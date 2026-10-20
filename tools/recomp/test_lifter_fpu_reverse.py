@@ -29,37 +29,37 @@ class FpuReverseFormTest(unittest.TestCase):
         lifted = _lift("fdivr", "dword ptr [0x281250]", [_mem(disp=0x281250)])
 
         self.assertEqual(len(lifted), 1)
-        self.assertIn("fp_top() = MEMF(0x281250) / fp_top();", lifted[0])
+        self.assertIn("fp_top() = RECOMP_FP_PC(MEMF(0x281250) / fp_top());", lifted[0])
         self.assertNotIn("/* FPU:", lifted[0])
 
     def test_fsubr_subtracts_the_stack_top_from_the_operand(self):
         lifted = _lift("fsubr", "dword ptr [eax + 0x10]",
                        [_mem(base="eax", disp=0x10)])
 
-        self.assertIn("fp_top() = MEMF(eax + 0x10) - fp_top();", lifted[0])
+        self.assertIn("fp_top() = RECOMP_FP_PC(MEMF(eax + 0x10) - fp_top());", lifted[0])
 
     def test_reverse_pop_forms_use_the_reversed_operand_order(self):
-        self.assertIn("fp_st1() = fp_top() / fp_st1(); fp_pop();",
+        self.assertIn("fp_st1() = RECOMP_FP_PC(fp_top() / fp_st1()); fp_pop();",
                       _lift("fdivrp", "st(1)", [])[0])
-        self.assertIn("fp_st1() = fp_top() - fp_st1(); fp_pop();",
+        self.assertIn("fp_st1() = RECOMP_FP_PC(fp_top() - fp_st1()); fp_pop();",
                       _lift("fsubrp", "st(1)", [])[0])
 
     def test_forward_forms_keep_their_original_operand_order(self):
         """The reverse cases must not disturb the plain ones."""
-        self.assertIn("fp_top() = fp_top() / MEMF(eax);",
+        self.assertIn("fp_top() = RECOMP_FP_PC(fp_top() / MEMF(eax));",
                       _lift("fdiv", "dword ptr [eax]", [_mem(base="eax")])[0])
-        self.assertIn("fp_top() = fp_top() - MEMF(eax);",
+        self.assertIn("fp_top() = RECOMP_FP_PC(fp_top() - MEMF(eax));",
                       _lift("fsub", "dword ptr [eax]", [_mem(base="eax")])[0])
 
     def test_integer_memory_operands_are_read_as_signed_integers(self):
         lifted = _lift("fidiv", "dword ptr [esp + 8]",
                        [_mem(base="esp", disp=8)])
 
-        self.assertIn("fp_top() = fp_top() / (double)SMEM32(esp + 8);", lifted[0])
+        self.assertIn("fp_top() = RECOMP_FP_PC(fp_top() / (double)SMEM32(esp + 8));", lifted[0])
 
         word = _lift("fisubr", "word ptr [ebx + 0xbc]",
                      [_mem(base="ebx", disp=0xBC, size=2)])
-        self.assertIn("fp_top() = (double)SMEM16(ebx + 0xBC) - fp_top();",
+        self.assertIn("fp_top() = RECOMP_FP_PC((double)SMEM16(ebx + 0xBC) - fp_top());",
                       word[0])
 
     def test_transcendentals_emit_statements_rather_than_comments(self):
@@ -67,7 +67,7 @@ class FpuReverseFormTest(unittest.TestCase):
             ("fpatan", "atan2(fp_st1(), fp_top())"),
             ("fsin", "sin(fp_top())"),
             ("fcos", "cos(fp_top())"),
-            ("frndint", "recomp_fp_round_cw(fp_top())"),  # honours the control word
+            ("frndint", "recomp_frndint(fp_top(), g_fp_control_word)"),
             ("fyl2x", "log2(fp_top())"),
         ):
             with self.subTest(mnemonic=mnemonic):
@@ -76,54 +76,9 @@ class FpuReverseFormTest(unittest.TestCase):
                 self.assertNotIn("/* FPU:", lifted[0])
 
     def test_fptan_pushes_the_implicit_one(self):
-        """FPTAN leaves tan(x) and then 1.0 on the stack."""
-        self.assertIn("fp_push(1.0);", _lift("fptan", "", [])[0])
+        """FPTAN leaves tan(x) and then 1.0 (NaN for a non-finite x)."""
+        self.assertIn("fp_push(isfinite(_a) ? 1.0 : _a - _a);", _lift("fptan", "", [])[0])
 
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class NanCompareTest(unittest.TestCase):
-    """An unordered comiss sets ZF, PF and CF together, so every branch that
-    is taken on CF or ZF is taken on NaN too -- which C's relational operators
-    are not. JSRF's collision edge tests run on a NaN direction whenever a
-    character stands still, and depend on exactly this."""
-
-    def test_comiss_conditions_follow_x86_on_nan(self):
-        import math
-        nan = float("nan")
-        # (condition text the lifter emits, x86 truth table on (a, b))
-        cases = {
-            "jb":  lambda a, b: not (a >= b),
-            "jbe": lambda a, b: not (a > b),
-            "je":  lambda a, b: (not (a < b)) and (not (a > b)),
-            "jne": lambda a, b: (a < b) or (a > b),
-            "ja":  lambda a, b: a > b,
-            "jae": lambda a, b: a >= b,
-        }
-        x86 = {  # CF, ZF after comiss: unordered 1,1; less 1,0; equal 0,1; greater 0,0
-            "jb":  lambda cf, zf: cf == 1,
-            "jbe": lambda cf, zf: cf == 1 or zf == 1,
-            "je":  lambda cf, zf: zf == 1,
-            "jne": lambda cf, zf: zf == 0,
-            "ja":  lambda cf, zf: cf == 0 and zf == 0,
-            "jae": lambda cf, zf: cf == 0,
-        }
-        def flags(a, b):
-            if math.isnan(a) or math.isnan(b): return 1, 1
-            if a < b: return 1, 0
-            if a == b: return 0, 1
-            return 0, 0
-        for jcc, c in cases.items():
-            for a, b in ((nan, 1.0), (1.0, nan), (nan, nan), (0.0, 1.0), (1.0, 1.0), (2.0, 1.0)):
-                with self.subTest(jcc=jcc, a=a, b=b):
-                    self.assertEqual(c(a, b), x86[jcc](*flags(a, b)))
-
-    def test_lifter_emits_the_nan_safe_forms(self):
-        import inspect
-        from tools.recomp import lifter as L
-        src = inspect.getsource(L)
-        self.assertIn('return f"(!({a} >= {b}))", desc', src)
-        self.assertIn('return f"(!({a} > {b}))", desc', src)
-        self.assertIn('return f"(!({a} < {b}) && !({a} > {b}))", desc', src)

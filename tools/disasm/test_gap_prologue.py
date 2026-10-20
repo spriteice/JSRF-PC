@@ -46,6 +46,11 @@ class _Image:
 
 
 class _Engine:
+    jump_tables = {}
+
+    def get_instruction(self, addr):
+        return self.instructions.get(addr)
+
     def __init__(self, insns, prologues):
         self.instructions = {i.address: i for i in insns}
         self._prologues = set(prologues)
@@ -111,6 +116,13 @@ class GapPrologueTest(unittest.TestCase):
         det.engine._stub = True
         self.assertFalse(det._pass_gap_prologues([]))
 
+    def test_padding_before_a_jump_table_is_not_a_function(self):
+        insns = [_Insn(0x1000, 1, is_ret=True), _Insn(0x1001, 2)]
+        det = _detector(insns, [_Func(0x1000, 0x1001)], {0x1001})
+        det.engine.jump_tables = {0x1003: 0x1013}
+        self.assertFalse(det._pass_gap_prologues([]))
+        self.assertEqual(det.added, [])
+
     def test_a_non_ret_instruction_starts_nothing(self):
         insns = [_Insn(0x00476EAF, 1, is_ret=False)]
         funcs = [_Func(0x00476EA0, 0x00476EB0), _Func(0x004771C0, 0x004771D0)]
@@ -168,3 +180,11 @@ class SehPrologueShapeTest(unittest.TestCase):
         code = bytes.fromhex("6a18") + bytes.fromhex("c3") + bytes([0x90]) * 8
         self.assertFalse(self._probe(code))
 
+    def test_chkstk_prologue_is_a_prologue(self):
+        # mov eax, 0x8028 ; call rel32 -- Half-Life 2's 0x00426370
+        code = bytes.fromhex("b828800000") + bytes.fromhex("e8067a1800")
+        self.assertTrue(self._probe(code))
+
+    def test_mov_eax_without_a_call_is_not(self):
+        code = bytes.fromhex("b828800000") + bytes.fromhex("c3") + bytes([0x90]) * 8
+        self.assertFalse(self._probe(code))

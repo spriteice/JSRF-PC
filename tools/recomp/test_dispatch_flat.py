@@ -28,14 +28,8 @@ from tools.recomp.translator import BatchTranslator  # noqa: E402
 
 
 def _find_cc():
-    for cc in ("clang", "gcc", "cc"):
-        p = shutil.which(cc)
-        if p:
-            return p
-    for p in (r"C:\Program Files\LLVM\bin\clang.exe",):
-        if os.path.exists(p):
-            return p
-    return None
+    from tools.recomp.c_fixture import compiler
+    return compiler()
 
 
 # Deliberately awkward: a sparse span with a big hole, a first and a last entry
@@ -102,8 +96,8 @@ int main(void) {
 def test_generated_dispatch_flat_matches_binary_search():
     cc = _find_cc()
     if not cc:
-        print("  SKIP no C compiler on PATH")
-        return
+        import pytest
+        pytest.skip('no C compiler on PATH')
     with tempfile.TemporaryDirectory() as tmp:
         # The generated file includes the per-title funcs header; a stub is
         # enough, the harness provides the real symbols.
@@ -125,9 +119,10 @@ def test_generated_dispatch_flat_matches_binary_search():
         with open(hp, "w") as f:
             f.write(HARNESS)
         exe = os.path.join(tmp, "t.exe")
-        r = subprocess.run([cc, "-w", "-I", tmp, hp, disp, "-o", exe],
-                           capture_output=True, text=True)
-        assert r.returncode == 0, r.stderr[-2000:]
+        from tools.recomp.c_fixture import command
+        r = subprocess.run(command(cc, [hp, disp], exe, include_dirs=[tmp]),
+                           cwd=tmp, capture_output=True, text=True)
+        assert r.returncode == 0, (r.stdout + r.stderr)[-2000:]
         r = subprocess.run([exe], capture_output=True, text=True)
         assert r.returncode == 0, r.stdout + r.stderr
         assert r.stdout.startswith("OK"), r.stdout
@@ -142,6 +137,42 @@ def test_empty_translation_set_does_not_divide_by_zero():
         src = open(disp).read()
         assert "g_flat_span = 0x00000000u" in src, src[:400]
         assert "if (!g_flat_span) return 0;" in src
+
+
+def test_reserved_name_mangled_everywhere():
+    # The recompiled image carries its own CRT; Black's function named
+    # `onexit` clashed with UCRT's onexit_t __cdecl onexit(onexit_t) (C2373)
+    # in the dispatch TU, which includes <stdlib.h>. The identifier, its
+    # forward declaration, every call site and the dispatch row must share one
+    # mangled name.
+    from tools.recomp.lifter import _func_ident
+
+    assert _func_ident(0x000A1C60, "onexit") == "onexit_000A1C60"
+    assert _func_ident(0x000A1C60, "sub_000A1C60") == "sub_000A1C60"
+    assert _func_ident(0x000A1C60, None) == "sub_000A1C60"
+
+
+def test_win32_api_name_mangled():
+    # Nightfire re-exports shims named exactly like the Win32 APIs they wrap;
+    # `void CreateThread(void)` collides with kernel32.lib's import at link
+    # time (LNK2005). The host export names come from data/win32_api_names.txt.
+    from tools.recomp.lifter import _func_ident, _WIN32_EXPORTS
+
+    assert "CreateThread" in _WIN32_EXPORTS
+    assert "QueryPerformanceCounter" in _WIN32_EXPORTS
+    assert _func_ident(0x0006B1B0, "CreateThread") == "CreateThread_0006B1B0"
+    assert _func_ident(0x0006B1B0, "sub_0006B1B0") == "sub_0006B1B0"
+
+
+def test_reserved_dispatch_row_uses_mangled_name():
+    with tempfile.TemporaryDirectory() as tmp:
+        disp = os.path.join(tmp, "d.c")
+        BatchTranslator._write_dispatch_table(
+            object.__new__(BatchTranslator),
+            [(0x000A1C60, "onexit_000A1C60", "void onexit_000A1C60(void) {}")],
+            disp, "recomp_funcs.h")
+        src = open(disp).read()
+        assert "(recomp_func_t)onexit_000A1C60" in src
 
 
 def _run():

@@ -1,5 +1,6 @@
 """Tests for calls to functions replaced through manual dispatch."""
 
+import os
 import tempfile
 
 from tools.recomp.disasm import BasicBlock, Instruction, Operand
@@ -124,3 +125,53 @@ def test_split_translation_passes_manual_set_to_lifter():
             functions, output_dir, manual={TARGET})
 
     assert batch.translator.seen_manual == {TARGET}
+
+
+def test_wrapped_function_body_is_gen_and_calls_reach_wrapper():
+    # --exclude-manual wrap: the body is emitted as sub_X_gen, while direct
+    # calls, the header and the dispatch table all name the wrapper sub_X.
+    class FakeTranslator:
+        def __init__(self, func_db):
+            self.owned_function_starts = set()
+            self.lifter = Lifter(func_db=func_db)
+
+        def translate_function(self, addr, func_info):
+            return f"void {func_info['name']}(void) {{}}"
+
+    info = {"name": "sub_001E9100_gen", "wrapper_name": "sub_001E9100"}
+    lifter = Lifter(func_db={TARGET: info})
+    generated = "\n".join(lifter.lift_instruction(_direct_call()))
+    assert "RECOMP_ABI_CALL(0x001E9100u, sub_001E9100);" in generated
+
+    batch = BatchTranslator.__new__(BatchTranslator)
+    batch.translator = FakeTranslator({TARGET: info})
+    with tempfile.TemporaryDirectory() as output_dir:
+        batch.translate_batch_split([(TARGET, info)], output_dir)
+        header = open(os.path.join(output_dir, "recomp_funcs.h")).read()
+        dispatch = open(os.path.join(output_dir, "recomp_dispatch.c")).read()
+
+    assert "void sub_001E9100_gen(void)" in header
+    assert "void sub_001E9100(void);" in header
+    assert "(recomp_func_t)sub_001E9100 }" in dispatch
+    assert "(recomp_func_t)sub_001E9100_gen" not in dispatch
+
+
+def test_wrapped_body_is_translated_even_when_filtered_or_manual():
+    # The hand-written wrapper calls sub_X_gen, so neither a category filter
+    # nor a --manual-functions entry may drop that body.
+    from types import SimpleNamespace
+
+    from .__main__ import _wrap_generated_bodies
+
+    other = 0x00120000
+    func_db = {TARGET: {"name": "sub_001E9100"}, other: {"name": "sub_00120000"}}
+    batch = SimpleNamespace(
+        func_db=func_db,
+        translator=SimpleNamespace(owned_function_starts=set()))
+    funcs, manual = _wrap_generated_bodies(
+        batch, [(other, func_db[other])], {TARGET, other}, {TARGET})
+
+    assert [addr for addr, _ in funcs] == [other, TARGET]
+    assert manual == {other}
+    assert func_db[TARGET]["name"] == "sub_001E9100_gen"
+    assert func_db[TARGET]["wrapper_name"] == "sub_001E9100"

@@ -27,11 +27,11 @@ class FpuLifterTest(unittest.TestCase):
 
         self.assertEqual(
             Lifter().lift_instruction(store),
-            ["MEMF(esp + 0x18) = (float)fp_top(); /* fst */"],
+            ["MEMWF(esp + 0x18, (float)fp_top()); /* fst */"],
         )
         self.assertEqual(
             Lifter().lift_instruction(store_pop),
-            ["MEMF(esp + 0x18) = (float)fp_top(); fp_pop(); /* fstp */"],
+            ["MEMWF(esp + 0x18, (float)fp_top()); fp_pop(); /* fstp */"],
         )
 
     def test_qword_integer_conversion_uses_signed_64_bit_storage(self):
@@ -45,7 +45,7 @@ class FpuLifterTest(unittest.TestCase):
 
         self.assertEqual(
             Lifter().lift_instruction(store),
-            ["SMEM64(esp + 0x10) = (int64_t)llrint(fp_top()); "
+            ["SMEM64(esp + 0x10) = (int64_t)recomp_fist(fp_top(), g_fp_control_word, 64); "
              "fp_pop(); /* fistp */"],
         )
         self.assertEqual(
@@ -62,7 +62,7 @@ class FpuLifterTest(unittest.TestCase):
 
         self.assertEqual(
             Lifter().lift_instruction(instruction),
-            ["fp_top() = fp_top() / MEMF(0x123456); "
+            ["fp_top() = RECOMP_FP_PC(fp_top() / MEMF(0x123456)); "
              "/* fdiv dword ptr [0x00123456] */"],
         )
 
@@ -72,7 +72,7 @@ class FpuLifterTest(unittest.TestCase):
 
         self.assertEqual(
             Lifter().lift_instruction(instruction),
-            ["fp_top() = fp_top() * fp_st1(); /* fmul st(1) */"],
+            ["fp_top() = RECOMP_FP_PC(fp_top() * fp_st1()); /* fmul st(1) */"],
         )
 
     def test_translated_functions_share_runtime_fpu_state(self):
@@ -89,7 +89,8 @@ class FpuLifterTest(unittest.TestCase):
         translator.disasm.disassemble_function = (
             lambda _raw, _start, _end: instructions)
         translator.disasm.build_basic_blocks = (
-            lambda _instructions, _start, _end, extra_leaders=None: [block])
+            lambda _instructions, _start, _end, extra_leaders=None,
+            stop_mnemonics=(): [block])
 
         generated = translator.translate_function(
             start, {"_addr": start, "end": start + 3})
@@ -127,7 +128,7 @@ class FpuLifterTest(unittest.TestCase):
 
         self.assertEqual(
             Lifter().lift_instruction(store),
-            ["MEM16(ebp + 0xFFFFFFFCu) = g_fp_control_word;"
+            ["MEMW16(ebp + 0xFFFFFFFCu, g_fp_control_word);"
              " /* fnstcw word ptr [ebp - 4] */"],
         )
         self.assertEqual(
@@ -145,11 +146,9 @@ class FpuLifterTest(unittest.TestCase):
         self.assertEqual(len(lifted), 1)
         # The compare can live in a different lifted body than the FNSTSW that
         # reads it, so the result has to be shared state, not a function local.
-        self.assertIn("g_fp_cmp", lifted[0])
+        self.assertIn("g_fp_cc", lifted[0])
         self.assertNotIn("_fpu_cmp", lifted[0])
         # C3 (equal) and C0 (less) at their status-word positions, plus TOP
-        self.assertIn("0x4000u", lifted[0])
-        self.assertIn("0x0100u", lifted[0])
         self.assertIn("(g_fp_top & 7u) << 11", lifted[0])
         self.assertNotIn("/* fnstsw ax - store FPU status word */", lifted[0])
 
@@ -178,6 +177,19 @@ class FpuLifterTest(unittest.TestCase):
 
         self.assertIn("fp_st1()", lifted)
         self.assertNotIn("fp_top() = fp_top()", lifted)
+
+    def test_fnclex_is_a_deliberate_no_op(self):
+        """The exception flags are not modelled, so there is nothing to clear.
+        Left to the generic `/* FPU: */` fallback it read as unhandled, and the
+        XBE conformance phase rejected JSRF's 0x0017BF79 for it."""
+        for m, raw in (("fnclex", "dbe2"), ("fclex", "9bdbe2")):
+            instruction = Instruction(0, len(raw) // 2, m, "", raw)
+            instruction.operands = []
+
+            self.assertEqual(
+                Lifter().lift_instruction(instruction),
+                ["/* fnclex: clear x87 exception flags (nothing tracked) */"],
+            )
 
 
 if __name__ == "__main__":

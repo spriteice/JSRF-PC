@@ -238,9 +238,32 @@ class NeedsCarryTest(unittest.TestCase):
         self.assertFalse(FunctionTranslator._function_needs_cf(
             [self._insn("add"), self._insn("cmp"), self._insn("jae")]))
 
+    def test_carry_cmov_after_add_needs_cf(self):
+        # A cmovb after 'add' reads the same _cf the jcc would; without _cf
+        # declared the generated `if (_cf)` is an undeclared identifier.
+        self.assertTrue(FunctionTranslator._function_needs_cf(
+            [self._insn("add"), self._insn("cmovb")]))
+
+    def test_carry_cmov_after_cmp_does_not(self):
+        self.assertFalse(FunctionTranslator._function_needs_cf(
+            [self._insn("add"), self._insn("cmp"), self._insn("cmovb")]))
+
+    def test_signed_cmov_after_add_does_not(self):
+        self.assertFalse(FunctionTranslator._function_needs_cf(
+            [self._insn("add"), self._insn("cmovge")]))
+
     def test_signed_branch_after_add_does_not(self):
         self.assertFalse(FunctionTranslator._function_needs_cf(
             [self._insn("add"), self._insn("jge")]))
+
+    def test_lahf_after_add_needs_cf(self):
+        # lahf's AH carries CF via a jb probe of the add, which reads _cf.
+        self.assertTrue(FunctionTranslator._function_needs_cf(
+            [self._insn("add"), self._insn("lahf")]))
+
+    def test_lahf_after_cmp_does_not(self):
+        self.assertFalse(FunctionTranslator._function_needs_cf(
+            [self._insn("add"), self._insn("cmp"), self._insn("lahf")]))
 
     def test_adc_alone_needs_cf(self):
         self.assertTrue(FunctionTranslator._function_needs_cf(

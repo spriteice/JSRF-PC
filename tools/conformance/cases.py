@@ -60,6 +60,43 @@ _FP = [
     (1e10, 3.0), (1e-10, 3.0), (65536.0, 256.0),
 ]
 
+# Operands for the x87 trig cases. The x87 reduces with a 66-bit pi, so above
+# pi/4 it returns f(x * pi / pi66), not libm's f(x): 1e10 is the vector that
+# first showed it, 355 and pi land near a zero where the shift is many ulps,
+# and 2^63 and up are out of range (st0 kept, nothing pushed, C2 set).
+_FP_TRIG = [
+    (1e10, 1.0), (-1e10, 1.0), (1e15, 1.0), (1e18, 1.0), (2.0**62, 1.0),
+    (-(2.0**62), 1.0), (355.0, 1.0), (-355.0, 1.0),
+    (3.141592653589793, 1.0), (100.0, 1.0), (0.5, 1.0),
+    (2.0**63, 1.0), (-(2.0**63), 1.0), (2.0**64, 1.0), (1e300, 1.0),
+    # inf and NaN: the default NaN with C2 clear (invalid is masked), not
+    # out of range -- put on the hardware oracle rather than assumed.
+    (float("inf"), 1.0), (float("-inf"), 1.0), (float("nan"), 1.0),
+]
+
+# The oracle is the host CPU, and only Intel's x87 reduces with the P3's
+# 66-bit pi. AMD reduces more exactly, so for pi/4 < |x| < 2^63 an AMD host
+# disagrees with the (correct, P3) lift by up to ~1e-6. Those rows have no
+# oracle there and are dropped; the range edges, inf and NaN still run.
+# tests/x87_trig checks the reduction against model.py on any host.
+def _host_x87_is_amd():
+    import platform
+    s = platform.processor()
+    try:
+        with open("/proc/cpuinfo") as f:
+            s += f.read(4096)
+    except OSError:
+        pass
+    return "AuthenticAMD" in s or "HygonGenuine" in s
+
+
+def _trig(rows):
+    if not _host_x87_is_amd():
+        return rows
+    return [r for r in rows
+            if not (3.141592653589793 / 4 < abs(r[0]) < 2.0**63)]
+
+
 # Only for the cases that mask fnstsw down to the condition codes. The
 # status word's low byte carries the exception flags -- invalid is set by
 # a NaN compare -- and those are not modelled, so a case comparing the
@@ -87,6 +124,28 @@ _SSE = [
 ]
 
 CASES = [
+    Case("comisd_register_lane", "double register compare uses the 64-bit lane",
+         ["movsd xmm0, qword ptr [eax]", "movsd xmm1, qword ptr [eax+16]",
+          "comisd xmm0, xmm1", "setb al", "movzx eax, al"], _FP_NAN, kind="fpu"),
+    Case("ucomisd_register_lane", "double register compare uses the 64-bit lane",
+         ["movsd xmm0, qword ptr [eax]", "movsd xmm1, qword ptr [eax+16]",
+          "ucomisd xmm0, xmm1", "setb al", "movzx eax, al"], _FP_NAN, kind="fpu"),
+    Case("cmp_setp", "parity reader after a known flag producer",
+         ['cmp eax, ecx', 'setp al', 'movzx eax, al'], _PAIRS),
+    Case("cmp_setnp", "parity reader after a known flag producer",
+         ['cmp eax, ecx', 'setnp al', 'movzx eax, al'], _PAIRS),
+    Case("cmp_cmovp", "parity reader after a known flag producer",
+         ['cmp eax, ecx', 'cmovp eax, ecx'], _PAIRS),
+    Case("cmp_cmovnp", "parity reader after a known flag producer",
+         ['cmp eax, ecx', 'cmovnp eax, ecx'], _PAIRS),
+    Case("test_setp", "parity reader after a known flag producer",
+         ['test eax, ecx', 'setp al', 'movzx eax, al'], _PAIRS),
+    Case("test_setnp", "parity reader after a known flag producer",
+         ['test eax, ecx', 'setnp al', 'movzx eax, al'], _PAIRS),
+    Case("test_cmovp", "parity reader after a known flag producer",
+         ['test eax, ecx', 'cmovp eax, ecx'], _PAIRS),
+    Case("test_cmovnp", "parity reader after a known flag producer",
+         ['test eax, ecx', 'cmovnp eax, ecx'], _PAIRS),
     # -- signed compare width (the RECOMP_SIGNED vs SXV decision) -------------
     Case("setl_i8", "cmp at byte width, then jl's condition",
          ["cmp al, cl", "setl al", "movzx eax, al"], _PAIRS),
@@ -128,6 +187,17 @@ CASES = [
           "sbb ecx, ecx", "mov eax, ecx"], _PAIRS),
     Case("neg_adc", "neg's carry into adc",
          ["neg eax", "adc ecx, 0", "mov eax, ecx"], _PAIRS),
+
+    # -- rotate through carry ------------------------------------------------
+    Case("rcr_divide_normaliser", "shr's carry into rcr, as MSVC's 64-bit divide",
+         ["shr ecx, 1", "rcr eax, 1"], _PAIRS),
+    Case("rcl_i32_cl", "rcl by a variable count",
+         ["stc", "rcl eax, cl"], _PAIRS),
+    Case("rcr_i8_cl_setc", "byte rcr, count mod 9, carry out read by setc",
+         ["stc", "rcr al, cl", "setc ah"], _PAIRS),
+    Case("rcl_i16_cl_setc", "word rcl, count mod 17, carry out read by setc",
+         ["clc", "rcl ax, cl", "setc cl", "movzx ecx, cl",
+          "shl ecx, 16", "movzx eax, ax", "or eax, ecx"], _PAIRS),
 
     # -- sign/zero extension -------------------------------------------------
     Case("movsx_8_32", "sign-extend byte to dword",
@@ -332,9 +402,22 @@ CASES = [
          _FP, "fpu", tol=1e-15),
     Case("fpu_sincos_pair", "fsin and fcos",
          ["fld qword ptr [eax]", "fsin", "fld qword ptr [eax]", "fcos"],
-         _FP, "fpu", tol=1e-15),
+         _trig(_FP + _FP_TRIG), "fpu", tol=1e-15),
     Case("fpu_ptan", "fptan replaces st0 and pushes 1.0 -- depth grows by one",
-         ["fld qword ptr [eax]", "fptan"], _FP, "fpu", tol=1e-15),
+         ["fld qword ptr [eax]", "fptan"], _trig(_FP + _FP_TRIG), "fpu", tol=1e-15),
+    Case("fpu_sincos_pushes",
+         "fsincos leaves sin in st1 and cos in st0, and pushes nothing out "
+         "of range",
+         ["fld qword ptr [eax]", "fsincos"], _trig(_FP + _FP_TRIG), "fpu", tol=1e-15),
+    # C2 is what MSVC's CRT checks after fsin, through both paths a status
+    # word reaches a branch: AH read directly, and AH loaded into EFLAGS by
+    # sahf, where C2 is PF. The second is the one `_CIsin` uses.
+    Case("fpu_sin_c2_status", "fsin sets C2 only out of range (fnstsw ax)",
+         ["fld qword ptr [eax]", "fsin", "fnstsw ax", "and eax, 0x0400"],
+         _trig(_FP_TRIG), "fpu", tol=1e-15),
+    Case("fpu_sin_c2_sahf", "fsin's C2 reaches PF through sahf",
+         ["fld qword ptr [eax]", "fsin", "fnstsw ax", "sahf", "setp al",
+          "movzx eax, al"], _trig(_FP_TRIG), "fpu", tol=1e-15),
 
     # ══ SSE ═════════════════════════════════════════════════════════════════
     #
@@ -415,6 +498,34 @@ CASES = [
          ["test ax, ax", "setns al", "movzx eax, al"], _PAIRS),
     Case("js_cmp_i8", "sign flag after an 8-bit cmp, which truncates first",
          ["cmp al, cl", "sets al", "movzx eax, al"], _PAIRS),
+    Case("js_add_i8", "sign flag after an 8-bit add reads bit 7 of the result",
+         ["add al, cl", "sets al", "movzx eax, al"], _PAIRS),
+    Case("js_sub_i16", "sign flag after a 16-bit sub reads bit 15",
+         ["sub ax, cx", "sets al", "movzx eax, al"], _PAIRS),
+    Case("js_xor_i8", "sign flag after an 8-bit xor",
+         ["xor al, cl", "sets al", "movzx eax, al"], _PAIRS),
+    Case("js_sar_i8", "sign flag after an 8-bit sar",
+         ["sar al, 1", "sets al", "movzx eax, al"], _PAIRS),
+
+    # Unsigned word saturation must clamp each lane, not wrap or drop the op.
+    *[Case("mmx_" + op + "_" + form + "_" + str(half),
+           "unsigned word arithmetic saturates all four lanes",
+           ["movd mm0, eax", "punpckldq mm0, mm0",
+            "movd mm1, ecx", "punpckldq mm1, mm1"]
+           + ([op + " mm0, mm1"] if form == "reg" else
+              ["sub esp, 8", "movq qword ptr [esp], mm1",
+               op + " mm0, qword ptr [esp]", "add esp, 8"])
+           + (["psrlq mm0, 32"] if half else [])
+           + ["sub esp, 8", "movq qword ptr [esp], mm0",
+              "mov eax, dword ptr [esp]", "add esp, 8", "emms"],
+           [(a, b) for a in (0, 1, 0x0001ffff, 0x80007fff, 0xfffeffff, 0xffffffff)
+                   for b in (0, 1, 0x0001ffff, 0x80007fff, 0xfffeffff, 0xffffffff)])
+      for op in ("paddusw", "psubusw") for form in ("reg", "mem") for half in (0, 1)],
+
+    *[Case("mmx_" + op + "_flags", "unsigned saturated arithmetic preserves EFLAGS",
+           ["pxor mm0, mm0", "pxor mm1, mm1", "cmp eax, 0", op + " mm0, mm1",
+            "sete al", "movzx eax, al", "emms"], [(0, 0), (1, 0)])
+      for op in ("paddusw", "psubusw")],
 
     # bt/btr/bts/btc are 386 instructions, so real Xbox code has them. They
     # were unhandled until the corpus lifted the CRT's float-to-int helper,
@@ -432,6 +543,17 @@ CASES = [
     # model reported "equal", so `fucompp; fnstsw ax; test ah,44h; jp` -- how
     # this era's CRT asks "is this a NaN" -- answered no every time. Found by
     # running Crimson Skies' own float classification against itself.
+    Case("fpu_fprem_completion", "FPREM clears FXAM's C2 after complete reduction",
+         ["fld qword ptr [eax+16]", "fld qword ptr [eax]", "fxam",
+          "fprem", "fnstsw ax", "and eax, 0400h"],
+         [(7.5, 3.0), (-7.5, 3.0), (7.5, -3.0), (0.0, 3.0),
+          (100.0, 7.0), (2.5, 2.0)], "fpu"),
+    Case("fpu_fprem1_completion", "FPREM1 clears C2 and rounds the quotient to nearest",
+         ["fld qword ptr [eax+16]", "fld qword ptr [eax]", "fxam",
+          "fprem1", "fnstsw ax", "and eax, 0400h"],
+         [(7.5, 3.0), (-7.5, 3.0), (7.5, -3.0), (0.0, 3.0),
+          (100.0, 7.0), (2.5, 2.0)], "fpu"),
+
     Case("fpu_nan_unordered",
          "comparing a value with itself is the isnan idiom; NaN is unordered",
          ["fld qword ptr [eax]", "fld qword ptr [eax]", "fucompp",
@@ -440,3 +562,37 @@ CASES = [
          ["fld qword ptr [eax+16]", "fld qword ptr [eax]", "fucompp",
           "fnstsw ax", "and eax, 04500h"], _FP_NAN, "fpu"),
 ]
+
+# MMX arithmetic/conversions preserve EFLAGS. Exercise the deferred condition,
+# not only the MMX result, with both true and false incoming comparisons.
+for _op in (
+        "paddsb mm0, mm1", "paddsw mm0, mm1", "paddusb mm0, mm1",
+        "psubsb mm0, mm1", "psubsw mm0, mm1", "psubusb mm0, mm1",
+        "pavgb mm0, mm1", "pavgw mm0, mm1", "pminsw mm0, mm1",
+        "pmaxsw mm0, mm1", "psadbw mm0, mm1",
+        "cvtps2pi mm0, xmm0", "cvttps2pi mm0, xmm0",
+        "pinsrw mm0, ecx, 0", "pextrw edx, mm0, 0"):
+    for _consumer, _before, _after in (
+            ("sete", ["cmp eax, 0"], ["sete al", "movzx eax, al"]),
+            ("cmove", ["cmp eax, 0"], ["cmove eax, ecx"]),
+            ("sbb", ["neg eax"], ["sbb eax, eax"])):
+        CASES.append(Case(
+            "mmx_flags_" + _op.split()[0] + "_" + _consumer,
+            "MMX preserves the comparison/carry consumed afterward",
+            ["pxor mm0, mm0", "pxor mm1, mm1", "xorps xmm0, xmm0"]
+            + _before + [_op] + _after + ["emms"], [(0, 7), (1, 7)]))
+
+CASES.append(Case("pushad_popad", "POPAD restores registers and skips saved ESP",
+    ["pushad", "mov eax, 0", "mov ecx, 0", "popad", "add eax, ecx"], _PAIRS))
+
+# Exercise ordinary-RAM REP semantics against the real CPU. MMIO side effects
+# are covered by the access-counting fixture, since host RAM is not a device.
+for _name, _setup, _count, _copy, _result in (
+        ("rep_copy_byte", ["mov esi, eax", "lea edi, [eax+16]"], 4, "rep movsb", "mov eax, [edi-4]"),
+        ("rep_copy_word", ["mov esi, eax", "lea edi, [eax+16]"], 4, "rep movsw", "mov eax, [edi-8]"),
+        ("rep_copy_dword", ["mov esi, eax", "lea edi, [eax+16]"], 4, "rep movsd", "mov eax, [edi-16]"),
+        ("rep_copy_overlap", ["mov esi, eax", "lea edi, [eax+4]"], 3, "rep movsd", "mov eax, [edi-4]"),
+        ("rep_copy_backward", ["lea esi, [eax+12]", "lea edi, [eax+28]", "std"], 4, "rep movsd", "mov eax, [edi+4]"),
+        ("rep_copy_zero", ["mov esi, eax", "lea edi, [eax+16]"], 0, "rep movsd", "mov eax, [edi]")):
+    CASES.append(Case(_name, "REP copy preserves element order, direction and count",
+        ["cld"] + _setup + ["mov ecx, %d" % _count, _copy, "cld", _result], _SSE, "sse"))

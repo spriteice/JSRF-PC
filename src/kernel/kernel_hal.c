@@ -12,6 +12,7 @@
  */
 
 #include "kernel.h"
+#include <stdlib.h>
 #include <string.h>
 #if defined(_WIN32)
 #include <intrin.h>
@@ -787,5 +788,140 @@ uint64_t xbox_ReadTimeStampCounter(void)
         uint64_t rem  = ticks % (uint64_t)freq.QuadPart;
         return secs * XBOX_TSC_HZ
              + (rem * XBOX_TSC_HZ) / (uint64_t)freq.QuadPart;
+    }
+}
+
+/* =========================================================================
+ * x86 port I/O
+ *
+ * The lifter turns `in`/`out` into these. The MCPX decodes I/O space: its
+ * ACPI/PM block sits at 0x8000 and SMBus at 0xC000, and the kernel exports
+ * cover SMBus, so a title touches ports directly only for the odd pin.
+ *
+ * 0x80C0 is the first GPIO register of the ACPI block. Bit 5 is the field pin
+ * of the video encoder: D3D's vblank ISR stores !bit5 in [device+0x1DF8], and
+ * D3DDevice_GetDisplayFieldStatus reports D3DFIELD_ODD while that is set.
+ * Interlaced output alternates fields every vblank, so the pin follows the
+ * parity of the vblank count. A constant answer says "odd field" for ever,
+ * and the XDK's XMV player only starts its clock on an even one: Burnout 3's
+ * EA intro waited on its loading screen indefinitely. JSRF's ISR reads it at
+ * 0x0018E500.
+ *
+ * The count is g_vblank_count (kernel_bridge.c), bumped once per tick by the
+ * timer thread. Two regimes follow from it:
+ *  - tick-driven (RECOMP_VBLANK=1, once the first vblank is counted): the pin
+ *    is the count's parity and holds still between vblanks, however often
+ *    it is read;
+ *  - no tick (before the first vblank, or the whole run with RECOMP_VBLANK
+ *    off): the count is 0, so the pin toggles on every read instead. A
+ *    reader waiting for either field still sees it; nothing is implied
+ *    about vblank delivery.
+ *
+ * Every other port reads 0 and is logged on first use, once per port.
+ * ========================================================================= */
+extern unsigned long g_vblank_count;
+
+static int port_first_use(uint32_t port, int is_out)
+{
+    static uint32_t seen[32];
+    static volatile LONG nseen;
+    uint32_t key = (port & 0xFFFFu) | (is_out ? 0x10000u : 0u);
+    LONG i, n = nseen;
+
+    for (i = 0; i < n && i < 32; i++)
+        if (seen[i] == key)
+            return 0;
+    i = InterlockedIncrement(&nseen) - 1;
+    if (i < 32)
+        seen[i] = key;
+    return i < 32;
+}
+
+uint32_t xbox_PortIn(uint32_t port, int width)
+{
+    uint32_t v = 0;
+
+    port &= 0xFFFFu;
+    if (port == 0x80C0u) {
+        static volatile LONG reads;
+        uint32_t n = (uint32_t)*(volatile unsigned long *)&g_vblank_count;
+        if (!n)
+            n = (uint32_t)InterlockedIncrement(&reads);
+        v = (n & 1u) << 5;
+        return v;
+    }
+    if (port_first_use(port, 0))
+        xbox_log(XBOX_LOG_WARN, XBOX_LOG_HAL, "in%c 0x%04X -> 0 (not modelled)",
+            width == 1 ? 'b' : width == 2 ? 'w' : 'd', port);
+    return v;
+}
+
+void xbox_PortOut(uint32_t port, uint32_t value, int width)
+{
+    port &= 0xFFFFu;
+    if (port_first_use(port, 1))
+        xbox_log(XBOX_LOG_WARN, XBOX_LOG_HAL, "out%c 0x%04X = 0x%X (ignored)",
+            width == 1 ? 'b' : width == 2 ? 'w' : 'd', port, value);
+}
+
+/* =========================================================================
+ * cpuid
+ *
+ * The Xbox CPU is a 733 MHz Coppermine-based Pentium III with MMX, FXSR and
+ * SSE, and that is what is reported by default. Leaf 1 eax 0x683 is family
+ * 6, model 8 (Coppermine), stepping 3: one of the Coppermine signatures in
+ * Intel's Pentium III Processor Specification Update. Which stepping the
+ * console ships is not documented, so software should key on family and
+ * model only. The max basic leaf is 2 and there are no extended leaves.
+ * Leaf 1's edx is the P3 feature set (FPU..CMOV, PAT, PSE-36, MMX, FXSR,
+ * SSE).
+ *
+ * Leaf 2 gives the P6 TLB and 16 KB 4-way L1 descriptors (0x01-0x04, 0x08,
+ * 0x0C). The L2 byte is 0, the null descriptor: the console's 128 KB L2 is
+ * reported to be 8-way, and the SDM's 128 KB 32-byte-line descriptor (0x41)
+ * says 4-way, so no L2 is described rather than a wrong one.
+ *
+ * A leaf above the maximum, extended ones included, returns the highest
+ * basic leaf's data: Intel SDM vol. 2A, CPUID, "If a value entered for
+ * CPUID.EAX is higher than the maximum input value for basic or extended
+ * function for that processor then the data for the highest basic
+ * information leaf is returned." So 0x80000000 reads eax 0x03020101, below
+ * 0x80000001, which is how software learns there are no extended leaves.
+ *
+ * RECOMP_CPUID_NO_SIMD=1 is an opt-out for a title whose MMX or SSE paths
+ * do not lift correctly: it clears MMX, FXSR and SSE together (bits 23-25),
+ * so the title takes its scalar path. Masking only MMX would describe a CPU
+ * with SSE but no MMX, which never existed: SSE's integer extensions use
+ * the MMX registers, and FXSAVE/FXRSTOR arrived with SSE to save that state.
+ * ========================================================================= */
+void xbox_Cpuid(uint32_t leaf, uint32_t subleaf, uint32_t out[4])
+{
+    static int no_simd = -1;
+
+    if (no_simd < 0) {
+        const char *e = getenv("RECOMP_CPUID_NO_SIMD");
+        no_simd = e && *e && *e != '0';
+    }
+    (void)subleaf;
+    out[0] = out[1] = out[2] = out[3] = 0;
+    if (leaf > 2)
+        leaf = 2;
+    switch (leaf) {
+    case 0:
+        out[0] = 2;
+        out[1] = 0x756E6547u;   /* "Genu" */
+        out[3] = 0x49656E69u;   /* "ineI" */
+        out[2] = 0x6C65746Eu;   /* "ntel" */
+        break;
+    case 1:
+        out[0] = 0x00000683u;
+        out[3] = 0x0383F9FFu;
+        if (no_simd)
+            out[3] &= ~0x03800000u;     /* MMX, FXSR, SSE */
+        break;
+    default:
+        out[0] = 0x03020101u;
+        out[3] = 0x0C040800u;   /* L1 D, DTLB 4M, L1 I, no L2 */
+        break;
     }
 }

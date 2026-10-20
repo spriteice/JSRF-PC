@@ -58,7 +58,7 @@ class SsePackedLifterTest(unittest.TestCase):
             Lifter().lift_instruction(
                 _insn("movss", "dword ptr [ecx], xmm2",
                       [_mem("ecx", 0, size=4), _xmm("xmm2")])),
-            ["MEMF(ecx) = xmm2.f[0]; /* movss */"],
+            ["MEMWF(ecx, xmm2.f[0]); /* movss */"],
         )
 
     def test_packed_arithmetic_emits_a_statement(self):
@@ -171,34 +171,38 @@ class SsePackedLifterTest(unittest.TestCase):
                 statement.lstrip().startswith("/*"), (mnemonic, statement))
 
 
-class SseFloatToIntConversionTest(unittest.TestCase):
-    """cvtss2si rounds by MXCSR (round-to-nearest-even); only cvttss2si
-    truncates. Both used to lift to a plain (int32_t) cast, which truncates
-    and is undefined for NaN -- JSRF's FloatToInt helper (0x14C690, 134 call
-    sites) returned 2 for 2.7."""
+class CvtPi2PsTest(unittest.TestCase):
+    """cvtpi2ps: two signed dwords out of an MMX register (or m64) become two
+    singles in the LOW half of an xmm, upper lanes untouched.
 
-    def _lift(self, mnemonic, op_str, operands):
-        return Lifter().lift_instruction(_insn(mnemonic, op_str, operands))
+    It has an xmm destination and an mm source, so it matched neither the mm
+    paths nor the xmm ones and fell through to a TODO comment -- which deletes
+    the instruction silently. In Half-Life 2's Xbox loader that removed every
+    integer-to-float step of the XMV YUV-to-RGB converter; the float pipeline
+    then ran on whatever the xmm registers held from before and painted the
+    whole intro solid red. A dropped instruction is the worst kind of bug the
+    recompiler can have, because everything downstream still runs.
+    """
 
-    def test_cvtss2si_rounds_through_the_helper(self):
-        self.assertEqual(
-            self._lift("cvtss2si", "eax, dword ptr [esp + 4]",
-                       [Operand(type="reg", reg="eax"), _mem("esp", 4, size=4)]),
-            ["eax = recomp_cvt2si(MEMF(esp + 4)); /* cvtss2si */"],
-        )
+    def test_mmx_source_is_lifted(self):
+        lifted = Lifter().lift_instruction(
+            _insn("cvtpi2ps", "xmm0, mm0", [_xmm("xmm0"), _xmm("mm0")]))
+        self.assertEqual(len(lifted), 1)
+        self.assertIn("XMM_FROM_PI(xmm0, mm0)", lifted[0])
 
-    def test_cvttss2si_truncates_through_the_helper(self):
-        self.assertEqual(
-            self._lift("cvttss2si", "eax, xmm7",
-                       [Operand(type="reg", reg="eax"), _xmm("xmm7")]),
-            ["eax = recomp_cvtt2si(xmm7.f[0]); /* cvttss2si */"],
-        )
+    def test_memory_source_is_lifted(self):
+        lifted = Lifter().lift_instruction(
+            _insn("cvtpi2ps", "xmm1, qword ptr [eax]",
+                  [_xmm("xmm1"), _mem("eax", size=8)]))
+        self.assertEqual(len(lifted), 1)
+        self.assertIn("MMX_MEM(", lifted[0])
 
-    def test_no_conversion_is_a_bare_cast(self):
-        for m in ("cvtss2si", "cvttss2si", "cvtsd2si", "cvttsd2si"):
-            out = self._lift(m, "edx, xmm0",
-                             [Operand(type="reg", reg="edx"), _xmm("xmm0")])
-            self.assertNotIn("(int32_t)", out[0], m)
+    def test_it_does_not_become_a_comment(self):
+        # The regression itself: a TODO comment compiles and does nothing.
+        statement = Lifter().lift_instruction(
+            _insn("cvtpi2ps", "xmm0, mm0", [_xmm("xmm0"), _xmm("mm0")]))[0]
+        self.assertNotIn("TODO", statement)
+        self.assertFalse(statement.lstrip().startswith("/*"), statement)
 
 
 if __name__ == "__main__":

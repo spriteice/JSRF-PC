@@ -14,11 +14,106 @@ Memory model:
   - Xbox data sections mapped at original VAs
 """
 
+import os
 import re
 import struct
 
-from .disasm import Instruction, Operand
+from .disasm import Instruction, Operand, LOOP_JUMPS
 from .config import is_code_address, is_data_address, va_to_file_offset
+
+# Function export names of the Windows libraries the host exe links
+# (kernel32/user32/gdi32/advapi32/winmm/ws2_32/ole32/dbghelp/...). A guest
+# function that shares one of these names collides with the import at link
+# time (LNK2005) -- every Xbox-era game re-exports shims named like Win32
+# APIs (CreateThread, GetLastError, QueryPerformanceCounter, SetEvent, ...).
+# Generated from the x64 import libs of the Windows SDK with:
+#   Get-ChildItem "$env:WINSDK/Lib/*/um/x64" -Filter *.lib | ForEach-Object {
+#     & dumpbin /exports $_ }  # then keep the indent-only identifier lines
+_WIN32_EXPORTS = set()
+_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+_WIN32_EXPORTS_FILE = os.path.join(_DATA_DIR, "win32_api_names.txt")
+if os.path.exists(_WIN32_EXPORTS_FILE):
+    with open(_WIN32_EXPORTS_FILE, encoding="ascii") as _f:
+        _WIN32_EXPORTS.update(line.strip() for line in _f if line.strip())
+
+
+# C identifiers a recompiled function name must not be: the generated TUs
+# include the C standard headers (math.h/string.h through recomp_types.h,
+# stdlib.h in the dispatch TU), and a recompiled image carries its own copies
+# of the CRT helpers -- Black has a function literally named `onexit`.
+# Emitting `void onexit(void);` next to UCRT's `onexit_t __cdecl onexit(
+# onexit_t)` is a redefinition with different type modifiers and cl fails with
+# C2373. The host Win32 export names are folded in too: the host exe links
+# kernel32.lib et al., and Xbox games re-export shims named exactly like the
+# APIs they wrap, so the same clash happens there for the linker. Mangle with
+# the address, the same suffixed-<addr> scheme func_id already uses for
+# duplicate names.
+#
+# This is the last guard before a name becomes a C token, and the only one
+# every name source passes through -- Ghidra, IDA, a hand-written symbols
+# file. tools/ghidra_naming/merge_names.py filters a similar set earlier, but
+# it only sees the Ghidra path, so this list must not be the smaller of the
+# two. Over-mangling costs an address suffix on a name; under-mangling costs
+# a build.
+_FUNC_RESERVED_IDENT = frozenset({
+    # C and C++ keywords
+    "asm", "auto", "break", "case", "char", "const", "continue",
+    "default", "do", "double", "else", "enum", "extern", "float",
+    "for", "goto", "if", "inline", "int", "long", "register",
+    "restrict", "return", "short", "signed", "sizeof", "static",
+    "struct", "switch", "typedef", "union", "unsigned", "void",
+    "volatile", "while",
+    # <string.h>
+    "memchr", "memcmp", "memcpy", "memmove", "memset", "strcat",
+    "strchr", "strcmp", "strcoll", "strcpy", "strcspn", "strerror",
+    "strlen", "strncat", "strncmp", "strncpy", "strpbrk", "strrchr",
+    "strspn", "strstr", "strtok", "strxfrm", "strdup", "strnlen",
+    # <math.h> C89
+    "acos", "asin", "atan", "atan2", "ceil", "cos", "cosh", "exp",
+    "fabs", "floor", "fmod", "frexp", "ldexp", "log", "log10", "modf",
+    "pow", "sin", "sinh", "sqrt", "tan", "tanh",
+    # <math.h> C99 classification and comparison. These are function-like
+    # *macros*, which makes them the worst members of this set: a function
+    # named `isnan` does not collide, it expands. `void isnan(void);` becomes
+    # `void (fpclassify(void) == FP_NAN);` and the compiler reports a bad
+    # parameter declarator inside corecrt_math.h, naming neither the guest
+    # function nor the clash. Reported from a FIFA Street 2 port.
+    "fpclassify", "isfinite", "isgreater", "isgreaterequal", "isinf",
+    "isless", "islessequal", "islessgreater", "isnan", "isnormal",
+    "isunordered", "signbit",
+    # <math.h> C99 functions
+    "acosh", "asinh", "atanh", "cbrt", "copysign", "erf", "erfc", "exp2",
+    "expm1", "fdim", "fma", "fmax", "fmin", "hypot", "ilogb", "lgamma",
+    "llrint", "llround", "log1p", "log2", "logb", "lrint", "lround",
+    "nan", "nearbyint", "nextafter", "nexttoward", "remainder", "remquo",
+    "rint", "round", "scalbln", "scalbn", "tgamma", "trunc",
+    # <stdlib.h>
+    "abort", "abs", "atexit", "atof", "atoi", "atol", "bsearch",
+    "calloc", "div", "exit", "free", "getenv", "labs", "ldiv", "malloc",
+    "mblen", "mbstowcs", "mbtowc", "onexit", "qsort", "rand", "realloc",
+    "srand", "strtod", "strtol", "strtoul", "system", "wctomb",
+    "wcstombs",
+    # <stdlib.h> C99
+    "atoll", "llabs", "lldiv", "strtof", "strtold", "strtoll", "strtoull",
+    # <setjmp.h>
+    "longjmp", "setjmp",
+    # Host Win32 API export names (data/win32_api_names.txt) so a guest
+    # function named like a linked import does not collide at link time.
+}) | _WIN32_EXPORTS
+
+
+def _func_ident(addr, name):
+    """C identifier for the recompiled function at addr.
+
+    Every place a func_db name becomes a C token -- the function definition,
+    its forward declaration, call sites and the dispatch table -- must agree,
+    or the link fails. Reserved names get the same ``_<addr>`` suffix func_id
+    already gives duplicate names.
+    """
+    base = name if name else f"sub_{addr:08X}"
+    if base in _FUNC_RESERVED_IDENT:
+        return f"{base}_{addr:08X}"
+    return base
 
 
 # ── Operand formatting ──────────────────────────────────────
@@ -254,8 +349,46 @@ FLAG_SETTERS = frozenset({
 # generic fallback is a _flags variable nothing ever assigns -- the condition
 # came out always-false. MSVC's bit-oriented decoders are built entirely from
 # this shape: "add reg, reg" to shift the top bit into CF, then jae on it.
+# Setters that WRITE their destination and whose ZF/SF a later jcc reads. The
+# destination can be overwritten between the two, so each of these publishes
+# its result into _fa/_fas next to the write and the condition reads that --
+# the rule inc/dec has followed since "Result at the flag-setting
+# instruction, before later MOVs". See Lifter._result_snapshot.
+_RESULT_SNAPSHOT_SETTERS = frozenset({
+    "and", "or", "xor", "adc", "sbb", "neg",
+    "shl", "sal", "shr", "sar", "shld", "shrd",
+    "add", "sub",
+    # xadd writes dst = dst + src and sets the flags from that sum; the lift
+    # publishes the sum into _fa/_fas next to the atomic (see the atomic
+    # read-modify-write lowering), so a jcc after it reads the snapshot and
+    # not the destination, which another thread may have moved on since.
+    "xadd",
+})
+# ...and the two whose conditions also need the SOURCE, to recover the
+# original destination from the result. Theirs goes into _fb, captured before
+# the write because `sub eax, eax` would otherwise snapshot an operand it has
+# already destroyed.
+_RESULT_SRC_SETTERS = frozenset({"add", "sub"})
+
 CF_TRACKED = frozenset({
     "add", "sub", "adc", "sbb", "shl", "shr", "sar",
+})
+
+# bt reports CF without touching the operand, so its CF can be rebuilt at the
+# consumer by reading the bit again. The other three WRITE the bit they report,
+# so the same read gives the value after the write -- always 1 after bts,
+# always 0 after btr, inverted after btc. Their CF only exists if it was
+# captured before the write, which is what _cf is for, so they are listed
+# separately and _function_needs_cf treats them as CF producers.
+BT_MODIFY = frozenset({"bts", "btr", "btc"})
+
+# Arithmetic that writes its destination and leaves ZF as (destination == 0).
+# A join can unify two different setters from this set when they share a
+# destination register, because a je or jne then means the same thing on both
+# edges. cmp and test are deliberately absent: they write no destination.
+ZF_FROM_DEST = frozenset({
+    "sub", "add", "and", "or", "xor", "inc", "dec", "neg",
+    "adc", "sbb", "shl", "shr", "sar",
 })
 
 # Additional instructions that modify EFLAGS (tracked but handled as generic)
@@ -263,15 +396,30 @@ _EFLAGS_SETTERS = frozenset({
     "shld", "shrd", "rol", "ror", "rcl", "rcr",  # Shifts/rotates set CF
     "bsf", "bsr",       # Bit scan sets ZF
     "bt", "bts", "btr", "btc",  # Bit test sets CF
-    "cmpxchg", "lock cmpxchg",   # Compare-and-exchange sets ZF
-    "xadd", "lock xadd",         # Exchange-and-add sets flags from the sum
+    "cmpxchg",           # Compare-and-exchange sets ZF
+    "xadd",              # Exchange-and-add sets flags
 })
 
 # Instructions with undefined/unpredictable flags (clear tracking)
 _FLAGS_UNDEFINED = frozenset({
     "mul", "div", "idiv",  # Flags partially undefined
-    "rdtsc", "cpuid",      # Special instructions
+    "rdtsc",               # Special instructions
+    # popfd is in neither set. It REPLACES every flag with whatever was
+    # pushed, so the last comparison is gone, but the new flags are known at
+    # run time: popfd loads g_eflags, and the flag state after it is
+    # "eflags" (see lift_basic_block). It used to sit in _EFLAGS_PRESERVE,
+    # next to pushfd, which does read-and-preserve and does belong there.
 })
+
+# SSE compare predicates, by the CMPPS/CMPSS immediate. The named forms
+# (cmpltss, cmpnleps, ...) are the same instruction with the immediate
+# spelled out, so both lift through one table.
+_SSE_CMP_PRED = {"eq": 0, "lt": 1, "le": 2, "unord": 3,
+                 "neq": 4, "nlt": 5, "nle": 6, "ord": 7}
+_SSE_CMP_NAMED = {f"cmp{p}{w}": (n, w) for p, n in _SSE_CMP_PRED.items()
+                  for w in ("ps", "ss")}
+_BARE_STRING_COMPARES = ("cmpsb", "cmpsw", "cmpsd", "scasb", "scasw", "scasd")
+
 
 # Instructions that do NOT modify EFLAGS (preserve flag tracking)
 _EFLAGS_PRESERVE = frozenset({
@@ -284,8 +432,17 @@ _EFLAGS_PRESERVE = frozenset({
     "call",
     "int3", "int", "wait",
     "cld", "std", "cli", "sti",
-    "pushfd", "popfd", "pushal",
+    # LOOP counts ECX down and branches on it; LOOPE/LOOPNE additionally
+    # read ZF. None of the three write EFLAGS, so a comparison before the
+    # loop still answers the jcc after it.
+    "loop", "loope", "loopne",
+    # pushfd READS the flags and leaves them alone, so it belongs here.
+    # popfd does NOT -- see the note in _FLAGS_UNDEFINED.
+    "pushfd", "pushal", "pushad", "popal", "popad",
+    # cpuid writes eax..edx and no flags.
+    "cpuid",
     "sgdt", "ljmp", "sfence",
+    "stmxcsr", "ldmxcsr",
     # SSE scalar float
     "movss", "movsd",
     "addss", "subss", "mulss", "divss",
@@ -294,7 +451,7 @@ _EFLAGS_PRESERVE = frozenset({
     "minsd", "maxsd", "sqrtsd",
     "cvtsi2ss", "cvtss2si", "cvttss2si",
     "cvtsi2sd", "cvtsd2si", "cvttsd2si",
-    "cvtss2sd", "cvtsd2ss",
+    "cvtss2sd", "cvtsd2ss", "cvtps2dq", "cvttps2dq",
     "cmpss", "cmpsd",
     "cmpltss", "cmpeqss", "cmpleps", "cmpneqss",
     # SSE packed float
@@ -310,9 +467,12 @@ _EFLAGS_PRESERVE = frozenset({
     "addpd", "subpd", "mulpd", "divpd",
     # SSE/MMX integer
     "movd", "movq", "movntq",
+    "cvtps2pi", "cvttps2pi", "pinsrw", "pextrw",
     "emms",
     "paddb", "paddw", "paddd", "paddq",
     "psubb", "psubw", "psubd",
+    "paddsb", "paddsw", "paddusb", "psubsb", "psubsw", "psubusb",
+    "pavgb", "pavgw", "pminsw", "pmaxsw", "psadbw",
     "pmullw", "pmulhw", "pmulhuw", "pmaddwd",
     "pand", "pandn", "por", "pxor",
     "pcmpeqb", "pcmpeqw", "pcmpeqd",
@@ -325,6 +485,7 @@ _EFLAGS_PRESERVE = frozenset({
     "punpckhbw", "punpckhwd", "punpckhdq", "punpckhqdq",
     "packsswb", "packssdw", "packuswb",
     "pmovmskb",
+    "paddusw", "psubusw",
     # String operations (without rep prefix)
     "stosb", "stosw", "stosd",
     "movsb", "movsw", "movsd",
@@ -334,33 +495,77 @@ _EFLAGS_PRESERVE = frozenset({
 })
 
 
+def _has_xmm_operand(ops):
+    """True for the SSE reading of a mnemonic the string operations share.
+
+    Only "movsd" is ambiguous in the dispatcher today -- "cmpsd" is the other
+    mnemonic x86 overloads this way, but it has no SSE lifter here yet. The
+    test is written over the operands rather than the mnemonic so it stays
+    correct if one is added.
+    """
+    return any(op is not None and getattr(op, "type", None) == "reg"
+               and (getattr(op, "reg", None) or "").startswith("xmm")
+               for op in (ops or ()))
+
+
 def _make_condition(jcc, flag_setter, flag_ops):
     """
     Generate a C condition expression for a jcc based on what set the flags.
     Returns (cond_expr, description) or None.
     """
+    jcc = {"jpe": "jp", "jpo": "jnp"}.get(jcc, jcc)
     cond_info = COND_MAP.get(jcc)
     if not cond_info:
         return None
     cmp_macro, test_macro, desc = cond_info
+
+    # A join whose predecessors disagree on which instruction set the flags,
+    # but agree that the zero flag came from the same destination register.
+    #
+    # "sub eax, ecx" on one edge and "dec eax" on the other are different
+    # setters, so the state cannot be inherited as itself -- yet both leave
+    # ZF as (eax == 0), which is all a je or jne needs. The translator
+    # recognises that case and passes this marker.
+    #
+    # Only ZF is answerable from it. dec does not write CF, so a jb after the
+    # same join would be reading a flag one predecessor never set; returning
+    # None there leaves the existing fallback in place.
+    if flag_setter == "__zf_from_dest" and flag_ops:
+        dest = _fmt_operand_read(flag_ops[0])
+        if jcc in ("je", "jz"):
+            return f"({dest} == 0)", desc
+        if jcc in ("jne", "jnz"):
+            return f"({dest} != 0)", desc
+        return None
+
+    # After stc/clc/cmc, CF is _cf (the lift writes it) and nothing else is
+    # known: the other flags keep whatever the instruction before left, and
+    # that setter is no longer the tracked one.
+    if flag_setter == "__cf_only":
+        if jcc in ("jb", "jnae", "jc"):
+            return "_cf", desc
+        if jcc in ("jae", "jnb", "jnc"):
+            return "!_cf", desc
+        return None
 
     # A cmp/test that is not fused with its jcc snapshots its operands into
     # _fa/_fb (zero-extended) and _fas/_fbs (sign-extended) at the point the
     # comparison happens. Use those rather than re-reading registers that may
     # since have changed.
     SIGNED = {"CMP_L", "CMP_LE", "CMP_G", "CMP_GE", "TEST_S"}
-    RESULT_SNAPSHOT = {"add", "sub", "and", "or", "xor", "inc", "dec", "neg",
-                       "shl", "sal", "shr", "sar", "shld", "shrd", "adc", "sbb"}
     if flag_setter in ("cmp", "test", "bsf", "bsr") and len(flag_ops) >= 2:
         signed = (cmp_macro in SIGNED) or (test_macro in SIGNED)
         lhs, rhs = ("_fas", "_fbs") if signed else ("_fa", "_fb")
-    elif flag_setter in RESULT_SNAPSHOT and len(flag_ops) >= 1:
-        # The lifter snapshotted the result into _fa/_fas and the source
-        # operand into _fb/_fbs at the instruction (see lift_instruction).
-        # The per-setter rules below spell (int32_t)lhs for the signed
-        # view; _fas already is that, so hand out the signed name where the
-        # cast would be applied and the unsigned one elsewhere.
-        lhs, rhs = "_fa", ("_fb" if len(flag_ops) >= 2 else None)
+    elif flag_setter in _RESULT_SNAPSHOT_SETTERS and flag_ops:
+        # Same reason as the cmp/test snapshot above, for the family that
+        # WRITES its destination rather than only reading it.
+        lhs = "_fa"
+        if flag_setter in _RESULT_SRC_SETTERS and len(flag_ops) >= 2:
+            rhs = "_fb"
+        elif len(flag_ops) >= 2:
+            rhs = _fmt_operand_read(flag_ops[1])
+        else:
+            rhs = None
     elif len(flag_ops) >= 2:
         lhs = _fmt_operand_read(flag_ops[0])
         rhs = _fmt_operand_read(flag_ops[1])
@@ -370,36 +575,36 @@ def _make_condition(jcc, flag_setter, flag_ops):
     else:
         lhs = None
         rhs = None
-    # Signed view of the left operand: the snapshot's _fas when one exists,
-    # otherwise the 32-bit cast the rules below always used.
-    lhs_s = "_fas" if lhs == "_fa" else (f"(int32_t){lhs}" if lhs else None)
+    # _fa is zero-extended, so (int32_t)_fa is never negative for an 8- or
+    # 16-bit result. Sign tests read _fas, the same snapshot sign-extended.
+    slhs = "_fas" if lhs == "_fa" else f"(int32_t){lhs}"
 
     # ── FPU compare-to-EFLAGS and sahf: no standard operands ──
     if flag_setter in ("fcompi", "fcomip", "fucomi", "fucompi",
-                        "fucomip", "fcomi", "sahf"):
-        # g_fp_cmp is -1 less, 0 equal, 1 greater, 2 unordered. Unordered
-        # sets ZF, PF and CF together (fcomi directly, sahf via C3/C2/C0), so
-        # it has to count as below, below-or-equal and equal -- and as
-        # neither above nor above-or-equal. Comparing the code against 0
-        # (the old form) made 2 read as "greater".
+                        "fucomip", "fcomi", "sahf", "eflags"):
+        # EFLAGS must survive later x87 status changes and AH writes.
+        # FCOMI clears SF/OF; SAHF loads SF from AH and preserves OF.
+        # "eflags" is the state popfd leaves: the same bit layout, read from
+        # the g_eflags image it loaded.
+        cf, zf, pf = "(_fa & 1u)", "(_fa & 0x40u)", "(_fa & 4u)"
+        sf, of = "((_fa >> 7) & 1u)", "((_fa >> 11) & 1u)"
         fpu_cmp_map = {
-            "ja": "(g_fp_cmp == 1)", "jnbe": "(g_fp_cmp == 1)",
-            "jae": "(g_fp_cmp == 0 || g_fp_cmp == 1)",
-            "jnb": "(g_fp_cmp == 0 || g_fp_cmp == 1)",
-            "jnc": "(g_fp_cmp == 0 || g_fp_cmp == 1)",
-            "jb": "(g_fp_cmp == -1 || g_fp_cmp == 2)",
-            "jnae": "(g_fp_cmp == -1 || g_fp_cmp == 2)",
-            "jc": "(g_fp_cmp == -1 || g_fp_cmp == 2)",
-            "jbe": "(g_fp_cmp != 1)", "jna": "(g_fp_cmp != 1)",
-            "je": "(g_fp_cmp == 0 || g_fp_cmp == 2)",
-            "jz": "(g_fp_cmp == 0 || g_fp_cmp == 2)",
-            "jne": "(g_fp_cmp == -1 || g_fp_cmp == 1)",
-            "jnz": "(g_fp_cmp == -1 || g_fp_cmp == 1)",
-            "jp": "(g_fp_cmp == 2)", "jnp": "(g_fp_cmp != 2)",
+            "ja": f"(!{cf} && !{zf})", "jnbe": f"(!{cf} && !{zf})",
+            "jae": f"!{cf}", "jnb": f"!{cf}", "jnc": f"!{cf}",
+            "jb": cf, "jnae": cf, "jc": cf,
+            "jbe": f"({cf} || {zf})", "jna": f"({cf} || {zf})",
+            "je": zf, "jz": zf, "jne": f"!{zf}", "jnz": f"!{zf}",
+            "jp": pf, "jpe": pf, "jnp": f"!{pf}", "jpo": f"!{pf}",
+            "js": sf, "jns": f"!{sf}", "jo": of, "jno": f"!{of}",
+            "jl": f"({sf} != {of})", "jge": f"({sf} == {of})",
+            "jle": f"({zf} || {sf} != {of})",
+            "jg": f"(!{zf} && {sf} == {of})",
         }
-        cond = fpu_cmp_map.get(jcc)
-        if cond:
-            return f"{cond} /* {flag_setter} */", desc
+        expr = fpu_cmp_map.get(jcc)
+        if expr:
+            if flag_setter == "eflags":
+                expr = expr.replace("_fa", "g_eflags")
+            return f"{expr} /* {flag_setter} */", desc
         return None
 
     # If no operands available for other flag-setters, can't generate condition
@@ -427,31 +632,35 @@ def _make_condition(jcc, flag_setter, flag_ops):
         )
         desc = f"{desc} ({void_a} vs {void_b})" if desc else desc
         a, b = "_fca", "_fcb"
-        # comiss uses unsigned condition codes (CF, ZF) -- and an UNORDERED
-        # compare (either operand NaN) sets ZF, PF and CF all at once. So
-        # every condition that is true on CF or ZF is also true on NaN, which
-        # C's relational operators are not: `a < b` is false when a is NaN,
-        # but jb after comiss is taken. JSRF normalises a zero-length motion
-        # segment into a NaN direction (0 * rsqrtss(0) = 0 * inf), and its
-        # edge tests then read "no hit" on the Xbox through jb; lifted as
-        # `a < b` they fell through to "hit", and every rudie standing still
-        # in the Garage was knocked flat every frame.
+        # comiss uses unsigned condition codes (CF, ZF), and an unordered
+        # compare -- either side NaN -- sets ZF, PF and CF all three. The C
+        # relational operators are all false on NaN, which is right for
+        # ja/jae and wrong for everything that reads a set flag.
+        u = f"({a} != {a} || {b} != {b})"
         if jcc in ("ja", "jnbe"):
-            return f"({a} > {b})", desc                      # CF=0 and ZF=0
+            return f"({a} > {b})", desc
         if jcc in ("jae", "jnb", "jnc"):
-            return f"({a} >= {b})", desc                     # CF=0
+            return f"({a} >= {b})", desc
         if jcc in ("jb", "jnae", "jc"):
-            return f"(!({a} >= {b}))", desc                  # CF=1: less or unordered
+            return f"({a} < {b} || {u})", desc
         if jcc in ("jbe", "jna"):
-            return f"(!({a} > {b}))", desc                   # CF=1 or ZF=1
+            return f"({a} <= {b} || {u})", desc
         if jcc in ("je", "jz"):
-            return f"(!({a} < {b}) && !({a} > {b}))", desc   # ZF=1: equal or unordered
+            return f"({a} == {b} || {u})", desc
         if jcc in ("jne", "jnz"):
-            return f"(({a} < {b}) || ({a} > {b}))", desc     # ZF=0: ordered, not equal
-        if jcc == "jp":
-            return f"(({a} != {a}) || ({b} != {b})) /* {jcc}: unordered */", desc
-        if jcc == "jnp":
-            return f"(({a} == {a}) && ({b} == {b})) /* {jcc}: ordered */", desc
+            return f"({a} != {b} && !{u})", desc
+        if jcc in ("jp", "jpe"):
+            return u, desc
+        if jcc in ("jnp", "jpo"):
+            return f"!{u}", desc
+        if jcc in ("js", "jo", "jl"):
+            return "0", desc
+        if jcc in ("jns", "jno", "jge"):
+            return "1", desc
+        if jcc == "jle":
+            return f"({a} == {b} || {u})", desc
+        if jcc == "jg":
+            return f"({a} != {b} && !{u})", desc
         return None
 
     # SF is the sign bit of the result at the OPERAND's width, not at 32 bits.
@@ -463,6 +672,70 @@ def _make_condition(jcc, flag_setter, flag_ops):
     if _sf_width is None and len(flag_ops) > 1:
         _sf_width = _operand_width(flag_ops[1])
     _sf_cast = {1: "(int8_t)", 2: "(int16_t)"}.get(_sf_width, "(int32_t)")
+    # SF AFTER A COMPARE IS THE SIGN BIT OF THE WRAPPED DIFFERENCE, AND THE
+    # SUBTRACTION MUST BE DONE UNSIGNED TO GET IT.
+    #
+    # `cmp` snapshots its operands sign-extended into _fas/_fbs, so the obvious
+    # spelling is `(int32_t)(_fas - _fbs) < 0`. Signed overflow is undefined
+    # behaviour, and this subtraction overflows for exactly the inputs the
+    # question is about: cmp 0x80000000, 1 leaves 0x7FFFFFFF on the hardware,
+    # so SF is 0, while the C expression is INT_MIN - 1. From -O1 the compiler
+    # is entitled to fold `a - b < 0` to `a < b`, which answers 1. It does:
+    # gcc and clang both give 0 at -O0 and 1 at -O1 and above, so the emitted
+    # program's meaning changes with the optimisation level.
+    #
+    # Unsigned subtraction is defined to wrap, so doing it in the unsigned type
+    # of the operand's own width and taking the top bit is exactly the
+    # hardware's SF, at every width, with no undefined case.
+    _sf_utype = {1: "uint8_t", 2: "uint16_t"}.get(_sf_width, "uint32_t")
+    _sf_top = {1: 7, 2: 15}.get(_sf_width, 31)
+
+    def _sf_of_difference(a, b):
+        return (f"(({_sf_utype})(({_sf_utype})({a}) - ({_sf_utype})({b}))"
+                f" >> {_sf_top})")
+
+    # ── OF and PF of cmp, sub, add and the logic ops ──
+    #
+    # The per-mnemonic rules below never defined jo/jno, nor jp/jnp after
+    # sub, add and the logic ops, so those fell to the untracked `_flags`
+    # fallback (always false), and a pushfd pushed OF and PF as whatever
+    # g_eflags held: `cmp al, bl; pushfd` with al = -128, bl = 1 (wraps to
+    # 127, OF set) saved OF clear. OF is set when the operands' signs make
+    # the result's sign impossible: for a - b they differ and the result's
+    # sign is not a's; for a + b they agree and the result's is not a's.
+    # sub and add kept only the result and the source, so a is recovered
+    # from them (a = r + b, a = r - b). Like SF, it is the top bit at the
+    # operand's width, in the unsigned type, so nothing overflows in C. The
+    # logic ops clear OF. PF is the parity of the result's low byte.
+    #
+    # This is the one OF derivation: publish_flags reads it through jo, as
+    # every other consumer does. Setters it does not cover (adc, sbb, neg,
+    # the shifts) return None, and a pushfd after them says so.
+    def _overflow_flag():
+        t = _sf_utype
+        if flag_setter == "cmp":
+            a, b, r, same_sign = lhs, rhs, f"({lhs}) - ({rhs})", False
+        elif flag_setter == "sub" and rhs == "_fb":
+            a, b, r, same_sign = "(_fa + _fb)", "_fb", "_fa", False
+        elif flag_setter == "add" and rhs == "_fb":
+            a, b, r, same_sign = "(_fa - _fb)", "_fb", "_fa", True
+        elif flag_setter in ("and", "or", "xor", "test"):
+            return "0"
+        else:
+            return None
+        signs = f"(({t})({a}) ^ ({t})({b}))"
+        if same_sign:
+            signs = f"(({t})~{signs})"
+        return f"((({t})({signs} & (({t})({a}) ^ ({t})({r})))) >> {_sf_top})"
+
+    if jcc in ("jo", "jno"):
+        of = _overflow_flag()
+        if of is not None:
+            return (f"({of} != 0)" if jcc == "jo" else f"({of} == 0)"), desc
+    if (flag_setter in ("sub", "add", "and", "or", "xor") and lhs == "_fa"
+            and jcc in ("jp", "jpe", "jnp", "jpo")):
+        return ("RECOMP_PARITY8(_fa)" if jcc in ("jp", "jpe")
+                else "(!RECOMP_PARITY8(_fa))"), desc
 
     # ── bsf/bsr: ZF is the only flag they define ──
     #
@@ -482,9 +755,9 @@ def _make_condition(jcc, flag_setter, flag_ops):
         if cmp_macro:
             return f"{cmp_macro}({lhs}, {rhs})", desc
         if jcc == "js":
-            return f"({_sf_cast}(({lhs}) - ({rhs})) < 0)", desc
+            return f"({_sf_of_difference(lhs, rhs)} != 0)", desc
         if jcc == "jns":
-            return f"({_sf_cast}(({lhs}) - ({rhs})) >= 0)", desc
+            return f"({_sf_of_difference(lhs, rhs)} == 0)", desc
         if jcc == "jp":
             return f"RECOMP_PARITY8(({lhs}) - ({rhs}))", desc
         if jcc == "jnp":
@@ -541,9 +814,9 @@ def _make_condition(jcc, flag_setter, flag_ops):
         if jcc in ("jne", "jnz"):
             return f"({lhs} != 0)", desc
         if jcc == "js":
-            return f"({lhs_s} < 0)", desc
+            return f"({slhs} < 0)", desc
         if jcc == "jns":
-            return f"({lhs_s} >= 0)", desc
+            return f"({slhs} >= 0)", desc
         # Ordered: reconstruct original a = result + b
         if cmp_macro and rhs:
             return f"{cmp_macro}((uint32_t){lhs} + (uint32_t){rhs}, (uint32_t){rhs})", desc
@@ -552,13 +825,13 @@ def _make_condition(jcc, flag_setter, flag_ops):
         if jcc in ("jae", "jnb"):
             return f"((uint32_t){lhs} + (uint32_t){rhs} >= (uint32_t){rhs})", desc
         if jcc in ("jl", "jnge"):
-            return f"({lhs_s} < 0)", desc
+            return f"({slhs} < 0)", desc
         if jcc in ("jge", "jnl"):
-            return f"({lhs_s} >= 0)", desc
+            return f"({slhs} >= 0)", desc
         if jcc in ("jle", "jng"):
-            return f"({lhs_s} <= 0)", desc
+            return f"({slhs} <= 0)", desc
         if jcc in ("jg", "jnle"):
-            return f"({lhs_s} > 0)", desc
+            return f"({slhs} > 0)", desc
         return None
 
     # ── add: a = a + b, flags from result ──
@@ -568,21 +841,21 @@ def _make_condition(jcc, flag_setter, flag_ops):
         if jcc in ("jne", "jnz"):
             return f"({lhs} != 0)", desc
         if jcc == "js":
-            return f"({lhs_s} < 0)", desc
+            return f"({slhs} < 0)", desc
         if jcc == "jns":
-            return f"({lhs_s} >= 0)", desc
+            return f"({slhs} >= 0)", desc
         if jcc in ("jb", "jnae", "jc"):
             return f"({lhs} < (uint32_t){rhs})", desc
         if jcc in ("jae", "jnb", "jnc"):
             return f"({lhs} >= (uint32_t){rhs})", desc
         if jcc in ("jl", "jnge"):
-            return f"({lhs_s} < 0)", desc
+            return f"({slhs} < 0)", desc
         if jcc in ("jge", "jnl"):
-            return f"({lhs_s} >= 0)", desc
+            return f"({slhs} >= 0)", desc
         if jcc in ("jle", "jng"):
-            return f"({lhs_s} <= 0)", desc
+            return f"({slhs} <= 0)", desc
         if jcc in ("jg", "jnle"):
-            return f"({lhs_s} > 0)", desc
+            return f"({slhs} > 0)", desc
         return None
 
     # ── adc/sbb: result-based (like add/sub but with carry) ──
@@ -592,23 +865,9 @@ def _make_condition(jcc, flag_setter, flag_ops):
         if jcc in ("jne", "jnz"):
             return f"({lhs} != 0)", desc
         if jcc == "js":
-            return f"({lhs_s} < 0)", desc
+            return f"({slhs} < 0)", desc
         if jcc == "jns":
-            return f"({lhs_s} >= 0)", desc
-        return None
-
-    # ── zf_result: a join of result-based setters on one destination ──
-    # (see FunctionTranslator._flag_states_result_merge). Only what every
-    # member defines from the result: ZF and SF.
-    if flag_setter == "zf_result":
-        if jcc in ("je", "jz"):
-            return f"({lhs} == 0)", desc
-        if jcc in ("jne", "jnz"):
-            return f"({lhs} != 0)", desc
-        if jcc == "js":
-            return f"({_sf_cast}({lhs}) < 0)", desc
-        if jcc == "jns":
-            return f"({_sf_cast}({lhs}) >= 0)", desc
+            return f"({slhs} >= 0)", desc
         return None
 
     # ── and/or/xor: result-based, CF=0, OF=0 ──
@@ -618,33 +877,56 @@ def _make_condition(jcc, flag_setter, flag_ops):
         if jcc in ("jne", "jnz"):
             return f"({lhs} != 0)", desc
         if jcc in ("js", "jl"):
-            return f"({lhs_s} < 0)", desc
+            return f"({slhs} < 0)", desc
         if jcc in ("jns", "jge"):
-            return f"({lhs_s} >= 0)", desc
+            return f"({slhs} >= 0)", desc
         if jcc == "jle":
-            return f"({lhs_s} <= 0)", desc
+            return f"({slhs} <= 0)", desc
         if jcc == "jg":
-            return f"({lhs_s} > 0)", desc
-        if jcc in ("jb", "jnae", "jbe", "jna"):
+            return f"({slhs} > 0)", desc
+        if jcc in ("jb", "jnae"):
             return "0", desc  # CF=0 after and/or/xor
-        if jcc in ("jae", "jnb", "ja", "jnbe"):
+        if jcc in ("jae", "jnb"):
             return "1", desc
+        # jbe and ja are not carry-only: jbe is CF|ZF, ja is !CF && !ZF. CF is
+        # 0 here, but ZF is whatever the result was, so these reduce to ZF and
+        # !ZF -- not to constants. Folding them to 0 and 1 meant
+        # "and eax, eax; jbe" never branched and "; ja" always did. The
+        # CF_TRACKED path above already spells the same two conditions out in
+        # full, as does the CMP_BE/CMP_A that `test` goes through.
+        if jcc in ("jbe", "jna"):
+            return f"({lhs} == 0)", desc
+        if jcc in ("ja", "jnbe"):
+            return f"({lhs} != 0)", desc
         return None
 
     # ── dec/inc: result-based, CF unchanged ──
     if flag_setter in ("dec", "inc"):
+        lhs = "_fa"  # Result at the flag-setting instruction, before later MOVs.
+        if jcc in ("jb", "jnae", "jc"):
+            return "_cf", desc
+        if jcc in ("jae", "jnb", "jnc"):
+            return "!_cf", desc
+        if jcc in ("ja", "jnbe"):
+            return f"(!_cf && {lhs} != 0)", desc
+        if jcc in ("jbe", "jna"):
+            return f"(_cf || {lhs} == 0)", desc
         if jcc in ("je", "jz"):
             return f"({lhs} == 0)", desc
         if jcc in ("jne", "jnz"):
             return f"({lhs} != 0)", desc
         if jcc == "js":
-            return f"({lhs_s} < 0)", desc
+            return "(_fas < 0)", desc
         if jcc == "jns":
-            return f"({lhs_s} >= 0)", desc
+            return "(_fas >= 0)", desc
         if jcc in ("jl", "jle", "jg", "jge"):
-            cast = "(int32_t)" + lhs
-            op = {"jl": "<", "jle": "<=", "jg": ">", "jge": ">="}[jcc]
-            return f"({cast} {op} 0)", desc
+            less = "((_fas < 0) != (_fb != 0))"
+            return {"jl": less, "jle": f"({less} || _fa == 0)",
+                    "jg": f"(!{less} && _fa != 0)", "jge": f"!{less}"}[jcc], desc
+        if jcc in ("jo", "jno"):
+            return ("(_fb != 0)" if jcc == "jo" else "(_fb == 0)"), desc
+        if jcc in ("jp", "jpe", "jnp", "jpo"):
+            return ("RECOMP_PARITY8(_fa)" if jcc in ("jp", "jpe") else "!RECOMP_PARITY8(_fa)"), desc
         return None
 
     # ── neg: flags from (0 - a_orig), result is -a ──
@@ -659,17 +941,17 @@ def _make_condition(jcc, flag_setter, flag_ops):
         if jcc in ("jae", "jnb", "jnc"):
             return f"({lhs} == 0)", desc
         if jcc == "js":
-            return f"({lhs_s} < 0)", desc
+            return f"({slhs} < 0)", desc
         if jcc == "jns":
-            return f"({lhs_s} >= 0)", desc
+            return f"({slhs} >= 0)", desc
         if jcc in ("jg", "jnle"):
-            return f"({lhs_s} > 0)", desc
+            return f"({slhs} > 0)", desc
         if jcc in ("jge", "jnl"):
-            return f"({lhs_s} >= 0)", desc
+            return f"({slhs} >= 0)", desc
         if jcc in ("jl", "jnge"):
-            return f"({lhs_s} < 0)", desc
+            return f"({slhs} < 0)", desc
         if jcc in ("jle", "jng"):
-            return f"({lhs_s} <= 0)", desc
+            return f"({slhs} <= 0)", desc
         return None
 
     # ── shift: result-based ──
@@ -679,9 +961,9 @@ def _make_condition(jcc, flag_setter, flag_ops):
         if jcc in ("jne", "jnz"):
             return f"({lhs} != 0)", desc
         if jcc == "js":
-            return f"({lhs_s} < 0)", desc
+            return f"({slhs} < 0)", desc
         if jcc == "jns":
-            return f"({lhs_s} >= 0)", desc
+            return f"({slhs} >= 0)", desc
         return None
 
     # ── shld/shrd: double-precision shift, result-based ──
@@ -691,19 +973,47 @@ def _make_condition(jcc, flag_setter, flag_ops):
         if jcc in ("jne", "jnz"):
             return f"({lhs} != 0)", desc
         if jcc == "js":
-            return f"({lhs_s} < 0)", desc
+            return f"({slhs} < 0)", desc
         if jcc == "jns":
-            return f"({lhs_s} >= 0)", desc
+            return f"({slhs} >= 0)", desc
         return None
 
     # ── rol/ror/rcl/rcr: rotation, only CF/OF affected ──
     if flag_setter in ("rol", "ror", "rcl", "rcr"):
+        # rcl/rcr leave their carry-out in _cf (RC_ROT writes it back), and
+        # _function_needs_cf declares _cf for any function containing them.
+        if flag_setter in ("rcl", "rcr"):
+            if jcc in ("jb", "jnae", "jc"):
+                return "_cf", desc
+            if jcc in ("jae", "jnb", "jnc"):
+                return "!_cf", desc
         # ZF/SF not modified by rotations - can't resolve most conditions
         return None
 
     # ── bsf/bsr: bit scan, ZF set if source is zero ──
     # ── bt/bts/btr/btc: bit test, sets CF ──
     if flag_setter in ("bt", "bts", "btr", "btc"):
+        # THE THREE THAT WRITE THE BIT CANNOT BE REBUILT BY READING IT.
+        #
+        # Every form below answers CF by reading the tested bit a second time,
+        # at the consumer. That is exact for `bt`, which reports the bit and
+        # leaves it alone. bts/btr/btc report the bit and then MODIFY it, so by
+        # the time the consumer looks, the answer is the value they wrote:
+        # always 1 after bts, always 0 after btr, inverted after btc. The
+        # test-and-set idiom -- "did I just claim this, or was it already
+        # taken?" -- therefore always answered "already taken" after bts and
+        # "free" after btr, with no way for guest code to observe the truth.
+        #
+        # The lift already captures the pre-write value into _cf (see the
+        # bt/bts/btr/btc arm of _lift_misc), and _function_needs_cf now counts
+        # these three as CF producers so that capture is always emitted when a
+        # carry condition consumes it. So answer from the snapshot.
+        if flag_setter in BT_MODIFY:
+            if jcc in ("jb", "jnae", "jc"):
+                return "_cf", desc
+            if jcc in ("jae", "jnb", "jnc"):
+                return "!_cf", desc
+            return None
         if rhs is None:
             return None
         # Same bit-string rule as the lifter above: a memory bit base with a
@@ -729,7 +1039,7 @@ def _make_condition(jcc, flag_setter, flag_ops):
         return None
 
     # ── cmpxchg: compares accumulator with dest, sets ZF on match ──
-    if flag_setter in ("cmpxchg", "lock cmpxchg"):
+    if flag_setter == "cmpxchg":
         # ZF comes from the compare the instruction already did, and the lift
         # snapshots it into _fa/_fb. Re-reading eax here would test a value
         # cmpxchg may have just replaced.
@@ -739,37 +1049,49 @@ def _make_condition(jcc, flag_setter, flag_ops):
             return "(_fa != _fb)", desc
         return None
 
-    # ── xadd: exchange and add, flags from addition ──
-    # The lift snapshots the sum into _fa (and _fas) -- the destination is
-    # memory that another thread may already have changed, and the source
-    # register now holds the OLD value, so neither can be re-read here.
-    # InterlockedDecrement's "jne skip_delete" is the customer: with the
-    # flags marked undefined every Release() deleted its object.
-    if flag_setter in ("xadd", "lock xadd"):
+    # ── xadd: exchange and add, flags from the sum ──
+    #
+    # `lock xadd [refcount], -1 / jne` is InterlockedDecrement's shape, so a
+    # COM Release reads these flags to decide whether to destroy the object.
+    # Before the sum was snapshotted (and while "lock xadd" was listed as
+    # undefined flags) the jne fell to the `_flags` fallback, which is never
+    # assigned, and every Release took the destroy arm: a refcount of 2
+    # freed the object on the first Release and the second Release freed it
+    # again, corrupting the title's heap (Jet Set Radio Future, after
+    # Direct3D device creation).
+    if flag_setter == "xadd":
         if jcc in ("je", "jz"):
-            return "(_fa == 0)", desc
+            return f"({lhs} == 0)", desc
         if jcc in ("jne", "jnz"):
-            return "(_fa != 0)", desc
-        if jcc in ("js",):
-            return "(_fas < 0)", desc
-        if jcc in ("jns",):
-            return "(_fas >= 0)", desc
+            return f"({lhs} != 0)", desc
+        if jcc in ("js", "jl", "jnge"):
+            return f"({slhs} < 0)", desc
+        if jcc in ("jns", "jge", "jnl"):
+            return f"({slhs} >= 0)", desc
         if jcc in ("jle", "jng"):
-            return "(_fas <= 0)", desc
+            return f"({slhs} <= 0)", desc
         if jcc in ("jg", "jnle"):
-            return "(_fas > 0)", desc
-        if jcc in ("jl", "jnge"):
-            return "(_fas < 0)", desc
-        if jcc in ("jge", "jnl"):
-            return "(_fas >= 0)", desc
+            return f"({slhs} > 0)", desc
         return None
 
     # ── repe cmpsb / repne scasb: string comparison ──
+    #
+    # ZF lives in _flags. CF lives in _cf, which _rep_compare writes whenever
+    # the function declares it -- and _function_needs_cf declares it for
+    # exactly these carry conditions after a rep compare.
     if "cmps" in flag_setter or "scas" in flag_setter:
         if jcc in ("je", "jz"):
             return "(_flags != 0)", desc
         if jcc in ("jne", "jnz"):
             return "(_flags == 0)", desc
+        if jcc in ("jb", "jnae", "jc"):
+            return "_cf", desc
+        if jcc in ("jae", "jnb", "jnc"):
+            return "!_cf", desc
+        if jcc in ("jbe", "jna"):
+            return "(_cf || _flags != 0)", desc
+        if jcc in ("ja", "jnbe"):
+            return "(!_cf && _flags == 0)", desc
         return None
 
     return None
@@ -831,7 +1153,9 @@ def try_match_cmp_jcc(insns, idx, lifter=None):
     if len(first.operands) < 2:
         return None
 
-    result = _make_condition(second.mnemonic, first.mnemonic, first.operands)
+    # Same normalised form the snapshot and the recorded state use.
+    result = _make_condition(second.mnemonic,
+                             *normalise_zero_test(first.mnemonic, first.operands))
     if not result:
         return None
 
@@ -853,10 +1177,23 @@ def try_match_cmp_jcc(insns, idx, lifter=None):
 # rather than asking every project to look them up by hand.
 #
 #   __SEH_prolog   mov eax, fs:[0]        64 A1 00 00 00 00
-#                  lea ebp, [esp+0x10]    8D 6C 24 10
+#                  lea ebp, [esp+N]       8D 6C 24 N
 #   __SEH_epilog   mov fs:[0], ecx        64 89 0D 00 00 00 00
 #                  leave; push ecx; ret   C9 51 C3
-_SEH_PROLOG_MARKERS = (b"\x64\xa1\x00\x00\x00\x00", b"\x8d\x6c\x24\x10")
+#
+# The frame offset N in that final lea is not fixed: it counts the slots the
+# variant pushed before it. The four-push form most titles link against lands
+# on 0x10; the three-push form (push -1; push scopetable; push old fs:[0])
+# lands on 0x0C. Requiring 0x10 made the 0x0C form undetectable, and a title
+# built against it got prolog=None -- which is indistinguishable here from a
+# CRT that has no __SEH_prolog at all, so nothing reported it. Every SEH
+# function then kept its caller's stale ebp: the first ebp-relative store
+# landed in the caller's frame, and `mov esp, ebp` in the epilogue cut the
+# stack back to the caller's. In DDS9 that corrupted esi across the very first
+# static initialiser, and _initterm walked the rest of its table out of the
+# guest stack, calling whatever return addresses it found there.
+_SEH_PROLOG_MARKERS = (b"\x64\xa1\x00\x00\x00\x00",)
+_SEH_PROLOG_LEA_ALTS = (b"\x8d\x6c\x24\x10", b"\x8d\x6c\x24\x0c")
 _SEH_EPILOG_MARKERS = (b"\x64\x89\x0d\x00\x00\x00\x00", b"\xc9\x51\xc3")
 
 # Both are tiny; a large match is something else that happens to touch fs:[0].
@@ -864,15 +1201,32 @@ _SEH_PROLOG_MAX_SIZE = 128
 _SEH_EPILOG_MAX_SIZE = 64
 
 
+def _as_addr_set(value):
+    """None / one address / an iterable of them -> a set of addresses."""
+    if value is None:
+        return set()
+    if isinstance(value, int):
+        return {value}
+    return {a for a in value if a is not None}
+
+
 def detect_seh_helpers(func_db, xbe_data, verbose=False):
     """Locate __SEH_prolog / __SEH_epilog in the target binary.
 
-    Returns (prolog_addr, epilog_addr); either may be None if not found, which
-    is normal for a title whose CRT does not use them.
+    Returns (prologs, epilog_addr). `prologs` is a tuple, empty if none were
+    found, which is normal for a title whose CRT does not use them.
+
+    A tuple and not a single address, because a title can link more than one
+    __SEH_prolog. Shin Megami Tensei: Nine carries two: 0x0023B2C8 in the
+    four-push form, and 0x00237DA4 in the three-push form. Returning only the
+    first match meant every function calling the other one silently lost its
+    frame read-back -- and which one won depended on nothing more meaningful
+    than which had the lower address.
     """
     from .config import va_to_file_offset
 
-    prolog = epilog = None
+    prologs = []
+    epilog = None
 
     def _size_of(info):
         # "end" is a hex string in functions.json but BatchTranslator rewrites
@@ -902,23 +1256,25 @@ def detect_seh_helpers(func_db, xbe_data, verbose=False):
             continue
         body = xbe_data[offset:offset + size]
 
-        if (prolog is None and size <= _SEH_PROLOG_MAX_SIZE
-                and all(m in body for m in _SEH_PROLOG_MARKERS)):
-            prolog = addr
+        if (size <= _SEH_PROLOG_MAX_SIZE
+                and all(m in body for m in _SEH_PROLOG_MARKERS)
+                and any(m in body for m in _SEH_PROLOG_LEA_ALTS)):
+            prologs.append(addr)
         elif (epilog is None and size <= _SEH_EPILOG_MAX_SIZE
                 and all(m in body for m in _SEH_EPILOG_MARKERS)):
             epilog = addr
 
-        if prolog is not None and epilog is not None:
-            break
+    # No early exit once one of each is in hand: the whole point is to find
+    # every prolog, and a second one can sit anywhere in the address space.
 
     if verbose:
         import sys
         fmt = lambda a: f"0x{a:08X}" if a else "not found"
-        print(f"  SEH helpers: __SEH_prolog {fmt(prolog)}, "
+        names = ", ".join(fmt(a) for a in prologs) if prologs else "not found"
+        print(f"  SEH helpers: __SEH_prolog {names}, "
               f"__SEH_epilog {fmt(epilog)}", file=sys.stderr)
 
-    return prolog, epilog
+    return tuple(prologs), epilog
 
 
 # MSVC's setjmp/longjmp pair, found by the "VC20" cookie the CRT stamps into
@@ -976,6 +1332,31 @@ def detect_setjmp_helpers(func_db, xbe_data, verbose=False):
     return found.get("setjmp"), found.get("longjmp")
 
 
+def normalise_zero_test(mnemonic, ops):
+    """`test X, X` is `cmp X, 0`, and saying so keeps a branch alive.
+
+    The two leave every flag identical: both compute X, so ZF, SF and PF come
+    out the same, and both clear CF and OF. What differs is only how the
+    snapshot reconstructs them -- a cmp answers `je` with `_fa == _fb`, a test
+    with `(_fa & _fb) == 0` -- and that difference is enough to stop two
+    predecessors merging at a join. `_merge_flag_states` requires one
+    operation across all of them, so a block reached by `cmp [x], 0` on one
+    edge and `test eax, eax` on the other inherits no state at all, and its
+    jcc compiles as the `_flags` fallback, which nothing ever assigns: the
+    branch is never taken.
+
+    Normalising here is what makes that merge legal rather than forcing one
+    through. After it the two predecessors really are the same operation on
+    the same width, which is what the merge was asking for.
+    """
+    if (mnemonic == "test" and len(ops) == 2
+            and ops[0].type == "reg" and ops[1].type == "reg"
+            and ops[0].reg and ops[0].reg == ops[1].reg):
+        return "cmp", [ops[0], Operand(type="imm", imm=0,
+                                       mem_size=ops[0].mem_size)]
+    return mnemonic, ops
+
+
 class Lifter:
     """Translates x86 instructions to C statements."""
 
@@ -1001,6 +1382,7 @@ class Lifter:
         self.needs_cf = False  # Set per-function by translator (has adc/sbb)
         self.publishes_ebp = False  # Set per-function: has a real frame
         self.trace_exit_name = None  # Set per-function when traced
+        self.force_return_value = None   # Set per-function by --force-return
         # Every direct call target we emit a name for, as {addr: name}. The
         # batch translator diffs this against the functions it actually defined
         # so it can stub out the remainder (see translate_batch_split).
@@ -1018,14 +1400,33 @@ class Lifter:
         # Detect if either is missing, so overriding one does not silently
         # leave the other unset -- that is the bug this whole path fixes.
         if (seh_prolog is None or seh_epilog is None) and self.func_db:
-            found_prolog, found_epilog = detect_seh_helpers(self.func_db, xbe_data)
-            seh_prolog = seh_prolog if seh_prolog is not None else found_prolog
+            found_prologs, found_epilog = detect_seh_helpers(self.func_db, xbe_data)
+            seh_prolog = seh_prolog if seh_prolog is not None else found_prologs
             seh_epilog = seh_epilog if seh_epilog is not None else found_epilog
-        self.SEH_PROLOG = seh_prolog
+        # seh_prolog arrives as None, one address (the --seh-prolog override)
+        # or a tuple of them (detection). Normalise, and keep the scalar
+        # attribute pointing at the first so existing callers and the
+        # command-line override keep working.
+        self.SEH_PROLOGS = frozenset(_as_addr_set(seh_prolog))
+        self.SEH_PROLOG = min(self.SEH_PROLOGS) if self.SEH_PROLOGS else None
         self.SEH_EPILOG = seh_epilog
+        # Every address whose call means "the frame pointer changed underneath
+        # this function": all the prologs, plus the epilog.
+        self.SEH_HELPERS = self.SEH_PROLOGS | (
+            {seh_epilog} if seh_epilog is not None else set())
         self.SETJMP_FN = setjmp_fn
         self.LONGJMP_FN = longjmp_fn
         self.jump_table_targets = {}
+        # call-site VA -> targets the title was measured reaching from it
+        # (tools/recomp/output/icall_sites.json). A site whose whole recorded
+        # set is small and translated is guarded with direct calls; the
+        # generic dispatch stays as the fallback, so an unseen target is
+        # slow, never wrong. See _lift_call.
+        self.icall_site_targets = {}
+        self.caller_cleanup_sites = set()
+        # Addresses loaded as immediates into a register inside the current
+        # function, used to resolve `jmp <reg>`. See _lift_jmp.
+        self.imm_code_refs = set()
 
     def _call_target_name(self, addr):
         """Get the name for a call target address.
@@ -1038,44 +1439,18 @@ class Lifter:
         that are not known function starts.
         """
         if addr in self.func_db:
-            name = self.func_db[addr].get("name", f"sub_{addr:08X}")
+            info = self.func_db[addr]
+            # A wrapped body is named sub_X_gen; calls go to the wrapper.
+            name = info.get("wrapper_name") or info.get("name", f"sub_{addr:08X}")
         elif addr in self.label_db:
             name = self.label_db[addr]
         else:
             name = f"sub_{addr:08X}"
+        name = _func_ident(addr, name)
         self.referenced_calls[addr] = name
         return name
 
-    # Arithmetic whose flags a later jcc reads from the RESULT. The condition
-    # used to re-read the destination register at the jcc, which is wrong the
-    # moment anything between the two rewrites it -- `dec ecx; mov [..], ecx;
-    # mov ecx, [..]; jne` is MSVC's ordinary loop shape, and CRI's ADX
-    # decoder in JSRF has exactly that: the reloaded ecx was a pointer, never
-    # zero, so the inner loop never ended and wrote PCM over 50 MB of RAM.
-    # Snapshot the result (and the right-hand operand, for the ordered
-    # compares that reconstruct the original) at the instruction instead.
-    _RESULT_SNAPSHOT = frozenset({
-        "add", "sub", "and", "or", "xor", "inc", "dec", "neg",
-        "shl", "sal", "shr", "sar", "shld", "shrd", "adc", "sbb",
-    })
-
     def lift_instruction(self, insn):
-        out = self._lift_instruction_inner(insn)
-        m = insn.mnemonic
-        if m in self._RESULT_SNAPSHOT and insn.operands and insn.operands[0].type in ("reg", "mem"):
-            ops = insn.operands
-            size = _operand_width(ops[0]) or 4
-            mask = self._SNAP_MASK.get(size, "0xFFFFFFFFu")
-            sx = self._SNAP_SX.get(size, "(int32_t)")
-            pre = []
-            if len(ops) >= 2 and m in ("add", "sub", "adc", "sbb", "and", "or", "xor"):
-                pre.append(f"_fb = (uint32_t)({_fmt_operand_read(ops[1])}) & {mask}; _fbs = (int32_t){sx}(_fb);")
-            post = [f"_fa = (uint32_t)({_fmt_operand_read(ops[0])}) & {mask}; _fas = (int32_t){sx}(_fa);"
-                    f" /* flags snapshot: {m} */"]
-            return pre + list(out) + post
-        return out
-
-    def _lift_instruction_inner(self, insn):
         """
         Translate a single x86 instruction to one or more C statements.
         Returns a list of C statement strings.
@@ -1108,6 +1483,16 @@ class Lifter:
             return self._lift_push(insn, ops)
         if m == "pop":
             return self._lift_pop(insn, ops)
+
+        # Save the pre-push ESP in the fifth slot; POPAD discards that
+        # slot rather than restoring ESP from memory. Neither changes flags.
+        if m in ("pushal", "pushad"):
+            return ["{ uint32_t _pa_esp = esp; PUSH32(esp, eax); PUSH32(esp, ecx); "
+                    "PUSH32(esp, edx); PUSH32(esp, ebx); PUSH32(esp, _pa_esp); "
+                    "PUSH32(esp, ebp); PUSH32(esp, esi); PUSH32(esp, edi); } /* pushal */"]
+        if m in ("popal", "popad"):
+            return ["POP32(esp, edi); POP32(esp, esi); POP32(esp, ebp); esp += 4; "
+                    "POP32(esp, ebx); POP32(esp, edx); POP32(esp, ecx); POP32(esp, eax); /* popal */"]
 
         # ── Arithmetic ──
         if m in ("add", "sub", "and", "or", "xor"):
@@ -1156,9 +1541,23 @@ class Lifter:
         # ── String operations ──
         if m.startswith("rep ") or m.startswith("repe ") or m.startswith("repne "):
             return self._lift_rep_string(insn, m)
+        # "movsd" is TWO instructions. The string MOVSD copies a dword from
+        # [esi] to es:[edi]; the SSE2 MOVSD moves a scalar double in or out of
+        # an xmm register. They share a mnemonic and nothing else, and this
+        # branch runs ahead of the SSE one below, so an SSE movsd was lifted
+        # as a string copy -- walking esi and edi and touching neither operand
+        # the instruction actually names. Told apart by the only thing that
+        # differs.
         if m in ("movsb", "movsd", "movsw", "stosb", "stosd", "stosw",
-                 "lodsb", "lodsd", "lodsw"):
+                 "lodsb", "lodsd", "lodsw") and not _has_xmm_operand(ops):
             return self._lift_string_op(insn, m)
+        # A single cmps/scas is the rep form run once, with ecx left alone.
+        # These were RECOMP_UNIMPL: no compare, no advance, stale flags --
+        # and MSVC unrolls short memcmps into exactly `cmpsd; jne` chains.
+        if m in _BARE_STRING_COMPARES and not _has_xmm_operand(ops):
+            return (["{ uint32_t _rc = ecx; ecx = 1;"]
+                    + self._lift_rep_string(insn, "repe " + m)
+                    + ["ecx = _rc; }"])
         if m == "wait":
             return ["/* wait - FPU sync */"]
 
@@ -1254,7 +1653,10 @@ class Lifter:
         if m == "lahf":
             return ["/* lahf - load AH from flags (used in FPU compare idiom) */"]
         if m == "sahf":
-            return ["/* sahf - store AH to flags */"]
+            out = ["_fa = ((eax >> 8) & 0xD5u) | (_fb << 11); /* sahf */"]
+            if self.needs_cf:
+                out.append("_cf = _fa & 1u;")
+            return out
         if m == "shld":
             return self._lift_shld(insn, ops)
         if m == "shrd":
@@ -1279,10 +1681,10 @@ class Lifter:
                 address = "ebx + LO8(eax)"
             return [f"SET_LO8(eax, MEM8({address})); /* xlatb */"]
         if m in ("sete", "setne", "setb", "setae", "setbe", "seta",
-                 "setl", "setge", "setle", "setg", "sets", "setns"):
+                 "setl", "setge", "setle", "setg", "sets", "setns", "setp", "setnp", "setpe", "setpo"):
             return self._lift_setcc(insn, ops, m)
         if m in ("cmove", "cmovne", "cmovb", "cmovae", "cmovbe", "cmova",
-                 "cmovl", "cmovge", "cmovle", "cmovg", "cmovs", "cmovns"):
+                 "cmovl", "cmovge", "cmovle", "cmovg", "cmovs", "cmovns", "cmovp", "cmovnp", "cmovpe", "cmovpo"):
             return self._lift_cmovcc(insn, ops, m)
 
         # ── SSE (scalar float) ──
@@ -1297,9 +1699,13 @@ class Lifter:
         # Dispatched on the operands rather than the mnemonic, because the
         # integer SIMD names are shared with SSE: `paddw mm0, mm1` and
         # `paddw xmm0, xmm1` differ only in register file.
+        # cvtpi2ps is named here as well: its source may be m64 rather than
+        # an mm register, and dispatching purely on the operands then sent
+        # that form past the MMX lifter to a TODO comment -- the same silent
+        # drop, one addressing mode along.
         if any(op.type == "reg" and op.reg and op.reg.startswith("mm")
                and not op.reg.startswith("xmm") for op in ops) or m in (
-                   "emms", "femms"):
+                   "emms", "femms", "cvtpi2ps"):
             return self._lift_mmx(insn, m, ops)
 
         if m in ("movss", "movsd", "movaps", "movups", "movlps", "movhps",
@@ -1310,7 +1716,7 @@ class Lifter:
                  "comiss", "comisd", "ucomiss", "ucomisd",
                  "cvtsi2ss", "cvtss2si", "cvttss2si",
                  "cvtsi2sd", "cvtsd2si", "cvttsd2si",
-                 "cvtss2sd", "cvtsd2ss",
+                 "cvtss2sd", "cvtsd2ss", "cvtps2dq", "cvttps2dq",
                  "xorps", "xorpd", "andps", "orps", "andnps",
                  "movd", "movq",
                  "shufps", "unpcklps", "unpckhps",
@@ -1318,9 +1724,21 @@ class Lifter:
                  "minps", "maxps", "rsqrtss", "rcpss",
                  "sqrtps", "rsqrtps", "rcpps",
                  "cmpneqps", "cmpeqps", "cmpltps", "cmpleps",
+                 "cmpps", "cmpss",
                  "movmskps",
-                 "pand", "pandn", "por", "pxor", "pcmpgtd"):
+                 "pand", "pandn", "por", "pxor", "pcmpgtd")                 or m in _SSE_CMP_NAMED:
             return self._lift_sse(insn, m, ops)
+
+        # ── SSE control and status ──
+        # Guest state like the x87 control word: a title reads MXCSR back
+        # to check the rounding mode (JSRF refuses to run a routine unless
+        # RC is nearest), so the store must not be dropped.
+        if m in ("stmxcsr", "ldmxcsr"):
+            if not ops or ops[0].type != "mem":
+                return self._unimplemented(insn, m)
+            if m == "stmxcsr":
+                return [f"MEMW32({_fmt_mem(ops[0])}, g_mxcsr); /* stmxcsr {insn.op_str} */"]
+            return [f"g_mxcsr = MEM32({_fmt_mem(ops[0])}); /* ldmxcsr {insn.op_str} */"]
 
         # ── FPU ──
         if m.startswith("f"):
@@ -1344,6 +1762,39 @@ class Lifter:
             expr = {"stc": "1", "clc": "0", "cmc": "!_cf"}[m]
             return [f"_cf = {expr}; /* {m} */"]
 
+        # ── CPU identification ──
+        #
+        # The runtime answers as the Xbox CPU, a Coppermine-class Pentium III
+        # (see xbox_Cpuid). Lifted as a no-op, eax..edx kept whatever they
+        # held, so a feature test read a register the guest had just loaded
+        # with something else -- an EFLAGS.ID + CPUID feature probe decided
+        # on stale registers.
+        if m == "cpuid":
+            return ["{ uint32_t _id[4]; xbox_Cpuid(eax, ecx, _id);"
+                    " eax = _id[0]; ebx = _id[1]; ecx = _id[2];"
+                    " edx = _id[3]; } /* cpuid */"]
+
+        # ── EFLAGS to and from the stack ──
+        #
+        # Both were no-ops, which unbalanced the stack: every pushfd/popfd
+        # pair left esp 4 bytes off, and the CPUID-support idiom
+        # (pushfd; pop; xor 0x200000; push; popfd; pushfd; pop) popped the
+        # caller's saved registers instead, so an EFLAGS.ID + CPUID feature
+        # probe returned with the caller's callee-saved registers swapped.
+        #
+        # The word lives in g_eflags. lift_basic_block writes the tracked
+        # arithmetic flags into it right before a pushfd (publish_flags), so
+        # this arm only pushes; recomp_pushfd adds DF from g_df and bit 1.
+        # popfd loads the image, and the jcc after it reads g_eflags.
+        if m == "pushfd":
+            return ["PUSH32(esp, recomp_pushfd()); /* pushfd */"]
+        if m == "popfd":
+            out = ["{ uint32_t _efl; POP32(esp, _efl); recomp_popfd(_efl); }"
+                   " /* popfd */"]
+            if self.needs_cf:
+                out.append("_cf = (int)(g_eflags & 1u); /* popfd: CF */")
+            return out
+
         # ── Time stamp counter ──
         #
         # The guest reads wall-clock time through it. Xbox's
@@ -1365,6 +1816,31 @@ class Lifter:
                 "  /* rdtsc */",
             ]
 
+        # ── Port I/O ──
+        #
+        # `in`/`out` reach the MCPX's I/O space: the ACPI block at 0x8000,
+        # SMBus at 0xC000. Lifted as no-ops, an `in` left the accumulator
+        # holding whatever it held before, which is a value, just not the
+        # port's. D3D's vblank ISR reads the TV encoder's field pin from
+        # 0x80C0 bit 5 into [device+0x1DF8]; the stale register always read
+        # as "odd field", and the XMV player, which starts its clock only on
+        # an even field, never started (Burnout 3's EA intro). The runtime
+        # answers the ports it models and logs the rest.
+        if m in ("in", "out") and len(ops) == 2:
+            data, port = (ops[0], ops[1]) if m == "in" else (ops[1], ops[0])
+            width = _operand_width(data) or 1
+            if data.type != "reg" or port.type not in ("reg", "imm"):
+                return self._unimplemented(insn, m)
+            port_c = (f"0x{port.imm & 0xFF:02X}u" if port.type == "imm"
+                      else "(edx & 0xFFFFu)")
+            if m == "in":
+                return [_fmt_set_reg(data.reg,
+                                     f"xbox_PortIn({port_c}, {width})")
+                        + f" /* {m} {insn.op_str} */"]
+            return [f"xbox_PortOut({port_c}, (uint32_t)"
+                    f"({_fmt_operand_read(data)}), {width}); /* {m} "
+                    f"{insn.op_str} */"]
+
         # ── Bit scan ──
         # Index of the lowest (bsf) or highest (bsr) set bit. When the source
         # is zero the destination is left untouched and ZF is set; that is the
@@ -1380,8 +1856,7 @@ class Lifter:
         # reads them was already meaningless.
         if m in ("bsf", "bsr"):
             if len(ops) < 2:
-                self.unimplemented.setdefault(m, []).append(insn.address)
-                return [f"/* TODO: {m} {insn.op_str} */"]
+                return self._unimplemented(insn, m)
             dst = _fmt_operand_read(ops[0])
             src = _fmt_operand_read(ops[1])
             width = (_operand_width(ops[1]) or 4) * 8
@@ -1424,14 +1899,18 @@ class Lifter:
                 addr = _fmt_mem(ops[0])
                 src = _fmt_operand_read(ops[1])
                 if atomic_m == "xadd":
-                    # dst = dst + src, and src receives dst's old value.
-                    # Snapshot the sum for the jcc that follows (see the
-                    # xadd case in _make_jcc_condition).
+                    # dst = dst + src, and src receives dst's old value. The
+                    # flags come from the sum, which is snapshotted into
+                    # _fa/_fas here: the source operand is overwritten by the
+                    # old value in the same instruction, and the destination
+                    # may be changed by another thread before the jcc reads
+                    # it (_RESULT_SNAPSHOT_SETTERS explains the rule).
                     return [
-                        "{ uint32_t _old = RECOMP_ATOMIC_ADD32("
-                        f"XBOX_PTR({addr}), {src});",
-                        f"  _fa = _old + ({src}); _fb = 0; "
-                        "_fas = (int32_t)_fa; _fbs = 0;",
+                        f"{{ uint32_t _add = {src};",
+                        "  uint32_t _old = RECOMP_ATOMIC_ADD32("
+                        f"XBOX_PTR({addr}), _add);",
+                        "  _fa = _old + _add; _fas = (int32_t)_fa;"
+                        f" /* {m} result */",
                         "  " + _fmt_operand_write(ops[1], "_old") + " }"
                         f"  /* {m} */",
                     ]
@@ -1453,8 +1932,7 @@ class Lifter:
         # ── Unhandled ──
         #
         # Recorded, not merely commented -- see self.unimplemented.
-        self.unimplemented.setdefault(m, []).append(insn.address)
-        return [f"/* TODO: {m} {insn.op_str} */"]
+        return self._unimplemented(insn, m)
 
     # ── MOV family ──
 
@@ -1512,10 +1990,9 @@ class Lifter:
             r = ops[1].reg
             if r in ("al", "bl", "cl", "dl", "ah", "bh", "ch", "dh"):
                 src = f"SX8({src})"
-            # bp and sp belong here too. They were missing, so `movsx ecx, bp`
-            # fell through as a plain 16-bit read -- a zero extension -- and
-            # JSRF's keyframe angle interpolator (sub_0005D3B0) handed every
-            # negative X angle back 65536 too large.
+            # bp and sp too: without them `movsx eax, bp` read LO16(ebp)
+            # zero-extended, so a negative 16-bit value read as a large
+            # positive one.
             elif r in ("ax", "bx", "cx", "dx", "si", "di", "bp", "sp"):
                 src = f"SX16({src})"
         return [_fmt_operand_write(ops[0], src)]
@@ -1567,6 +2044,36 @@ class Lifter:
 
     # ── ALU binary operations ──
 
+    def _result_snapshot(self, ops, m, src_too=False):
+        """Publish a result-setter's flags where they are computed.
+
+        The consuming jcc can be several instructions -- or several basic
+        blocks -- after the write, and anything between them may have
+        replaced the destination: a mov, a pop, a lea, a reloaded loop
+        pointer. Reading it back at the branch then asks about the wrong
+        value, silently.
+
+        inc/dec already publish _fa for exactly this, and _make_condition
+        says why: "Result at the flag-setting instruction, before later
+        MOVs." This is that, for the rest of the family.
+
+        src_too captures the SOURCE into _fb instead, for add and sub, whose
+        carry and ordered conditions recover the original destination from
+        result and source. The caller emits it BEFORE the write.
+        """
+        size = _operand_width(ops[0])
+        if size not in self._SNAP_MASK:
+            size = 4
+        mask, sx = self._SNAP_MASK[size], self._SNAP_SX[size]
+        if src_too:
+            src = _fmt_operand_read(ops[1])
+            return (f"_fb = (uint32_t)({src}) & {mask};"
+                    f" _fbs = (int32_t){sx}(_fb);"
+                    f" /* {m} source, before the write */")
+        dst = _fmt_operand_read(ops[0])
+        return (f"_fa = (uint32_t)({dst}) & {mask};"
+                f" _fas = (int32_t){sx}(_fa); /* {m} result */")
+
     def _lift_alu_binop(self, insn, ops, m):
         if len(ops) < 2:
             return [f"/* {m}: bad operands */"]
@@ -1577,9 +2084,12 @@ class Lifter:
         if m == "xor" and ops[0].type == "reg" and ops[1].type == "reg" and ops[0].reg == ops[1].reg:
             out = ["_cf = 0; /* xor clears CF */"] if self.needs_cf else []
             out.append(_fmt_operand_write(ops[0], "0") + " /* xor self */")
+            out.append(self._result_snapshot(ops, m))
             return out
         expr = f"{dst} {c_op} {src}"
         out = []
+        if m in _RESULT_SRC_SETTERS:
+            out.append(self._result_snapshot(ops, m, src_too=True))
         if self.needs_cf:
             # CF must be computed from the pre-write operands.
             if m == "add":
@@ -1590,6 +2100,7 @@ class Lifter:
             else:
                 out.append("_cf = 0; /* logical op clears CF */")
         out.append(_fmt_operand_write(ops[0], expr))
+        out.append(self._result_snapshot(ops, m))
         return out
 
     def _lift_inc_dec(self, insn, ops, m):
@@ -1601,9 +2112,15 @@ class Lifter:
         # For sub-registers (al, cl, etc.), use the SET macro instead of ++
         if ops[0].type == "reg" and ops[0].reg in (
                 "eax", "ebx", "ecx", "edx", "esi", "edi", "ebp", "esp"):
-            return [f"{val}{'++' if m == 'inc' else '--'};"]
+            out = [f"{val}{'++' if m == 'inc' else '--'};"]
         else:
-            return [_fmt_operand_write(ops[0], f"{val} {op_char} {delta}")]
+            out = [_fmt_operand_write(ops[0], f"{val} {op_char} {delta}")]
+        size = _operand_width(ops[0]) or 4
+        mask, sx = self._SNAP_MASK[size], self._SNAP_SX[size]
+        overflow_result = (1 << (size * 8 - 1)) - (m == "dec")
+        out += [f"_fa = (uint32_t)({val}) & {mask};",
+                f"_fas = (int32_t){sx}(_fa); _fb = (_fa == 0x{overflow_result:X}u); /* {m} result/SF/OF; CF unchanged */"]
+        return out
 
     def _lift_neg(self, insn, ops, preserve_carry=False):
         if len(ops) < 1:
@@ -1613,7 +2130,8 @@ class Lifter:
         if preserve_carry or self.needs_cf:
             # neg sets CF iff the operand was non-zero (neg/sbb sign-extract).
             out.append(f"_cf = (int)(({val}) != 0);")
-        out.append(_fmt_operand_write(ops[0], f"(uint32_t)(-(int32_t){val})"))
+        out.append(_fmt_operand_write(ops[0], f"(uint32_t)(0u - (uint32_t)({val}))"))
+        out.append(self._result_snapshot(ops, "neg"))
         return out
 
     def _lift_not(self, insn, ops):
@@ -1630,11 +2148,14 @@ class Lifter:
         src = _fmt_operand_read(ops[1])
         # sbb reg, reg is a common idiom: result is 0 or 0xFFFFFFFF depending on CF
         if ops[0].type == "reg" and ops[1].type == "reg" and ops[0].reg == ops[1].reg:
-            return [_fmt_operand_write(ops[0], "_cf ? 0xFFFFFFFF : 0") + " /* sbb self (CF extend) */"]
+            return [_fmt_operand_write(ops[0], "_cf ? 0xFFFFFFFF : 0")
+                    + " /* sbb self (CF extend) */",
+                    self._result_snapshot(ops, "sbb")]
         w = (_operand_width(ops[0]) or 4) * 8
         return ["{ uint64_t _t = (uint64_t)(%s) - (uint64_t)(%s) - (uint64_t)_cf;"
                 " _cf = (int)((_t >> %d) & 1); %s }  /* sbb */"
-                % (dst, src, w, _fmt_operand_write(ops[0], "(uint32_t)_t"))]
+                % (dst, src, w, _fmt_operand_write(ops[0], "(uint32_t)_t")),
+                self._result_snapshot(ops, "sbb")]
 
     def _lift_adc(self, insn, ops):
         """ADC: add with carry."""
@@ -1645,27 +2166,52 @@ class Lifter:
         w = (_operand_width(ops[0]) or 4) * 8
         return ["{ uint64_t _t = (uint64_t)(%s) + (uint64_t)(%s) + (uint64_t)_cf;"
                 " _cf = (int)((_t >> %d) & 1); %s }  /* adc */"
-                % (dst, src, w, _fmt_operand_write(ops[0], "(uint32_t)_t"))]
+                % (dst, src, w, _fmt_operand_write(ops[0], "(uint32_t)_t")),
+                self._result_snapshot(ops, "adc")]
+
+    def _lift_double_shift(self, insn, ops, m):
+        """SHLD/SHRD, with x86's count rules rather than C's.
+
+        The count is masked to five bits by the hardware, and a masked count
+        of zero leaves the destination and the flags alone. Neither was
+        honoured here, and the second is the one that produced a wrong value
+        rather than merely undefined behaviour: the old expression built
+        `src >> (32 - cnt)`, so a count of zero shifted by the operand's full
+        width. C leaves that undefined, and where the host takes the shift
+        amount modulo the width it shifts by nothing and returns `src` whole,
+        so the write came out `dst | src` for an instruction that should not
+        have written at all.
+
+        _lift_shift already states the rule for shl/shr/sar -- "C leaves a
+        shift of 32 or more UNDEFINED, and the compiler is entitled to assume
+        it never happens" -- and masks there. The double-precision pair never
+        got it.
+
+        Masked to 1..31 the complement is 31..1, so nothing below can shift by
+        the width again. The 16-bit form additionally refuses counts above 15,
+        which Intel leaves undefined for that width; the point is to keep the
+        C defined rather than to invent an answer x86 does not give.
+        """
+        if len(ops) < 3:
+            return [f"/* {m}: bad operands */"]
+        dst = _fmt_operand_read(ops[0])
+        src = _fmt_operand_read(ops[1])
+        cnt = _fmt_operand_read(ops[2])
+        w = (_operand_width(ops[0]) or 4) * 8
+        expr = (f"({dst} << _c) | ({src} >> ({w} - _c))" if m == "shld"
+                else f"({dst} >> _c) | ({src} << ({w} - _c))")
+        # A masked count of zero leaves the destination AND the flags alone,
+        # so the result snapshot lives inside the guard with the write.
+        return ["{ uint32_t _c = (uint32_t)(%s) & 31u; if (_c && _c < %uu) {"
+                " %s %s } }  /* %s */"
+                % (cnt, w, _fmt_operand_write(ops[0], expr),
+                   self._result_snapshot(ops, m), m)]
 
     def _lift_shld(self, insn, ops):
-        """SHLD: double-precision shift left."""
-        if len(ops) < 3:
-            return [f"/* shld: bad operands */"]
-        dst = _fmt_operand_read(ops[0])
-        src = _fmt_operand_read(ops[1])
-        cnt = _fmt_operand_read(ops[2])
-        return [_fmt_operand_write(ops[0],
-            f"({dst} << {cnt}) | ({src} >> (32 - {cnt}))") + " /* shld */"]
+        return self._lift_double_shift(insn, ops, "shld")
 
     def _lift_shrd(self, insn, ops):
-        """SHRD: double-precision shift right."""
-        if len(ops) < 3:
-            return [f"/* shrd: bad operands */"]
-        dst = _fmt_operand_read(ops[0])
-        src = _fmt_operand_read(ops[1])
-        cnt = _fmt_operand_read(ops[2])
-        return [_fmt_operand_write(ops[0],
-            f"({dst} >> {cnt}) | ({src} << (32 - {cnt}))") + " /* shrd */"]
+        return self._lift_double_shift(insn, ops, "shrd")
 
     def _lift_imul(self, insn, ops):
         nops = len(ops)
@@ -1723,51 +2269,110 @@ class Lifter:
             bit = f"({cnt}) - 1" if c_op == ">>" else f"{w} - ({cnt})"
             out.append(f"if ({cnt}) _cf = (int)((({dst}) >> ({bit})) & 1);")
         out.append(_fmt_operand_write(ops[0], f"{dst} {c_op} {cnt}"))
+        out.append(self._result_snapshot(ops, "shift"))
         return out
 
     def _lift_sar(self, insn, ops):
+        """Arithmetic shift right, at the operand's own width.
+
+        Two things have to be right that a bare "(int32_t)dst >> cnt" gets
+        wrong.
+
+        The cast must match the operand. Every narrow read arrives
+        zero-extended - LO8/HI8/LO16 mask, and MEM8/MEM16 are unsigned - so
+        casting an 8- or 16-bit operand to int32_t produces a positive number
+        and the ">>" is a logical shift wearing an arithmetic cast. "sar al, 1"
+        with al = 0x80 gave 0x40 where x86 gives 0xC0: a negative value halved
+        into a positive one, which is how a fixed-point divide or a signed
+        average goes quietly wrong without ever faulting. int8_t/int16_t
+        promote to int before the shift, so a count at or above the operand
+        width still sign-fills and stays well defined.
+
+        The count must be masked to 5 bits, as x86 does for 8-, 16- and 32-bit
+        operands. Unmasked, "sar eax, 33" asks C for a shift of 33 on a 32-bit
+        type, which is undefined - the host may fold it to 33 & 31 and look
+        correct, which is exactly why it cannot be left to chance.
+
+        CF reads the sign-extended value too, not the raw operand. For a
+        count below the operand width either spelling gives the same bit, but
+        x86 keeps sign-filling past that width: "sar al, 31" on al = 0x80
+        leaves CF = 1. Reading bit 30 of the zero-extended 0x80 gives 0, and
+        reading it of the sign-extended 0xFFFFFF80 gives 1. It takes the count
+        mask for the same reason the value does.
+        """
         if len(ops) < 2:
             return ["/* sar: bad operands */"]
         dst = _fmt_operand_read(ops[0])
-        cnt = _fmt_operand_read(ops[1])
+        cnt = f"(({_fmt_operand_read(ops[1])}) & 31u)"
+        width = (_operand_width(ops[0]) or 4) * 8
+        signed = f"(int32_t)(int{width}_t)({dst})"
         out = []
         if self.needs_cf:
-            out.append(f"if ({cnt}) _cf = (int)((({dst}) >> (({cnt}) - 1)) & 1);")
-        out.append(_fmt_operand_write(ops[0], f"(uint32_t)((int32_t){dst} >> {cnt})"))
+            out.append(f"if ({cnt}) _cf = (int)(((uint32_t)({signed}) >> (({cnt}) - 1)) & 1);")
+        out.append(_fmt_operand_write(ops[0], f"(uint32_t)(({signed}) >> {cnt})"))
+        out.append(self._result_snapshot(ops, "sar"))
         return out
 
-    def _lift_rotate(self, insn, ops, m):
-        if len(ops) < 2:
-            return [f"/* {m}: bad operands */"]
-        dst = _fmt_operand_read(ops[0])
-        cnt = _fmt_operand_read(ops[1])
-        func = "ROL32" if m == "rol" else "ROR32"
-        return [_fmt_operand_write(ops[0], f"{func}({dst}, {cnt})")]
-
     def _lift_rotate_carry(self, insn, ops, m):
-        """rcl/rcr: rotate through CF. The 64-bit division helpers
-        (_aulldvrm and friends) shift edx:eax right with `shr edx,1; rcr eax,1`
-        -- a no-op here silently corrupted every 64-bit divide."""
+        """rcl/rcr: the carry flag is one of the bits being rotated.
+
+        These were falling through to the TODO comment, which is a silent
+        no-op. Where they appear is the compiler's own 64-bit divide:
+
+            shr ecx, 1
+            rcr ebx, 1        <- carries ecx's bit 0 into ebx's bit 31
+            shr edx, 1
+            rcr eax, 1
+            or  ecx, ecx
+            jnz ...
+
+        That loop normalises a 128-bit pair down to something a 32-bit
+        divide can take. With the rcr dropped the low halves never move, so
+        the divisor and the dividend both go into the divide wrong -- and
+        nothing says so.
+        """
+        if len(ops) < 2:
+            return [f"/* {m}: bad operands */"]
+        width = (_operand_width(ops[0]) or 4) * 8
+        dst = _fmt_operand_read(ops[0])
+        cnt = _fmt_operand_read(ops[1])
+        left = 1 if m == "rcl" else 0
+        write = _fmt_operand_write(ops[0], "_rcv")
+        return [
+            f"{{ uint32_t _rcv = RC_ROT((uint32_t)({dst}), (unsigned)({cnt}),"
+            f" &_cf, {width}, {left});",
+            f"  {write} }} /* {m} */",
+        ]
+
+    def _lift_rotate(self, insn, ops, m):
+        """A rotate is at the OPERAND's width, not always at 32 bits.
+
+        Every narrow read here arrives zero-extended, so ROL32/ROR32 on a byte
+        rotated it inside a 32-bit word: the bits that should wrap around at
+        bit 7 landed in bits 31..8 and were then discarded by the store. `ror
+        al, 2` on 0x01 produced 0x00 where x86 gives 0x40 -- the operand's top
+        bits silently deleted rather than rotated round.
+
+        The count is masked to 5 bits by the hardware and only then reduced
+        modulo the width, so `rol al, 16` is the identity and `rol ax, 31` is a
+        rotate by 15. Both of those came back as 0 before.
+
+        Same defect class as the `sar` width bug: a narrow operand evaluated at
+        32 bits. That one was fixed; the rotates beside it were missed.
+        """
         if len(ops) < 2:
             return [f"/* {m}: bad operands */"]
         dst = _fmt_operand_read(ops[0])
         cnt = _fmt_operand_read(ops[1])
-        w = (_operand_width(ops[0]) or 4) * 8
-        mask = {8: "0xFFu", 16: "0xFFFFu", 32: "0xFFFFFFFFu"}[w]
-        if m == "rcr":
-            body = (f"_rv = ((_rv >> 1) | ((uint32_t)_cf << {w - 1})) & {mask};"
-                    f" _cf = (int)(_ro & 1); _ro = _rv;")
-        else:
-            body = (f"_rv = ((_rv << 1) | (uint32_t)_cf) & {mask};"
-                    f" _cf = (int)((_ro >> {w - 1}) & 1); _ro = _rv;")
-        return [f"{{ uint32_t _ro = (uint32_t)({dst}) & {mask}, _rv = _ro;"
-                f" uint32_t _rn = ((uint32_t)({cnt})) % {w + 1}u;"
-                f" while (_rn--) {{ {body} }}"
-                f" {_fmt_operand_write(ops[0], '_rv')} }} /* {m} */"]
+        bits = (_operand_width(ops[0]) or 4) * 8
+        suffix = {8: "8", 16: "16"}.get(bits, "32")
+        func = ("ROL" if m == "rol" else "ROR") + suffix
+        return [_fmt_operand_write(ops[0], f"{func}({dst}, {cnt})")]
 
     # ── Compare / Test (standalone) ──
 
-    # Widths for the flag snapshot below.
+    # Sign-extending cast and mask per operand width, shared by the flag
+    # snapshot below and by the arithmetic shift above.
     _SNAP_MASK = {1: "0xFFu", 2: "0xFFFFu", 4: "0xFFFFFFFFu"}
     _SNAP_SX = {1: "(int8_t)", 2: "(int16_t)", 4: "(int32_t)"}
 
@@ -1820,10 +2425,14 @@ class Lifter:
         # _fa and _fb are already masked to the operand width, so their
         # unsigned comparison is CF at that width.
         if self.needs_cf:
-            if kind == "cmp":
+            zero_rhs = (ops[1].type == "imm" and not ops[1].imm)
+            if kind == "cmp" and not zero_rhs:
                 out.append("_cf = (int)(_fa < _fb);")
             else:
-                out.append("_cf = 0; /* test/cmp-logical clears CF */")
+                # An unsigned value is never below zero, so a compare against
+                # it cannot borrow -- which is also why `test X, X` normalises
+                # onto this form without disturbing CF.
+                out.append("_cf = 0; /* nothing borrows from zero */")
         return out
 
     def _lift_cmp(self, insn, ops):
@@ -1834,7 +2443,8 @@ class Lifter:
     def _lift_test(self, insn, ops):
         if len(ops) < 2:
             return ["/* test: bad operands */"]
-        return self._snapshot_flags(insn, ops, "test")
+        kind, ops = normalise_zero_test("test", ops)
+        return self._snapshot_flags(insn, ops, kind)
 
     # ── Control flow ──
 
@@ -1859,6 +2469,8 @@ class Lifter:
     # and assigned to the instance. The class values are only a fallback for
     # callers that construct a Lifter without a function database.
     SEH_PROLOG = None
+    SEH_PROLOGS = frozenset()
+    SEH_HELPERS = frozenset()
     SEH_EPILOG = None
 
     # The CRT's setjmp/longjmp, detected by detect_setjmp_helpers().
@@ -1866,6 +2478,9 @@ class Lifter:
     LONGJMP_FN = None
 
     def _lift_call(self, insn, ops):
+        caller_cleans = insn.address in self.caller_cleanup_sites
+        safe_macro = "RECOMP_ICALL_SAFE_CC" if caller_cleans else "RECOMP_ICALL_SAFE"
+        safe_at_macro = "RECOMP_ICALL_SAFE_AT_CC" if caller_cleans else "RECOMP_ICALL_SAFE_AT"
         # x86 'call' pushes the address of the following instruction, then jumps.
         # Push that real guest address, not a placeholder: the value is visible
         # to the callee, and plenty of x86 code reads it. __SEH_prolog locates
@@ -1927,7 +2542,7 @@ class Lifter:
                 # replacement silently. Contributed in #15.
                 lines.append(
                     f"PUSH32(esp, 0x{ret_va:08X}u); "
-                    f"RECOMP_ICALL_SAFE(0x{insn.call_target:08X}u, "
+                    f"{safe_macro}(0x{insn.call_target:08X}u, "
                     "_icall_esp); "
                     f"/* manual call 0x{insn.call_target:08X} */")
             else:
@@ -1962,7 +2577,7 @@ class Lifter:
             # stack address where the caller had just zeroed it, so an
             # "if (status < 0)" test against esi failed and XapiInitProcess
             # bailed to the dashboard.
-            if insn.call_target in (self.SEH_PROLOG, self.SEH_EPILOG):
+            if insn.call_target in self.SEH_HELPERS:
                 lines.insert(0, "g_seh_ebp = ebp; /* publish frame to SEH helper */")
                 lines.append("ebp = g_seh_ebp; /* read back frame from SEH helper */")
             return lines
@@ -1976,10 +2591,23 @@ class Lifter:
             # target -- `call dword ptr [esp+8]`, the shape MSVC gives a
             # callback invoked through a stack argument -- is read four bytes
             # low and dispatches through the wrong slot.
-            return [f"{{ uint32_t _icall_target = {target}; "
-                    f"PUSH32(esp, 0x{ret_va:08X}u); "
-                    "RECOMP_ICALL_SAFE(_icall_target, _icall_esp); }"
-                    " /* indirect call */"]
+            site = insn.address
+            head = (f"{{ uint32_t _icall_target = {target}; "
+                    f"PUSH32(esp, 0x{ret_va:08X}u); ")
+            fallback = (f"{safe_at_macro}(_icall_target, _icall_esp, "
+                        f"0x{site:08X}u); }}")
+            recorded = self.icall_site_targets.get(site)
+            guards = [t for t in (recorded or [])
+                      if t in self.func_db and t not in self.manual_functions]
+            if recorded and 0 < len(recorded) <= 4 and len(guards) == len(recorded):
+                arms = " else ".join(
+                    f"if (_icall_target == 0x{t:08X}u) {{ RECOMP_ICALL_GUARD_HIT(); "
+                    f"RECOMP_ABI_CALL(0x{t:08X}u, {self._call_target_name(t)}); }}"
+                    for t in sorted(set(guards)))
+                return [head + arms + " else { RECOMP_ICALL_GUARD_MISS(); "
+                        + fallback + " }"
+                        + f" /* indirect call, guarded {len(set(guards))} */"]
+            return [head + fallback + " /* indirect call */"]
         return ["/* call: no target */"]
 
     def _lift_ret(self, insn, ops):
@@ -1988,7 +2616,7 @@ class Lifter:
         # If this function IS __SEH_prolog or __SEH_epilog, bridge ebp
         # so the caller can read back the frame pointer.
         prefix = ""
-        if self.func_start in (self.SEH_PROLOG, self.SEH_EPILOG):
+        if self.func_start in self.SEH_HELPERS:
             prefix = "g_seh_ebp = ebp; "
         # Exit trace, for functions that return with a register the caller
         # relied on holding something else. Entry tracing alone cannot show
@@ -1998,10 +2626,40 @@ class Lifter:
         if self.trace_exit_name:
             prefix = (f'RECOMP_TRACE_EXIT("{self.trace_exit_name}", '
                       f'0x{self.func_start:08X}); ') + prefix
+        # --force-return: hand the caller a constant instead of what the
+        # body computed.
+        #
+        # Set at the ret rather than skipped at the entry, which matters:
+        # the epilogue still runs, so esp is adjusted by the function's own
+        # ret -- 4 for a cdecl, 4+n for a stdcall -- and nothing has to guess
+        # the calling convention. The body's side effects still happen; only
+        # the answer changes. Off at run time unless RECOMP_FORCE_RETURN is
+        # set, so a build carrying it behaves normally by default.
+        if self.force_return_value is not None:
+            prefix = (f'if (g_force_return) eax = '
+                      f'0x{self.force_return_value:X}U; ') + prefix
+
         if len(ops) >= 1 and ops[0].type == "imm":
             n = ops[0].imm
             return [f"{prefix}esp += {4 + n}; return; /* ret {n} */"]
         return [f"{prefix}esp += 4; return; /* ret */"]
+
+    def _forced_tail(self, tail):
+        """Apply --force-return to a tail jump.
+
+        A tail call leaves through the target, not through a ret, so the
+        assignment has to land after the call and before the return -- the
+        target still runs, and the caller still gets the constant. Shin
+        Megami Tensei: Nine's XMV "is the movie finished" query ends in
+        exactly this shape, so without it the option would miss the function
+        that motivated it.
+        """
+        if self.force_return_value is None:
+            return tail
+        return tail.replace(
+            "; return;",
+            f"; if (g_force_return) eax = 0x{self.force_return_value:X}U;"
+            f" return;", 1)
 
     def _is_external_target(self, addr):
         """Check if a jump target is outside the current function."""
@@ -2017,18 +2675,12 @@ class Lifter:
         if offset is None:
             return []
         targets = []
-        # MSVC indexes some tables from 1 (`jmp [eax*4 + base]` with eax in
-        # 1..n, table stored at base+4), so entry 0 is whatever precedes the
-        # table. Tolerate one junk leading entry; keep index alignment by
-        # recording it as 0 so callers see real targets at their true index.
         for i in range(max_entries):
             o = offset + i * 4
             if o + 4 > len(self.xbe_data):
                 break
             val = struct.unpack_from('<I', self.xbe_data, o)[0]
             if not is_code_address(val):
-                if i == 0:
-                    continue
                 break
             targets.append(val)
         return targets
@@ -2048,8 +2700,6 @@ class Lifter:
         targets = self.jump_table_targets.get(table_va)
         if targets is None:
             targets = self._read_jump_table(table_va)
-        if not targets:
-            return []
         # Truncate at the first entry outside the function rather than
         # demanding that every entry be inside it.
         #
@@ -2066,16 +2716,58 @@ class Lifter:
         # 0x005BA617 has 8 real arms followed by code; the old rule resolved
         # none of them, the indexed jump became an unresolvable indirect call,
         # and sprintf silently produced the wrong string.
+        inside = self._leading_arms(targets)
+        # Two arms is the smallest thing worth calling a switch; one is more
+        # likely a coincidence than a jump table.
+        if len(inside) >= 2:
+            return inside
+        if table_va in self.jump_table_targets:
+            # A census entry is authoritative (see _authoritative_jump_tables);
+            # never rediscover arms it rejected.
+            return []
+        # The displacement is not always where the table starts. MSVC's CRT
+        # memcpy/memmove dispatch their lead and trail bytes with
+        #
+        #     and  eax, 3              ; 1..3, never 0 on this path
+        #     jmp  [eax*4 + LeadUpVec - 4]
+        #
+        #     sub  ecx, 4              ; -4..-1 when fewer than 4 dwords left
+        #     jmp  [ecx*4 + TrailUpVec + 16]
+        #
+        # so slot 0 is the previous instruction's bytes, or the arms all sit
+        # below the base. Both escaped as unresolvable indirect tail jumps,
+        # and an unaligned memcpy returned without copying. The emitted
+        # switch compares the loaded value against its arms rather than
+        # indexing, so only the set of arms matters, not where index 0 is.
+        skipped = self._leading_arms(self._read_jump_table(table_va + 4))
+        if len(skipped) >= 2:
+            return skipped
+        # A table counted down from its last slot (`jmp [ecx*4 + LAST]`) has
+        # that one slot at the displacement itself, already in `inside`.
+        below = inside + self._leading_arms(
+            self._read_jump_table_backward(table_va - 4))
+        if len(below) >= 2:
+            return below
+        return []
+
+    def _leading_arms(self, targets):
+        """Entries up to the first one outside the current function."""
         inside = []
         for target in targets:
             if not (self.func_start <= target < self.func_end):
                 break
             inside.append(target)
-        # Two arms is the smallest thing worth calling a switch; one is more
-        # likely a coincidence than a jump table.
-        if len(inside) >= 2:
-            return inside
-        return []
+        return inside
+
+    def _read_jump_table_backward(self, last_va, max_entries=256):
+        """Like _read_jump_table, reading downward from last_va."""
+        targets = []
+        for i in range(max_entries):
+            got = self._read_jump_table(last_va - i * 4, max_entries=1)
+            if not got:
+                break
+            targets.append(got[0])
+        return targets
 
     def _lift_jmp(self, insn, ops):
         if insn.jump_target:
@@ -2094,7 +2786,7 @@ class Lifter:
                             f'"tail 0x{insn.jump_target:08X}");',
                             tail,
                         ]
-                    return [tail]
+                    return [self._forced_tail(tail)]
                 name = self._call_target_name(insn.jump_target)
                 tail = (f"g_seh_ebp = ebp; {name}(); return; "
                         f"/* tail jmp 0x{insn.jump_target:08X} */")
@@ -2105,7 +2797,7 @@ class Lifter:
                     # between measuring and guessing.
                     return [f'RECOMP_TRACE_ESP("{self.trace_exit_name}", '
                             f'"tail 0x{insn.jump_target:08X}");', tail]
-                return [tail]
+                return [self._forced_tail(tail)]
             return [f"goto loc_{insn.jump_target:08X};"]
         elif len(ops) >= 1:
             # Detect intra-function switch tables (computed gotos)
@@ -2118,8 +2810,35 @@ class Lifter:
                     lines.append(f"if (_jt == 0x{t:08X}u) goto loc_{t:08X};")
                 lines.append(f"g_seh_ebp = ebp; RECOMP_ITAIL(_jt); return; }}")
                 return lines
+            # `jmp <reg>` where the register was loaded with an address
+            # inside this same function: a hand-written continuation chain,
+            # not a call. The XMV YUV-to-RGB converter in Half-Life 2's
+            # loader is built this way -- four blocks that each do
+            # `mov ebx, <next>; jmp <shared tail>`, and the shared tail ends
+            # `jmp ebx`. Treated as an indirect tail call it resolved to
+            # nothing, so the shared tail never came back and the function's
+            # epilogue never ran: every call leaked 0x2C bytes of guest stack
+            # and the converter wrote past its surface until it walked out of
+            # the tiled aperture, 144 MB later.
+            #
+            # The targets are labels in this function, so this is a goto, and
+            # the same shape the memory-operand switch above emits.
+            if ops[0].type == "reg" and self.imm_code_refs:
+                inside = sorted(t for t in self.imm_code_refs
+                                if self.func_start <= t < self.func_end)
+                if inside:
+                    target_expr = _fmt_operand_read(ops[0])
+                    lines = [f"{{ uint32_t _jt = {target_expr};"
+                             f" /* intra-function indirect jmp:"
+                             f" {len(inside)} targets */"]
+                    for t in inside:
+                        lines.append(f"if (_jt == 0x{t:08X}u) goto loc_{t:08X};")
+                    lines.append("g_seh_ebp = ebp; RECOMP_ITAIL(_jt); return; }")
+                    return lines
             target = _fmt_operand_read(ops[0])
-            return [f"g_seh_ebp = ebp; RECOMP_ITAIL({target}); return; /* indirect tail jmp */"]
+            return [self._forced_tail(
+                f"g_seh_ebp = ebp; RECOMP_ITAIL({target}); return;"
+                f" /* indirect tail jmp */")]
         return ["/* jmp: no target */"]
 
     def _lift_jcc(self, insn):
@@ -2136,6 +2855,9 @@ class Lifter:
                     return [f"if ({cond}) {{ g_seh_ebp = ebp; {name}(); return; }} /* {jcc} */"]
                 return [f"if ({cond}) goto loc_{target:08X}; /* {jcc} */"]
             return [f"/* {jcc} - no target */"]
+
+        if jcc in LOOP_JUMPS:
+            return self._lift_loop(insn)
 
         cond_info = COND_MAP.get(jcc)
         desc = cond_info[2] if cond_info else jcc
@@ -2162,6 +2884,33 @@ class Lifter:
 
     # ── SETcc / CMOVcc ──
 
+    def _lift_loop(self, insn, zf_expr=None):
+        """LOOP/LOOPE/LOOPNE: count ECX down, branch while it is non-zero.
+
+        These reached the generic jcc path, which has no idea ECX is the
+        counter. It dropped the decrement entirely and emitted the `_flags`
+        fallback -- a variable nothing assigns -- so the back edge compiled
+        as never taken and the loop body ran exactly once.
+
+        LOOPE/LOOPNE also test ZF. ``zf_expr`` carries that condition when a
+        tracked instruction set the flags; without one, keep the existing
+        never-taken fallback rather than inventing a termination condition.
+        """
+        jcc = insn.mnemonic
+        stmts = [f"ecx -= 1; /* {jcc}: count down */"]
+        if jcc == "loop":
+            cond, desc = "ecx != 0", "ecx is non-zero"
+        else:
+            cond = f"(ecx != 0) && ({zf_expr or '_flags'})"
+            desc = ("ecx is non-zero and zero flag set" if jcc == "loope"
+                    else "ecx is non-zero and zero flag clear")
+        target = insn.jump_target
+        if target is None:
+            stmts.append(f"/* {jcc}: {desc} - no target */")
+            return stmts
+        stmts.append(_emit_cond_goto(cond, jcc, desc, target, self))
+        return stmts
+
     def _lift_setcc(self, insn, ops, m):
         if len(ops) < 1:
             return [f"/* {m}: no operand */"]
@@ -2174,6 +2923,28 @@ class Lifter:
         return [f"if (_flags /* {m} */) {_fmt_operand_write(ops[0], src)}"]
 
     # ── String operations ──
+
+    def _lift_rep_movs(self, size, m):
+        """Keep forward non-overlap memcpy; MMIO/overlap/DF use volatile elements.
+
+        Validate the entire guest range in 64 bits before the host fast path,
+        including a range crossing into MMIO or wrapping the 32-bit address.
+        """
+        mem = f"MEM{size*8}"
+        return [
+            "{ uint64_t _n = (uint64_t)ecx * %du;" % size,
+            "if (!g_df && esi < 0xFD000000u && edi < 0xFD000000u"
+            " && (uint64_t)esi + _n <= 0xFD000000u"
+            " && (uint64_t)edi + _n <= 0xFD000000u) {",
+            "  uint8_t *_d = (uint8_t*)XBOX_PTR(edi), *_s = (uint8_t*)XBOX_PTR(esi);",
+            "  if ((uint64_t)edi + _n <= esi || (uint64_t)esi + _n <= edi) memcpy(_d, _s, (size_t)_n);",
+            f"  else {{ uint32_t _i; for (_i = 0; _i < ecx; _i++) {mem}(edi + _i*{size}u) = {mem}(esi + _i*{size}u); }}",
+            f"  esi += ecx * {size}u; edi += ecx * {size}u; }}",
+            f"else {{ uint32_t _i; int32_t _st = RECOMP_DF_STEP({size});",
+            f"  for (_i = 0; _i < ecx; _i++) {mem}(edi + _i*_st) = {mem}(esi + _i*_st);",
+            "  esi += ecx * _st; edi += ecx * _st; }",
+            f"ecx = 0; }} /* {m} */",
+        ]
 
     def _lift_rep_string(self, insn, m):
         # Every one of these steps by RECOMP_DF_STEP(size) rather than a
@@ -2198,34 +2969,11 @@ class Lifter:
         # memcpy is still used when the ranges provably do not overlap, which
         # is the overwhelming majority of calls.
         if "movsb" in m:
-            return ["if (!g_df) { uint8_t *_d = (uint8_t*)XBOX_PTR(edi),"
-                    " *_s = (uint8_t*)XBOX_PTR(esi); uint32_t _n = ecx;",
-                    "  if (_d + _n <= _s || _s + _n <= _d) memcpy(_d, _s, _n);",
-                    "  else { uint32_t _i; for (_i = 0; _i < _n; _i++) _d[_i] = _s[_i]; }",
-                    "  esi += ecx; edi += ecx; }",
-                    "else { uint32_t _i; for (_i = 0; _i < ecx; _i++)"
-                    " MEM8(edi - _i) = MEM8(esi - _i); esi -= ecx; edi -= ecx; }",
-                    "ecx = 0; /* rep movsb */"]
+            return self._lift_rep_movs(1, m)
         if "movsd" in m:
-            return ["if (!g_df) { uint8_t *_d = (uint8_t*)XBOX_PTR(edi),"
-                    " *_s = (uint8_t*)XBOX_PTR(esi); uint32_t _n = ecx * 4;",
-                    "  if (_d + _n <= _s || _s + _n <= _d) memcpy(_d, _s, _n);",
-                    "  else { uint32_t _i; for (_i = 0; _i < ecx; _i++)"
-                    " MEM32(edi + _i*4) = MEM32(esi + _i*4); }",
-                    "  esi += ecx * 4; edi += ecx * 4; }",
-                    "else { uint32_t _i; for (_i = 0; _i < ecx; _i++)"
-                    " MEM32(edi - _i*4) = MEM32(esi - _i*4); esi -= ecx * 4; edi -= ecx * 4; }",
-                    "ecx = 0; /* rep movsd */"]
+            return self._lift_rep_movs(4, m)
         if "movsw" in m:
-            return ["if (!g_df) { uint8_t *_d = (uint8_t*)XBOX_PTR(edi),"
-                    " *_s = (uint8_t*)XBOX_PTR(esi); uint32_t _n = ecx * 2;",
-                    "  if (_d + _n <= _s || _s + _n <= _d) memcpy(_d, _s, _n);",
-                    "  else { uint32_t _i; for (_i = 0; _i < ecx; _i++)"
-                    " MEM16(edi + _i*2) = MEM16(esi + _i*2); }",
-                    "  esi += ecx * 2; edi += ecx * 2; }",
-                    "else { uint32_t _i; for (_i = 0; _i < ecx; _i++)"
-                    " MEM16(edi - _i*2) = MEM16(esi - _i*2); esi -= ecx * 2; edi -= ecx * 2; }",
-                    "ecx = 0; /* rep movsw */"]
+            return self._lift_rep_movs(2, m)
         if "stosb" in m:
             return ["if (!g_df) { memset((void*)XBOX_PTR(edi), (uint8_t)eax, ecx); edi += ecx; }",
                     "else { uint32_t _i; for (_i = 0; _i < ecx; _i++)"
@@ -2246,27 +2994,9 @@ class Lifter:
                 "ecx = 0; /* rep stosw */"
             ]
         if "cmpsb" in m:
-            continue_on_equal = "repne" not in m and "repnz" not in m
-            stop_condition = "!_flags" if continue_on_equal else "_flags"
-            return [
-                "{ int32_t _st = RECOMP_DF_STEP(1);",
-                "while (ecx != 0) {",
-                "    _flags = (MEM8(esi) == MEM8(edi));",
-                "    esi += _st; edi += _st; ecx--;",
-                f"    if ({stop_condition}) break;",
-                f"}} }} /* {m} */",
-            ]
+            return self._rep_compare(m, "MEM8(esi)", "MEM8(edi)", 1, True)
         if "scasb" in m:
-            continue_on_equal = "repne" not in m and "repnz" not in m
-            stop_condition = "!_flags" if continue_on_equal else "_flags"
-            return [
-                "{ int32_t _st = RECOMP_DF_STEP(1);",
-                "while (ecx != 0) {",
-                "    _flags = (LO8(eax) == MEM8(edi));",
-                "    edi += _st; ecx--;",
-                f"    if ({stop_condition}) break;",
-                f"}} }} /* {m} */",
-            ]
+            return self._rep_compare(m, "LO8(eax)", "MEM8(edi)", 1, False)
         # The word and dword forms, same shape as the byte forms above. They
         # used to be a bare comment: nothing compared, esi/edi never advanced,
         # and the flags kept whatever the previous instruction left, so the jcc
@@ -2276,31 +3006,51 @@ class Lifter:
         if "cmpsw" in m or "cmpsd" in m:
             wide = "cmpsd" in m
             step, acc = (4, "MEM32") if wide else (2, "MEM16")
-            continue_on_equal = "repne" not in m and "repnz" not in m
-            stop_condition = "!_flags" if continue_on_equal else "_flags"
-            return [
-                f"{{ int32_t _st = RECOMP_DF_STEP({step});",
-                "while (ecx != 0) {",
-                f"    _flags = ({acc}(esi) == {acc}(edi));",
-                "    esi += _st; edi += _st; ecx--;",
-                f"    if ({stop_condition}) break;",
-                f"}} }} /* {m} */",
-            ]
+            return self._rep_compare(m, f"{acc}(esi)", f"{acc}(edi)", step,
+                                     True)
         if "scasw" in m or "scasd" in m:
             wide = "scasd" in m
             step, acc = (4, "MEM32") if wide else (2, "MEM16")
             value = "eax" if wide else "LO16(eax)"
-            continue_on_equal = "repne" not in m and "repnz" not in m
-            stop_condition = "!_flags" if continue_on_equal else "_flags"
-            return [
-                f"{{ int32_t _st = RECOMP_DF_STEP({step});",
-                "while (ecx != 0) {",
-                f"    _flags = ({value} == {acc}(edi));",
-                "    edi += _st; ecx--;",
-                f"    if ({stop_condition}) break;",
-                f"}} }} /* {m} */",
-            ]
+            return self._rep_compare(m, value, f"{acc}(edi)", step, False)
         return [f"/* {m} */"]
+
+    def _rep_compare(self, m, first, second, step, uses_esi):
+        """REPE/REPNE CMPS and SCAS: compare element by element.
+
+        `_flags` holds ZF of the last comparison, which is all je/jne/sete
+        ask. CF matters too wherever the function reads it: MSVC's memcmp
+        and basic_string::compare finish a mismatch with
+        `sbb eax, eax; sbb eax, -1`, which turns CF -- "the first differing
+        element of the first operand is below the second's" -- into -1 or
+        +1. Nothing wrote _cf here, so the sbb read whatever the last add or
+        xor left, and JSRF's string compare (sub_00179AE0, after
+        `xor eax, eax`: CF 0) answered +1 for every mismatch, "less" never.
+        The comparison is unsigned at the element's width, as the hardware
+        does it: cmps compares [esi] with [edi], scas the accumulator with
+        [edi].
+
+        A zero count leaves the flags as they were. _cf does that by itself
+        (only an iteration writes it); for _flags, lift_basic_block loads
+        the incoming ZF before this loop when a tracked setter provides it.
+        """
+        continue_on_equal = "repne" not in m and "repnz" not in m
+        stop_condition = "!_flags" if continue_on_equal else "_flags"
+        advance = ("esi += _st; edi += _st; ecx--;" if uses_esi
+                   else "edi += _st; ecx--;")
+        lines = [
+            f"{{ int32_t _st = RECOMP_DF_STEP({step});",
+            "while (ecx != 0) {",
+            f"    _flags = ({first} == {second});",
+        ]
+        if self.needs_cf:
+            lines.append(f"    _cf = ({first} < {second});")
+        lines += [
+            f"    {advance}",
+            f"    if ({stop_condition}) break;",
+            f"}} }} /* {m} */",
+        ]
+        return lines
 
     def _lift_string_op(self, insn, m):
         # Unprefixed forms; direction still comes from EFLAGS.DF.
@@ -2348,6 +3098,7 @@ class Lifter:
         "paddsb": "MMX_PADDSB", "paddsw": "MMX_PADDSW",
         "psubsb": "MMX_PSUBSB", "psubsw": "MMX_PSUBSW",
         "paddusb": "MMX_PADDUSB", "psubusb": "MMX_PSUBUSB",
+        "paddusw": "MMX_PADDUSW", "psubusw": "MMX_PSUBUSW",
         "pmullw": "MMX_PMULLW", "pmulhw": "MMX_PMULHW",
         "pmaddwd": "MMX_PMADDWD",
         "pavgb": "MMX_PAVGB", "pavgw": "MMX_PAVGW",
@@ -2403,10 +3154,10 @@ class Lifter:
         if m in self._MMX_BINARY and len(ops) >= 2:
             a, b = src(dst), src(ops[1])
             if a is None or b is None:
-                return [f"/* TODO: {m} {insn.op_str} */"]
+                return self._unimplemented(insn, m)
             if is_mm(dst):
                 return [f"{dst.reg} = {self._MMX_BINARY[m]}({a}, {b}); /* {m} */"]
-            return [f"/* TODO: {m} {insn.op_str} (dst not mm) */"]
+            return self._unimplemented(insn, m, " (dst not mm)")
 
         if m in self._MMX_SHIFT and len(ops) >= 2 and is_mm(dst):
             count = ops[1]
@@ -2417,8 +3168,27 @@ class Lifter:
             elif count.type == "mem":
                 cnt = f"MMX_MEM({_fmt_mem(count)}).q"
             else:
-                return [f"/* TODO: {m} {insn.op_str} */"]
+                return self._unimplemented(insn, m)
             return [f"{dst.reg} = {self._MMX_SHIFT[m]}({dst.reg}, {cnt}); /* {m} */"]
+
+        # cvtpi2ps: the other direction -- two dwords in, two singles out,
+        # into the LOW half of an xmm whose upper lanes are preserved. The
+        # destination is an xmm and the source an mm register or m64, so
+        # neither goes through the mm paths above and it fell through to a
+        # TODO comment: in Half-Life 2's loader that silently deleted every
+        # integer-to-float step of the XMV YUV-to-RGB converter, which then
+        # ran its whole float pipeline on stale registers and painted every
+        # frame of the intro solid red.
+        if m == "cvtpi2ps" and len(ops) >= 2 and dst.type == "reg" \
+                and dst.reg and dst.reg.startswith("xmm"):
+            s_op = ops[1]
+            if s_op.type == "reg" and s_op.reg and s_op.reg.startswith("mm"):
+                a = s_op.reg
+            elif s_op.type == "mem":
+                a = f"MMX_MEM({_fmt_mem(s_op)})"
+            else:
+                return self._unimplemented(insn, m)
+            return [f"{dst.reg} = XMM_FROM_PI({dst.reg}, {a}); /* cvtpi2ps */"]
 
         # cvtps2pi / cvttps2pi: two singles in, two dwords out. The source is
         # an xmm register or a 64-bit memory operand -- never an mm register,
@@ -2432,20 +3202,20 @@ class Lifter:
                 addr = _fmt_mem(s_op)
                 lo, hi = f"MEMF({addr})", f"MEMF(({addr}) + 4)"
             else:
-                return [f"/* TODO: {m} {insn.op_str} */"]
+                return self._unimplemented(insn, m)
             return [f"{dst.reg} = MMX_FROM_PS({lo}, {hi}, {trunc}); /* {m} */"]
 
         if m == "pshufw" and len(ops) >= 3 and is_mm(dst):
             a = src(ops[1])
             if a is None:
-                return [f"/* TODO: {m} {insn.op_str} */"]
+                return self._unimplemented(insn, m)
             return [f"{dst.reg} = MMX_PSHUFW({a}, {ops[2].imm & 0xFF}u); /* pshufw */"]
 
         if m == "pinsrw" and len(ops) >= 3 and is_mm(dst):
             v = (f"{ops[1].reg}" if ops[1].type == "reg"
                  else f"MEM16({_fmt_mem(ops[1])})" if ops[1].type == "mem" else None)
             if v is None:
-                return [f"/* TODO: {m} {insn.op_str} */"]
+                return self._unimplemented(insn, m)
             return [f"{dst.reg} = MMX_PINSRW({dst.reg}, {v}, "
                     f"{ops[2].imm & 0xFF}u); /* pinsrw */"]
 
@@ -2477,14 +3247,39 @@ class Lifter:
                              " /* movd */"])
                 if dst.type == "reg":
                     return [f"{dst.reg} = {ops[1].reg}.ud[0]; /* movd */"]
-            return [f"/* TODO: {m} {insn.op_str} */"]
+            return self._unimplemented(insn, m)
 
         # movntq: a non-temporal store. The hint is irrelevant; the store is not.
         if m == "movntq" and len(ops) >= 2 and dst.type == "mem" and is_mm(ops[1]):
             return [f"MMX_STORE({_fmt_mem(dst)}, {ops[1].reg}); /* movntq */"]
 
+        return self._unimplemented(insn, m)
+
+    def _unimplemented(self, insn, m, note=""):
+        """The one way out for an instruction this lifter cannot translate.
+
+        Until 19 Sep 2026 that way out was a bare `/* TODO: ... */` comment,
+        which the C compiler reads as nothing at all: the instruction vanished
+        and the guest carried on with whatever the registers held. Nothing at
+        runtime could say the site had even been REACHED, so an untranslated
+        instruction surfaced as a subsystem failure somewhere else -- the
+        Wreckless heap (`bsf`), the Half-Life 2 intro (`cvtpi2ps`) -- and cost
+        an afternoon each time. The translator's end-of-run tally lists these
+        sites but cannot say which are live: on JSRF 122 sites sit in the
+        image and the mnemonics (`bound`, `arpl`, `daa`, `hlt`...) are what a
+        linear sweep reads over data, so most are probably dead. Probably.
+
+        So the site now carries RECOMP_UNIMPL(text, va): the runtime logs the
+        guest address and register state the first times it is reached, and
+        under RECOMP_UNIMPL_TRAP stops there, at the cause, instead of
+        somewhere downstream. The comment stays so `grep TODO:` still finds
+        every site. The tally in self.unimplemented is recorded here and
+        nowhere else, so every emitted marker is also a counted one.
+        """
         self.unimplemented.setdefault(m, []).append(insn.address)
-        return [f"/* TODO: {m} {insn.op_str} */"]
+        text = f"{m} {insn.op_str}".strip()
+        return [f'RECOMP_UNIMPL("{text}", 0x{insn.address:08X}u);'
+                f" /* TODO: {text}{note} */"]
 
     def _lift_sse(self, insn, m, ops):
         """Translate SSE instructions to C float operations."""
@@ -2504,7 +3299,8 @@ class Lifter:
         # and write lane 0 explicitly rather than the whole register.
         def _sse_read(op):
             if _is_xmm(op):
-                return f"{op.reg}.f[0]"
+                lane = "d" if (m.endswith("sd") and m != "cvtss2sd") or m in ("cvtsd2si", "cvttsd2si", "cvtsd2ss") else "f"
+                return f"{op.reg}.{lane}[0]"
             elif op.type == "reg":
                 return op.reg
             elif op.type == "mem":
@@ -2517,7 +3313,8 @@ class Lifter:
 
         def _sse_write(op, val):
             if _is_xmm(op):
-                return f"{op.reg}.f[0] = {val};"
+                lane = "d" if m.endswith("sd") else "f"
+                return f"{op.reg}.{lane}[0] = {val};"
             elif op.type == "reg":
                 return f"{op.reg} = {val};"
             elif op.type == "mem":
@@ -2638,7 +3435,8 @@ class Lifter:
                 return [_sse_write(ops[0], f"{_sse_read(ops[0])} / {_sse_read(ops[1])}") + f" /* {m} */"]
         if m in ("sqrtss", "sqrtsd"):
             if nops >= 2:
-                return [_sse_write(ops[0], f"sqrtf({_sse_read(ops[1])})") + f" /* {m} */"]
+                fn = "sqrt" if m == "sqrtsd" else "sqrtf"
+                return [_sse_write(ops[0], f"{fn}({_sse_read(ops[1])})") + f" /* {m} */"]
         if m in ("minss", "minsd"):
             if nops >= 2:
                 a, b = _sse_read(ops[0]), _sse_read(ops[1])
@@ -2664,19 +3462,29 @@ class Lifter:
             if nops >= 2:
                 src = _fmt_operand_read(ops[1])
                 return [_sse_write(ops[0], f"(float)(int32_t){src}") + " /* cvtsi2ss */"]
-        if m in ("cvtss2si", "cvttss2si", "cvtsd2si", "cvttsd2si"):
-            # cvtss2si/cvtsd2si ROUND (MXCSR: round-to-nearest-even); only the
-            # cvtt- forms truncate. Both used to be a plain (int32_t) cast,
-            # which truncates -- so every rounding conversion truncated
-            # (JSRF's FloatToInt at 0x14C690, 134 call sites) -- and is
-            # undefined for NaN/out-of-range, where x86 gives 0x80000000.
+        # CVTSS2SI/CVTSD2SI round by MXCSR.RC, the CVTT forms truncate; a
+        # C cast truncated both, and is undefined out of range.
+        if m in ("cvtss2si", "cvttss2si"):
             if nops >= 2:
-                helper = "recomp_cvtt2si" if m.startswith("cvtt") else "recomp_cvt2si"
-                return [_fmt_operand_write(ops[0], f"{helper}({_sse_read(ops[1])})") + f" /* {m} */"]
+                trunc = 1 if m == "cvttss2si" else 0
+                return [_fmt_operand_write(
+                    ops[0], f"(uint32_t)recomp_cvt_si32((double){_sse_read(ops[1])}, g_mxcsr, {trunc})")
+                        + f" /* {m} */"]
         if m == "cvtsi2sd":
             if nops >= 2:
                 src = _fmt_operand_read(ops[1])
                 return [_sse_write(ops[0], f"(double)(int32_t){src}") + " /* cvtsi2sd */"]
+        if m in ("cvtsd2si", "cvttsd2si"):
+            if nops >= 2:
+                trunc = 1 if m == "cvttsd2si" else 0
+                # The source is a double: lane 0 of an xmm register is .d[0].
+                src = f"{ops[1].reg}.d[0]" if _is_xmm(ops[1]) else _sse_read(ops[1])
+                return [_fmt_operand_write(
+                    ops[0], f"(uint32_t)recomp_cvt_si32({src}, g_mxcsr, {trunc})")
+                        + f" /* {m} */"]
+        if m in ("cvtps2dq", "cvttps2dq") and nops >= 2:
+            src = _packed_read(ops[1])
+            return [_packed_write(ops[0], f"XMM_CVT_PS2DQ({src}, {int(m == 'cvttps2dq')})") + f" /* {m} */"]
         if m == "cvtss2sd":
             if nops >= 2:
                 return [_sse_write(ops[0], f"(double){_sse_read(ops[1])}") + " /* cvtss2sd */"]
@@ -2692,7 +3500,11 @@ class Lifter:
                 # frequently a write to a register the operand address was
                 # built from -- so the operands have to be read now, while
                 # they still mean what the compare meant.
-                return [f"_fca = {_sse_read(ops[0])}; _fcb = {_sse_read(ops[1])};"
+                def compare_read(op):
+                    if m.endswith("sd") and _is_xmm(op):
+                        return f"{op.reg}.d[0]"
+                    return _sse_read(op)
+                return [f"_fca = {compare_read(ops[0])}; _fcb = {compare_read(ops[1])};"
                         f" /* {m} */"]
 
         # ── Bitwise ──
@@ -2725,10 +3537,10 @@ class Lifter:
         # ── Reciprocal / rsqrt ──
         if m == "rsqrtss":
             if nops >= 2:
-                return [_sse_write(ops[0], f"1.0f / sqrtf({_sse_read(ops[1])})") + " /* rsqrtss */"]
+                return [_sse_write(ops[0], f"recomp_rsqrtss({_sse_read(ops[1])})") + " /* rsqrtss */"]
         if m == "rcpss":
             if nops >= 2:
-                return [_sse_write(ops[0], f"1.0f / {_sse_read(ops[1])}") + " /* rcpss */"]
+                return [_sse_write(ops[0], f"recomp_rcpss({_sse_read(ops[1])})") + " /* rcpss */"]
 
         # ── Packed sqrt / reciprocal / rsqrt ──
         # The SSE model here tracks only the low lane as a single float, so
@@ -2740,26 +3552,46 @@ class Lifter:
         # rsqrtps/sqrtps are the workhorse of 3D vector normalize; some titles
         # use them heavily, which is why this surfaced on those binaries.
         if m == "sqrtps":
-            if nops >= 2:
-                return [_sse_write(ops[0], f"sqrtf({_sse_read(ops[1])})")
-                        + " /* sqrtps (low lane; 4-lane model TODO) */"]
-        if m == "rsqrtps":
-            if nops >= 2:
-                return [_sse_write(ops[0], f"1.0f / sqrtf({_sse_read(ops[1])})")
-                        + " /* rsqrtps (low lane; 4-lane model TODO) */"]
-        if m == "rcpps":
-            if nops >= 2:
-                return [_sse_write(ops[0], f"1.0f / {_sse_read(ops[1])}")
-                        + " /* rcpps (low lane; 4-lane model TODO) */"]
-
-        # ── Packed comparison ──
-        if m in ("cmpneqps", "cmpeqps", "cmpltps", "cmpleps"):
-            helper = {"cmpeqps": "XMM_CMP_EQ", "cmpltps": "XMM_CMP_LT",
-                      "cmpleps": "XMM_CMP_LE", "cmpneqps": "XMM_CMP_NEQ"}[m]
-            lifted = _packed_binary(helper)
+            lifted = _packed_binary("XMM_SQRT")
             if lifted is not None:
                 return lifted
             return [f"/* {m} {insn.op_str} */"]
+        if m == "rsqrtps":
+            lifted = _packed_binary("XMM_RSQRT")
+            if lifted is not None:
+                return lifted
+            return [f"/* {m} {insn.op_str} */"]
+        if m == "rcpps":
+            lifted = _packed_binary("XMM_RCP")
+            if lifted is not None:
+                return lifted
+            return [f"/* {m} {insn.op_str} */"]
+
+        # ── Comparison ──
+        # Every predicate, packed and scalar, named or by immediate. Only
+        # four packed forms were lifted; the rest -- cmpltss above all --
+        # fell to RECOMP_UNIMPL and left the destination as it was. That
+        # is not harmless: RenderWare's frustum build normalises each side
+        # plane as `cmpltss mask, len2; rsqrtss; andps mask`, so with the
+        # mask stuck at zero every side plane came out (0,0,0,0) and
+        # culled the whole world out of Burnout 3's race view.
+        if m in _SSE_CMP_NAMED or m in ("cmpps", "cmpss"):
+            if m in _SSE_CMP_NAMED:
+                pred, width = _SSE_CMP_NAMED[m]
+            else:
+                if nops < 3 or ops[2].type != "imm":
+                    return [f"/* {m} {insn.op_str} - no predicate */"]
+                pred, width = ops[2].imm & 7, m[-2:]
+            if nops < 2 or not _is_xmm(ops[0]):
+                return [f"/* {m} {insn.op_str} */"]
+            if width == "ps":
+                b = _packed_read(ops[1])
+                if b is None:
+                    return [f"/* {m} {insn.op_str} */"]
+                return [_packed_write(ops[0], f"XMM_CMP_PRED({ops[0].reg}, {b}, {pred})")
+                        + f" /* {m} */"]
+            return [f"{ops[0].reg}.u[0] = recomp_cmp_pred({ops[0].reg}.f[0], "
+                    f"{_sse_read(ops[1])}, {pred}) ? 0xFFFFFFFFu : 0u; /* {m} */"]
 
         # ── Move mask ──
         # This feeds branches, so a hardcoded 0 silently picked one side.
@@ -2847,6 +3679,12 @@ class Lifter:
                         return [f"fp_push(MEMF({_fmt_mem(ops[0])})); /* fld float */"]
                     elif ops[0].mem_size == 8:
                         return [f"fp_push(MEMD({_fmt_mem(ops[0])})); /* fld double */"]
+                    elif ops[0].mem_size == 10:
+                        # The CRT's libm loads its constants this way. Read as
+                        # a float, 1.0L came back as 0.0.
+                        a = _fmt_mem(ops[0])
+                        return [f"fp_push(recomp_f80_load(((uint64_t)MEM32(({a}) + 4) << 32)"
+                                f" | MEM32({a}), MEM16(({a}) + 8))); /* fld tbyte */"]
                     return [f"fp_push(MEMF({_fmt_mem(ops[0])})); /* fld */"]
                 if ops[0].type == "reg":
                     # fld st(i) pushes a COPY of st(i). Was a no-op comment,
@@ -2874,6 +3712,13 @@ class Lifter:
                     return [f"MEMWF({_fmt_mem(ops[0])}, (float)fp_top());{do_pop} /* {m} */"]
                 elif ops[0].mem_size == 8:
                     return [f"MEMWD({_fmt_mem(ops[0])}, fp_top());{do_pop} /* {m} */"]
+                elif ops[0].mem_size == 10:
+                    # Only fstp has a tbyte form. This was a comment, so the
+                    # spill stored nothing and the stack kept a slot.
+                    a = _fmt_mem(ops[0])
+                    return [f"{{ uint64_t _m; uint16_t _se = recomp_f80_store(fp_top(), &_m);"
+                            f" MEMW32({a}, (uint32_t)_m); MEMW32(({a}) + 4, (uint32_t)(_m >> 32));"
+                            f" MEMW16(({a}) + 8, _se); }}{do_pop} /* {m} tbyte */"]
             # fst/fstp st(i): copy st0 to st(i); fstp then pops. This used to be
             # a bare comment -- a no-op -- which LEAKS the FPU stack. `fstp st(0)`
             # is the common idiom for "pop the value fptan/fsincos just pushed";
@@ -2899,19 +3744,19 @@ class Lifter:
                 return [f"fp_push((double){smem}({_fmt_mem(ops[0])})); /* fild */"]
             return [f"/* fild {insn.op_str} */"]
 
-        if m in ("fist", "fistp"):
+        if m in ("fist", "fistp", "fisttp"):
             if len(ops) >= 1 and ops[0].type == "mem":
                 size = ops[0].mem_size
                 mem_acc = _smem_accessor(size)
                 int_type = {2: "int16_t", 4: "int32_t", 8: "int64_t"}.get(
                     size, "int32_t")
-                pop = " fp_pop();" if m == "fistp" else ""
-                cvt = {2: "recomp_fist16", 4: "recomp_fist32", 8: "recomp_fist64"}.get(size, "recomp_fist32")
+                pop = " fp_pop();" if m != "fist" else ""
+                control = "0x0C00u" if m == "fisttp" else "g_fp_control_word"
                 wacc = {2: "MEMW16", 4: "MEMW32"}.get(size)
                 if wacc:
-                    return [f"{wacc}({_fmt_mem(ops[0])}, ({int_type}){cvt}(fp_top()));{pop} /* {m} */"]
+                    return [f"{wacc}({_fmt_mem(ops[0])}, ({int_type})recomp_fist(fp_top(), {control}, {size * 8}));{pop} /* {m} */"]
                 return [f"{mem_acc}({_fmt_mem(ops[0])}) = "
-                        f"({int_type}){cvt}(fp_top());{pop} /* {m} */"]
+                        f"({int_type})recomp_fist(fp_top(), {control}, {size * 8});{pop} /* {m} */"]
             return [f"/* {m} {insn.op_str} */"]
 
         if m in ("fadd", "faddp", "fsub", "fsubp", "fsubr", "fsubrp",
@@ -2938,8 +3783,8 @@ class Lifter:
 
             def _combine(dst, src):
                 if cop in ("+", "*") or not reverse:
-                    return f"{dst} = {dst} {cop} {src};"
-                return f"{dst} = {src} {cop} {dst};"   # reversed sub/div
+                    return f"{dst} = RECOMP_FP_PC({dst} {cop} {src});"
+                return f"{dst} = RECOMP_FP_PC({src} {cop} {dst});"   # reversed sub/div
 
             # Memory operand: dst is st0, no pop (memory forms never pop).
             if ops and ops[0].type == "mem":
@@ -2986,7 +3831,7 @@ class Lifter:
         if m == "fabs":
             return [f"fp_top() = fabs(fp_top()); /* fabs */"]
         if m == "fsqrt":
-            return [f"fp_top() = sqrt(fp_top()); /* fsqrt */"]
+            return [f"fp_top() = RECOMP_FP_PC(sqrt(fp_top())); /* fsqrt */"]
         # x87 transcendentals. None of these were implemented, so every one fell
         # through to the unknown-op path and left the FP stack untouched --
         # silently, because an unimplemented FPU op looks exactly like an
@@ -3000,20 +3845,24 @@ class Lifter:
         #
         # These are exact-enough mappings onto libm. The 80-bit intermediates of
         # real x87 are not reproduced -- fp_stack is double -- which is the same
-        # approximation every other op here already makes.
+        # approximation every other op here already makes. fsin, fcos, fsincos
+        # and fptan go through the recomp_x87_* helpers, which reduce with the
+        # x87's 66-bit pi as the hardware does, inside the 2^63 range check.
         if m == "fsin":
-            return [f"fp_top() = sin(fp_top()); /* fsin */"]
+            return ["if (recomp_fp_trig_in_range(fp_top())) fp_top() = recomp_x87_sin(fp_top()); /* fsin */"]
         if m == "fcos":
-            return [f"fp_top() = cos(fp_top()); /* fcos */"]
+            return ["if (recomp_fp_trig_in_range(fp_top())) fp_top() = recomp_x87_cos(fp_top()); /* fcos */"]
         if m == "fsincos":
             # Replaces st0 with sin, then pushes cos. Order matters: the push
             # must see the sine already stored.
-            return [f"{{ double _a = fp_top(); fp_top() = sin(_a);"
-                    f" fp_push(cos(_a)); }} /* fsincos */"]
+            return ["if (recomp_fp_trig_in_range(fp_top())) { double _c;"
+                    " fp_top() = recomp_x87_sincos(fp_top(), &_c); fp_push(_c); } /* fsincos */"]
         if m == "fptan":
             # st0 = tan(st0), then push 1.0. The constant push is not decoration:
             # callers use it as the denominator of a subsequent fdiv.
-            return [f"{{ fp_top() = tan(fp_top()); fp_push(1.0); }} /* fptan */"]
+            # An infinite or NaN operand pushes a NaN, not 1.0.
+            return ["if (recomp_fp_trig_in_range(fp_top())) { double _a = fp_top();"
+                    " fp_top() = recomp_x87_tan(_a); fp_push(isfinite(_a) ? 1.0 : _a - _a); } /* fptan */"]
         if m == "fpatan":
             # st1 = atan2(st1, st0), pop. Argument order is st1 over st0.
             return [f"{{ fp_st1() = atan2(fp_st1(), fp_top()); fp_pop(); }}"
@@ -3023,27 +3872,25 @@ class Lifter:
             return [f"{{ fp_st1() = fp_st1() * log2(fp_top()); fp_pop(); }}"
                     f" /* fyl2x */"]
         if m == "fyl2xp1":
-            return [f"{{ fp_st1() = fp_st1() * log2(fp_top() + 1.0); fp_pop(); }}"
+            return [f"{{ fp_st1() = fp_st1() * (log1p(fp_top()) / 0.69314718055994530942); fp_pop(); }}"
                     f" /* fyl2xp1 */"]
         if m == "f2xm1":
-            return [f"fp_top() = exp2(fp_top()) - 1.0; /* f2xm1 */"]
+            return ["fp_top() = expm1(fp_top() * 0.69314718055994530942); /* f2xm1 */"]
         if m in ("fprem", "fprem1"):
-            # Both leave the remainder in st0 and clear C2 to say "complete".
-            # fprem truncates toward zero, fprem1 rounds to nearest (IEEE), which
-            # is the difference between fmod and remainder.
-            fn = "fmod" if m == "fprem" else "remainder"
-            return [f"fp_top() = {fn}(fp_top(), fp_st1()); /* {m} */"]
+            return [f"fp_top() = recomp_fprem(fp_top(), fp_st1(), {int(m == 'fprem1')}); /* {m} */"]
         if m == "fscale":
-            return [f"fp_top() = ldexp(fp_top(), (int)fp_st1()); /* fscale */"]
+            return ["fp_top() = recomp_fscale(fp_top(), fp_st1()); /* fscale */"]
         if m in ("fnclex", "fclex"):
             return ["/* fnclex: clear x87 exception flags (nothing tracked) */"]
         if m == "frndint":
-            # Round the way the x87 control word says, not the way the host
-            # happens to be set. The CRT's floor() and ceil() are fldcw to
-            # round-down/round-up followed by frndint; with rint() both came
-            # back rounded to nearest, so floor(110.2) was right and
-            # ceil(110.2) was 110.
-            return [f"fp_top() = recomp_fp_round_cw(fp_top()); /* frndint: rounds as the control word says */"]
+            # Rounds under the guest's x87 RC bits, like FIST. rint() used the
+            # host's rounding mode, which the guest's fldcw never reaches, so
+            # MSVC's floor() and ceil() -- fldcw RC=down/up around a frndint --
+            # both rounded to nearest: floor(2.7) returned 3. Code that indexes
+            # a table with floor() then reads one entry past it (in one title,
+            # a skeletal animation drew a frame of garbage bones per loop).
+            return [f"fp_top() = recomp_frndint(fp_top(), g_fp_control_word);"
+                    f" /* frndint */"]
         if m == "fldpi":
             return [f"fp_push(3.14159265358979323846); /* fldpi */"]
         if m == "fldl2e":
@@ -3055,8 +3902,10 @@ class Lifter:
         if m == "fldln2":
             return [f"fp_push(0.69314718055994530942); /* fldln2 */"]
         if m == "ftst":
-            return [f"g_fp_cmp = (fp_top() < 0.0) ? -1 : "
-                    f"(fp_top() > 0.0) ? 1 : 0; /* ftst */"]
+            return ["g_fp_cmp = RECOMP_FCMP(fp_top(), 0.0); "
+                    "g_fp_cc = RECOMP_FCMP_CC(g_fp_cmp); /* ftst */"]
+        if m == "fxam":
+            return ["g_fp_cc = recomp_fxam(fp_top()); /* fxam */"]
         if m == "fxch":
             # fxch st(i) swaps st0 with st(i); the bare form is st(1). Was
             # hardcoded to st1, so fxch st(2)/st(3)/st(4) (86/7/1 sites in Halo)
@@ -3072,13 +3921,16 @@ class Lifter:
             dst = self._st_expr(i)
             return [f"{{ double _t = fp_top(); fp_top() = {dst}; {dst} = _t; }}"
                     f" /* fxch {insn.op_str} */"]
-        if m in ("fcom", "fcomp", "fcompp", "fucom", "fucomp", "fucompp"):
+        if m in ("fcom", "fcomp", "fcompp", "fucom", "fucomp", "fucompp",
+                 "ficom", "ficomp"):
             # Compare st0 against the operand, not always st1. `fcomp [mem]`
             # compares st0 with the memory value; only the no-operand form
             # compares st0 with st1. Getting this wrong made every float compare
             # against a constant read a garbage st1 -- Halo's camera FOV and
             # world_to_view checks both fed on it.
             rhs = self._fcom_rhs(ops)
+            if m.startswith("fi") and ops and ops[0].type == "mem":
+                rhs = f"(double){_smem_accessor(ops[0].mem_size)}({_fmt_mem(ops[0])})"
             # Pop count is in the mnemonic and was being ignored: fcom/fucom pop
             # nothing, fcomp/fucomp pop once, fcompp/fucompp pop twice. Emitting
             # zero pops for every form leaked a stack slot on each fcomp -- and
@@ -3090,6 +3942,7 @@ class Lifter:
             npop = 2 if m.endswith("pp") else (1 if m.endswith("p") else 0)
             pops = " fp_pop();" * npop
             return [f"g_fp_cmp = RECOMP_FCMP(fp_top(), {rhs});"
+                    " g_fp_cc = RECOMP_FCMP_CC(g_fp_cmp);"
                     f"{pops} /* {m} {insn.op_str} */"]
         if m in ("fcompi", "fcomip", "fucomi", "fucompi", "fucomip", "fcomi"):
             # These set EFLAGS directly (CF, ZF, PF) from FPU comparison
@@ -3097,8 +3950,11 @@ class Lifter:
             pops = m.endswith("pi") or m.endswith("ip")
             pop_code = " fp_pop();" if pops else ""
             rhs = self._fcom_rhs(ops)
-            return [f"g_fp_cmp = RECOMP_FCMP(fp_top(), {rhs});"
-                    f"{pop_code} /* {m} */"]
+            out = [f"_fa = RECOMP_FCMP_CC(RECOMP_FCMP(fp_top(), {rhs})) >> 8;"
+                   f"{pop_code} /* {m} */"]
+            if self.needs_cf:
+                out.append("_cf = _fa & 1u;")
+            return out
         if m == "fnstsw":
             # `fnstsw ax` after an FPU compare is half of the pre-SSE float
             # branch idiom `fcomp; fnstsw ax; test ah, mask; j(p/np/z/nz)`.
@@ -3116,10 +3972,7 @@ class Lifter:
             # `test ah, 0x44; jp` -- the standard isnan idiom -- reads exactly
             # those two bits. Reporting equal for a NaN compare sends every
             # float classification in a title down the wrong branch.
-            status = ("(uint16_t)(((g_fp_top & 7u) << 11) |"
-                      " (g_fp_cmp == 2 ? 0x4500u :"
-                      " g_fp_cmp < 0 ? 0x0100u :"
-                      " g_fp_cmp > 0 ? 0x0000u : 0x4000u))")
+            status = "(uint16_t)(((g_fp_top & 7u) << 11) | g_fp_cc)"
             if insn.op_str.strip() in ("ax", "eax"):
                 # `fnstsw ax` writes the whole of AX, not just AH.
                 return [f"eax = (eax & 0xFFFF0000u) | (uint32_t){status};"
@@ -3155,7 +4008,70 @@ class Lifter:
         if m == "fld1":
             return [f"fp_push(1.0); /* fld1 */"]
 
+        if m in _FCMOV_JCC:
+            # Reached only when lift_basic_block had no tracked flag setter
+            # to build the condition from; `_flags` is what every other
+            # untracked flag reader falls back to (see _lift_cmovcc).
+            return [_fcmov_statement(insn, f"_flags /* {m} */")]
+
         return [f"/* FPU: {m} {insn.op_str} */"]
+
+
+# FCMOVcc moves st(i) into st(0) when an EFLAGS condition holds; each one
+# reads the same flags as the jcc named here (Intel SDM, FCMOVcc). They were
+# left as comments, so the move never happened. MSVC builds float min/max
+# from `fld a; fld b; fcom st(1); fnstsw ax; test ah, 1; fcmove st(0),
+# st(1); fxch st(1); fstp st(0)`: without the move such a min(x, 1.0)
+# always returned 1.0 and max(x, 0.0) always 0.0, which in one title reset
+# a screen fade to zero every frame and held the boot on its first logo.
+_FCMOV_JCC = {
+    "fcmovb": "jb", "fcmove": "je", "fcmovbe": "jbe", "fcmovu": "jp",
+    "fcmovnb": "jae", "fcmovne": "jne", "fcmovnbe": "ja", "fcmovnu": "jnp",
+}
+
+
+def _fcmov_statement(insn, cond_expr):
+    """`if (cond) st(0) = st(i);` for an FCMOVcc instruction. Capstone lists
+    both operands, (st(0), st(i)); the source is the last one."""
+    ops = insn.operands
+    i = (Lifter._st_index(ops[-1].reg)
+         if (ops and ops[-1].type == "reg" and ops[-1].reg) else 1)
+    return (f"if ({cond_expr}) fp_top() = {Lifter._st_expr(i)};"
+            f" /* {insn.mnemonic} {insn.op_str} */")
+
+
+def _is_rep_compare(insn):
+    """REPE/REPNE CMPS or SCAS -- the prefixed forms that write `_flags`."""
+    if not insn.mnemonic.startswith("rep"):
+        return False
+    text = f"{insn.mnemonic} {getattr(insn, 'op_str', '') or ''}"
+    return any(f in text for f in ("cmpsb", "cmpsw", "cmpsd",
+                                   "scasb", "scasw", "scasd"))
+
+
+def publish_flags(state, note="flags for pushfd"):
+    """Write the tracked setter's CF/PF/ZF/SF/OF into g_eflags.
+
+    Each flag comes from the condition a jcc on it would use (_make_condition),
+    so the image and the branches agree, and a flag with no rule keeps the bit
+    g_eflags held. Only pushfd calls it: the flags stay lazy everywhere else,
+    and code that never pushes them pays nothing. A boundary that has to carry
+    the flags too (a call, a ret) can call it with its own note.
+    """
+    if not state or state[0] == "eflags":
+        return []
+    mask = 0
+    bits = []
+    for condition, bit in (("jb", 1), ("jp", 4), ("je", 0x40),
+                           ("js", 0x80), ("jo", 0x800)):
+        value = _make_condition(condition, *state)
+        if value:
+            mask |= bit
+            bits.append(f"(({value[0]}) ? 0x{bit:X}u : 0u)")
+    if not bits:
+        return []
+    return [f"g_eflags = (g_eflags & ~0x{mask:X}u) | "
+            + " | ".join(bits) + f"; /* {note} */"]
 
 
 def lift_basic_block(lifter, bb, flag_state=None):
@@ -3183,6 +4099,9 @@ def lift_basic_block(lifter, bb, flag_state=None):
     else:
         last_flag_setter = None
         last_flag_ops = []
+    # What stc/clc/cmc replaced: after popfd the other flags already sit in
+    # g_eflags, so a pushfd there has nothing missing to flag.
+    cf_only_over = None
 
     while i < len(insns):
         curr = insns[i]
@@ -3196,12 +4115,14 @@ def lift_basic_block(lifter, bb, flag_state=None):
             # for any later jcc, and that one reads the snapshot. Emit the
             # snapshot here too or those temps are stale - which silently sends
             # every reusing branch the wrong way.
+            # Snapshot and record the same normalised form, or a later jcc
+            # reads `cmp X, 0` state out of `test X, X` temps.
+            last_flag_setter, last_flag_ops = normalise_zero_test(
+                flag_insn.mnemonic, list(flag_insn.operands))
             if flag_insn.mnemonic in ("cmp", "test") and len(flag_insn.operands) >= 2:
                 stmts.extend(lifter._snapshot_flags(
-                    flag_insn, flag_insn.operands, flag_insn.mnemonic))
+                    flag_insn, last_flag_ops, last_flag_setter))
             stmts.append(stmt)
-            last_flag_setter = flag_insn.mnemonic
-            last_flag_ops = list(flag_insn.operands)
             i += consumed
             continue
 
@@ -3211,6 +4132,76 @@ def lift_basic_block(lifter, bb, flag_state=None):
             stmts.extend(results)
             i += 1
             continue
+
+        # LOOP counts ECX down rather than reading a flag. LOOPE/LOOPNE also
+        # test ZF, which only has an expression while a tracked instruction
+        # still owns the flags.
+        if curr.mnemonic in LOOP_JUMPS:
+            zf_expr = None
+            if curr.mnemonic != "loop" and last_flag_setter:
+                probe = _make_condition(
+                    "je" if curr.mnemonic == "loope" else "jne",
+                    last_flag_setter, last_flag_ops)
+                if probe:
+                    zf_expr = probe[0]
+            stmts.extend(lifter._lift_loop(curr, zf_expr))
+            i += 1
+            continue
+
+        # LAHF copies SF ZF AF PF CF into AH. It used to lift to a comment,
+        # leaving AH as whatever EAX held, so every `ucomiss; lahf; test ah,
+        # 0x44; jnp` -- MSVC's "is this float zero" -- answered at random.
+        # Burnout 3 guards a divide with exactly that; the guard fell
+        # through on 0, the 0/0 became the player's position, and the race
+        # camera, every matrix and the stunt-distance readout went NaN.
+        # The flags come from the tracked setter, through the same
+        # conditions the jcc forms use. AF is not modelled and reads 0.
+        if curr.mnemonic == "lahf" and last_flag_setter:
+            bits = []
+            for jcc, bit in (("js", 0x80), ("je", 0x40), ("jp", 0x04),
+                             ("jb", 0x01)):
+                probe = _make_condition(jcc, last_flag_setter, last_flag_ops)
+                if probe:
+                    bits.append(f"(({probe[0]}) ? 0x{bit:02X}u : 0u)")
+            stmts.append("eax = (eax & 0xFFFF00FFu) | ((uint32_t)("
+                         + " | ".join(bits + ["0x02u"])
+                         + f") << 8); /* lahf ({last_flag_setter}) */")
+            i += 1
+            continue
+
+        # PUSHFD: the tracked flags go into g_eflags first (publish_flags),
+        # and the pushfd arm of lift_instruction pushes that image. This is
+        # the only place the lazy flags are materialised, so the cost stays
+        # at the pushfd sites. AF is not modelled. A
+        # CF/PF/ZF/SF/OF the setter has no rule for keeps the value g_eflags
+        # last held, and the site carries a RECOMP_UNIMPL naming those flags,
+        # so the gap is visible at run time and in the translator's tally.
+        if curr.mnemonic == "pushfd" and last_flag_setter:
+            state = (last_flag_setter, last_flag_ops)
+            stmts.extend(publish_flags(state))
+            in_eflags = last_flag_setter == "eflags" or (
+                last_flag_setter == "__cf_only" and cf_only_over == "eflags")
+            missing = [name for jcc, name in (("jb", "CF"), ("jp", "PF"),
+                                              ("je", "ZF"), ("js", "SF"),
+                                              ("jo", "OF"))
+                       if not in_eflags and not _make_condition(jcc, *state)]
+            if missing:
+                source = ("stc/clc/cmc" if last_flag_setter == "__cf_only"
+                          else last_flag_setter)
+                lifter.unimplemented.setdefault("pushfd (flags)", []).append(
+                    curr.address)
+                stmts.append(f'RECOMP_UNIMPL("pushfd: {",".join(missing)} not'
+                             f' rebuilt after {source}, kept from g_eflags",'
+                             f' 0x{curr.address:08X}u);')
+        elif curr.mnemonic == "pushfd":
+            # No tracked setter (function entry, after a call, a join whose
+            # paths disagree, an instruction that leaves the flags undefined):
+            # the pushed image is g_eflags as last written. A comment, not
+            # RECOMP_UNIMPL: the EFLAGS.ID/CPUID probe opens with exactly this
+            # pushfd and only wants bit 21, so a runtime marker would trip
+            # RECOMP_UNIMPL_TRAP on every title that probes the CPU.
+            stmts.append("/* pushfd: no tracked flag setter, pushes g_eflags"
+                         " as last written */")
 
         # Check if this instruction uses flags (jcc, setcc, cmovcc)
         if curr.is_cond_jump and last_flag_setter:
@@ -3227,7 +4218,7 @@ def lift_basic_block(lifter, bb, flag_state=None):
 
         if (curr.mnemonic in ("sete", "setne", "setb", "setae", "setbe",
                               "seta", "setl", "setge", "setle", "setg",
-                              "sets", "setns")
+                              "sets", "setns", "setp", "setnp", "setpe", "setpo", "seto", "setno")
                 and last_flag_setter and len(curr.operands) >= 1):
             cond = _make_setcc_value(
                 curr.mnemonic, last_flag_setter, last_flag_ops)
@@ -3241,7 +4232,8 @@ def lift_basic_block(lifter, bb, flag_state=None):
 
         if (curr.mnemonic in ("cmove", "cmovne", "cmovb", "cmovae",
                               "cmovbe", "cmova", "cmovl", "cmovge",
-                              "cmovle", "cmovg", "cmovs", "cmovns")
+                              "cmovle", "cmovg", "cmovs", "cmovns",
+                              "cmovp", "cmovnp", "cmovpe", "cmovpo", "cmovo", "cmovno")
                 and last_flag_setter and len(curr.operands) >= 2):
             cond = _make_cmovcc_cond(
                 curr.mnemonic, last_flag_setter, last_flag_ops)
@@ -3254,19 +4246,16 @@ def lift_basic_block(lifter, bb, flag_state=None):
                 i += 1
                 continue
 
-        # fcmovcc st(0), st(i): conditional x87 move on the integer flags.
-        # MSVC's fmin/fmax intrinsics are "fcom; fnstsw ax; test ah,1;
-        # fcmovne" -- as a bare comment they returned the wrong operand.
-        if curr.mnemonic.startswith("fcmov") and last_flag_setter:
-            fcc = curr.mnemonic[5:]
-            jcc = {"e": "je", "ne": "jne", "b": "jb", "nb": "jae",
-                   "be": "jbe", "nbe": "ja", "u": "jp", "nu": "jnp"}.get(fcc)
-            cond = _make_condition(jcc, last_flag_setter, last_flag_ops) if jcc else None
+        if curr.mnemonic == "sahf":
+            overflow = (_make_condition("jo", last_flag_setter, last_flag_ops)
+                        if last_flag_setter else None)
+            stmts.append(f"_fb = ({overflow[0] if overflow else '0'}) != 0; /* SAHF preserves OF */")
+
+        if curr.mnemonic in _FCMOV_JCC and last_flag_setter:
+            cond = _make_condition(_FCMOV_JCC[curr.mnemonic],
+                                   last_flag_setter, last_flag_ops)
             if cond:
-                mm = re.search(r"st\(?(\d+)\)?\s*$", curr.op_str)
-                idx = int(mm.group(1)) if mm else 1
-                stmts.append(f"if ({cond[0]}) fp_top() = fp_st({idx});"
-                             f" /* {curr.mnemonic} {curr.op_str} */")
+                stmts.append(_fcmov_statement(curr, cond[0]))
                 i += 1
                 continue
 
@@ -3276,8 +4265,10 @@ def lift_basic_block(lifter, bb, flag_state=None):
         if curr.mnemonic == "neg":
             j = i + 1
             while (j < len(insns)
+                    # popfd is no longer in _EFLAGS_PRESERVE, so the set
+                    # carries this now; it used to need naming here, which is
+                    # how the inconsistency was visible in the first place.
                     and insns[j].mnemonic in _EFLAGS_PRESERVE
-                    and insns[j].mnemonic != "popfd"
                     and not insns[j].is_branch
                     and not insns[j].is_call
                     and not insns[j].is_ret):
@@ -3288,20 +4279,54 @@ def lift_basic_block(lifter, bb, flag_state=None):
                 curr, curr.operands, preserve_carry=preserve)
         else:
             results = lifter.lift_instruction(insns[i])
+            # A REPE/REPNE compare whose count is zero leaves EFLAGS alone,
+            # but `_flags` would keep whatever it last held -- 0 on entry --
+            # so the je after it read "not equal" where the hardware reads
+            # the ZF of the instruction before. MSVC's basic_string::compare
+            # is `xor eax, eax; repe cmpsb; je` with the count = the shorter
+            # length, so comparing against an empty string took the wrong
+            # arm. Load the incoming ZF first, when a tracked setter has one.
+            if _is_rep_compare(curr) and last_flag_setter:
+                zf = _make_condition("je", last_flag_setter, last_flag_ops)
+                if zf:
+                    stmts.append(f"_flags = ({zf[0]}) ? 1 : 0;"
+                                 " /* ZF in: a zero count keeps it */")
         stmts.extend(results)
 
         # Track flag-setting instructions
-        if curr.mnemonic in FLAG_SETTERS:
+        if (curr.mnemonic in _BARE_STRING_COMPARES
+                and not _has_xmm_operand(curr.operands)):
+            # A single cmps/scas sets the flags like cmp. "cmpsd" is also
+            # the SSE2 scalar compare, which is why it sits in
+            # _EFLAGS_PRESERVE and has to be caught before that test.
             last_flag_setter = curr.mnemonic
             last_flag_ops = list(curr.operands)
+        elif curr.mnemonic in _SSE_CMP_NAMED:
+            pass  # SSE compares write a mask, not EFLAGS
+        elif curr.mnemonic in FLAG_SETTERS:
+            last_flag_setter, last_flag_ops = normalise_zero_test(
+                curr.mnemonic, list(curr.operands))
+        elif curr.mnemonic in ("stc", "clc", "cmc"):
+            # CF is now _cf (the lift writes it); nothing else is tracked.
+            if last_flag_setter != "__cf_only":
+                cf_only_over = last_flag_setter
+            last_flag_setter, last_flag_ops = "__cf_only", []
+        elif curr.mnemonic == "popfd":
+            # Every flag now comes from the image popfd loaded.
+            last_flag_setter, last_flag_ops = "eflags", []
         elif curr.mnemonic in _FLAGS_UNDEFINED:
             # Flags are undefined after these - clear tracking
             last_flag_setter = None
             last_flag_ops = []
+        elif curr.mnemonic in ("lock xadd", "lock cmpxchg"):
+            # Capstone keeps the lock prefix in the mnemonic; the flags are
+            # those of the bare instruction, which the lowering snapshots.
+            last_flag_setter = curr.mnemonic[5:]
+            last_flag_ops = list(curr.operands)
         elif curr.mnemonic in _EFLAGS_SETTERS:
             # Additional flag-setting instructions
-            last_flag_setter = curr.mnemonic
-            last_flag_ops = list(curr.operands)
+            last_flag_setter, last_flag_ops = normalise_zero_test(
+                curr.mnemonic, list(curr.operands))
         elif curr.mnemonic in _EFLAGS_PRESERVE:
             pass  # These don't affect EFLAGS
         elif curr.mnemonic in ("fcompi", "fcomip", "fucomi", "fucompi",
@@ -3325,14 +4350,15 @@ def lift_basic_block(lifter, bb, flag_state=None):
             # repe cmpsb/repne scasb = comparison, sets flags
             rest = curr.op_str.strip() if hasattr(curr, 'op_str') else ""
             raw_m = curr.mnemonic
-            # All widths: `repe cmpsd` is how MSVC compares GUIDs, and the
-            # `sete` after it read stale flags when only the byte forms were
-            # tracked -- DirectSound's QueryInterface then handed back the
-            # wrong interface for every IID.
-            if any(k in raw_m for k in ("cmps", "scas")):
+            # Every width sets flags, not just the byte forms: a
+            # `repe cmpsd` left the xor before it as the tracked setter, so
+            # the sbb that follows read the xor's CF instead of the compare's.
+            _cmp_forms = ("cmpsb", "cmpsw", "cmpsd",
+                          "scasb", "scasw", "scasd")
+            if any(f in raw_m for f in _cmp_forms):
                 last_flag_setter = raw_m
                 last_flag_ops = list(curr.operands)
-            elif any(k in rest for k in ("cmps", "scas")):
+            elif any(f in rest for f in _cmp_forms):
                 last_flag_setter = raw_m
                 last_flag_ops = list(curr.operands)
             else:

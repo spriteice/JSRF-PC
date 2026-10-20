@@ -60,6 +60,10 @@
  * CMakeLists) -- MSVC's C4013 was emitted and discarded. Same failure as the
  * missing stdlib.h in kernel_bridge.c, in a hotter path. */
 #include <math.h>
+#if defined(_M_IX86) || defined(_M_X64) || defined(__i386__) || defined(__x86_64__)
+#include <xmmintrin.h>
+#include <emmintrin.h>
+#endif
 
 /* MSVC's __forceinline -> gcc/clang equivalent on POSIX. */
 #if !defined(_MSC_VER) && !defined(__forceinline)
@@ -76,8 +80,12 @@
 void recomp_debug_service(uint32_t service, uint32_t arg_va);
 
 /* MSVC's __debugbreak() intrinsic -> gcc/clang equivalent.
- * The auto-generated code emits __debugbreak for x86 INT 3 instructions. */
-#if !defined(_MSC_VER) && !defined(__debugbreak)
+ * The auto-generated code emits __debugbreak for x86 INT 3 instructions.
+ * !defined(__debugbreak) is not enough on its own: MinGW declares __debugbreak
+ * as a function, not a macro, so that test passes and the macro is defined
+ * anyway. Any windows.h reaching this TU afterwards then fails to declare it.
+ * Excluding _WIN32 outright leaves the SDK's own int3 intrinsic in place. */
+#if !defined(_MSC_VER) && !defined(_WIN32) && !defined(__debugbreak)
 #define __debugbreak() __builtin_trap()
 #endif
 
@@ -101,6 +109,11 @@ extern ptrdiff_t g_xbox_mem_offset;
  *
  * These replace a hardcoded 0x00400000 cutoff that was only ever right for one
  * title -- see the comment where they are defined in xbox_memory_layout.c. */
+/* --force-return: read once at startup, so the check at each forced ret is a
+ * load rather than a getenv. Zero unless RECOMP_FORCE_RETURN is set, which is
+ * what lets a build carrying forced functions behave normally by default. */
+extern int g_force_return;
+
 extern uint32_t g_xbox_code_lo;
 extern uint32_t g_xbox_code_hi;
 
@@ -262,7 +275,36 @@ extern RECOMP_TLS uint32_t g_ebp;
  * memmove's overlapping case is the same instruction and the same bug.
  */
 extern RECOMP_TLS int g_df;
+extern RECOMP_TLS uint32_t g_eflags; /* EFLAGS image: pushfd, popfd */
 #define RECOMP_DF_STEP(n) (g_df ? -(int32_t)(n) : (int32_t)(n))
+
+/* EFLAGS as pushfd and popfd see it.
+ *
+ * The arithmetic flags are lazy: a jcc rebuilds them from the instruction
+ * that set them, and the lifter writes them into g_eflags only right before
+ * a pushfd (publish_flags in lifter.py), so code without one pays nothing.
+ * The rest of the word lives in g_eflags too: popfd loads it, masked to the
+ * bits a P3 lets ring 0 write (CF PF AF ZF SF TF IF DF OF IOPL NT AC ID),
+ * with bit 1 always set. The ID bit (21) round-trips, which is how code
+ * learns the CPU has cpuid; a jcc right after popfd reads its flags from
+ * here.
+ *
+ * recomp_pushfd builds the pushed word from g_eflags, with DF from g_df,
+ * which std/cld keep. cli and sti do not update IF (they have no lift that
+ * touches it), so a pushfd after them reports the IF of the last popfd image:
+ * set, unless the guest popped it clear. */
+#define RECOMP_EFL_WRITABLE 0x00247FD5u
+static inline uint32_t recomp_pushfd(void) {
+    return (g_eflags & ~0x400u) | 0x2u | (g_df ? 0x400u : 0u);
+}
+static inline void recomp_popfd(uint32_t v) {
+    g_eflags = (v & RECOMP_EFL_WRITABLE) | 0x2u;
+    g_df = (int)((v >> 10) & 1u);
+}
+
+/* cpuid: out[0..3] = eax, ebx, ecx, edx for leaf `leaf` (subleaf unused).
+ * The runtime answers as the Xbox's Coppermine-class Pentium III. */
+void xbox_Cpuid(uint32_t leaf, uint32_t subleaf, uint32_t out[4]);
 
 /* x87 control and status. Thread-local for the same reason the x87 stack
    above is: one guest routine can lift to several C functions, so a compare
@@ -270,6 +312,46 @@ extern RECOMP_TLS int g_df;
    word has to survive a call. (g_fp_stack/g_fp_top are declared above.) */
 extern RECOMP_TLS uint16_t g_fp_control_word;
 extern RECOMP_TLS int g_fp_cmp;
+extern RECOMP_TLS uint16_t g_fp_cc;
+/* SSE control and status (MXCSR), reset value 0x1F80: every exception
+ * masked, rounding to nearest. Like the x87 control word it is guest state
+ * that STMXCSR stores and LDMXCSR loads; the host's MXCSR is never changed.
+ * The rounding-control bits (13-14) steer CVTSS2SI/CVTSD2SI. The exception
+ * flags (bits 0-5) are not modelled and read as clear, as the x87 status
+ * word's exception byte is not. */
+extern RECOMP_TLS uint32_t g_mxcsr;
+/* x87 precision control (control word bits 8-9). The stack is double-backed,
+ * which matches PC=53 and is close enough for PC=64, but PC=24 -- what the
+ * Xbox runs with -- rounds every arithmetic result to float. A title that
+ * compares a freshly computed value against the same value stored as a float
+ * relies on that: Burnout 3's sorted draw list re-inserts a node by walking
+ * while `v > next` / `v < prev`, and with v left at double precision it sits
+ * between its own stored copy and a neighbour and walks back and forth
+ * forever, which froze every race at the start line.
+ *
+ * PC narrows the significand only; the exponent keeps the register's range.
+ * So a plain (float) cast is right only inside float's range -- outside it,
+ * it would turn a large intermediate into inf (and inf*0 into NaN) or flush a
+ * tiny one to 0, where the x87 carries on. Those go the long way. */
+static inline double recomp_fp_round24(double x) {
+    double ax = fabs(x);
+    int e;
+    if ((ax <= 3.4028234663852886e38 && ax >= 1.1754943508222875e-38) || ax == 0.0
+        || x != x || ax == INFINITY)
+        return (double)(float)x;
+    x = frexp(x, &e);                      /* |x| in [0.5, 1): float-exact range */
+    return ldexp((double)(float)x, e);
+}
+#define RECOMP_FP_PC(x) ((g_fp_control_word & 0x300u) ? (double)(x) : recomp_fp_round24(x))
+#define RECOMP_FCMP_CC(c) ((uint16_t)((c)==2 ? 0x4500u : (c)<0 ? 0x0100u : (c)>0 ? 0u : 0x4000u))
+/* Values in the existing double-backed stack are all representable as normal
+ * x87 extended values, including binary64 subnormals. Empty stack tags and
+ * unsupported extended encodings are not represented by this stack model. */
+static inline uint16_t recomp_fxam(double value) {
+    return (uint16_t)((signbit(value) ? 0x0200u : 0u) |
+        (isnan(value) ? 0x0100u : isinf(value) ? 0x0500u :
+         value == 0.0 ? 0x4000u : 0x0400u));
+}
 
 /* Result of an x87 compare, in the shape the status word wants:
  *   -1 less, 0 equal, 1 greater, 2 unordered (either operand is NaN).
@@ -277,64 +359,187 @@ extern RECOMP_TLS int g_fp_cmp;
  * followed by `test ah, 0x44; jp` is how this era's CRT asks "is this a NaN",
  * and collapsing it to "equal" answers no every time. */
 #define RECOMP_FCMP(a, b)     (((a) != (a) || (b) != (b)) ? 2 : (a) < (b) ? -1 : (a) > (b) ? 1 : 0)
-
-/* fist/fistp with x87 semantics: the control word's rounding mode decides
- * the integer, and anything unrepresentable (NaN, out of range) stores the
- * "integer indefinite" 0x80..0 rather than whatever the host cast gives
- * (ARM64 saturates, and returns 0 for NaN). Rounding-control bits 10-11:
- * 0 nearest-even, 1 down, 2 up, 3 toward zero. */
-static inline double recomp_fp_round_cw(double v) {
-    switch ((g_fp_control_word >> 10) & 3) {
-    case 1:  return floor(v);
-    case 2:  return ceil(v);
-    case 3:  return trunc(v);
-    default: return rint(v);
+/* x87 rounding to an integral value under the guest RC bits (control word
+ * bits 10-11: 0 nearest-even, 1 down, 2 up, 3 toward zero). FRNDINT rounds
+ * this way, and so does FIST before its store; neither may follow the HOST's
+ * rounding mode, which the guest's fldcw never reaches. MSVC's CRT floor() and
+ * ceil() are `fldcw RC=down/up` (via _ctrlfp) around _frnd, a bare frndint,
+ * so a frndint lifted as rint() made both of them round to nearest.
+ * NaN, the infinities and values already integral come back unchanged, and a
+ * zero result keeps the operand's sign, as FRNDINT's does. */
+static inline double recomp_frndint(double value, uint16_t control) {
+    double rounded;
+    if (!isfinite(value)) return value;
+    switch((control>>10)&3) {
+    case 1: rounded=floor(value); break;
+    case 2: rounded=ceil(value); break;
+    case 3: rounded=trunc(value); break;
+    default: {
+        double lo=floor(value), fraction=value-lo;
+        rounded=lo;
+        if(fraction>0.5 || (fraction==0.5 && fmod(lo,2.0)!=0.0)) rounded=lo+1.0;
+        break;
     }
+    }
+    return rounded == 0.0 ? copysign(0.0, value) : rounded;
 }
-static inline int64_t recomp_fist64(double v) {
-    double r;
-    if (v != v) return (int64_t)0x8000000000000000ull;
-    r = recomp_fp_round_cw(v);
-    if (r >= 9223372036854775808.0 || r < -9223372036854775808.0)
-        return (int64_t)0x8000000000000000ull;
-    return (int64_t)r;
-}
-static inline int32_t recomp_fist32(double v) {
-    double r;
-    if (v != v) return (int32_t)0x80000000u;
-    r = recomp_fp_round_cw(v);
-    if (r >= 2147483648.0 || r < -2147483648.0) return (int32_t)0x80000000u;
-    return (int32_t)r;
-}
-static inline int16_t recomp_fist16(double v) {
-    double r;
-    if (v != v) return (int16_t)0x8000;
-    r = recomp_fp_round_cw(v);
-    if (r >= 32768.0 || r < -32768.0) return (int16_t)0x8000;
-    return (int16_t)r;
+/* x87 integer stores use the guest RC bits, independently of host rounding.
+ * Masked invalid conversions store the signed integer-indefinite value. */
+static inline int64_t recomp_fist(double value, uint16_t control, unsigned bits) {
+    double rounded = recomp_frndint(value, control);
+    double limit=ldexp(1.0,(int)bits-1);
+    if(!isfinite(rounded) || rounded < -limit || rounded >= limit)
+        return bits==64?INT64_MIN:-(INT64_C(1)<<(bits-1));
+    return (int64_t)rounded;
 }
 
-/* cvtss2si / cvtsd2si ROUND, using MXCSR's mode -- round-to-nearest-even,
- * which the title never changes. Only the cvtt- forms truncate. A C cast
- * truncates, so lifting both as (int32_t) made every rounding conversion a
- * truncating one (JSRF's FloatToInt helper at 0x14C690, 134 call sites:
- * 2.7 -> 2 instead of 3, -0.6 -> 0 instead of -1). NaN and out-of-range
- * inputs give the "integer indefinite" 0x80000000 on x86; a C cast of those
- * is undefined and ARM64 returns 0 or saturates. Float inputs widen to
- * double exactly, so one pair serves the ss and sd forms. */
-static inline int32_t recomp_cvt2si(double v) {
-    double r;
-    if (v != v) return (int32_t)0x80000000u;
-    r = nearbyint(v);
-    if (r >= 2147483648.0 || r < -2147483648.0) return (int32_t)0x80000000u;
-    return (int32_t)r;
+/* fld/fstp tbyte: 64-bit significand with an explicit integer bit, 15-bit
+ * exponent biased by 16383, sign on top. The stack is double, so a load
+ * rounds to 53 bits and a store is exact. */
+static inline double recomp_f80_load(uint64_t mant, uint16_t se) {
+    int e = se & 0x7fff;
+    double v = e == 0x7fff ? ((mant << 1) ? NAN : INFINITY)
+                           : ldexp((double)mant, e - 16383 - 63);
+    return (se & 0x8000u) ? -v : v;
 }
-static inline int32_t recomp_cvtt2si(double v) {
-    double r;
-    if (v != v) return (int32_t)0x80000000u;
-    r = trunc(v);
-    if (r >= 2147483648.0 || r < -2147483648.0) return (int32_t)0x80000000u;
-    return (int32_t)r;
+static inline uint16_t recomp_f80_store(double v, uint64_t *mant) {
+    union { double d; uint64_t u; } bits;
+    uint16_t sign = signbit(v) ? 0x8000u : 0u;
+    int e;
+    bits.d = v;
+    if (v != v) { *mant = 0x8000000000000000ull | (bits.u << 11); return sign | 0x7fffu; }
+    if (isinf(v)) { *mant = 0x8000000000000000ull; return sign | 0x7fffu; }
+    if (v == 0.0) { *mant = 0; return sign; }
+    v = frexp(fabs(v), &e);
+    *mant = (uint64_t)(int64_t)ldexp(v, 63) << 1;
+    return (uint16_t)(sign | (e + 16382));
+}
+
+/* Trig range failure leaves both value and stack depth unchanged. */
+static inline int recomp_fp_trig_in_range(double value) {
+    if (isfinite(value) && fabs(value) >= 0x1p63) {
+        g_fp_cc |= 0x0400u;
+        return 0;
+    }
+    g_fp_cc &= (uint16_t)~0x0400u;
+    return 1;
+}
+
+/* x87 FSIN, FCOS, FSINCOS and FPTAN values, for an operand that
+ * recomp_fp_trig_in_range has let through.
+ *
+ * The x87 reduces the operand modulo pi/4 with a 66-bit pi,
+ * 0xC90FDAA22168C234C * 2^-66, not the true pi libm reduces with. The
+ * reduced argument is off by k * (pi - pi66) / 4 for k eighth-turns removed,
+ * so the hardware returns f(x * (1 + D)), D = (pi - pi66) / pi66, where libm
+ * returns f(x). At x = 1e10 the two cosines differ in the 11th digit, and the
+ * x87's fsin(pi) is 1.2246063538223773e-16, not 1.2246467991473532e-16. A
+ * title that runs sin() on an accumulated, never-wrapped angle drifts from
+ * libm that way on a Pentium III, so the recompiled one has to drift too.
+ *
+ * 1 + D rounds to 1, so the shift is applied as a correction to libm's s and
+ * c by angle addition, in the versine form (v = 1 - cos e = 2 sin^2(e/2)):
+ * the correction stays small next to s and the sum rounds once, which keeps a
+ * result near a zero of the function accurate. Below |e| = 2^-26 (|x| under
+ * about 1.16e13) sin e is e and v is below half an ulp, so that costs no
+ * libm call beyond the other one of the pair. tests/x87_trig/model.py derives
+ * the vectors and the error budget (a third of the conformance tolerance).
+ * tan = sin/cos loses relative accuracy as cos(x * (1 + D)) nears 0, as the
+ * hardware's own tan does there; the budget sweep leaves out |cos| < 1e-2.
+ *
+ * For |x| <= pi/4 the hardware does no reduction and libm's value is
+ * returned as it is. No precision-control rounding: PC only narrows FADD,
+ * FSUB, FMUL, FDIV and FSQRT, and the transcendentals always deliver 64 bits.
+ * Inf and NaN give NaN (invalid is masked), as libm's do. */
+#define RECOMP_X87_PI66_D 1.2874146789751208e-21 /* 0x1.8518e2da2e893p-70 */
+static inline int recomp_x87_reduces(double x) {
+    return isfinite(x) && fabs(x) > 0.78539816339744830962;
+}
+static inline void recomp_x87_sincos_pi66(double x, double *s, double *c) {
+    double e = x * RECOMP_X87_PI66_D, se, v, sx = sin(x), cx = cos(x);
+    if (fabs(e) < 1.4901161193847656e-08) { /* 2^-26 */
+        se = e; v = 0.0;
+    } else {
+        double h = sin(0.5 * e);
+        se = sin(e); v = 2.0 * h * h;
+    }
+    *s = sx + (cx * se - sx * v);
+    *c = cx - (sx * se + cx * v);
+}
+static inline double recomp_x87_sin(double x) {
+    double s, c;
+    if (!recomp_x87_reduces(x)) return sin(x);
+    recomp_x87_sincos_pi66(x, &s, &c);
+    return s;
+}
+static inline double recomp_x87_cos(double x) {
+    double s, c;
+    if (!recomp_x87_reduces(x)) return cos(x);
+    recomp_x87_sincos_pi66(x, &s, &c);
+    return c;
+}
+/* Returns the sine; *c is the cosine FSINCOS then pushes. */
+static inline double recomp_x87_sincos(double x, double *c) {
+    double s;
+    if (!recomp_x87_reduces(x)) { *c = cos(x); return sin(x); }
+    recomp_x87_sincos_pi66(x, &s, c);
+    return s;
+}
+static inline double recomp_x87_tan(double x) {
+    double s, c;
+    if (!recomp_x87_reduces(x)) return tan(x);
+    recomp_x87_sincos_pi66(x, &s, &c);
+    return s / c;
+}
+
+static inline double recomp_fscale(double value, double scale) {
+    if (isnan(value) || isnan(scale)) return value + scale;
+    if (scale == INFINITY)
+        return value == 0.0 ? NAN : copysign(INFINITY, value);
+    if (scale == -INFINITY)
+        return isinf(value) ? NAN : copysign(0.0, value);
+    /* Finite exponents beyond this clamp already overflow/underflow double.
+     * Avoid an undefined float-to-int cast for the much larger x87 inputs. */
+    return scalbn(value, scale > 4096 ? 4096 : scale < -4096 ? -4096 : (int)scale);
+}
+
+static inline double recomp_fprem(double a, double b, int nearest) {
+    int quotient = 0, ea = 0, eb = 0;
+    unsigned q;
+    double result;
+    if (isfinite(a) && isfinite(b) && a != 0.0 && b != 0.0) {
+        frexp(a, &ea); frexp(b, &eb);
+        if (ea - eb >= 64) {
+            /* Intel permits 32..63 bits of quotient per partial reduction.
+             * Keep C2 set; the guest repeats until a complete reduction. */
+            g_fp_cc |= 0x0400u;
+            return fmod(a, scalbn(b, ea - eb - 32));
+        }
+    }
+    result = remquo(a, b, &quotient);
+    /* remquo's quotient is round-to-nearest; FPREM chops. Step back one in
+     * magnitude, on the low bits remquo returns, before reading C0/C3/C1. */
+    q = (unsigned)(quotient < 0 ? -quotient : quotient);
+    if (!nearest && result != 0.0 && isfinite(result) && signbit(result) != signbit(a)) {
+        result += copysign(fabs(b), a);
+        q -= 1u;
+    }
+    /* C0/C3/C1 contain quotient bits 2/1/0; C2 says complete. */
+    g_fp_cc = (uint16_t)(((q & 4u) << 6) | ((q & 2u) << 13) | ((q & 1u) << 9));
+    return result;
+}
+
+/* CVTSS2SI/CVTSD2SI (and the truncating CVTT forms) to a 32-bit integer.
+ * The non-truncating forms round under MXCSR.RC (bits 13-14), which uses the
+ * x87 RC encoding, so recomp_frndint does the rounding. A C cast would always
+ * truncate, and is undefined out of range; the hardware answers NaN, the
+ * infinities and out-of-range values with the integer indefinite. */
+static inline int32_t recomp_cvt_si32(double value, uint32_t mxcsr, int truncate) {
+    double rounded = truncate ? (isfinite(value) ? trunc(value) : value)
+                              : recomp_frndint(value, (uint16_t)(((mxcsr >> 13) & 3u) << 10));
+    if (!(rounded >= -2147483648.0 && rounded <= 2147483647.0))
+        return (int32_t)0x80000000u;
+    return (int32_t)rounded;
 }
 
 /* ================================================================
@@ -380,6 +585,7 @@ void recomp_icall_not_code_log(uint32_t va);
 #include "recomp_icall_feedback.h"
 #else
 #define RECOMP_ICALL_OBSERVE(va, flags) ((void)0)
+#define RECOMP_ICALL_OBSERVE_SITE(site, va) ((void)0)
 #endif
 
 /**
@@ -396,6 +602,12 @@ void recomp_icall_not_code_log(uint32_t va);
  * make that division wrong by the ratio of the two clocks; the runtime scales
  * to the console's rate instead. */
 uint64_t xbox_ReadTimeStampCounter(void);
+
+/* x86 port I/O (`in`/`out`). width is 1, 2 or 4 bytes. The runtime models
+ * the ports titles are known to read (the field pin at 0x80C0) and logs the
+ * first access to any other. */
+uint32_t xbox_PortIn(uint32_t port, int width);
+void     xbox_PortOut(uint32_t port, uint32_t value, int width);
 
 void recomp_trace_enter(const char *name, uint32_t va);
 void recomp_trace_exit(const char *name, uint32_t va);
@@ -749,6 +961,48 @@ RECOMP_XMM_BITWISE(XMM_CMP_LT,  (a.f[i] <  b.f[i]) ? 0xFFFFFFFFu : 0u)
 RECOMP_XMM_BITWISE(XMM_CMP_LE,  (a.f[i] <= b.f[i]) ? 0xFFFFFFFFu : 0u)
 RECOMP_XMM_BITWISE(XMM_CMP_NEQ, (a.f[i] == b.f[i]) ? 0u : 0xFFFFFFFFu)
 
+/* The full SSE compare predicate set, by CMPPS/CMPSS immediate:
+ * 0 EQ, 1 LT, 2 LE, 3 UNORD, 4 NEQ, 5 NLT, 6 NLE, 7 ORD. The N forms are
+ * the negations, so they are true when either side is NaN. */
+static inline int recomp_cmp_pred(float a, float b, int p) {
+    switch (p & 7) {
+    case 0:  return a == b;
+    case 1:  return a < b;
+    case 2:  return a <= b;
+    case 3:  return a != a || b != b;
+    case 4:  return !(a == b);
+    case 5:  return !(a < b);
+    case 6:  return !(a <= b);
+    default: return !(a != a || b != b);
+    }
+}
+static inline RecompXmm XMM_CMP_PRED(RecompXmm a, RecompXmm b, int p) {
+    RecompXmm r; int i;
+    for (i = 0; i < 4; ++i)
+        r.u[i] = recomp_cmp_pred(a.f[i], b.f[i], p) ? 0xFFFFFFFFu : 0u;
+    return r;
+}
+/* Packed unary ops; the first argument is unused, as for the binary forms. */
+RECOMP_XMM_LANEWISE(XMM_SQRT,  sqrtf(b.f[i]))
+/* These instructions deliberately approximate and treat denormals as zero.
+ * Exact division changes Newton refinement and zero-mask idioms. */
+static inline float recomp_rcpss(float x) {
+#if defined(_M_IX86) || defined(_M_X64) || defined(__i386__) || defined(__x86_64__)
+    return _mm_cvtss_f32(_mm_rcp_ss(_mm_set_ss(x)));
+#else
+    return 1.0f / (fpclassify(x) == FP_SUBNORMAL ? copysignf(0.0f, x) : x);
+#endif
+}
+static inline float recomp_rsqrtss(float x) {
+#if defined(_M_IX86) || defined(_M_X64) || defined(__i386__) || defined(__x86_64__)
+    return _mm_cvtss_f32(_mm_rsqrt_ss(_mm_set_ss(x)));
+#else
+    return 1.0f / sqrtf(fpclassify(x) == FP_SUBNORMAL ? copysignf(0.0f, x) : x);
+#endif
+}
+RECOMP_XMM_LANEWISE(XMM_RSQRT, recomp_rsqrtss(b.f[i]))
+RECOMP_XMM_LANEWISE(XMM_RCP, recomp_rcpss(b.f[i]))
+
 /** movmskps: the four lane sign bits, packed into the low nibble. */
 static inline uint32_t XMM_MOVEMASK(RecompXmm a) {
     return ((a.u[0] >> 31) & 1u) | (((a.u[1] >> 31) & 1u) << 1)
@@ -837,14 +1091,75 @@ static inline uint32_t SUB32_CF(uint32_t a, uint32_t b, int *cf) {
  * Rotation / shift helpers
  * ================================================================ */
 
+/* x86 masks the rotate count to 5 bits, and THEN the rotate is modulo the
+ * operand's own width -- so `rol al, 16` is a rotate by zero and `rol ax, 31`
+ * is a rotate by 15. A narrow rotate performed at 32 bits is not a rotate at
+ * all: the bits that should wrap around at bit 7 or 15 land above the operand
+ * and are discarded by the store, which turns `ror al, 2` on 0x01 into 0x00
+ * where x86 gives 0x40.
+ *
+ * The zero case is separated out because `val >> (32 - 0)` is a shift of a
+ * uint32_t by 32, which is undefined behaviour -- it happened to survive
+ * because x86 masks shift counts to 5 bits and gives back `val`, but the
+ * compiler is under no obligation to agree, least of all at -O2. */
 static inline uint32_t ROL32(uint32_t val, int n) {
     n &= 31;
-    return (val << n) | (val >> (32 - n));
+    return n ? ((val << n) | (val >> (32 - n))) : val;
 }
 
 static inline uint32_t ROR32(uint32_t val, int n) {
     n &= 31;
-    return (val >> n) | (val << (32 - n));
+    return n ? ((val >> n) | (val << (32 - n))) : val;
+}
+
+/* rcl/rcr: rotate through the carry flag.
+ *
+ * The carry is a bit sitting one place above the operand's top bit, so the
+ * rotation is over width+1 bits. That is also why a count is reduced modulo
+ * width+1 for the 8- and 16-bit forms rather than modulo the width: a byte
+ * rotates through nine positions, not eight. The 32-bit form takes the count
+ * masked to five bits and no further, which is already inside 33.
+ *
+ * `cf` carries in and out.
+ */
+static inline uint32_t RC_ROT(uint32_t val, unsigned n, int *cf,
+                              unsigned width, int left) {
+    unsigned mod = width + 1u;
+    uint64_t mask = (width >= 32u) ? 0xFFFFFFFFull
+                                   : ((((uint64_t)1 << width) - 1u));
+    uint64_t x = (((uint64_t)(*cf & 1)) << width) | ((uint64_t)val & mask);
+
+    n &= 31u;
+    if (width < 32u)
+        n %= mod;
+    if (n) {
+        uint64_t full = (((uint64_t)1 << mod) - 1u);
+        x = left ? ((x << n) | (x >> (mod - n)))
+                 : ((x >> n) | (x << (mod - n)));
+        x &= full;
+    }
+    *cf = (int)((x >> width) & 1);
+    return (uint32_t)(x & mask);
+}
+
+static inline uint8_t ROL8(uint8_t val, int n) {
+    n = (n & 31) % 8;
+    return n ? (uint8_t)((val << n) | (val >> (8 - n))) : val;
+}
+
+static inline uint8_t ROR8(uint8_t val, int n) {
+    n = (n & 31) % 8;
+    return n ? (uint8_t)((val >> n) | (val << (8 - n))) : val;
+}
+
+static inline uint16_t ROL16(uint16_t val, int n) {
+    n = (n & 31) % 16;
+    return n ? (uint16_t)((val << n) | (val >> (16 - n))) : val;
+}
+
+static inline uint16_t ROR16(uint16_t val, int n) {
+    n = (n & 31) % 16;
+    return n ? (uint16_t)((val >> n) | (val << (16 - n))) : val;
 }
 
 /* ================================================================
@@ -907,10 +1222,18 @@ static inline int recomp_parity8(uint32_t x) {
 }
 #define RECOMP_PARITY8(x) recomp_parity8((uint32_t)(x))
 
-/** Pop a 32-bit value from the simulated stack. */
+/**
+ * Pop a 32-bit value from the simulated stack.
+ * Writes dst AFTER incrementing sp: for `pop esp` (dst == sp) x86 leaves ESP
+ * equal to the popped value, not popped value + 4 (Intel SDM, POP). The old
+ * read-then-increment order left every lifted `pop esp` 4 bytes high, so the
+ * round-to-int idiom `push esp; push eax; ...; pop eax; pop esp` drifted the
+ * stack and later pops read the wrong slots.
+ */
 #define POP32(sp, dst) do { \
-    (dst) = MEM32(sp); \
+    uint32_t _pv = MEM32(sp); \
     (sp) += 4; \
+    (dst) = _pv; \
 } while(0)
 
 /* ================================================================
@@ -1094,9 +1417,52 @@ extern uint64_t g_recomp_abi_repairs;
         (fn)(); \
     } \
 } while(0)
+#elif defined(RECOMP_CALL_PROFILE)
+/* Opt-in profiling: every direct call reports its target to the project, which
+ * keeps the counts (a project defines recomp_call_profile_hit). Diffing the counts
+ * of two situations shows which functions one of them runs and the other does not. */
+void recomp_call_profile_hit(uint32_t va);
+#define RECOMP_ABI_CALL(va, fn) do { recomp_call_profile_hit(va); (fn)(); } while(0)
 #else
 #define RECOMP_ABI_CALL(va, fn) (fn)()
 #endif
+
+/* A guarded arm of an indirect call. When a recorded run saw a call site
+ * reach only a few translated functions, the lifter compares the target
+ * against each and calls the match directly (RECOMP_ABI_CALL), falling back
+ * to RECOMP_ICALL_SAFE_AT for anything else -- so an unseen target is slow,
+ * never wrong. Under RECOMP_ICALL_FEEDBACK the arms are counted, so a run
+ * can say how often the guards held; otherwise they cost nothing. */
+#ifdef RECOMP_ICALL_FEEDBACK
+extern volatile uint64_t g_icall_guard_hits;
+extern volatile uint64_t g_icall_guard_misses;
+#define RECOMP_ICALL_GUARD_HIT()  ((void)g_icall_guard_hits++)
+#define RECOMP_ICALL_GUARD_MISS() ((void)g_icall_guard_misses++)
+#else
+#define RECOMP_ICALL_GUARD_HIT()  ((void)0)
+#define RECOMP_ICALL_GUARD_MISS() ((void)0)
+#endif
+
+/* Every loop back edge in code lifted with --back-edge-yield (tools.recomp;
+ * off by default, so a title lifted without it has none): the guest CPU's
+ * quantum check. A guest thread that has waited its quantum for the CPU
+ * (RECOMP_GUEST_LOCK) sets the flag, and the holder hands over at its next
+ * back edge, as the console's timer tick preempted it wherever it was; a
+ * kernel call checks the quantum too, but a frame of lifted code can go
+ * without one. With the lock off the flag is never set: one relaxed atomic
+ * load and a branch not taken per back edge. */
+#if defined(_MSC_VER)
+#include <intrin.h>
+#define RECOMP_LOAD_RELAXED32(p) \
+    ((int32_t)__iso_volatile_load32((const volatile __int32 *)(p)))
+#else
+#define RECOMP_LOAD_RELAXED32(p) __atomic_load_n((p), __ATOMIC_RELAXED)
+#endif
+extern int32_t g_xbox_guest_cpu_preempt;
+void xbox_GuestCpuPreempt(uint32_t va);
+#define RECOMP_BACK_EDGE(va) \
+    do { if (RECOMP_LOAD_RELAXED32(&g_xbox_guest_cpu_preempt)) \
+             xbox_GuestCpuPreempt(va); } while (0)
 
 /**
  * RECOMP_ICALL - Indirect call through the dispatch table.
@@ -1171,7 +1537,11 @@ void recomp_icallv_record(uint32_t va, uint32_t esp0, uint32_t esp1, uint32_t ea
  *
  * Here rather than in the runtime so that any runtime builds with it; only
  * the failure path calls it. */
+#if defined(_MSC_VER)
+static __declspec(noinline) uint32_t recomp_icall_skip_esp(uint32_t saved_esp)
+#else
 static __attribute__((noinline, unused)) uint32_t recomp_icall_skip_esp(uint32_t saved_esp)
+#endif
 {
     uint32_t ra, args, pops = 0;
     if (saved_esp < g_esp + 4)
@@ -1207,6 +1577,74 @@ static __attribute__((noinline, unused)) uint32_t recomp_icall_skip_esp(uint32_t
                RECOMP_ABI_CALL(_va, _fn); } \
     else { RECOMP_ICALL_OBSERVE(_va, RECOMP_ICALL_SEEN_UNRESOLVED); \
            recomp_icall_fail_log(_va); g_esp = recomp_icall_skip_esp(saved_esp); eax = 0; } \
+} while(0)
+
+/* Caller cleanup: a failed call pops only its return address. */
+#define RECOMP_ICALL_SAFE_CC(xbox_va, saved_esp) do { \
+    (void)(saved_esp); \
+    uint32_t _va = (uint32_t)(xbox_va); \
+    g_icall_trace[g_icall_trace_idx & (ICALL_TRACE_SIZE-1)] = _va; \
+    g_icall_trace_idx++; \
+    g_icall_count++; \
+    if (!RECOMP_ICALL_IS_CODE(_va)) { \
+        recomp_icall_not_code_log(_va); \
+        g_esp += 4; eax = 0; break; \
+    } \
+    recomp_func_t _fn = recomp_lookup_manual(_va); \
+    if (!_fn) _fn = recomp_lookup(_va); \
+    if (!_fn) _fn = recomp_lookup_kernel(_va); \
+    if (_fn) { RECOMP_ICALL_OBSERVE(_va, RECOMP_ICALL_SEEN_RESOLVED); \
+               RECOMP_ABI_CALL(_va, _fn); } \
+    else { RECOMP_ICALL_OBSERVE(_va, RECOMP_ICALL_SEEN_UNRESOLVED); \
+           recomp_icall_fail_log(_va); g_esp += 4; eax = 0; } \
+} while(0)
+
+/**
+ * RECOMP_ICALL_SAFE_AT - RECOMP_ICALL_SAFE that also names the call SITE.
+ *
+ * `site` is the guest address of the `call` instruction. Under
+ * RECOMP_ICALL_FEEDBACK the runtime records which targets each site reaches
+ * (icall_sites.dump), which is what lets the lifter guard a site with direct
+ * calls on the next generation. Everything else is RECOMP_ICALL_SAFE.
+ */
+#define RECOMP_ICALL_SAFE_AT(xbox_va, saved_esp, site) do { \
+    uint32_t _va = (uint32_t)(xbox_va); \
+    g_icall_trace[g_icall_trace_idx & (ICALL_TRACE_SIZE-1)] = _va; \
+    g_icall_trace_idx++; \
+    g_icall_count++; \
+    if (!RECOMP_ICALL_IS_CODE(_va)) { \
+        recomp_icall_not_code_log(_va); \
+        g_esp = (saved_esp); eax = 0; break; \
+    } \
+    RECOMP_ICALL_OBSERVE_SITE((site), _va); \
+    recomp_func_t _fn = recomp_lookup_manual(_va); \
+    if (!_fn) _fn = recomp_lookup(_va); \
+    if (!_fn) _fn = recomp_lookup_kernel(_va); \
+    if (_fn) { RECOMP_ICALL_OBSERVE(_va, RECOMP_ICALL_SEEN_RESOLVED); \
+               RECOMP_ABI_CALL(_va, _fn); } \
+    else { RECOMP_ICALL_OBSERVE(_va, RECOMP_ICALL_SEEN_UNRESOLVED); \
+           recomp_icall_fail_log(_va); g_esp = (saved_esp); eax = 0; } \
+} while(0)
+
+/* Caller cleanup: a failed call pops only its return address. */
+#define RECOMP_ICALL_SAFE_AT_CC(xbox_va, saved_esp, site) do { \
+    (void)(saved_esp); \
+    uint32_t _va = (uint32_t)(xbox_va); \
+    g_icall_trace[g_icall_trace_idx & (ICALL_TRACE_SIZE-1)] = _va; \
+    g_icall_trace_idx++; \
+    g_icall_count++; \
+    if (!RECOMP_ICALL_IS_CODE(_va)) { \
+        recomp_icall_not_code_log(_va); \
+        g_esp += 4; eax = 0; break; \
+    } \
+    RECOMP_ICALL_OBSERVE_SITE((site), _va); \
+    recomp_func_t _fn = recomp_lookup_manual(_va); \
+    if (!_fn) _fn = recomp_lookup(_va); \
+    if (!_fn) _fn = recomp_lookup_kernel(_va); \
+    if (_fn) { RECOMP_ICALL_OBSERVE(_va, RECOMP_ICALL_SEEN_RESOLVED); \
+               RECOMP_ABI_CALL(_va, _fn); } \
+    else { RECOMP_ICALL_OBSERVE(_va, RECOMP_ICALL_SEEN_UNRESOLVED); \
+           recomp_icall_fail_log(_va); g_esp += 4; eax = 0; } \
 } while(0)
 
 /**
@@ -1282,21 +1720,20 @@ extern RECOMP_TLS RecompMmx g_mm4, g_mm5, g_mm6, g_mm7;
 
 static inline RecompMmx MMX_ZERO(void) { RecompMmx r; r.q = 0; return r; }
 
-/* cvtps2pi / cvttps2pi: the low two packed singles of an SSE register or of a
- * 64-bit memory operand become two signed dwords in an MMX register. The
- * rounding form follows the current rounding mode, round-to-nearest everywhere
- * these titles use it; the truncating form is what a C cast already does.
- *
- * An input that is NaN or outside int32 gives the "integer indefinite" value
- * on hardware, where the C cast is undefined -- and a video decoder pushing
- * coefficients through this reaches that edge often enough to matter. */
+/* CVTPS2PI follows MXCSR; CVTTPS2PI truncates regardless of its rounding mode.
+ * Use SSE scalar conversions to avoid touching the host x87/MMX register file.
+ * Non-x86 hosts use their floating-point environment for rounding instead. */
 static inline int32_t MMX_CVT_F2I(float v, int truncate)
 {
-    if (!(v >= -2147483648.0f && v <= 2147483647.0f))
+#if defined(_M_IX86) || defined(_M_X64) || defined(__i386__) || defined(__x86_64__)
+    return truncate ? _mm_cvttss_si32(_mm_set_ss(v))
+                    : _mm_cvtss_si32(_mm_set_ss(v));
+#else
+    double rounded = truncate ? trunc((double)v) : nearbyint((double)v);
+    if (!(rounded >= -2147483648.0 && rounded <= 2147483647.0))
         return (int32_t)0x80000000u;       /* integer indefinite */
-    if (truncate)
-        return (int32_t)v;
-    return (int32_t)(v < 0.0f ? v - 0.5f : v + 0.5f);
+    return (int32_t)rounded;
+#endif
 }
 
 static inline RecompMmx MMX_FROM_PS(float lo, float hi, int truncate)
@@ -1305,6 +1742,33 @@ static inline RecompMmx MMX_FROM_PS(float lo, float hi, int truncate)
     r.d[0] = MMX_CVT_F2I(lo, truncate);
     r.d[1] = MMX_CVT_F2I(hi, truncate);
     return r;
+}
+
+static inline int32_t recomp_sse_d2i(double v, int truncate) {
+#if defined(_M_IX86) || defined(_M_X64) || defined(__i386__) || defined(__x86_64__)
+    return truncate ? _mm_cvttsd_si32(_mm_set_sd(v))
+                    : _mm_cvtsd_si32(_mm_set_sd(v));
+#else
+    double rounded = truncate ? trunc(v) : nearbyint(v);
+    return rounded >= -2147483648.0 && rounded < 2147483648.0
+        ? (int32_t)rounded : INT32_MIN;
+#endif
+}
+static inline RecompXmm XMM_CVT_PS2DQ(RecompXmm v, int truncate) {
+    RecompXmm r; int i;
+    for (i = 0; i < 4; ++i) r.i[i] = MMX_CVT_F2I(v.f[i], truncate);
+    return r;
+}
+
+/** cvtpi2ps: two signed dwords in, two singles out, into the LOW half of the
+ * destination -- lanes 2 and 3 keep whatever they held. That detail is the
+ * whole instruction: code that builds a float4 from two of these relies on
+ * the first one surviving the second. */
+static inline RecompXmm XMM_FROM_PI(RecompXmm dst, RecompMmx src)
+{
+    dst.f[0] = (float)src.d[0];
+    dst.f[1] = (float)src.d[1];
+    return dst;
 }
 
 static inline RecompMmx MMX_MEM(uint32_t addr) {
@@ -1333,6 +1797,10 @@ static inline uint8_t recomp_sat_u8(int32_t v) {
     return (uint8_t)(v > 255 ? 255 : (v < 0 ? 0 : v));
 }
 
+static inline uint16_t recomp_sat_u16(int32_t v) {
+    return (uint16_t)(v > 65535 ? 65535 : (v < 0 ? 0 : v));
+}
+
 /* -- integer arithmetic, lane-wise, wrapping -------------------- */
 #define RECOMP_MMX_BINOP(NAME, LANES, FIELD, EXPR)                      \
     static inline RecompMmx NAME(RecompMmx a, RecompMmx b) {            \
@@ -1355,6 +1823,10 @@ RECOMP_MMX_BINOP(MMX_PADDUSB, 8, ub,
                  recomp_sat_u8((int32_t)a.ub[i] + b.ub[i]))
 RECOMP_MMX_BINOP(MMX_PSUBUSB, 8, ub,
                  recomp_sat_u8((int32_t)a.ub[i] - b.ub[i]))
+RECOMP_MMX_BINOP(MMX_PADDUSW, 4, uw,
+                 recomp_sat_u16((int32_t)a.uw[i] + b.uw[i]))
+RECOMP_MMX_BINOP(MMX_PSUBUSW, 4, uw,
+                 recomp_sat_u16((int32_t)a.uw[i] - b.uw[i]))
 RECOMP_MMX_BINOP(MMX_PMULLW, 4, w, (int16_t)((int32_t)a.w[i] * b.w[i]))
 RECOMP_MMX_BINOP(MMX_PMULHW, 4, w, (int16_t)(((int32_t)a.w[i] * b.w[i]) >> 16))
 RECOMP_MMX_BINOP(MMX_PAVGB, 8, ub, (uint8_t)(((int32_t)a.ub[i] + b.ub[i] + 1) >> 1))
@@ -1515,6 +1987,24 @@ static inline RecompMmx MMX_PSADBW(RecompMmx a, RecompMmx b) {
  * The recomp_funcs.h header (generated) declares all translated
  * function prototypes.
  * ================================================================ */
+
+/* An instruction the lifter has no translation for.
+ *
+ * The lifter used to emit a bare "TODO: mnemonic" C comment at such a site,
+ * and a comment is a no-op: the instruction vanished, the guest carried
+ * on, and nothing at runtime could say the site had been reached. Wreckless
+ * died inside RtlAllocateHeap because `bsf` was a comment; Half-Life 2 painted
+ * its intro red because `cvtpi2ps` was. Each was found by working backwards
+ * from a subsystem failure that had nothing to do with the cause.
+ *
+ * Now the site calls this, with the instruction text and its guest address.
+ * The instruction is STILL a no-op -- this changes no behaviour -- but the run
+ * says which untranslated sites it reached, how often, and with what register
+ * state, and with RECOMP_UNIMPL_TRAP=1 it stops at the first one. The lifter
+ * keeps the comment beside the call so `grep TODO:` over a gen tree still
+ * enumerates every site whether or not it is ever reached. */
+void recomp_unimpl(const char *text, uint32_t va);
+#define RECOMP_UNIMPL(_text, _va) recomp_unimpl((_text), (_va))
 
 #endif /* RECOMP_TYPES_H */
 

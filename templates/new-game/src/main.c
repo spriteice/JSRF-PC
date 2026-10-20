@@ -34,6 +34,7 @@
 #include <dbghelp.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <math.h>
 
@@ -69,6 +70,7 @@ extern RECOMP_TLS uint32_t g_seh_ebp;
 extern RECOMP_TLS double g_fp_stack[8];
 extern RECOMP_TLS int g_fp_top;
 extern RECOMP_TLS uint16_t g_fp_control_word;
+extern RECOMP_TLS uint32_t g_mxcsr;
 extern RECOMP_TLS int g_fp_cmp;
 extern RECOMP_TLS RecompXmm g_xmm0, g_xmm1, g_xmm2, g_xmm3;
 extern RECOMP_TLS RecompXmm g_xmm4, g_xmm5, g_xmm6, g_xmm7;
@@ -154,8 +156,69 @@ static void print_guest_context(void *rip)
                 shown++;
             }
         }
+        /* When the frame is gone, say so, and fall back on what is left.
+         *
+         * A fault inside a block copy leaves no return address in range: the
+         * copy is a host memmove and its caller's frame is further up than
+         * this reaches. Worse, a copy that ran past its buffer overwrites the
+         * stack itself, so the list comes out empty exactly when it is most
+         * needed -- and an empty list under a promising heading reads like
+         * "nothing to see" rather than "the evidence is destroyed". */
+        if (!shown)
+            fprintf(stderr, "    (no return addresses in range)\n");
+
+        /* Everything below only pays for itself when the scan came back
+         * empty. A crash where the chain was recovered already says what
+         * happened, and burying that under another twenty lines makes the
+         * common report worse to read. */
+        if (!shown) {
+            uint32_t k;
+
+            /* The indirect-call history, which the stack cannot overwrite.
+             * recomp_manual.c prints this too, but only from
+             * recomp_icall_fail_log -- a page fault inside a block copy
+             * never reaches that path, and this is the same information by
+             * the route the fault actually took.
+             *
+             * Declared here rather than included: main.c does not pull in
+             * recomp_types.h, and recomp_manual.c spells it the same way. */
+            extern volatile uint32_t g_icall_trace[16];
+            extern volatile uint32_t g_icall_trace_idx;
+
+            fprintf(stderr, "  recent ICALL targets:");
+            for (k = 0; k < 16; k++)
+                fprintf(stderr, " %08X",
+                        g_icall_trace[(g_icall_trace_idx + k) & 15]);
+            fprintf(stderr, "\n");
+
+            /* The frame unfiltered. The pointers and lengths handed to
+             * whatever faulted live here and look nothing like code, so the
+             * filter above drops exactly what is wanted. On the crash this
+             * was written for, one of these words was the end of the mapped
+             * RAM mirror -- which is what identified the fault as a copy
+             * running off its buffer rather than a stray pointer. */
+            for (i = 0; i < 20; i++)
+                fprintf(stderr, "    raw[esp+%-4d] 0x%08X\n", i * 4, sp[i]);
+        }
     }
 }
+
+/* The emulated APU.
+ *
+ * Two entry points that had no callers anywhere in the tree. apu_mmio_hook.c
+ * documents apu_hook_handle_mmio as "called from VEH in main.c" and no main.c
+ * called it; apu_decode_and_handle's first line is `if (!g_apu_state) return
+ * false` and nothing assigned g_apu_state. So with RECOMP_AC97_READY set the
+ * APU's registers were unmapped to be trapped, and every trap was then
+ * declined and surfaced as an access violation on the first register
+ * DirectSound touched. The VEH below now reaches apu_hook_handle_mmio
+ * through the toolkit's xbox_VehMmioFault.
+ *
+ * Declared rather than included so this does not depend on src/apu being on
+ * the include path. */
+typedef struct MCPXAPUState MCPXAPUState;
+extern MCPXAPUState *mcpx_apu_init_standalone(uint8_t *ram_ptr);
+extern MCPXAPUState *g_apu_state;
 
 static LONG CALLBACK veh_handler(PEXCEPTION_POINTERS ep)
 {
@@ -172,6 +235,16 @@ static LONG CALLBACK veh_handler(PEXCEPTION_POINTERS ep)
         if (fault_addr >= 0xFD000000 && fault_addr < 0xFE000000) {
             return EXCEPTION_CONTINUE_SEARCH;
         }
+
+        /* Trapped hardware registers (APU, USB OHCI) -> their models.
+         *
+         * The other half of RECOMP_AC97_READY: reporting the codec ready is
+         * what lets DirectSoundCreate past its first gate, and from there it
+         * drives the APU directly, so the registers have to fault to be seen.
+         * "Handled" means the access was decoded and the instruction stepped
+         * over, so execution resumes instead of unwinding. */
+        if (xbox_VehMmioFault(ep))
+            return EXCEPTION_CONTINUE_EXECUTION;
 
         fprintf(stderr, "[CRASH] Access violation at RIP=0x%llX, fault addr=0x%llX (%s)\n",
             (unsigned long long)ep->ContextRecord->Rip,
@@ -262,6 +335,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
     g_xbox_mem_offset = xbox_GetMemoryOffset();
     printf("Xbox memory mapped. Offset: 0x%llX\n", (unsigned long long)g_xbox_mem_offset);
+
+    /* Bring up the emulated APU.
+     *
+     * Gated on the same variable that unmaps its registers, because the two
+     * halves are useless apart: a trap with no model declines every access,
+     * and a model nothing traps into never sees a register. The APU walks
+     * Xbox physical RAM to find voice buffers, so it gets the guest RAM
+     * base. */
+    if (getenv("RECOMP_AC97_READY")) {
+        g_apu_state = mcpx_apu_init_standalone((uint8_t *)xbox_GetMemoryBase());
+        fprintf(stderr, "[BOOT] emulated APU %s\n",
+                g_apu_state ? "up" : "FAILED to initialise");
+    }
 
     /* Step 3: Initialize Xbox kernel */
     printf("Initializing Xbox kernel replacement...\n");

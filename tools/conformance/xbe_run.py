@@ -17,8 +17,8 @@ are chosen mechanically rather than by hand:
     an argument we invented;
   * no `fs:` access (SEH), no string operations (they walk esi/edi as
     pointers), no privileged or I/O instructions;
-  * and nothing that lifts to a bare comment, since an unhandled instruction is
-    a silent no-op that the comparison cannot see.
+  * and nothing that lifts to a bare comment or a RECOMP_UNIMPL call, since an
+    unhandled instruction is a silent no-op that the comparison cannot see.
 
 Arguments are small integers. A function that treated one as a pointer would
 fault -- but the operand rule above already excludes those, and the native call
@@ -34,7 +34,10 @@ from . import image
 # we need a supply of verifiable functions, not all of them.
 _PROLOGUE = bytes((0x55, 0x8B, 0xEC))
 
-_LIFTED_RE = '\\blifted_([0-9A-Fa-f]{8})\\s*\\('
+# Any mention, not only a direct call: the lifter also passes a callee by
+# name, as in RECOMP_ABI_CALL(0x0009748Cu, lifted_0009748C), and a callee seen
+# only that way was never declared or stubbed, so the harness did not compile.
+_LIFTED_RE = '\\blifted_([0-9A-Fa-f]{8})\\b'
 
 _MAX_INSNS = 400
 _MIN_BYTES, _MAX_BYTES = 12, 1200
@@ -253,8 +256,12 @@ def lift(data, sections, candidates):
         tr = FunctionTranslator(data, func_db)
         for va, size, _ in candidates:
             body = tr.translate_function(va, func_db[va])
+            # Untranslated instructions used to lift to a bare comment; they
+            # now lift to a RECOMP_UNIMPL(...) call, which the harness does
+            # not define. Either way the instruction is a no-op.
             gaps = [l.strip() for l in body.splitlines()
-                    if l.strip().startswith(("/* TODO", "/* FPU:"))]
+                    if l.strip().startswith(("/* TODO", "/* FPU:"))
+                    or "RECOMP_UNIMPL(" in l]
             if gaps:
                 # An unhandled instruction is a silent no-op: the comparison
                 # would be meaningless, so say which one and move on.
@@ -284,12 +291,19 @@ _HARNESS = '''/* generated -- a real title's own code, lifted and run against it
 RECOMP_TLS uint32_t g_eax, g_ecx, g_edx, g_esp, g_ebx, g_esi, g_edi;
 RECOMP_TLS uint32_t g_seh_ebp, g_ebp;
 RECOMP_TLS double g_fp_stack[8]; RECOMP_TLS int g_fp_top;
-RECOMP_TLS uint16_t g_fp_control_word = 0x027F; RECOMP_TLS int g_fp_cmp;
+RECOMP_TLS uint16_t g_fp_control_word = 0x027F; RECOMP_TLS uint32_t g_mxcsr = 0x1F80; RECOMP_TLS int g_fp_cmp; RECOMP_TLS uint16_t g_fp_cc = 0x4000;
 RECOMP_TLS RecompXmm g_xmm0,g_xmm1,g_xmm2,g_xmm3,g_xmm4,g_xmm5,g_xmm6,g_xmm7;
 volatile uint32_t g_icall_trace[16]; volatile uint32_t g_icall_trace_idx;
 volatile uint64_t g_icall_count;
 ptrdiff_t g_xbox_mem_offset;
 void recomp_icall_fail_log(uint32_t va) { (void)va; }
+/* recomp_types.h sends the device window (RECOMP_MMIO_LO..HI) through these.
+   Guest addresses are host addresses here, so that window is memory too. */
+uint32_t recomp_mmio_read(uint32_t addr, unsigned size)
+{ uint32_t v = 0; memcpy(&v, (const void *)(uintptr_t)addr, size); return v; }
+void recomp_mmio_write(uint32_t addr, uint32_t val, unsigned size)
+{ memcpy((void *)(uintptr_t)addr, &val, size); }
+uint32_t g_xbox_code_lo, g_xbox_code_hi;
 typedef void (*recomp_func_t)(void);
 recomp_func_t recomp_lookup(uint32_t va) { (void)va; return 0; }
 recomp_func_t recomp_lookup_manual(uint32_t va) { (void)va; return 0; }
@@ -580,7 +594,7 @@ static void run_one(uint32_t va, const uint32_t *raw, int vec, int *shown) {
 
     reset_memory();
 
-    g_fp_cmp = 0; g_fp_control_word = 0x027Fu;
+    g_fp_cmp = 0; g_fp_cc = 0x4000; g_fp_control_word = 0x027Fu; g_mxcsr = 0x1F80u;
     memset(g_fp_stack, 0, sizeof g_fp_stack);
     /* one value on the x87 stack, matching the native side's fld */
     g_fp_top = 7; g_fp_stack[7] = g_fp_arg;
@@ -645,9 +659,13 @@ int main(int argc, char **argv) {
     }
     if (!map_image(path)) return 2;
     /* Deterministic, and not all zero: a function that reads it should see
-       something a bug could get wrong. */
+       something a bug could get wrong. A zero word every 64 bytes, though:
+       i * 7 + 1 never has two zero bytes in a row, so a wide-string routine
+       (FBoS's wcscpy at 0x000728F0) found no terminator, ran off the end of
+       the scratch buffer into the harness's own buffers, and reported a
+       mismatch that was the harness, not the lifter. */
     for (i = 0; i < SCRATCH_SIZE; i++)
-        g_scratch_seed[i] = (unsigned char)(i * 7 + 1);
+        g_scratch_seed[i] = (i % 64) >= 62 ? 0 : (unsigned char)(i * 7 + 1);
     { unsigned short cw = 0x027F; __asm { fldcw cw } }
     for (i = 0; i < (int)(sizeof g_funcs / sizeof g_funcs[0]); i++) {
         shown = 0;

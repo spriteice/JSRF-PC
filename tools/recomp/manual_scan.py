@@ -54,6 +54,21 @@ def definition_names(path):
 
 _REF_RE = re.compile(r"\bsub_([0-9A-Fa-f]{8})\b")
 
+# An entry hook: `void sub_XXXXXXXX_enter(void)` defined by hand is called at
+# the top of the generated sub_XXXXXXXX, before its first instruction. Unlike
+# a _gen wrapper it is reached from direct callers too, and the function's own
+# code stays generated: the way to trace, or hold, a function that is called
+# directly without writing its body out by hand.
+_ENTER_RE = re.compile(r"^void sub_([0-9A-Fa-f]{8})_enter\(void\)\s*(?:\{|$)", re.M)
+
+
+def entry_hooks(path):
+    """Addresses of functions the manual file defines an entry hook for."""
+    if not os.path.exists(path):
+        return set()
+    live = strip_disabled(open(path, encoding="utf-8", errors="replace").read())
+    return {int(m.group(1), 16) for m in _ENTER_RE.finditer(live)}
+
 
 def scan(path):
     """(skip, wrap, referenced) for functions the manual file handles.

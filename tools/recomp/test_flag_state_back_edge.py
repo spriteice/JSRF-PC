@@ -51,13 +51,14 @@ def test_back_edge_predecessor_supplies_the_flags():
     je = [l for l in c.splitlines() if "je:" in l and "goto" in l]
     assert je, c
     assert "_flags" not in je[0], je[0]
-    assert "TEST_Z(_fa, _fb)" in je[0], je[0]
+    # `test r, r` is lifted as the equivalent `cmp r, 0`.
+    assert "CMP_EQ(_fa, _fb)" in je[0], je[0]
 
 
 def test_both_arms_leave_a_snapshot_for_it():
     c = _translate(CODE)
-    assert "/* test edx, edx" in c, c
-    assert "/* test ecx, ecx" in c, c
+    assert "/* cmp edx, 0" in c, c
+    assert "/* cmp ecx, 0" in c, c
 
 
 if __name__ == "__main__":

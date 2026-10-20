@@ -132,50 +132,6 @@ void recomp_icallv_dump(void)
                 (int)(g_icallv[i].esp1 - g_icallv[i].esp0), g_icallv[i].eax);
     }
 }
-/* ── Functions the recompiler never found ──────────────────────
- *
- * recomp/gen/recomp_seeded.c holds 40 functions that live in .text, are
- * referenced from vtables and state-handler tables in the data sections,
- * and were not lifted -- 0x0007DBD0 (the title menu's per-frame handler,
- * whose absence made Start do nothing), 0x00096F80 (hit next, 720 times,
- * once the menu worked), 0x000BE190 (a deleting destructor), and 37 more
- * found by the same scan. They are dispatched from here because the
- * ICALL path asks recomp_lookup_manual() before the generated table.
- * JSRF_NO_MANUAL_LIFT=1 switches them off for an A/B against the old
- * behaviour (the calls silently skipped). */
-typedef void (*recomp_seeded_func_t)(void);
-extern const struct { uint32_t va; recomp_seeded_func_t fn; } g_recomp_seeded[];
-extern const unsigned g_recomp_seeded_count;
-
-/* recomp_holes.c: functions reached by direct calls and tail jumps that
- * the discovery pass missed (each was a no-op stub before). Direct calls
- * link straight to them; this table is for an indirect call landing on one. */
-typedef void (*recomp_holes_func_t)(void);
-extern const struct { uint32_t va; recomp_holes_func_t fn; } g_recomp_holes[];
-extern const unsigned g_recomp_holes_count;
-
-static recomp_func_t holes_lookup(uint32_t va)
-{
-    unsigned lo = 0, hi = g_recomp_holes_count;
-    while (lo < hi) {
-        unsigned mid = (lo + hi) / 2;
-        if (g_recomp_holes[mid].va == va) return (recomp_func_t)g_recomp_holes[mid].fn;
-        if (g_recomp_holes[mid].va < va) lo = mid + 1; else hi = mid;
-    }
-    return (recomp_func_t)0;
-}
-
-static recomp_func_t seeded_lookup(uint32_t va)
-{
-    unsigned lo = 0, hi = g_recomp_seeded_count;
-    while (lo < hi) {
-        unsigned mid = (lo + hi) / 2;
-        if (g_recomp_seeded[mid].va == va) return (recomp_func_t)g_recomp_seeded[mid].fn;
-        if (g_recomp_seeded[mid].va < va) lo = mid + 1; else hi = mid;
-    }
-    return (recomp_func_t)0;
-}
-
 /* ── A DirectSound spin, made cooperative ──────────────────────
  *
  * 0x001A308E, in the XDK's DirectSound library:
@@ -239,22 +195,12 @@ recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
         if (manual_on < 0) {
             manual_on = (getenv("JSRF_NO_MANUAL_LIFT") == NULL);
             g_manual_trace = (getenv("JSRF_MANUAL_TRACE") != NULL);
-            fprintf(stderr, "[MANUAL] hand-lifted overrides %s: %u seeded "
-                    "functions + the DirectSound stop-pending wait; %u hole "
-                    "functions (always on)\n",
-                    manual_on ? "ON" : "OFF", g_recomp_seeded_count, g_recomp_holes_count);
+            fprintf(stderr, "[MANUAL] hand-lifted overrides %s: the "
+                    "DirectSound stop-pending wait\n",
+                    manual_on ? "ON" : "OFF");
             fflush(stderr);
         }
-        if (manual_on) {
-            recomp_func_t f;
-            if (xbox_va == 0x001A308Eu) return manual_sub_001A308E;
-            f = seeded_lookup(xbox_va);
-            if (f) return f;
-        }
-        {
-            recomp_func_t f = holes_lookup(xbox_va);
-            if (f) return f;
-        }
+        if (manual_on && xbox_va == 0x001A308Eu) return manual_sub_001A308E;
     }
 
     (void)xbox_va;
@@ -407,6 +353,30 @@ void recomp_icall_not_code_log(uint32_t va)
         }
     }
     fflush(stderr);
+}
+
+/* ── Untranslated instructions ───────────────────────────────────────────
+ *
+ * The lifter emits RECOMP_UNIMPL(text, va) at every instruction it has no
+ * translation for, in place of the bare comment it used to leave. The
+ * instruction is still a no-op; this only stops the omission being silent.
+ * RECOMP_UNIMPL_TRAP=1 aborts at the first hit, at the guest address of the
+ * cause rather than wherever the damage surfaces. */
+void recomp_unimpl(const char *text, uint32_t va)
+{
+    static int printed;
+    const char *trap = getenv("RECOMP_UNIMPL_TRAP");
+    int stop = trap && *trap && *trap != '0';
+
+    if (printed < 50 || stop) {
+        printed++;
+        fprintf(stderr,
+                "[UNIMPL] untranslated instruction REACHED: `%s` at 0x%08X"
+                " (a no-op; set RECOMP_UNIMPL_TRAP=1 to stop here)\n",
+                text, va);
+        fflush(stderr);
+    }
+    if (stop) abort();
 }
 
 

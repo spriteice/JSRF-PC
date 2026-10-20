@@ -19,8 +19,6 @@ POSIX_PRELUDE = r'''
 #include <sys/wait.h>
 static sigjmp_buf g_jmp;
 static volatile int g_in_guard;
-uint32_t recomp_mmio_read(uint32_t a, unsigned s) { (void)s; return *(volatile uint32_t *)(uintptr_t)a; }
-void recomp_mmio_write(uint32_t a, uint32_t v, unsigned s) { (void)s; *(volatile uint32_t *)(uintptr_t)a = v; }
 static void guard_handler(int sig) { if (g_in_guard == 1) { g_in_guard = 2; siglongjmp(g_jmp, sig); } _exit(3); }
 static void install_guards(void) {
     struct sigaction sa; memset(&sa, 0, sizeof sa);

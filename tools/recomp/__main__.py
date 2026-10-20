@@ -59,6 +59,17 @@ def find_data_files(disasm_dir=None, func_id_dir=None, abi_dir=None, overrides=N
     return paths
 
 
+def _parse_force_returns(items):
+    """Parse --force-return ADDR=VALUE pairs into {addr: value}."""
+    out = {}
+    for item in items or ():
+        if "=" not in item:
+            raise SystemExit(f"--force-return wants ADDR=VALUE, got {item!r}")
+        addr, _, value = item.partition("=")
+        out[int(addr, 0)] = int(value, 0) & 0xFFFFFFFF  # -1 is 0xFFFFFFFF
+    return out
+
+
 def _load_addrs(path):
     """Load a JSON address list (or {addr: name} map) as a set of ints."""
     if not path:
@@ -73,6 +84,35 @@ def _load_addrs(path):
             e = e.get("start") or e.get("address")
         out.add(int(e, 16) if isinstance(e, str) else int(e))
     return out
+
+
+def _wrap_generated_bodies(batch, funcs, manual, wrapped):
+    """Emit each wrapped body as sub_X_gen and keep sub_X for its callers.
+
+    recomp_manual.c defines sub_X and calls the generated body as sub_X_gen,
+    so that body must be translated even when --category, --max-funcs or the
+    --manual-functions list would leave it out.
+    """
+    for addr in wrapped:
+        batch.func_db[addr]["name"] = f"sub_{addr:08X}_gen"
+        batch.func_db[addr]["wrapper_name"] = f"sub_{addr:08X}"
+    listed = {addr for addr, _ in funcs}
+    owned = batch.translator.owned_function_starts
+    funcs = funcs + [(addr, batch.func_db[addr]) for addr in sorted(wrapped)
+                     if addr not in listed and addr not in owned]
+    return funcs, manual - wrapped
+
+
+def _load_manual_protection(manual_functions, exclude_manual):
+    """Load manual entry points before any destructive boundary repair."""
+    protected = _load_addrs(manual_functions)
+    scan_result = None
+    if exclude_manual:
+        from .manual_scan import scan as _scan_manual, entry_hooks
+        scan_result = _scan_manual(exclude_manual)
+        protected.update(set().union(*scan_result))
+        protected.update(entry_hooks(exclude_manual))
+    return protected, scan_result
 
 
 def check_data_matches_binary(xbe_path, summary_path):
@@ -198,6 +238,10 @@ def main():
                         help="Path to abi_functions.json (overrides --abi-dir)")
     parser.add_argument("--skip-binary-check", action="store_true",
                         help="Allow disassembly recorded for a different binary")
+    parser.add_argument("--icall-sites", metavar="FILE", default=None,
+                        help="Per-site indirect-call targets from "
+                             "tools.recomp.icall_feedback merge (default: "
+                             "tools/recomp/output/icall_sites.json)")
     parser.add_argument("--manual-functions", metavar="FILE",
                         help="JSON list of addresses the project implements by "
                              "hand. Their bodies are not generated, so the "
@@ -215,12 +259,50 @@ def main():
                         help="JSON list of addresses to emit an entry trace "
                              "for (RECOMP_TRACE_ENTER). For bring-up: shows "
                              "which call in an init chain is not returning")
+    parser.add_argument("--force-return", metavar="ADDR=VALUE",
+                        action="append", default=[],
+                        help="Make a function hand its callers a constant "
+                             "instead of what it computed, e.g. "
+                             "0x0015D780=0. Repeatable. A bring-up probe for "
+                             "a title waiting on a service the runtime does "
+                             "not implement yet: the body still runs, only "
+                             "the answer changes, and the emitted code is "
+                             "inert unless RECOMP_FORCE_RETURN is set")
+    parser.add_argument("--coalesce-functions", metavar="JSON", action="append",
+                        help="Explicit owner bounds and false interior starts "
+                             "to merge before translation; repeatable")
+    parser.add_argument("--entry-stubs", action="store_true",
+                        help="Stub an unresolved target that lies inside a "
+                             "known function with a copy of that function "
+                             "entered at the target, instead of a plain "
+                             "return. Each target is a full copy, so it can "
+                             "grow the generated code a lot. Off by default")
+    parser.add_argument("--back-edge-yield", action="store_true",
+                        help="Call RECOMP_BACK_EDGE, the guest CPU's quantum "
+                             "check, at every loop back edge. The guest CPU "
+                             "lock (RECOMP_GUEST_LOCK=1) needs it to preempt "
+                             "a loop that makes no kernel call; it costs a "
+                             "load and a branch per edge when the lock is "
+                             "off. Off by default: edges stay bare")
     parser.add_argument("--seh-prolog", metavar="ADDR",
                         help="Address of __SEH_prolog (hex). Auto-detected if omitted")
     parser.add_argument("--seh-epilog", metavar="ADDR",
                         help="Address of __SEH_epilog (hex). Auto-detected if omitted")
 
     args = parser.parse_args()
+
+    # Reset on every CLI invocation, including one with no manual file.
+    from . import translator as translator_module
+    from .manual_scan import entry_hooks
+    translator_module.ENTRY_HOOKS = (entry_hooks(args.exclude_manual)
+                                    if args.exclude_manual else set())
+
+    # Boundary repair is destructive: an interior function start disappears
+    # once it is coalesced into its owner. Load hand-written entry points before
+    # constructing BatchTranslator so coalescence cannot delete a symbol the
+    # project implements, wraps, or references manually.
+    protected_function_starts, manual_scan_result = _load_manual_protection(
+        args.manual_functions, args.exclude_manual)
 
     if args.game_name:
         config.set_game_name(args.game_name)
@@ -271,8 +353,16 @@ def main():
         abi_json_path=data_files.get("abi"),
         output_dir=args.output_dir,
         trace_functions=_load_addrs(args.trace_functions),
+        force_returns=_parse_force_returns(args.force_return),
+        coalesce_json_paths=args.coalesce_functions,
+        protected_function_starts=protected_function_starts,
         seh_prolog=int(args.seh_prolog, 16) if args.seh_prolog else None,
         seh_epilog=int(args.seh_epilog, 16) if args.seh_epilog else None,
+        icall_sites_json_path=args.icall_sites or os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "output",
+            "icall_sites.json"),
+        back_edge_yield=args.back_edge_yield,
+        entry_stubs=args.entry_stubs,
     )
 
     t_load = time.time() - t0
@@ -392,8 +482,7 @@ def main():
         # used above -- the `manual` set (declare-only) and func_db name pinning
         # -- so the translator needs no changes.
         if args.exclude_manual:
-            from .manual_scan import scan as _scan_manual
-            skip, wrap, referenced = _scan_manual(args.exclude_manual)
+            skip, wrap, referenced = manual_scan_result
             known = set(translator.func_db)
 
             # referenced-but-not-wrapped: the hand-written code names these as
@@ -408,11 +497,8 @@ def main():
                     info["name"] = plain
                     pinned += 1
 
-            # wrap: recomp_manual.c defines sub_X itself and calls the generated
-            # body as sub_X_gen. So do NOT add these to `manual` (the body is
-            # still needed) -- just rename them so the emitted body is sub_X_gen.
-            for addr in wrap & known:
-                translator.func_db[addr]["name"] = f"sub_{addr:08X}_gen"
+            funcs, manual = _wrap_generated_bodies(
+                translator, funcs, manual, wrap & known)
 
             # skip - wrap: defined by hand and not wrapped -> declare-only, which
             # is exactly what membership in `manual` produces.
