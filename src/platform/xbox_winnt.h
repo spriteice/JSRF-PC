@@ -23,7 +23,7 @@
 #define XBOX_WINNT_H
 
 /* Thread-local storage qualifier (portable). */
-#if defined(_WIN32)
+#if defined(_MSC_VER)
 #define XBOX_THREAD_LOCAL __declspec(thread)
 #else
 #define XBOX_THREAD_LOCAL __thread

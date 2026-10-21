@@ -442,7 +442,7 @@ void xbox_path_init(const char* game_dir, const char* save_dir)
 /* Thread-local: several threads open files at once, and a plain static let one
  * thread's translation overwrite another's between the translate and the read.
  * That showed up as the FMV trigger firing on roughly two runs in three. */
-static __declspec(thread) wchar_t s_last_host_path[MAX_PATH];
+static XBOX_THREAD_LOCAL wchar_t s_last_host_path[MAX_PATH];
 
 static void xbox_remember_host_path(const wchar_t *p)
 {
