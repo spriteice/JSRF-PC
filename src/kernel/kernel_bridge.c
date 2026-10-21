@@ -38,9 +38,7 @@
  * but only as warnings, and this file is compiled with /W4 /WX-. */
 #include <stdlib.h>
 #include <float.h>
-#include <unistd.h>   /* usleep, for recomp_guest_spin_yield */
-#define SPIN_WITNESS_N 3
-#include <sched.h>    /* sched_yield, likewise */
+#include <unistd.h>   /* usleep */
 void xbox_guest_lock_acquire(void);
 void xbox_guest_lock_release(void);
 static void kernel_freeze_watch(void); /* see the bottom of this file */
@@ -6506,52 +6504,15 @@ void xbox_guest_lock_release(void)
     g_lock_owner = 0;
     LeaveCriticalSection(&g_guest_lock);
 }
-/* Stand back for a moment inside a guest spin that has no calls in it.
- *
- * A lifted loop that only tests memory never reaches the entry hook, so a
- * guest thread spinning on a flag holds the guest lock for as long as the
- * spin lasts. That is fine when another guest thread clears the flag, and
- * fatal when the thing that clears it is an interrupt: the ISR runs on the
- * kernel timer thread, the timer thread needs the guest lock to run it, and
- * the lock is held by the very spin the ISR would end. The two wait for each
- * other and the game stops -- reported as "held the guest lock for 18723 ms"
- * with the holder inside DirectSound's stop-pending wait.
- *
- * Dropping the lock for a moment between polls is all that is needed: the
- * timer thread takes it, delivers the APU interrupt, DirectSound retires the
- * voice and clears the bit, and the spin ends on its next look.
- *
- * The first few dozen polls yield without sleeping, because the wait this was
- * written for normally ends within a frame and 100 us a poll would make a
- * routine stop cost milliseconds. Only a wait that has already gone on starts
- * sleeping.
- *
- * The counter restarts when there has been a gap since the previous poll, so
- * it measures ONE wait rather than every wait this thread has ever done --
- * otherwise a healthy run would eventually print the complaint below. It
- * exists because a spin that yields politely forever is a hang with better
- * manners, and silence is how the first one hid.
- *
- * Both lock helpers no-op when this thread does not hold the lock, so this is
- * safe to call from anywhere. */
-/* Witnesses: has the code that is SUPPOSED to end this wait run at all?
- *
- * "The flag never clears" has two completely different causes and the spin
- * itself cannot tell them apart: either the clearing code never runs, or it
- * runs and decides not to clear. One witness counter at the top of each
- * relevant function separates them in a single run, which is cheaper than
- * another round of reading disassembly and guessing. Incremented from the
- * generated bodies; see the headers on those functions. */
-unsigned long g_spin_witness[SPIN_WITNESS_N];
-static const char *const g_spin_witness_name[SPIN_WITNESS_N] = {
-    "sub_001A2681 (DirectSound voice service, root of the chain)",
-    "sub_001A2E2E (the only code that clears bit 0x8000)",
-    "sub_001A2E2E reached the clear itself",
-};
-
 /* Run a device's interrupt handler on this thread, between two instructions
- * of whatever it is running, with the lifted registers saved around it.
- * recomp_guest_spin_yield below says why this thread and why the registers. */
+ * of whatever it is running, as the console's interrupt preempts the running
+ * thread. DirectSound spins for a voice's stop to retire while holding its own
+ * critical section, and the APU handler that retires it enters that section
+ * too: recursive on the spinning thread, a deadlock on any other. The lifted
+ * registers are ordinary variables, so they are saved around the handler, or
+ * the interrupted loop would resume with the handler's and poll the wrong
+ * address forever. ebp is a function local in generated code and needs no
+ * saving; g_seh_ebp does. */
 static int kernel_raise_interrupt_here(uint32_t vector)
 {
     uint32_t s_eax = g_eax, s_ecx = g_ecx, s_edx = g_edx;
@@ -6563,151 +6524,6 @@ static int kernel_raise_interrupt_here(uint32_t vector)
     g_esp = s_esp; g_seh_ebp = s_seh;
     g_spin_isrs++;
     return r;
-}
-
-void recomp_guest_spin_yield(uint32_t site_va, uint32_t obj_va, uint32_t flags)
-{
-    static RECOMP_TLS unsigned long polls;
-    static RECOMP_TLS long long started, last, said;
-    long long now = (long long)GetTickCount64();
-
-    if (!last || now - last > 50) { polls = 0; started = now; said = 0; }
-    last = now;
-
-    xbox_guest_lock_release();
-    if (++polls < 64) sched_yield();
-    else              usleep(100);
-    xbox_guest_lock_acquire();
-
-    /* Take the interrupt HERE, on the thread that is spinning.
-     *
-     * This is the difference between a console and this port, and it is the
-     * whole reason the title deadlocks. DirectSound sets "stop pending", then
-     * spins for it to clear WHILE HOLDING its own critical section, and the
-     * code that clears it needs that same critical section. On the console
-     * that is not a deadlock, because the APU's interrupt preempts the
-     * spinning thread itself -- and an Xbox critical section is recursive per
-     * thread, so the handler's acquire succeeds immediately, retires the
-     * voice, clears the flag, and the spin ends on its next look.
-     *
-     * Here the interrupt was delivered on the kernel timer thread, a
-     * different thread, which blocks on that critical section and never
-     * arrives. Both threads then wait for each other. Delivering it on this
-     * thread restores the console's behaviour exactly: same handler, same
-     * lock, same owner.
-     *
-     * The register set is saved and restored around it because that is also
-     * what the hardware does and what this port otherwise does not: the
-     * lifted registers are ordinary variables, so a handler running "between"
-     * two instructions of the spin would leave ecx pointing somewhere else
-     * and the loop would poll the wrong address forever. ebp is a function
-     * local in generated code and needs no saving; g_seh_ebp does.
-     *
-     * in_isr keeps a handler that spins from re-entering itself. */
-    {
-        extern int mcpx_apu_irq_pending_global(void) __attribute__((weak));
-        extern unsigned char xbox_KeCurrentIrql(void);
-        static RECOMP_TLS int in_isr;
-        static int on = -1, irql_gate = -1, force_polls = -1;
-        if (force_polls < 0) { const char *e = getenv("RECOMP_SPIN_ISR_FORCE");
-                               force_polls = e ? atoi(e) : 0; }
-        if (on < 0) { const char *e = getenv("RECOMP_SPIN_ISR");
-                      on = e ? atoi(e) : 1; }
-        /* Not while the title has masked it -- and DISPATCH_LEVEL does not
-         * mask it.
-         *
-         * This gate was first written as "IRQL < DISPATCH_LEVEL", on the
-         * theory that DirectSound raises IRQL to keep its own interrupt
-         * handler out of its structures. That is wrong twice over, and it
-         * cost a working build.
-         *
-         * Wrong about the hardware: raising to DISPATCH_LEVEL blocks DPCs and
-         * thread preemption, not device interrupts. A device interrupt is
-         * masked only at or above its own IRQL, which is higher than
-         * DISPATCH. So on a console the APU interrupt arrives perfectly well
-         * while a thread sits at DISPATCH_LEVEL -- which is exactly the case
-         * here, because DirectSound's stop-pending spin runs at DISPATCH.
-         * Gating at 2 therefore withheld the one interrupt that ends that
-         * spin, and the deadlock this whole mechanism exists to break came
-         * straight back: "froze pushing new game".
-         *
-         * Wrong about the evidence: the gate was added to stop a crash in a
-         * scene-graph walk, and that crash turned out to be an artefact of a
-         * test environment that was missing RECOMP_ABI_RESTORE. It reproduces
-         * with this delivery disabled entirely, and it predates the delivery
-         * being written. The gate was fixing something that was never broken.
-         *
-         * What remains true is that SOME level must mask it, or a handler
-         * that runs at device IRQL could re-enter itself. Above DISPATCH is
-         * the honest threshold: it masks nothing the console would deliver,
-         * and still holds the interrupt pending -- exactly as the hardware
-         * holds it -- for the one case that matters. */
-        /* The threshold is a setting, and its default is "never mask".
-         *
-         * Guessing it wrong is expensive: at 2 it withheld the interrupt that
-         * ends DirectSound's spin and the freeze came back, and the crash the
-         * gate was added for turned out to be a test-harness artefact. The
-         * build that demonstrably reached the tutorial had no gate at all, so
-         * that is the default, and the threshold is settable rather than
-         * argued about. RECOMP_SPIN_ISR_IRQL=<n>: hold the interrupt when the
-         * title's IRQL is n or above. */
-        if (irql_gate < 0) { const char *e = getenv("RECOMP_SPIN_ISR_IRQL");
-                             irql_gate = e ? atoi(e) : 99; }
-        /* RECOMP_SPIN_ISR_FORCE=<polls>: once a spin has gone on this long,
-         * run the handler whether or not the hardware says an interrupt is
-         * pending.
-         *
-         * Measurement, not a guess: with the mask wide open, ZERO interrupts
-         * were delivered to the spinning thread, because ISTS is zero -- the
-         * voice processor has nothing to report. So the deadlock is not "the
-         * interrupt cannot get through", it is "there is no interrupt". The
-         * handler is nevertheless the only code that can end this wait, and
-         * whether running it unprompted ends the wait decides what the real
-         * bug is: if it does, the APU is failing to raise a notification it
-         * owes; if it does not, the handler needs something else entirely.
-         *
-         * Off unless asked for. Running a driver's interrupt handler when its
-         * device did not ask is not something to do quietly in a shipping
-         * build. */
-        if (force_polls > 0 && polls == (unsigned long)force_polls
-            && !in_isr && xbox_GetConnectedInterrupt(APU_VECTOR)) {
-            int r;
-            in_isr = 1;
-            r = kernel_raise_interrupt_here(APU_VECTOR);
-            in_isr = 0;
-            fprintf(stderr, "  [SPIN] ran the APU handler unprompted after %lu"
-                            " polls; it returned %d\n", polls, r);
-            fflush(stderr);
-        }
-        if (on && !in_isr && xbox_KeCurrentIrql() < irql_gate
-            && mcpx_apu_irq_pending_global
-            && xbox_GetConnectedInterrupt(APU_VECTOR)
-            && mcpx_apu_irq_pending_global()) {
-            in_isr = 1;
-            kernel_raise_interrupt_here(APU_VECTOR);
-            in_isr = 0;
-        }
-    }
-
-    if (now - started >= 5000 && now - said >= 5000) {
-        int i;
-        said = now;
-        fprintf(stderr, "  [SPIN] thread %lu has been spinning at 0x%08X for "
-                        "%lld ms (%lu polls), waiting on object 0x%08X whose "
-                        "flags are 0x%04X\n",
-                (unsigned long)GetCurrentThreadId(), site_va,
-                now - started, polls, obj_va, flags & 0xFFFFu);
-        { extern unsigned char xbox_KeCurrentIrql(void);
-          fprintf(stderr, "  [SPIN]   this thread is at IRQL %u; interrupts "
-                  "delivered on it: %lu\n",
-                  (unsigned)xbox_KeCurrentIrql(), g_spin_isrs); }
-        for (i = 0; i < SPIN_WITNESS_N; i++)
-            fprintf(stderr, "  [SPIN]   %-58s %lu time(s)\n",
-                    g_spin_witness_name[i], g_spin_witness[i]);
-        { extern void xbox_kernel_thread_report(void);
-          xbox_kernel_thread_report(); }
-        fflush(stderr);
-    }
 }
 
 /* Called from the function-entry trace hook: hand the CPU over after a
@@ -6815,8 +6631,8 @@ void xbox_guest_lock_yield_now(void)
  * device interrupt, and DirectSound counts on that too: its stop wait
  * (0x001A308E, the load-game hang) spins at raised IRQL until the APU's
  * handler retires the voice. So a pending APU interrupt is taken here, on
- * this thread, at any IRQL, as recomp_guest_spin_yield does for the same
- * reason; only the thread switch waits for IRQL to drop. */
+ * this thread, at any IRQL (kernel_raise_interrupt_here); only the thread
+ * switch waits for IRQL to drop. */
 void xbox_GuestCpuPreempt(uint32_t va)
 {
     extern unsigned g_recomp_tick;
