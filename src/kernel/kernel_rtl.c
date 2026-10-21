@@ -428,7 +428,7 @@ static void crt_lock_trace(const char *what, PRTL_CRITICAL_SECTION guest)
         }
         if (watch && va == watch_va) {
             fprintf(stderr, "  [CSWATCH] t%-6lu %s 0x%08X\n",
-                    GetCurrentThreadId(), what, va);
+                    (unsigned long)GetCurrentThreadId(), what, va);
             xbox_guest_backtrace(8);
             fflush(stderr);
         }
@@ -436,14 +436,14 @@ static void crt_lock_trace(const char *what, PRTL_CRITICAL_SECTION guest)
 
     if (all) {
         fprintf(stderr, "  [CSTRACE] t%-6lu %-4s 0x%08X idx %d\n",
-                GetCurrentThreadId(), what, va, idx);
+                (unsigned long)GetCurrentThreadId(), what, va, idx);
         fflush(stderr);
         return;
     }
     if (idx < 0)
         return;
     fprintf(stderr, "  [CSTRACE] t%-6lu %-4s lock %d\n",
-            GetCurrentThreadId(), what, idx);
+            (unsigned long)GetCurrentThreadId(), what, idx);
     fflush(stderr);
 }
 
@@ -484,7 +484,7 @@ VOID __stdcall xbox_RtlEnterCriticalSection(PRTL_CRITICAL_SECTION CriticalSectio
     if (InterlockedIncrement(&g_cs_contention_reports) <= 16) {
         fprintf(stderr, "  [CS] thread %lu waiting on guest lock 0x%08X"
                         " (held by thread %lu)\n",
-                GetCurrentThreadId(),
+                (unsigned long)GetCurrentThreadId(),
                 (uint32_t)((uintptr_t)CriticalSection
                            - (uintptr_t)g_xbox_mem_offset),
                 (unsigned long)(uintptr_t)cs->OwningThread);
@@ -506,7 +506,8 @@ VOID __stdcall xbox_RtlEnterCriticalSection(PRTL_CRITICAL_SECTION CriticalSectio
                         slot->owner_tid, slot->owner_site, slot->depth);
         }
         fprintf(stderr, "  [CS] enters=%ld leaves=%ld (outstanding %ld)\n",
-                g_cs_enters, g_cs_leaves, g_cs_enters - g_cs_leaves);
+                (long)g_cs_enters, (long)g_cs_leaves,
+                (long)(g_cs_enters - g_cs_leaves));
         xbox_guest_backtrace(10);
         fflush(stderr);
     }
@@ -514,7 +515,7 @@ VOID __stdcall xbox_RtlEnterCriticalSection(PRTL_CRITICAL_SECTION CriticalSectio
     xbox_cs_note_owner(cs);
     if (g_cs_contention_reports <= 16) {
         fprintf(stderr, "  [CS] thread %lu acquired 0x%08X\n",
-                GetCurrentThreadId(),
+                (unsigned long)GetCurrentThreadId(),
                 (uint32_t)((uintptr_t)CriticalSection
                            - (uintptr_t)g_xbox_mem_offset));
         fflush(stderr);

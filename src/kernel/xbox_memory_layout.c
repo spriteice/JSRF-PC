@@ -1339,7 +1339,7 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
     );
     if (!g_mapping_handle) {
         fprintf(stderr, "xbox_MemoryLayoutInit: CreateFileMapping failed (error %lu)\n",
-                GetLastError());
+                (unsigned long)GetLastError());
         return FALSE;
     }
 
@@ -1890,7 +1890,7 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
         } else {
             fprintf(stderr, "  WARNING: contiguous window at 0x%08X failed "
                     "(error %lu); pinned physical allocations will fault\n",
-                    XBOX_CONTIG_BASE, GetLastError());
+                    XBOX_CONTIG_BASE, (unsigned long)GetLastError());
         }
     }
 
@@ -1933,7 +1933,7 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
         } else {
             fprintf(stderr, "  WARNING: NV2A aperture at 0x%08X failed "
                     "(error %lu); D3D register access will fault\n",
-                    XBOX_NV2A_BASE, GetLastError());
+                    XBOX_NV2A_BASE, (unsigned long)GetLastError());
         }
     }
 
@@ -2038,7 +2038,7 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
         } else {
             fprintf(stderr, "  WARNING: MCPX aperture at 0x%08X failed "
                     "(error %lu); USB/audio register access will fault\n",
-                    XBOX_MCPX_BASE, GetLastError());
+                    XBOX_MCPX_BASE, (unsigned long)GetLastError());
         }
     }
 
@@ -2059,7 +2059,7 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
         } else {
             fprintf(stderr, "  WARNING: flash aperture at 0x%08X failed "
                     "(error %lu); a title reading flash will fault\n",
-                    XBOX_FLASH_BASE, GetLastError());
+                    XBOX_FLASH_BASE, (unsigned long)GetLastError());
         }
     }
 
@@ -2161,7 +2161,7 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
                 mirrors_ok++;
             } else {
                 fprintf(stderr, "  Mirror %d: FAILED at %p (error %lu)\n",
-                        m + 1, (void *)mirror_base, GetLastError());
+                        m + 1, (void *)mirror_base, (unsigned long)GetLastError());
             }
         }
         fprintf(stderr, "  RAM mirror: %d/%d views mapped (covers %d MB)\n",
@@ -2223,7 +2223,7 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
         } else {
             fprintf(stderr, "  WARNING: tiled aperture at 0x%08X failed"
                     " (error %lu); rendering writes will fault\n",
-                    XBOX_TILED_BASE, GetLastError());
+                    XBOX_TILED_BASE, (unsigned long)GetLastError());
         }
     }
 
