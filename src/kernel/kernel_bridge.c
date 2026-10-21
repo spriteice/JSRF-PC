@@ -2563,7 +2563,7 @@ static void kernel_apu_tick(void)
     extern int mcpx_apu_irq_pending_global(void) __attribute__((weak));
     static int off = -1;
     static unsigned declined, backoff;
-    int claimed;
+    int claimed, forced;
 
     if (off < 0) off = getenv("RECOMP_APU_NO_IRQ") ? 1 : 0;
     if (off || !mcpx_apu_irq_pending_global) return;
@@ -2609,13 +2609,21 @@ static void kernel_apu_tick(void)
     { static long hz = -1; static long long next;
       if (hz < 0) { const char *e = getenv("RECOMP_APU_FORCE_HZ");
                     hz = e ? atol(e) : 0; }
+      forced = hz > 0;
       if (hz > 0) {
           long long now = (long long)GetTickCount64();
           if (now < next) return;
           next = now + (1000 / hz > 0 ? 1000 / hz : 1);
       } else if (!mcpx_apu_irq_pending_global()) return; }
 
-    claimed = kernel_raise_interrupt(APU_VECTOR);
+    /* Looked at again once this thread holds the lock: the line is level-
+     * triggered, and the thread that held the lock may have taken it on
+     * itself in the meantime (xbox_GuestCpuPreempt). */
+    xbox_guest_lock_acquire();
+    claimed = forced || mcpx_apu_irq_pending_global()
+            ? kernel_raise_interrupt_locked(APU_VECTOR) : -2;
+    xbox_guest_lock_release();
+    if (claimed == -2) return;
     raised++;
     if (claimed > 0) g_apu_claimed++;
     if (raised <= 3 || (claimed <= 0 && declined < 3)) {
@@ -6241,8 +6249,12 @@ static void lock_holder_where(void)
  * loop back edge in lifted code (RECOMP_BACK_EDGE, under the toolkit's name):
  * while it is zero a back edge costs a load and a branch. */
 int32_t g_xbox_guest_cpu_preempt;
-/* The holder's latest loop back edge, for the [LOCK] report. */
+/* The holder's latest loop back edge and its IRQL there, for the [LOCK]
+ * report. */
 static volatile uint32_t g_lock_owner_edge;
+static volatile unsigned g_lock_owner_irql;
+/* Interrupts delivered from inside a spin rather than on the timer thread. */
+static unsigned long g_spin_isrs;
 static volatile long long     g_lock_since;
 
 /* Per-thread queueing statistics, kept in a small fixed table so that
@@ -6416,9 +6428,18 @@ void xbox_guest_lock_report(void)
     fprintf(stderr, "  [LOCK] thread %lu has held the guest lock for %lld ms"
                     " (critical-section handoffs %lu, free releases %lu)\n",
             owner, now - since, g_cs_handoffs, g_cs_free_releases);
-    if (g_lock_owner_edge)
-        fprintf(stderr, "  [LOCK] its latest loop back edge: guest 0x%08X\n",
-                g_lock_owner_edge);
+    if (g_lock_owner_edge) {
+        extern void mcpx_apu_debug_line(char *, unsigned long) __attribute__((weak));
+        fprintf(stderr, "  [LOCK] its latest loop back edge: guest 0x%08X at "
+                        "IRQL %u; APU interrupts taken on a spinning thread: "
+                        "%lu\n", g_lock_owner_edge, g_lock_owner_irql,
+                g_spin_isrs);
+        if (mcpx_apu_debug_line) {
+            char line[320];
+            mcpx_apu_debug_line(line, sizeof line);
+            fprintf(stderr, "  [LOCK] APU: %s\n", line);
+        }
+    }
     { extern void xbox_kernel_thread_report(void);
       xbox_kernel_thread_report(); }
 #ifdef __APPLE__
@@ -6497,13 +6518,27 @@ void xbox_guest_lock_release(void)
  * another round of reading disassembly and guessing. Incremented from the
  * generated bodies; see the headers on those functions. */
 unsigned long g_spin_witness[SPIN_WITNESS_N];
-/* Interrupts delivered from inside a spin rather than on the timer thread. */
-static unsigned long g_spin_isrs;
 static const char *const g_spin_witness_name[SPIN_WITNESS_N] = {
     "sub_001A2681 (DirectSound voice service, root of the chain)",
     "sub_001A2E2E (the only code that clears bit 0x8000)",
     "sub_001A2E2E reached the clear itself",
 };
+
+/* Run a device's interrupt handler on this thread, between two instructions
+ * of whatever it is running, with the lifted registers saved around it.
+ * recomp_guest_spin_yield below says why this thread and why the registers. */
+static int kernel_raise_interrupt_here(uint32_t vector)
+{
+    uint32_t s_eax = g_eax, s_ecx = g_ecx, s_edx = g_edx;
+    uint32_t s_ebx = g_ebx, s_esi = g_esi, s_edi = g_edi;
+    uint32_t s_esp = g_esp, s_seh = g_seh_ebp;
+    int r = kernel_raise_interrupt_locked(vector);
+    g_eax = s_eax; g_ecx = s_ecx; g_edx = s_edx;
+    g_ebx = s_ebx; g_esi = s_esi; g_edi = s_edi;
+    g_esp = s_esp; g_seh_ebp = s_seh;
+    g_spin_isrs++;
+    return r;
+}
 
 void recomp_guest_spin_yield(uint32_t site_va, uint32_t obj_va, uint32_t flags)
 {
@@ -6611,17 +6646,10 @@ void recomp_guest_spin_yield(uint32_t site_va, uint32_t obj_va, uint32_t flags)
          * build. */
         if (force_polls > 0 && polls == (unsigned long)force_polls
             && !in_isr && xbox_GetConnectedInterrupt(APU_VECTOR)) {
-            uint32_t s_eax = g_eax, s_ecx = g_ecx, s_edx = g_edx;
-            uint32_t s_ebx = g_ebx, s_esi = g_esi, s_edi = g_edi;
-            uint32_t s_esp = g_esp, s_seh = g_seh_ebp;
             int r;
             in_isr = 1;
-            r = kernel_raise_interrupt_locked(APU_VECTOR);
+            r = kernel_raise_interrupt_here(APU_VECTOR);
             in_isr = 0;
-            g_eax = s_eax; g_ecx = s_ecx; g_edx = s_edx;
-            g_ebx = s_ebx; g_esi = s_esi; g_edi = s_edi;
-            g_esp = s_esp; g_seh_ebp = s_seh;
-            g_spin_isrs++;
             fprintf(stderr, "  [SPIN] ran the APU handler unprompted after %lu"
                             " polls; it returned %d\n", polls, r);
             fflush(stderr);
@@ -6630,16 +6658,9 @@ void recomp_guest_spin_yield(uint32_t site_va, uint32_t obj_va, uint32_t flags)
             && mcpx_apu_irq_pending_global
             && xbox_GetConnectedInterrupt(APU_VECTOR)
             && mcpx_apu_irq_pending_global()) {
-            uint32_t s_eax = g_eax, s_ecx = g_ecx, s_edx = g_edx;
-            uint32_t s_ebx = g_ebx, s_esi = g_esi, s_edi = g_edi;
-            uint32_t s_esp = g_esp, s_seh = g_seh_ebp;
             in_isr = 1;
-            kernel_raise_interrupt_locked(APU_VECTOR);
+            kernel_raise_interrupt_here(APU_VECTOR);
             in_isr = 0;
-            g_eax = s_eax; g_ecx = s_ecx; g_edx = s_edx;
-            g_ebx = s_ebx; g_esi = s_esi; g_edi = s_edi;
-            g_esp = s_esp; g_seh_ebp = s_seh;
-            g_spin_isrs++;
         }
     }
 
@@ -6752,16 +6773,28 @@ void xbox_guest_lock_yield_now(void)
  * thread held the lock for over twenty seconds with no kernel call, and the
  * timer thread, which needs it to deliver the vblank and APU interrupts,
  * stopped with it. Counted like the entry hook, so a hot loop pays a call and
- * an increment while someone waits. Not at DISPATCH_LEVEL or inside an
- * interrupt or DPC: the console switched no threads there, and DirectSound
- * counts on that. */
+ * an increment while someone waits.
+ *
+ * At DISPATCH_LEVEL, or inside an interrupt or DPC, the console switches no
+ * threads, and DirectSound counts on that. But DISPATCH_LEVEL does not mask a
+ * device interrupt, and DirectSound counts on that too: its stop wait
+ * (0x001A308E, the load-game hang) spins at raised IRQL until the APU's
+ * handler retires the voice. So a pending APU interrupt is taken here, on
+ * this thread, at any IRQL, as recomp_guest_spin_yield does for the same
+ * reason; only the thread switch waits for IRQL to drop. */
 void xbox_GuestCpuPreempt(uint32_t va)
 {
     extern unsigned g_recomp_tick;
     extern unsigned char xbox_KeCurrentIrql(void);
+    extern int mcpx_apu_irq_pending_global(void) __attribute__((weak));
     if (!t_guest_holds || t_in_callback) return;
     g_lock_owner_edge = va;
-    if ((++g_recomp_tick & 0xFFu) == 0u && xbox_KeCurrentIrql() < DISPATCH_LEVEL)
+    if ((++g_recomp_tick & 0xFFu) != 0u) return;
+    g_lock_owner_irql = xbox_KeCurrentIrql();
+    if (mcpx_apu_irq_pending_global && xbox_GetConnectedInterrupt(APU_VECTOR)
+        && mcpx_apu_irq_pending_global())
+        kernel_raise_interrupt_here(APU_VECTOR);
+    if (g_lock_owner_irql < DISPATCH_LEVEL)
         xbox_guest_lock_yield_now();
 }
 /* Give the guest lock up across a wait that is not a kernel call.
