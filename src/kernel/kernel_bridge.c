@@ -1094,6 +1094,34 @@ static void bridge_NtFreeVirtualMemory(void)
         BRIDGE_MEM32(base_ptr) = 0;
 }
 
+/* -- NtProtectVirtualMemory (ordinal 204, 4 args = 16 bytes) -----------
+ *
+ *     NTSTATUS NtProtectVirtualMemory(PVOID *BaseAddress, PSIZE_T RegionSize,
+ *                                     ULONG NewProtect, PULONG OldProtect);
+ *
+ * XAPI's VirtualProtect. JSRF calls it to make a buffer PAGE_READWRITE before
+ * it fills the buffer and PAGE_READONLY after. Unbridged, the fallback
+ * returned success and never wrote *OldProtect.
+ *
+ * The change is accepted and not applied. The guest is one flat committed
+ * read-write mapping, which is what NtQueryVirtualMemory reports, so the old
+ * protection is PAGE_READWRITE. Applying it would change nothing a correct
+ * title does, and could fault the runtime's own writes into guest memory.
+ * The kernel would also round *BaseAddress and *RegionSize to whole pages;
+ * they are left as passed, and VirtualProtect discards them.
+ */
+static void bridge_NtProtectVirtualMemory(void)
+{
+    uint32_t old_ptr = STACK_ARG(3);
+
+    if (!bridge_out_ok(old_ptr, 4, "NtProtectVirtualMemory")) {
+        g_eax = 0xC0000005u;                /* STATUS_ACCESS_VIOLATION */
+        return;
+    }
+    BRIDGE_MEM32(old_ptr) = 0x04;           /* PAGE_READWRITE */
+    g_eax = 0;                              /* STATUS_SUCCESS */
+}
+
 /* ── ExAllocatePool / ExAllocatePoolWithTag (ordinals 15, 16) ─
  * Must allocate from Xbox heap so the returned pointer is an Xbox VA
  * that can be accessed via MEM32(). Native HeapAlloc returns 64-bit
@@ -4493,6 +4521,18 @@ static void bridge_KeSetBasePriorityThread(void)
     }
 }
 
+/* ── KeSetDisableBoostThread (ordinal 144, 2 args) ─────────
+ * LOGICAL KeSetDisableBoostThread(PKTHREAD Thread, LOGICAL Disable)
+ *
+ * XAPI's SetThreadPriorityBoost, which JSRF calls and which discards the
+ * result. Guest threads run as host threads, and the console's priority
+ * boost is not modelled, so there is no boost to turn off: the previous
+ * setting is reported as FALSE, boosts not disabled. */
+static void bridge_KeSetDisableBoostThread(void)
+{
+    g_eax = 0;
+}
+
 /* ── KeStallExecutionProcessor (ordinal 151, 1 arg) */
 static void bridge_KeStallExecutionProcessor(void)
 {
@@ -5818,6 +5858,7 @@ static bridge_func_t bridge_for_ordinal(ULONG ordinal)
     /* Memory - virtual */
     case 184: return bridge_NtAllocateVirtualMemory;
     case 199: return bridge_NtFreeVirtualMemory;
+    case 204: return bridge_NtProtectVirtualMemory;
     case 215: return bridge_NtQuerySymbolicLinkObject;
     case 217: return bridge_NtQueryVirtualMemory;
 
@@ -5941,6 +5982,9 @@ static bridge_func_t bridge_for_ordinal(ULONG ordinal)
      * priority as 0 and any priority the title set was discarded. */
     case 124: return bridge_KeQueryBasePriorityThread;
     case 143: return bridge_KeSetBasePriorityThread;
+    /* Routed beside them: the boost switch takes a thread object and a
+     * LOGICAL and returns one, with nothing to marshal. */
+    case 144: return bridge_KeSetDisableBoostThread;
     /* Routed. Both clear the memory-model bar above: neither allocates,
      * frees, nor hands back a host pointer. KeStallExecutionProcessor takes a
      * microsecond count and busy-waits -- no pointers at all.
