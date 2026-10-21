@@ -6260,8 +6260,9 @@ static volatile unsigned g_lock_owner_irql;
 static unsigned long g_spin_isrs;
 static volatile long long     g_lock_since;
 /* Whose time slice is running, and since when. Unlike g_lock_since it does
- * not restart when the same thread takes the lock back; see
- * xbox_guest_lock_yield_now. Written and read only under the lock. */
+ * not restart when the same thread takes the lock back after a kernel call,
+ * only when the lock changes hands or xbox_guest_lock_yield_now has offered
+ * it. Written and read only under the lock. */
 static unsigned long g_slice_owner;
 static long long     g_slice_since;
 /* Slices that ended in a hand-over, for the [LOCK] report. */
@@ -6794,6 +6795,7 @@ void xbox_guest_lock_yield_now(void)
           SwitchToThread();
       } }
     xbox_guest_lock_acquire();
+    g_slice_since = t_guest_since;   /* offered: a new slice, taken over or not */
 }
 /* The same offer at a loop back edge, in code lifted with --back-edge-yield,
  * while some guest thread queues for the lock.
