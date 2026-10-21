@@ -13,8 +13,7 @@
  * and 2D overlays that way, so it is the first geometry to appear. Batches that
  * need a vertex program executed are counted and skipped rather than drawn
  * somewhere wrong -- see raster_batch(). Texturing, depth and vertex programs
- * are still a renderer, not a command decoder; the upgrade path is the D3D11
- * translator in src/nv2a/nv2a_pgraph_d3d11.c.
+ * are still a renderer, not a command decoder: src/nv2a_gl is that renderer.
  *
  * Everything this does not handle is counted and ranked by
  * nv2a_pb_exec_report(), so what remains is a list rather than a guess.
@@ -616,9 +615,8 @@ static void clear_surface(uint32_t param)
  * correction, and only batches whose attribute 0 is already in screen space.
  * A title running a vertex program hands over object-space positions that mean
  * nothing without executing the program, so those batches are counted and
- * skipped rather than drawn somewhere wrong. Upgrade path is the D3D11
- * translator in src/nv2a/nv2a_pgraph_d3d11.c once vertex programs are
- * translated; this exists to get the first geometry on screen for every title,
+ * skipped rather than drawn somewhere wrong; src/nv2a_gl executes them. This
+ * exists to get the first geometry on screen for every title,
  * which in practice is UI, HUD and 2D overlays -- all pre-transformed.
  */
 

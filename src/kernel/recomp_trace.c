@@ -507,7 +507,7 @@ void recomp_trace_esp(const char *name, const char *tag)
  * ------------------------------------------------------------------------- */
 
 /* Defined in xbox_memory_layout.c; declared extern per consumer, as
- * kernel_bridge.c and nv2a_pb_replay.c already do. */
+ * kernel_bridge.c already does. */
 extern ptrdiff_t g_xbox_mem_offset;
 
 void recomp_debug_service(uint32_t service, uint32_t arg_va)

@@ -63,7 +63,7 @@ way to get this subtly wrong.
 | Piece | File |
 |---|---|
 | Combiner → HLSL | `src/d3d/d3d8_combiners.c`, `src/d3d/d3d8_combiners.h` |
-| Vertex microcode → HLSL | `src/nv2a/nv2a_pgraph_d3d11.c` |
+| Vertex microcode → GLSL | `src/nv2a_gl/nv2a_vsh.c` |
 | Texture unswizzling | `src/d3d/d3d8_swizzle.h` |
 
 `d3d8_combiners.h` and `d3d8_swizzle.h` cite xemu as a reference for the

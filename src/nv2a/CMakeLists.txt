@@ -7,10 +7,7 @@
 
 add_library(xbox_nv2a STATIC
     nv2a_core.c
-    nv2a_pgraph_d3d11.c
-    nv2a_pb_replay.c
     nv2a_mmio_hook.c
-    nv2a_pb_test.c
 )
 
 target_include_directories(xbox_nv2a PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
