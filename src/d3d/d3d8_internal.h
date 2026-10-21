@@ -11,14 +11,11 @@
 #define COBJMACROS
 #include "d3d8_xbox.h"
 
-/* Portable: D3D8 device accessor used by recompiled code on both backends
- * (d3d8_device.c on Windows, d3d8_gl.c on POSIX). */
+/* D3D8 device accessor used by recompiled code (d3d8_device.c). */
 IDirect3DDevice8 *d3d8_GetDevice(void);
 
 #if defined(_WIN32)
-/* === Everything below is the D3D11 backend. The POSIX d3d8_compat
- * library (d3d8_gl.c) implements its own internal state and does not
- * need any of these declarations. === */
+/* === Everything below is the D3D11 backend. === */
 
 #include <d3d11.h>
 #include <dxgi.h>
