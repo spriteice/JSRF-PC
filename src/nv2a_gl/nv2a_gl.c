@@ -847,6 +847,8 @@ static uint32_t g_frame_chars_prev;  /* ... and in the frame just finished */
 #define TEX_CACHE 4096
 static struct {
     uint32_t offset, format, w, h, pitch, hash;
+    uint32_t content;       /* every byte of it, hashed (see upload_texture_inner) */
+    uint32_t checked;       /* the frame its content was last compared in */
     uint32_t last_draw;     /* when this entry was last looked up */
     uint32_t tex;           /* the device's texture */
     int      used;
@@ -2870,15 +2872,28 @@ static uint32_t upload_texture(const TexStage *t)
     PROF_ADD(tex);
     return r;
 }
+static uint64_t vc_hash(const void *data, size_t n, uint64_t seed);   /* the vertex cache's, below */
+/* Every byte a texture's decode reads -- row by row at the pitch for a linear
+ * one -- hashed as the vertex cache hashes its sources. */
+static uint32_t tex_content(const TexStage *t, const uint8_t *src, uint32_t bytes)
+{
+    int lin = !fmt_is_swz(t->color) && !fmt_is_dxt(t->color);
+    uint32_t rows = lin ? t->height : 1, row = bytes / rows, i;
+    uint32_t pitch = lin && t->pitch ? t->pitch : row;
+    uint64_t h = t->color;
+    for (i = 0; i < rows; i++)
+        h = vc_hash(src + (size_t)i * pitch, row, h);
+    return (uint32_t)(h ^ (h >> 32));
+}
 static uint32_t upload_texture_inner(const TexStage *t)
 {
     uint32_t va = resolve(t->offset);
     const uint8_t *src = guest(va);
-    uint32_t w = t->width, h = t->height, i, hash, key;
+    uint32_t w = t->width, h = t->height, i, hash, key, bytes, content = 0;
     uint32_t tex;
     uint8_t *rgba = NULL;
     Nv2aSampler smp;
-    int slot = -1;
+    int slot = -1, hashed = 0;
 
     if (!w || !h || w > 4096 || h > 4096) return 0;
 
@@ -2900,17 +2915,20 @@ static uint32_t upload_texture_inner(const TexStage *t)
                       (unsigned long long)n[4]);
       } }
 
-    /* Cache on where it came from and what it looks like. Hashing the whole
-     * image would be exact but costs a full read per draw; hashing a sparse
-     * sample catches a title that reuses one address for many textures, which
-     * is the case that actually matters. */
+    /* Cache on where it came from and what it holds. A sparse sample of the
+     * bytes, taken at every lookup, catches a title that reuses one address
+     * for many textures, but not a change that falls between its samples:
+     * the graffiti picker loads each chosen design into its one 1024x1024
+     * source image (01808000), and the preview and the wall posters kept the
+     * default. So the whole content is compared as well, once a frame --
+     * reading every texture in full at every draw took over half the frame
+     * on the Ally X. A change between two draws of one frame that the sample
+     * misses shows from the next frame on. */
+    bytes = fmt_is_dxt(t->color)
+          ? ((w + 3) / 4) * ((h + 3) / 4) * d3d8_format_dxt_block_bytes(t->color)
+          : w * h * (fmt_is_swz(t->color) ? linear_bpp(swz_to_linear(t->color))
+                                          : linear_bpp(t->color));
     {
-        uint32_t bytes = fmt_is_dxt(t->color)
-                       ? ((w + 3) / 4) * ((h + 3) / 4)
-                         * d3d8_format_dxt_block_bytes(t->color)
-                       : w * h * (fmt_is_swz(t->color)
-                                  ? linear_bpp(swz_to_linear(t->color))
-                                  : linear_bpp(t->color));
         uint32_t step = bytes > 4096 ? bytes / 64 : 64;
         /* RECOMP_GL_TEXHASH_FULL=1: hash every byte (slow; for testing
          * whether a texture the CPU rewrote in place is being served stale). */
@@ -2929,6 +2947,11 @@ static uint32_t upload_texture_inner(const TexStage *t)
         if (g_tcache[k].used && g_tcache[k].offset == t->offset
          && g_tcache[k].format == t->color && g_tcache[k].w == w
          && g_tcache[k].h == h && g_tcache[k].hash == hash) {
+            if (g_tcache[k].checked != S.flips) {
+                if (!hashed) { content = tex_content(t, src, bytes); hashed = 1; }
+                if (g_tcache[k].content != content) continue;
+                g_tcache[k].checked = S.flips;
+            }
             g_tcache[k].last_draw = S.draws;
             return g_tcache[k].tex;
         }
@@ -3225,6 +3248,8 @@ static uint32_t upload_texture_inner(const TexStage *t)
     g_tcache[slot].offset = t->offset; g_tcache[slot].format = t->color;
     g_tcache[slot].w = w; g_tcache[slot].h = h; g_tcache[slot].pitch = t->pitch;
     g_tcache[slot].hash = hash; g_tcache[slot].tex = tex;
+    g_tcache[slot].content = hashed ? content : tex_content(t, src, bytes);
+    g_tcache[slot].checked = S.flips;
     g_tcache[slot].last_draw = S.draws;
     return tex;
 }
