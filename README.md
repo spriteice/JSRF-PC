@@ -43,9 +43,10 @@ Every version is on the [Releases](https://github.com/JuMatt/JetSetRadioFuture-U
    earlier, right-click the app and choose **Open** instead.) This is needed
    once.
 3. It asks where your game is: pick the folder that contains `default.xbe`,
-   or a disc image (`.iso`), which it unpacks once if
-   [extract-xiso](https://github.com/XboxDev/extract-xiso) is installed. It
-   remembers the choice.
+   or a disc image (`.iso`), which it unpacks once by itself — nothing else to
+   install. You can also drop either onto the app. It remembers the choice,
+   and if the files are not the right ones (another build of the game,
+   another game's disc, a zip), it says what they are.
 
 Saves are kept in the game folder, in `UDATA` (where an Xbox keeps them), so
 copy that folder to back them up, and keep it if you replace the game files.
@@ -184,9 +185,10 @@ on-screen controls — not on a phone yet: reports are welcome.
 ### Installing on Linux
 
 Extract the archive anywhere and run `./jsrf-unleashed`. The first time, it
-asks for the folder that contains `default.xbe` (with a folder picker if
-`zenity` or `kdialog` is installed, otherwise in the terminal) and remembers
-it. `./jsrf-unleashed --install` adds it to your applications menu. It needs
+asks for the folder that contains `default.xbe`, or the one your disc image
+(`.iso`) is in (with a folder picker if `zenity` or `kdialog` is installed,
+otherwise in the terminal), and remembers it; an image is unpacked once, by
+the game itself. `./jsrf-unleashed /path/to/game.iso` works too. `./jsrf-unleashed --install` adds it to your applications menu. It needs
 OpenGL 3.3 drivers and an X11 or Wayland desktop; SDL2 is bundled. The
 `README.txt` inside lists the options (`--scale`, `--fullscreen`, `--choose`)
 and where settings, saves and logs are kept.
@@ -197,10 +199,14 @@ toggles full screen, **F10** widescreen, and **F9** sets the resolution (1× to
 
 ### Your game files
 
-You need the **USA (NTSC-U) release** of *Jet Set Radio Future* — the game
-code inside the app is translated from that version's executable, so other
-regions' discs will not work. Make an image of your own disc and extract it:
-you want the folder with `default.xbe`, `Media/` and the rest.
+You need the **standalone USA (NTSC-U) disc** of *Jet Set Radio Future* — the
+game code inside the app is translated from that disc's executable, address
+for address, so other builds of the game will not work: the European and
+Japanese releases, and the **Sega GT 2002 + JSRF combo disc** (the one that
+came with the Xbox), whose JSRF is a different, later build. Every app checks
+the files before starting and says what they are if they are not the right
+ones. Make an image of your own disc (`.iso`), or extract it: you want the
+folder with `default.xbe`, `Media/` and the rest.
 
 ## Playing
 

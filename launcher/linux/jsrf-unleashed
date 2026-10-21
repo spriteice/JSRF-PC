@@ -6,14 +6,14 @@
 # remembers it, and starts the game with the settings it needs.
 #
 #   ./jsrf-unleashed                  play (asks where the game is, the first time)
-#   ./jsrf-unleashed /path/to/game    use that folder (or a .iso -- see below), and remember it
+#   ./jsrf-unleashed /path/to/game    use that folder (or a disc image -- see below), and remember it
 #   ./jsrf-unleashed --choose         ask where the game is again
 #   ./jsrf-unleashed --scale N        internal resolution, 1 to 4 times 640x480 (default 2); remembered
 #   ./jsrf-unleashed --fullscreen     start full screen
 #   ./jsrf-unleashed --install        add JSRF Unleashed to your applications menu
 #   ./jsrf-unleashed --version        which version this is
 #
-# A .iso of your disc is unpacked once, if extract-xiso is installed.
+# A disc image (.iso) is unpacked once, by the game itself: nothing else to install.
 # In game: F11 (or Alt+Return) full screen, F10 widescreen 16:9, F9 resolution.
 #
 set -u
@@ -45,7 +45,7 @@ fail() { say "$1"; exit 1; }
 is_game() { [ -n "$1" ] && [ -f "$1/default.xbe" ] && [ -d "$1/Media" ]; }
 
 ask_game() {
-    local q="Where is Jet Set Radio Future? Pick the folder that contains default.xbe."
+    local q="Where is Jet Set Radio Future? Pick the folder that contains default.xbe, or the folder your disc image (.iso) is in."
     if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v zenity >/dev/null 2>&1; then
         zenity --file-selection --directory --title="$q" 2>/dev/null
     elif [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v kdialog >/dev/null 2>&1; then
@@ -56,17 +56,94 @@ ask_game() {
     fi
 }
 
-# A disc image: unpacked once into ~/.local/share/jsrf-unleashed/<name>.
+engine() { LD_LIBRARY_PATH="$HERE/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$HERE/bin/jsrf_recomp" "$@"; }
+
+# Files that are not the game JSRF Unleashed runs: say what they are (the
+# engine's own check, port/xbe_check.c, names them) and forget them.
+refuse() {
+    cfg_set game_dir ""
+    fail "$(printf "These files won't work with JSRF Unleashed.\n\n%s\n" "$1" | fold -s -w 72)"
+}
+
+# The engine's output while it unpacks, line by line as it comes (awk would
+# hold it back in a buffer): its progress lines for zenity ("# text" first and
+# the percentage last -- zenity closes on 100) or the terminal; everything else,
+# its answer, into $STATE/unpack.out.
+relay() {
+    local mode="$1" name="$2" line d t
+    while IFS= read -r line; do
+        case "$line" in
+            "progress "*)
+                set -- $line; d="$2"; t="$3"
+                [ "$t" -gt 0 ] 2>/dev/null || continue
+                if [ "$mode" = zenity ]; then
+                    printf '# Unpacking %s -- %d.%d of %d.%d GB\n%d\n' "$name" \
+                        $((d / 1000000000)) $((d / 100000000 % 10)) \
+                        $((t / 1000000000)) $((t / 100000000 % 10)) $((d * 100 / t))
+                else
+                    printf '\r  %d.%d of %d.%d GB' $((d / 1000000000)) $((d / 100000000 % 10)) \
+                        $((t / 1000000000)) $((t / 100000000 % 10)) >&2
+                fi ;;
+            *) printf '%s\n' "$line" >> "$STATE/unpack.out" ;;
+        esac
+    done
+}
+
+# A disc image: unpacked once into ~/.local/share/jsrf-unleashed/<name>, by the
+# engine (--unpack-iso: the unpacker the other apps use, port/ios/xiso.c), so
+# nothing else has to be installed. Checked first, so a zip, another game's
+# disc or another build of the game is named before anything is unpacked.
+# Prints the game folder; nothing if unpacking was cancelled.
 from_iso() {
-    local iso="$1" dest
-    dest="$DATA/$(basename "${iso%.*}")"
+    local iso="$1" name dest why ps
+    name="$(basename "$iso")"; name="${name%.*}"; name="${name%.xiso}"
+    dest="$DATA/$name"
     if is_game "$dest"; then printf '%s' "$dest"; return; fi
-    command -v extract-xiso >/dev/null 2>&1 || \
-        fail "To use a disc image, install extract-xiso first (https://github.com/XboxDev/extract-xiso), or extract it yourself and pick the folder."
-    say "Unpacking $(basename "$iso") -- this happens once. The files go to: $dest" &
-    mkdir -p "$dest" && extract-xiso -x "$iso" -d "$dest" >/dev/null 2>&1 || fail "extract-xiso could not unpack $iso."
-    is_game "$dest" || fail "$iso does not look like Jet Set Radio Future (no default.xbe and Media after unpacking)."
+    why="$(engine --check-iso "$iso" 2>/dev/null)"
+    case $? in 0) ;; 2|3|4) refuse "$why" ;; *) fail "Could not read $iso." ;; esac
+    rm -rf -- "${dest:?}"
+    : > "$STATE/unpack.out"
+    if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v zenity >/dev/null 2>&1; then
+        engine --unpack-iso "$iso" "$dest" 2>/dev/null | relay zenity "$(basename "$iso")" \
+            | zenity --progress --title="JSRF Unleashed" --auto-close \
+                     --text="Unpacking $(basename "$iso") -- this happens once." 2>/dev/null
+        ps=("${PIPESTATUS[@]}")
+        if [ "${ps[2]}" -ne 0 ] && ! grep -qx ok "$STATE/unpack.out"; then   # Cancel
+            rm -rf -- "${dest:?}"
+            return 0
+        fi
+    else
+        printf 'Unpacking %s -- this happens once. The files go to:\n  %s\n' "$(basename "$iso")" "$dest" >&2
+        engine --unpack-iso "$iso" "$dest" 2>/dev/null | relay terminal "$(basename "$iso")"
+        ps=("${PIPESTATUS[@]}")
+        printf '\n' >&2
+    fi
+    why="$(grep -vx ok "$STATE/unpack.out")"
+    if [ "${ps[0]}" -ne 0 ] || ! is_game "$dest"; then
+        rm -rf -- "${dest:?}"
+        case "${ps[0]}" in 2|3|4) refuse "$why" ;; esac
+        fail "$(printf "The disc image could not be unpacked.\n\n%s\n" "${why:-(exit ${ps[0]})}" | fold -s -w 72)"
+    fi
     printf '%s' "$dest"
+}
+
+# What was given or picked -> the game folder: the folder itself, the folder
+# of a default.xbe, a disc image (any file: the engine says what it is if it
+# is not one), or a folder with one disc image in it.
+pick() {
+    local p="$1" imgs
+    if [ -f "$p" ]; then
+        case "$(basename "$p")" in
+            [Dd][Ee][Ff][Aa][Uu][Ll][Tt].[Xx][Bb][Ee]) p="$(dirname "$p")" ;;
+            *) from_iso "$p"; return ;;
+        esac
+    fi
+    if [ -d "$p" ] && ! is_game "$p"; then
+        mapfile -t imgs < <(find "$p" -maxdepth 1 -type f \( -iname '*.iso' -o -iname '*.xiso' \) 2>/dev/null | sort)
+        if [ "${#imgs[@]}" -eq 1 ]; then from_iso "${imgs[0]}"; return; fi
+        [ "${#imgs[@]}" -gt 1 ] && fail "That folder has ${#imgs[@]} disc images in it: give the one of Jet Set Radio Future."
+    fi
+    printf '%s' "$p"
 }
 
 install_desktop() {
@@ -103,16 +180,24 @@ done
 
 # Which game folder: the argument, else the remembered one, else ask.
 if [ -n "$GAME" ]; then
-    case "$GAME" in *.iso|*.ISO) GAME="$(from_iso "$GAME")" || exit 1 ;; esac
+    GAME="$(pick "$GAME")" || exit 1
 elif [ "$CHOOSE" = 0 ] && is_game "$(cfg_get game_dir)"; then
     GAME="$(cfg_get game_dir)"
 else
     GAME="$(ask_game)"
     [ -n "$GAME" ] || exit 0
-    case "$GAME" in *.iso|*.ISO) GAME="$(from_iso "$GAME")" || exit 1 ;; esac
+    GAME="$(pick "$GAME")" || exit 1
 fi
+[ -n "$GAME" ] || exit 0          # unpacking was cancelled
 GAME="$(cd "$GAME" 2>/dev/null && pwd)" || fail "That folder does not exist."
-is_game "$GAME" || fail "That folder has no default.xbe and Media in it. Pick the folder you extracted the game into."
+is_game "$GAME" || fail "$(printf "That folder has no default.xbe and Media in it, so it isn't the game's files. Pick the folder you extracted the game into, or your disc image (.iso)." | fold -s -w 72)"
+
+# The engine is the standalone US disc's program, translated address for
+# address: another build (European, Japanese, a Sega GT 2002 combo disc)
+# starts and then crashes a few seconds in. Its own check (port/xbe_check.c)
+# says what the files are; exit 3 = another build or another game.
+why="$(engine --check-game "$GAME" 2>/dev/null)"
+case $? in 2|3) refuse "$why" ;; esac
 cfg_set game_dir "$GAME"
 
 SCALE="$(cfg_get scale)"; case "$SCALE" in [1-4]) ;; *) SCALE=2 ;; esac
@@ -135,7 +220,13 @@ export LD_LIBRARY_PATH="$HERE/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 cd "$GAME" || exit 1
 "$HERE/bin/jsrf_recomp" "$GAME" > "$LOG" 2>&1
 status=$?
-if [ "$status" -ne 0 ]; then
+if [ "$status" -eq 3 ]; then
+    # The engine's own check stopped it: not the standalone US disc's files
+    # (the log says what they are).
+    cfg_set game_dir ""
+    say "$(printf "These files won't work with JSRF Unleashed.\n\n%s\n" \
+              "$(sed -n 's/^\[XBE\] //p' "$LOG")" | fold -s -w 72)"
+elif [ "$status" -ne 0 ]; then
     say "JSRF Unleashed stopped unexpectedly (exit $status).
 
 The log is at:

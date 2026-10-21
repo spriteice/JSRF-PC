@@ -32,6 +32,8 @@ public class SetupActivity extends Activity {
 
     static native String nativeVersion();
     static native boolean nativeProbe(String path);
+    static native String nativeCheckImage(String path);
+    static native String nativeCheckGame(String dir);
     native String nativeUnpack(String iso, String dest);
 
     private static final int PICK_ISO = 1;
@@ -67,6 +69,16 @@ public class SetupActivity extends Activity {
     }
 
     private void startGame() {
+        // Another build of the game (European, Japanese, a Sega GT 2002 combo
+        // disc) starts and then crashes a few seconds in: the engine is the
+        // standalone US disc's code.
+        String other = nativeCheckGame(gameDir().getAbsolutePath());
+        if (other != null) {
+            if (mStatus == null) showSetup();
+            status("These files won't work with JSRF Unleashed.\n\n" + other
+                   + "\n\nReplace the files in " + gameDir().getAbsolutePath() + " with a standalone US disc's.");
+            return;
+        }
         startActivity(new Intent(this, JsrfActivity.class));
         finish();
     }
@@ -85,7 +97,7 @@ public class SetupActivity extends Activity {
         TextView body = new TextView(this);
         body.setTextSize(16);
         body.setPadding(0, dp(12), 0, dp(12));
-        body.setText("This plays your own copy of Jet Set Radio Future, the USA release. "
+        body.setText("This plays your own copy of Jet Set Radio Future: the standalone US disc. "
                 + "Nothing of the game comes with the app.\n\n"
                 + "Choose the disc image (.iso) of your copy: it is unpacked once into the app, "
                 + "which needs about 3 GB of free space.\n\n"
@@ -175,9 +187,10 @@ public class SetupActivity extends Activity {
         /* The unpacker takes the picked file as "fd:N": a picker hands out a
          * descriptor, not a path. */
         final String iso = "fd:" + pfd.getFd();
-        if (!nativeProbe(iso)) {
+        String wrong = nativeCheckImage(iso);
+        if (wrong != null) {
             close(pfd);
-            status("That file is not an Xbox disc image.");
+            status(wrong);
             return;
         }
         long need = pfd.getStatSize() + 200L * 1024 * 1024;

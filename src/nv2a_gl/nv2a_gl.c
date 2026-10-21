@@ -5159,6 +5159,23 @@ static void do_draw_body(void)
         G->uniform_f(NV2A_U_VPSCALE, vp_scale_eff, 1);
         G->uniform_f(NV2A_U_VPOFF, S.u.vp_off, 1);
         uni2f(NV2A_U_VPSURFACE, (float)g_fbo_w, (float)g_fbo_h);
+        {   /* Where the viewport is on the surface, for a vertex program's
+             * screen-space oPos (see the epilogue): its centre -- the offset
+             * register less the driver's 0.53125 nudge, which puts a whole-
+             * surface viewport's centre at exactly half the surface -- and
+             * its half size. Unscaled by the widescreen squeeze, which acts
+             * inside the viewport through vpScale. */
+            float r[4];
+            r[0] = S.u.vp_off[0] - 0.53125f;
+            r[1] = S.u.vp_off[1] - 0.53125f;
+            r[2] = fabsf(S.u.vp_scale[0]);
+            r[3] = fabsf(S.u.vp_scale[1]);
+            if (r[2] < 1e-6f || r[3] < 1e-6f) {      /* no viewport: the surface */
+                r[0] = (float)g_fbo_w * 0.5f; r[1] = (float)g_fbo_h * 0.5f;
+                r[2] = (float)g_fbo_w * 0.5f; r[3] = (float)g_fbo_h * 0.5f;
+            }
+            G->uniform_f(NV2A_U_VPRECT, r, 1);
+        }
         uni1f(NV2A_U_WIDESHIFT, g_wide_shift);
         memcpy(g_last.vp_scale, vp_scale_eff, sizeof vp_scale_eff);
         memcpy(g_last.vp_off, S.u.vp_off, sizeof S.u.vp_off);

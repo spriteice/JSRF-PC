@@ -25,6 +25,7 @@
  */
 #include "xiso.h"
 
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>
@@ -325,6 +326,16 @@ static int open_image(const char *iso_path)
 }
 
 
+long xiso_head(const char *path, unsigned char *buf, size_t n)
+{
+    x_ssize r;
+    int fd = open_image(path);
+    if (fd < 0) return -1;
+    r = x_pread(fd, buf, n, 0);
+    close(fd);
+    return (long)r;
+}
+
 int xiso_probe(const char *iso_path)
 {
     uint64_t base, size;
@@ -334,6 +345,102 @@ int xiso_probe(const char *iso_path)
     ok = x_fsize(fd, &size) == 0 && find_volume(fd, size, &base, &rs, &rz);
     close(fd);
     return ok;
+}
+
+/* The entry called name in a directory table, searched the way walk_entries
+ * walks it (every entry, not by the tree's order: a table is small, and a
+ * tool that sorted it differently would still be found): 0 and its sector,
+ * size and attributes if it is there, 1 if not, -1 if the table is damaged. */
+static int find_entry(Xiso *x, const unsigned char *tab, uint32_t len, uint32_t off,
+                      const char *name, uint32_t *sec, uint32_t *fsize, unsigned *attr, int left)
+{
+    size_t want = strlen(name);
+    for (;;) {
+        uint16_t l, r;
+        unsigned nlen, i;
+        int rc;
+        if (++x->entries > XISO_MAX_ENTRIES) return fail(x, "The disc image's directory does not end (damaged image?).");
+        if ((uint64_t)off + 14 > len) return fail(x, "A directory entry lies outside its directory (damaged image?).");
+        l = rd16(tab + off);
+        r = rd16(tab + off + 2);
+        if (l == 0xFFFF) return 1;                      /* padding: nothing here */
+        nlen = tab[off + 13];
+        if ((uint64_t)off + 14 + nlen > len) return fail(x, "A file name runs past its directory (damaged image?).");
+        if (nlen == want) {
+            for (i = 0; i < nlen; i++)
+                if (toupper(tab[off + 14 + i]) != toupper((unsigned char)name[i])) break;
+            if (i == nlen) {
+                *sec = rd32(tab + off + 4);
+                *fsize = rd32(tab + off + 8);
+                *attr = tab[off + 12];
+                return 0;
+            }
+        }
+        if (l) {
+            if (left >= 1024) return fail(x, "The disc image's directory is malformed.");
+            rc = find_entry(x, tab, len, (uint32_t)l * 4u, name, sec, fsize, attr, left + 1);
+            if (rc <= 0) return rc;
+        }
+        if (!r) return 1;
+        off = (uint32_t)r * 4u;
+    }
+}
+
+int xiso_read_file(const char *iso_path, const char *name,
+                   unsigned char *buf, size_t bufsize, size_t *got, uint64_t *size,
+                   char *err, size_t errlen)
+{
+    Xiso x;
+    uint32_t root_sector, root_size, sec = 0, fsize = 0;
+    unsigned attr = 0;
+    uint64_t at;
+    unsigned char *tab;
+    size_t n;
+    int rc;
+
+    memset(&x, 0, sizeof x);
+    x.err = err; x.errlen = errlen;
+    if (err && errlen) err[0] = 0;
+    if (got) *got = 0;
+    if (size) *size = 0;
+    x.fd = open_image(iso_path);
+    if (x.fd < 0) return fail(&x, "Could not open the file: %s", strerror(errno));
+    if (x_fsize(x.fd, &x.size)) { close(x.fd); return fail(&x, "Could not read the file: %s", strerror(errno)); }
+    if (!find_volume(x.fd, x.size, &x.base, &root_sector, &root_size)) {
+        close(x.fd);
+        return fail(&x, "That file is not an Xbox disc image.");
+    }
+    at = x.base + (uint64_t)root_sector * XISO_SECTOR;
+    if (!root_size) { close(x.fd); return 1; }
+    if (root_size > XISO_MAX_TABLE || at + root_size > x.size) {
+        close(x.fd);
+        return fail(&x, "The disc image's top folder lies outside it (damaged or incomplete image?).");
+    }
+    tab = (unsigned char *)malloc(root_size);
+    if (!tab) { close(x.fd); return fail(&x, "Out of memory."); }
+    if (read_at(x.fd, tab, root_size, at)) {
+        free(tab); close(x.fd);
+        return fail(&x, "Could not read the disc image: %s", strerror(errno));
+    }
+    rc = find_entry(&x, tab, root_size, 0, name, &sec, &fsize, &attr, 0);
+    free(tab);
+    if (rc) { close(x.fd); return rc; }
+    if (attr & XISO_ATTR_DIR) { close(x.fd); return 1; }
+    at = x.base + (uint64_t)sec * XISO_SECTOR;
+    if (at + fsize > x.size) {
+        close(x.fd);
+        return fail(&x, "The disc image is shorter than its own directory says "
+                        "(a download that did not finish?).");
+    }
+    n = fsize < bufsize ? (size_t)fsize : bufsize;
+    if (n && read_at(x.fd, buf, n, at)) {
+        close(x.fd);
+        return fail(&x, "Could not read the disc image: %s", strerror(errno));
+    }
+    close(x.fd);
+    if (got) *got = n;
+    if (size) *size = fsize;
+    return 0;
 }
 
 int xiso_extract(const char *iso_path, const char *dest_dir,

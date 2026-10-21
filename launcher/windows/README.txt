@@ -4,7 +4,8 @@ JSRF Unleashed for Windows (x86_64)
 Jet Set Radio Future, statically recompiled and running natively.
 https://github.com/JuMatt/JetSetRadioFuture-Unleashed
 
-You need your own copy of the game -- the USA release. This package is the
+You need your own copy of the game -- the standalone US disc (not the Sega GT
+2002 + JSRF combo disc, whose JSRF is a different build). This package is the
 engine only: no game files, no textures, no music, no video.
 
 The Windows build is the same engine as the Mac and Linux builds, tested

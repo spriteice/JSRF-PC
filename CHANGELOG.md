@@ -10,6 +10,91 @@ its version. Downloads are on the
 [Releases](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/releases)
 page.
 
+## 0.4.9 — 20 October 2026
+
+- **The character select shows the skaters where they are.** Each rudie
+  on the select screen skates in two small windows, and there they came
+  out in the wrong place: too big, too low and too far right, sunk into the
+  floor or under the rail they were grinding with the sparks alone on it,
+  and in the small window often out of frame. The game draws those windows
+  as viewports inside the screen. The scenery and the effects go through
+  the console's fixed-function path, which the renderer placed right; the
+  skaters are drawn by the game's own vertex programs, whose output the
+  renderer stretched over the whole screen, as if each window were the
+  screen. They are put back in their windows now. Everything drawn full
+  screen, which is every stage, comes out exactly as before.
+- **Mac: the game can be set up again.** In "Pick the folder of extracted
+  game files, or a disc image (.iso)", choosing the folder and clicking
+  Use This only opened it, and inside it the button stayed grey: the window
+  accepted .iso files and nothing else. And an .iso was handed to
+  extract-xiso, which is not part of macOS, so without Homebrew the app
+  could only say to install it. Folders and disc images can both be chosen
+  now, and the app unpacks an image by itself, with a progress bar, using
+  the unpacker the iPhone, Android and Windows apps already had (the engine
+  does it: `--unpack-iso`). A folder with the image in it works too, and
+  either can be dropped on the app's icon or given on its command line.
+- **Linux: disc images without extract-xiso.** The launcher unpacks an
+  .iso by itself as well, with a progress window when zenity is there, so
+  nothing has to be installed, on a Steam Deck either.
+- **Wrong files are named, before anything is unpacked.** JSRF Unleashed
+  is made from one build of the game, address for address: the standalone
+  US disc. A player whose files were another build saw the game crash a few
+  seconds in (a "misaligned access" on a Mac, with 0.4.6). Every app now
+  checks the files first and says what they are instead: another game's
+  disc (by its name), a zip or other archive to unpack first, a compressed
+  disc image, a disc with no game on it, or another build of Jet Set Radio
+  Future -- the European or the Japanese release, or the Sega GT 2002 +
+  JSRF combo disc, the copy that came with the Xbox, whose JSRF is a later
+  build than the standalone disc's. A disc image is checked before it is
+  unpacked (the engine reads its default.xbe out of it: `--check-iso`).
+  Only the layout of default.xbe is compared, not the bytes, so a US
+  default.xbe with a patch applied (the region, a widescreen hack) still
+  runs.
+- Tested on the Mac with Metal and OpenGL: the character select from a save,
+  and the garage after it, unchanged. The Mac app unpacked the game's disc
+  image in a few seconds, all 3,221 files identical to the extracted game's,
+  and named another game's image without unpacking it; the check was also
+  run on a zip, on a file that is no disc image, and on copies doctored to
+  look like a European release and a combo disc, and the Linux launcher
+  (with its progress window) and the Windows launcher (under Wine) refused
+  the same wrong files. Earlier builds of this version ran on Mesa, under
+  Wine and in the Android emulator; the final Android and iPhone builds were
+  built and checked, not run.
+- Every download is 0.4.9: Mac, iPhone, Linux, Windows and Android.
+
+## 0.4.8 — 20 October 2026
+
+- **The robot at the future site of the Rokkaku Expo Stadium starts.** A
+  player on Android 0.4.7 could not finish the Urban Battle there ("Destroy
+  the Rokkaku piece of junk!"): the robot hung where it had been made, out
+  of reach, and never moved, attacked or could be tagged. Every earlier
+  version had the same soft lock. The robot's first step, the one that puts
+  it in the stadium and starts it, was one of four functions of the game
+  that the translation had never found. Each of the four sits right after
+  another function, and the recompiler took it for the end of that one, so
+  no earlier scan saw it as missing. The game called it every frame and
+  every call was skipped. It is in now: the robot fights at ground level,
+  moves around the stadium and attacks, and its arms can be grinded and the
+  marks on it sprayed.
+- **The Rokkaku robots make their sounds.** Their sound function was another
+  of the four. The Terror Drone at Hikage Street calls it four times a frame
+  for its thrusters; every call was skipped, so the robots were silent.
+- The other two are handlers in two of the game's per-object tables, each
+  placed right after a jump table that the recompiler read as code. Nothing
+  has been seen calling them yet.
+- Found by listing every address that the game's tables or its code's
+  constants hold, that follows the end of a function, and that no
+  translated function starts at — inside other functions this time.
+- Tested on the Mac with the game code of 0.4.7 and of 0.4.8. With 0.4.7's,
+  the robot at the future site never leaves its first state and the game
+  calls the missing function every frame; with 0.4.8's it goes through its
+  whole routine, and a test player put on its arms grinded them and sprayed
+  one of its marks off. The Terror Drone at Hikage Street, which worked
+  before, was sprayed the same way with both and moved on after each mark.
+  The Linux build was started on Mesa, the Windows build under Wine and the
+  Android build in the Android emulator.
+- Every download is 0.4.8: Mac, iPhone, Linux, Windows and Android.
+
 ## 0.4.7 — 15 October 2026 — Android only
 
 An Android-only fix. The Mac, iPhone, Linux and Windows downloads are

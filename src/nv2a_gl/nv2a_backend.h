@@ -196,7 +196,7 @@ typedef enum {
     NV2A_U_LTAMB,      NV2A_U_LTDIF,      NV2A_U_LTSPC,      NV2A_U_LTDIR,
     NV2A_U_LTHALF,     NV2A_U_LTPOS,      NV2A_U_LTATT,      NV2A_U_LTRANGE,
     NV2A_U_LTSPOTDIR,  NV2A_U_LTEYE,      NV2A_U_LTSPECPOW,  NV2A_U_WIDESHIFT,
-    NV2A_U_FOGMODE,    NV2A_U_FOGPARAM,   NV2A_U_FOGPLANE,
+    NV2A_U_FOGMODE,    NV2A_U_FOGPARAM,   NV2A_U_FOGPLANE,  NV2A_U_VPRECT,
     /* fragment stage */
     NV2A_U_DRAWTINT,   NV2A_U_FOGCOLOR,   NV2A_U_ALPHAFUNC,  NV2A_U_ALPHAREF,
     NV2A_U_TEX0,                              /* ..3: sampler units, GL only */

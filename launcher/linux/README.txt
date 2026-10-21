@@ -4,7 +4,8 @@ JSRF Unleashed for Linux (x86_64)
 Jet Set Radio Future, statically recompiled and running natively.
 https://github.com/JuMatt/JetSetRadioFuture-Unleashed
 
-You need your own copy of the game -- the USA release. This package is the
+You need your own copy of the game -- the standalone US disc (not the Sega GT
+2002 + JSRF combo disc, whose JSRF is a different build). This package is the
 engine only: no game files, no textures, no music, no video.
 
 
@@ -17,8 +18,8 @@ What you need
   ten years).
 - A desktop session, X11 or Wayland. Sound goes through PipeWire, PulseAudio
   or ALSA.
-- Your game files: make an image of your own disc and extract it. You want
-  the folder with default.xbe, Media/ and the rest in it.
+- Your game files: an image of your own disc (.iso), or the folder its files
+  were extracted into -- the one with default.xbe, Media/ and the rest in it.
 
 
 Playing
@@ -26,10 +27,13 @@ Playing
 1. Extract this archive anywhere.
 2. Run ./jsrf-unleashed
 3. The first time, it asks where the game is: pick the folder that contains
-   default.xbe. (With zenity or kdialog installed you get a folder picker;
-   otherwise it asks in the terminal.) It remembers the choice. You can also
-   give the folder -- or a .iso of your disc, if extract-xiso is installed --
-   on the command line:  ./jsrf-unleashed /path/to/game
+   default.xbe, or the folder your disc image (.iso) is in. (With zenity or
+   kdialog installed you get a folder picker; otherwise it asks in the
+   terminal.) An image is unpacked once, by the game itself -- nothing else to
+   install. It remembers the choice. You can also give the folder or the
+   image on the command line:  ./jsrf-unleashed /path/to/game.iso
+   If the files are not the right ones (another build of the game, another
+   game's disc, a zip), it says what they are.
 
    ./jsrf-unleashed --install     adds JSRF Unleashed to your applications menu
    ./jsrf-unleashed --scale N     internal resolution, 1 to 4 (default 2); remembered

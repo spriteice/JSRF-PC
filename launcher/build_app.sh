@@ -49,6 +49,24 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key>    <string>12.0</string>
   <key>NSHighResolutionCapable</key>   <true/>
   <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
+  <!-- A disc image or the game's folder can be dropped on the app (or opened
+       with it). Never the default app for either: double-clicking an .iso
+       still mounts it. -->
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>       <string>Xbox disc image</string>
+      <key>CFBundleTypeExtensions</key> <array><string>iso</string><string>xiso</string></array>
+      <key>CFBundleTypeRole</key>       <string>Viewer</string>
+      <key>LSHandlerRank</key>          <string>Alternate</string>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key>       <string>Game folder</string>
+      <key>LSItemContentTypes</key>     <array><string>public.folder</string></array>
+      <key>CFBundleTypeRole</key>       <string>Viewer</string>
+      <key>LSHandlerRank</key>          <string>None</string>
+    </dict>
+  </array>
 </dict>
 </plist>
 PLIST

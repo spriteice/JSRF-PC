@@ -94,6 +94,7 @@ if(ANDROID)
     add_library(jsrf_recomp SHARED
         main.c
         recomp_manual.c
+        xbe_check.c
         android/jsrf_android.c
         ios/xiso.c
         ${JSRF_GEN_SOURCES}
@@ -103,15 +104,18 @@ else()
     add_executable(jsrf_recomp
         main.c
         recomp_manual.c
+        xbe_check.c
+        ios/xiso.c
         ${JSRF_GEN_SOURCES}
     )
 endif()
 if(IOS)
     # The iPhone / iPad app around the engine (ios/jsrf_ios.m: the window,
-    # the controls, the game in Documents) and the disc-image unpacker. The
+    # the controls, the game in Documents; the disc-image unpacker, ios/xiso.c,
+    # is in every build -- the Mac and Linux apps use it through the engine). The
     # bundle -- Info.plist, icons, signature -- is put together by
     # launcher/ios/package_ios.sh from this executable.
-    target_sources(jsrf_recomp PRIVATE ios/jsrf_ios.m ios/xiso.c)
+    target_sources(jsrf_recomp PRIVATE ios/jsrf_ios.m)
     set_source_files_properties(ios/jsrf_ios.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
     set_target_properties(jsrf_recomp PROPERTIES MACOSX_BUNDLE OFF)
     target_link_libraries(jsrf_recomp PRIVATE

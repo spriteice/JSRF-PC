@@ -62,6 +62,8 @@
 #endif /* !_WIN32 */
 #include "win32_compat.h"
 #include "recomp_icall_feedback.h"
+#include "xbe_check.h"
+#include "ios/xiso.h"
 #include "apu.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -710,6 +712,30 @@ static int host_main(void)
     }
     printf("XBE loaded: %zu bytes\n", xbe_size);
 
+    /* Only the standalone US disc's program fits the translated code
+     * (xbe_check.c). Another build's would run until the first pointer into
+     * the wrong bytes; stop here and say what the files are instead. Exit code 3 tells
+     * the launchers that the files, not the engine, are the problem.
+     * JSRF_ANY_XBE=1 runs it anyway. */
+    {
+        char why[512];
+        const char *any = getenv("JSRF_ANY_XBE");
+        if (jsrf_xbe_check((const unsigned char *)xbe_data, xbe_size, why, sizeof why) != JSRF_XBE_OK) {
+            if (any && atoi(any)) {
+                fprintf(stderr, "[XBE] %s\n  (%s)\n[XBE] JSRF_ANY_XBE is set: running it anyway.\n",
+                        why, jsrf_xbe_detail());
+            } else {
+                fprintf(stderr, "[XBE] %s\n[XBE] %s\n", why, JSRF_XBE_OTHER_ADVICE);
+                fprintf(stderr, "  (%s)\n", jsrf_xbe_detail());
+                printf("Not the standalone US disc's default.xbe -- stopping (exit 3).\n");
+                free(xbe_data);
+                return 3;
+            }
+        } else {
+            printf("[XBE] the standalone US disc's program (section layout as built from)\n");
+        }
+    }
+
     /* Step 2: Initialize Xbox memory layout */
     printf("Initializing Xbox memory layout...\n");
     if (getenv("JSRF_RAM_MB")) {
@@ -1002,6 +1028,15 @@ static BOOL load_xbe(const char *path, void **out_data, size_t *out_size)
 }
 
 /* Console entry point (for debugging -- lets you see printf output) */
+/* --unpack-iso's progress, one line now and then for the launcher reading it. */
+static int unpack_progress(void *ctx, uint64_t done, uint64_t total)
+{
+    (void)ctx;
+    printf("progress %llu %llu\n", (unsigned long long)done, (unsigned long long)total);
+    fflush(stdout);
+    return 0;
+}
+
 #if defined(__ANDROID__)
 /* Android: SDL's Java side (SDLActivity) loads libmain.so and calls SDL_main
  * on a thread of its own, with the arguments JsrfActivity gives it. */
@@ -1014,6 +1049,54 @@ int main(int argc, char **argv)
      * the release tag), for the launchers and for anyone asking. */
     if (argc > 1 && !strcmp(argv[1], "--version")) {
         printf("%s\n", JSRF_VERSION);
+        return 0;
+    }
+    /* --check-game <folder>: is it the build this engine runs? Prints why
+     * not and exits 0 (yes), 2 (no default.xbe) or 3 (another build, or
+     * another game) -- for the launchers, before they start anything. */
+    if (argc > 2 && !strcmp(argv[1], "--check-game")) {
+        char why[640];
+        int r = jsrf_xbe_check_folder(argv[2], why, sizeof why);
+        if (r == JSRF_XBE_OK) printf("ok\n");
+        else if (r == JSRF_XBE_OTHER) printf("%s\n\n%s\n", why, JSRF_XBE_OTHER_ADVICE);
+        else printf("%s\n", why);
+        return r;
+    }
+    /* --check-iso <image>: the same for a disc image, without unpacking it:
+     * is it an Xbox disc image at all, and is the default.xbe in it the build
+     * this engine runs? Exits 0, 2, 3 as above, or 4 (not an Xbox disc image:
+     * a zip, a compressed image, something else). */
+    if (argc > 2 && !strcmp(argv[1], "--check-iso")) {
+        char why[640];
+        int r = jsrf_xbe_check_iso(argv[2], why, sizeof why);
+        if (r == JSRF_XBE_OK) printf("ok\n");
+        else if (r == JSRF_XBE_OTHER) printf("%s\n\n%s\n", why, JSRF_XBE_OTHER_ADVICE);
+        else printf("%s\n", why);
+        return r;
+    }
+    /* --unpack-iso <image> <folder>: the check above, then the image's files
+     * into folder, with the unpacker the iPhone, Android and Windows apps use
+     * (ios/xiso.c), so the Mac and Linux apps need no other program. Prints
+     * "progress <bytes done> <bytes in all>" as it goes, then "ok" or why
+     * not; exits 0, the check's code, or 1 if unpacking failed (what was
+     * written is left for the caller, which unpacks into a folder of its own,
+     * to remove). */
+    if (argc > 3 && !strcmp(argv[1], "--unpack-iso")) {
+        char why[640], err[512];
+        int r = jsrf_xbe_check_iso(argv[2], why, sizeof why);
+        if (r != JSRF_XBE_OK) {
+            if (r == JSRF_XBE_OTHER) printf("%s\n\n%s\n", why, JSRF_XBE_OTHER_ADVICE);
+            else printf("%s\n", why);
+            return r;
+        }
+        setvbuf(stdout, NULL, _IOLBF, 0);
+        if (xiso_extract(argv[2], argv[3], unpack_progress, NULL, err, sizeof err)) {
+            printf("%s\n", err);        /* the launchers say it could not be unpacked */
+            return 1;
+        }
+        r = jsrf_xbe_check_folder(argv[3], why, sizeof why);
+        if (r != JSRF_XBE_OK) { printf("%s\n", why); return r; }
+        printf("ok\n");
         return 0;
     }
     g_argv = argv;

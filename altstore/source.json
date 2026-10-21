@@ -27,6 +27,24 @@
       },
       "versions": [
         {
+          "version": "0.4.9",
+          "buildVersion": "0.4.9",
+          "date": "2026-10-20T22:00:00Z",
+          "localizedDescription": "The character select shows the skaters where they are: in its two preview windows they came out too big, too low and off to the right, under the rails they grinded and into the floor. A disc image is checked before it is unpacked, and files of another game or another build of it (the European or Japanese release, the Sega GT 2002 + JSRF combo disc) are named instead of crashing.",
+          "downloadURL": "https://github.com/JuMatt/JetSetRadioFuture-Unleashed/releases/download/v0.4.9/JSRF-Unleashed-iOS.ipa",
+          "size": 13272958,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "0.4.8",
+          "buildVersion": "0.4.8",
+          "date": "2026-10-20T15:00:00Z",
+          "localizedDescription": "The robot at the future site of the Rokkaku Expo Stadium starts and fights, so chapter 5's Urban Battle can be finished: until now it hung out of reach and never moved. The Rokkaku robots make their sounds too, and two more of the game's missing functions are in.",
+          "downloadURL": "https://github.com/JuMatt/JetSetRadioFuture-Unleashed/releases/download/v0.4.8/JSRF-Unleashed-iOS.ipa",
+          "size": 13265655,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.4.6",
           "buildVersion": "0.4.6",
           "date": "2026-10-15T16:01:00Z",

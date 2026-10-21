@@ -40,8 +40,8 @@ num="$(printf '%s' "$version" | sed -n 's/^\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\).*/
 printf '#define JSRF_VER_NUM %s\n#define JSRF_VER_STR "%s"\n' "$num" "$version" > "$stage/jsrf_version.h"
 "$tc/bin/x86_64-w64-mingw32-windres" -I "$stage" -I "$here" "$here/resources.rc" -O coff -o "$stage/launcher.res"
 "$tc/bin/x86_64-w64-mingw32-clang" -O2 -s -Wall -Wextra -municode -mwindows \
-    -I "$repo/port/ios" -o "$dir/JSRF Unleashed.exe" \
-    "$here/jsrf_launcher.c" "$repo/port/ios/xiso.c" "$stage/launcher.res" \
+    -I "$repo/port/ios" -I "$repo/port" -o "$dir/JSRF Unleashed.exe" \
+    "$here/jsrf_launcher.c" "$repo/port/ios/xiso.c" "$repo/port/xbe_check.c" "$stage/launcher.res" \
     -lshell32 -lole32 -luuid -lcomctl32
 
 # The engine and what it loads.

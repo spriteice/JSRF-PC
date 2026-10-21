@@ -28,6 +28,7 @@
 #include <sys/stat.h>
 #include <android/log.h>
 #include "xiso.h"
+#include "../xbe_check.h"
 
 #ifndef JSRF_VERSION
 #define JSRF_VERSION "dev"
@@ -290,6 +291,43 @@ Java_com_jumatt_jsrfunleashed_SetupActivity_nativeProbe(JNIEnv *env, jclass cls,
     (void)cls;
     if (p) (*env)->ReleaseStringUTFChars(env, path, p);
     return r ? JNI_TRUE : JNI_FALSE;
+}
+
+/* Whether the picked file (a path or "fd:N") is an image of the game's disc,
+ * before unpacking it: null if it is, else what to tell the player -- not an
+ * Xbox disc image (a zip...), another game's disc, another build of the game. */
+JNIEXPORT jstring JNICALL
+Java_com_jumatt_jsrfunleashed_SetupActivity_nativeCheckImage(JNIEnv *env, jclass cls, jstring path)
+{
+    const char *p = (*env)->GetStringUTFChars(env, path, NULL);
+    char why[640], text[1300];
+    int r = p ? jsrf_xbe_check_iso(p, why, sizeof why) : JSRF_XBE_NOT_IMAGE;
+    (void)cls;
+    if (p) (*env)->ReleaseStringUTFChars(env, path, p);
+    if (r == JSRF_XBE_OK) return NULL;
+    if (!p) snprintf(why, sizeof why, "Could not open that file.");
+    __android_log_print(ANDROID_LOG_WARN, TAG, "%s", why);
+    snprintf(text, sizeof text, "%s.\n\n%s%s%s", JSRF_XBE_HEADING, why,
+             r == JSRF_XBE_OTHER ? "\n\n" : "", r == JSRF_XBE_OTHER ? JSRF_XBE_OTHER_ADVICE : "");
+    return (*env)->NewStringUTF(env, text);
+}
+
+/* Whether <dir>/default.xbe is the standalone US disc's program
+ * (port/xbe_check.c): null if it is (or cannot be read -- the engine checks
+ * again), else what to tell the player. Another build starts and then
+ * crashes a few seconds in. */
+JNIEXPORT jstring JNICALL
+Java_com_jumatt_jsrfunleashed_SetupActivity_nativeCheckGame(JNIEnv *env, jclass cls, jstring dir)
+{
+    const char *d = (*env)->GetStringUTFChars(env, dir, NULL);
+    char why[512], text[1100];
+    int r = d ? jsrf_xbe_check_folder(d, why, sizeof why) : JSRF_XBE_OK;
+    (void)cls;
+    if (d) (*env)->ReleaseStringUTFChars(env, dir, d);
+    if (r != JSRF_XBE_OTHER) return NULL;
+    __android_log_print(ANDROID_LOG_WARN, TAG, "%s", why);
+    snprintf(text, sizeof text, "%s\n\n%s", why, JSRF_XBE_OTHER_ADVICE);
+    return (*env)->NewStringUTF(env, text);
 }
 
 struct unpack_ctx { JNIEnv *env; jobject self; jmethodID progress; };

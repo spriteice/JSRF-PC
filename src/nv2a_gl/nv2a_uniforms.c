@@ -54,6 +54,7 @@ const Nv2aUniformDesc nv2a_uniform_desc[NV2A_U_COUNT] = {
     V("fogMode",    INT,   1),
     V("fogParam",   VEC2,  1),
     V("fogPlane",   VEC4,  1),
+    V("vpRect",     VEC4,  1),
     /* fragment stage */
     F("drawTint",   VEC4,  1),
     F("fogColor",   VEC4,  1),

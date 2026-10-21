@@ -787,7 +787,8 @@ static void jsrf_hook_switch(void)
 {
     extern void recomp_trace_enable_hooks(void);
     if (getenv("JSRF_WATCH_SNDMGR") || getenv("JSRF_DEEP_ESP")
-     || getenv("JSRF_BONE_CHECK") || getenv("JSRF_CRI_CALLS"))
+     || getenv("JSRF_BONE_CHECK") || getenv("JSRF_CRI_CALLS")
+     || getenv("JSRF_ROBO_LOG"))
         recomp_trace_enable_hooks();
 }
 
@@ -819,9 +820,161 @@ static void cri_census(uint32_t va)
     }
 }
 
+/* JSRF_ROBO_LOG=<seconds> (test only): the Rokkaku robots built on
+ * Media/Enemy/Robo. Enemy type 27 (made by sub_000ECF50; per-frame update
+ * sub_000ECDB0, state at +0x128) is the Terror Drone of the Urban Battle at
+ * the future site of the Expo Stadium; type 12 (made by sub_000EAC20; its
+ * brain's update is sub_000EA6A0, state at +8) is the other robot. One line
+ * per robot whenever its state changes, every that many seconds otherwise,
+ * and every few frames while it attacks (states 2 and 3); with the player's
+ * position, the robot's grind rails (its component at +0xBC keeps their
+ * handles in the rail table at 0x0022FCE8, see sub_000179B0; each rail's
+ * bounds at +0x10/+0x1C, its points at +4, how many at +0x28) and its four
+ * graffiti spots (+0x174, 16 bytes each). One line too for each enemy a
+ * mission creates (sub_000C0B30), with its type.
+ * JSRF_ROBO_RIDE=<seconds>[:<rail>[:<point>]][,...] (with the log): at each
+ * of those times (up to 8), put the player 40 units above a point of that
+ * rail of the drone (rail 0 by default; the point by its index, or -1 for
+ * the lowest, the default, -2 for the highest) -- to see whether landing on
+ * it starts a grind -- and log the player's position every 0.2 s for 5 s
+ * after. */
+static float s_player_pos[3];
+static uint32_t s_player_va;
+static uint32_t robo_rail(const uint8_t *m, uint32_t h)
+{
+    uint32_t p;
+    int guard;
+    if (h == 0xFFFFFFFFu) return 0;
+    p = *(const uint32_t *)(m + 0x0022FCE8u + 0x890u + (h & 0xFFu) * 4u);
+    for (guard = 0; p >= 0x10000u && p < (64u << 20) && guard < 256; guard++) {
+        if (*(const uint32_t *)(m + p + 0x38) == h) return p;
+        p = *(const uint32_t *)(m + p + 0x94);
+    }
+    return 0;
+}
+static void jsrf_robo_log(uint32_t va)
+{
+    static double period = -1, ride_t[8], ride_until = -1, ride_next;
+    static int ride_rail[8], ride_pt[8], ride_n, ride_cur;
+    static struct { uint32_t obj, state, calls; double next; } r[16];
+    const uint8_t *m;
+    const uint32_t *w;
+    const float *f;
+    const uint32_t *cw;
+    const float *cf;
+    uint32_t obj, st, comp;
+    int i, k, fine, t27, nrails;
+    double now;
+    if (va != 0x000ECDB0u && va != 0x000EA6A0u && va != 0x000C0B30u) return;
+    if (period < 0) {
+        const char *e = getenv("JSRF_ROBO_LOG");
+        period = e ? atof(e) : 0;
+        e = getenv("JSRF_ROBO_RIDE");
+        while (e && *e && ride_n < 8) {
+            char *x;
+            ride_t[ride_n] = strtod(e, &x);
+            if (x == e) break;
+            ride_rail[ride_n] = *x == ':' ? (int)strtol(x + 1, &x, 10) : 0;
+            ride_pt[ride_n] = *x == ':' ? (int)strtol(x + 1, &x, 10) : -1;
+            ride_n++;
+            e = *x == ',' ? x + 1 : x;
+        }
+    }
+    if (period <= 0) return;
+    m = (const uint8_t *)g_xbox_mem_offset;
+    now = pad_now();
+    if (va == 0x000C0B30u) {
+        uint32_t desc = GARG(2);
+        fprintf(stderr, "[ROBO] t=%.1f enemy created: type %d (args %08X %08X)\n", now,
+                desc >= 0x10000u && desc < (64u << 20) ? (int)*(const uint32_t *)(m + desc) : -1,
+                GARG(1), desc);
+        fflush(stderr);
+        return;
+    }
+    obj = g_ecx;
+    if (obj < 0x10000u || obj >= (64u << 20)) return;
+    w = (const uint32_t *)(m + obj);
+    f = (const float *)(m + obj);
+    st = va == 0x000ECDB0u ? w[0x128 / 4] : w[0x8 / 4];
+    for (i = 0; i < 16 && r[i].obj && r[i].obj != obj; i++)
+        ;
+    if (i == 16) return;
+    if (!r[i].obj) { r[i].obj = obj; r[i].state = 0xFFFFFFFFu; r[i].next = 0; r[i].calls = 0; }
+    r[i].calls++;
+    t27 = va == 0x000ECDB0u;
+    comp = obj + (t27 ? 0xBCu : 0x30u);       /* the rails-and-spots component, sub_000EB830 */
+    nrails = t27 ? 2 : 5;
+    cw = (const uint32_t *)(m + comp);
+    cf = (const float *)(m + comp);
+    if (ride_cur < ride_n && now >= ride_t[ride_cur] && s_player_va) {
+        int rr = ride_rail[ride_cur], rp = ride_pt[ride_cur];
+        uint32_t rl = rr >= 0 && rr < nrails ? robo_rail(m, cw[1 + rr]) : 0;
+        ride_cur++;
+        if (rl) {
+            uint32_t pts = *(const uint32_t *)(m + rl + 4), n = *(const uint32_t *)(m + rl + 0x28), lo = 0;
+            if (pts >= 0x10000u && pts < (64u << 20) && n && n < 64) {
+                const float *P = (const float *)(m + pts);
+                float *pl = (float *)((uint8_t *)g_xbox_mem_offset + s_player_va + 0xCA4);
+                if (rp >= 0) lo = (uint32_t)(rp < (int)n ? rp : (int)n - 1);
+                else
+                    for (k = 1; k < (int)n; k++)
+                        if (rp == -2 ? P[k * 6 + 1] > P[lo * 6 + 1] : P[k * 6 + 1] < P[lo * 6 + 1]) lo = (uint32_t)k;
+                fprintf(stderr, "[ROBO] t=%.1f ride: player (%.1f %.1f %.1f) -> 40 above point %u of rail %d"
+                        " (%.1f %.1f %.1f) of the type-%d robot\n", now, pl[0], pl[1], pl[2], lo, rr,
+                        P[lo * 6], P[lo * 6 + 1], P[lo * 6 + 2], t27 ? 27 : 12);
+                pl[0] = P[lo * 6]; pl[1] = P[lo * 6 + 1] + 40.0f; pl[2] = P[lo * 6 + 2];
+                ride_until = now + 5.0; ride_next = now;
+            }
+        } else
+            fprintf(stderr, "[ROBO] t=%.1f ride: the robot has no rail %d\n", now, rr);
+    }
+    if (now < ride_until && now >= ride_next) {
+        fprintf(stderr, "[ROBO] t=%.2f riding? player at (%.1f %.1f %.1f)\n", now,
+                s_player_pos[0], s_player_pos[1], s_player_pos[2]);
+        ride_next = now + 0.2;
+    }
+    fine = t27 && (st == 2 || st == 3) && r[i].calls % 6 == 0;
+    if (st == r[i].state && now < r[i].next && !fine) return;
+    if (t27)
+        fprintf(stderr, "[ROBO] t=%.2f type27 %08X state %u%s count %u idx %u shot %u flags %08X"
+                " motion %08X@%.2f %08X@%.2f at (%.1f %.1f %.1f) ground %.1f dist %.1f player (%.1f %.1f %.1f)\n",
+                now, obj, st, st != r[i].state ? " (new)" : "", w[0x12C / 4], w[0x134 / 4],
+                w[0x138 / 4], w[0x90 / 4], w[0x148 / 4], f[0x154 / 4], w[0x14C / 4], f[0x158 / 4],
+                f[0x48 / 4], f[0x4C / 4], f[0x50 / 4], f[0x88 / 4], f[0x74 / 4],
+                s_player_pos[0], s_player_pos[1], s_player_pos[2]);
+    else {
+        uint32_t ent = w[4 / 4];
+        const float *ef = ent >= 0x10000u && ent < (64u << 20) ? (const float *)(m + ent + 0x44) : 0;
+        fprintf(stderr, "[ROBO] t=%.1f type12 %08X state %u%s +10 %08X +144 %08X at (%.1f %.1f %.1f) ground %.1f"
+                " entity %08X at (%.1f %.1f %.1f) flags %08X player (%.1f %.1f %.1f)\n", now, obj, st,
+                st != r[i].state ? " (new)" : "", w[0x10 / 4], w[0x144 / 4], f[0x14 / 4], f[0x18 / 4],
+                f[0x1C / 4], f[0x2C / 4], ent, ef ? ef[0] : 0.0f, ef ? ef[1] : 0.0f, ef ? ef[2] : 0.0f,
+                ef ? *(const uint32_t *)(m + ent + 0xA4) : 0u, s_player_pos[0], s_player_pos[1], s_player_pos[2]);
+    }
+    if (now >= r[i].next) {
+        for (k = 0; k < nrails; k++) {
+            uint32_t h = cw[1 + k], rl = robo_rail(m, h);
+            if (!rl) { fprintf(stderr, "[ROBO]   rail %d: handle %08X, none\n", k, h); continue; }
+            {
+                const float *R = (const float *)(m + rl);
+                fprintf(stderr, "[ROBO]   rail %d: handle %08X, %u points, (%.1f %.1f %.1f) .. (%.1f %.1f %.1f)\n",
+                        k, h, *(const uint32_t *)(m + rl + 0x28), R[0x10 / 4], R[0x14 / 4], R[0x18 / 4],
+                        R[0x1C / 4], R[0x20 / 4], R[0x24 / 4]);
+            }
+        }
+        fprintf(stderr, "[ROBO]   graffiti: handles %08X %08X %08X %08X progress %.2f %.2f %.2f %.2f\n",
+                cw[0x3C / 4], cw[0x40 / 4], cw[0x44 / 4], cw[0x48 / 4], cf[0x4C / 4], cf[0x50 / 4],
+                cf[0x54 / 4], cf[0x58 / 4]);
+    }
+    fflush(stderr);
+    if (st != r[i].state || now >= r[i].next) r[i].next = now + period;
+    r[i].state = st;
+}
+
 void recomp_trace_user_hook(const char *name, uint32_t va)
 {
     cri_census(va);
+    jsrf_robo_log(va);
     static int init = -1; static uint32_t mgr; static const char *last_name; static uint32_t last_va;
     if (init < 0) { const char *e = getenv("JSRF_WATCH_SNDMGR"); mgr = e ? (uint32_t)strtoul(e, 0, 0) : 0; init = 1; }
     if (mgr) {
@@ -2682,6 +2835,98 @@ static void jsrf_where(uint32_t fl, uint32_t obj)
             jsrf_now(), fl, obj, b0[12], b0[13], b0[14]);
 }
 
+/* ---- where a skater is posed: JSRF_EVT_LOG=<seconds> ------------------------
+ *
+ * The character select's preview skaters were drawn into the floor and under
+ * the rails they grind. Every that many seconds, for each skeleton posed
+ * through sub_00047970 (the usual "pose this skeleton with this motion"):
+ * who called sub_00047970 (the return address above its saved ebx), the
+ * matrix the skeleton was posed under (the matrix stack's top: translation and
+ * up axis -- up exactly vertical means a world-space pass), and the posed
+ * bones: bone 0, bone 1, the lowest and the highest bone, in that space. Plus,
+ * from sub_00080BD0, each character's own position (+0xCA4). Enough to tell a
+ * skater posed low (bones under the matrix origin) from one placed low. */
+static double evt_period = -1;
+static int evt_on(void)
+{
+    if (evt_period < 0) {
+        const char *e = getenv("JSRF_EVT_LOG");
+        evt_period = e ? atof(e) : 0;
+    }
+    return evt_period > 0;
+}
+static void jsrf_evt_pose(uint32_t caller, uint32_t obj, uint32_t motion)
+{
+    static struct { uint32_t obj, caller; double next; } seen[256];
+    const uint8_t *m = (const uint8_t *)g_xbox_mem_offset;
+    const uint32_t lim = 64u << 20;
+    uint32_t nb, mats, top, i, lo = 0, hi = 0;
+    const float *mt, *b;
+    float ylo = 1e30f, yhi = -1e30f;
+    int k, slot = -1;
+    double now = jsrf_now();
+    if (obj < 0x10000u || obj + 0x24u > lim) return;
+    top = *(const uint32_t *)(m + 0x264C04u);
+    top = (top >= 0x10000u && top + 4 <= lim) ? *(const uint32_t *)(m + top) : 0;
+    mt = (top >= 0x10000u && top + 64 <= lim) ? (const float *)(m + top) : NULL;
+    /* One line per object and pass kind (world: up exactly vertical). */
+    {
+        uint32_t kind = (mt && fabsf(mt[5] - 1.0f) < 1e-3f && fabsf(mt[4]) < 1e-3f && fabsf(mt[6]) < 1e-3f) ? 1u : 0u;
+        uint32_t key = caller ^ kind;
+        for (k = 0; k < 256; k++) {
+            if (seen[k].obj == obj && seen[k].caller == key) { slot = k; break; }
+            if (!seen[k].obj) { seen[k].obj = obj; seen[k].caller = key; slot = k; break; }
+        }
+        if (slot < 0) {                    /* full: a new scene's objects -- start over */
+            memset(seen, 0, sizeof seen);
+            seen[0].obj = obj; seen[0].caller = key; slot = 0;
+        }
+        if (now < seen[slot].next) return;
+        seen[slot].next = now + evt_period;
+        nb = *(const uint32_t *)(m + obj + 0x1c);
+        mats = *(const uint32_t *)(m + obj + 0x20);
+        fprintf(stderr, "[EVT] t=%.2f flip %u obj %08X from %08X %s", now, nv2a_gl_flips(), obj, caller,
+                kind ? "world" : "other");
+        if (mt) fprintf(stderr, " | matrix at (%.2f %.2f %.2f) up (%.3f %.3f %.3f)",
+                        mt[12], mt[13], mt[14], mt[4], mt[5], mt[6]);
+        if (motion >= 0x10000u && motion + 0x10u <= lim)
+            fprintf(stderr, " | motion %08X root flags %08X", *(const uint32_t *)(m + motion),
+                    *(const uint32_t *)(m + motion + 8));
+        if (nb == 20 && mats >= 0x10000u && mats + 64u * 20u <= lim) {
+            for (i = 0; i < 20; i++) {
+                b = (const float *)(m + mats + 64u * i);
+                if (b[13] < ylo) { ylo = b[13]; lo = i; }
+                if (b[13] > yhi) { yhi = b[13]; hi = i; }
+            }
+            b = (const float *)(m + mats);
+            fprintf(stderr, " | bone0 (%.2f %.2f %.2f) bone1 (%.2f %.2f %.2f) lowest %u y %.2f highest %u y %.2f",
+                    b[12], b[13], b[14], b[16 + 12], b[16 + 13], b[16 + 14], lo, ylo, hi, yhi);
+        }
+        fprintf(stderr, "\n");
+        fflush(stderr);
+    }
+}
+static void jsrf_evt_char(uint32_t self)
+{
+    static struct { uint32_t obj; double next; } seen[64];
+    const uint8_t *m = (const uint8_t *)g_xbox_mem_offset;
+    const float *p;
+    int k, slot = -1;
+    double now = jsrf_now();
+    if (self < 0x10000u || self + 0xCB0u > (64u << 20)) return;
+    for (k = 0; k < 64; k++) {
+        if (seen[k].obj == self) { slot = k; break; }
+        if (!seen[k].obj) { seen[k].obj = self; slot = k; break; }
+    }
+    if (slot < 0) { memset(seen, 0, sizeof seen); seen[0].obj = self; slot = 0; }
+    if (now < seen[slot].next) return;
+    seen[slot].next = now + evt_period;
+    p = (const float *)(m + self + 0xCA4u);
+    fprintf(stderr, "[EVTCHAR] t=%.2f flip %u char %08X at (%.2f %.2f %.2f)\n", now, nv2a_gl_flips(),
+            self, p[0], p[1], p[2]);
+    fflush(stderr);
+}
+
 /* ---- the poser: census + snapshot ---------------------------------------- */
 extern void sub_0005F0F0_gen(void);
 void sub_0005F0F0(void)
@@ -2696,6 +2941,14 @@ void sub_0005F0F0(void)
         if (c && *c == '@') census_sec = atof(c + 1);
         else census_flip = c ? (uint32_t)strtoul(c, 0, 0) : 0;
         init = 1;
+    }
+    /* Called through sub_00047970: its caller's return address sits above
+     * sub_00047970's saved ebx, at GARG(7). */
+    if (evt_on() && GARG(0) == 0x0004798Du) {
+        uint32_t caller = GARG(7), o = GARG(1), mo = GARG(3);
+        sub_0005F0F0_gen();
+        jsrf_evt_pose(caller, o, mo);
+        return;
     }
     snap = jsrf_snap_begin(0x0005F0F0u);
     if (!census_flip && census_sec < 0) {
@@ -3201,6 +3454,7 @@ void sub_00080BD0(void)
     const uint8_t *m = (const uint8_t *)g_xbox_mem_offset;
     uint32_t self = g_ecx;
     sub_00080BD0_gen();
+    if (evt_on()) jsrf_evt_char(self);
     if (ev_log_on() && self >= 0x10000u && self < (64u << 20)) {
         uint32_t f308 = *(const uint32_t *)(m + self + 0x308u);
         uint32_t f2f8 = *(const uint32_t *)(m + self + 0x2F8u);
@@ -3395,8 +3649,6 @@ void sub_0006C680(void)
  * switch on +0x60). JSRF_SPOT_LOG=1: each spot the first time it updates --
  * its id (+0x58), state, the player's position then, and the floats of its
  * first 0xC0 bytes, to find where spots are -- and every change of state. */
-static float s_player_pos[3];
-static uint32_t s_player_va;
 /* A spot's descriptor: the graffiti manager at 0x2314B0 keeps them in a hash
  * table at +8 (bucket id & 0xFF, chained through +0x104, matched on +0x9C).
  * Its +0xA4 holds 3 bits per part (+0x98 parts): the design sprayed there, 7

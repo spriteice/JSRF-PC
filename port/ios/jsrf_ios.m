@@ -45,6 +45,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include "xiso.h"
+#include "../xbe_check.h"
 
 /* ---- what the runtime asks for ------------------------------------------ */
 
@@ -697,6 +698,21 @@ static void draw_circle(CGPoint c, CGFloat r, CGFloat fill, CGFloat line)
     if (self.started || self.unpacking) return;
     game = find_game();
     if (!game) { [self showSetup]; return; }
+    {
+        /* Another build of the game (European, Japanese, a Sega GT 2002 combo
+         * disc) starts and then crashes a few seconds in: the engine is the
+         * standalone US disc's code. */
+        char why[512];
+        if (jsrf_xbe_check_folder(game.fileSystemRepresentation, why, sizeof why) == JSRF_XBE_OTHER) {
+            fprintf(stderr, "[IOS] %s\n", why);
+            [self showSetup];
+            [self alert:@JSRF_XBE_HEADING
+                   text:[NSString stringWithFormat:@"%s\n\n%s\n\nThe files are in Files: On My "
+                         "iPhone > JSRF Unleashed: replace them with a standalone US disc's.", why,
+                         JSRF_XBE_OTHER_ADVICE]];
+            return;
+        }
+    }
     self.setup.hidden = YES;
     g_open = 1;                       /* the renderer may present from now on */
     if (!start_engine(game)) {
@@ -713,10 +729,16 @@ static void draw_circle(CGPoint c, CGFloat r, CGFloat fill, CGFloat line)
 - (void)engineStopped:(int)rc
 {
     [UIApplication sharedApplication].idleTimerDisabled = NO;
+    if (rc == 3) {                    /* the engine's own check: not the standalone US disc's files */
+        [self alert:@JSRF_XBE_HEADING
+               text:[NSString stringWithFormat:@"%s\n\nIts log says what the files are: "
+                     "Files: On My iPhone > JSRF Unleashed > Logs > last-run.log.", JSRF_XBE_OTHER_ADVICE]];
+        return;
+    }
     [self alert:@"The game stopped"
            text:[NSString stringWithFormat:@"The engine could not run the game (code %d). Its log "
                  "is in Files: On My iPhone > JSRF Unleashed > Logs > last-run.log.%@", rc,
-                 rc == 1 ? @"\n\nThe usual reasons: the files are not the USA release, or iOS "
+                 rc == 1 ? @"\n\nThe usual reasons: the files are not the standalone US disc's, or iOS "
                            "refused the 4 GB of address space the game's memory map needs." : @""]];
 }
 
@@ -832,9 +854,20 @@ static int unpack_progress(void *ctx, uint64_t done, uint64_t total)
                            "Keep the app open until it is done.", iso.lastPathComponent, dest.lastPathComponent];
     [UIApplication sharedApplication].idleTimerDisabled = YES;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        char err[512];
-        int rc = xiso_extract(iso.fileSystemRepresentation, tmp.fileSystemRepresentation,
+        char err[1200], what[640];
+        int rc, wrong;
+        /* What the file is, before minutes and gigabytes go into it: another
+         * game's disc, another build of the game (port/xbe_check.c). */
+        int r = jsrf_xbe_check_iso(iso.fileSystemRepresentation, what, sizeof what);
+        wrong = r != JSRF_XBE_OK;
+        if (wrong) {
+            rc = -1;
+            snprintf(err, sizeof err, "%s%s%s", what, r == JSRF_XBE_OTHER ? "\n\n" : "",
+                     r == JSRF_XBE_OTHER ? JSRF_XBE_OTHER_ADVICE : "");
+        } else {
+            rc = xiso_extract(iso.fileSystemRepresentation, tmp.fileSystemRepresentation,
                               unpack_progress, (__bridge void *)self, err, sizeof err);
+        }
         NSError *e = nil;
         if (!rc && !has_xbe(tmp)) { rc = -1; snprintf(err, sizeof err, "The image unpacked, but it "
                                     "has no default.xbe: it is not a game disc."); }
@@ -851,7 +884,7 @@ static int unpack_progress(void *ctx, uint64_t done, uint64_t total)
             self.progress.hidden = YES;
             [UIApplication sharedApplication].idleTimerDisabled = NO;
             if (why) {
-                [self alert:@"Could not unpack the image" text:why];
+                [self alert:wrong ? @JSRF_XBE_HEADING : @"Could not unpack the image" text:why];
                 [self showSetup];
                 return;
             }

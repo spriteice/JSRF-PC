@@ -112,20 +112,23 @@ enum Library {
     }
 
     static func extractedFolder(for iso: URL) -> URL {
-        root.appendingPathComponent(iso.deletingPathExtension().lastPathComponent)
+        var name = iso.deletingPathExtension().lastPathComponent
+        if name.lowercased().hasSuffix(".xiso") { name = String(name.dropLast(5)) }
+        return root.appendingPathComponent(name)
     }
 
-    /// extract-xiso, wherever the user keeps it. Not bundled: it is somebody
-    /// else's program and shipping it would make this a redistribution
-    /// question rather than a launcher.
-    static func extractTool() -> URL? {
-        let candidates = [
-            "/opt/homebrew/bin/extract-xiso",
-            "/usr/local/bin/extract-xiso",
-            "/usr/bin/extract-xiso",
-        ].map { URL(fileURLWithPath: $0) }
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    /// The disc images directly in a folder -- where a download lands, and
+    /// what someone picks when they were asked for "the game".
+    static func images(in folder: URL) -> [URL] {
+        let kids = (try? FileManager.default.contentsOfDirectory(
+            at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        return kids.filter { ["iso", "xiso"].contains($0.pathExtension.lowercased()) }
+                   .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
+    // A disc image is unpacked by the engine itself (--unpack-iso: the
+    // unpacker the iPhone, Android and Windows apps use, port/ios/xiso.c).
+    // It used to be handed to extract-xiso, which is not part of macOS: a
+    // player without Homebrew had no way to use an image at all.
 }
 
 // MARK: - the game
@@ -135,6 +138,31 @@ enum Game {
     static var binary: URL {
         Bundle.main.bundleURL
             .appendingPathComponent("Contents/MacOS/jsrf_recomp")
+    }
+
+    /// Whether some files are the game the engine is made from, asked of the
+    /// engine itself (port/xbe_check.c, through port/main.c) so there is one
+    /// copy of the check: `--check-game <folder>` or `--check-iso <image>`.
+    /// nil means yes, or that the engine could not be asked -- then it checks
+    /// again at startup and stops with the same explanation in its log. A
+    /// string is what to tell the player: what the files are instead (another
+    /// build of the game, another game's disc, a zip, not a disc image).
+    static func refusal(_ args: [String]) -> String? {
+        let p = Process()
+        p.executableURL = binary
+        p.arguments = args
+        let out = Pipe()
+        p.standardOutput = out
+        p.standardError = FileHandle.nullDevice
+        do { try p.run() } catch { return nil }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        // 2: no default.xbe; 3: another build or another game; 4: not an Xbox
+        // disc image. Anything else is the engine failing, not the files.
+        guard [2, 3, 4].contains(p.terminationStatus) else { return nil }
+        let text = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return text.isEmpty ? "These are not the files of the standalone US disc of Jet Set Radio Future." : text
     }
 
     /// The flags the port needs. Kept here rather than in a shell script so
@@ -209,10 +237,44 @@ final class Launcher: NSObject, NSApplicationDelegate {
                  "Expected it at:\n\(Game.binary.path)\n\nRebuild the app with build_app.sh.")
             return
         }
-        if let folder = GameFolder.remembered() {
+        launched = true
+        // A path on the command line, as the Windows and Linux launchers take one.
+        let arg = CommandLine.arguments.dropFirst()
+            .first { !$0.hasPrefix("-") && FileManager.default.fileExists(atPath: $0) }
+        if let url = opened ?? arg.map({ URL(fileURLWithPath: $0) }) {   // dropped on the app, or opened with it
+            opened = nil
+            used = url.standardizedFileURL
+            use(url)
+        } else if let folder = GameFolder.remembered() {
             start(folder)
         } else {
             ask(reason: nil)
+        }
+    }
+
+    /// A folder or a disc image dropped on the app's icon, or opened with it:
+    /// used as if it had been picked. When the app is started that way this
+    /// comes before applicationDidFinishLaunching, which then takes it.
+    private var opened: URL?
+    private var used: URL?
+    private var launched = false
+    func application(_ sender: NSApplication, open urls: [URL]) {
+        guard let url = urls.first else { return }
+        if !launched { opened = url; return }
+        if url.standardizedFileURL == used { return }    // the command line's, delivered again
+        use(url)
+    }
+
+    /// For the release tests: every question the launcher puts on screen,
+    /// appended to the file JSRF_LAUNCHER_TRACE names. Nothing else changes.
+    private func trace(_ what: String) {
+        guard let path = ProcessInfo.processInfo.environment["JSRF_LAUNCHER_TRACE"],
+              let data = (what.replacingOccurrences(of: "\n", with: " / ") + "\n").data(using: .utf8)
+        else { return }
+        if let h = FileHandle(forWritingAtPath: path) {
+            h.seekToEndOfFile(); h.write(data); h.closeFile()
+        } else {
+            FileManager.default.createFile(atPath: path, contents: data)
         }
     }
 
@@ -225,85 +287,179 @@ final class Launcher: NSObject, NSApplicationDelegate {
             a.informativeText = reason
             a.addButton(withTitle: "Choose…")
             a.addButton(withTitle: "Quit")
+            trace("[alert] \(a.messageText) | \(reason)")
             if a.runModal() != .alertFirstButtonReturn { NSApp.terminate(nil); return }
         }
 
         let panel = NSOpenPanel()
         panel.title = "Choose the game"
-        panel.message = "Pick the folder of extracted game files, or a disc image (.iso)."
+        panel.message = "Pick the folder of the game's extracted files, or an image of its disc (.iso)."
         panel.prompt = "Use This"
         panel.canChooseDirectories = true
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
-        panel.allowedFileTypes = ["iso", "xiso"]
+        // No file-type filter: with allowedFileTypes set, macOS lets the panel
+        // choose only such files -- "Use This" on a folder opens it, and inside
+        // it the button stays grey, so no folder can be picked at all. Nor are
+        // other files greyed out: a file someone takes for the game and cannot
+        // even select tells them nothing. Anything can be chosen, and use()
+        // says what it is if it is not the game.
         panel.treatsFilePackagesAsDirectories = true
 
+        trace("[picker] \(panel.message ?? "")")
         guard panel.runModal() == .OK, let picked = panel.url else {
             NSApp.terminate(nil); return
         }
+        use(picked)
+    }
 
+    /// Whatever was picked: the game's folder (or the folder above it), a
+    /// folder with the disc image in it, the image, default.xbe itself -- or
+    /// something else, which the engine names.
+    private func use(_ picked: URL) {
         var isDir: ObjCBool = false
         FileManager.default.fileExists(atPath: picked.path, isDirectory: &isDir)
         if isDir.boolValue {
-            guard let folder = GameFolder.resolve(picked) else {
-                ask(reason: "That folder has no default.xbe in it, so it isn't the game's files. "
-                          + "Pick the folder the disc was extracted into.")
+            if let folder = GameFolder.resolve(picked) {
+                start(folder, remembering: picked)
                 return
             }
-            GameFolder.remember(picked)
-            start(folder)
-        } else {
-            extract(picked)
+            let images = Library.images(in: picked)
+            if images.count == 1 { extract(images[0]); return }
+            ask(reason: images.isEmpty
+                ? "That folder has no default.xbe in it, so it isn't the game's files: the game's "
+                  + "folder has default.xbe and Media in it. Pick that folder, or an image of the "
+                  + "disc (.iso)."
+                : "That folder has \(images.count) disc images in it. Pick the one of Jet Set Radio Future.")
+            return
         }
+        if picked.lastPathComponent.lowercased() == "default.xbe" {
+            use(picked.deletingLastPathComponent())
+            return
+        }
+        extract(picked)     // a disc image, or the engine says what it is instead
+    }
+
+    /// The files are not the game: say what they are, and offer the picker
+    /// again. What is remembered is left alone -- a wrong file dropped on the
+    /// app says nothing about the folder that worked yesterday.
+    private func refuse(_ why: String) {
+        NSApp.activate(ignoringOtherApps: true)
+        let a = NSAlert()
+        a.alertStyle = .warning
+        a.messageText = "These files won't work with JSRF Unleashed"
+        a.informativeText = why
+        a.addButton(withTitle: "Choose Other Files…")
+        a.addButton(withTitle: "Quit")
+        trace("[alert] \(a.messageText) | \(why)")
+        if a.runModal() == .alertFirstButtonReturn { ask(reason: nil) } else { NSApp.terminate(nil) }
     }
 
     private func extract(_ iso: URL) {
         let dest = Library.extractedFolder(for: iso)
         if let folder = GameFolder.resolve(dest) {   // unpacked on an earlier run
-            GameFolder.remember(dest)
-            start(folder)
+            start(folder, remembering: dest)
             return
         }
-        guard let tool = Library.extractTool() else {
-            fail("That's a disc image, and the tool to unpack it isn't installed.",
-                 "Install extract-xiso and try again:\n\n    brew install extract-xiso\n\n"
-               + "Or unpack the image yourself and pick the resulting folder instead.")
+        // What the file is, before minutes and gigabytes go into unpacking it:
+        // the game's disc, another build of the game, another game, a zip...
+        if let why = Game.refusal(["--check-iso", iso.path]) {
+            refuse(why)
             return
         }
 
         let progress = NSAlert()
         progress.messageText = "Unpacking \(iso.lastPathComponent)…"
         progress.informativeText = "This happens once. The files go to:\n\(dest.path)"
-        let spinner = NSProgressIndicator(frame: NSRect(x: 0, y: 0, width: 300, height: 20))
-        spinner.style = .bar
-        spinner.isIndeterminate = true
-        spinner.startAnimation(nil)
-        progress.accessoryView = spinner
+        let box = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 42))
+        let bar = NSProgressIndicator(frame: NSRect(x: 0, y: 20, width: 320, height: 20))
+        bar.style = .bar
+        bar.isIndeterminate = true
+        bar.minValue = 0
+        bar.maxValue = 1
+        bar.startAnimation(nil)
+        let label = NSTextField(labelWithString: "")
+        label.frame = NSRect(x: 0, y: 0, width: 320, height: 16)
+        label.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        label.textColor = .secondaryLabelColor
+        box.addSubview(bar)
+        box.addSubview(label)
+        progress.accessoryView = box
         progress.addButton(withTitle: "Cancel")
 
-        try? FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        try? FileManager.default.removeItem(at: dest)     // what a cancelled run left
         let p = Process()
-        p.executableURL = tool
-        p.arguments = ["-d", dest.path, "-x", iso.path]
-        p.terminationHandler = { _ in
-            DispatchQueue.main.async {
-                NSApp.abortModal()
-                if let folder = GameFolder.resolve(dest) {
-                    GameFolder.remember(dest)
-                    self.start(folder)
-                } else {
-                    try? FileManager.default.removeItem(at: dest)
-                    self.fail("That image didn't unpack into a game.",
-                              "No default.xbe was found in it. If it's a redump-style image with "
-                            + "a video partition, extract it yourself and pick the folder.")
+        p.executableURL = Game.binary
+        p.arguments = ["--unpack-iso", iso.path, dest.path]
+        let out = Pipe()
+        p.standardOutput = out
+        p.standardError = FileHandle.nullDevice
+        do { try p.run() } catch {
+            fail("The disc image couldn't be unpacked.", error.localizedDescription); return
+        }
+
+        // The engine prints "progress <done> <total>" lines, then its answer.
+        // Read on a thread of its own; the bar is moved on the main thread,
+        // which is inside the alert's modal loop and still runs the queue.
+        var result: (status: Int32, said: [String])? = nil
+        var cancelled = false
+        let reader = out.fileHandleForReading
+        DispatchQueue.global(qos: .userInitiated).async {
+            var pending = Data(), said: [String] = []
+            while true {
+                let chunk = reader.availableData
+                if chunk.isEmpty { break }
+                pending.append(chunk)
+                while let nl = pending.firstIndex(of: 0x0A) {
+                    let line = String(decoding: pending[pending.startIndex..<nl], as: UTF8.self)
+                    pending.removeSubrange(pending.startIndex...nl)
+                    let f = line.split(separator: " ")
+                    if f.count == 3, f[0] == "progress", let done = Double(f[1]),
+                       let total = Double(f[2]), total > 0 {
+                        DispatchQueue.main.async {
+                            bar.isIndeterminate = false
+                            bar.doubleValue = done / total
+                            label.stringValue = String(format: "%.1f of %.1f GB", done / 1e9, total / 1e9)
+                            self.trace("[progress] \(label.stringValue)")
+                        }
+                    } else {
+                        said.append(line)
+                    }
                 }
             }
+            p.waitUntilExit()
+            let status = p.terminationStatus
+            DispatchQueue.main.async {
+                if cancelled { return }          // the alert is gone; nothing to end
+                result = (status, said)
+                NSApp.abortModal()
+            }
         }
-        do { try p.run() } catch {
-            fail("Couldn't run extract-xiso.", error.localizedDescription); return
+        trace("[alert] \(progress.messageText) | \(progress.informativeText)")
+        _ = progress.runModal()
+
+        guard let finished = result else {     // Cancel
+            cancelled = true
+            p.terminate()
+            p.waitUntilExit()
+            try? FileManager.default.removeItem(at: dest)
+            ask(reason: nil)
+            return
         }
-        progress.runModal()
-        if p.isRunning { p.terminate(); NSApp.terminate(nil) }
+        let status = finished.status, said = finished.said
+        let text = said.filter { $0 != "ok" }.joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if status == 0, let folder = GameFolder.resolve(dest) {
+            start(folder, remembering: dest)
+            return
+        }
+        try? FileManager.default.removeItem(at: dest)
+        if [2, 3, 4].contains(status) {
+            refuse(text.isEmpty ? "That disc image isn't the game's." : text)
+        } else {
+            fail("The disc image couldn't be unpacked.",
+                 text.isEmpty ? "The unpacker stopped (status \(status))." : text)
+        }
     }
 
     // MARK: running
@@ -321,7 +477,22 @@ final class Launcher: NSObject, NSApplicationDelegate {
     /// running IS the application the system launched, with its window rights
     /// intact. This is the usual shape of a wrapper that has a question to ask
     /// before the real program starts.
-    private func start(_ folder: URL) {
+    ///
+    /// remembering: what to remember once the files pass the check (the
+    /// folder that was picked, which may be the one above the game's, or
+    /// where an image was unpacked); nil when they are the remembered ones.
+    private func start(_ folder: URL, remembering: URL? = nil) {
+        // Another build of the game (European, Japanese, a Sega GT 2002 combo
+        // disc) loads and then crashes a few seconds in: the code is the
+        // standalone US disc's. Say what the files are and offer the picker
+        // again rather than start it.
+        if let why = Game.refusal(["--check-game", folder.path]) {
+            if remembering == nil { GameFolder.forget() }     // they were the remembered ones
+            refuse(why)
+            return
+        }
+        if let r = remembering { GameFolder.remember(r) }
+
         // Write the log where the game lives.
         //
         // logRoot prefers the folder beside the .app, which is right in
@@ -398,6 +569,7 @@ final class Launcher: NSObject, NSApplicationDelegate {
         a.informativeText = detail
         a.addButton(withTitle: "Choose Game…")
         a.addButton(withTitle: "Quit")
+        trace("[alert] \(message) | \(detail)")
         if a.runModal() == .alertFirstButtonReturn {
             GameFolder.forget()
             ask(reason: nil)
