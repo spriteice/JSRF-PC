@@ -2132,6 +2132,10 @@ static void bridge_HalReadSMCTrayState(void)
  * Returns 1 if the routine was found and called.
  */
 static int kernel_run_dpc_locked(uint32_t dpc_va, uint32_t arg1, uint32_t arg2);
+/* An interrupt, DPC or synchronize routine is running on this thread. The
+ * console switches no threads until it returns, so neither does a loop back
+ * edge inside it (xbox_GuestCpuPreempt). */
+static RECOMP_TLS int t_in_callback;
 static int kernel_run_dpc(uint32_t dpc_va, uint32_t arg1, uint32_t arg2)
 {
     int r;
@@ -2172,7 +2176,9 @@ static int kernel_run_dpc_locked(uint32_t dpc_va, uint32_t arg1, uint32_t arg2)
     g_esp -= 4; BRIDGE_MEM32(g_esp) = context;
     g_esp -= 4; BRIDGE_MEM32(g_esp) = dpc_va;
     g_esp -= 4; BRIDGE_MEM32(g_esp) = 0;
+    t_in_callback++;
     fn();
+    t_in_callback--;
     return 1;
 }
 
@@ -2212,7 +2218,9 @@ static void bridge_KeSynchronizeExecution(void)
      * the dummy return address and the argument, so g_esp needs no fixup. */
     g_esp -= 4; BRIDGE_MEM32(g_esp) = context;
     g_esp -= 4; BRIDGE_MEM32(g_esp) = 0;
+    t_in_callback++;
     fn();
+    t_in_callback--;
     /* g_eax is whatever the routine returned, which is this call's result. */
 }
 
@@ -2322,7 +2330,9 @@ static int kernel_raise_interrupt_locked(uint32_t vector)
     g_esp -= 4; BRIDGE_MEM32(g_esp) = context;
     g_esp -= 4; BRIDGE_MEM32(g_esp) = kint;
     g_esp -= 4; BRIDGE_MEM32(g_esp) = 0;
+    t_in_callback++;
     fn();
+    t_in_callback--;
     return (int)(g_eax & 1u);
 }
 
@@ -6139,8 +6149,8 @@ static RECOMP_TLS int g_kernel_dispatch_slot = -1;
  *
  * This lock serialises guest execution: a thread holds it while running
  * guest code and gives it up around every blocking kernel call. Time
- * slicing comes from the function-entry trace hook, which yields the lock
- * after a few milliseconds so a busy thread cannot starve the rest. A thread
+ * slicing comes from loop back edges (xbox_GuestCpuPreempt), which yield the
+ * lock after a few milliseconds so a busy thread cannot starve the rest. A thread
  * at idle priority (JSRF's `while (!exit) counter++`) never takes the lock:
  * it touches nothing shared and would otherwise hold it forever.
  *
@@ -6227,8 +6237,12 @@ static void lock_holder_where(void)
 }
 #endif
 /* How many guest threads are queueing for the lock right now. Used by the
- * yield to decide whether standing back is worth anything. */
-static volatile int g_lock_waiters;
+ * yield to decide whether standing back is worth anything, and read by every
+ * loop back edge in lifted code (RECOMP_BACK_EDGE, under the toolkit's name):
+ * while it is zero a back edge costs a load and a branch. */
+int32_t g_xbox_guest_cpu_preempt;
+/* The holder's latest loop back edge, for the [LOCK] report. */
+static volatile uint32_t g_lock_owner_edge;
 static volatile long long     g_lock_since;
 
 /* Per-thread queueing statistics, kept in a small fixed table so that
@@ -6337,9 +6351,9 @@ void xbox_guest_lock_acquire(void)
     { long long t0 = 0;
       int watch = lock_watch();
       if (watch) t0 = (long long)GetTickCount64();
-      __atomic_add_fetch(&g_lock_waiters, 1, __ATOMIC_RELAXED);
+      __atomic_add_fetch(&g_xbox_guest_cpu_preempt, 1, __ATOMIC_RELAXED);
       EnterCriticalSection(&g_guest_lock);
-      __atomic_sub_fetch(&g_lock_waiters, 1, __ATOMIC_RELAXED);
+      __atomic_sub_fetch(&g_xbox_guest_cpu_preempt, 1, __ATOMIC_RELAXED);
       if (watch) {
           long long w = (long long)GetTickCount64() - t0;
           unsigned slot = lock_slot();
@@ -6350,6 +6364,7 @@ void xbox_guest_lock_acquire(void)
     t_guest_holds = 1;
     t_guest_since = (long long)GetTickCount64();
     g_lock_owner = GetCurrentThreadId();
+    g_lock_owner_edge = 0;
 #ifdef __APPLE__
     g_lock_owner_pt = pthread_self();
 #endif
@@ -6401,6 +6416,9 @@ void xbox_guest_lock_report(void)
     fprintf(stderr, "  [LOCK] thread %lu has held the guest lock for %lld ms"
                     " (critical-section handoffs %lu, free releases %lu)\n",
             owner, now - since, g_cs_handoffs, g_cs_free_releases);
+    if (g_lock_owner_edge)
+        fprintf(stderr, "  [LOCK] its latest loop back edge: guest 0x%08X\n",
+                g_lock_owner_edge);
     { extern void xbox_kernel_thread_report(void);
       xbox_kernel_thread_report(); }
 #ifdef __APPLE__
@@ -6713,7 +6731,8 @@ void xbox_guest_lock_yield_now(void)
     { static long handoff = -1;
       if (handoff < 0) { const char *e = getenv("RECOMP_HANDOFF_US");
                          handoff = e ? atol(e) : 60; if (handoff < 0) handoff = 0; }
-      if (handoff && g_lock_waiters > 0) {
+      if (handoff && __atomic_load_n(&g_xbox_guest_cpu_preempt,
+                                     __ATOMIC_RELAXED) > 0) {
           /* Sleep(0) yields only to equal-priority runnable threads, which a
            * thread blocked on the lock is not; Sleep(1) is the shortest wait
            * this shim guarantees actually leaves the CPU. */
@@ -6722,6 +6741,28 @@ void xbox_guest_lock_yield_now(void)
           SwitchToThread();
       } }
     xbox_guest_lock_acquire();
+}
+/* The same offer at a loop back edge, in code lifted with --back-edge-yield,
+ * while some guest thread queues for the lock.
+ *
+ * Nothing else in lifted code makes it. The function-entry hook that was
+ * meant to (RECOMP_TRACE_ENTER) is emitted only for traced functions, so a
+ * busy thread kept the lock until its next blocking kernel call -- forever,
+ * in a loop that makes none. JSRF does that after a save is picked: the main
+ * thread held the lock for over twenty seconds with no kernel call, and the
+ * timer thread, which needs it to deliver the vblank and APU interrupts,
+ * stopped with it. Counted like the entry hook, so a hot loop pays a call and
+ * an increment while someone waits. Not at DISPATCH_LEVEL or inside an
+ * interrupt or DPC: the console switched no threads there, and DirectSound
+ * counts on that. */
+void xbox_GuestCpuPreempt(uint32_t va)
+{
+    extern unsigned g_recomp_tick;
+    extern unsigned char xbox_KeCurrentIrql(void);
+    if (!t_guest_holds || t_in_callback) return;
+    g_lock_owner_edge = va;
+    if ((++g_recomp_tick & 0xFFu) == 0u && xbox_KeCurrentIrql() < DISPATCH_LEVEL)
+        xbox_guest_lock_yield_now();
 }
 /* Give the guest lock up across a wait that is not a kernel call.
  *

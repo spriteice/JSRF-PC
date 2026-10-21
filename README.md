@@ -277,9 +277,10 @@ game's executable — is not in this repository and will not be: it is derived
 from SEGA's binary. You produce it on your own machine, from your own
 `default.xbe`, with the pipeline in [`tools/recomp`](tools/recomp) — the
 [getting-started guide](docs/GETTING_STARTED.md) walks through it (it is written
-for the toolkit in general), and `--exclude-manual port/recomp_manual.c` tells
-it about the hand-written overrides in [`port/`](port). Put the result in
-`port/recomp/gen`, then:
+for the toolkit in general), `--exclude-manual port/recomp_manual.c` tells
+it about the hand-written overrides in [`port/`](port), and `--back-edge-yield`
+lets a guest thread that is busy in a loop hand the CPU to the others. Put the
+result in `port/recomp/gen`, then:
 
 ```sh
 cmake -S port -B build -DCMAKE_BUILD_TYPE=Release    # on Linux add -DNV2A_GL_CONTEXT=sdl
