@@ -157,6 +157,22 @@ static int resolve_symlink(const char* xbox_path, char* out, size_t out_size)
  * image. */
 int g_xbox_translate_want_dir;
 
+/* Each partition device's length in sectors, as the partition table both
+ * backends write describes it; 0 is the whole disk. The image file behind a
+ * device holds only what has been written to it, so this -- not the file's
+ * size -- is how long the device is. Sizing the images instead put close to
+ * 10 GB of apparent size in the save folder, which a file manager reports and
+ * a copy that does not keep holes writes out in full. */
+static const ULONGLONG s_part_sectors[] = {
+    0x009C4400ull, /* 0: whole disk, the retail 5 GB */
+    0x00465400ull, /* 1: E: game and saves           */
+    0x000FA000ull, /* 2: C: system                   */
+    0x00177000ull, /* 3: X: cache                    */
+    0x00177000ull, /* 4: Y: cache                    */
+    0x00177000ull, /* 5: Z: cache                    */
+};
+#define XBOX_PART_COUNT ((int)(sizeof(s_part_sectors) / sizeof(s_part_sectors[0])))
+
 /* ======================================================================== */
 #if defined(_WIN32)
 /* ======================================================================== */
@@ -172,6 +188,9 @@ int g_xbox_translate_want_dir;
 static WCHAR s_game_dir[MAX_PATH];
 static WCHAR s_save_dir[MAX_PATH];
 static BOOL  s_initialized = FALSE;
+/* Each partition image's final path, as GetFinalPathNameByHandleW normalises
+ * it, so a handle can be matched to its device however the title opened it. */
+static WCHAR s_part_image[XBOX_PART_COUNT][MAX_PATH];
 
 /*
  * The raw disk device, \Device\Harddisk0\Partition0.
@@ -273,6 +292,20 @@ static BOOL xbox_partition_device_path(const char *xbox_path, WCHAR *out, DWORD 
     return TRUE;
 }
 
+ULONGLONG xbox_partition_length(HANDLE h)
+{
+    WCHAR path[MAX_PATH];
+    DWORD n = GetFinalPathNameByHandleW(h, path, MAX_PATH, FILE_NAME_NORMALIZED);
+
+    if (!n || n >= MAX_PATH)
+        return 0;
+    for (int p = 0; p < XBOX_PART_COUNT; p++) {
+        if (s_part_image[p][0] && !wcscmp(path, s_part_image[p]))
+            return s_part_sectors[p] * 512ull;
+    }
+    return 0;
+}
+
 void xbox_path_init(const char* game_dir, const char* save_dir)
 {
     WCHAR save_base[MAX_PATH];
@@ -332,56 +365,28 @@ void xbox_path_init(const char* game_dir, const char* save_dir)
             swprintf_s(dir, MAX_PATH, L"%s\\%s", s_save_dir, subs[i]);
             SHCreateDirectoryExW(NULL, dir, NULL);
         }
+        /* The partition devices' images, recreated empty each start: a
+         * device's length comes from s_part_sectors, and its image holds only
+         * what has been written. Nothing in them outlives a run anyway -- the
+         * table written below goes over sector 4, where XAPI reads and writes
+         * its cache-partition table, so a title formats its cache partition
+         * again every start. Marked sparse, so a write far into a partition
+         * does not allocate the gap before it. */
+        for (int p = 0; p < XBOX_PART_COUNT; p++) {
+            HANDLE h;
+            DWORD ret;
+
+            swprintf_s(image, MAX_PATH, L"%s\\Partition%d.img", s_save_dir, p);
+            h = CreateFileW(image, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+                            CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+            if (h == INVALID_HANDLE_VALUE)
+                continue;
+            DeviceIoControl(h, FSCTL_SET_SPARSE, NULL, 0, NULL, 0, &ret, NULL);
+            GetFinalPathNameByHandleW(h, s_part_image[p], MAX_PATH, FILE_NAME_NORMALIZED);
+            CloseHandle(h);
+        }
         swprintf_s(image, MAX_PATH, L"%s\\%s", s_save_dir, XBOX_DISK_IMAGE_NAME);
         xbox_write_partition_table(image);
-        /* The whole disk is the retail 5 GB (0x9C4400 sectors), as on POSIX
-         * -- only where the file can be sparse, so it costs no space. */
-        {
-            HANDLE h = CreateFileW(image, GENERIC_WRITE, FILE_SHARE_READ, NULL,
-                                   OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-            if (h != INVALID_HANDLE_VALUE) {
-                DWORD ret;
-                LARGE_INTEGER end;
-                end.QuadPart = (LONGLONG)(0x009C4400ull * 512ull);
-                if (DeviceIoControl(h, FSCTL_SET_SPARSE, NULL, 0, NULL, 0, &ret, NULL)
-                    && SetFilePointerEx(h, end, NULL, FILE_BEGIN))
-                    SetEndOfFile(h);
-                CloseHandle(h);
-            }
-        }
-        /* The other partition devices, sized to the same geometry the table
-         * above describes, so a title that asks the device how big it is gets
-         * an answer consistent with the table it just read. Marked sparse
-         * first: the cache partitions are 750 MB each and none of that is
-         * touched until something writes to it. */
-        {
-            static const ULONGLONG part_sectors[6] = {
-                0,             /* 0: whole disk, sized below      */
-                0x00465400ull, /* 1: E: game and saves            */
-                0x000FA000ull, /* 2: C: system                    */
-                0x00177000ull, /* 3: X: cache                     */
-                0x00177000ull, /* 4: Y: cache                     */
-                0x00177000ull, /* 5: Z: cache                     */
-            };
-            for (int p = 1; p <= 5; p++) {
-                HANDLE h;
-                DWORD ret;
-                LARGE_INTEGER end;
-
-                swprintf_s(image, MAX_PATH, L"%s\\Partition%d.img",
-                           s_save_dir, p);
-                h = CreateFileW(image, GENERIC_WRITE, FILE_SHARE_READ, NULL,
-                                OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-                if (h == INVALID_HANDLE_VALUE)
-                    continue;
-                DeviceIoControl(h, FSCTL_SET_SPARSE, NULL, 0, NULL, 0,
-                                &ret, NULL);
-                end.QuadPart = (LONGLONG)(part_sectors[p] * 512ull);
-                if (SetFilePointerEx(h, end, NULL, FILE_BEGIN))
-                    SetEndOfFile(h);
-                CloseHandle(h);
-            }
-        }
     }
 
     s_initialized = TRUE;
@@ -508,9 +513,9 @@ static BOOL s_initialized = FALSE;
 
 /* Partition devices on POSIX -- same scheme as the Win32 build above: the raw
  * disk (Partition0) is an image file carrying the retail partition table at
- * sector 4, and the other partitions are sparse image files of the retail
- * geometry, so XAPI's utility-drive mount finds the cache partitions it
- * expects. See the Win32 block for the reasoning. */
+ * sector 4, and every partition is an image file that starts empty, its
+ * length taken from s_part_sectors, so XAPI's utility-drive mount finds the
+ * cache partitions it expects. See the Win32 block for the reasoning. */
 #include <fcntl.h>
 #define XBOX_PART_TABLE_OFFSET 0x800
 #define XBOX_PART_IN_USE       0x80000000u
@@ -539,27 +544,21 @@ static void posix_write_partition_table(const char *path)
         memcpy(e + 24, &parts[i].size, 4);
     }
     pwrite(fd, sector, sizeof(sector), XBOX_PART_TABLE_OFFSET);
-    /* whole disk: 0x9C4400 sectors (retail 5 GB geometry) */
-    ftruncate(fd, (off_t)0x009C4400ull * 512);
     close(fd);
 }
 
+/* Recreated empty each start, as in the Win32 block (see there for why
+ * nothing in them needs to outlive a run). */
 static void posix_create_partition_images(void)
 {
-    static const unsigned long long part_sectors[6] = {
-        0, 0x00465400ull, 0x000FA000ull, 0x00177000ull, 0x00177000ull, 0x00177000ull };
     char image[MAX_PATH];
+    for (int p = 0; p < XBOX_PART_COUNT; p++) {
+        snprintf(image, sizeof(image), "%s/Partition%d.img", s_save_dir, p);
+        int fd = open(image, O_RDWR | O_CREAT | O_TRUNC, 0644);
+        if (fd >= 0) close(fd);
+    }
     snprintf(image, sizeof(image), "%s/Partition0.img", s_save_dir);
     posix_write_partition_table(image);
-    for (int p = 1; p <= 5; p++) {
-        snprintf(image, sizeof(image), "%s/Partition%d.img", s_save_dir, p);
-        int fd = open(image, O_RDWR | O_CREAT, 0644);
-        if (fd < 0) continue;
-        struct stat st;
-        if (fstat(fd, &st) == 0 && st.st_size == 0)
-            ftruncate(fd, (off_t)(part_sectors[p] * 512ull));
-        close(fd);
-    }
 }
 
 static BOOL posix_partition_device_path(const char *xbox_path, char *out, DWORD n)
@@ -577,6 +576,21 @@ static BOOL posix_partition_device_path(const char *xbox_path, char *out, DWORD 
     if (*rest != '\0') return FALSE;
     snprintf(out, n, "%s/Partition%c.img", s_save_dir, digit);
     return TRUE;
+}
+
+ULONGLONG xbox_partition_length(HANDLE h)
+{
+    const char *path = w32_handle_path(h);
+    char image[MAX_PATH];
+
+    if (!path)
+        return 0;
+    for (int p = 0; p < XBOX_PART_COUNT; p++) {
+        snprintf(image, sizeof(image), "%s/Partition%d.img", s_save_dir, p);
+        if (!strcmp(path, image))
+            return s_part_sectors[p] * 512ull;
+    }
+    return 0;
 }
 
 /* Strip a single trailing '/' (but never the root '/'). */

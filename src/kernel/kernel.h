@@ -541,6 +541,10 @@ const wchar_t *xbox_LastHostPath(void);
 
 BOOL xbox_translate_path(const char* xbox_path, xbox_host_char* host_path_buf, DWORD buf_size);
 
+/* The length in bytes of the partition device a handle has open, from the
+ * emulated disk's geometry; 0 when the handle is not a partition device. */
+ULONGLONG xbox_partition_length(HANDLE h);
+
 /* ============================================================================
  * Pool Allocator (kernel_pool.c)
  * ============================================================================ */

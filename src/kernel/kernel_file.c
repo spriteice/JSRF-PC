@@ -44,6 +44,19 @@ static const char* get_xbox_path(PXBOX_OBJECT_ATTRIBUTES ObjectAttributes)
     return ObjectAttributes->ObjectName->Buffer;
 }
 
+/* A partition device reads to the end of its partition (platform-independent).
+ * The image behind it holds only what has been written (kernel_path.c), and
+ * the rest reads as zero, as a blank disk does -- the zeros are already in the
+ * buffer, which a short read clears. Returns how many of those bytes, from
+ * host position pos, a short read also delivers: none for any other file. */
+static ULONG partition_unwritten_bytes(HANDLE h, ULONGLONG pos, ULONG want)
+{
+    ULONGLONG end = xbox_partition_length(h);
+    if (pos >= end)
+        return 0;
+    return (end - pos < want) ? (ULONG)(end - pos) : want;
+}
+
 /* ======================================================================== */
 #if defined(_WIN32)
 /* ====================  Win32 backend  =================================== */
@@ -258,8 +271,25 @@ NTSTATUS __stdcall xbox_NtReadFile(
          * on the console the sector padding reads as zero. JSRF reads
          * Media/Progress/Progress.dat (27776 bytes) as 28160 and parses to the
          * end of its buffer -- see the POSIX twin below. The count stays short. */
-        if (bytes_read < Length)
+        if (bytes_read < Length) {
+            LARGE_INTEGER pos;
+            DWORD more;
             memset((uint8_t *)Buffer + bytes_read, 0, Length - bytes_read);
+            /* Where the read stopped. A read past the end with an offset
+             * does not move the file pointer, so the offset says. */
+            pos.QuadPart = 0;
+            if (ByteOffset && ByteOffset->QuadPart >= 0)
+                pos.QuadPart = ByteOffset->QuadPart + bytes_read;
+            else
+                SetFilePointerEx(FileHandle, pos, &pos, FILE_CURRENT);
+            more = partition_unwritten_bytes(FileHandle, (ULONGLONG)pos.QuadPart,
+                                             Length - bytes_read);
+            if (more) {
+                bytes_read += more;
+                pos.QuadPart += more;
+                SetFilePointerEx(FileHandle, pos, NULL, FILE_BEGIN);
+            }
+        }
         if (bytes_read > 0) { g_read_bytes += bytes_read; g_read_calls++; }
         IoStatusBlock->Information = bytes_read;
         if (bytes_read == 0 && Length > 0) {
@@ -933,8 +963,17 @@ NTSTATUS __stdcall xbox_NtReadFile(
      * The count stays short, so a streaming loop still sees its EOF; only
      * the bytes the title can see are made deterministic.
      */
-    if ((ULONG)n < Length)
+    if ((ULONG)n < Length) {
+        off_t pos = lseek(fd, 0, SEEK_CUR);
+        ULONG more = 0;
         memset((uint8_t *)Buffer + n, 0, Length - (ULONG)n);
+        if (pos >= 0)
+            more = partition_unwritten_bytes(FileHandle, (ULONGLONG)pos, Length - (ULONG)n);
+        if (more) {
+            n += (ssize_t)more;
+            lseek(fd, pos + (off_t)more, SEEK_SET);
+        }
+    }
 
     IoStatusBlock->Information = (ULONG_PTR)n;
     /* Counted so the periodic kernel summary can say whether a title sitting
