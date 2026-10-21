@@ -211,9 +211,24 @@ static WCHAR s_game_dir[MAX_PATH];
 static WCHAR s_save_dir[MAX_PATH];
 static WCHAR s_user_dir[MAX_PATH];
 static BOOL  s_initialized = FALSE;
-/* Each partition image's final path, as GetFinalPathNameByHandleW normalises
- * it, so a handle can be matched to its device however the title opened it. */
-static WCHAR s_part_image[XBOX_PART_COUNT][MAX_PATH];
+/* Each partition image's identity -- its volume's serial number and its file
+ * index -- so a handle can be matched to its device however the title opened
+ * it. An identity, not a path: a path read back from a handle depends on the
+ * volume answering FILE_NAME_NORMALIZED, which a RAM disk or a virtual
+ * volume need not, and an image that went unmatched would tell the title its
+ * partition holds nothing. */
+static struct { DWORD vol, hi, lo; BOOL set; } s_part_image[XBOX_PART_COUNT];
+
+static BOOL part_identity(HANDLE h, DWORD *vol, DWORD *hi, DWORD *lo)
+{
+    BY_HANDLE_FILE_INFORMATION fi;
+    if (!GetFileInformationByHandle(h, &fi))
+        return FALSE;
+    *vol = fi.dwVolumeSerialNumber;
+    *hi = fi.nFileIndexHigh;
+    *lo = fi.nFileIndexLow;
+    return (*hi | *lo) != 0;   /* a volume that numbers no files names none */
+}
 
 /*
  * The raw disk device, \Device\Harddisk0\Partition0.
@@ -317,13 +332,13 @@ static BOOL xbox_partition_device_path(const char *xbox_path, WCHAR *out, DWORD 
 
 ULONGLONG xbox_partition_length(HANDLE h)
 {
-    WCHAR path[MAX_PATH];
-    DWORD n = GetFinalPathNameByHandleW(h, path, MAX_PATH, FILE_NAME_NORMALIZED);
+    DWORD vol, hi, lo;
 
-    if (!n || n >= MAX_PATH)
+    if (!part_identity(h, &vol, &hi, &lo))
         return 0;
     for (int p = 0; p < XBOX_PART_COUNT; p++) {
-        if (s_part_image[p][0] && !wcscmp(path, s_part_image[p]))
+        if (s_part_image[p].set && s_part_image[p].vol == vol
+         && s_part_image[p].hi == hi && s_part_image[p].lo == lo)
             return s_part_sectors[p] * 512ull;
     }
     return 0;
@@ -422,7 +437,9 @@ void xbox_path_init(const char* game_dir, const char* save_dir)
             if (h == INVALID_HANDLE_VALUE)
                 continue;
             DeviceIoControl(h, FSCTL_SET_SPARSE, NULL, 0, NULL, 0, &ret, NULL);
-            GetFinalPathNameByHandleW(h, s_part_image[p], MAX_PATH, FILE_NAME_NORMALIZED);
+            s_part_image[p].set = part_identity(h, &s_part_image[p].vol,
+                                                &s_part_image[p].hi,
+                                                &s_part_image[p].lo);
             CloseHandle(h);
         }
         swprintf_s(image, MAX_PATH, L"%s\\%s", s_save_dir, XBOX_DISK_IMAGE_NAME);

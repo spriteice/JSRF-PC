@@ -700,6 +700,29 @@ static int host_main(void)
          * unless asked: a frame paced at 60 Hz would come out at 32 ms. One
          * millisecond, as a POSIX host's sleeps are. */
         timeBeginPeriod(1);
+        /* And keep it when the window is covered or minimised. Windows 11
+         * then lets a process's timer request lapse and runs it on its
+         * efficiency setting -- the Windows side of what App Nap does on a
+         * Mac, where the game asks macOS not to (nv2a_window_mac.m). Asked
+         * not to here too: the process's power throttling, execution speed
+         * and timer resolution, both off. Looked up rather than linked, and
+         * on a Windows 10 that does not know the timer flag, the speed one
+         * alone. */
+        {
+            typedef BOOL (WINAPI *SetInfoFn)(HANDLE, int, LPVOID, DWORD);
+            struct { ULONG Version, ControlMask, StateMask; } pt;
+            SetInfoFn set_info = (SetInfoFn)(void *)GetProcAddress(
+                GetModuleHandleW(L"kernel32.dll"), "SetProcessInformation");
+            if (set_info) {
+                pt.Version = 1;              /* PROCESS_POWER_THROTTLING_CURRENT_VERSION */
+                pt.ControlMask = 0x1 | 0x4;  /* ..._EXECUTION_SPEED | ..._IGNORE_TIMER_RESOLUTION */
+                pt.StateMask = 0;            /* neither: full speed, the timer as asked */
+                if (!set_info(GetCurrentProcess(), 4 /* ProcessPowerThrottling */, &pt, sizeof pt)) {
+                    pt.ControlMask = 0x1;
+                    set_info(GetCurrentProcess(), 4, &pt, sizeof pt);
+                }
+            }
+        }
 #else
         struct sigaction sa; memset(&sa, 0, sizeof sa);
         sa.sa_sigaction = segv_handler; sa.sa_flags = SA_SIGINFO;

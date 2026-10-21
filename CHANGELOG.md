@@ -10,6 +10,121 @@ its version. Downloads are on the
 [Releases](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/releases)
 page.
 
+## 0.5.3 — 21 October 2026
+
+Fixes found by **spriteice**, who plays JSRF Unleashed on a ROG Xbox Ally X
+and went through the engine in
+[his fork](https://github.com/spriteice/JetSetRadioFuture-Unleashed/tree/TESTING).
+Thank you, spriteice! Each of these commits links the one of his it comes
+from, and says where it was adapted to this engine. Every platform is new
+in 0.5.3.
+
+- **The graffiti you pick now shows.** The texture cache knew a texture by
+  its address, size, format and 64 bytes sampled from it. The graffiti
+  picker loads each chosen design into the same 1024x1024 image, in place,
+  and when those 64 bytes did not change, the preview and the posters on
+  the walls kept the default graffiti. The whole content of the textures
+  being drawn is now compared as well, a megabyte of them at the end of each
+  frame, in turn, and a texture rewritten in place is uploaded again a few
+  frames later. (Comparing all of them every frame, as first written, took
+  0.6 ms a frame on a Mac; in turn, it costs nothing measurable.)
+- **Video memory no longer grows at every area.** The game frees an area's
+  textures when it leaves it, and the texture cache kept them on the GPU
+  until all 4,096 of its slots were full: on the Ally X, from 55 MB to
+  306 MB in a minute and a half. Textures whose memory the game has freed
+  are dropped once a frame (on a Mac in 99th Street the cache holds 179
+  textures, 57 MB), and a texture that changed is uploaded over its old
+  entry rather than beside it.
+- **The save folder is no longer 10 GB.** The engine backs the Xbox hard
+  disk with six image files in the save folder (Partition0.img to
+  Partition5.img), and made them the size of the console's partitions,
+  9.77 GB together. They were sparse, so on most disks they took almost no
+  space, but the folder showed as 10 GB in Explorer, in Finder and in the
+  iPhone's Files app, and a copy or a backup that does not keep holes, or an
+  exFAT or FAT32 drive, wrote all of it. They now hold only what the game
+  writes, about 120 KB, and start empty at each launch, which also shrinks
+  the old ones; nothing in them outlived a run anyway (the game formats its
+  cache partition at every start). The game's saves are elsewhere, in
+  `UDATA` in the game folder, and are not touched.
+- **Windows: two per-thread variables were shared by every thread.** MinGW,
+  which builds the Windows download, ignores `__declspec(thread)`: the
+  file path the kernel had just translated, which the cutscene player reads
+  back (another thread's open could replace it, and a cutscene not play),
+  and the game's IRQL. Both are thread-local now, as on the other platforms.
+- The game's IRQL is read from the register it is passed in (KfRaiseIrql
+  and KfLowerIrql are fastcall); it was the low byte of whatever the caller
+  had pushed last.
+- The guest lock's time slice runs from when the lock last changed hands,
+  not from the holder's latest retake after a kernel call, and for up to
+  50 ms it does not end at raised IRQL or inside an interrupt, DPC or
+  synchronize routine. `RECOMP_SLICE_FROM_RETAKE=1` measures it the old
+  way. On spriteice's build the timer thread, which delivers the vertical
+  blank and the APU interrupt, queued for the lock most of the time in
+  game; on a Mac in 99th Street it made no measurable difference, the slice
+  already running out once a frame.
+- A draw to a surface of another size under the same viewport now uses that
+  surface's size.
+- Tested on a Mac in 99th Street against 0.5.2 (Metal, 225 s each, New
+  Game and the left stick): the same frame rate and hitches, textures the
+  same share of the frame. Linux and Windows (under Wine): the game starts
+  and runs its title and attract demo, and the partition images stay small.
+  The Android and iPhone builds were built and checked, not run.
+
+## 0.5.2 — 21 October 2026 — Windows only
+
+A second Windows-only fix for the sound, which still stuttered in 0.5.1 for
+some players. The Mac, iPhone, Linux and Android downloads are 0.5.0's,
+unchanged: the 0.5.2 release carries them over, and they still say 0.5.0.
+
+- **Windows: the game's clock in 15.6 ms steps.** The engine's kernel timed
+  everything on Windows' GetTickCount64, which moves in steps of the system
+  tick, 15.6 ms, whatever timeBeginPeriod asks: the display interrupt that is
+  the game's frame clock, the game's own timers and DPCs, and the 4 ms slice
+  after which a game thread hands the guest lock to the next. On Windows
+  alone, then, all of those came in 15.6 ms steps. A player's 0.5.1 log shows
+  the frame clock slipping a whole step every 15 frames, a 30 ms frame four
+  times a second: a 60 Hz clock read off a 64 Hz tick. The 4 ms slice became
+  15.6 ms, so the ADX server thread that refills the music waited about four
+  times as long for its turn, and the music ran dry.
+- On Windows the kernel's GetTickCount and GetTickCount64 are now the
+  performance counter in milliseconds, as they are CLOCK_MONOTONIC on the
+  other platforms. The engine no longer imports either.
+- The game asks Windows 11 not to throttle it when its window is covered or
+  minimised, neither its speed nor its timer resolution (on Windows 10, the
+  speed alone): the Windows side of the Mac's App Nap opt-out.
+- 0.5.1's fix (every game thread at normal priority on Windows) is kept.
+- Tested under Wine, where the game starts and runs its title screen as
+  before; the stutter itself needs a real Windows PC to show.
+
+## 0.5.1 — 21 October 2026 — Windows only
+
+A Windows-only fix. The Mac, iPhone, Linux and Android downloads are
+0.5.0's, unchanged: the 0.5.1 release carries them over, and they still say
+0.5.0.
+
+- **Windows: sound that stutters when the PC is busy.** The game gives each
+  of its threads a priority, as Xbox games do, and on Windows those were
+  applied to real Windows threads; on the Mac and Linux, SetThreadPriority
+  is the engine's own and only remembers the number. The game puts CRI's ADX
+  worker, the thread that reads and decodes the music stream, at the lowest
+  priority, idle. On the console that thread runs whenever the others wait,
+  half of every frame; on a PC it runs only when no normal-priority thread
+  anywhere wants its core (the game's own threads, a browser, a chat app),
+  so under load it starved and the music ran dry. The game's other requests
+  were applied too: highest and above normal for three threads, and one
+  thread raising itself to time-critical and back about fifty times a
+  second.
+- Every game thread now runs at normal priority on Windows, as on the other
+  platforms, and the game reads back the priorities it set.
+  `RECOMP_THREAD_PRIORITIES=1` applies them as before.
+- The APU's frame thread, which makes the sound 5 ms at a time and sleeps
+  in between, runs at the highest priority below time-critical on Windows,
+  so that a busy moment delays the picture rather than the sound (SDL's
+  device thread, which plays what it makes, was at time-critical already).
+- Tested under Wine, where the game starts and runs its title screen as
+  before; Wine does not apply thread priorities, so the stutter itself could
+  not be reproduced there. The game's requests were logged on Linux.
+
 ## 0.5.0 — 21 October 2026
 
 - **Less stutter: new textures appear about six times faster.** The first

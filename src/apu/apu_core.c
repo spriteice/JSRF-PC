@@ -859,6 +859,13 @@ MCPXAPUState *mcpx_apu_init_standalone(uint8_t *ram_ptr)
     /* Start background frame thread */
     qemu_thread_create(&d->apu_thread, "mcpx.apu_thread",
                        mcpx_apu_frame_thread, d, QEMU_THREAD_JOINABLE);
+#if defined(_WIN32)
+    /* It makes the sound the device plays, 5 ms at a time, and sleeps in
+     * between: above the game's own threads, so that a busy moment delays
+     * the picture rather than the music (SDL's device thread, which takes
+     * what it makes, is at TIME_CRITICAL already). */
+    SetThreadPriority(d->apu_thread.thread, THREAD_PRIORITY_HIGHEST);
+#endif
     mcpx_apu_wait_for_idle(d);
     /* On hosts without MMIO trapping nothing will ever resume the APU from
      * the register path, and a paused frame thread cannot answer the DSP

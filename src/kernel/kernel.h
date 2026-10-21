@@ -715,6 +715,8 @@ NTSTATUS __stdcall xbox_PsTerminateSystemThread(NTSTATUS ExitStatus);
 NTSTATUS __stdcall xbox_KeDelayExecutionThread(KPROCESSOR_MODE WaitMode, BOOLEAN Alertable, PLARGE_INTEGER Interval);
 LONG     __stdcall xbox_KeSetBasePriorityThread(PVOID Thread, LONG Increment);
 LONG     __stdcall xbox_KeQueryBasePriorityThread(PVOID Thread);
+/* The Win32 priority the title gave a thread (on Windows kept, not applied). */
+int      xbox_thread_guest_priority(HANDLE Thread);
 NTSTATUS __stdcall xbox_KeAlertThread(PVOID Thread, KPROCESSOR_MODE AlertMode);
 NTSTATUS __stdcall xbox_NtYieldExecution(void);
 NTSTATUS __stdcall xbox_NtDuplicateObject(HANDLE SourceHandle, PHANDLE TargetHandle, ULONG Options);

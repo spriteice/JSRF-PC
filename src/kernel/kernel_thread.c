@@ -237,17 +237,82 @@ static LONG win32_priority_to_xbox(int priority)
     }
 }
 
+/*
+ * On Windows the priorities the title asks for are kept, not applied.
+ *
+ * They were applied, and Windows is the only host where that did anything:
+ * elsewhere SetThreadPriority is win32_compat's, which only remembers the
+ * number. JSRF gives CRI's ADX worker THREAD_PRIORITY_IDLE, and that thread
+ * reads and decodes the music stream. On the console an idle thread runs
+ * whenever the others wait -- which is half of every frame. On a Windows PC
+ * it runs only when no normal-priority thread anywhere wants the core it is
+ * on (the game's own threads, the browser, the overlay), so under load it
+ * was starved and the music ran dry: audio stutter on Windows alone. The
+ * title's other requests were real there as well: HIGHEST and ABOVE_NORMAL
+ * for three of its threads, and one thread raising itself to TIME_CRITICAL
+ * and back some fifty times a second.
+ *
+ * So Windows now does what the Mac and Linux builds always did: every guest
+ * thread runs at normal priority, and the title reads back what it set.
+ * RECOMP_THREAD_PRIORITIES=1 applies them as before, to compare.
+ */
+#if defined(_WIN32)
+#define GUEST_PRIO_SLOTS 256
+static struct { DWORD tid; int prio; } g_guest_prio[GUEST_PRIO_SLOTS];
+static SRWLOCK g_guest_prio_lock = SRWLOCK_INIT;
+
+static int apply_priorities(void)
+{
+    static int v = -1;
+    if (v < 0) { const char *e = getenv("RECOMP_THREAD_PRIORITIES"); v = e && atoi(e) ? 1 : 0; }
+    return v;
+}
+
+static int guest_priority_get(HANDLE h)
+{
+    DWORD tid = GetThreadId(h);
+    int i, p = THREAD_PRIORITY_NORMAL;
+    if (apply_priorities()) return GetThreadPriority(h);
+    AcquireSRWLockShared(&g_guest_prio_lock);
+    for (i = 0; i < GUEST_PRIO_SLOTS; i++)
+        if (g_guest_prio[i].tid == tid) { p = g_guest_prio[i].prio; break; }
+    ReleaseSRWLockShared(&g_guest_prio_lock);
+    return p;
+}
+
+static void guest_priority_set(HANDLE h, int prio)
+{
+    DWORD tid = GetThreadId(h);
+    int i, free_slot = -1;
+    if (apply_priorities()) { SetThreadPriority(h, prio); return; }
+    if (!tid) return;
+    AcquireSRWLockExclusive(&g_guest_prio_lock);
+    for (i = 0; i < GUEST_PRIO_SLOTS; i++) {
+        if (g_guest_prio[i].tid == tid) { g_guest_prio[i].prio = prio; free_slot = -2; break; }
+        if (!g_guest_prio[i].tid && free_slot == -1) free_slot = i;
+    }
+    if (free_slot >= 0) { g_guest_prio[free_slot].tid = tid; g_guest_prio[free_slot].prio = prio; }
+    ReleaseSRWLockExclusive(&g_guest_prio_lock);
+}
+#else
+static int  guest_priority_get(HANDLE h)           { return GetThreadPriority(h); }
+static void guest_priority_set(HANDLE h, int prio) { SetThreadPriority(h, prio); }
+#endif
+
+/* The priority the title gave a thread (the guest lock asks it). */
+int xbox_thread_guest_priority(HANDLE h) { return guest_priority_get(h); }
+
 LONG __stdcall xbox_KeSetBasePriorityThread(PVOID Thread, LONG Increment)
 {
     HANDLE hThread = (HANDLE)Thread;
     LONG previous;
 
     /* Get previous priority before setting new one */
-    int prev_win32 = GetThreadPriority(hThread);
+    int prev_win32 = guest_priority_get(hThread);
     previous = win32_priority_to_xbox(prev_win32);
 
     int new_win32 = xbox_priority_to_win32(Increment);
-    SetThreadPriority(hThread, new_win32);
+    guest_priority_set(hThread, new_win32);
 
     xbox_log(XBOX_LOG_DEBUG, XBOX_LOG_THREAD,
         "KeSetBasePriorityThread: thread=%p, increment=%d (win32=%d), prev=%d",
@@ -259,7 +324,7 @@ LONG __stdcall xbox_KeSetBasePriorityThread(PVOID Thread, LONG Increment)
 LONG __stdcall xbox_KeQueryBasePriorityThread(PVOID Thread)
 {
     HANDLE hThread = (HANDLE)Thread;
-    int win32_priority = GetThreadPriority(hThread);
+    int win32_priority = guest_priority_get(hThread);
     return win32_priority_to_xbox(win32_priority);
 }
 

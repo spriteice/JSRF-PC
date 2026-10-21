@@ -2163,7 +2163,8 @@ static void bridge_HalReadSMCTrayState(void)
 static int kernel_run_dpc_locked(uint32_t dpc_va, uint32_t arg1, uint32_t arg2);
 /* An interrupt, DPC or synchronize routine is running on this thread. The
  * console switches no threads until it returns, so neither does a loop back
- * edge inside it (xbox_GuestCpuPreempt). */
+ * edge inside it (xbox_GuestCpuPreempt) nor the guest lock's time slice
+ * (xbox_guest_lock_yield_now). */
 static RECOMP_TLS int t_in_callback;
 static int kernel_run_dpc(uint32_t dpc_va, uint32_t arg1, uint32_t arg2)
 {
@@ -6311,8 +6312,11 @@ static volatile long long     g_lock_since;
  * it. Written and read only under the lock. */
 static unsigned long g_slice_owner;
 static long long     g_slice_since;
-/* Slices that ended in a hand-over, for the [LOCK] report. */
+/* For the [LOCK] report: slices that ended in a hand-over, and slice ends
+ * put off because the holder was at DISPATCH_LEVEL or above or inside an
+ * interrupt, DPC or synchronize routine. */
 static unsigned long g_slice_handoffs;
+static unsigned long g_slice_held_raised;
 /* Back-edge checks that found the holder at DISPATCH_LEVEL or above, where
  * no hand-over is made, for the same report. */
 static unsigned long g_slice_irql_held;
@@ -6402,7 +6406,7 @@ void xbox_guest_lock_acquire(void)
      * to decide without measuring both.
      */
     if (!xbox_guest_lock_idle_takes_lock()
-     && GetThreadPriority(GetCurrentThread()) <= THREAD_PRIORITY_IDLE) {
+     && xbox_thread_guest_priority(GetCurrentThread()) <= THREAD_PRIORITY_IDLE) {
         t_guest_idle = 1;
         return;
     }
@@ -6533,11 +6537,13 @@ void xbox_guest_lock_stats(void)
                 g_lock_wait_ms[i]);
         g_lock_takes[i] = 0; g_lock_hold_ms[i] = 0; g_lock_wait_ms[i] = 0;
     }
-    fprintf(stderr, "        %lu time slices ended in a hand-over\n",
-            g_slice_handoffs);
+    fprintf(stderr, "        %lu time slices ended in a hand-over, %lu slice ends "
+                    "put off at raised IRQL or in an interrupt or DPC\n",
+            g_slice_handoffs, g_slice_held_raised);
     fprintf(stderr, "        %lu back-edge checks put off at raised IRQL\n",
             g_slice_irql_held);
     g_slice_handoffs = 0;
+    g_slice_held_raised = 0;
     g_slice_irql_held = 0;
     fflush(stderr);
 }
@@ -6613,17 +6619,40 @@ void xbox_guest_lock_yield_now(void)
     }
     if (!t_guest_holds) return;
     /* The slice runs from when this thread took the lock over from another,
-     * not from its latest retake. A thread that drops the lock around a
-     * kernel call which returns at once takes it straight back, before any
-     * waiter has woken, and a slice restarted there never runs out. In game
-     * JSRF's main thread enters DirectSound's critical section thousands of
-     * times a second, so it held the lock 94% of the time and almost never
-     * handed it over, and the timer thread, which delivers the vertical
-     * blank, queued for it 72-96% of the time. */
-    { static long long slice = -1;
+     * or last offered it -- not from its latest retake. A thread that drops
+     * the lock around a kernel call which returns at once takes it straight
+     * back, before any waiter has woken, and a slice restarted there never
+     * runs out. In game JSRF's main thread enters DirectSound's critical
+     * section thousands of times a second, so it held the lock most of the
+     * time and almost never handed it over, and the timer thread, which
+     * delivers the vertical blank and the APU interrupt, queued for it most
+     * of the time. RECOMP_SLICE_FROM_RETAKE=1 measures it the old way.
+     *
+     * Not at DISPATCH_LEVEL or above, and not inside an interrupt, DPC or
+     * synchronize routine: the console switches no threads there, and a
+     * driver raises IRQL to keep its own deferred routine out of what it is
+     * rewriting -- which the timer thread would run as soon as it had the
+     * lock. Measured from the same start, so a holder that only leaves raised
+     * IRQL late hands over at once; and past RECOMP_SLICE_RAISED_MS (50) it
+     * hands over anyway, for a spin at raised IRQL that waits on an
+     * interrupt only the timer thread can deliver. */
+    { static long long slice = -1, raised = -1;
+      static int from_retake = -1;
+      long long ran;
       if (slice < 0) { const char *e = getenv("RECOMP_SLICE_MS");
                        slice = e ? atoll(e) : 4; if (slice < 0) slice = 0; }
-      if ((long long)GetTickCount64() - g_slice_since < slice) return; }
+      if (from_retake < 0) from_retake = getenv("RECOMP_SLICE_FROM_RETAKE") ? 1 : 0;
+      ran = (long long)GetTickCount64() - (from_retake ? t_guest_since : g_slice_since);
+      if (ran < slice) return;
+      if (!from_retake) {
+          extern unsigned char xbox_KeCurrentIrql(void);
+          if (raised < 0) { const char *e = getenv("RECOMP_SLICE_RAISED_MS");
+                            raised = e ? atoll(e) : 50; }
+          if (ran < raised && (t_in_callback || xbox_KeCurrentIrql() >= DISPATCH_LEVEL)) {
+              g_slice_held_raised++;
+              return;
+          }
+      } }
     xbox_guest_lock_release();
     /*
      * Hand the lock over, rather than merely offering it.

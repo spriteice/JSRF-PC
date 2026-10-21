@@ -467,6 +467,8 @@ typedef struct {
     unsigned long vbo_bytes, unif_vec4;
     unsigned tex_held;                  /* textures the cache holds, now */
     unsigned long long tex_held_bytes;  /* ... and their size, uploaded as RGBA8 */
+    unsigned n_tex_rewritten;           /* dropped by tcache_verify: rewritten in place */
+    unsigned long long tex_verified;    /* source bytes tcache_verify compared */
 } GlProfile;
 static void vc_report(const char *when);
 static GlProfile g_prof;
@@ -565,14 +567,17 @@ static void prof_report(void)
         fprintf(stderr,
             "[GLPROF]   per second: %lu KB of vertices, %lu constant vec4s, "
             "%u constant uploads, %u program switches, %u texture uploads, "
-            "%u texture lookups; %u textures held (%llu MB)\n",
+            "%u texture lookups; %u textures held (%llu MB); %llu KB compared, "
+            "%u rewritten in place\n",
             (g_prof.vbo_bytes - prev.vbo_bytes) / 1024,
             g_prof.unif_vec4 - prev.unif_vec4,
             g_prof.n_const_upload - prev.n_const_upload,
             g_prof.n_prog_switch - prev.n_prog_switch,
             g_prof.n_tex_upload  - prev.n_tex_upload,
             g_prof.n_tex_lookup  - prev.n_tex_lookup,
-            g_prof.tex_held, g_prof.tex_held_bytes >> 20);
+            g_prof.tex_held, g_prof.tex_held_bytes >> 20,
+            (g_prof.tex_verified - prev.tex_verified) >> 10,
+            g_prof.n_tex_rewritten - prev.n_tex_rewritten);
         {
             static double prev_pb; static unsigned long prev_words;
             fprintf(stderr,
@@ -882,8 +887,8 @@ static uint32_t g_frame_chars_prev;  /* ... and in the frame just finished */
 #define TEX_CACHE 4096
 static struct {
     uint32_t offset, format, w, h, pitch, hash;
-    uint32_t content;       /* every byte of it, hashed (see upload_texture_inner) */
-    uint32_t checked;       /* the frame its content was last compared in */
+    uint32_t content;       /* every byte of it, hashed (see tcache_verify) */
+    uint32_t drawn;         /* the frame it was last looked up in */
     uint32_t last_draw;     /* when this entry was last looked up */
     uint32_t tex;           /* the device's texture */
     uint32_t va, serial;    /* read from: where, and the allocation (contig_serial) */
@@ -3036,14 +3041,40 @@ static uint32_t upload_texture(const TexStage *t)
     return r;
 }
 static uint64_t vc_hash(const void *data, size_t n, uint64_t seed);   /* the vertex cache's, below */
+/* The bytes a texture's decode reads from its base level. */
+static uint32_t tex_bytes(uint32_t color, uint32_t w, uint32_t h)
+{
+    return fmt_is_dxt(color)
+         ? ((w + 3) / 4) * ((h + 3) / 4) * d3d8_format_dxt_block_bytes(color)
+         : w * h * (fmt_is_swz(color) ? linear_bpp(swz_to_linear(color)) : linear_bpp(color));
+}
+/* The sparse sample a lookup compares: 64 of the bytes, cheap enough for
+ * every lookup, and it catches a title that reuses one address for many
+ * textures -- the case that matters most. */
+static uint32_t tex_sample(uint32_t color, const uint8_t *src, uint32_t bytes, int bias)
+{
+    uint32_t step = bytes > 4096 ? bytes / 64 : 64, hash, i;
+    /* RECOMP_GL_TEXHASH_FULL=1: hash every byte (slow; for testing
+     * whether a texture the CPU rewrote in place is being served stale). */
+    { static int full = -1;
+      if (full < 0) full = getenv("RECOMP_GL_TEXHASH_FULL") ? 1 : 0;
+      if (full) step = 1; }
+    hash = color * 2654435761u;
+    for (i = 0; i < bytes && step; i += step)
+        hash = hash * 31u + src[i];
+    hash = hash * 31u + bytes;
+    if (bias) hash ^= 0x9E3779B9u;   /* a different upload */
+    return hash;
+}
 /* Every byte a texture's decode reads -- row by row at the pitch for a linear
  * one -- hashed as the vertex cache hashes its sources. */
-static uint32_t tex_content(const TexStage *t, const uint8_t *src, uint32_t bytes)
+static uint32_t tex_content(uint32_t color, uint32_t height, uint32_t pitch,
+                            const uint8_t *src, uint32_t bytes)
 {
-    int lin = !fmt_is_swz(t->color) && !fmt_is_dxt(t->color);
-    uint32_t rows = lin ? t->height : 1, row = bytes / rows, i;
-    uint32_t pitch = lin && t->pitch ? t->pitch : row;
-    uint64_t h = t->color;
+    int lin = !fmt_is_swz(color) && !fmt_is_dxt(color);
+    uint32_t rows = lin ? height : 1, row = bytes / rows, i;
+    uint64_t h = color;
+    if (!(lin && pitch)) pitch = row;
     for (i = 0; i < rows; i++)
         h = vc_hash(src + (size_t)i * pitch, row, h);
     return (uint32_t)(h ^ (h >> 32));
@@ -3074,15 +3105,61 @@ static void tcache_sweep(void)
          && contig_serial(g_tcache[k].va) != g_tcache[k].serial)
             tcache_drop(k);
 }
+/* Once a frame, after the sweep: the whole content of the textures being
+ * drawn, compared a few at a time.
+ *
+ * The sample misses a texture the title rewrites in place where those 64
+ * bytes do not change: the graffiti picker loads each chosen design into its
+ * one 1024x1024 source image (01808000), and the preview and the wall posters
+ * kept the default. Comparing every texture in full at its first lookup of
+ * each frame fixes that, and cost a Mac in 99th Street 0.6 ms a frame --
+ * textures 3.6% of the wall time where they took 0.7% -- and two and a half
+ * times the frames that missed their vblank. So the comparison runs here, at
+ * most RECOMP_GL_TEXCHECK_KB of source a frame (1024; 0 turns it off) and
+ * always one texture however large, in turn through the textures drawn this
+ * frame or the last. One that no longer matches is dropped, and the next
+ * lookup uploads what is there now: a rewrite shows a few frames later rather
+ * than on the next.
+ *
+ * Only where the sample still matches: a different picture that the sample
+ * does see is the lookup's to handle, and a title that puts two pictures
+ * through one place in a frame keeps an entry for each. */
+static void tcache_verify(void)
+{
+    static uint32_t cursor;
+    static long budget = -1;
+    uint64_t spent = 0;
+    uint32_t n;
+    if (budget < 0) { const char *e = getenv("RECOMP_GL_TEXCHECK_KB");
+                      budget = (e ? atol(e) : 1024) * 1024L; if (budget < 0) budget = 0; }
+    if (!budget) return;
+    for (n = 0; n < TEX_CACHE && spent < (uint64_t)budget; n++) {
+        uint32_t k = cursor, bytes;
+        const uint8_t *src;
+        cursor = (cursor + 1) % TEX_CACHE;
+        if (!g_tcache[k].tex || S.flips - g_tcache[k].drawn > 1) continue;
+        bytes = tex_bytes(g_tcache[k].format, g_tcache[k].w, g_tcache[k].h);
+        src = guest(g_tcache[k].va);
+        spent += bytes;
+        if (tex_sample(g_tcache[k].format, src, bytes, g_tcache[k].bias) != g_tcache[k].hash)
+            continue;
+        g_prof.tex_verified += bytes;
+        if (tex_content(g_tcache[k].format, g_tcache[k].h, g_tcache[k].pitch, src, bytes)
+            != g_tcache[k].content) {
+            tcache_drop(k);
+            g_prof.n_tex_rewritten++;
+        }
+    }
+}
 static uint32_t upload_texture_inner(const TexStage *t)
 {
     uint32_t va = resolve(t->offset);
     const uint8_t *src = guest(va);
-    uint32_t w = t->width, h = t->height, i, hash, key, bytes, content = 0;
+    uint32_t w = t->width, h = t->height, i, hash, key, bytes;
     uint32_t tex;
     uint8_t *rgba = NULL;
     Nv2aSampler smp;
-    int slot = -1, stale = -1, tomb = -1, hashed = 0;
+    int slot = -1, stale = -1, tomb = -1;
 
     if (!w || !h || w > 4096 || h > 4096) return 0;
 
@@ -3104,38 +3181,16 @@ static uint32_t upload_texture_inner(const TexStage *t)
                       (unsigned long long)n[4]);
       } }
 
-    /* Cache on where it came from and what it holds. A sparse sample of the
-     * bytes, taken at every lookup, catches a title that reuses one address
-     * for many textures, but not a change that falls between its samples:
-     * the graffiti picker loads each chosen design into its one 1024x1024
-     * source image (01808000), and the preview and the wall posters kept the
-     * default. So the whole content is compared as well, once a frame --
-     * reading every texture in full at every draw took over half the frame
-     * on the Ally X. A change between two draws of one frame that the sample
-     * misses shows from the next frame on.
+    /* Cache on where it came from and what it looks like: the sample, at every
+     * lookup, and the whole content once in a while (tcache_verify).
      *
-     * A changed texture is uploaded over its old entry, whichever hash saw
-     * the change; a new entry would leave the old picture behind, never
-     * looked up again, until the table filled. The one exception is an old
-     * picture this frame has drawn: a title that puts two pictures through
-     * one place within a frame keeps an entry for each. */
-    bytes = fmt_is_dxt(t->color)
-          ? ((w + 3) / 4) * ((h + 3) / 4) * d3d8_format_dxt_block_bytes(t->color)
-          : w * h * (fmt_is_swz(t->color) ? linear_bpp(swz_to_linear(t->color))
-                                          : linear_bpp(t->color));
-    {
-        uint32_t step = bytes > 4096 ? bytes / 64 : 64;
-        /* RECOMP_GL_TEXHASH_FULL=1: hash every byte (slow; for testing
-         * whether a texture the CPU rewrote in place is being served stale). */
-        { static int full = -1;
-          if (full < 0) full = getenv("RECOMP_GL_TEXHASH_FULL") ? 1 : 0;
-          if (full) step = 1; }
-        hash = t->color * 2654435761u;
-        for (i = 0; i < bytes && step; i += step)
-            hash = hash * 31u + src[i];
-        hash = hash * 31u + bytes;
-        if (g_upload_bias_bg) hash ^= 0x9E3779B9u;   /* a different upload */
-    }
+     * A changed texture is uploaded over its old entry; a new entry would
+     * leave the old picture behind, never looked up again, until the table
+     * filled. The one exception is an old picture this frame has drawn: a
+     * title that puts two pictures through one place within a frame keeps an
+     * entry for each. */
+    bytes = tex_bytes(t->color, w, h);
+    hash = tex_sample(t->color, src, bytes, g_upload_bias_bg);
     key = (t->offset ^ (w << 16) ^ (h << 4) ^ t->color) * 2246822519u;
     for (i = 0; i < TEX_CACHE; i++) {
         uint32_t k = (key + i) % TEX_CACHE;
@@ -3145,15 +3200,10 @@ static uint32_t upload_texture_inner(const TexStage *t)
             if (g_tcache[k].hash != hash) {
                 /* The sample changed. Not this frame's: upload over it,
                  * unless a later entry already holds the new picture. */
-                if (stale < 0 && g_tcache[k].checked != S.flips) stale = (int)k;
+                if (stale < 0 && g_tcache[k].drawn != S.flips) stale = (int)k;
                 continue;
             }
-            if (g_tcache[k].checked != S.flips) {
-                if (!hashed) { content = tex_content(t, src, bytes); hashed = 1; }
-                /* Stale: upload over it, or it is hashed again at every lookup. */
-                if (g_tcache[k].content != content) { stale = (int)k; break; }
-                g_tcache[k].checked = S.flips;
-            }
+            g_tcache[k].drawn = S.flips;
             g_tcache[k].last_draw = S.draws;
             return g_tcache[k].tex;
         }
@@ -3474,8 +3524,8 @@ static uint32_t upload_texture_inner(const TexStage *t)
     g_tcache[slot].hash = hash; g_tcache[slot].tex = tex;
     g_tcache[slot].bias = g_upload_bias_bg;
     g_tcache[slot].va = va; g_tcache[slot].serial = contig_serial(va);
-    g_tcache[slot].content = hashed ? content : tex_content(t, src, bytes);
-    g_tcache[slot].checked = S.flips;
+    g_tcache[slot].content = tex_content(t->color, h, t->pitch, src, bytes);
+    g_tcache[slot].drawn = S.flips;
     g_tcache[slot].last_draw = S.draws;
     return tex;
 }
@@ -8955,7 +9005,7 @@ static void present(int is_frame)
     uint8_t *dst;
 
     if (!g_ready || !g_fbo_w || !g_fbo_h || !S.color_offset) return;
-    if (is_frame) { S.frames++; prof_report(); tcache_sweep();
+    if (is_frame) { S.frames++; prof_report(); tcache_sweep(); tcache_verify();
                     /* the census counts one frame, not everything since the
                      * last dump -- otherwise it measures the gap, not the
                      * picture next to it */

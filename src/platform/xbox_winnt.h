@@ -57,6 +57,35 @@ static inline void xbox_path_normalize(char *p)
 #endif
 #include <windows.h>
 
+/*
+ * The kernel's millisecond clock: the performance counter, as on the other
+ * hosts (win32_compat's GetTickCount64 is CLOCK_MONOTONIC).
+ *
+ * Windows' own GetTickCount and GetTickCount64 move in steps of the system
+ * tick, 15.6 ms, and timeBeginPeriod does not change that -- it makes Sleep
+ * finer, not the tick count. The kernel times everything on it: the display
+ * interrupt that is the game's frame clock, the game's own timers and their
+ * DPCs, and the 4 ms slice after which a guest thread hands the guest lock
+ * on. On Windows alone all of those came out in 15.6 ms steps. A 60 Hz frame
+ * clock read off a 64 Hz tick slips a whole tick every 15 frames (a player's
+ * log: a 30 ms frame four times a second, every 15 frames), and a 4 ms slice
+ * became 15.6, so the thread that refills the music waited about four times
+ * as long for its turn: the sound stuttered on Windows and nowhere else.
+ * Every kernel file includes this header after <windows.h> and before
+ * anything else could declare these again.
+ */
+static __inline ULONGLONG xbox_tick_ms(void)
+{
+    static LARGE_INTEGER f;
+    LARGE_INTEGER c;
+    if (!f.QuadPart) QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&c);
+    return (ULONGLONG)(c.QuadPart / f.QuadPart) * 1000ULL
+         + (ULONGLONG)(c.QuadPart % f.QuadPart) * 1000ULL / (ULONGLONG)f.QuadPart;
+}
+#define GetTickCount64() xbox_tick_ms()
+#define GetTickCount()   ((DWORD)xbox_tick_ms())
+
 /* Wide-string helpers: map to the real CRT functions on Windows. */
 #define xbox_wcslen  wcslen
 #define xbox_wcsncmp wcsncmp
