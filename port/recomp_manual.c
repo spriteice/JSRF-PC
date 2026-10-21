@@ -726,7 +726,6 @@ static void jsrf_hook_switch(void)
 /* JSRF_CRI_CALLS=1 (test only): which functions of the CRI library
  * (0x138000-0x145000) the game calls, and from where. Every 10 s, the pairs
  * called since the last report, with counts. */
-static double pad_now(void);
 static void cri_census(uint32_t va)
 {
     static int on = -1;
@@ -1157,7 +1156,6 @@ void sub_00144F60(void)
 }
 
 /* arm the .data write trap when the title music file is opened */
-static double pad_now(void);
 static unsigned s_game_frames;   /* sound-manager updates: one per game frame */
 void xbox_file_open_hook(const char *path)
 {
@@ -1747,7 +1745,6 @@ static void mscript_dump(uint32_t flow, uint32_t state)
     mscript_list("trig", *(uint32_t *)(m + ms + 0x17C), *(uint32_t *)(m + ms + 0x180));
     fflush(stderr);
 }
-extern void nv2a_set_wide_scene(int on);
 /* What the flow last said about widescreen (-1 nothing yet: the boot logos,
  * widened, see jsrf_wide_boot). */
 static int s_wide_scene_said = -1;
@@ -1976,7 +1973,6 @@ void sub_000A6110(void)
  * [VOICE] lines give the time, the game frame and the present count for
  * every change, so a line's real start and end can be set against the
  * frames captured while it plays. */
-extern uint32_t nv2a_gl_flips(void);
 extern void sub_0013A9A0(void);
 static int voice_log_on(void)
 {
@@ -2554,7 +2550,6 @@ uint32_t recomp_atomic_cas32_unaligned(void *p, uint32_t cmp, uint32_t val)
  * ========================================================================== */
 #include <math.h>
 #include <string.h>
-extern uint32_t nv2a_gl_flips(void);
 extern size_t g_xbox_total_ram;
 
 static void jsrf_snap_write(const char *dir, const char *name, uint32_t va,
@@ -3736,7 +3731,6 @@ void sub_0003FEC0(void)
  * frame then holds the wide view squeezed, and the window shows it at its
  * shape; the renderer squeezes the 2D overlays (nv2a_gl.c) so they keep
  * their shape. JSRF_WIDE_LOG=1 logs the projections the title sets. */
-extern int nv2a_widescreen(void);
 extern float nv2a_wide_squeeze(void);
 static int wide_log(void)
 {
