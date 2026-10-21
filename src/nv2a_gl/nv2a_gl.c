@@ -2949,7 +2949,8 @@ static uint32_t upload_texture_inner(const TexStage *t)
          && g_tcache[k].h == h && g_tcache[k].hash == hash) {
             if (g_tcache[k].checked != S.flips) {
                 if (!hashed) { content = tex_content(t, src, bytes); hashed = 1; }
-                if (g_tcache[k].content != content) continue;
+                /* Stale: upload over it, or it is hashed again at every lookup. */
+                if (g_tcache[k].content != content) { slot = (int)k; break; }
                 g_tcache[k].checked = S.flips;
             }
             g_tcache[k].last_draw = S.draws;
