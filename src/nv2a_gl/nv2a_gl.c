@@ -460,6 +460,8 @@ typedef struct {
     double present, pace;   /* at the flip: showing the frame, waiting for its time */
     unsigned n_draws, n_const_upload, n_prog_switch, n_tex_upload, n_tex_lookup;
     unsigned long vbo_bytes, unif_vec4;
+    unsigned tex_held;                  /* textures the cache holds, now */
+    unsigned long long tex_held_bytes;  /* ... and their size, uploaded as RGBA8 */
 } GlProfile;
 static void vc_report(const char *when);
 static GlProfile g_prof;
@@ -558,13 +560,14 @@ static void prof_report(void)
         fprintf(stderr,
             "[GLPROF]   per second: %lu KB of vertices, %lu constant vec4s, "
             "%u constant uploads, %u program switches, %u texture uploads, "
-            "%u texture lookups\n",
+            "%u texture lookups; %u textures held (%llu MB)\n",
             (g_prof.vbo_bytes - prev.vbo_bytes) / 1024,
             g_prof.unif_vec4 - prev.unif_vec4,
             g_prof.n_const_upload - prev.n_const_upload,
             g_prof.n_prog_switch - prev.n_prog_switch,
             g_prof.n_tex_upload  - prev.n_tex_upload,
-            g_prof.n_tex_lookup  - prev.n_tex_lookup);
+            g_prof.n_tex_lookup  - prev.n_tex_lookup,
+            g_prof.tex_held, g_prof.tex_held_bytes >> 20);
         {
             static double prev_pb; static unsigned long prev_words;
             fprintf(stderr,
@@ -851,6 +854,7 @@ static struct {
     uint32_t checked;       /* the frame its content was last compared in */
     uint32_t last_draw;     /* when this entry was last looked up */
     uint32_t tex;           /* the device's texture */
+    int      bias;          /* uploaded as a bump source (g_upload_bias_bg) */
     int      used;
 } g_tcache[TEX_CACHE];
 
@@ -2893,7 +2897,7 @@ static uint32_t upload_texture_inner(const TexStage *t)
     uint32_t tex;
     uint8_t *rgba = NULL;
     Nv2aSampler smp;
-    int slot = -1, hashed = 0;
+    int slot = -1, stale = -1, hashed = 0;
 
     if (!w || !h || w > 4096 || h > 4096) return 0;
 
@@ -2923,7 +2927,13 @@ static uint32_t upload_texture_inner(const TexStage *t)
      * default. So the whole content is compared as well, once a frame --
      * reading every texture in full at every draw took over half the frame
      * on the Ally X. A change between two draws of one frame that the sample
-     * misses shows from the next frame on. */
+     * misses shows from the next frame on.
+     *
+     * A changed texture is uploaded over its old entry, whichever hash saw
+     * the change; a new entry would leave the old picture behind, never
+     * looked up again, until the table filled. The one exception is an old
+     * picture this frame has drawn: a title that puts two pictures through
+     * one place within a frame keeps an entry for each. */
     bytes = fmt_is_dxt(t->color)
           ? ((w + 3) / 4) * ((h + 3) / 4) * d3d8_format_dxt_block_bytes(t->color)
           : w * h * (fmt_is_swz(t->color) ? linear_bpp(swz_to_linear(t->color))
@@ -2946,11 +2956,17 @@ static uint32_t upload_texture_inner(const TexStage *t)
         uint32_t k = (key + i) % TEX_CACHE;
         if (g_tcache[k].used && g_tcache[k].offset == t->offset
          && g_tcache[k].format == t->color && g_tcache[k].w == w
-         && g_tcache[k].h == h && g_tcache[k].hash == hash) {
+         && g_tcache[k].h == h && g_tcache[k].bias == g_upload_bias_bg) {
+            if (g_tcache[k].hash != hash) {
+                /* The sample changed. Not this frame's: upload over it,
+                 * unless a later entry already holds the new picture. */
+                if (stale < 0 && g_tcache[k].checked != S.flips) stale = (int)k;
+                continue;
+            }
             if (g_tcache[k].checked != S.flips) {
                 if (!hashed) { content = tex_content(t, src, bytes); hashed = 1; }
                 /* Stale: upload over it, or it is hashed again at every lookup. */
-                if (g_tcache[k].content != content) { slot = (int)k; break; }
+                if (g_tcache[k].content != content) { stale = (int)k; break; }
                 g_tcache[k].checked = S.flips;
             }
             g_tcache[k].last_draw = S.draws;
@@ -2958,6 +2974,7 @@ static uint32_t upload_texture_inner(const TexStage *t)
         }
         if (!g_tcache[k].used) { slot = (int)k; break; }
     }
+    if (stale >= 0) slot = stale;
     if (slot < 0) {
         /* Full: evict, but never something this draw is still using. Four
          * texture stages can be bound at once, so anything touched within the
@@ -2987,6 +3004,8 @@ static uint32_t upload_texture_inner(const TexStage *t)
     if (g_tcache[slot].used && g_tcache[slot].tex) {
         G->tex_free(g_tcache[slot].tex);
         g_tcache[slot].tex = 0;
+        g_prof.tex_held--;
+        g_prof.tex_held_bytes -= (unsigned long long)g_tcache[slot].w * g_tcache[slot].h * 4;
     }
     /* Until the new texture exists the slot holds nothing: a tombstone that
      * keeps its place in the probe chain and matches no lookup. */
@@ -3245,10 +3264,13 @@ static uint32_t upload_texture_inner(const TexStage *t)
     if (!tex) return 0;
 
     g_prof.n_tex_upload++;
+    g_prof.tex_held++;
+    g_prof.tex_held_bytes += (unsigned long long)w * h * 4;
     g_tcache[slot].used = 1;
     g_tcache[slot].offset = t->offset; g_tcache[slot].format = t->color;
     g_tcache[slot].w = w; g_tcache[slot].h = h; g_tcache[slot].pitch = t->pitch;
     g_tcache[slot].hash = hash; g_tcache[slot].tex = tex;
+    g_tcache[slot].bias = g_upload_bias_bg;
     g_tcache[slot].content = hashed ? content : tex_content(t, src, bytes);
     g_tcache[slot].checked = S.flips;
     g_tcache[slot].last_draw = S.draws;
