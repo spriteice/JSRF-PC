@@ -4720,18 +4720,19 @@ static void bridge_HalReadWritePCISpace(void)
     g_eax = 0;
 }
 
-/* ── HalRequestSoftwareInterrupt / HalClearSoftwareInterrupt (48 / 38, 1 arg)
+/* ── HalRequestSoftwareInterrupt / HalClearSoftwareInterrupt (48 / 38,
+ * fastcall: level in cl, as KfRaiseIrql's)
  * DPC/APC delivery hooks with no interrupt-driven machinery behind them here;
  * both xbox_* versions are documented no-ops. */
 static void bridge_HalRequestSoftwareInterrupt(void)
 {
-    xbox_HalRequestSoftwareInterrupt((KIRQL)STACK_ARG(0));
+    xbox_HalRequestSoftwareInterrupt((KIRQL)g_ecx);
     g_eax = 0;
 }
 
 static void bridge_HalClearSoftwareInterrupt(void)
 {
-    xbox_HalClearSoftwareInterrupt((KIRQL)STACK_ARG(0));
+    xbox_HalClearSoftwareInterrupt((KIRQL)g_ecx);
     g_eax = 0;
 }
 
@@ -5542,7 +5543,7 @@ static int stdcall_args_for_ordinal(ULONG ordinal)
     case  29: return 16;  /* ExSaveNonVolatileSetting (4) */
     case  35: return  0;  /* FscGetCacheSize (void) */
     case  37: return  4;  /* FscSetCacheSize (1) */
-    case  38: return  4;  /* HalClearSoftwareInterrupt (1) */
+    case  38: return  0;  /* HalClearSoftwareInterrupt (fastcall: arg in ecx) */
     case  39: return  8;  /* HalDisableSystemInterrupt (2) */
     case  42: return  0;  /* HalDiskSerialNumber - data export */
     case  44: return  8;  /* HalGetInterruptVector (2) */
@@ -5550,7 +5551,7 @@ static int stdcall_args_for_ordinal(ULONG ordinal)
     case  46: return 24;  /* HalReadWritePCISpace (6) */
     case  45: return 16;  /* HalReadSMBusValue (4) */
     case  50: return 16;  /* HalWriteSMBusValue (4) */
-    case  48: return  4;  /* HalRequestSoftwareInterrupt (1) */
+    case  48: return  0;  /* HalRequestSoftwareInterrupt (fastcall: arg in ecx) */
     case  49: return  4;  /* HalReturnToFirmware (1) */
     case  61: return 36;  /* IoBuildDeviceIoControlRequest (9) */
     case  62: return 28;  /* IoBuildSynchronousFsdRequest (7) */

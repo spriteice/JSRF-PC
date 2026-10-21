@@ -299,12 +299,12 @@ ULONG __stdcall xbox_HalReadSMCTrayState(PULONG TrayState, PULONG TrayStateChang
  * interrupt-driven DPC delivery.
  * ============================================================================ */
 
-VOID __stdcall xbox_HalClearSoftwareInterrupt(KIRQL RequestIrql)
+VOID __fastcall xbox_HalClearSoftwareInterrupt(KIRQL RequestIrql)
 {
     (void)RequestIrql;
 }
 
-VOID __stdcall xbox_HalRequestSoftwareInterrupt(KIRQL RequestIrql)
+VOID __fastcall xbox_HalRequestSoftwareInterrupt(KIRQL RequestIrql)
 {
     (void)RequestIrql;
 }

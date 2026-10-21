@@ -754,8 +754,8 @@ BOOLEAN  __stdcall xbox_KeSynchronizeExecution(PXBOX_KINTERRUPT Interrupt, PVOID
 VOID    __stdcall xbox_HalReadWritePCISpace(ULONG BusNumber, ULONG SlotNumber, ULONG RegisterNumber, PVOID Buffer, ULONG Length, BOOLEAN WritePCISpace);
 VOID    __stdcall xbox_HalReturnToFirmware(ULONG Routine);
 ULONG   __stdcall xbox_HalReadSMCTrayState(PULONG TrayState, PULONG TrayStateChangeCount);
-VOID    __stdcall xbox_HalClearSoftwareInterrupt(KIRQL RequestIrql);
-VOID    __stdcall xbox_HalRequestSoftwareInterrupt(KIRQL RequestIrql);
+VOID    __fastcall xbox_HalClearSoftwareInterrupt(KIRQL RequestIrql);
+VOID    __fastcall xbox_HalRequestSoftwareInterrupt(KIRQL RequestIrql);
 VOID    __stdcall xbox_HalDisableSystemInterrupt(ULONG BusInterruptLevel, KIRQL Irql);
 ULONG   __stdcall xbox_HalGetInterruptVector(ULONG BusInterruptLevel, PKIRQL Irql);
 VOID    __stdcall xbox_HalInitiateShutdown(void);
