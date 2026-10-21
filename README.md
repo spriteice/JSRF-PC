@@ -191,7 +191,8 @@ otherwise in the terminal), and remembers it; an image is unpacked once, by
 the game itself. `./jsrf-unleashed /path/to/game.iso` works too. `./jsrf-unleashed --install` adds it to your applications menu. It needs
 OpenGL 3.3 drivers and an X11 or Wayland desktop; SDL2 is bundled. The
 `README.txt` inside lists the options (`--scale`, `--fullscreen`, `--choose`)
-and where settings, saves and logs are kept.
+and where settings, saves and logs are kept. A folder named `portable` next to
+`jsrf-unleashed` keeps them all in that folder instead of your home folder.
 
 On Linux the keyboard layout is the same as below; **F11** (or Alt+Return)
 toggles full screen, **F10** widescreen, and **F9** sets the resolution (1× to

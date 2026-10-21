@@ -36,13 +36,19 @@ static int match_prefix(const char* path, const char* prefix)
 /* A device-path translation rule, shared by both backends. */
 typedef struct {
     const char* prefix;     /* Xbox path prefix (backslash form)         */
-    int         to_save;    /* 1 = under save_dir, 0 = under game_dir    */
+    int         to_save;    /* 1 = save_dir, 0 = game_dir, 2 = user_dir  */
     const char* sub_win;    /* sub-directory, Win32 backslash form       */
     const char* sub_posix;  /* sub-directory, POSIX slash form           */
 } path_rule;
 
 static const path_rule s_rules[] = {
     { "\\Device\\CdRom0\\",                   0, NULL,         NULL          },
+    /* E:\UDATA and E:\TDATA, where XAPI keeps a title's saves (it links U:
+     * and T: there). In the player's own folder when there is one -- see
+     * xbox_path_init -- and otherwise left to the Partition1 rule below,
+     * which keeps them in the game dir. */
+    { "\\Device\\Harddisk0\\Partition1\\UDATA", 2, "\\UDATA",    "/UDATA"      },
+    { "\\Device\\Harddisk0\\Partition1\\TDATA", 2, "\\TDATA",    "/TDATA"      },
     { "\\Device\\Harddisk0\\Partition1\\",    0, NULL,         NULL          },
     /* The rest of the disk. Partition 0 is the whole raw device, 2 holds
      * system data, and 3-5 are the per-title caches behind X:, Y: and Z:.
@@ -80,6 +86,21 @@ static const path_rule s_rules[] = {
     { "\\??\\T:\\",                           1, "\\TitleData","/TitleData"  },
 };
 #define PATH_RULE_COUNT ((int)(sizeof(s_rules) / sizeof(s_rules[0])))
+
+/* How much of `path` rule i matches, or 0. A user_dir rule applies only when
+ * there is a user dir, and only to a whole name: UDATA, not UDATAX. */
+static int match_rule(int i, const char* path, int have_user_dir)
+{
+    int skip;
+
+    if (s_rules[i].to_save == 2 && !have_user_dir)
+        return 0;
+    skip = match_prefix(path, s_rules[i].prefix);
+    if (skip && s_rules[i].to_save == 2
+        && path[skip] && path[skip] != '\\' && path[skip] != '/')
+        return 0;
+    return skip;
+}
 
 /*
  * Rewrite a path through a drive letter the title mapped for itself.
@@ -184,9 +205,11 @@ static const ULONGLONG s_part_sectors[] = {
 #include <shlobj.h>
 #include <winioctl.h>
 #pragma pop_macro("KernelMode")
+#include <stdlib.h>
 
 static WCHAR s_game_dir[MAX_PATH];
 static WCHAR s_save_dir[MAX_PATH];
+static WCHAR s_user_dir[MAX_PATH];
 static BOOL  s_initialized = FALSE;
 /* Each partition image's final path, as GetFinalPathNameByHandleW normalises
  * it, so a handle can be matched to its device however the title opened it. */
@@ -337,6 +360,17 @@ void xbox_path_init(const char* game_dir, const char* save_dir)
         }
     }
 
+    /* The player's own folder for E:\UDATA and E:\TDATA, when the launcher
+     * gives one (JSRF_USER_DIR, the Linux launcher's portable mode); without
+     * it they stay in the game dir. */
+    {
+        const char* user_dir = getenv("JSRF_USER_DIR");
+        s_user_dir[0] = L'\0';
+        if (user_dir && user_dir[0]
+            && !MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, user_dir, -1, s_user_dir, MAX_PATH))
+            MultiByteToWideChar(CP_ACP, 0, user_dir, -1, s_user_dir, MAX_PATH);
+    }
+
     size_t len = wcslen(s_game_dir);
     if (len > 0 && s_game_dir[len - 1] == L'\\')
         s_game_dir[len - 1] = L'\0';
@@ -344,6 +378,10 @@ void xbox_path_init(const char* game_dir, const char* save_dir)
     len = wcslen(s_save_dir);
     if (len > 0 && s_save_dir[len - 1] == L'\\')
         s_save_dir[len - 1] = L'\0';
+
+    len = wcslen(s_user_dir);
+    if (len > 0 && s_user_dir[len - 1] == L'\\')
+        s_user_dir[len - 1] = L'\0';
 
     /* Create the save-side directories. T:/U:/Z: map into subdirectories of
      * save_dir, and a title that opens a file there with a create disposition
@@ -361,6 +399,8 @@ void xbox_path_init(const char* game_dir, const char* save_dir)
         WCHAR image[MAX_PATH];
         WCHAR dir[MAX_PATH];
         SHCreateDirectoryExW(NULL, s_save_dir, NULL);
+        if (s_user_dir[0])
+            SHCreateDirectoryExW(NULL, s_user_dir, NULL);
         for (int i = 0; i < (int)(sizeof(subs) / sizeof(subs[0])); i++) {
             swprintf_s(dir, MAX_PATH, L"%s\\%s", s_save_dir, subs[i]);
             SHCreateDirectoryExW(NULL, dir, NULL);
@@ -390,7 +430,8 @@ void xbox_path_init(const char* game_dir, const char* save_dir)
     }
 
     s_initialized = TRUE;
-    xbox_log(XBOX_LOG_INFO, XBOX_LOG_PATH, "Path init: game=%S, save=%S", s_game_dir, s_save_dir);
+    xbox_log(XBOX_LOG_INFO, XBOX_LOG_PATH, "Path init: game=%S, save=%S, user=%S",
+             s_game_dir, s_save_dir, s_user_dir);
 }
 
 /* The host path the last translation produced.
@@ -440,10 +481,11 @@ BOOL xbox_translate_path(const char* xbox_path, xbox_host_char* host_path_buf, D
     }
 
     for (int i = 0; i < PATH_RULE_COUNT; i++) {
-        skip = match_prefix(xbox_path, s_rules[i].prefix);
+        skip = match_rule(i, xbox_path, s_user_dir[0] != L'\0');
         if (skip) {
             remainder = xbox_path + skip;
-            base_dir  = s_rules[i].to_save ? s_save_dir : s_game_dir;
+            base_dir  = s_rules[i].to_save == 2 ? s_user_dir
+                      : s_rules[i].to_save ? s_save_dir : s_game_dir;
             sub_dir   = s_rules[i].sub_win;
             goto translate;
         }
@@ -509,6 +551,7 @@ const wchar_t *xbox_LastHostPath(void) { return s_last_host_path_posix; }
 
 static char s_game_dir[MAX_PATH];
 static char s_save_dir[MAX_PATH];
+static char s_user_dir[MAX_PATH];
 static BOOL s_initialized = FALSE;
 
 /* Partition devices on POSIX -- same scheme as the Win32 build above: the raw
@@ -699,22 +742,33 @@ void xbox_path_init(const char* game_dir, const char* save_dir)
         }
     }
 
+    /* The player's own folder for E:\UDATA and E:\TDATA, when the launcher
+     * gives one (JSRF_USER_DIR, the Linux launcher's portable mode); without
+     * it they stay in the game dir. */
+    {
+        const char* user_dir = getenv("JSRF_USER_DIR");
+        snprintf(s_user_dir, sizeof(s_user_dir), "%s", user_dir ? user_dir : "");
+    }
+
     strip_trailing_slash(s_game_dir);
     strip_trailing_slash(s_save_dir);
+    strip_trailing_slash(s_user_dir);
 
     s_initialized = TRUE;
     {
         static const char *subs[] = { "TitleData", "UserData", "Cache", "SystemData" };
         char dir[MAX_PATH];
         mkdir_p(s_save_dir);
+        if (s_user_dir[0])
+            mkdir_p(s_user_dir);
         for (int i = 0; i < 4; i++) {
             snprintf(dir, sizeof(dir), "%s/%s", s_save_dir, subs[i]);
             mkdir_p(dir);
         }
         posix_create_partition_images();
     }
-    xbox_log(XBOX_LOG_INFO, XBOX_LOG_PATH, "Path init: game=%s, save=%s",
-             s_game_dir, s_save_dir);
+    xbox_log(XBOX_LOG_INFO, XBOX_LOG_PATH, "Path init: game=%s, save=%s, user=%s",
+             s_game_dir, s_save_dir, s_user_dir);
 }
 
 BOOL xbox_translate_path(const char* xbox_path, xbox_host_char* host_path_buf, DWORD buf_size)
@@ -742,10 +796,11 @@ BOOL xbox_translate_path(const char* xbox_path, xbox_host_char* host_path_buf, D
     }
 
     for (int i = 0; i < PATH_RULE_COUNT; i++) {
-        skip = match_prefix(xbox_path, s_rules[i].prefix);
+        skip = match_rule(i, xbox_path, s_user_dir[0] != '\0');
         if (skip) {
             remainder = xbox_path + skip;
-            base_dir  = s_rules[i].to_save ? s_save_dir : s_game_dir;
+            base_dir  = s_rules[i].to_save == 2 ? s_user_dir
+                      : s_rules[i].to_save ? s_save_dir : s_game_dir;
             sub_dir   = s_rules[i].sub_posix;
             goto translate;
         }

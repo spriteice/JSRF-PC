@@ -14,15 +14,29 @@
 #   ./jsrf-unleashed --version        which version this is
 #
 # A disc image (.iso) is unpacked once, by the game itself: nothing else to install.
+# Portable: with a folder named "portable" beside this script, the settings,
+# saves and logs are kept in it, and nothing in your home folder.
 # In game: F11 (or Alt+Return) full screen, F10 widescreen 16:9, F9 resolution.
 #
 set -u
 HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-CFG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/jsrf-unleashed"
-CFG="$CFG_DIR/settings"
-DATA="${XDG_DATA_HOME:-$HOME/.local/share}/jsrf-unleashed"
-STATE="${XDG_STATE_HOME:-$HOME/.local/state}/jsrf-unleashed"
-mkdir -p "$CFG_DIR" "$DATA/save" "$STATE/logs"
+# Looked for first, before anything is read or made: in portable mode nothing
+# outside this folder is touched but the game's own files.
+if [ -d "$HERE/portable" ]; then
+    PORTABLE="$HERE/portable"
+    CFG="$PORTABLE/settings.cfg"
+    DATA="$PORTABLE/games"
+    SAVE="$PORTABLE/cache"
+    STATE="$PORTABLE/logs"
+    LOGS="$STATE"
+else
+    PORTABLE=""
+    CFG="${XDG_CONFIG_HOME:-$HOME/.config}/jsrf-unleashed/settings"
+    DATA="${XDG_DATA_HOME:-$HOME/.local/share}/jsrf-unleashed"
+    SAVE="$DATA/save"
+    STATE="${XDG_STATE_HOME:-$HOME/.local/state}/jsrf-unleashed"
+    LOGS="$STATE/logs"
+fi
 
 cfg_get() { [ -f "$CFG" ] && sed -n "s/^$1=//p" "$CFG" | tail -n 1; }
 cfg_set() {   # key value: replace or append, keeping every other line
@@ -41,6 +55,12 @@ say() {
     fi
 }
 fail() { say "$1"; exit 1; }
+
+mkdir -p "${CFG%/*}" "$SAVE" "$LOGS" ${PORTABLE:+"$PORTABLE/saves"}
+# A portable folder that cannot be written stops here rather than falling back
+# to the home folder, which would split the saves between two places.
+[ -z "$PORTABLE" ] || [ -w "$PORTABLE" ] || \
+    fail "$(printf "The portable folder can't be written to:\n\n%s\n\nMake it writable, or remove it to keep the settings, saves and logs in your home folder instead." "$PORTABLE" | fold -s -w 72)"
 
 is_game() { [ -n "$1" ] && [ -f "$1/default.xbe" ] && [ -d "$1/Media" ]; }
 
@@ -89,9 +109,10 @@ relay() {
     done
 }
 
-# A disc image: unpacked once into ~/.local/share/jsrf-unleashed/<name>, by the
-# engine (--unpack-iso: the unpacker the other apps use, port/ios/xiso.c), so
-# nothing else has to be installed. Checked first, so a zip, another game's
+# A disc image: unpacked once into ~/.local/share/jsrf-unleashed/<name> (in
+# portable mode, portable/games/<name>), by the engine (--unpack-iso: the
+# unpacker the other apps use, port/ios/xiso.c), so nothing else has to be
+# installed. Checked first, so a zip, another game's
 # disc or another build of the game is named before anything is unpacked.
 # Prints the game folder; nothing if unpacking was cancelled.
 from_iso() {
@@ -147,6 +168,8 @@ pick() {
 }
 
 install_desktop() {
+    # The menu is in the home folder, which portable mode leaves alone.
+    [ -z "$PORTABLE" ] || fail "$(printf "JSRF Unleashed is in portable mode (it has a \"portable\" folder), so it does not add itself to the applications menu, which is kept in your home folder." | fold -s -w 72)"
     local apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
     mkdir -p "$apps"
     cat > "$apps/jsrf-unleashed.desktop" <<EOF
@@ -172,17 +195,22 @@ while [ $# -gt 0 ]; do
         --fullscreen) FULLSCREEN=1 ;;
         --install)    install_desktop; exit 0 ;;
         --version)    cat "$HERE/VERSION" 2>/dev/null || "$HERE/bin/jsrf_recomp" --version; exit 0 ;;
-        -h|--help)    sed -n '4,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help)    sed -n '4,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *)            GAME="$1" ;;
     esac
     shift
 done
 
+# Portable: a game folder inside this one is remembered relative to it, so the
+# whole folder can move (another path, an SD card) and still find it.
+LAST_GAME="$(cfg_get game_dir)"
+[ -n "$PORTABLE" ] && case "$LAST_GAME" in /*|"") ;; *) LAST_GAME="$HERE/$LAST_GAME" ;; esac
+
 # Which game folder: the argument, else the remembered one, else ask.
 if [ -n "$GAME" ]; then
     GAME="$(pick "$GAME")" || exit 1
-elif [ "$CHOOSE" = 0 ] && is_game "$(cfg_get game_dir)"; then
-    GAME="$(cfg_get game_dir)"
+elif [ "$CHOOSE" = 0 ] && is_game "$LAST_GAME"; then
+    GAME="$LAST_GAME"
 else
     GAME="$(ask_game)"
     [ -n "$GAME" ] || exit 0
@@ -198,15 +226,30 @@ is_game "$GAME" || fail "$(printf "That folder has no default.xbe and Media in i
 # says what the files are; exit 3 = another build or another game.
 why="$(engine --check-game "$GAME" 2>/dev/null)"
 case $? in 2|3) refuse "$why" ;; esac
-cfg_set game_dir "$GAME"
+KEEP="$GAME"
+[ -n "$PORTABLE" ] && case "$GAME" in "$HERE"/*) KEEP="${GAME#"$HERE"/}" ;; esac
+cfg_set game_dir "$KEEP"
+
+# Portable: the saves the game kept in its own folder (UDATA, TDATA) are
+# copied into portable/saves the first time, so its progress carries over.
+# Copied, not moved: the originals stay where they were.
+if [ -n "$PORTABLE" ]; then
+    for d in UDATA TDATA; do
+        [ -d "$GAME/$d" ] && [ ! -e "$PORTABLE/saves/$d" ] || continue
+        cp -R "$GAME/$d" "$PORTABLE/saves/" || {
+            rm -rf -- "${PORTABLE:?}/saves/$d"
+            fail "$(printf "The saves in\n%s\ncould not be copied into\n%s\nso the game was not started. The originals are untouched." "$GAME/$d" "$PORTABLE/saves" | fold -s -w 72)"
+        }
+    done
+fi
 
 SCALE="$(cfg_get scale)"; case "$SCALE" in [1-4]) ;; *) SCALE=2 ;; esac
 
 # The previous run's log is kept (five of them), then a fresh one.
 LOG="$STATE/last-run.log"
 if [ -f "$LOG" ]; then
-    mv "$LOG" "$STATE/logs/run-$(date +%Y%m%d-%H%M%S).log"
-    ls -1t "$STATE"/logs/run-*.log 2>/dev/null | tail -n +6 | while IFS= read -r old; do rm -f "$old"; done
+    mv "$LOG" "$LOGS/run-$(date +%Y%m%d-%H%M%S).log"
+    ls -1t "$LOGS"/run-*.log 2>/dev/null | tail -n +6 | while IFS= read -r old; do rm -f "$old"; done
 fi
 
 export RECOMP_USB=1 RECOMP_GL=1 RECOMP_PB_EXEC=1 RECOMP_VBLANK=1 RECOMP_AC97_READY_NOTRAP=1 \
@@ -214,10 +257,16 @@ export RECOMP_USB=1 RECOMP_GL=1 RECOMP_PB_EXEC=1 RECOMP_VBLANK=1 RECOMP_AC97_REA
        RECOMP_LOCK_IDLE=1 RECOMP_GL_CURTAIN=skip RECOMP_MUTE=0 RECOMP_WINDOW=1
 export RECOMP_GL_SCALE="$SCALE"
 [ "$FULLSCREEN" = 1 ] && export RECOMP_FULLSCREEN=1
-export JSRF_GAME_DIR="$GAME" JSRF_SAVE_DIR="$DATA/save" JSRF_SETTINGS_FILE="$CFG"
+export JSRF_GAME_DIR="$GAME" JSRF_SAVE_DIR="$SAVE" JSRF_SETTINGS_FILE="$CFG"
+# Portable: the game's saves go to portable/saves, not the game folder (the
+# engine's path layer, src/kernel/kernel_path.c).
+[ -n "$PORTABLE" ] && export JSRF_USER_DIR="$PORTABLE/saves"
 export LD_LIBRARY_PATH="$HERE/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
-cd "$GAME" || exit 1
+# What the engine writes by a relative name (xbox_kernel.log, the icall dumps)
+# goes to the game folder, or to the logs in portable mode.
+WORK="$GAME"; [ -n "$PORTABLE" ] && WORK="$LOGS"
+cd "$WORK" || exit 1
 "$HERE/bin/jsrf_recomp" "$GAME" > "$LOG" 2>&1
 status=$?
 if [ "$status" -eq 3 ]; then

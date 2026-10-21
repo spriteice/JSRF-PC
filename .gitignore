@@ -48,6 +48,16 @@ launcher/AppIcon.icns
 # The generated code: derived from the game's executable, never committed
 port/recomp/
 
+# The game's files, saves and logs, wherever a run puts them (the Linux
+# launcher's portable/ folder holds all three)
+Media/
+UDATA/
+TDATA/
+portable/
+Partition*.img
+*.log
+*.dump
+
 # Backups and merge leftovers
 *.bak*
 *.orig
