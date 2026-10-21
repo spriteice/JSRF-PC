@@ -673,13 +673,15 @@ class DisasmEngine:
                                 lower: Optional[int] = None,
                                 tail_targets=(), *, require_entry_frame=False,
                                 allow_indirect_tails=False,
-                                may_return=True) -> bool:
+                                may_return=True, unproven_tails=None) -> bool:
         """Read-only proof of a closed callback CFG inside an unclaimed gap.
 
         Calls may return from other functions; branches and fallthrough must
         stay on decoded instruction boundaries. Reuse the translator's CFG
         decoder and the sweep's measured switch tables, without a size cap.
         With may_return=False, a ret or an indirect tail fails the proof.
+        A direct jmp out of the gap to an address not in tail_targets fails
+        it too, and is added to unproven_tails when that is a set.
         """
         from ..recomp.disasm import Disassembler
 
@@ -784,8 +786,15 @@ class DisasmEngine:
                 if edge == insn.jump_target and edge in tail_targets:
                     exits = True  # preserve proven tails to existing bodies
                     continue
+                if (unproven_tails is not None and insn.is_jump
+                        and edge == insn.jump_target
+                        and not lower <= edge < upper):
+                    unproven_tails.add(edge)
+                    continue
                 return False
             backward |= any(edge in starts and edge <= insn.address for edge in edges)
+        if unproven_tails:
+            return False
         if require_entry_frame:
             saved = {insn.op_str for insn in decoded if insn.mnemonic == "push"}
             restored = {insn.op_str for insn in decoded if insn.mnemonic == "pop"}

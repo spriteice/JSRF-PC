@@ -806,19 +806,23 @@ class FunctionDetector:
             index = bisect.bisect_right(starts, entry)
             if index < len(starts):
                 upper = min(upper, starts[index])
+            # Every direct tail the body takes, not only its entry block's: a
+            # callback can return early and tail-jump to a shared epilogue
+            # further down (JSRF's 0x000C31B0, a vtable entry, to 0x000C2730).
+            tails = set()
             if self.engine.probes_as_callback_body(
                     entry, upper, tail_targets=proven,
-                    require_entry_frame=entry_frame and entry == target):
+                    require_entry_frame=entry_frame and entry == target,
+                    unproven_tails=tails):
                 proven.add(entry)
                 pending.pop()
                 continue
             if entry in visiting:
                 return False
             visiting.add(entry)
-            tail = self.engine.block_tail_jump(entry, max_insns=upper - entry)
-            if tail is None or tail in visiting or tail in proven:
+            if not tails or tails & visiting:
                 return False
-            pending.append(tail)
+            pending.extend(sorted(tails))
         return target in proven
 
     def _pass_imm_ref_targets(self, sections: List[SectionInfo]) -> bool:

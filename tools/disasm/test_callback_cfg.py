@@ -135,6 +135,32 @@ def test_table_thunk_chain_requires_a_proven_destination(valid):
     assert (BASE + 16 in detector._alias_entries) == valid
 
 
+@pytest.mark.parametrize('valid', [True, False])
+def test_table_entry_that_returns_early_still_proves_its_later_tail(valid):
+    # JSRF's 0x000C31B0, a vtable entry: its first block returns, and only a
+    # later path tail-jumps, to a shared epilogue that nothing else names.
+    #   +16: test eax, eax ; jne +1 ; ret ; jmp +64
+    from tools.disasm.engine import DisasmEngine
+    body = bytearray(b'\xcc' * 200)
+    for off in (0, 32, 96):
+        body[off] = 0xc3
+    body[16:21] = b'\x85\xc0\x75\x01\xc3'
+    body[21:26] = b'\xe9' + struct.pack('<i', 64 - 26)
+    body[64:66] = b'\x40\xc3' if valid else b'\xf4\xc3'
+    table = struct.pack('<I', BASE + 16)
+    text = SectionInfo('.text', BASE, len(body), 0, len(body), False, True, '')
+    data = SectionInfo('.data', BASE + 0x1000, len(table), len(body), len(table), False, False, '')
+    image = BinaryImage('synthetic', bytes(body) + table, 0, 0x20000, BASE, 0, [text, data])
+    engine = DisasmEngine(image)
+    engine.linear_sweep(text)
+    detector = FunctionDetector(engine, image, None, LabelManager())
+    for off in (0, 32, 96):
+        detector.functions[BASE + off] = Function(BASE + off, BASE + off + 1, 'known')
+    assert engine.block_tail_jump(BASE + 16) is None
+    detector._pass_data_ptr_targets([text])
+    assert (BASE + 16 in detector._alias_entries) == valid
+
+
 def test_entry_frame_rejects_an_epilogue_without_its_saves():
     for body, accepted in ((b'\x5b\xc3', False), (b'\x53\x5b\xc3', True),
                            (b'\x83\xc4\x08\xc3', False),  # add esp,8; ret
