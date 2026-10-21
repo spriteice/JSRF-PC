@@ -103,6 +103,28 @@ log. Found a bug? Open an issue on GitHub with last-run.log and what you were
 doing.
 
 
+Portable mode
+-------------
+Make a folder named "portable" next to "JSRF Unleashed.exe", and everything
+is kept in it instead -- nothing in %LOCALAPPDATA%, nothing in the game folder:
+
+  portable\settings.cfg   settings
+  portable\saves\         saves (UDATA and TDATA): back this folder up
+  portable\logs\          last-run.log and the logs before it
+  portable\cache\         the game's cache: safe to delete
+  portable\games\         disc images unpacked in portable mode
+
+The first time, it asks where the game is again, and copies the saves it
+finds in the game folder into portable\saves (the originals stay). A game
+folder inside this folder is remembered relative to it, so the whole folder
+can be moved, to a USB stick for instance, even under another drive letter.
+
+To update, extract the new version over this folder, or move portable\ into
+the new one: deleting the folder deletes your saves with it. Graphics drivers
+and the folder picker keep their own small files and settings in your user
+profile as they do for any program.
+
+
 On a Mac or Linux, through Wine or CrossOver
 --------------------------------------------
 There are native Mac and Linux builds, which are the better choice. The

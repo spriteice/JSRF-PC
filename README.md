@@ -74,6 +74,8 @@ Controllers work through SDL: Xbox, PlayStation, Switch Pro and many more.
 Saves are kept in the game folder, in `UDATA`, as on the Mac. The
 `README.txt` inside lists the options and where the settings and logs
 (`last-run.log`) are kept.
+A folder named `portable` next to **JSRF Unleashed.exe** keeps the settings,
+saves and logs in that folder instead.
 
 On a Mac, the Windows build also runs in [CrossOver](https://www.codeweavers.com/crossover)
 (a Windows 10 64-bit bottle, then **Run Command…** on JSRF Unleashed.exe),

@@ -16,8 +16,9 @@
  *   JSRF Unleashed.exe --version          which version this is
  *
  * Settings, saves, logs and unpacked disc images live in
- * %LOCALAPPDATA%\JSRF Unleashed. In game: F11 (or Alt+Enter) full screen,
- * F10 widescreen 16:9.
+ * %LOCALAPPDATA%\JSRF Unleashed -- or, with a folder named "portable" beside
+ * the launcher, in that folder, as on Linux. In game: F11 (or Alt+Enter) full
+ * screen, F10 widescreen 16:9.
  */
 #define WIN32_LEAN_AND_MEAN
 #ifndef UNICODE
@@ -43,8 +44,14 @@
 #define APP L"JSRF Unleashed"
 
 static wchar_t g_here[MAX_PATH];       /* the launcher's folder */
-static wchar_t g_base[MAX_PATH];       /* %LOCALAPPDATA%\JSRF Unleashed */
-static wchar_t g_cfg[MAX_PATH];        /* ...\settings, shared with the engine */
+static wchar_t g_portable[MAX_PATH];   /* its "portable" folder, or "" when there is none */
+static wchar_t g_base[MAX_PATH];       /* %LOCALAPPDATA%\JSRF Unleashed (portable\games):
+                                        * disc images are unpacked here */
+static wchar_t g_cfg[MAX_PATH];        /* ...\settings (portable\settings.cfg), shared with the engine */
+static wchar_t g_save[MAX_PATH];       /* the engine's cache: ...\save (portable\cache) */
+static wchar_t g_log[MAX_PATH];        /* ...\last-run.log (portable\logs\last-run.log) */
+static wchar_t g_logs[MAX_PATH];       /* the logs before it: ...\logs (portable\logs) */
+static wchar_t g_saves[MAX_PATH];      /* portable\saves: the game's saves, in portable mode */
 
 /* ---- small helpers -------------------------------------------------------- */
 
@@ -342,7 +349,8 @@ static int unpack(const wchar_t *iso, const wchar_t *dest)
     return 0;
 }
 
-/* An image is unpacked into %LOCALAPPDATA%\JSRF Unleashed\<its name>, once. */
+/* An image is unpacked into %LOCALAPPDATA%\JSRF Unleashed\<its name> (in
+ * portable mode, portable\games\<its name>), once. */
 static int game_from_image(const wchar_t *iso, wchar_t *game, size_t n)
 {
     wchar_t name[MAX_PATH], *dot, msg[1024];
@@ -449,6 +457,45 @@ static int other_release(const wchar_t *game)
     return 1;
 }
 
+/* ---- portable: the saves the game kept in its own folder ----------------------
+ *
+ * UDATA and TDATA are copied into portable\saves the first time, so the
+ * game's progress carries over. Copied, not moved: the originals stay where
+ * they were. Returns 0, or 1 when a copy failed (what it made is removed). */
+static int copy_saves(const wchar_t *game)
+{
+    static const wchar_t *const dirs[] = { L"UDATA", L"TDATA" };
+    wchar_t from[MAX_PATH * 2 + 1], to[MAX_PATH * 2 + 1], into[MAX_PATH + 1], msg[2048];
+    SHFILEOPSTRUCTW op;
+    size_t i;
+
+    for (i = 0; i < sizeof dirs / sizeof dirs[0]; i++) {
+        join(from, MAX_PATH * 2, game, dirs[i]);
+        join(to, MAX_PATH * 2, g_saves, dirs[i]);
+        if (!is_dir(from) || GetFileAttributesW(to) != INVALID_FILE_ATTRIBUTES) continue;
+        /* SHFileOperationW takes lists that end with two NULs. */
+        from[wcslen(from) + 1] = 0;
+        to[wcslen(to) + 1] = 0;
+        wcscpy(into, g_saves);
+        into[wcslen(into) + 1] = 0;
+        ZeroMemory(&op, sizeof op);
+        op.wFunc = FO_COPY;
+        op.pFrom = from;
+        op.pTo = into;
+        op.fFlags = FOF_NO_UI;
+        if (SHFileOperationW(&op) == 0 && !op.fAnyOperationsAborted) continue;
+        op.wFunc = FO_DELETE;
+        op.pFrom = to;
+        op.pTo = NULL;
+        SHFileOperationW(&op);
+        _snwprintf(msg, 2048, L"The saves in\n%ls\ncould not be copied into\n%ls\nso the game "
+                              L"was not started. The originals are untouched.", from, g_saves);
+        msg[2047] = 0;
+        return fail(msg);
+    }
+    return 0;
+}
+
 /* ---- the run ---------------------------------------------------------------- */
 
 static const wchar_t *const k_env[][2] = {
@@ -461,8 +508,7 @@ static const wchar_t *const k_env[][2] = {
 
 static int run(const wchar_t *game, int scale, int fullscreen)
 {
-    wchar_t engine[MAX_PATH * 2], cmd[MAX_PATH * 6], log[MAX_PATH * 2], logs[MAX_PATH * 2],
-            save[MAX_PATH * 2], sc[8], msg[2048];
+    wchar_t engine[MAX_PATH * 2], cmd[MAX_PATH * 6], sc[8], msg[2048];
     SECURITY_ATTRIBUTES sa;
     STARTUPINFOW si;
     PROCESS_INFORMATION pi;
@@ -474,11 +520,8 @@ static int run(const wchar_t *game, int scale, int fullscreen)
     if (!is_file(engine))
         return fail(L"engine\\jsrf_recomp.exe is missing. Unzip the whole download "
                     L"and keep the engine folder beside JSRF Unleashed.exe.");
-    join(save, MAX_PATH * 2, g_base, L"save");
-    SHCreateDirectoryExW(NULL, save, NULL);
-    join(log, MAX_PATH * 2, g_base, L"last-run.log");
-    join(logs, MAX_PATH * 2, g_base, L"logs");
-    rotate_logs(log, logs);
+    SHCreateDirectoryExW(NULL, g_save, NULL);
+    rotate_logs(g_log, g_logs);
 
     for (i = 0; i < sizeof k_env / sizeof k_env[0]; i++)
         SetEnvironmentVariableW(k_env[i][0], k_env[i][1]);
@@ -486,13 +529,16 @@ static int run(const wchar_t *game, int scale, int fullscreen)
     SetEnvironmentVariableW(L"RECOMP_GL_SCALE", sc);
     if (fullscreen) SetEnvironmentVariableW(L"RECOMP_FULLSCREEN", L"1");
     SetEnvironmentVariableW(L"JSRF_GAME_DIR", game);
-    SetEnvironmentVariableW(L"JSRF_SAVE_DIR", save);
+    SetEnvironmentVariableW(L"JSRF_SAVE_DIR", g_save);
     SetEnvironmentVariableW(L"JSRF_SETTINGS_FILE", g_cfg);
+    /* Portable: the game's saves go to portable\saves, not the game folder
+     * (the engine's path layer, src/kernel/kernel_path.c). */
+    if (g_portable[0]) SetEnvironmentVariableW(L"JSRF_USER_DIR", g_saves);
 
     ZeroMemory(&sa, sizeof sa);
     sa.nLength = sizeof sa;
     sa.bInheritHandle = TRUE;
-    out = CreateFileW(log, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa,
+    out = CreateFileW(g_log, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa,
                       CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     ZeroMemory(&si, sizeof si);
     si.cb = sizeof si;
@@ -504,7 +550,10 @@ static int run(const wchar_t *game, int scale, int fullscreen)
     }
     _snwprintf(cmd, MAX_PATH * 6, L"\"%ls\" \"%ls\"", engine, game);
     cmd[MAX_PATH * 6 - 1] = 0;
-    if (!CreateProcessW(engine, cmd, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, game, &si, &pi)) {
+    /* What the engine writes by a relative name (xbox_kernel.log, the icall
+     * dumps) goes to the game folder, or to the logs in portable mode. */
+    if (!CreateProcessW(engine, cmd, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL,
+                        g_portable[0] ? g_logs : game, &si, &pi)) {
         if (out != INVALID_HANDLE_VALUE) CloseHandle(out);
         _snwprintf(msg, 2048, L"Could not start the engine (error %lu).", GetLastError());
         msg[2047] = 0;
@@ -521,17 +570,17 @@ static int run(const wchar_t *game, int scale, int fullscreen)
         cfg_set("game_dir", "");
         _snwprintf(msg, 2048, L"%hs.\n\n%hs\n\n"
                               L"The log says what the files are:\n%ls", JSRF_XBE_HEADING,
-                              JSRF_XBE_OTHER_ADVICE, log);
+                              JSRF_XBE_OTHER_ADVICE, g_log);
         msg[2047] = 0;
         say(msg, MB_ICONWARNING);
     } else if (code != 0) {
         _snwprintf(msg, 2048, L"JSRF Unleashed stopped unexpectedly (exit %lu).\n\n"
                               L"The log is at:\n%ls\n\nIf you report the problem, please attach it.\n\n"
-                              L"Show the log in its folder?", (unsigned long)code, log);
+                              L"Show the log in its folder?", (unsigned long)code, g_log);
         msg[2047] = 0;
         if (MessageBoxW(NULL, msg, APP, MB_YESNO | MB_ICONWARNING | MB_SETFOREGROUND) == IDYES) {
             wchar_t arg[MAX_PATH * 3];
-            _snwprintf(arg, MAX_PATH * 3, L"/select,\"%ls\"", log);
+            _snwprintf(arg, MAX_PATH * 3, L"/select,\"%ls\"", g_log);
             arg[MAX_PATH * 3 - 1] = 0;
             ShellExecuteW(NULL, L"open", L"explorer.exe", arg, NULL, SW_SHOWNORMAL);
         }
@@ -557,8 +606,33 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
 
     GetModuleFileNameW(NULL, g_here, MAX_PATH);
     if ((slash = wcsrchr(g_here, L'\\')) != NULL) *slash = 0;
-    {
+    /* Looked for first, before anything is read or made: in portable mode
+     * nothing outside this folder is touched but the game's own files. */
+    join(g_portable, MAX_PATH, g_here, L"portable");
+    if (is_dir(g_portable)) {
+        wchar_t probe[MAX_PATH], msg[1024];
+        join(g_base, MAX_PATH, g_portable, L"games");
+        join(g_cfg, MAX_PATH, g_portable, L"settings.cfg");
+        join(g_save, MAX_PATH, g_portable, L"cache");
+        join(g_logs, MAX_PATH, g_portable, L"logs");
+        join(g_log, MAX_PATH, g_logs, L"last-run.log");
+        join(g_saves, MAX_PATH, g_portable, L"saves");
+        SHCreateDirectoryExW(NULL, g_logs, NULL);
+        SHCreateDirectoryExW(NULL, g_saves, NULL);
+        /* A portable folder that cannot be written stops here rather than
+         * falling back to %LOCALAPPDATA%, which would split the saves between
+         * two places. */
+        if (!GetTempFileNameW(g_portable, L"jsr", 0, probe)) {
+            _snwprintf(msg, 1024, L"The portable folder can't be written to:\n\n%ls\n\n"
+                                  L"Make it writable, or remove it to keep the settings, saves "
+                                  L"and logs in %%LOCALAPPDATA%%\\JSRF Unleashed instead.", g_portable);
+            msg[1023] = 0;
+            return fail(msg);
+        }
+        DeleteFileW(probe);
+    } else {
         PWSTR la = NULL;
+        g_portable[0] = 0;
         if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, NULL, &la)) && la) {
             join(g_base, MAX_PATH, la, L"JSRF Unleashed");
             CoTaskMemFree(la);
@@ -566,9 +640,12 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
             const wchar_t *e = _wgetenv(L"LOCALAPPDATA");
             join(g_base, MAX_PATH, e ? e : g_here, L"JSRF Unleashed");
         }
+        SHCreateDirectoryExW(NULL, g_base, NULL);
+        join(g_cfg, MAX_PATH, g_base, L"settings");
+        join(g_save, MAX_PATH, g_base, L"save");
+        join(g_log, MAX_PATH, g_base, L"last-run.log");
+        join(g_logs, MAX_PATH, g_base, L"logs");
     }
-    SHCreateDirectoryExW(NULL, g_base, NULL);
-    join(g_cfg, MAX_PATH, g_base, L"settings");
 
     for (i = 1; i < argc; i++) {
         if (!wcscmp(argv[i], L"--choose")) choose = 1;
@@ -603,6 +680,14 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
         if (!n || n >= MAX_PATH * 2) return fail(L"That path is too long.");
     } else if (!choose && cfg_get("game_dir", u8, sizeof u8)) {
         from_utf8(u8, game, MAX_PATH * 2);
+        /* Portable: a game folder inside this one is remembered relative to
+         * it (below), so the whole folder can move -- to another drive letter,
+         * a USB stick -- and still find it. */
+        if (g_portable[0] && game[0] && game[0] != L'\\' && game[0] != L'/' && game[1] != L':') {
+            wchar_t rel[MAX_PATH * 2];
+            wcscpy(rel, game);
+            join(game, MAX_PATH * 2, g_here, rel);
+        }
         if (!is_game(game)) game[0] = 0;
     }
     if (!game[0] && !pick_folder(game, MAX_PATH * 2))
@@ -633,8 +718,15 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
         cfg_set("game_dir", "");                    /* ask again next time */
         return 1;
     }
-    to_utf8(game, u8, sizeof u8);
+    {
+        size_t lh = wcslen(g_here);
+        const wchar_t *keep = game;
+        if (g_portable[0] && !_wcsnicmp(game, g_here, lh) && game[lh] == L'\\')
+            keep = game + lh + 1;
+        to_utf8(keep, u8, sizeof u8);
+    }
     cfg_set("game_dir", u8);
+    if (g_portable[0] && copy_saves(game)) return 1;
     if (cfg_get("scale", val, sizeof val)) {
         int s = atoi(val);
         if (s >= 1 && s <= 4) scale = s;
