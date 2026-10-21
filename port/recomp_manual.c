@@ -132,77 +132,8 @@ void recomp_icallv_dump(void)
                 (int)(g_icallv[i].esp1 - g_icallv[i].esp0), g_icallv[i].eax);
     }
 }
-/* ── A DirectSound spin, made cooperative ──────────────────────
- *
- * 0x001A308E, in the XDK's DirectSound library:
- *
- *     test byte  [ecx+0x12], 1        ; voice has a stop pending?
- *     je   done
- *   w: test word  [ecx+0x12], 0x8000  ; ...wait for the ISR to retire it
- *     jne  w
- *   done: ret
- *
- * On the console the APU interrupt preempts this loop and clears the bit.
- * Here the loop holds the guest lock, makes no calls (so the entry-hook
- * hand-off never fires), and the ISR runs on the timer thread, which needs
- * that lock: a livelock, seen as "held the guest lock for 143982 ms" with
- * one thread at 98.8% CPU. Same test, same bit, but the lock is dropped
- * for a moment between polls so the interrupt can land. The interrupt
- * itself is delivered by kernel_apu_tick() in the runtime. */
-extern void xbox_guest_lock_acquire(void);
-extern void xbox_guest_lock_release(void);
-int g_manual_trace;
-
-static void manual_sub_001A308E(void)
-{
-    uint32_t obj = g_ecx;
-    if (MEM8(obj + 0x12) & 1) {
-        unsigned polls = 0;
-        while (MEM16(obj + 0x12) & 0x8000) {
-            xbox_guest_lock_release();
-            usleep(100);
-            xbox_guest_lock_acquire();
-            if (++polls == 5000) {           /* half a second: say so, a few times */
-                static int said;
-                if (said++ < 3)
-                    fprintf(stderr, "[MANUAL] sub_001A308E: voice %08X still "
-                            "has its stop pending after 500 ms (flags %04X)\n",
-                            obj, MEM16(obj + 0x12));
-            }
-        }
-        if (g_manual_trace && polls) {
-            static unsigned n;
-            if (n++ < 5)
-                fprintf(stderr, "[MANUAL] sub_001A308E: waited %u polls for "
-                        "voice %08X\n", polls, obj);
-        }
-    }
-    g_esp += 4; return;                      /* ret */
-}
-
 recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
 {
-    /*
-     * TODO: Add your overrides here. Examples:
-     *
-     * if (xbox_va == 0x00012345) return traced_sub_00012345;
-     * if (xbox_va == 0x00067890) return stub_00067890;
-     * if (xbox_va == 0x000ABCDE) return fixed_sub_000ABCDE;
-     */
-
-    {
-        static int manual_on = -1;
-        if (manual_on < 0) {
-            manual_on = (getenv("JSRF_NO_MANUAL_LIFT") == NULL);
-            g_manual_trace = (getenv("JSRF_MANUAL_TRACE") != NULL);
-            fprintf(stderr, "[MANUAL] hand-lifted overrides %s: the "
-                    "DirectSound stop-pending wait\n",
-                    manual_on ? "ON" : "OFF");
-            fflush(stderr);
-        }
-        if (manual_on && xbox_va == 0x001A308Eu) return manual_sub_001A308E;
-    }
-
     (void)xbox_va;
     return (recomp_func_t)0;
 }
