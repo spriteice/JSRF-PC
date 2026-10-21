@@ -1207,6 +1207,29 @@ static int sdl_cfg_get(const char *key, int def)
     return v;
 }
 
+/* A number from the same file, for the game's own keys (port/freecam.c):
+ * 1 and *v when the key's last line holds one, -1 when it holds something
+ * else, 0 when there is no such key -- which sdl_cfg_get's atoi cannot tell
+ * apart, nor read 0.05. */
+int nv_window_pref_num(const char *key, double *v);
+int nv_window_pref_num(const char *key, double *v)
+{
+    char path[1024], line[1200], *end;
+    size_t kl = strlen(key);
+    FILE *f;
+    int r = 0;
+    sdl_cfg_path(path, sizeof path);
+    if (!path[0] || !(f = fopen(path, "r"))) return 0;
+    while (fgets(line, sizeof line, f))
+        if (!strncmp(line, key, kl) && line[kl] == '=') {
+            double d = strtod(line + kl + 1, &end);
+            r = end != line + kl + 1 && (*end == 0 || *end == '\n' || *end == '\r') ? 1 : -1;
+            if (r > 0) *v = d;
+        }
+    fclose(f);
+    return r;
+}
+
 static void sdl_cfg_set(const char *key, int val)
 {
     char path[1024], tmp[1100], line[1200];
@@ -1258,7 +1281,10 @@ int nv_window_pref_widescreen(void) { return sdl_cfg_get("widescreen", 0) != 0; 
  *   R          Black                    F  White
  *   Return     Start                    Esc  Back (and Android's Back)
  *   C / V      left / right stick click
- * F11 or Alt+Return: full screen. F10: widescreen. F9: resolution. */
+ * F11 or Alt+Return: full screen. F10: widescreen. F9: resolution. F8: the
+ * free camera, kept as "freecam" (port/freecam.c, which the runtime does
+ * without: the symbol is weak). */
+extern int jsrf_freecam_toggle(void) __attribute__((weak));
 static volatile unsigned short g_sdl_kb_buttons;
 static volatile unsigned char  g_sdl_kb_analog[8];
 
@@ -1989,6 +2015,10 @@ static void sdl_pump(void)
                 }
                 if (k == SDL_SCANCODE_F10) { sdl_toggle_widescreen(); break; }
                 if (k == SDL_SCANCODE_F9)  { sdl_choose_scale(); break; }
+                if (k == SDL_SCANCODE_F8 && jsrf_freecam_toggle) {
+                    sdl_cfg_set("freecam", jsrf_freecam_toggle());
+                    break;
+                }
             }
             sdl_key(ev.key.keysym.scancode, 1);
             break;

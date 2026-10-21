@@ -196,7 +196,9 @@ and where settings, saves and logs are kept. A folder named `portable` next to
 
 On Linux the keyboard layout is the same as below; **F11** (or Alt+Return)
 toggles full screen, **F10** widescreen, and **F9** sets the resolution (1× to
-4×; the game restarts to apply it).
+4×; the game restarts to apply it). **F8** turns on the free camera, on Linux and
+Windows: the right stick turns the camera around the player (its settings are
+in `README.txt`).
 
 ### Your game files
 

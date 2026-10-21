@@ -1,0 +1,180 @@
+/* The free camera (freecam.h): freecam=1 in the settings file, or F8.
+ *
+ * The follow camera keeps everything it works out for itself -- what it looks
+ * at, how far it stays, how high the eye sits, where a wall stops it -- and
+ * freecam only moves the eye around that target, by the right stick. Two
+ * angles say where: yaw, the way the view faces, and pitch, how far the eye
+ * is above (or below) the target. They start from the game's own view each
+ * time freecam takes over, so taking over never jumps, and again whenever the
+ * game puts its camera back behind the player (the L trigger). While it is on,
+ * spraying graffiti does not turn the camera to the spot.
+ *
+ * The stick is used as it comes: past the deadzone the turn per frame is in
+ * proportion to how far it is pushed, with nothing carried from one frame to
+ * the next -- no acceleration, no smoothing. The settings are read once, at
+ * the first use:
+ *
+ *   freecam        0 / 1    on at start (F8 flips it and keeps it here)
+ *   invert_x       0 / 1    0: right turns the view right
+ *   invert_y       0 / 1    0: up tilts the view up
+ *   sensitivity_x  1 - 10   36 degrees a second at full tilt per step
+ *   sensitivity_y  1 - 10
+ *   deadzone       0 - 1    0.05 = 5%, measured on the stick's distance from
+ *                           centre, and the speed rescaled from 0 at its edge
+ *
+ * A key that is missing takes its default; one that is out of range, or not
+ * a number, takes its default and says so in the log. */
+#include <math.h>
+#include <stdio.h>
+#include "freecam.h"
+
+/* Degrees per game frame, at full tilt, for each step of sensitivity: 36 a
+ * second at the game's 60 frames a second. */
+#define FREECAM_STEP_DEG 0.6
+/* How far the eye goes above or below the target, in degrees. The view is
+ * built from an eye, a target and an up direction, which turns over at
+ * straight up or down; this stays short of it. */
+#define FREECAM_PITCH_MAX_DEG 80.0
+
+static const double k_rad = 3.14159265358979323846 / 180.0;
+
+#if defined(NV2A_GL_USE_SDL)
+/* nv2a_gl.c: a number from the settings file the engine already keeps. */
+extern int nv_window_pref_num(const char *key, double *v);
+#else
+/* The Mac and iOS keep their settings as preferences of their own: no keys. */
+static int nv_window_pref_num(const char *key, double *v)
+{
+    (void)key; (void)v;
+    return 0;
+}
+#endif
+
+static struct {
+    int invert_x, invert_y;
+    double sens_x, sens_y, deadzone;
+} s_cfg = { 0, 0, 5.0, 5.0, 0.05 };      /* the defaults */
+static int s_loaded;
+static volatile int s_on;
+static volatile int s_steer;    /* on, and the follow camera ran last frame */
+static int s_follow_ran;        /* the follow camera ran since freecam_frame */
+static short s_stick[4][2];     /* each port's right stick, as last read */
+static uint32_t s_cam;          /* the camera yaw and pitch are for; 0: start them again */
+static double s_yaw, s_pitch;   /* radians */
+
+/* A key in [lo, hi], or def. */
+static double cfg_num(const char *key, double def, double lo, double hi)
+{
+    double v;
+    int r = nv_window_pref_num(key, &v);
+    if (r == 0) return def;
+    if (r > 0 && v >= lo && v <= hi) return v;
+    if (r > 0)
+        fprintf(stderr, "[FREECAM] settings: %s=%g is outside %g to %g; using %g\n",
+                key, v, lo, hi, def);
+    else
+        fprintf(stderr, "[FREECAM] settings: %s is not a number; using %g\n", key, def);
+    return def;
+}
+
+static void freecam_load(void)
+{
+    if (s_loaded) return;
+    s_loaded = 1;
+    s_on = cfg_num("freecam", 0, -HUGE_VAL, HUGE_VAL) != 0;
+    s_cfg.invert_x = cfg_num("invert_x", s_cfg.invert_x, -HUGE_VAL, HUGE_VAL) != 0;
+    s_cfg.invert_y = cfg_num("invert_y", s_cfg.invert_y, -HUGE_VAL, HUGE_VAL) != 0;
+    s_cfg.sens_x = cfg_num("sensitivity_x", s_cfg.sens_x, 1, 10);
+    s_cfg.sens_y = cfg_num("sensitivity_y", s_cfg.sens_y, 1, 10);
+    s_cfg.deadzone = cfg_num("deadzone", s_cfg.deadzone, 0, 1);
+    fprintf(stderr, "[FREECAM] %s (settings); invert x %d y %d, sensitivity x %g y %g, deadzone %g\n",
+            s_on ? "on" : "off", s_cfg.invert_x, s_cfg.invert_y, s_cfg.sens_x, s_cfg.sens_y,
+            s_cfg.deadzone);
+}
+
+void freecam_frame(void)
+{
+    int steer = s_on && s_follow_ran;
+    if (steer != s_steer)
+        fprintf(stderr, "[FREECAM] %s\n", steer ? "steering the camera"
+                : s_on ? "idle: the follow camera is not running" : "idle");
+    if (!s_follow_ran) s_cam = 0;
+    s_steer = steer;
+    s_follow_ran = 0;
+}
+
+void freecam_pad(unsigned port, short *rx, short *ry)
+{
+    freecam_load();
+    if (!rx) { s_stick[port & 3][0] = s_stick[port & 3][1] = 0; return; }
+    s_stick[port & 3][0] = *rx;
+    s_stick[port & 3][1] = *ry;
+    if (s_steer) *rx = *ry = 0;
+}
+
+/* The farthest-pushed right stick, -1..1 on each axis, past a radial
+ * deadzone and rescaled so that its edge is 0 and full tilt is 1. */
+static void freecam_stick(double *x, double *y)
+{
+    double best = -1, m, k;
+    int p;
+    *x = *y = 0;
+    for (p = 0; p < 4; p++) {
+        double sx = s_stick[p][0] / 32767.0, sy = s_stick[p][1] / 32767.0;
+        if (sx * sx + sy * sy > best) { best = sx * sx + sy * sy; *x = sx; *y = sy; }
+    }
+    m = sqrt(best);
+    if (m <= s_cfg.deadzone || s_cfg.deadzone >= 1) { *x = *y = 0; return; }
+    k = ((m > 1 ? 1 : m) - s_cfg.deadzone) / (1 - s_cfg.deadzone) / m;
+    *x *= k; *y *= k;
+}
+
+int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float seye[3],
+                  float raise, int reset, float eye[3])
+{
+    const double pmax = FREECAM_PITCH_MAX_DEG * k_rad, step = FREECAM_STEP_DEG * k_rad;
+    double v[3], d, x, y, cp;
+    freecam_load();
+    s_follow_ran = 1;
+    if (!s_on) return 0;
+    v[0] = seye[0] - tgt[0]; v[1] = seye[1] - tgt[1]; v[2] = seye[2] - tgt[2];
+    d = sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+    if (!(d > 0)) return 0;
+    if (cam != s_cam || reset) {
+        /* Left-handed, y up (as auto_step steers): the view faces from the
+         * eye to the target, heading atan2(x, z). */
+        s_yaw = atan2(-v[0], -v[2]);
+        s_pitch = asin(v[1] / d);
+        fprintf(stderr, "[FREECAM] following camera %08X (mode %u) from heading %.0f, pitch %.0f%s\n",
+                cam, mode, s_yaw / k_rad, s_pitch / k_rad,
+                cam == s_cam ? ", as the game put it back behind the player" : "");
+        s_cam = cam;
+    }
+    freecam_stick(&x, &y);
+    if (s_cfg.invert_x) x = -x;
+    if (s_cfg.invert_y) y = -y;
+    s_yaw = remainder(s_yaw + x * s_cfg.sens_x * step, 2 * 180.0 * k_rad);
+    s_pitch -= y * s_cfg.sens_y * step;     /* up tilts the view up: the eye goes down */
+    if (s_pitch > pmax) s_pitch = pmax;
+    if (s_pitch < -pmax) s_pitch = -pmax;
+    cp = cos(s_pitch);
+    eye[0] = (float)(tgt[0] - d * cp * sin(s_yaw));
+    eye[1] = (float)(tgt[1] + d * sin(s_pitch) + raise);
+    eye[2] = (float)(tgt[2] - d * cp * cos(s_yaw));
+    return 1;
+}
+
+int freecam_on(void)
+{
+    freecam_load();
+    return s_on;
+}
+
+int jsrf_freecam_toggle(void)
+{
+    freecam_load();
+    s_on = !s_on;
+    s_cam = 0;
+    fprintf(stderr, "[FREECAM] %s (F8)\n", s_on ? "on" : "off");
+    return s_on;
+}

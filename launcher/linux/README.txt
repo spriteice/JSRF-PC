@@ -63,6 +63,30 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
   F9                  resolution: the game is drawn at 1x to 4x the Xbox's
                       640x480 (2x by default), up to 2560x1920; remembered.
                       The game restarts to apply it, so save first.
+  F8                  free camera: the right stick turns the camera around
+                      the player; remembered (see Free camera below)
+
+
+Free camera
+-----------
+F8, or freecam=1 in the settings file, gives the right stick to the camera:
+it turns around the player, and forward is wherever it looks. The L trigger
+puts it back behind the player, as it does the game's camera, and spraying
+graffiti doesn't turn it to the wall. F8 is remembered. The settings file
+(see "Where things are kept") also takes these, one per line, with no spaces
+around "=". The values shown are the defaults, which a key that is left out,
+or out of range, gets:
+
+  freecam=0          1: on
+  invert_x=0         1: right turns the view left
+  invert_y=0         1: up tilts the view down
+  sensitivity_x=5    left-right speed, 1 to 10: 36 degrees a second per step
+  sensitivity_y=5    up-down speed, 1 to 10
+  deadzone=0.05      how far the stick moves before the camera does, 0 to 1
+                     (0.05 is 5%)
+
+With no keyboard (Steam's Game Mode), bind F8 to a controller button in Steam
+Input; the right stick click is free, as the game does not use it.
 
 
 Where things are kept

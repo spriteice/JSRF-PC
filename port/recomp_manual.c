@@ -1206,6 +1206,7 @@ void sub_0017CAB0(void)
  *   0x001C3EBD  XInputPoll(h)                            stdcall 4
  * ====================================================================== */
 #include "xinput_xbox.h"
+#include "freecam.h"
 #define XPP_TYPE_GAMEPAD 0x001BC860u
 #define XPP_HANDLE_BASE  0x58580000u
 
@@ -1993,6 +1994,7 @@ void sub_00116E30(void)
     uint32_t o = g_ecx;
     int k;
     s_game_frames++;
+    freecam_frame();
     sub_00116E30_gen();
     if (!voice_log_on() || o < 0x10000u || o + 0x200u >= (64u << 20)) return;
     s_sndmgr = o;
@@ -2403,7 +2405,11 @@ void sub_001C3E14(void)
     XBOX_INPUT_STATE s;
     static uint16_t last_btn; static uint8_t last_a;
     if ((h & 0xFFFF0000u) != XPP_HANDLE_BASE || !st) { g_eax = 0x57; g_esp += 12; return; }
-    if (!pad_read(h & 3, &s)) { g_eax = 0x48F; g_esp += 12; return; }   /* ERROR_DEVICE_NOT_CONNECTED */
+    if (!pad_read(h & 3, &s)) {                                        /* ERROR_DEVICE_NOT_CONNECTED */
+        freecam_pad(h & 3, NULL, NULL);
+        g_eax = 0x48F; g_esp += 12; return;
+    }
+    freecam_pad(h & 3, &s.Gamepad.sThumbRX, &s.Gamepad.sThumbRY);    /* the free camera's, while it steers */
     *(uint32_t *)(m + st) = s.dwPacketNumber;
     *(uint16_t *)(m + st + 4) = s.Gamepad.wButtons;
     memcpy(m + st + 6, s.Gamepad.bAnalogButtons, 8);
@@ -3932,9 +3938,29 @@ void sub_000A5070(void)
     static double next;
     const uint8_t *m = (const uint8_t *)g_xbox_mem_offset;
     const uint32_t lim = 64u << 20;
-    uint32_t cam = g_ecx;
+    uint32_t cam = g_ecx, sprayed = 0;
+    uint32_t *gcam = NULL;
     if (on < 0) on = getenv("JSRF_CAM_LOG") != NULL;
+    /* While the free camera (port/freecam.c) is on, the camera never turns to
+     * the graffiti being sprayed: mode 13, which frames the spot and snaps
+     * back behind the player after. The spray code (sub_0008D280) asks for it
+     * with +0xE3C on the player, and the mode is chosen from that here; this
+     * update reads 0 in its place, and nothing it calls reads or writes it
+     * (the player's own code does, outside it), so it is put back after. */
+    if (freecam_on() && cam >= 0x10000u && cam + 0x240u < lim) {
+        uint32_t who = ((const uint32_t *)(m + cam))[0x24 / 4];
+        if (who >= 0x10000u && who + 0xE40u < lim) {
+            gcam = (uint32_t *)(uintptr_t)(m + who + 0xE3C);
+            sprayed = *gcam;
+            *gcam = 0;
+        }
+    }
+    { static uint32_t was;
+      if (sprayed && !was)
+          fprintf(stderr, "[FREECAM] t=%.2f graffiti: no graffiti camera while freecam is on\n", pad_now());
+      was = sprayed; }
     sub_000A5070_gen();
+    if (gcam) *gcam = sprayed;
     if (cam >= 0x10000u && cam + 0x240u < lim)
         s_cam_mode_now = ((const uint32_t *)(m + cam))[0x208 / 4];
     { static int hooks = -1;
@@ -3994,6 +4020,82 @@ void sub_000A5070(void)
             memcpy(last, now, sizeof last);
         }
     }
+}
+
+/* ---- the free camera (port/freecam.c) ----------------------------------
+ * sub_000A6100 is the follow camera's post-update: the one the table at
+ * 0x2155AC gives modes 3, 4, 5, 9 and 13, which jumps to sub_000A5B60. When
+ * it returns, the working eye (+0x20C) is final for the frame; sub_000A28B0
+ * then copies it to the camera's eye (+0x44) and takes the heading the
+ * controls follow from it. freecam_orbit moves it around the working target
+ * (+0x218), at the distance of the game's smoothed eye (+0x1E4) and with the
+ * game's raise (+0xE4), and the game's own wall test runs again on it.
+ *
+ * The L trigger (sub_00080340), and the player's set-up (sub_000836F0), ask
+ * for the camera back behind the player: +0xE5C on the one it follows
+ * (sub_00011BD0, +0x24). sub_000A5B60 does it -- its smoothed eye snaps
+ * behind -- and clears the request; when it was cleared here, freecam starts
+ * again from that eye.
+ *
+ * That test is sub_000A5B60's: a line from the target to the eye against the
+ * world (sub_00018260 on 0x22FCE8, mask 0x33B7) and, when it is blocked, the
+ * point to stop at (sub_000194B0), with its scratch laid out as that
+ * function's locals -- 0x50 bytes, the hit record at +0x40, the result's
+ * pointer at +0 -- and the return addresses of its own calls. */
+extern void sub_00018260(void);
+extern void sub_000194B0(void);
+static void freecam_walls(uint32_t cam)
+{
+    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
+    const uint32_t lim = 64u << 20;
+    uint32_t sv_ecx = g_ecx, scr, a[6], r, res;
+    g_esp -= 0x50;
+    scr = g_esp;
+    a[0] = cam + 0xBC; a[1] = cam + 0x218; a[2] = cam + 0x20C; a[3] = scr + 0x40;
+    a[4] = 0x33B7; a[5] = 0xFFFFFFFFu;
+    g_ecx = 0x0022FCE8u;
+    if (guest_call_cdecl(sub_00018260, 0x000A602Au, 6, a)) {
+        *(uint32_t *)(m + scr) = 0;
+        a[0] = scr + 0x40; a[1] = scr;
+        g_ecx = 0x0022FCE8u;
+        r = guest_call_cdecl(sub_000194B0, 0x000A604Cu, 2, a);
+        res = *(uint32_t *)(m + scr);
+        if (res >= 0x10000u && res + 0x5Cu < lim) {
+            static double next;
+            memcpy(m + cam + 0x20C, m + res + (r ? 0x50 : 0x2C), 12);
+            if (pad_now() >= next) {
+                const float *e = (const float *)(m + cam + 0x20C);
+                next = pad_now() + 1.0;
+                fprintf(stderr, "[FREECAM] t=%.2f wall: eye pulled in to (%.1f %.1f %.1f)\n",
+                        pad_now(), e[0], e[1], e[2]);
+            }
+        } else if (res) {
+            static int once;
+            if (!once++) fprintf(stderr, "[FREECAM] wall test gave %08X; no wall test\n", res);
+        }
+    }
+    g_ecx = sv_ecx;
+    g_esp += 0x50;
+}
+extern void sub_000A6100_gen(void);
+void sub_000A6100(void)
+{
+    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
+    const uint32_t lim = 64u << 20;
+    uint32_t cam = g_ecx, who = 0, asked = 0;
+    float *cf, eye[3];
+    if (cam >= 0x10000u && cam + 0x240u < lim) {
+        who = *(uint32_t *)(m + cam + 0x24);
+        if (who >= 0x10000u && who + 0xE60u < lim) asked = *(uint32_t *)(m + who + 0xE5C);
+    }
+    sub_000A6100_gen();
+    if (cam < 0x10000u || cam + 0x240u >= lim) return;
+    cf = (float *)(m + cam);
+    if (!freecam_orbit(cam, ((const uint32_t *)cf)[0x208 / 4], cf + 0x218 / 4, cf + 0x1E4 / 4,
+                       cf[0xE4 / 4], asked && !*(uint32_t *)(m + who + 0xE5C), eye))
+        return;
+    memcpy(cf + 0x20C / 4, eye, sizeof eye);
+    freecam_walls(cam);
 }
 
 /* ---- camera call counters (JSRF_CAM_LOG=1): which camera methods and mode
