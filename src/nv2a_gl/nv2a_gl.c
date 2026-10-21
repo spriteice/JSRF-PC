@@ -855,6 +855,7 @@ static struct {
     uint32_t checked;       /* the frame its content was last compared in */
     uint32_t last_draw;     /* when this entry was last looked up */
     uint32_t tex;           /* the device's texture */
+    uint32_t va, serial;    /* read from: where, and the allocation (contig_serial) */
     int      bias;          /* uploaded as a bump source (g_upload_bias_bg) */
     int      used;
 } g_tcache[TEX_CACHE];
@@ -2066,13 +2067,18 @@ static int gl_init(uint32_t w, uint32_t h)
 
 #endif /* NV2A_GL_USE_SDL */
 
-/* Which contiguous allocation holds a surface offset now (0: none, or not
- * in the window). Surfaces are physical offsets; the window maps physical P
- * at XBOX_CONTIG_BASE + P. */
+/* Which contiguous allocation holds guest address va now (0: none, or not
+ * in the window). */
+static uint32_t contig_serial(uint32_t va)
+{
+    return va - XBOX_CONTIG_BASE < XBOX_CONTIG_SIZE ? xbox_ContiguousBlockSerial(va) : 0;
+}
+
+/* The same for a surface offset. Surfaces are physical offsets; the window
+ * maps physical P at XBOX_CONTIG_BASE + P. */
 static uint32_t surf_serial(uint32_t offset)
 {
-    offset &= 0x0FFFFFFFu;
-    return offset < XBOX_CONTIG_SIZE ? xbox_ContiguousBlockSerial(XBOX_CONTIG_BASE + offset) : 0;
+    return contig_serial(XBOX_CONTIG_BASE + (offset & 0x0FFFFFFFu));
 }
 
 /* Make the framebuffer for `offset` current, creating it if this is the first
@@ -2890,6 +2896,32 @@ static uint32_t tex_content(const TexStage *t, const uint8_t *src, uint32_t byte
         h = vc_hash(src + (size_t)i * pitch, row, h);
     return (uint32_t)(h ^ (h >> 32));
 }
+/* Empty a slot but keep its place in the probe chains: a tombstone that
+ * matches no lookup, and that the next upload probing past it fills. */
+static void tcache_drop(uint32_t k)
+{
+    if (g_tcache[k].used && g_tcache[k].tex) {
+        G->tex_free(g_tcache[k].tex);
+        g_prof.tex_held--;
+        g_prof.tex_held_bytes -= (unsigned long long)g_tcache[k].w * g_tcache[k].h * 4;
+    }
+    g_tcache[k].tex = 0;
+    g_tcache[k].offset = 0xFFFFFFFFu;
+    g_tcache[k].hash = 0xFFFFFFFFu;
+}
+/* Once a frame: drop every texture whose memory the title has freed since
+ * it was uploaded. JSRF's D3D frees a stage's textures when it leaves it
+ * (MmFreeContiguousMemory), and nothing looks those entries up again: they
+ * stayed on the GPU until the table was full, stage after stage. A texture
+ * read from outside the contiguous window has no allocation to go by. */
+static void tcache_sweep(void)
+{
+    uint32_t k;
+    for (k = 0; k < TEX_CACHE; k++)
+        if (g_tcache[k].tex && g_tcache[k].serial
+         && contig_serial(g_tcache[k].va) != g_tcache[k].serial)
+            tcache_drop(k);
+}
 static uint32_t upload_texture_inner(const TexStage *t)
 {
     uint32_t va = resolve(t->offset);
@@ -2898,7 +2930,7 @@ static uint32_t upload_texture_inner(const TexStage *t)
     uint32_t tex;
     uint8_t *rgba = NULL;
     Nv2aSampler smp;
-    int slot = -1, stale = -1, hashed = 0;
+    int slot = -1, stale = -1, tomb = -1, hashed = 0;
 
     if (!w || !h || w > 4096 || h > 4096) return 0;
 
@@ -2974,8 +3006,10 @@ static uint32_t upload_texture_inner(const TexStage *t)
             return g_tcache[k].tex;
         }
         if (!g_tcache[k].used) { slot = (int)k; break; }
+        if (!g_tcache[k].tex && tomb < 0) tomb = (int)k;   /* see tcache_drop */
     }
     if (stale >= 0) slot = stale;
+    else if (tomb >= 0) slot = tomb;
     if (slot < 0) {
         /* Full: evict, but never something this draw is still using. Four
          * texture stages can be bound at once, so anything touched within the
@@ -3002,16 +3036,8 @@ static uint32_t upload_texture_inner(const TexStage *t)
                   S.draws, S.flips, t->offset, w, h, t->color, t->pitch,
                   S.xf_mode == NV2A_XF_MODE_FIXED ? "ff" : "vp");
       } }
-    if (g_tcache[slot].used && g_tcache[slot].tex) {
-        G->tex_free(g_tcache[slot].tex);
-        g_tcache[slot].tex = 0;
-        g_prof.tex_held--;
-        g_prof.tex_held_bytes -= (unsigned long long)g_tcache[slot].w * g_tcache[slot].h * 4;
-    }
-    /* Until the new texture exists the slot holds nothing: a tombstone that
-     * keeps its place in the probe chain and matches no lookup. */
-    g_tcache[slot].offset = 0xFFFFFFFFu;
-    g_tcache[slot].hash = 0xFFFFFFFFu;
+    /* Until the new texture exists the slot holds nothing. */
+    tcache_drop((uint32_t)slot);
 
     if (fmt_is_dxt(t->color)) {
         /* Decoded here rather than handed to the driver compressed.
@@ -3272,6 +3298,7 @@ static uint32_t upload_texture_inner(const TexStage *t)
     g_tcache[slot].w = w; g_tcache[slot].h = h; g_tcache[slot].pitch = t->pitch;
     g_tcache[slot].hash = hash; g_tcache[slot].tex = tex;
     g_tcache[slot].bias = g_upload_bias_bg;
+    g_tcache[slot].va = va; g_tcache[slot].serial = contig_serial(va);
     g_tcache[slot].content = hashed ? content : tex_content(t, src, bytes);
     g_tcache[slot].checked = S.flips;
     g_tcache[slot].last_draw = S.draws;
@@ -8709,7 +8736,7 @@ static void present(int is_frame)
     uint8_t *dst;
 
     if (!g_ready || !g_fbo_w || !g_fbo_h || !S.color_offset) return;
-    if (is_frame) { S.frames++; prof_report();
+    if (is_frame) { S.frames++; prof_report(); tcache_sweep();
                     /* the census counts one frame, not everything since the
                      * last dump -- otherwise it measures the gap, not the
                      * picture next to it */
