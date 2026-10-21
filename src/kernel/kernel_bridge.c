@@ -6256,6 +6256,13 @@ static volatile unsigned g_lock_owner_irql;
 /* Interrupts delivered from inside a spin rather than on the timer thread. */
 static unsigned long g_spin_isrs;
 static volatile long long     g_lock_since;
+/* Whose time slice is running, and since when. Unlike g_lock_since it does
+ * not restart when the same thread takes the lock back; see
+ * xbox_guest_lock_yield_now. Written and read only under the lock. */
+static unsigned long g_slice_owner;
+static long long     g_slice_since;
+/* Slices that ended in a hand-over, for the [LOCK] report. */
+static unsigned long g_slice_handoffs;
 
 /* Per-thread queueing statistics, kept in a small fixed table so that
  * reporting them needs no allocation and no lock of its own. */
@@ -6377,6 +6384,10 @@ void xbox_guest_lock_acquire(void)
     t_guest_since = (long long)GetTickCount64();
     g_lock_owner = GetCurrentThreadId();
     g_lock_owner_edge = 0;
+    if (g_slice_owner != g_lock_owner) {
+        g_slice_owner = g_lock_owner;
+        g_slice_since = t_guest_since;
+    }
 #ifdef __APPLE__
     g_lock_owner_pt = pthread_self();
 #endif
@@ -6469,6 +6480,9 @@ void xbox_guest_lock_stats(void)
                 g_lock_wait_ms[i]);
         g_lock_takes[i] = 0; g_lock_hold_ms[i] = 0; g_lock_wait_ms[i] = 0;
     }
+    fprintf(stderr, "        %lu time slices ended in a hand-over\n",
+            g_slice_handoffs);
+    g_slice_handoffs = 0;
     fflush(stderr);
 }
 void xbox_guest_lock_release(void)
@@ -6724,10 +6738,18 @@ void xbox_guest_lock_yield_now(void)
         }
     }
     if (!t_guest_holds) return;
+    /* The slice runs from when this thread took the lock over from another,
+     * not from its latest retake. A thread that drops the lock around a
+     * kernel call which returns at once takes it straight back, before any
+     * waiter has woken, and a slice restarted there never runs out. In game
+     * JSRF's main thread enters DirectSound's critical section thousands of
+     * times a second, so it held the lock 94% of the time and almost never
+     * handed it over, and the timer thread, which delivers the vertical
+     * blank, queued for it 72-96% of the time. */
     { static long long slice = -1;
       if (slice < 0) { const char *e = getenv("RECOMP_SLICE_MS");
                        slice = e ? atoll(e) : 4; if (slice < 0) slice = 0; }
-      if ((long long)GetTickCount64() - t_guest_since < slice) return; }
+      if ((long long)GetTickCount64() - g_slice_since < slice) return; }
     xbox_guest_lock_release();
     /*
      * Hand the lock over, rather than merely offering it.
@@ -6754,6 +6776,7 @@ void xbox_guest_lock_yield_now(void)
                          handoff = e ? atol(e) : 60; if (handoff < 0) handoff = 0; }
       if (handoff && __atomic_load_n(&g_xbox_guest_cpu_preempt,
                                      __ATOMIC_RELAXED) > 0) {
+          __atomic_add_fetch(&g_slice_handoffs, 1, __ATOMIC_RELAXED);
           /* Sleep(0) yields only to equal-priority runnable threads, which a
            * thread blocked on the lock is not; Sleep(1) is the shortest wait
            * this shim guarantees actually leaves the CPU. */
