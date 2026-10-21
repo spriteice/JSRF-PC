@@ -1335,17 +1335,20 @@ static void bridge_ExAllocatePoolWithTag(void)
     g_eax = xbox_va;
 }
 
-/* ── KfRaiseIrql / KfLowerIrql (ordinals 160, 161) ────── */
+/* ── KfRaiseIrql / KfLowerIrql (ordinals 160, 161, fastcall: level in cl)
+ * Not STACK_ARG(0), for the reason ObfDereferenceObject gives: the level never
+ * reaches the stack. Read from there, a thread's IRQL became the low byte of
+ * whatever its caller pushed last -- after any DirectSound call, a saved esi --
+ * so it nearly always sat at DISPATCH_LEVEL or above, and its loop back edges
+ * never handed the guest lock over (xbox_GuestCpuPreempt). */
 static void bridge_KfRaiseIrql(void)
 {
-    uint32_t new_irql = STACK_ARG(0);
-    g_eax = (uint32_t)xbox_KfRaiseIrql((UCHAR)new_irql);
+    g_eax = (uint32_t)xbox_KfRaiseIrql((UCHAR)g_ecx);
 }
 
 static void bridge_KfLowerIrql(void)
 {
-    uint32_t new_irql = STACK_ARG(0);
-    xbox_KfLowerIrql((UCHAR)new_irql);
+    xbox_KfLowerIrql((UCHAR)g_ecx);
     g_eax = 0;
 }
 
@@ -6263,6 +6266,9 @@ static unsigned long g_slice_owner;
 static long long     g_slice_since;
 /* Slices that ended in a hand-over, for the [LOCK] report. */
 static unsigned long g_slice_handoffs;
+/* Back-edge checks that found the holder at DISPATCH_LEVEL or above, where
+ * no hand-over is made, for the same report. */
+static unsigned long g_slice_irql_held;
 
 /* Per-thread queueing statistics, kept in a small fixed table so that
  * reporting them needs no allocation and no lock of its own. */
@@ -6482,7 +6488,10 @@ void xbox_guest_lock_stats(void)
     }
     fprintf(stderr, "        %lu time slices ended in a hand-over\n",
             g_slice_handoffs);
+    fprintf(stderr, "        %lu back-edge checks put off at raised IRQL\n",
+            g_slice_irql_held);
     g_slice_handoffs = 0;
+    g_slice_irql_held = 0;
     fflush(stderr);
 }
 void xbox_guest_lock_release(void)
@@ -6819,6 +6828,8 @@ void xbox_GuestCpuPreempt(uint32_t va)
         kernel_raise_interrupt_here(APU_VECTOR);
     if (g_lock_owner_irql < DISPATCH_LEVEL)
         xbox_guest_lock_yield_now();
+    else
+        g_slice_irql_held++;
 }
 /* Give the guest lock up across a wait that is not a kernel call.
  *

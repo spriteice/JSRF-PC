@@ -176,6 +176,39 @@ def test_arg_sizes_are_dword_multiples():
     print("ok  arg_sizes_are_dword_multiples")
 
 
+def test_fastcall_bridges_read_registers():
+    """A fastcall export takes its arguments in ecx and edx, not on the stack.
+
+    The arg-size table says which ones are fastcall, and nothing tied the
+    bridge bodies to it. KfRaiseIrql and KfLowerIrql read STACK_ARG(0), the
+    caller's last push, so every thread's IRQL was a stray byte -- nearly
+    always DISPATCH_LEVEL or above -- and a loop back edge never handed the
+    guest lock to the timer thread, which delivers the vblank and the APU
+    interrupt. In game it queued for that lock most of every second.
+    """
+    with open(BRIDGE_C, encoding="utf-8", errors="replace") as fh:
+        src = fh.read()
+    m = re.search(r"static int stdcall_args_for_ordinal.*?\n\}", src, re.S)
+    assert m, "could not locate stdcall_args_for_ordinal"
+    fastcall = sorted({int(o) for o in re.findall(
+        r"case\s+(\d+):\s*return\s+0;\s*/\*[^*]*fastcall", m.group(0))})
+    assert fastcall, "no fastcall entries in the arg-size table"
+    routes = dict(load_routes())
+    bad = []
+    for ordinal in fastcall:
+        name = routes.get(ordinal)
+        if name is None:
+            continue
+        body = re.search(r"static void bridge_%s\(void\)\s*\{(.*?)\n\}" % name,
+                         src, re.S)
+        assert body, f"could not locate bridge_{name}"
+        if "STACK_ARG" in body.group(1):
+            bad.append(f"ordinal {ordinal} (bridge_{name}) is fastcall but "
+                       f"reads STACK_ARG")
+    assert not bad, "\n  ".join(bad)
+    print(f"ok  fastcall_bridges_read_registers ({len(fastcall)} fastcall)")
+
+
 def load_data_exports():
     """(ordinal, KDATA slot) for every entry in kernel_data_va_for_ordinal."""
     src = open(BRIDGE_C, encoding="utf-8", errors="replace").read()
