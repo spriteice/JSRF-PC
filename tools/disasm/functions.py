@@ -122,6 +122,15 @@ class FunctionDetector:
         # Pass 5: Build functions from candidates
         self._build_functions(sections)
 
+        # Pass 5b: Calls that never return. A body measured past one runs on
+        # into the next function and hides it from every pass below. MSVC
+        # marks most with int3; a call into a wrapper around one is unmarked,
+        # and JSRF's loader threads all end by calling such a wrapper.
+        if self.engine.mark_no_return(
+                {f.start: f.end for f in self.functions.values()}):
+            self.functions.clear()
+            self._build_functions(sections)
+
         # Pass 6: Tail-jump targets. A function reached only by "jmp" and never
         # by "call" is invisible to every pass above, so it is emitted as a stub
         # that returns without unwinding the frame its jumping caller built --
@@ -283,7 +292,10 @@ class FunctionDetector:
         all of that, or None when the bytes cannot be sized.
         """
         for _ in range(16):
-            addr = self._skip_padding(addr)
+            # A table's first slot can begin with a padding byte (0x90, 0xcc).
+            if (addr not in self.engine.jump_tables
+                    and not self.engine.is_jump_table_ref(addr)):
+                addr = self._skip_padding(addr)
             if addr in self.engine.jump_tables:
                 end = self.engine.jump_tables[addr]
                 arms = (end - addr) // 4
@@ -361,8 +373,6 @@ class FunctionDetector:
 
         Returns whether anything was added, so the caller can rebuild.
         """
-        if not self.engine.jump_tables:
-            return False
         bounds = sorted((f.start, f.end) for f in self.functions.values())
         starts = [b[0] for b in bounds]
         code_ranges = [(sec.virtual_addr, sec.virtual_addr + sec.virtual_size)
@@ -379,9 +389,17 @@ class FunctionDetector:
         for tbl in self.engine.jump_tables:
             arms.update(self.engine.jump_table_entries(tbl))
 
+        # Every table a dispatch names. resync_jump_tables measures only
+        # those of 3 or more entries, and a function can follow a shorter one:
+        # JSRF's 0x0007BE30 sits behind a 2-entry table and its byte index
+        # table, and is otherwise reached only through a pointer.
+        tables = set(self.engine.jump_tables)
+        tables.update(insn.jump_table for insn in self.engine.instructions.values()
+                      if insn.jump_table is not None)
+
         found = 0
-        for tbl, end in sorted(self.engine.jump_tables.items()):
-            addr = self._past_switch_data(end, (end - tbl) // 4)
+        for tbl in sorted(tables):
+            addr = self._past_switch_data(tbl, 0)
             if addr is None or addr in arms:
                 continue
             # Opcodes 0x00-0x0E are `add`, `or` and segment pushes. No function
@@ -1603,7 +1621,8 @@ class FunctionDetector:
                     addr = skipped
                     continue
 
-            if insn.is_ret or (insn.is_jump and not insn.is_cond_jump):
+            if (insn.is_ret or (insn.is_jump and not insn.is_cond_jump)
+                    or (insn.is_call and self.engine.call_never_returns(insn))):
                 # Stop only once we have decoded *past* every internal branch
                 # target. A target is an address that must be inside the
                 # function, so landing exactly on it is not coverage -- the

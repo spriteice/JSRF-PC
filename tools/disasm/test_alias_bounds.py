@@ -23,6 +23,7 @@ class _Insn:
         self.address = addr
         self.end_address = addr + 4
         self.is_ret = ret
+        self.is_call = False
         self.is_jump = False
         self.is_cond_jump = jcc is not None
         self.is_branch = jcc is not None

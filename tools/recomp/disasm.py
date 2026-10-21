@@ -250,8 +250,10 @@ class Disassembler:
         return [decoded[a] for a in sorted(decoded)]
 
     def disassemble_cfg(self, raw_bytes, start_va, end_va, entry_points,
-                        stop_addresses=None, stop_mnemonics=()):
-        """Decode reachable instruction streams from an explicit worklist."""
+                        stop_addresses=None, stop_mnemonics=(), no_return=()):
+        """Decode reachable instruction streams from an explicit worklist.
+
+        A call into `no_return` ends its stream: nothing after it runs."""
         size = end_va - start_va
         if size <= 0 or size > len(raw_bytes):
             return []
@@ -281,6 +283,8 @@ class Disassembler:
                         worklist.append(insn.jump_target)
                     break
                 if insn.is_ret or insn.mnemonic in stop_mnemonics:
+                    break
+                if insn.is_call and insn.call_target in no_return:
                     break
 
         return [decoded[addr] for addr in sorted(decoded)]

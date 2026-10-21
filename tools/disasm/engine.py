@@ -137,6 +137,9 @@ class DisasmEngine:
         # the dword table it feeds. disp -> addresses of the reads, so that
         # index_table_length() can find the bound check in front of one.
         self.byte_tables: Dict[int, List[int]] = {}
+        # Function starts proven never to return. A call into one ends its
+        # block; see mark_no_return().
+        self.no_return: Set[int] = set()
 
     def _classify_instruction(self, cs_insn: CsInsn) -> Instruction:
         """Convert a Capstone instruction to our Instruction type."""
@@ -669,12 +672,14 @@ class DisasmEngine:
     def probes_as_callback_body(self, addr: int, upper: int,
                                 lower: Optional[int] = None,
                                 tail_targets=(), *, require_entry_frame=False,
-                                allow_indirect_tails=False) -> bool:
+                                allow_indirect_tails=False,
+                                may_return=True) -> bool:
         """Read-only proof of a closed callback CFG inside an unclaimed gap.
 
         Calls may return from other functions; branches and fallthrough must
         stay on decoded instruction boundaries. Reuse the translator's CFG
         decoder and the sweep's measured switch tables, without a size cap.
+        With may_return=False, a ret or an indirect tail fails the proof.
         """
         from ..recomp.disasm import Disassembler
 
@@ -710,7 +715,8 @@ class DisasmEngine:
         while True:
             decoded = decoder.disassemble_cfg(
                 raw, lower, upper, entries,
-                stop_mnemonics=("int3", "int", "ud2", "hlt", "iret", "iretd"))
+                stop_mnemonics=("int3", "int", "ud2", "hlt", "iret", "iretd"),
+                no_return=self.no_return)
             arms = set()
             for insn in decoded:
                 if not insn.is_jump or insn.jump_target is not None:
@@ -751,12 +757,17 @@ class DisasmEngine:
                     and insn.address not in branch_targets):
                 exits = True
                 continue
+            if insn.is_call and self.call_never_returns(insn):
+                exits = True
+                continue
             if (set(insn.groups) & {CS_GRP_INT, CS_GRP_IRET, CS_GRP_PRIVILEGE}
                     or insn.mnemonic.split()[-1] in (
                         "ud2", "ud0", "ud1", "retf", "in", "out",
                         "insb", "insw", "insd", "outsb", "outsw", "outsd")):
                 return False
             if insn.is_ret or insn.address in indirect_tails:
+                if not may_return:
+                    return False
                 exits = True
                 continue
             edges = []
@@ -799,6 +810,43 @@ class DisasmEngine:
                     or all("esp" not in insn.regs_written for insn in decoded)):
                 return False
         return bool(decoded) and (exits or backward)
+
+    def call_never_returns(self, insn: Instruction) -> bool:
+        """Does control end at this call? It does when the callee is in
+        no_return, or when MSVC follows the call with int3, as it does after
+        any call it knows never returns (an import's ExitThread included).
+        The int3 after `int 0x2d` is the debug service's slide byte instead.
+        """
+        follow = self.instructions.get(insn.end_address)
+        return (insn.call_target in self.no_return
+                or (follow is not None and follow.mnemonic == "int3"))
+
+    def mark_no_return(self, bodies: Dict[int, int]) -> bool:
+        """Add to no_return every body (start -> end) that never returns.
+
+        Such a body closes its CFG with no ret and leaves only through a call
+        that never returns: one MSVC follows with int3, or one into a body
+        already marked. Wrappers of those are found by iterating. Until then
+        descent and extents run past the call into whatever follows, usually
+        the next function, and claim it. Returns whether any were added.
+        """
+        starts = sorted(bodies)
+        callers: Dict[int, Set[int]] = {}
+        for insn in self.instructions.values():
+            if insn.is_call and insn.call_target is not None:
+                i = bisect.bisect_right(starts, insn.address) - 1
+                if i >= 0 and insn.address < bodies[starts[i]]:
+                    callers.setdefault(insn.call_target, set()).add(starts[i])
+        before = len(self.no_return)
+        pending = set(bodies)
+        while pending:
+            found = {start for start in pending - self.no_return
+                     if self.probes_as_callback_body(
+                         start, bodies[start], tail_targets=self.no_return,
+                         may_return=False)}
+            self.no_return |= found
+            pending = set().union(*(callers.get(f, ()) for f in found))
+        return len(self.no_return) > before
 
     def _first_arm_after(self, table: int, site: int) -> Optional[int]:
         """The lowest entry of a measured jump table that lies past `site`,
@@ -1134,6 +1182,8 @@ class DisasmEngine:
                 if insn.is_call and insn.call_target is not None:
                     if in_bounds(insn.call_target) and insn.call_target not in visited_starts:
                         worklist.append(insn.call_target)
+                if insn.is_call and self.call_never_returns(insn):
+                    break
 
                 # Follow conditional jump targets (and continue fall-through)
                 if insn.is_cond_jump and insn.jump_target is not None:

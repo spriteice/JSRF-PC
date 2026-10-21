@@ -34,7 +34,8 @@ class Image:
         self.data = data
         self.image_size = len(data)
         self.section = SimpleNamespace(name=".text", virtual_addr=BASE,
-                                       virtual_size=len(data), executable=True)
+                                       virtual_size=len(data),
+                                       raw_size=len(data), executable=True)
         self.sections = [self.section]
 
     def get_section_at_va(self, addr):
@@ -138,6 +139,26 @@ def test_function_after_a_switch_table_is_found():
     assert follower in det.functions, sorted(hex(a) for a in det.functions)
     assert det.functions[follower].detection_method == "jump_table_follower"
     assert det.functions[follower].end == follower + len(FOLLOWER)
+
+
+def test_function_after_a_two_entry_table_is_found():
+    # JSRF's 0x0007BE30: two arms are too few for resync_jump_tables to
+    # measure, but the jmp still names the table, and its index bytes follow.
+    data, table, follower, _ = _owner_with_table(bytes([0, 1, 1, 0, 1]),
+                                                 n_arms=2)
+    det, engine = _detect(data)
+    assert table not in engine.jump_tables
+    assert follower in det.functions, sorted(hex(a) for a in det.functions)
+
+
+def test_a_table_whose_first_slot_reads_as_padding_is_not_skipped():
+    # JSRF's table at 0x00031934 opens with 0x00031790, and its 0x90 is a
+    # nop to the padding skip, which then started a function one byte in.
+    data, table, follower, _ = _owner_with_table()
+    engine, image = _engine(data)
+    image.data = data[:table - BASE] + b"\x90" + data[table - BASE + 1:]
+    det = FunctionDetector(engine, image, XRefTracker(), LabelManager())
+    assert det._past_switch_data(table, 0) == follower
 
 
 def test_padding_in_front_of_a_table_is_not_a_prologue():

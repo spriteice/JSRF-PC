@@ -37,6 +37,7 @@ class _Insn:
         self.jump_target = target
         self.jump_table = jump_table
         self.is_ret = is_ret
+        self.is_call = False
         self.is_jump = is_jump
         self.is_cond_jump = is_cond_jump
         self.is_branch = is_jump or is_cond_jump
