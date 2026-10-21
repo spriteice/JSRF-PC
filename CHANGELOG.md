@@ -10,6 +10,62 @@ its version. Downloads are on the
 [Releases](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/releases)
 page.
 
+## 0.5.0 — 21 October 2026
+
+- **Less stutter: new textures appear about six times faster.** The first
+  time the game uses a texture it is converted on the CPU, and a new area
+  brings dozens at once: when 99th Street starts, 59 arrive in one frame and
+  65 in another, and each was a freeze of about a fifth of a second; new
+  parts of an area coming into view mid-play cost smaller ones. A compressed
+  (DXT) texture was decoded per pixel, decoding its whole 4×4 block for every
+  pixel of it, and a swizzled one worked out where each pixel lives from
+  scratch every time. Each block is decoded once now, and the layout is worked
+  out once per texture: the same 59 textures take about 35 ms, with exactly
+  the same pixels.
+- **Less stutter: shaders are kept, and built before the game needs them.**
+  The first time the game draws something new, its shaders are built and
+  the game waits. Every shader built is now kept, in a `shaders` folder in
+  the app's own data folder (on a Mac, `~/Library/Application Support/JSRF
+  Unleashed/save`; not the game folder), and at the next start they are built
+  again before they are needed: on Metal by two background threads while the
+  title screen runs, with the pipeline states each was drawn with; on OpenGL
+  a few milliseconds at a time on frames with little to draw (menus, loading
+  screens). Where the driver hands out compiled programs (Windows, Linux,
+  Android), each is kept compiled, for that driver, and loaded instead of
+  built. With OpenGL on a Mac, which keeps nothing between sessions, four
+  minutes on 99th Street spent about 430 ms building shaders, and now about
+  50 ms; on Linux (Mesa) a shader that took 13.8 ms loads in 1.5 ms. On Metal,
+  macOS keeps compiled shaders itself, so the gain there is small. A shader
+  needed for the first time on a machine is still built on the spot. The
+  folder can be deleted at any time; `RECOMP_SHADER_CACHE=0` turns the cache
+  off and `RECOMP_SHADER_BINARIES=0` keeps sources only.
+- **No more grey spikes.** Some objects shot long grey spikes across the
+  screen for a moment, for instance on the staircase that winds around the
+  garage's centre platform. The reciprocal step of the game's vertex
+  programs (RCC) lost its sign, so points just behind the camera were thrown
+  across the screen; it keeps its sign now, its size held between 2^-64 and
+  2^64 as on the console, the perspective divide never meets a zero, and the
+  address register is set as the console sets it.
+- **Mac: no stutter with the window covered.** macOS slows down the timers
+  of an app whose window is covered (App Nap), and the game paces itself,
+  streams and plays its music on timers: a covered window stuttered in
+  quarter-second stalls. The game declares itself latency-critical work for
+  as long as it runs.
+- **The log says what each stutter was.** Every frame that took one and a
+  half frames or longer is written to `last-run.log` (`[HITCH]`) with the
+  shaders built in it, the textures converted and the time left to the game
+  itself; the first 200, then one in 50, and a total at the end.
+- Tested on the Mac with Metal and OpenGL: New Game, then 99th Street,
+  four minutes of skating, each renderer with and without the shader cache
+  and with the old and the new texture conversion; the final Mac app ran the
+  title on both. The new texture conversion was compared with the old one
+  pixel for pixel on DXT1, DXT3 and DXT5 at many sizes, and the swizzle
+  offsets on every power-of-two size up to 2048×2048. The shader cache also
+  ran on Linux (Mesa) with its files empty, filled and damaged; the final
+  Windows build ran under Wine twice, its shaders built and saved the first
+  time and loaded already compiled the second, and the final Linux build ran
+  on Mesa. The Android and iPhone builds were built and checked, not run.
+
 ## 0.4.9 — 20 October 2026
 
 - **The character select shows the skaters where they are.** Each rudie

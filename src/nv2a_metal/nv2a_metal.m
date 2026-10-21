@@ -56,6 +56,7 @@
 #include <TargetConditionals.h>
 
 #include "../nv2a_gl/nv2a_backend.h"
+#include "../nv2a_gl/nv2a_shader_cache.h"
 
 #if !__has_feature(objc_arc)
 #error "nv2a_metal.m is written for ARC: compile it with -fobjc-arc"
@@ -121,6 +122,7 @@ static uint32_t g_cur_rt;
 typedef struct {
     id<MTLFunction> vf, ff;
     uint64_t        uses;      /* bit per Nv2aUniformId the source reads */
+    uint64_t        skey;      /* the shader cache's key for its sources, 0 none */
     uint32_t        gen;       /* changes each time the slot is reused */
     int             used;
 } MtlProg;
@@ -702,22 +704,112 @@ static id<MTLFunction> compile_fn(const char *src, NSString *name, const char *w
     return [lib newFunctionWithName:name];
 }
 
+/* ---- the shader cache (nv2a_shader_cache.h) ----------------------------------
+ *
+ * Compiling a program's Metal source took 30 ms on average in a measured run
+ * and up to 190, and making its pipeline state another 12 -- each one a
+ * visible stall when the game first draws something new. So every program
+ * built is remembered on disk with the pipeline states it was drawn with, and
+ * at the next start two background threads build them all again, in the order
+ * the game first needed them, while the title runs. A program the game asks
+ * for that they have built is handed over; one they have not reached yet is
+ * compiled as before, and they then only make its pipeline states.
+ *
+ * The tables below are shared with those threads, under g_warm_mu. */
+#define MTL_MAX_WARM 4096
+/* `ahead` says who made an entry: 1 those threads, 0 the render thread
+ * (kept, so that a program the game drops and asks for again, or a pipeline
+ * state for a slot used again, is not built twice). */
+static struct { uint64_t key; id<MTLFunction> vf, ff; int ahead; } g_wfn[MTL_MAX_WARM];
+static int g_nwfn;
+static struct { uint64_t key; uint32_t recipe; id<MTLRenderPipelineState> pso; int ahead; } g_wpso[MTL_MAX_WARM * 2];
+static int g_nwpso;
+static pthread_mutex_t g_warm_mu = PTHREAD_MUTEX_INITIALIZER;
+/* the render thread's: found built ahead / found kept from earlier this run */
+static unsigned g_warm_hits, g_keep_hits, g_warm_pso_hits, g_keep_pso_hits;
+static atomic_int g_warm_built, g_warm_psos, g_warm_running;
+
+/* A program's functions: 0 none, 1 kept from this run, 2 built ahead. */
+static int warm_fn_get(uint64_t key, id<MTLFunction> __strong *vf, id<MTLFunction> __strong *ff)
+{
+    int i, found = 0;
+    pthread_mutex_lock(&g_warm_mu);
+    for (i = 0; i < g_nwfn; i++)
+        if (g_wfn[i].key == key) { *vf = g_wfn[i].vf; *ff = g_wfn[i].ff; found = g_wfn[i].ahead ? 2 : 1; break; }
+    pthread_mutex_unlock(&g_warm_mu);
+    return found;
+}
+
+/* Keep a program's functions (once per key): 1 if they went in. */
+static int warm_fn_put(uint64_t key, id<MTLFunction> vf, id<MTLFunction> ff, int ahead)
+{
+    int i, put = 0;
+    pthread_mutex_lock(&g_warm_mu);
+    for (i = 0; i < g_nwfn; i++) if (g_wfn[i].key == key) break;
+    if (i == g_nwfn && g_nwfn < MTL_MAX_WARM) {
+        g_wfn[g_nwfn].key = key; g_wfn[g_nwfn].vf = vf; g_wfn[g_nwfn].ff = ff; g_wfn[g_nwfn].ahead = ahead;
+        g_nwfn++;
+        put = 1;
+    }
+    pthread_mutex_unlock(&g_warm_mu);
+    return put;
+}
+
+/* A pipeline state for a program's key and a recipe, or nil; *ahead says
+ * who made it. */
+static id<MTLRenderPipelineState> warm_pso_get(uint64_t key, uint32_t recipe, int *ahead)
+{
+    id<MTLRenderPipelineState> pso = nil;
+    int i;
+    pthread_mutex_lock(&g_warm_mu);
+    for (i = 0; i < g_nwpso; i++)
+        if (g_wpso[i].key == key && g_wpso[i].recipe == recipe) {
+            pso = g_wpso[i].pso;
+            if (ahead) *ahead = g_wpso[i].ahead;
+            break;
+        }
+    pthread_mutex_unlock(&g_warm_mu);
+    return pso;
+}
+
+static void warm_pso_put(uint64_t key, uint32_t recipe, id<MTLRenderPipelineState> pso, int ahead)
+{
+    int i;
+    pthread_mutex_lock(&g_warm_mu);
+    for (i = 0; i < g_nwpso; i++) if (g_wpso[i].key == key && g_wpso[i].recipe == recipe) break;
+    if (i == g_nwpso && g_nwpso < MTL_MAX_WARM * 2) {
+        g_wpso[g_nwpso].key = key; g_wpso[g_nwpso].recipe = recipe; g_wpso[g_nwpso].pso = pso;
+        g_wpso[g_nwpso].ahead = ahead;
+        g_nwpso++;
+    }
+    pthread_mutex_unlock(&g_warm_mu);
+}
+
 static uint32_t mtl_prog_new(const char *vsrc, const char *fsrc, const char *what)
 {
     uint32_t i;
-    id<MTLFunction> vf, ff;
+    id<MTLFunction> vf = nil, ff = nil;
+    uint64_t key;
     if (!vsrc || !fsrc) return 0;
     for (i = 0; i < MTL_MAX_PROG; i++) if (!g_prog[i].used) break;
     if (i == MTL_MAX_PROG) { fprintf(stderr, "  [MTL] out of program slots\n"); return 0; }
+    key = nv2a_sc_is_open() ? nv2a_sc_key(vsrc, fsrc) : 0;
     @autoreleasepool {
-        double t0 = now_ms();
-        vf = compile_fn(vsrc, @"nv2a_vsh_main", what, 0);
-        ff = vf ? compile_fn(fsrc, @"nv2a_psh_main", what, 1) : nil;
-        g_ms_compile += now_ms() - t0;
-        if (!vf || !ff) return 0;
+        int have = key ? warm_fn_get(key, &vf, &ff) : 0;
+        if (have) {
+            if (have == 2) g_warm_hits++; else g_keep_hits++;
+        } else {
+            double t0 = now_ms();
+            vf = compile_fn(vsrc, @"nv2a_vsh_main", what, 0);
+            ff = vf ? compile_fn(fsrc, @"nv2a_psh_main", what, 1) : nil;
+            g_ms_compile += now_ms() - t0;
+            if (!vf || !ff) return 0;
+            if (key) { nv2a_sc_add(key, vsrc, fsrc); warm_fn_put(key, vf, ff, 0); }
+        }
         g_prog[i].vf = vf;
         g_prog[i].ff = ff;
     }
+    g_prog[i].skey = key;
     g_prog[i].uses = uniforms_used(vsrc, fsrc);
     g_prog[i].gen = ++g_prog_gen;
     g_prog[i].used = 1;
@@ -858,38 +950,18 @@ static MTLColorWriteMask cmask_of(uint32_t cm)
     return m;
 }
 
-static id<MTLRenderPipelineState> pso_for(uint32_t prog)
+/* A pipeline state for a pair of functions and a recipe -- the 32 bits of
+ * pso_for's key that describe the blend: on/off, write mask, the factors. */
+static id<MTLRenderPipelineState> make_pso(id<MTLFunction> vf, id<MTLFunction> ff, uint32_t recipe,
+                                           NSError *__autoreleasing *err)
 {
-    static int nob = -1;
-    MtlProg *p = &g_prog[prog - 1];
-    int blend;
-    uint32_t src, dst, cm, i;
-    uint64_t key, h;
-    MTLRenderPipelineDescriptor *pd;
-    NSError *err = nil;
+    int blend = (int)(recipe >> 31);
+    uint32_t cm = (recipe >> 27) & 0xF, src = (recipe >> 12) & 0xFFF, dst = recipe & 0xFFF;
     id<MTLRenderPipelineState> pso;
-
-    if (nob < 0) nob = env_on("RECOMP_GL_NOBLEND");
-    blend = g_rs.blend_enable && !nob;
-    src = blend ? (uint32_t)g_rs.blend_src & 0xFFFF : 0;
-    dst = blend ? (uint32_t)g_rs.blend_dst & 0xFFFF : 0;
-    cm = (uint32_t)cmask_of(g_rs.color_mask);
-    /* program generation | blending | write mask | source | destination;
-     * the factors are GL enums, 0x0000-0x0001 and 0x0300-0x0308, which fit
-     * in 12 bits each. Never 0: 0 marks an empty slot. */
-    key = (uint64_t)p->gen << 32 | (uint64_t)(blend ? 1 : 0) << 31 | (uint64_t)cm << 27
-        | (uint64_t)(src & 0xFFF) << 12 | (uint64_t)(dst & 0xFFF);
-    key = key * 2 + 1;
-    h = key * 0x9E3779B97F4A7C15ull;
-    for (i = 0; i < MTL_PSO_CACHE; i++) {
-        MtlPso *e = &g_pso[(h + i) & (MTL_PSO_CACHE - 1)];
-        if (e->key == key) return e->pso;
-        if (!e->key) break;
-    }
     @autoreleasepool {
-        pd = [MTLRenderPipelineDescriptor new];
-        pd.vertexFunction = p->vf;
-        pd.fragmentFunction = p->ff;
+        MTLRenderPipelineDescriptor *pd = [MTLRenderPipelineDescriptor new];
+        pd.vertexFunction = vf;
+        pd.fragmentFunction = ff;
         pd.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA8Unorm;
         pd.colorAttachments[0].writeMask = (MTLColorWriteMask)cm;
         if (blend) {
@@ -903,13 +975,108 @@ static id<MTLRenderPipelineState> pso_for(uint32_t prog)
         }
         pd.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
         pd.stencilAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
-        {
-            double t0 = now_ms(), dt;
-            pso = [g_dev newRenderPipelineStateWithDescriptor:pd error:&err];
-            dt = now_ms() - t0;
-            g_ms_pso += dt;
-            if (dt > g_ms_pso_max) g_ms_pso_max = dt;
+        pso = [g_dev newRenderPipelineStateWithDescriptor:pd error:err];
+    }
+    return pso;
+}
+
+/* The builders: worker w of n takes the cache's programs w, w+n, w+2n...
+ * Each one's functions come from the table when the render thread (or the
+ * other worker) already has them, and are compiled otherwise; then every
+ * pipeline state an earlier run drew it with is made. */
+static void warm_build(int w, int n, int count)
+{
+    int i, k;
+    for (i = w; i < count; i += n) {
+        uint64_t key; const char *v, *f;
+        uint32_t rc[64];
+        int nr;
+        if (!nv2a_sc_entry(i, &key, &v, &f)) continue;
+        @autoreleasepool {
+            id<MTLFunction> vf = nil, ff = nil;
+            if (!warm_fn_get(key, &vf, &ff)) {
+                vf = compile_fn(v, @"nv2a_vsh_main", "a cached program", 0);
+                ff = vf ? compile_fn(f, @"nv2a_psh_main", "a cached program", 1) : nil;
+                if (!vf || !ff) continue;
+                if (warm_fn_put(key, vf, ff, 1)) atomic_fetch_add(&g_warm_built, 1);
+            }
+            nr = nv2a_sc_recipes(key, rc, 64);
+            for (k = 0; k < nr; k++) {
+                NSError *err = nil;
+                id<MTLRenderPipelineState> pso;
+                if (warm_pso_get(key, rc[k], NULL)) continue;
+                pso = make_pso(vf, ff, rc[k], &err);
+                if (!pso) continue;
+                warm_pso_put(key, rc[k], pso, 1);
+                atomic_fetch_add(&g_warm_psos, 1);
+            }
         }
+    }
+}
+
+static void mtl_cache_open(const char *dir, const char *tag)
+{
+    enum { WORKERS = 2 };
+    int n, w;
+    double t0;
+    if (!nv2a_sc_open(dir, tag)) return;
+    n = nv2a_sc_count();
+    if (!n) return;
+    fprintf(stderr, "  [SHADERS] Metal: building %d programs from earlier runs in the background\n", n);
+    t0 = now_ms();
+    atomic_store(&g_warm_running, WORKERS);
+    for (w = 0; w < WORKERS; w++) {
+        int me = w;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            warm_build(me, WORKERS, n);
+            if (atomic_fetch_sub(&g_warm_running, 1) == 1)
+                fprintf(stderr, "  [SHADERS] Metal: %d programs and %d pipeline states built ahead in %.0f ms\n",
+                        atomic_load(&g_warm_built), atomic_load(&g_warm_psos), now_ms() - t0);
+        });
+    }
+}
+
+static id<MTLRenderPipelineState> pso_for(uint32_t prog)
+{
+    static int nob = -1;
+    MtlProg *p = &g_prog[prog - 1];
+    int blend;
+    uint32_t src, dst, cm, i, recipe;
+    uint64_t key, h;
+    NSError *err = nil;
+    id<MTLRenderPipelineState> pso;
+
+    if (nob < 0) nob = env_on("RECOMP_GL_NOBLEND");
+    blend = g_rs.blend_enable && !nob;
+    src = blend ? (uint32_t)g_rs.blend_src & 0xFFFF : 0;
+    dst = blend ? (uint32_t)g_rs.blend_dst & 0xFFFF : 0;
+    cm = (uint32_t)cmask_of(g_rs.color_mask);
+    /* program generation | blending | write mask | source | destination;
+     * the factors are GL enums, 0x0000-0x0001 and 0x0300-0x0308, which fit
+     * in 12 bits each. Never 0: 0 marks an empty slot. */
+    recipe = (uint32_t)((blend ? 1u : 0u) << 31 | cm << 27 | (src & 0xFFFu) << 12 | (dst & 0xFFFu));
+    key = (uint64_t)p->gen << 32 | recipe;
+    key = key * 2 + 1;
+    h = key * 0x9E3779B97F4A7C15ull;
+    for (i = 0; i < MTL_PSO_CACHE; i++) {
+        MtlPso *e = &g_pso[(h + i) & (MTL_PSO_CACHE - 1)];
+        if (e->key == key) return e->pso;
+        if (!e->key) break;
+    }
+    {
+        int ahead = 0;
+        pso = p->skey ? warm_pso_get(p->skey, recipe, &ahead) : nil;
+        if (pso) {
+            if (ahead) g_warm_pso_hits++; else g_keep_pso_hits++;
+        }
+    }
+    if (!pso) {
+        double t0 = now_ms(), dt;
+        pso = make_pso(p->vf, p->ff, recipe, &err);
+        dt = now_ms() - t0;
+        g_ms_pso += dt;
+        if (dt > g_ms_pso_max) g_ms_pso_max = dt;
+        if (pso && p->skey) { nv2a_sc_recipe_add(p->skey, recipe); warm_pso_put(p->skey, recipe, pso, 0); }
     }
     if (!pso) {
         static int said;
@@ -1615,6 +1782,14 @@ static int mtl_init(void)
 
 static void mtl_report(void)
 {
+    if (nv2a_sc_is_open()) {
+        int progs = 0, added = 0;
+        nv2a_sc_stats(&progs, NULL, &added);
+        fprintf(stderr, "  [SHADERS] programs asked for: %u built ahead, %u kept from earlier; pipeline states: "
+                "%u built ahead, %u kept; background: %d programs, %d pipelines%s; on disk %d programs (%d new)\n",
+                g_warm_hits, g_keep_hits, g_warm_pso_hits, g_keep_pso_hits, atomic_load(&g_warm_built),
+                atomic_load(&g_warm_psos), atomic_load(&g_warm_running) ? " (still building)" : "", progs, added);
+    }
     uint32_t live_tex = 0, live_rt = 0, live_prog = 0, i;
     for (i = 0; i < MTL_MAX_TEX; i++)  if (g_tex[i].used)  live_tex++;
     for (i = 0; i < MTL_MAX_RT; i++)   if (g_rt[i].used)   live_rt++;
@@ -1659,6 +1834,8 @@ static void mtl_report(void)
     }
 }
 
+static double mtl_pipeline_ms(void) { return g_ms_pso; }
+
 static const Nv2aGfx g_metal = {
     "metal", NV2A_LANG_MSL, 0,
     mtl_init,
@@ -1669,6 +1846,10 @@ static const Nv2aGfx g_metal = {
     mtl_uniform_f, mtl_uniform_i,
     mtl_texture, mtl_state, mtl_state_invalidate,
     mtl_vertices, mtl_draw, mtl_clear, mtl_present, mtl_report,
+    NULL, NULL, NULL, NULL, NULL,       /* kept vertex buffers: not here */
+    NULL,                               /* uniform_f_part */
+    mtl_pipeline_ms,
+    mtl_cache_open, NULL,       /* builds on a thread of its own */
 };
 
 const Nv2aGfx *nv2a_gfx_metal(void) { return &g_metal; }

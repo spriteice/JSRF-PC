@@ -11,7 +11,7 @@ if(IOS)
     # port's ios/jsrf_ios.m, which defines what nv2a_window_mac.m does here.
     add_library(xbox_nv2a_gl STATIC
         nv2a_vsh.c nv2a_vsh_interp.c nv2a_psh.c nv2a_uniforms.c nv2a_gl.c
-        ../nv2a_metal/nv2a_metal.m)
+        nv2a_shader_cache.c ../nv2a_metal/nv2a_metal.m)
     set_source_files_properties(../nv2a_metal/nv2a_metal.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
     target_include_directories(xbox_nv2a_gl PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../d3d)
@@ -31,6 +31,7 @@ set(NV2A_GL_SOURCES
     nv2a_uniforms.c
     nv2a_gl.c
     nv2a_gfx_gl.c
+    nv2a_shader_cache.c
 )
 if(APPLE)
     # An AppKit window, so the frame can be watched rather than only dumped.

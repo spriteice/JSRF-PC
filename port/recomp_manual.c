@@ -1374,16 +1374,19 @@ static void test_hooks_step(uint8_t *ch)
  * digits each (0x00010001 is mssn0101, the tutorial; 0x00010060 is mssn0196,
  * what follows it). Every request is logged once per id.
  * JSRF_MISSION="101:196@20" (test only): from 20 s on, a request for 0101 is
- * turned into one for 0196 -- straight to the end of the tutorial. */
+ * turned into one for 0196 -- straight to the end of the tutorial. Up to four
+ * pairs, comma-separated, share the time: "0x10001:0x200FA,0x10064:0x200FA@45"
+ * sends New Game's tutorial and Load Game's garage alike to 99th Street. */
 static uint32_t s_mission_mgr;   /* the object whose vtable requests missions */
 static void mission_hook(const char *what)
 {
-    static int init; static uint32_t from, to; static double after;
+    static int init; static uint32_t from[4], to[4]; static double after; static int npairs;
     static uint32_t said[32]; static int nsaid;
     uint32_t *arg = (uint32_t *)((uint8_t *)g_xbox_mem_offset + g_esp + 4);
     uint32_t id = *arg; int i, seen = 0;
     if (!init) {
         const char *e = getenv("JSRF_MISSION"); unsigned a, b; double t = 0;
+        const char *at = e ? strchr(e, '@') : NULL;
         init = 1;
         /* An id is (chapter << 16) | number and the file is named after
          * the number modulo 100: 0x000100C4 (196) loads mssn0196, the scene
@@ -1391,11 +1394,16 @@ static void mission_hook(const char *what)
          * "101:196" therefore meant 0x00010060, the right files under the
          * wrong number, and the game hung on "Now Loading". Values of
          * 0x10000 and up are taken as ids: JSRF_MISSION="0x10001:0x100C4". */
-        if (e && sscanf(e, "%i:%i@%lf", (int *)&a, (int *)&b, &t) >= 2) {
-            from = a >= 0x10000u ? a : ((a / 100) << 16) | (a % 100);
-            to   = b >= 0x10000u ? b : ((b / 100) << 16) | (b % 100);
-            after = t;
+        if (at) t = atof(at + 1);
+        while (e && npairs < 4 && sscanf(e, "%i:%i", (int *)&a, (int *)&b) == 2) {
+            from[npairs] = a >= 0x10000u ? a : ((a / 100) << 16) | (a % 100);
+            to[npairs]   = b >= 0x10000u ? b : ((b / 100) << 16) | (b % 100);
+            npairs++;
+            e = strchr(e, ',');
+            if (!e || (at && e > at)) break;
+            e++;
         }
+        after = t;
     }
     for (i = 0; i < nsaid; i++) if (said[i] == (id ^ (what[0] << 24))) seen = 1;
     if (!seen && nsaid < 32) {
@@ -1409,11 +1417,13 @@ static void mission_hook(const char *what)
         fprintf(stderr, "\n");
     }
     if (what[0] == '.' && what[1] == 'b') s_mission_mgr = g_ecx;
-    if (from && id == from && pad_now() >= after) {
-        fprintf(stderr, "[MISSION] t=%.1f %s: redirecting mssn%02u%02u -> mssn%02u%02u\n",
-                pad_now(), what, from >> 16, from & 0xFFFF, to >> 16, to & 0xFFFF);
-        *arg = to;
-    }
+    for (i = 0; i < npairs; i++)
+        if (id == from[i] && pad_now() >= after) {
+            fprintf(stderr, "[MISSION] t=%.1f %s: redirecting mssn%02u%02u -> mssn%02u%02u\n",
+                    pad_now(), what, from[i] >> 16, from[i] & 0xFFFF, to[i] >> 16, to[i] & 0xFFFF);
+            *arg = to[i];
+            break;
+        }
 }
 /* ---- sub_00046FD0: fill in one storage device's record for the save menu
  * (slot 8 is the hard disk: +0 present, +4 ?, +8 room for a save, +0xC the

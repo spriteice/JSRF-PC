@@ -14,6 +14,7 @@
  */
 
 #include "nv2a_backend.h"
+#include "nv2a_shader_cache.h"
 
 #define GL_GLEXT_PROTOTYPES 1
 #if defined(NV2A_GLES)
@@ -37,6 +38,14 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#if defined(_WIN32)
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  include <windows.h>      /* QueryPerformanceCounter, for the shader cache's budget */
+#else
+#  include <time.h>
+#endif
 
 #if defined(NV2A_GLES)
 #include <string.h>
@@ -306,6 +315,7 @@ static int glx_tex_read(uint32_t t, uint32_t w, uint32_t h, void *bgra)
 /* ---- programs and uniforms ----------------------------------------------- */
 
 #define MAX_PROGS 4096
+static int g_bin_ok;             /* program binaries are saved and loaded */
 static struct {
     GLuint prog;
     GLint  loc[NV2A_U_COUNT];
@@ -377,18 +387,11 @@ static GLuint compile(GLenum stage, const char *src, const char *what)
     return s;
 }
 
-static uint32_t glx_prog_new(const char *vsrc, const char *fsrc, const char *what)
+/* Compile and link: a GL program object, or 0 having said why. */
+static GLuint glx_build(const char *vsrc, const char *fsrc, const char *what)
 {
     GLuint vs, fs, prog;
     GLint ok = 0;
-    int i, id;
-
-    if (!g_prog) {
-        g_prog = calloc(MAX_PROGS, sizeof *g_prog);
-        if (!g_prog) return 0;
-    }
-    for (i = 0; i < MAX_PROGS; i++) if (!g_prog[i].used) break;
-    if (i == MAX_PROGS) { fprintf(stderr, "  [GL] out of program slots\n"); return 0; }
 
     vs = compile(GL_VERTEX_SHADER, vsrc, what);
     if (!vs) return 0;
@@ -397,6 +400,7 @@ static uint32_t glx_prog_new(const char *vsrc, const char *fsrc, const char *wha
     prog = glCreateProgram();
     glAttachShader(prog, vs);
     glAttachShader(prog, fs);
+    if (g_bin_ok) glProgramParameteri(prog, GL_PROGRAM_BINARY_RETRIEVABLE_HINT, GL_TRUE);
     glLinkProgram(prog);
     glGetProgramiv(prog, GL_LINK_STATUS, &ok);
     glDeleteShader(vs);
@@ -408,6 +412,19 @@ static uint32_t glx_prog_new(const char *vsrc, const char *fsrc, const char *wha
         glDeleteProgram(prog);
         return 0;
     }
+    return prog;
+}
+
+/* A linked program into the table, with its uniforms looked up. */
+static uint32_t glx_adopt(GLuint prog)
+{
+    int i, id;
+    if (!g_prog) {
+        g_prog = calloc(MAX_PROGS, sizeof *g_prog);
+        if (!g_prog) { glDeleteProgram(prog); return 0; }
+    }
+    for (i = 0; i < MAX_PROGS; i++) if (!g_prog[i].used) break;
+    if (i == MAX_PROGS) { fprintf(stderr, "  [GL] out of program slots\n"); glDeleteProgram(prog); return 0; }
     g_prog[i].prog = prog;
     g_prog[i].used = 1;
     /* Where this program keeps each uniform, looked up once. A name looked
@@ -442,6 +459,198 @@ static uint32_t glx_prog_new(const char *vsrc, const char *fsrc, const char *wha
         }
     }
     return (uint32_t)i + 1;
+}
+
+/* ---- the shader cache (nv2a_shader_cache.h) ----------------------------------
+ *
+ * A program the game asks for is, in order: one already built ahead of it
+ * (g_warm: from the cache, on a frame with little to draw), one this driver
+ * compiled in an earlier run and saved (a program binary: loading one takes a
+ * fraction of a millisecond where compiling takes several, and on some
+ * drivers tens), or compiled now -- and then saved both ways for next time.
+ * Programs the cache has without a binary (another driver, or one that keeps
+ * none) are queued and built by cache_idle, a few per loading-screen frame. */
+#define MAX_WARM 4096
+static struct { uint64_t key; GLuint prog; } g_warm[MAX_WARM];
+static int g_nwarm;
+/* Keys the game has asked for this run: cache_idle has no need to build them. */
+static uint64_t g_asked[MAX_WARM];
+static int g_nasked;
+static int *g_todo, g_ntodo, g_itodo;
+static struct { unsigned warm, bin, bin_bad, compiled, saved, idle_built; double idle_ms; } g_cst;
+
+static double glx_now_ms(void)
+{
+#if defined(_WIN32)
+    static LARGE_INTEGER f;
+    LARGE_INTEGER c;
+    if (!f.QuadPart) QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&c);
+    return (double)c.QuadPart * 1000.0 / (double)f.QuadPart;
+#else
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (double)t.tv_sec * 1000.0 + (double)t.tv_nsec * 1e-6;
+#endif
+}
+
+static GLuint warm_take(uint64_t key)
+{
+    int i;
+    for (i = 0; i < g_nwarm; i++)
+        if (g_warm[i].key == key) {
+            GLuint p = g_warm[i].prog;
+            g_warm[i] = g_warm[--g_nwarm];
+            return p;
+        }
+    return 0;
+}
+
+static void save_binary(uint64_t key, GLuint prog)
+{
+    GLint len = 0;
+    GLenum format = 0;
+    GLsizei got = 0;
+    void *buf;
+    glGetProgramiv(prog, GL_PROGRAM_BINARY_LENGTH, &len);
+    if (len <= 0 || len > (8 << 20) || !(buf = malloc((size_t)len))) return;
+    glGetProgramBinary(prog, len, &got, &format, buf);
+    if (got > 0) { nv2a_sc_bin_put(key, buf, (uint32_t)got, (uint32_t)format); g_cst.saved++; }
+    free(buf);
+}
+
+/* A saved binary for key, linked: the program, or 0 (none, or refused -- a
+ * driver update -- and then forgotten). */
+static GLuint load_binary(uint64_t key)
+{
+    uint32_t len = 0, format = 0;
+    void *data = nv2a_sc_bin_get(key, &len, &format);
+    GLuint prog;
+    GLint ok = 0;
+    if (!data) return 0;
+    prog = glCreateProgram();
+    glProgramBinary(prog, (GLenum)format, data, (GLsizei)len);
+    free(data);
+    glGetProgramiv(prog, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        glDeleteProgram(prog);
+        nv2a_sc_bin_drop(key);
+        g_cst.bin_bad++;
+        return 0;
+    }
+    return prog;
+}
+
+static int asked(uint64_t key)
+{
+    int i;
+    for (i = 0; i < g_nasked; i++) if (g_asked[i] == key) return 1;
+    return 0;
+}
+
+static uint32_t glx_prog_new(const char *vsrc, const char *fsrc, const char *what)
+{
+    uint64_t key = nv2a_sc_is_open() ? nv2a_sc_key(vsrc, fsrc) : 0;
+    GLuint prog = 0;
+    if (key && g_nasked < MAX_WARM && !asked(key)) g_asked[g_nasked++] = key;
+    if (key) {
+        if ((prog = warm_take(key)) != 0) g_cst.warm++;
+        else if (g_bin_ok && (prog = load_binary(key)) != 0) g_cst.bin++;
+    }
+    if (!prog) {
+        prog = glx_build(vsrc, fsrc, what);
+        if (!prog) return 0;
+        g_cst.compiled++;
+        if (key) {
+            nv2a_sc_add(key, vsrc, fsrc);
+            if (g_bin_ok) save_binary(key, prog);
+        }
+    }
+    return glx_adopt(prog);
+}
+
+/* Whether this context can hand back and take program binaries:
+ * ARB_get_program_binary (core since OpenGL 4.1 and OpenGL ES 3.0) with at
+ * least one format -- some drivers support the calls and offer none. */
+static int glx_binaries_supported(void)
+{
+    GLint maj = 0, mnr = 0, n = 0;
+    int have = 0;
+    glGetIntegerv(GL_MAJOR_VERSION, &maj);
+    glGetIntegerv(GL_MINOR_VERSION, &mnr);
+#if defined(NV2A_GLES)
+    have = maj >= 3;
+#else
+    have = maj > 4 || (maj == 4 && mnr >= 1);
+    if (!have) {
+        GLint k, ne = 0;
+        glGetIntegerv(GL_NUM_EXTENSIONS, &ne);
+        for (k = 0; k < ne && !have; k++) {
+            const char *e = (const char *)glGetStringi(GL_EXTENSIONS, (GLuint)k);
+            if (e && !strcmp(e, "GL_ARB_get_program_binary")) have = 1;
+        }
+    }
+#endif
+    if (have) glGetIntegerv(GL_NUM_PROGRAM_BINARY_FORMATS, &n);
+    return have && n > 0;
+}
+
+static void glx_cache_open(const char *dir, const char *tag)
+{
+    int i, n, queued = 0;
+    const char *nobin = getenv("RECOMP_SHADER_BINARIES");
+    if (!nv2a_sc_open(dir, tag)) return;
+    /* RECOMP_SHADER_BINARIES=0: no program binaries, only the sources --
+     * for a driver whose binaries misbehave, and to try the other path. */
+    g_bin_ok = glx_binaries_supported() && !(nobin && !atoi(nobin));
+    if (g_bin_ok) {
+        char drv[768];
+        snprintf(drv, sizeof drv, "%s|%s|%s", (const char *)glGetString(GL_VENDOR),
+                 (const char *)glGetString(GL_RENDERER), (const char *)glGetString(GL_VERSION));
+        if (!nv2a_sc_bin_open(drv)) g_bin_ok = 0;
+    }
+    n = nv2a_sc_count();
+    g_todo = n ? (int *)malloc((size_t)n * sizeof *g_todo) : NULL;
+    for (i = 0; g_todo && i < n; i++) {
+        uint64_t key; const char *v, *f;
+        if (!nv2a_sc_entry(i, &key, &v, &f)) continue;
+        if (g_bin_ok && nv2a_sc_bin_has(key)) continue;     /* loaded when asked for */
+        g_todo[g_ntodo++] = i;
+        queued++;
+    }
+    fprintf(stderr, "  [SHADERS] OpenGL: program binaries %s; %d programs to build on loading screens\n",
+            g_bin_ok ? "kept" : (nobin && !atoi(nobin)) ? "off (RECOMP_SHADER_BINARIES=0)"
+                                                       : "not available from this driver", queued);
+}
+
+/* Build queued programs while the time spent, plus what one usually takes,
+ * stays inside the budget -- but always at least one, so that a driver slower
+ * than the budget still gets through the queue, a program a frame. */
+static int glx_cache_idle(double budget_ms)
+{
+    static double avg = 3.0;            /* ms a build takes, a running mean */
+    double t0, t;
+    int built = 0;
+    if (g_itodo >= g_ntodo || g_nwarm >= MAX_WARM) return 0;
+    t0 = glx_now_ms();
+    while (g_itodo < g_ntodo && g_nwarm < MAX_WARM && (!built || glx_now_ms() - t0 + avg < budget_ms)) {
+        uint64_t key; const char *v, *f;
+        GLuint prog;
+        int i = g_todo[g_itodo++], k, have = 0;
+        if (!nv2a_sc_entry(i, &key, &v, &f)) continue;
+        for (k = 0; k < g_nwarm; k++) if (g_warm[k].key == key) { have = 1; break; }
+        if (have || asked(key)) continue;
+        t = glx_now_ms();
+        prog = glx_build(v, f, "a cached program");
+        avg += 0.2 * (glx_now_ms() - t - avg);
+        built++;
+        if (!prog) continue;
+        if (g_bin_ok) save_binary(key, prog);
+        g_warm[g_nwarm].key = key; g_warm[g_nwarm].prog = prog; g_nwarm++;
+        g_cst.idle_built++;
+    }
+    g_cst.idle_ms += glx_now_ms() - t0;
+    return g_nwarm < MAX_WARM ? g_ntodo - g_itodo : 0;
 }
 
 static int prog_ok(uint32_t h) { return g_prog && h && h <= MAX_PROGS && g_prog[h - 1].used; }
@@ -1037,6 +1246,16 @@ static void glx_report(void)
 {
     if (g_copies)
         fprintf(stderr, "  [GL] %d copies of a surface sampled while drawn into\n", g_copies);
+    if (nv2a_sc_is_open()) {
+        int progs = 0, bins = 0, added = 0;
+        nv2a_sc_stats(&progs, &bins, &added);
+        fprintf(stderr, "  [SHADERS] programs asked for: %u built ahead (%u of them on loading screens, "
+                "%.0f ms), %u from saved binaries%s, %u compiled then; %u binaries saved; on disk %d "
+                "programs (%d new), %d binaries\n",
+                g_cst.warm, g_cst.idle_built, g_cst.idle_ms, g_cst.bin,
+                g_cst.bin_bad ? " (some refused: a driver update)" : "", g_cst.compiled,
+                g_cst.saved, progs, added, bins);
+    }
 }
 
 /* For nv2a_gl.c's GL-only paths (the SDL window's blit, the occlusion-query
@@ -1058,6 +1277,8 @@ static const Nv2aGfx g_gl = {
     glx_vertices, glx_draw, glx_clear, glx_present, glx_report,
     glx_vbuf_new, glx_vbuf_free, glx_vbuf_fill, glx_vbuf_bind, glx_draw_indexed,
     glx_uniform_f_part,
+    NULL,                       /* pipeline_ms: the link covers it */
+    glx_cache_open, glx_cache_idle,
 };
 
 const Nv2aGfx *nv2a_gfx_gl(void) { return &g_gl; }

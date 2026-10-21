@@ -31,6 +31,7 @@
 #include "nv2a_vsh.h"
 #include "nv2a_psh.h"
 #include "nv2a_backend.h"
+#include "nv2a_shader_cache.h"
 
 /*
  * Two ways to get a 3.3 core context.
@@ -725,6 +726,32 @@ static struct {
     uint32_t csync;     /* constants stamped before this it already has; 0 none */
     char    *dis;       /* disassembly, kept only when a dump is armed */
 } g_pcache[PROG_CACHE];
+
+/*
+ * Hitches.
+ *
+ * A player who reports "micro-stuttering" is describing frames that took two
+ * or three times the period, every now and then -- which the averages in the
+ * pacing report (and RECOMP_GL_PROFILE's per-second shares) cannot show. So
+ * the renderer notes, per frame, the work that comes in lumps: programs built
+ * (a GLSL compile and link, or a Metal library, is milliseconds each, and a
+ * new effect or object brings several at once), and textures decoded and
+ * uploaded. A frame half again the period or longer is written to the log
+ * with those, and with what is left over -- the game itself, its loading and
+ * its sound, which the renderer does not see. The first two hundred are
+ * written, then one in fifty.
+ */
+static struct {
+    unsigned compiles, tex_new;
+    double   compile_s, compile_worst, tex_s;
+    double   idle_s;                            /* building ahead for the shader cache */
+    double   pso_ms0;                           /* the backend's pipeline time at the frame's start */
+    uint32_t draws0;
+} g_hf;                                         /* this frame */
+static struct {
+    unsigned long long hitches, logged, compiles;
+    double   compile_s, compile_worst;
+} g_ht;                                         /* the whole run */
 /*
  * Internal resolution.
  *
@@ -2354,7 +2381,13 @@ static uint32_t build_program(const char *vsrc, const char *fsrc, const char *wh
     if (z01 < 0)   z01   = getenv("RECOMP_GL_Z01") ? 1 : 0;
     if (zview) f2 = splice_define(fsrc, "#define NV2A_ZVIEW_ON 1\n");
     if (z01)   v2 = splice_define(vsrc, "#define NV2A_Z01 1\n");
-    prog = G->prog_new(v2 ? v2 : vsrc, f2 ? f2 : fsrc, what);
+    { double t0 = mono_now(), dt;
+      prog = G->prog_new(v2 ? v2 : vsrc, f2 ? f2 : fsrc, what);
+      dt = mono_now() - t0;
+      g_hf.compiles++; g_hf.compile_s += dt;
+      if (dt > g_hf.compile_worst) g_hf.compile_worst = dt;
+      g_ht.compiles++; g_ht.compile_s += dt;
+      if (dt > g_ht.compile_worst) g_ht.compile_worst = dt; }
     free(v2); free(f2);
     return prog;
 }
@@ -2995,8 +3028,10 @@ static uint32_t surface_texture_for(const TexStage *t, float *sx, float *sy, int
 static uint32_t upload_texture(const TexStage *t)
 {
     uint32_t r; PROF_T0();
+    double t0 = mono_now();
     g_prof.n_tex_lookup++;
     r = upload_texture_inner(t);
+    g_hf.tex_s += mono_now() - t0;
     PROF_ADD(tex);
     return r;
 }
@@ -3165,20 +3200,31 @@ static uint32_t upload_texture_inner(const TexStage *t)
          * texture stays undefined, and every surface samples black. That is
          * a whole-screen failure caused by a driver capability, which is not
          * a trade worth making for an upload that happens once per texture
-         * and is cached afterwards. */
-        uint32_t x, y;
+         * and is cached afterwards.
+         *
+         * A block at a time: decoded per texel, every block was decoded
+         * sixteen times -- 4 ms a texture, and the 49 a new area brings at
+         * once were a 200 ms stall in the middle of play. */
+        uint32_t bw = (w + 3) / 4, bh = (h + 3) / 4, bb = d3d8_format_dxt_block_bytes(t->color);
+        uint32_t bx, by, k;
 
         rgba = (uint8_t *)malloc((size_t)w * h * 4);
         if (!rgba) return 0;
-        for (y = 0; y < h; y++)
-            for (x = 0; x < w; x++) {
-                uint32_t argb = 0xFF000000u;
-                d3d8_dxt_decode_texel(src, t->color, x, y, w, &argb);
-                if (g_upload_bias_bg) argb ^= 0x00008080u;
-                rgba[((size_t)y * w + x) * 4 + 0] = (uint8_t)(argb >> 16);
-                rgba[((size_t)y * w + x) * 4 + 1] = (uint8_t)(argb >> 8);
-                rgba[((size_t)y * w + x) * 4 + 2] = (uint8_t)argb;
-                rgba[((size_t)y * w + x) * 4 + 3] = (uint8_t)(argb >> 24);
+        for (by = 0; by < bh; by++)
+            for (bx = 0; bx < bw; bx++) {
+                uint32_t px[16];
+                d3d8_dxt_decode_block(src + ((size_t)by * bw + bx) * bb, t->color, px);
+                for (k = 0; k < 16; k++) {
+                    uint32_t x = bx * 4 + (k & 3u), y = by * 4 + (k >> 2), argb = px[k];
+                    uint8_t *o;
+                    if (x >= w || y >= h) continue;
+                    if (g_upload_bias_bg) argb ^= 0x00008080u;
+                    o = rgba + ((size_t)y * w + x) * 4;
+                    o[0] = (uint8_t)(argb >> 16);
+                    o[1] = (uint8_t)(argb >> 8);
+                    o[2] = (uint8_t)argb;
+                    o[3] = (uint8_t)(argb >> 24);
+                }
             }
         tex_alpha_census(rgba, w, h, t->color, 1);
     } else {
@@ -3202,14 +3248,25 @@ static uint32_t upload_texture_inner(const TexStage *t)
             }
             return 0;
         }
+        /* Where each column and each row lands in a swizzled image, worked
+         * out once: swizzle_offset(x, y) is offx[x] | offy[y], and working
+         * it out per texel was most of the time a swizzled upload took. */
+        static uint32_t offx[4096], offy[4096];
+        int swz = fmt_is_swz(t->color);
+        if (swz) {
+            uint32_t mx, my;
+            xbox_swizzle_masks(w, h, &mx, &my);
+            for (x = 0; x < w; x++) offx[x] = swizzle_deposit(x, mx);
+            for (y = 0; y < h; y++) offy[y] = swizzle_deposit(y, my);
+        }
         rgba = (uint8_t *)malloc((size_t)w * h * 4);
         if (!rgba) return 0;
         for (y = 0; y < h; y++) {
             for (x = 0; x < w; x++) {
                 const uint8_t *p;
                 uint32_t argb;
-                if (fmt_is_swz(t->color))
-                    p = src + (size_t)swizzle_offset(x, y, w, h) * bpp;
+                if (swz)
+                    p = src + (size_t)(offx[x] | offy[y]) * bpp;
                 else
                     p = src + (size_t)y * (t->pitch ? t->pitch : w * bpp)
                             + (size_t)x * bpp;
@@ -3410,6 +3467,7 @@ static uint32_t upload_texture_inner(const TexStage *t)
     g_prof.n_tex_upload++;
     g_prof.tex_held++;
     g_prof.tex_held_bytes += (unsigned long long)w * h * 4;
+    g_hf.tex_new++;
     g_tcache[slot].used = 1;
     g_tcache[slot].offset = t->offset; g_tcache[slot].format = t->color;
     g_tcache[slot].w = w; g_tcache[slot].h = h; g_tcache[slot].pitch = t->pitch;
@@ -8842,9 +8900,53 @@ static void frame_pace(void)
               if (g_pace_st.last > 0.0) {
                   double ms = (t - g_pace_st.last) * 1000.0;
                   g_pace_st.iv[ms < 14.0 ? 0 : ms < 19.5 ? 1 : ms < 30.0 ? 2 : ms < 45.0 ? 3 : 4]++;
+                  if (ms >= period * 1500.0) {
+                      g_ht.hitches++;
+                      if (g_ht.logged < 200 || g_ht.hitches % 50 == 0) {
+                          double pso = G->pipeline_ms ? G->pipeline_ms() - g_hf.pso_ms0 : 0.0;
+                          double other = ms - 1000.0 * (g_hf.compile_s + g_hf.tex_s + g_hf.idle_s) - pso;
+                          char pl[96] = "";
+                          if (G->pipeline_ms) snprintf(pl, sizeof pl, ", pipelines %.1f ms", pso);
+                          if (g_hf.idle_s > 0.0)
+                              snprintf(pl + strlen(pl), sizeof pl - strlen(pl), ", %.1f ms building ahead",
+                                       1000.0 * g_hf.idle_s);
+                          g_ht.logged++;
+                          fprintf(stderr, "[HITCH] frame %u: %.1f ms flip to flip, %u draws | "
+                                  "%u programs built in %.1f ms (worst %.1f)%s | %u textures new, "
+                                  "%.1f ms in textures | %.1f ms the rest\n",
+                                  S.frames, ms, S.draws - g_hf.draws0, g_hf.compiles,
+                                  1000.0 * g_hf.compile_s, 1000.0 * g_hf.compile_worst, pl,
+                                  g_hf.tex_new, 1000.0 * g_hf.tex_s, other < 0.0 ? 0.0 : other);
+                      }
+                  }
               }
-              g_pace_st.last = t; }
+              g_pace_st.last = t;
+              memset(&g_hf, 0, sizeof g_hf);
+              g_hf.draws0 = S.draws;
+              if (G->pipeline_ms) g_hf.pso_ms0 = G->pipeline_ms(); }
         }
+}
+
+/* A frame with little in it -- a logo, a loading screen, a menu -- is where
+ * the shader cache builds what earlier runs needed (cache_idle), a few
+ * milliseconds at a time, so that the game finds it built. It is done in the
+ * frame's slack, before frame_pace waits out the rest of the period, and with
+ * the guest lock given up as frame_pace gives it up, so that a loader running
+ * behind a loading screen carries on meanwhile. */
+static void cache_idle_frame(void)
+{
+    static uint32_t last_draws;
+    static int more = 1;
+    uint32_t nd = S.draws - last_draws;
+    last_draws = S.draws;
+    if (!more || !G || !G->cache_idle) return;
+    if (nd < 150) {
+        double t0 = mono_now();
+        int held = xbox_guest_lock_drop ? xbox_guest_lock_drop() : 0;
+        more = G->cache_idle(6.0) > 0;
+        if (held && xbox_guest_lock_retake) xbox_guest_lock_retake(held);
+        g_hf.idle_s += mono_now() - t0;
+    }
 }
 
 static void present(int is_frame)
@@ -8901,7 +9003,7 @@ static void present(int is_frame)
         }
     }
 
-    if (is_frame) { PROF_T0(); frame_pace(); PROF_ADD(pace); }
+    if (is_frame) { PROF_T0(); cache_idle_frame(); frame_pace(); PROF_ADD(pace); }
 
     /* Put the finished frame on screen: the surface the title has set up
      * when it flips, which is what the window showed while surfaces were
@@ -10130,6 +10232,11 @@ void nv2a_gl_report(void)
                 (unsigned long long)g_pace_st.iv[2], (unsigned long long)g_pace_st.iv[3],
                 (unsigned long long)g_pace_st.iv[4], (unsigned long long)n);
     }
+    if (g_ht.compiles)
+        fprintf(stderr, "  [HITCH] %llu frames half again the period or longer; %llu programs "
+                "built in %.0f ms in all (%.1f ms each, worst %.1f)\n",
+                g_ht.hitches, g_ht.compiles, 1000.0 * g_ht.compile_s,
+                1000.0 * g_ht.compile_s / (double)g_ht.compiles, 1000.0 * g_ht.compile_worst);
     fprintf(stderr,
         "  [GL] %u draws, %u triangles, %u clears, %u presents, "
         "%u programs compiled\n"
@@ -10190,6 +10297,37 @@ const Nv2aGfx *nv2a_gfx_metal(void) { return NULL; }
  * backend that changed halfway through a frame would leave its surfaces and
  * programs behind in the other one.
  */
+/* The shader cache (nv2a_shader_cache.h), in <JSRF_SAVE_DIR>/shaders: every
+ * launcher sets the save folder, and a run without one has no cache. Its files
+ * are named for the backend and for the translator -- a hash of a reference
+ * pair of shaders generated now -- so that what an older engine built is
+ * never loaded, only left behind. RECOMP_SHADER_CACHE=0 turns it off. */
+static void shader_cache_start(void)
+{
+    const char *save = getenv("JSRF_SAVE_DIR"), *off = getenv("RECOMP_SHADER_CACHE");
+    char dir[1024], tag[96];
+    char *v, *f;
+    uint64_t fp = 0;
+    Nv2aVshFixed f0;
+    Nv2aPshState p0;
+    int msl;
+    if (!G || !G->cache_open || (off && !atoi(off)) || !save || !*save) return;
+    msl = (G->lang == NV2A_LANG_MSL);
+    snprintf(dir, sizeof dir, "%s/shaders", save);
+    v = (char *)malloc(96 * 1024);
+    f = (char *)malloc(96 * 1024);
+    memset(&f0, 0, sizeof f0);
+    f0.inputs_read = 1;
+    memset(&p0, 0, sizeof p0);
+    if (v && f && (msl ? nv2a_vsh_emit_ff_msl(&f0, v, 96 * 1024) : nv2a_vsh_emit_ff_glsl(&f0, v, 96 * 1024))
+              && (msl ? nv2a_psh_emit_msl(&p0, f, 96 * 1024) : nv2a_psh_emit_glsl(&p0, f, 96 * 1024)))
+        fp = nv2a_sc_key(v, f);
+    free(v);
+    free(f);
+    snprintf(tag, sizeof tag, "%s-%08X", G->name, (unsigned)(fp ^ (fp >> 32)));
+    G->cache_open(dir, tag);
+}
+
 static int gfx_init(uint32_t w, uint32_t h)
 {
     const char *v = getenv("RECOMP_BACKEND");
@@ -10214,6 +10352,7 @@ static int gfx_init(uint32_t w, uint32_t h)
             G = m;
             g_is_gl = 0;
             fprintf(stderr, "  [GL] backend: %s\n", G->name);
+            shader_cache_start();
             return 1;
         }
         fprintf(stderr, "  [GL] Metal backend unavailable%s\n",
@@ -10229,6 +10368,7 @@ static int gfx_init(uint32_t w, uint32_t h)
     }
     if (!gl_init(w, h)) return 0;     /* the context, then the device */
     fprintf(stderr, "  [GL] backend: %s\n", G->name);
+    shader_cache_start();
     return 1;
 }
 

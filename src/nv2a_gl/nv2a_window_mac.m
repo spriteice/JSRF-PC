@@ -838,6 +838,29 @@ int nv_window_prepare(int width, int height, const char *title)
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
 
         /*
+         * No App Nap. macOS slows an app whose window is hidden or covered:
+         * its timers are bunched and fired late, a quarter of a second at a
+         * time. The game paces itself and runs its music, streaming and
+         * loading on timers and sleeps, so a covered window turned into a
+         * stall of 250 ms every few seconds -- seen in test runs whose window
+         * sat behind others -- and a player who switches away for a moment
+         * comes back to a game that has been stuttering behind their back.
+         * A game is latency-critical work the user started, which is what
+         * this declares, for as long as the process runs.
+         */
+        {
+            static id activity;
+            if (!activity) {
+                activity = [[NSProcessInfo processInfo]
+                    beginActivityWithOptions:(NSActivityUserInitiated | NSActivityLatencyCritical)
+                                      reason:@"Running the game"];
+#if !__has_feature(objc_arc)
+                [activity retain];
+#endif
+            }
+        }
+
+        /*
          * Never larger than the screen.
          *
          * The size used to be the internal resolution (640x480 times the

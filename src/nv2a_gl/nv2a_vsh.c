@@ -329,9 +329,13 @@ static void emit_ilu_expr(SB *sb, const Nv2aVshInsn *ins)
     case NV2A_ILU_RCC:
         /* Reciprocal clamped to the hardware's range, which is what makes it
          * different from RCP: a program relying on RCC not returning
-         * infinity gets a NaN through the rest of the shader without it. */
-        sb_add(sb, "vec4(clamp(1.0 / "); emit_src(sb, ins, 2);
-        sb_add(sb, ".x, 5.42101086e-20, 1.884467e+19))");
+         * infinity gets a NaN through the rest of the shader without it.
+         * The range is a MAGNITUDE (nv_rcc in the preludes): this used to
+         * clamp to +5.4e-20..+1.88e19, so a negative reciprocal -- the 1/w of
+         * every vertex behind the camera, which is what the title's epilogue
+         * takes RCC of -- came out as +5.4e-20, and the vertex was thrown to
+         * the middle of the screen. */
+        sb_add(sb, "vec4(nv_rcc("); emit_src(sb, ins, 2); sb_add(sb, ".x))");
         break;
     case NV2A_ILU_RSQ:
         sb_add(sb, "vec4(inversesqrt(max(abs("); emit_src(sb, ins, 2);
@@ -420,7 +424,21 @@ NV2A_GLSL_VERSION
 "    float d = src.x, s = src.y, p = clamp(src.w, -127.9961, 127.9961);\n"
 "    float spec = (d > 0.0 && s > 0.0) ? exp2(p * log2(max(s, 1e-30))) : 0.0;\n"
 "    return vec4(1.0, max(d, 0.0), spec, 1.0);\n"
-"}\n";
+"}\n"
+"\n"
+"// The NV2A's range for a reciprocal: a magnitude from 2^-64 to 2^64, with the\n"
+"// sign KEPT (+0 counts as positive, -0 as negative). RCC is 1/x held to it,\n"
+"// and the hardware holds a vertex's w to it before the rasteriser sees it\n"
+"// (xemu: clampAwayZeroInf). Behind the camera w is negative, and so is the\n"
+"// 1/w the title's own epilogue takes with RCC; a range of +2^-64..+2^64\n"
+"// turned every such 1/w into +2^-64, and every vertex behind the camera of\n"
+"// a character, a car or a pedestrian into a point in the middle of the\n"
+"// screen -- the triangles from it to the visible ones are the shards.\n"
+"float nv_away0(float t) {\n"
+"    if (t > 0.0 || floatBitsToUint(t) == 0u) return clamp(t, 5.421010862e-20, 1.844674407e19);\n"
+"    return clamp(t, -1.844674407e19, -5.421010862e-20);\n"
+"}\n"
+"float nv_rcc(float x) { return nv_away0(1.0 / x); }\n";
 
 /*
  * Screen space back to clip space.
@@ -502,7 +520,7 @@ static void emit_viewport_epilogue(SB *sb, int ff)
         "#if !NV2A_CLIP_Z01\n"
         "        ndc.z = ndc.z * 2.0 - 1.0;\n"
         "#endif\n"
-        "        ndc.w = oPos.w;\n"
+        "        ndc.w = nv_away0(oPos.w);\n"
         "        gl_Position = vec4(ndc.xyz * ndc.w, ndc.w);\n"
         "    } else {\n"
         "    ndc.x = (oPos.x - wideShift - vpOff.x) / max(vpScale.x, 1e-9);\n"
@@ -551,7 +569,7 @@ static void emit_viewport_epilogue(SB *sb, int ff)
         "    // viewport registers, which is the same divide wearing a\n"
         "    // different hat; z has no viewport scale to recover it with,\n"
         "    // because this title never applied one.\n"
-        "    ndc.z = oPos.w != 0.0 ? oPos.z / oPos.w : oPos.z;\n"
+        "    ndc.z = oPos.z / nv_away0(oPos.w);\n"
         "#else\n"
         "    ndc.z = (zClip.y > zClip.x)\n"
         "          ? (oPos.z - zClip.x) / (zClip.y - zClip.x)\n"
@@ -560,7 +578,10 @@ static void emit_viewport_epilogue(SB *sb, int ff)
         "#if !NV2A_CLIP_Z01\n"
         "    ndc.z = ndc.z * 2.0 - 1.0;   // D3D depth [0,1] -> GL [-1,1]\n"
         "#endif\n"
-        "    ndc.w = oPos.w;\n"
+        "    // w held away from zero and infinity, as the hardware does: a w of\n"
+        "    // exactly zero gave (0, 0, 0, 0), a vertex the rasteriser divides by\n"
+        "    // nothing.\n"
+        "    ndc.w = nv_away0(oPos.w);\n"
         "    gl_Position = vec4(ndc.xyz * ndc.w, ndc.w);\n"
         "    }\n"
         "    oFogC = nv_fog(oFog.x);\n"
@@ -638,9 +659,15 @@ static void emit_program_body(SB *sb, const Nv2aVshProgram *p)
         }
 
         if (have_mac && ins->mac == NV2A_MAC_ARL) {
+            /* floor, nudged up by a thousandth as xemu does it
+             * (vsh-prog.c, _ARL): an index computed as 3.0 by a title --
+             * a bone number times the registers per bone -- arrives as
+             * 2.9999998 often enough, and a plain floor then reads the last
+             * row of the previous bone's matrix with the first two of this
+             * one's. That vertex lands somewhere else entirely. */
             sb_add(sb, "    A0 = int(floor(");
             emit_src(sb, ins, 0);
-            sb_add(sb, ".x));\n");
+            sb_add(sb, ".x + 0.001));\n");
         } else if (have_mac && ins->mac_mask) {
             sb_add(sb, "    ");
             emit_temp_name(sb, ins->mac_temp);
@@ -802,7 +829,10 @@ static int emit_ff(const Nv2aVshFixed *f, char *buf, int bufsize, int msl)
         "    // the driver multiplies it in rather than leaving it to the\n"
         "    // hardware -- so the divide by w lands straight in screen\n"
         "    // pixels, and the shared epilogue takes it from there.\n"
-        "    float rhw = (p.w != 0.0) ? 1.0 / p.w : 0.0;\n"
+        "    // w held away from zero as the hardware holds it (nv_away0). A w of\n"
+        "    // exactly zero used to put the vertex at the top-left corner.\n"
+        "    float w = nv_away0(p.w);\n"
+        "    float rhw = 1.0 / w;\n"
         "    // The hardware adds the viewport offset register after the\n"
         "    // divide (xemu vsh-ff.c); the epilogue then un-screens by the\n"
         "    // surface size. w stays the true clip w so the rasteriser\n"
@@ -810,7 +840,7 @@ static int emit_ff(const Nv2aVshFixed *f, char *buf, int bufsize, int msl)
         "    // handing it 1/w inverted the correction on every world polygon.\n"
         "    oPos.xy = p.xy * rhw + ffVpOff.xy;\n"
         "    oPos.z = p.z * rhw;\n"
-        "    oPos.w = (p.w != 0.0) ? p.w : 1.0;\n");
+        "    oPos.w = w;\n");
 
     /* Colour. Lighting is not emulated yet; a title that pre-bakes its
      * shading into the vertex colours -- which a cel-shaded one does -- is
@@ -1101,6 +1131,13 @@ static const char *MSL_PRELUDE =
 "    float spec = (d > 0.0f && s > 0.0f) ? exp2(p * log2(max(s, 1e-30f))) : 0.0f;\n"
 "    return float4(1.0f, max(d, 0.0f), spec, 1.0f);\n"
 "}\n"
+"\n"
+"// The NV2A's reciprocal range, sign kept: see the GLSL prelude.\n"
+"static inline float nv_away0(float t) {\n"
+"    if (t > 0.0f || as_type<uint>(t) == 0u) return clamp(t, 5.421010862e-20f, 1.844674407e19f);\n"
+"    return clamp(t, -1.844674407e19f, -5.421010862e-20f);\n"
+"}\n"
+"static inline float nv_rcc(float x) { return nv_away0(1.0f / x); }\n"
 "\n"
 "// The fog factor from a fog distance: see the GLSL prelude.\n"
 "static inline float nv_fog_factor(float d, int en, int mode, float2 p) {\n"
