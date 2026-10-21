@@ -833,6 +833,7 @@ static struct {
     float    alpha_ref;
     float    vp_scale[4], vp_off[4];
     float    wide_shift;
+    uint32_t fbo_w, fbo_h;      /* the surface size vpSurface and vpRect hold */
 } g_last;
 static uint32_t g_frame_chars;       /* big skinned batches this frame */
 static uint32_t g_frame_chars_prev;  /* ... and in the frame just finished */
@@ -5186,8 +5187,11 @@ static void do_draw_body(void)
     if (g_wide_squeeze) vp_scale_eff[0] *= 1.0f / g_wide_s;
     if (memcmp(g_last.vp_scale, vp_scale_eff, sizeof vp_scale_eff)
      || memcmp(g_last.vp_off, S.u.vp_off, sizeof S.u.vp_off)
-     || g_last.wide_shift != g_wide_shift) {
-        /* The viewport, whenever it changes.
+     || g_last.wide_shift != g_wide_shift
+     || g_last.fbo_w != g_fbo_w || g_last.fbo_h != g_fbo_h) {
+        /* The viewport, whenever it or the surface it is on changes: vpSurface
+         * and vpRect hold the surface's size, and a title can draw to a
+         * surface of another size without writing the viewport again.
          *
          * The depth buffer was measured holding the entire scene inside one
          * millionth of its range, which makes depth testing a coin toss and is
@@ -5228,6 +5232,7 @@ static void do_draw_body(void)
         memcpy(g_last.vp_scale, vp_scale_eff, sizeof vp_scale_eff);
         memcpy(g_last.vp_off, S.u.vp_off, sizeof S.u.vp_off);
         g_last.wide_shift = g_wide_shift;
+        g_last.fbo_w = g_fbo_w; g_last.fbo_h = g_fbo_h;
     }
 
     /* Bind every stage the combiner shader samples.
