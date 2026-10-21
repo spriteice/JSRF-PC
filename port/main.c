@@ -151,6 +151,10 @@ static char **g_argv;
  * the user's. */
 static int g_scale_env_ours;
 
+/* The version, for the in-game menu's File > About (src/menu/menu_sdl.cpp). */
+const char *recomp_version(void);
+const char *recomp_version(void) { return JSRF_VERSION; }
+
 void recomp_restart_self(void);
 void recomp_restart_self(void)
 {

@@ -503,6 +503,33 @@ void xbox_InputInit(void)
     open_controllers();
 }
 
+/* The in-game menu (src/menu) has the pad while it is open: the game
+ * sees one with nothing pressed. What was held as it shut stays unseen
+ * until let go, so it is not also a press in the game. */
+extern int nv_window_menu_open(void) __attribute__((weak));   /* 1 open, 0 shut, -1 none */
+static WORD     g_menu_held[XBOX_MAX_CONTROLLERS];
+static unsigned g_menu_held_an[XBOX_MAX_CONTROLLERS];  /* a bit per analog[] */
+
+/* A pad's Back is the menu's own button, whenever there is a menu: the game
+ * never sees it, so opening the menu is never also a Back in the game. The
+ * keyboard's Back (Esc) is still the game's: F1 is the keyboard's menu key. */
+static int pad_back_is_games(void)
+{
+    return !nv_window_menu_open || nv_window_menu_open() < 0;
+}
+
+static void menu_gate(DWORD port, WORD *out, unsigned char analog[8], short axes[4])
+{
+    int open = nv_window_menu_open && nv_window_menu_open() > 0, i;
+    unsigned an = 0;
+    for (i = 0; i < 8; i++) if (analog[i]) an |= 1u << i;
+    if (open) { g_menu_held[port] = *out;  g_menu_held_an[port] = an; }
+    else      { g_menu_held[port] &= *out; g_menu_held_an[port] &= an; }
+    *out &= (WORD)~g_menu_held[port];
+    for (i = 0; i < 8; i++) if (g_menu_held_an[port] & (1u << i)) analog[i] = 0;
+    if (open) memset(axes, 0, 4 * sizeof axes[0]);
+}
+
 DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
 {
     WORD out = 0;
@@ -533,7 +560,8 @@ DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
             if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_DPAD_LEFT))  out |= XBOX_GAMEPAD_DPAD_LEFT;
             if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_DPAD_RIGHT)) out |= XBOX_GAMEPAD_DPAD_RIGHT;
             if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_START))      out |= XBOX_GAMEPAD_START;
-            if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_BACK))       out |= XBOX_GAMEPAD_BACK;
+            if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_BACK)
+             && pad_back_is_games())                                            out |= XBOX_GAMEPAD_BACK;
             if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_LEFTSTICK))  out |= XBOX_GAMEPAD_LEFT_THUMB;
             if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_RIGHTSTICK)) out |= XBOX_GAMEPAD_RIGHT_THUMB;
             /* analog[] in the order the Mac's backend uses:
@@ -558,6 +586,7 @@ DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
 
     /* The window's keyboard (kb_merge, above). */
     if (kb_merge(dwPort, &out, analog, axes)) have_pad = 1;
+    menu_gate(dwPort, &out, analog, axes);
 
     if (!have_pad) {
         g_controller_connected[dwPort] = FALSE;

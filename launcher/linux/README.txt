@@ -57,6 +57,9 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
   Return       Start                        Esc         Back
   C / V        left / right stick click
 
+  F1                  the in-game menu (also Back on a controller, which is
+                      then the menu's alone): About, Exit, the next three, and
+                      the free camera's settings
   F11 or Alt+Return   full screen
   F10                 widescreen 16:9 (a wider view, not a stretch; the HUD
                       keeps its shape, the title screen stays 4:3); remembered
@@ -85,8 +88,10 @@ or out of range, gets:
   deadzone=0.05      how far the stick moves before the camera does, 0 to 1
                      (0.05 is 5%)
 
-With no keyboard (Steam's Game Mode), bind F8 to a controller button in Steam
-Input; the right stick click is free, as the game does not use it.
+The in-game menu's Controller menu has all of these too, and keeps them here
+as F8 does: with no keyboard (Steam's Game Mode), Back opens it. Or bind F8
+to a controller button in Steam Input; the right stick click is free, as the
+game does not use it.
 
 
 Where things are kept

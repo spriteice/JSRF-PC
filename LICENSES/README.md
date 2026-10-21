@@ -10,3 +10,8 @@ and remaining the copyright of espes, Jannik Vogel and Matt Borgerson.
 
 Shipping the verbatim text alongside those files is an LGPL requirement, not
 a courtesy.
+
+`imgui-MIT.txt` is Dear ImGui's licence, verbatim from
+`third_party/imgui/LICENSE.txt`, for the copy of it under `third_party/imgui`
+(see NOTICE). The MIT licence asks that it go with every copy, the packaged
+builds included.

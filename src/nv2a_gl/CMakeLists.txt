@@ -148,3 +148,22 @@ if(MSVC)
 else()
     target_compile_options(xbox_nv2a_gl PRIVATE -Wall -Wextra -O2)
 endif()
+
+# The in-game menu (F1, or Back on a controller), src/menu: drawn
+# over this SDL window, so built only with it. Not on Android, which has its
+# own settings screen, nor on the Mac's and iPhone's own windows, which have
+# their own Video menus.
+if(NV2A_GL_CONTEXT STREQUAL "sdl" AND NOT ANDROID)
+    set(_nv2a_gl_menu_default ON)
+else()
+    set(_nv2a_gl_menu_default OFF)
+endif()
+option(NV2A_GL_MENU "nv2a_gl: the in-game menu (Dear ImGui, src/menu)" ${_nv2a_gl_menu_default})
+if(NV2A_GL_MENU)
+    if(NOT NV2A_GL_CONTEXT STREQUAL "sdl")
+        message(FATAL_ERROR "NV2A_GL_MENU needs NV2A_GL_CONTEXT=sdl")
+    endif()
+    # xbox_menu itself is added from the top level, after this directory.
+    target_link_libraries(xbox_nv2a_gl PUBLIC xbox_menu)
+    message(STATUS "nv2a_gl: in-game menu (Dear ImGui) on")
+endif()

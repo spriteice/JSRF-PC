@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
-project(xboxrecomp VERSION 0.8.0 LANGUAGES C)
+# C++ only for Dear ImGui, the in-game menu's (src/menu).
+project(xboxrecomp VERSION 0.8.0 LANGUAGES C CXX)
 
 # Xbox Static Recompilation Runtime Library
 # Provides link-time libraries for statically recompiled Xbox games.
@@ -57,6 +58,12 @@ add_subdirectory(src/nv2a)
 # NV2A -> OpenGL translation (POSIX, and Windows with XBOXRECOMP_WIN_GL)
 if(NOT WIN32 OR XBOXRECOMP_WIN_GL)
     add_subdirectory(src/nv2a_gl)
+endif()
+
+# The in-game menu (Dear ImGui), over nv2a_gl's SDL window. Before the
+# libraries that add rows to it, so they can find it (if(TARGET xbox_menu)).
+if(NV2A_GL_MENU)
+    add_subdirectory(src/menu)
 endif()
 
 # USB: MCPX OHCI host controllers. A title's XAPI is statically linked and

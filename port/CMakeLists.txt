@@ -24,7 +24,8 @@ if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
     set(CMAKE_OSX_ARCHITECTURES arm64 CACHE STRING "Mac architecture" FORCE)
 endif()
 
-project(jsrf_recomp C)
+# C++ only for Dear ImGui, the in-game menu's (src/menu).
+project(jsrf_recomp C CXX)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -174,6 +175,13 @@ elseif(ANDROID)
 else()
     target_link_libraries(jsrf_recomp PRIVATE pthread m dl)
     target_link_options(jsrf_recomp PRIVATE -rdynamic)
+endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND TARGET xbox_menu)
+    # The menu's C++ needs nothing from the C++ runtime, but CMake links a C
+    # program with a C++ library against libstdc++.so anyway: taken
+    # statically, nothing of it is pulled in and the engine needs no
+    # libstdc++ of the machine it runs on.
+    target_link_options(jsrf_recomp PRIVATE -static-libstdc++ -static-libgcc)
 endif()
 if(MSVC)
     target_link_options(jsrf_recomp PRIVATE /LARGEADDRESSAWARE)

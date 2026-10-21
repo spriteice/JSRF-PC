@@ -46,6 +46,19 @@ LGPL-2.1-or-later — extracted from xemu
   satisfies that.
 
 
+MIT — Dear ImGui
+----------------
+
+  https://github.com/ocornut/imgui
+
+    third_party/imgui/    Dear ImGui v1.93.0 and its SDL2, OpenGL 3 and
+                          null backends, unmodified
+                          (c) 2014-2026 Omar Cornut
+
+  The in-game menu (src/menu) is drawn with it. Licensed under the MIT
+  licence; the full text is in LICENSES/imgui-MIT.txt.
+
+
 Derived algorithms — credited, independently implemented
 --------------------------------------------------------
 

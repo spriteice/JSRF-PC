@@ -8,7 +8,7 @@
 # How the release build is made (Ubuntu 22.04, so glibc 2.35, and the result
 # runs on glibc 2.34 or later), from the repository at the release tag:
 #
-#   CC=clang cmake -S port -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+#   CC=clang CXX=clang++ cmake -S port -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
 #       -DNV2A_GL_CONTEXT=sdl -DOpenGL_GL_PREFERENCE=LEGACY \
 #       -DCMAKE_EXE_LINKER_FLAGS=-Wl,--as-needed
 #   cmake --build build
@@ -45,6 +45,7 @@ install -m 644 "$repo/launcher/icon/AppIcon.iconset/icon_256x256.png" "$dir/shar
 install -m 644 "$repo/LICENSE" "$dir/licences/LICENSE.txt"
 install -m 644 "$repo/NOTICE" "$dir/licences/NOTICE.txt"
 install -m 644 "$repo/LICENSES/LGPL-2.1.txt" "$dir/licences/LGPL-2.1.txt"
+install -m 644 "$repo/LICENSES/imgui-MIT.txt" "$dir/licences/imgui-MIT.txt"
 [ -n "${SDL_LICENSE:-}" ] && install -m 644 "$SDL_LICENSE" "$dir/licences/SDL2-LICENSE.txt"
 
 # What the engine needs from the system, said once at packaging time.

@@ -59,6 +59,10 @@
 #elif defined(NV2A_GL_USE_SDL)
 #  include <SDL2/SDL.h>
 #  include <sys/stat.h>
+#  if defined(XBOXRECOMP_MENU)
+#    include "menu_sdl.h"        /* the in-game menu (F1), src/menu */
+#    include "menu.h"
+#  endif
 #  if defined(NV2A_GLES)
      /* OpenGL ES 3.2: Android, and Linux (Mesa), where this path is tested.
       * The core entry points are the library's own exports; extensions are
@@ -1071,6 +1075,9 @@ static void pres_start(void);        /* the presenter, below */
 #if defined(_WIN32)
 static void sdl_menu_init(void);     /* the menu bar, below */
 #endif
+#if defined(XBOXRECOMP_MENU)
+static void sdl_menu_graphics(void); /* the in-game menu's rows, below */
+#endif
 
 static int gl_init(uint32_t w, uint32_t h)
 {
@@ -1158,6 +1165,14 @@ static int gl_init(uint32_t w, uint32_t h)
             (const char *)glGetString(GL_VERSION),
             (const char *)glGetString(GL_RENDERER),
             (const char *)glGetString(GL_SHADING_LANGUAGE_VERSION));
+#if defined(XBOXRECOMP_MENU)
+    {   /* File > About's lines on the GPU, kept for the life of the window. */
+        static char about_gl[256];
+        snprintf(about_gl, sizeof about_gl, "%s\nOpenGL %s",
+                 (const char *)glGetString(GL_RENDERER), (const char *)glGetString(GL_VERSION));
+        if (xbox_MenuInit(g_window, g_sdl_ctx, about_gl)) sdl_menu_graphics();
+    }
+#endif
 
     return gl_init_common(w, h);
 }
@@ -1230,7 +1245,7 @@ int nv_window_pref_num(const char *key, double *v)
     return r;
 }
 
-static void sdl_cfg_set(const char *key, int val)
+static void sdl_cfg_put(const char *key, const char *val)
 {
     char path[1024], tmp[1100], line[1200];
     size_t kl = strlen(key);
@@ -1253,13 +1268,13 @@ static void sdl_cfg_set(const char *key, int val)
     if ((in = fopen(path, "r")) != NULL) {
         while (fgets(line, sizeof line, in)) {
             if (!strncmp(line, key, kl) && line[kl] == '=') {
-                if (!done) fprintf(out, "%s=%d\n", key, val);
+                if (!done) fprintf(out, "%s=%s\n", key, val);
                 done = 1;
             } else fputs(line, out);
         }
         fclose(in);
     }
-    if (!done) fprintf(out, "%s=%d\n", key, val);
+    if (!done) fprintf(out, "%s=%s\n", key, val);
     fclose(out);
     /* On Windows rename() will not replace a file that exists -- and the
      * launcher has always written this one -- so a choice made here was
@@ -1268,6 +1283,24 @@ static void sdl_cfg_set(const char *key, int val)
         remove(path);
         rename(tmp, path);
     }
+}
+
+static void sdl_cfg_set(const char *key, int val)
+{
+    char v[16];
+    snprintf(v, sizeof v, "%d", val);
+    sdl_cfg_put(key, v);
+}
+
+/* A number kept in the same file, for the game's own keys -- the in-game
+ * menu's pages (src/menu/menu.h), which save what they change here, as a
+ * hotkey does. nv_window_pref_num reads it back. */
+void nv_window_pref_set_num(const char *key, double v);
+void nv_window_pref_set_num(const char *key, double v)
+{
+    char s[32];
+    snprintf(s, sizeof s, "%.15g", v);
+    sdl_cfg_put(key, s);
 }
 
 /* nv2a_widescreen() asks this when RECOMP_WIDESCREEN is not set. */
@@ -1424,10 +1457,12 @@ static void sdl_keys_release(void)
     memset((void *)g_sdl_kb_analog, 0, sizeof g_sdl_kb_analog);
 }
 
+/* The scales, as F9's box and the in-game menu name them. */
+static const char *const sdl_scale_names[4] = {
+    "1x  640x480", "2x  1280x960", "3x  1920x1440", "4x  2560x1920" };
+
 static void sdl_choose_scale(void)
 {
-    static const char *const names[4] = {
-        "1x  640x480", "2x  1280x960", "3x  1920x1440", "4x  2560x1920" };
     SDL_MessageBoxButtonData b[5];
     SDL_MessageBoxData box;
     char msg[512];
@@ -1445,7 +1480,7 @@ static void sdl_choose_scale(void)
     for (i = 0; i < 4; i++) {
         b[i].flags    = i + 1 == cur ? SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT : 0;
         b[i].buttonid = i + 1;
-        b[i].text     = names[i];
+        b[i].text     = sdl_scale_names[i];
     }
     b[4].flags    = SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
     b[4].buttonid = 0;
@@ -1472,6 +1507,46 @@ static void sdl_choose_scale(void)
         return;
     }
     sdl_restart_at(pick, was_fs);
+}
+
+#if defined(XBOXRECOMP_MENU)
+/* The in-game menu's Graphics rows (menu.h): the switches F11, F10 and F9
+ * are, so each setting still lives here, once, and is saved as before. */
+static int  sdl_is_fullscreen(void) { return (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0; }
+static int  sdl_scale_now(void)     { return (int)gl_scale() - 1; }
+static void sdl_scale_pick(int i)   { sdl_restart_at(i + 1, sdl_is_fullscreen()); }
+
+static void sdl_menu_graphics(void)
+{
+    const XBOX_MENU_ITEM rows[] = {
+        { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE, .label = "Full screen",
+          .state = sdl_is_fullscreen, .run = sdl_toggle_fullscreen },
+        { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE, .label = "Widescreen (16:9)",
+          .state = nv2a_widescreen, .run = sdl_toggle_widescreen },
+        { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Render scale",
+          .state = sdl_scale_now, .pick = sdl_scale_pick,
+          .choices = sdl_scale_names, .nchoices = (int)(sizeof sdl_scale_names / sizeof sdl_scale_names[0]),
+          .confirm = "The game restarts at the new scale: anything since your last save is lost." },
+    };
+    int n = (int)(sizeof rows / sizeof rows[0]);
+    /* A new scale is a restart, which not every port can do (F9 asks the same). */
+    if (!recomp_restart_self) n--;          /* Render scale, the last row */
+    xbox_MenuAdd(rows, n);
+}
+#endif
+
+/* Asked by the input layer (xinput_device.c): does the in-game menu have the
+ * controls? 1 open, 0 shut, -1 no menu (and so the pad's Back is the game's).
+ * Defined on every SDL build, as nv_window_keys is, so the weak reference
+ * there resolves the same way on each platform. */
+int nv_window_menu_open(void);
+int nv_window_menu_open(void)
+{
+#if defined(XBOXRECOMP_MENU)
+    return xbox_MenuIsOpen();
+#else
+    return -1;
+#endif
 }
 
 #if defined(_WIN32)
@@ -1599,6 +1674,9 @@ static void sdl_present(GLuint src_fbo, int sw, int sh)
     glBlitFramebuffer(0, 0, sw, sh,
                       (ww - dw) / 2, (wh - dh) / 2, (ww - dw) / 2 + dw, (wh - dh) / 2 + dh,
                       GL_COLOR_BUFFER_BIT, GL_LINEAR);
+#if defined(XBOXRECOMP_MENU)
+    xbox_MenuDraw();
+#endif
     SDL_GL_SwapWindow(g_window);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)rfb);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)dfb);
@@ -1854,6 +1932,9 @@ static int SDLCALL pres_main(void *arg)
                         "presenter\n", told, w, h, ww, wh, dw, dh);
             }
         }
+#if defined(XBOXRECOMP_MENU)
+        xbox_MenuDraw();
+#endif
         SDL_GL_SwapWindow(g_window);
         glFinish();                     /* the swap done: when the display took it */
         t = mono_now();
@@ -1999,6 +2080,9 @@ static void sdl_pump(void)
         if (want != nv2a_widescreen()) sdl_toggle_widescreen();
     }
     while (SDL_PollEvent(&ev)) {
+#if defined(XBOXRECOMP_MENU)
+        if (xbox_MenuEvent(&ev)) continue;      /* F1, a pad's Back, or the menu's */
+#endif
         switch (ev.type) {
         case SDL_QUIT:
             fprintf(stderr, "  [GL] window closed; stopping\n");
@@ -2046,6 +2130,9 @@ static void sdl_pump(void)
             break;
         }
     }
+#if defined(XBOXRECOMP_MENU)
+    xbox_MenuFrame();                           /* nothing while it is shut */
+#endif
 }
 
 #else

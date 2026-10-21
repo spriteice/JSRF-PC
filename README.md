@@ -69,7 +69,8 @@ years has. The **Video** menu at the top of the window sets the resolution,
 from 1× to 4× the Xbox's 640×480 (2× by default; the game restarts to apply
 it), widescreen 16:9 and full screen; the first two are remembered. The same
 are on **F9**, **F10** and **F11** (or Alt+Enter), which also work in full
-screen, where the menu is hidden.
+screen, where the menu is hidden, and in the in-game menu: **F1**, or Back on
+a controller.
 Controllers work through SDL: Xbox, PlayStation, Switch Pro and many more.
 Saves are kept in the game folder, in `UDATA`, as on the Mac. The
 `README.txt` inside lists the options and where the settings and logs
@@ -200,7 +201,8 @@ On Linux the keyboard layout is the same as below; **F11** (or Alt+Return)
 toggles full screen, **F10** widescreen, and **F9** sets the resolution (1× to
 4×; the game restarts to apply it). **F8** turns on the free camera, on Linux and
 Windows: the right stick turns the camera around the player (its settings are
-in `README.txt`).
+in `README.txt`). **F1**, or Back on a controller, opens the F11, F10 and F9
+settings, and the free camera's, in a menu over the game.
 
 ### Your game files
 

@@ -93,6 +93,7 @@ Every Xbox game has its own asset formats. If you reverse-engineer a texture for
 
 - **C11** standard, targeting MSVC (Visual Studio 2022).
 - **No external dependencies** for the runtime libraries. Everything needed is either in the Windows SDK or self-contained in this repo.
+- One exception to C: the in-game menu uses Dear ImGui, which is C++. It is kept, unmodified, in `third_party/imgui/`, and the C++ goes no further than that and `src/menu/`, which the rest of the runtime reaches through C headers. It is built without exceptions or RTTI and must not need the C++ runtime library.
 - Use `stdint.h` types (`uint32_t`, `int16_t`, etc.) rather than platform-specific types.
 - 4-space indentation, no tabs.
 - Function names: `xbox_ModuleName_FunctionName` for public APIs, `snake_case` for internal helpers.

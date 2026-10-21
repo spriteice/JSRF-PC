@@ -16,7 +16,7 @@ set -euo pipefail
 OS_RELEASE="${OS_RELEASE:-/etc/os-release}"
 
 # Same dependencies throughout, spelled per distro:
-#   build toolchain + cmake + pkg-config
+#   build toolchain (C, and C++ for the in-game menu) + cmake + pkg-config
 #   SDL2    - window, input, audio
 #   OpenGL headers - the renderer (nv2a_gl)
 #   OpenSSL - crypto, replaces bcrypt
@@ -37,7 +37,7 @@ detect_family() {
 
 family=$(detect_family) || {
     echo "Could not identify the distro from $OS_RELEASE." >&2
-    echo "Install these by hand: a C toolchain, cmake, pkg-config, SDL2," >&2
+    echo "Install these by hand: a C and C++ toolchain, cmake, pkg-config, SDL2," >&2
     echo "OpenGL headers, OpenSSL, and ffmpeg (all with headers)." >&2
     exit 1
 }
@@ -59,7 +59,7 @@ case "$family" in
         sudo pacman -S --needed "${PKGS[@]}"
         ;;
     fedora)
-        PKGS=(cmake gcc make pkgconf-pkg-config SDL2-devel mesa-libGL-devel
+        PKGS=(cmake gcc gcc-c++ make pkgconf-pkg-config SDL2-devel mesa-libGL-devel
               openssl-devel ffmpeg-devel)
         echo "Detected Fedora/RHEL. Installing ${#PKGS[@]} packages..."
         echo "(ffmpeg-devel needs RPM Fusion enabled.)"

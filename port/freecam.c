@@ -27,10 +27,17 @@
 #include <math.h>
 #include <stdio.h>
 #include "freecam.h"
+#if defined(XBOXRECOMP_MENU)
+#  include "menu.h"
+#endif
 
 /* Degrees per game frame, at full tilt, for each step of sensitivity: 36 a
  * second at the game's 60 frames a second. */
 #define FREECAM_STEP_DEG 0.6
+/* The steps of sensitivity the settings file takes (and the in-game menu
+ * offers). */
+#define FREECAM_SENS_MIN 1.0
+#define FREECAM_SENS_MAX 10.0
 /* How far the eye goes above or below the target, in degrees. The view is
  * built from an eye, a target and an up direction, which turns over at
  * straight up or down; this stays short of it. */
@@ -77,15 +84,22 @@ static double cfg_num(const char *key, double def, double lo, double hi)
     return def;
 }
 
+#if defined(XBOXRECOMP_MENU)
+static void freecam_menu(void);
+#endif
+
 static void freecam_load(void)
 {
     if (s_loaded) return;
     s_loaded = 1;
+#if defined(XBOXRECOMP_MENU)
+    freecam_menu();
+#endif
     s_on = cfg_num("freecam", 0, -HUGE_VAL, HUGE_VAL) != 0;
     s_cfg.invert_x = cfg_num("invert_x", s_cfg.invert_x, -HUGE_VAL, HUGE_VAL) != 0;
     s_cfg.invert_y = cfg_num("invert_y", s_cfg.invert_y, -HUGE_VAL, HUGE_VAL) != 0;
-    s_cfg.sens_x = cfg_num("sensitivity_x", s_cfg.sens_x, 1, 10);
-    s_cfg.sens_y = cfg_num("sensitivity_y", s_cfg.sens_y, 1, 10);
+    s_cfg.sens_x = cfg_num("sensitivity_x", s_cfg.sens_x, FREECAM_SENS_MIN, FREECAM_SENS_MAX);
+    s_cfg.sens_y = cfg_num("sensitivity_y", s_cfg.sens_y, FREECAM_SENS_MIN, FREECAM_SENS_MAX);
     s_cfg.deadzone = cfg_num("deadzone", s_cfg.deadzone, 0, 1);
     fprintf(stderr, "[FREECAM] %s (settings); invert x %d y %d, sensitivity x %g y %g, deadzone %g\n",
             s_on ? "on" : "off", s_cfg.invert_x, s_cfg.invert_y, s_cfg.sens_x, s_cfg.sens_y,
@@ -178,3 +192,46 @@ int jsrf_freecam_toggle(void)
     fprintf(stderr, "[FREECAM] %s (F8)\n", s_on ? "on" : "off");
     return s_on;
 }
+
+#if defined(XBOXRECOMP_MENU)
+/* The in-game menu's Controller page (src/menu/menu.h). A row changes what
+ * freecam uses at once and keeps it in the settings file, as F8 keeps
+ * freecam=; it runs on the window's thread, as F8 does. The deadzone is
+ * shown, and stepped, in percent. */
+
+extern void nv_window_pref_set_num(const char *key, double v);   /* nv2a_gl.c */
+
+static int    menu_on(void)            { return s_on; }
+static void   menu_on_run(void)        { nv_window_pref_set_num("freecam", jsrf_freecam_toggle()); }
+static int    menu_inv_x(void)         { return s_cfg.invert_x; }
+static void   menu_inv_x_run(void)     { s_cfg.invert_x = !s_cfg.invert_x; nv_window_pref_set_num("invert_x", s_cfg.invert_x); }
+static int    menu_inv_y(void)         { return s_cfg.invert_y; }
+static void   menu_inv_y_run(void)     { s_cfg.invert_y = !s_cfg.invert_y; nv_window_pref_set_num("invert_y", s_cfg.invert_y); }
+static double menu_sens_x(void)        { return s_cfg.sens_x; }
+static void   menu_sens_x_set(double v) { s_cfg.sens_x = v; nv_window_pref_set_num("sensitivity_x", v); }
+static double menu_sens_y(void)        { return s_cfg.sens_y; }
+static void   menu_sens_y_set(double v) { s_cfg.sens_y = v; nv_window_pref_set_num("sensitivity_y", v); }
+static double menu_dz(void)            { return s_cfg.deadzone * 100; }
+static void   menu_dz_set(double v)    { s_cfg.deadzone = v / 100; nv_window_pref_set_num("deadzone", v / 100); }
+
+static void freecam_menu(void)
+{
+    const XBOX_MENU_ITEM rows[] = {
+        { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_TOGGLE, .label = "Free camera (F8)",
+          .state = menu_on, .run = menu_on_run },
+        { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_TOGGLE, .label = "Invert X",
+          .state = menu_inv_x, .run = menu_inv_x_run },
+        { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_TOGGLE, .label = "Invert Y",
+          .state = menu_inv_y, .run = menu_inv_y_run },
+        { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_NUMBER, .label = "Sensitivity X",
+          .value = menu_sens_x, .set = menu_sens_x_set,
+          .min = FREECAM_SENS_MIN, .max = FREECAM_SENS_MAX, .step = 1, .format = "%g" },
+        { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_NUMBER, .label = "Sensitivity Y",
+          .value = menu_sens_y, .set = menu_sens_y_set,
+          .min = FREECAM_SENS_MIN, .max = FREECAM_SENS_MAX, .step = 1, .format = "%g" },
+        { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_NUMBER, .label = "Deadzone",
+          .value = menu_dz, .set = menu_dz_set, .min = 0, .max = 100, .step = 5, .format = "%g%%" },
+    };
+    xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
+}
+#endif
