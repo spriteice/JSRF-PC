@@ -184,6 +184,32 @@ def test_a_two_level_switch_index_table_is_stepped_over():
         assert addr not in det.functions, hex(addr)
 
 
+def test_index_bytes_after_the_table_are_not_a_slot():
+    # JSRF's 0x000F807C: its index bytes `00 02 02 00` read as 0x00020200, an
+    # address in .text, so the table grew an arm outside its function and the
+    # virtual method owning it was never translated. `00 01 01 00` is in this
+    # image once the follower is padded past BASE + 0x100.
+    index = bytes([0, 1, 1, 0, 3, 2, 1])
+    data, table, _, _ = _owner_with_table(
+        index, follower_code=FOLLOWER + b"\xcc" * 0x100)
+    engine, _ = _engine(data)
+    assert engine.jump_tables[table] == table + 16
+
+
+def test_a_word_naming_index_bytes_is_not_an_entry():
+    # JSRF's 0x0011A1DC: the load's displacement, read as a data word, named
+    # the index bytes, which decode as `add`s running over nop padding into the
+    # next function's ret. The code reads them as bytes: not an entry.
+    index = bytes([0, 1, 1, 0, 3, 2, 1, 0])
+    data, table, _, _ = _owner_with_table(
+        index, align_after_index=False, follower_code=b"\x90" * 8 + FOLLOWER)
+    index_at = table + 16
+    data += b"\xcc" * (-len(data) % 4) + struct.pack("<I", index_at)
+    det, _ = _detect(data)
+    assert index_at not in det.functions
+    assert index_at not in det._alias_entries
+
+
 def test_a_switch_arm_after_its_table_is_not_a_follower():
     # MSVC's memcpy parks arms straight after a table. When the owner was
     # measured short, the arm sits in a gap, but starting a function there

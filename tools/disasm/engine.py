@@ -332,7 +332,14 @@ class DisasmEngine:
             hi = lo + home.virtual_size
             entries = 0
             while entries < max_entries:
-                target = self.image.read_u32_at_va(tbl + entries * 4)
+                # A two-level switch parks its byte index table straight after
+                # the slots, and index bytes like `00 02 02 00` read as an
+                # in-section address. Index bytes name arms already counted.
+                slot = tbl + entries * 4
+                index = self.image.read_bytes_at_va(slot, 4) or b""
+                if slot in self.byte_tables and all(b < entries for b in index):
+                    break
+                target = self.image.read_u32_at_va(slot)
                 if target is None or not (lo <= target < hi):
                     break
                 entries += 1

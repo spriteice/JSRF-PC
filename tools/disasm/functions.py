@@ -1160,7 +1160,9 @@ class FunctionDetector:
         claimed = self._callback_code
         found = 0
         for target in sorted(targets):
-            if target in self.functions or target in self._alias_entries:
+            # A switch's index bytes are data the code reads, not an entry.
+            if (target in self.functions or target in self._alias_entries
+                    or target in self.engine.byte_tables):
                 continue
             # A table word can name an instruction suffix in any known body.
             # Require the same callable-entry proof as for recovered callbacks;
