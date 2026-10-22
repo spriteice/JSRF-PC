@@ -332,14 +332,14 @@ class DisasmEngine:
             hi = lo + home.virtual_size
             entries = 0
             while entries < max_entries:
-                # A two-level switch parks its byte index table straight after
-                # the slots, and index bytes like `00 02 02 00` read as an
-                # in-section address. Index bytes name arms already counted.
-                slot = tbl + entries * 4
-                index = self.image.read_bytes_at_va(slot, 4) or b""
-                if slot in self.byte_tables and all(b < entries for b in index):
+                # MSVC's two-level switch parks the byte index table straight
+                # after the dword table. Its first bytes, small arm numbers
+                # such as `00 02 02 00`, read as a dword are an address low
+                # in the section, so the walk would take them as one more
+                # arm. A `movzx` names that byte table; stop in front of it.
+                if tbl + entries * 4 in self.byte_tables:
                     break
-                target = self.image.read_u32_at_va(slot)
+                target = self.image.read_u32_at_va(tbl + entries * 4)
                 if target is None or not (lo <= target < hi):
                     break
                 entries += 1
@@ -680,15 +680,26 @@ class DisasmEngine:
                                 lower: Optional[int] = None,
                                 tail_targets=(), *, require_entry_frame=False,
                                 allow_indirect_tails=False,
-                                may_return=True, unproven_tails=None) -> bool:
+                                escapes: Optional[Set[int]] = None,
+                                may_return=True) -> bool:
         """Read-only proof of a closed callback CFG inside an unclaimed gap.
 
         Calls may return from other functions; branches and fallthrough must
         stay on decoded instruction boundaries. Reuse the translator's CFG
         decoder and the sweep's measured switch tables, without a size cap.
         With may_return=False, a ret or an indirect tail fails the proof.
-        A direct jmp out of the gap to an address not in tail_targets fails
-        it too, and is added to unproven_tails when that is a set.
+
+        allow_indirect_tails: an indirect jmp that is not a measured table is
+        an exit. True takes any form; "mem" takes a memory operand
+        (`jmp [reg + N]`, a vtable slot or a function-pointer field), or a
+        register the body itself wrote, never a bare `jmp reg`.
+
+        escapes: when given, a direct jmp or jcc out of [lower, upper) to an
+        address nobody has proven is not a refusal: the destination is added
+        to the set and the edge counts as an exit. The body is closed only
+        once the caller proves every destination itself, in its own gap.
+        A switch arm outside the gap counts as an exit when it is in
+        tail_targets, whether or not escapes is given.
         """
         from ..recomp.disasm import Disassembler
 
@@ -736,16 +747,30 @@ class DisasmEngine:
                 if (allow_indirect_tails
                         and (op.type != "mem" or not op.mem_index
                              or not self.jump_table_entries(op.mem_disp))):
+                    # "mem": `jmp reg` only when the body loaded that
+                    # register itself, a handler fetched from a table
+                    # (`mov eax, [eax*4+T] ; ... ; jmp eax`). A lone `ff e0`
+                    # decoded from a stray word has no such load.
+                    if (allow_indirect_tails == "mem" and op.type != "mem"
+                            and not (op.type == "reg" and any(
+                                op.reg in other.regs_written
+                                for other in decoded if other is not insn))):
+                        return False
                     indirect_tails.add(insn.address)
                     continue
                 if (op.type != "mem" or not op.mem_index or op.mem_base
                         or op.mem_scale != 4 or op.mem_seg):
                     return False
                 targets = self.jump_table_entries(op.mem_disp)
-                if not targets or any(not lower <= t < upper for t in targets):
+                # An arm outside the gap is fine when it is a proven entry: a
+                # dispatcher whose arms are other functions (a two-instruction
+                # `mov eax, [ecx+N]; jmp [eax*4+table]` method) exits into
+                # them as a tail call does.
+                if not targets or any(not lower <= t < upper
+                                      and t not in tail_targets for t in targets):
                     return False
                 tables[insn.address] = targets
-                arms.update(targets)
+                arms.update(t for t in targets if lower <= t < upper)
             if arms <= entries:
                 break
             entries.update(arms)
@@ -790,18 +815,20 @@ class DisasmEngine:
             for edge in edges:
                 if edge in starts:
                     continue
-                if edge == insn.jump_target and edge in tail_targets:
+                if edge in tail_targets and (edge == insn.jump_target
+                                             or insn.address in tables):
                     exits = True  # preserve proven tails to existing bodies
                     continue
-                if (unproven_tails is not None and insn.is_jump
-                        and edge == insn.jump_target
+                # A direct jump or branch out of the gap to code nobody has
+                # proven yet. The caller may prove that destination on its
+                # own (escapes); until it does, this body is not closed.
+                if (escapes is not None and edge == insn.jump_target
                         and not lower <= edge < upper):
-                    unproven_tails.add(edge)
+                    escapes.add(edge)
+                    exits = True
                     continue
                 return False
             backward |= any(edge in starts and edge <= insn.address for edge in edges)
-        if unproven_tails:
-            return False
         if require_entry_frame:
             saved = {insn.op_str for insn in decoded if insn.mnemonic == "push"}
             restored = {insn.op_str for insn in decoded if insn.mnemonic == "pop"}

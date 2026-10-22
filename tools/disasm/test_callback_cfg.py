@@ -243,6 +243,7 @@ def test_table_suffix_cannot_borrow_flags_from_an_existing_body(prefix, accepted
 def test_table_entry_after_padding_may_tail_jump_out(pad, accepted):
     # JSRF's 0x00067E90: `ret 4; nop; nop`, then a vtable entry that opens
     # with `push esi` and leaves by a jmp to code nothing has proven yet.
+    # The sweep past padding after a ret (_pass_gap_prologues) finds it.
     from tools.disasm.engine import DisasmEngine
     body = bytearray(b'\xc2\x04\x00' + bytes([pad]) * 13 + b'\x56\x8b\xf1')
     body += b'\xe9' + struct.pack('<i', 64 - len(body) - 5)
@@ -254,6 +255,5 @@ def test_table_entry_after_padding_may_tail_jump_out(pad, accepted):
     engine = DisasmEngine(image)
     engine.linear_sweep(text)
     detector = FunctionDetector(engine, image, None, LabelManager())
-    detector.functions[BASE] = Function(BASE, BASE + 3, 'owner')
-    detector._pass_data_ptr_targets([text])
-    assert (BASE + 16 in detector._alias_entries) == accepted
+    detector.detect_all([text])
+    assert (BASE + 16 in detector.functions) == accepted

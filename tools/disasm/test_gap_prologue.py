@@ -41,8 +41,13 @@ class _Func:
 
 
 class _Image:
+    bytes_at = {}
+
     def get_section_at_va(self, addr):
         return _Section()
+
+    def read_bytes_at_va(self, addr, n):
+        return bytes(self.bytes_at.get(addr + i, 0) for i in range(n))
 
 
 class _Engine:
@@ -61,6 +66,11 @@ class _Engine:
 
     def probes_as_constant_stub(self, addr):
         return self._stub
+
+    bodies = ()
+
+    def probes_as_callback_body(self, addr, upper, **kw):
+        return addr in self.bodies
 
 
 def _detector(insns, functions, prologues):
@@ -128,6 +138,42 @@ class GapPrologueTest(unittest.TestCase):
         funcs = [_Func(0x00476EA0, 0x00476EB0), _Func(0x004771C0, 0x004771D0)]
         det = _detector(insns, funcs, prologues={0x00476EB0})
         self.assertFalse(det._pass_gap_prologues([]))
+
+    # Panzer Dragoon Orta pads with nop, not int3:
+    #
+    #     0x0026B629  ret 0xc
+    #     0x0026B62C  nop x4
+    #     0x0026B630  mov ecx, [esp+4]   <- a COM forwarder, vtable-only
+    def _padded(self, ret_end, start):
+        insns = [_Insn(ret_end - 3, 3, is_ret=True)]
+        funcs = [_Func(ret_end - 0x20, ret_end), _Func(0x0026B690, 0x0026B6A0)]
+        det = _detector(insns, funcs, prologues={start})
+        det.image.bytes_at = {a: 0x90 for a in range(ret_end, start)}
+        return det
+
+    def test_a_start_past_nop_padding_is_a_function(self):
+        det = self._padded(0x0026B62C, 0x0026B630)
+        self.assertTrue(det._pass_gap_prologues([]))
+        self.assertEqual(det.added, [(0x0026B630, "gap_prologue")])
+
+    def test_a_closed_body_past_nop_padding_is_a_function(self):
+        # The forwarder ends `jmp [ecx+0x18]`: no prologue, no constant stub.
+        det = self._padded(0x0026B62C, 0x0026B630)
+        det.engine._prologues = set()
+        det.engine.bodies = {0x0026B630}
+        self.assertTrue(det._pass_gap_prologues([]))
+        self.assertEqual(det.added, [(0x0026B630, "gap_prologue")])
+
+    def test_a_closed_body_with_no_padding_in_front_is_not_enough(self):
+        det = self._padded(0x0026B630, 0x0026B630)
+        det.engine._prologues = set()
+        det.engine.bodies = {0x0026B630}
+        self.assertFalse(det._pass_gap_prologues([]))
+
+    def test_nops_that_reach_no_alignment_are_not_padding(self):
+        det = self._padded(0x0026B62C, 0x0026B62E)
+        self.assertFalse(det._pass_gap_prologues([]))
+
 
 class SehPrologueShapeTest(unittest.TestCase):
     """A function whose frame __SEH_prolog builds has no prologue to find.
