@@ -6317,9 +6317,6 @@ static long long     g_slice_since;
  * interrupt, DPC or synchronize routine. */
 static unsigned long g_slice_handoffs;
 static unsigned long g_slice_held_raised;
-/* Back-edge checks that found the holder at DISPATCH_LEVEL or above, where
- * no hand-over is made, for the same report. */
-static unsigned long g_slice_irql_held;
 
 /* Per-thread queueing statistics, kept in a small fixed table so that
  * reporting them needs no allocation and no lock of its own. */
@@ -6540,11 +6537,8 @@ void xbox_guest_lock_stats(void)
     fprintf(stderr, "        %lu time slices ended in a hand-over, %lu slice ends "
                     "put off at raised IRQL or in an interrupt or DPC\n",
             g_slice_handoffs, g_slice_held_raised);
-    fprintf(stderr, "        %lu back-edge checks put off at raised IRQL\n",
-            g_slice_irql_held);
     g_slice_handoffs = 0;
     g_slice_held_raised = 0;
-    g_slice_irql_held = 0;
     fflush(stderr);
 }
 void xbox_guest_lock_release(void)
@@ -6708,7 +6702,12 @@ void xbox_guest_lock_yield_now(void)
  * (0x001A308E, the load-game hang) spins at raised IRQL until the APU's
  * handler retires the voice. So a pending APU interrupt is taken here, on
  * this thread, at any IRQL (kernel_raise_interrupt_here); only the thread
- * switch waits for IRQL to drop. */
+ * switch waits for IRQL to drop.
+ *
+ * The slice check's own raised-IRQL rule (hand over anyway after
+ * RECOMP_SLICE_RAISED_MS) never sees a back edge, deliberately: every
+ * raised-IRQL loop has back edges, and a hand-over there lets the timer
+ * thread run a DPC partway through what the holder raised IRQL to protect. */
 void xbox_GuestCpuPreempt(uint32_t va)
 {
     extern unsigned g_recomp_tick;
@@ -6724,7 +6723,7 @@ void xbox_GuestCpuPreempt(uint32_t va)
     if (g_lock_owner_irql < DISPATCH_LEVEL)
         xbox_guest_lock_yield_now();
     else
-        g_slice_irql_held++;
+        g_slice_held_raised++;
 }
 /* Give the guest lock up across a wait that is not a kernel call.
  *
