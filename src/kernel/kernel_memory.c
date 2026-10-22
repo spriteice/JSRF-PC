@@ -14,6 +14,7 @@
 #if defined(_WIN32)
 /* _aligned_malloc/_aligned_free; POSIX gets them from win32_compat.h */
 #include <malloc.h>
+#include "xbox_memory_layout.h"   /* the guest view, for MEM_DECOMMIT */
 #endif
 
 /* ============================================================================
@@ -286,6 +287,34 @@ NTSTATUS __stdcall xbox_NtFreeVirtualMemory(
         return STATUS_INVALID_PARAMETER;
 
     SIZE_T size = (FreeType & MEM_RELEASE) ? 0 : (RegionSize ? *RegionSize : 0);
+
+#if defined(_WIN32)
+    /* Guest RAM is one view of a section (xbox_memory_layout.c), and
+     * VirtualFree decommits only what VirtualAlloc made: on a view it fails
+     * with ERROR_INVALID_PARAMETER, every time -- 7,229 times in a 110 s run
+     * of JSRF, each one a warning below. Do what the POSIX shim's VirtualFree
+     * does instead: take access away from the whole pages inside the range.
+     * Committing them again (NtAllocateVirtualMemory with MEM_COMMIT, or the
+     * MEM_RELEASE of a heap block) already gives it back. */
+    if ((FreeType & MEM_DECOMMIT) && !(FreeType & MEM_RELEASE)) {
+        uintptr_t view = (uintptr_t)xbox_GetMemoryBase();
+        uintptr_t a = (uintptr_t)*BaseAddress;
+        if (view && a >= view && a + size <= view + xbox_GetMappedSize()) {
+            uintptr_t lo = (a + 0xFFF) & ~(uintptr_t)0xFFF;
+            uintptr_t hi = (a + size) & ~(uintptr_t)0xFFF;
+            DWORD old;
+            if (hi > lo && !VirtualProtect((void *)lo, hi - lo, PAGE_NOACCESS, &old)) {
+                xbox_log(XBOX_LOG_WARN, XBOX_LOG_MEM,
+                    "NtFreeVirtualMemory: decommit of %p (%u bytes) in the guest view failed: err=%u",
+                    *BaseAddress, (ULONG)size, GetLastError());
+                return STATUS_UNSUCCESSFUL;
+            }
+            XBOX_TRACE(XBOX_LOG_MEM, "NtFreeVirtualMemory(%p, 0x%X) in the guest view",
+                *BaseAddress, FreeType);
+            return STATUS_SUCCESS;
+        }
+    }
+#endif
 
     if (!VirtualFree(*BaseAddress, size, FreeType)) {
         xbox_log(XBOX_LOG_WARN, XBOX_LOG_MEM,
