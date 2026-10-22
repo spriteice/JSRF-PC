@@ -48,7 +48,7 @@ static inline int64_t qemu_clock_get_us(int type) {
     LARGE_INTEGER freq, count;
     QueryPerformanceFrequency(&freq);
     QueryPerformanceCounter(&count);
-    return (int64_t)(count.QuadPart * 1000000LL / freq.QuadPart);
+    return qemu_qpc_scale(count.QuadPart, freq.QuadPart, 1000000LL);
 }
 #endif
 

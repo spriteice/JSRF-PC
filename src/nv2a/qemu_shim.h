@@ -369,12 +369,20 @@ static inline void bql_unlock(void) {}
 #define qemu_mutex_unlock_iothread() bql_unlock()
 
 /* Timer */
+/* A performance-counter reading in units of 1/per_sec s. Split into whole
+ * seconds and the remainder, as xbox_ReadTimeStampCounter does, because the
+ * product overflows: count * 1e9 passes INT64_MAX once the host has been up
+ * for 9.2 s at the 1 GHz counter the POSIX shim reports, or 15 minutes at
+ * Windows' usual 10 MHz. */
+static inline int64_t qemu_qpc_scale(int64_t count, int64_t freq, int64_t per_sec) {
+    return count / freq * per_sec + count % freq * per_sec / freq;
+}
 static inline int64_t qemu_clock_get_ns(int type) {
     (void)type;
     LARGE_INTEGER freq, count;
     QueryPerformanceFrequency(&freq);
     QueryPerformanceCounter(&count);
-    return (int64_t)(count.QuadPart * 1000000000LL / freq.QuadPart);
+    return qemu_qpc_scale(count.QuadPart, freq.QuadPart, 1000000000LL);
 }
 #define QEMU_CLOCK_VIRTUAL 0
 
