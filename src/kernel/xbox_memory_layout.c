@@ -3069,6 +3069,24 @@ uint32_t xbox_HeapBlockSize(uint32_t xbox_va)
     return 0;
 }
 
+const char *xbox_HeapDescribe(uint32_t xbox_va)
+{
+    int i;
+
+    for (i = 0; i < g_heap_block_count; i++) {
+        uint32_t a = g_heap_blocks[i].addr;
+        if (xbox_va < a || xbox_va >= a + g_heap_blocks[i].size)
+            continue;
+        if (g_heap_blocks[i].free)
+            return xbox_va == a ? "the start of free heap space" : "inside free heap space";
+        return xbox_va == a ? "a live heap block" : "inside a live heap block";
+    }
+    if (xbox_va >= XBOX_HEAP_BASE && xbox_va < XBOX_HEAP_TOP)
+        return xbox_va >= g_heap_next ? "in free heap space above the last block"
+                                      : "in the heap but in no block";
+    return "outside the heap";
+}
+
 void xbox_HeapFree(uint32_t xbox_va)
 {
     static int frees = 0, matched = 0;

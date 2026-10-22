@@ -468,6 +468,12 @@ void xbox_HeapFree(uint32_t xbox_va);
 uint32_t xbox_HeapBlockSize(uint32_t xbox_va);
 
 /**
+ * What the heap knows about an address outside its live blocks, in words for a
+ * warning: free space it handed out and took back, or never its own.
+ */
+const char *xbox_HeapDescribe(uint32_t xbox_va);
+
+/**
  * Get the file mapping handle for the Xbox memory region.
  * Used by the VEH handler to map additional mirror views on demand.
  * Returns NULL if file mapping is not available.

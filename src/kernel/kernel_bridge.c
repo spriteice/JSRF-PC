@@ -1096,9 +1096,25 @@ static void bridge_NtFreeVirtualMemory(void)
             g_eax = 0;
             return;
         }
-        if (KERNEL_LOG_ON())
-            fprintf(stderr, "  [KERNEL] NtFreeVirtualMemory: MEM_RELEASE of 0x%08X"
-                            " is not a heap block start\n", base);
+        /* Not a block the heap holds: either the title is releasing it a
+         * second time or the heap gave it back early, and only the code that
+         * made the call tells the two apart. */
+        { static unsigned said;
+          if (said++ < 16) {
+              char chain[96]; int len = 0, shown = 0, k;
+              chain[0] = 0;
+              for (k = 0; k < 24 && shown < 6; k++) {
+                  uint32_t w = (uint32_t)BRIDGE_MEM32(g_esp + (uint32_t)k * 4);
+                  if (w > g_xbox_code_lo && w < g_xbox_code_hi) {
+                      len += snprintf(chain + len, sizeof chain - len, " %08X", w);
+                      shown++;
+                  }
+              }
+              fprintf(stderr, "  [KERNEL] NtFreeVirtualMemory: MEM_RELEASE of 0x%08X,"
+                              " %s; called from 0x%08X, guest code on the stack:%s\n",
+                      base, xbox_HeapDescribe(base), g_xbox_kernel_caller, chain);
+              fflush(stderr);
+          } }
     }
     g_eax = (uint32_t)xbox_NtFreeVirtualMemory(&nbase, &nsize, free_type);
     if (g_eax == 0 && base_ptr && (free_type & 0x8000u))   /* MEM_RELEASE */
