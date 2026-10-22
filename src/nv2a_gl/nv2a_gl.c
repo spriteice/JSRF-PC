@@ -1104,9 +1104,6 @@ static int gl_init(uint32_t w, uint32_t h)
 #if !defined(NV2A_GLES)
 static void pres_start(void);        /* the presenter, below */
 #endif
-#if defined(_WIN32)
-static void sdl_menu_init(void);     /* the menu bar, below */
-#endif
 #if defined(XBOXRECOMP_MENU)
 static void sdl_menu_graphics(void); /* the in-game menu's rows, below */
 #endif
@@ -1187,9 +1184,6 @@ static int gl_init(uint32_t w, uint32_t h)
 #endif
     if (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP)
         SDL_ShowCursor(SDL_DISABLE);
-#if defined(_WIN32)
-    sdl_menu_init();
-#endif
     fprintf(stderr, "  [WIN] SDL window (%s video), %s\n", SDL_GetCurrentVideoDriver(),
             nv2a_widescreen() ? "16:9" : "4:3");
 
@@ -1417,20 +1411,10 @@ int nv_window_keys(unsigned short *buttons, unsigned char *analog)
     return any;
 }
 
-#if defined(_WIN32)
-static void sdl_menu_show(int on);
-static void sdl_menu_update(void);
-#else
-static void sdl_menu_show(int on) { (void)on; }
-static void sdl_menu_update(void) { }
-#endif
-
 static void sdl_toggle_fullscreen(void)
 {
     int fs = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
-    if (!fs) sdl_menu_show(0);          /* the menu bar is the window's */
     SDL_SetWindowFullscreen(g_window, fs ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
-    if (fs) sdl_menu_show(1);
     SDL_ShowCursor(fs ? SDL_ENABLE : SDL_DISABLE);
     fprintf(stderr, "[WIN] full screen %s\n", fs ? "off" : "on");
 }
@@ -1453,7 +1437,6 @@ static void sdl_toggle_widescreen(void)
         SDL_GetWindowSize(g_window, &ww, &wh);
         SDL_SetWindowSize(g_window, on ? wh * 16 / 9 : wh * 4 / 3, wh);
     }
-    sdl_menu_update();
     fprintf(stderr, "[WIN] widescreen %s\n", on ? "on (16:9)" : "off (4:3)");
 }
 
@@ -1580,100 +1563,6 @@ int nv_window_menu_open(void)
     return -1;
 #endif
 }
-
-#if defined(_WIN32)
-/*
- * The window's menu bar (Windows): Video -- the resolution, widescreen and
- * full screen, which is what the Mac's Video menu has and what F9, F10 and
- * F11 do. Not in full screen, where it would sit across the top of the
- * picture; the keys work there, and leaving full screen brings it back.
- * SDL hands the menu's WM_COMMAND over as a system event (sdl_pump).
- *
- * Holding a menu open holds the thread that owns the window, which is the
- * one that runs the GPU, so the game waits while it is open -- as a pause
- * menu would. Choosing a resolution asks before it restarts.
- */
-#include <SDL2/SDL_syswm.h>
-enum { MENU_RES1 = 101, MENU_WIDE = 110, MENU_FULL = 111 };
-static HWND  g_menu_hwnd;
-static HMENU g_menu_bar, g_menu_video, g_menu_res;
-
-static void sdl_menu_update(void)
-{
-    int i, cur = (int)gl_scale();
-    if (!g_menu_bar) return;
-    for (i = 1; i <= 4; i++)
-        CheckMenuItem(g_menu_res, MENU_RES1 + i - 1,
-                      MF_BYCOMMAND | (i == cur ? MF_CHECKED : MF_UNCHECKED));
-    CheckMenuItem(g_menu_video, MENU_WIDE,
-                  MF_BYCOMMAND | (nv2a_widescreen() ? MF_CHECKED : MF_UNCHECKED));
-}
-
-/* The menu takes its height from the window, not from the picture: the
- * window is grown by it, so the game keeps the size it had. */
-static void sdl_menu_show(int on)
-{
-    int w = 0, h = 0;
-    if (!g_menu_bar || !g_menu_hwnd) return;
-    if ((GetMenu(g_menu_hwnd) != NULL) == (on != 0)) return;
-    SDL_GetWindowSize(g_window, &w, &h);
-    SetMenu(g_menu_hwnd, on ? g_menu_bar : NULL);
-    if (on && w > 0 && h > 0) SDL_SetWindowSize(g_window, w, h);
-}
-
-static void sdl_menu_init(void)
-{
-    SDL_SysWMinfo info;
-    SDL_VERSION(&info.version);
-    if (!SDL_GetWindowWMInfo(g_window, &info) || info.subsystem != SDL_SYSWM_WINDOWS) return;
-    g_menu_hwnd  = info.info.win.window;
-    g_menu_bar   = CreateMenu();
-    g_menu_video = CreatePopupMenu();
-    g_menu_res   = CreatePopupMenu();
-    if (!g_menu_bar || !g_menu_video || !g_menu_res) { g_menu_bar = NULL; return; }
-    AppendMenuW(g_menu_res, MF_STRING, MENU_RES1 + 0, L"1x  (640 x 480)");
-    AppendMenuW(g_menu_res, MF_STRING, MENU_RES1 + 1, L"2x  (1280 x 960)");
-    AppendMenuW(g_menu_res, MF_STRING, MENU_RES1 + 2, L"3x  (1920 x 1440)");
-    AppendMenuW(g_menu_res, MF_STRING, MENU_RES1 + 3, L"4x  (2560 x 1920)");
-    AppendMenuW(g_menu_video, MF_POPUP, (UINT_PTR)g_menu_res, L"&Resolution\tF9");
-    AppendMenuW(g_menu_video, MF_STRING, MENU_WIDE, L"&Widescreen\tF10");
-    AppendMenuW(g_menu_video, MF_STRING, MENU_FULL, L"&Full screen\tF11");
-    AppendMenuW(g_menu_bar, MF_POPUP, (UINT_PTR)g_menu_video, L"&Video");
-    SDL_EventState(SDL_SYSWMEVENT, SDL_ENABLE);
-    sdl_menu_update();
-    sdl_menu_show(!(SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP));
-}
-
-static void sdl_menu_command(unsigned id)
-{
-    if (id >= MENU_RES1 && id < MENU_RES1 + 4) {
-        int pick = (int)(id - MENU_RES1) + 1, ans = 0;
-        char msg[256];
-        SDL_MessageBoxButtonData b[2];
-        SDL_MessageBoxData box;
-        if (pick == (int)gl_scale() || !recomp_restart_self) return;
-        b[0].flags = SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT; b[0].buttonid = 1; b[0].text = "Restart";
-        b[1].flags = SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT; b[1].buttonid = 0; b[1].text = "Cancel";
-        snprintf(msg, sizeof msg,
-                 "Restart the game at %dx (%d x %d)?\n\n"
-                 "Anything since your last save is lost.",
-                 pick, 640 * pick, 480 * pick);
-        memset(&box, 0, sizeof box);
-        box.flags = SDL_MESSAGEBOX_INFORMATION;
-        box.window = g_window;
-        box.title = "Resolution";
-        box.message = msg;
-        box.numbuttons = 2;
-        box.buttons = b;
-        if (SDL_ShowMessageBox(&box, &ans) == 0 && ans == 1) sdl_restart_at(pick, 0);
-        sdl_keys_release();
-    } else if (id == MENU_WIDE) {
-        sdl_toggle_widescreen();
-    } else if (id == MENU_FULL) {
-        sdl_toggle_fullscreen();
-    }
-}
-#endif
 
 /* The frame, fitted into the window between black bars: a widened scene at
  * 16:9 (the 640x480 surface holds a 16:9 view squeezed), anything else at its
@@ -2149,15 +2038,6 @@ static void sdl_pump(void)
                 for (i = 0; i < 8; i++) g_sdl_kb_analog[i] = 0;
             }
             break;
-#if defined(_WIN32)
-        case SDL_SYSWMEVENT:
-            /* The menu bar: a command from a menu has 0 in the high word. */
-            if (ev.syswm.msg && ev.syswm.msg->subsystem == SDL_SYSWM_WINDOWS
-                && ev.syswm.msg->msg.win.msg == WM_COMMAND
-                && HIWORD(ev.syswm.msg->msg.win.wParam) == 0)
-                sdl_menu_command(LOWORD(ev.syswm.msg->msg.win.wParam));
-            break;
-#endif
         default:
             break;
         }

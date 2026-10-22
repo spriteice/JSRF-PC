@@ -69,9 +69,6 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
   F8                 free camera: the right stick turns the camera around
                      the player; remembered (see Free camera below)
 
-The Video menu at the top of the window has the first three. It is hidden in
-full screen, where the keys and the in-game menu still work.
-
 
 Free camera
 -----------
