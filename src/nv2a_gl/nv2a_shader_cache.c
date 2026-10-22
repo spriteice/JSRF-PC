@@ -54,7 +54,32 @@ static void sc_truncate(const char *path, long len)
     _chsize_s(fd, len);
     _close(fd);
 }
+static int sc_remove(const char *path)
+{
+    wchar_t wp[2048];
+    return MultiByteToWideChar(CP_UTF8, 0, path, -1, wp, 2048) && _wremove(wp) == 0;
+}
+/* fn(dir, name, arg) for each file in dir; the sum of what fn returns. */
+static int sc_each(const char *dir, int (*fn)(const char *, const char *, const char *), const char *arg)
+{
+    wchar_t wp[2048];
+    char name[MAX_PATH * 3];
+    WIN32_FIND_DATAW fd;
+    HANDLE h;
+    int n = MultiByteToWideChar(CP_UTF8, 0, dir, -1, wp, 2040), sum = 0;
+    if (!n) return 0;
+    wcscpy(wp + n - 1, L"\\*");
+    if ((h = FindFirstFileW(wp, &fd)) == INVALID_HANDLE_VALUE) return 0;
+    do {
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
+            WideCharToMultiByte(CP_UTF8, 0, fd.cFileName, -1, name, sizeof name, NULL, NULL))
+            sum += fn(dir, name, arg);
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+    return sum;
+}
 #else
+#  include <dirent.h>
 #  include <pthread.h>
 #  include <sys/stat.h>
 #  include <sys/types.h>
@@ -65,6 +90,22 @@ static void unlock(void) { pthread_mutex_unlock(&s_mutex); }
 static FILE *sc_fopen(const char *path, const char *mode) { return fopen(path, mode); }
 static void sc_mkdir(const char *path) { mkdir(path, 0755); }
 static void sc_truncate(const char *path, long len) { if (truncate(path, (off_t)len)) { /* nothing */ } }
+static int sc_remove(const char *path) { return remove(path) == 0; }
+static int sc_each(const char *dir, int (*fn)(const char *, const char *, const char *), const char *arg)
+{
+    DIR *d = opendir(dir);
+    struct dirent *e;
+    struct stat st;
+    char path[2048];
+    int sum = 0;
+    if (!d) return 0;
+    while ((e = readdir(d)) != NULL) {
+        snprintf(path, sizeof path, "%s/%s", dir, e->d_name);
+        if (!stat(path, &st) && S_ISREG(st.st_mode)) sum += fn(dir, e->d_name, arg);
+    }
+    closedir(d);
+    return sum;
+}
 #endif
 
 #define MAGIC_SRC  0x3153534Au   /* "JSS1": a source text */
@@ -478,4 +519,35 @@ void nv2a_sc_stats(int *programs, int *binaries, int *added)
     if (binaries) *binaries = C.nbin;
     if (added) *added = C.added;
     unlock();
+}
+
+/* ---- binaries files no run reads any more ----------------------------------- */
+
+/* `name` in `dir` goes if it is a binaries file other than `keep`. */
+static int sweep_one(const char *dir, const char *name, const char *keep)
+{
+    static const char kind[] = "binaries-", ext[] = ".dat";
+    char path[2048];
+    size_t n = strlen(name);
+    if (strncmp(name, kind, sizeof kind - 1) || n < sizeof ext - 1
+        || strcmp(name + n - (sizeof ext - 1), ext) || !strcmp(name, keep))
+        return 0;
+    snprintf(path, sizeof path, "%s/%s", dir, name);
+    if (!sc_remove(path)) return 0;
+    fprintf(stderr, "  [SHADERS] removed %s: not this driver's or this engine's\n", name);
+    return 1;
+}
+
+int nv2a_sc_sweep(void)
+{
+    char dir[sizeof C.bfile], keep[sizeof C.bfile];
+    const char *slash;
+    lock();
+    slash = C.bin_open ? strrchr(C.bfile, '/') : NULL;
+    if (slash) {
+        snprintf(dir, sizeof dir, "%.*s", (int)(slash - C.bfile), C.bfile);
+        snprintf(keep, sizeof keep, "%s", slash + 1);
+    }
+    unlock();
+    return slash ? sc_each(dir, sweep_one, keep) : 0;
 }

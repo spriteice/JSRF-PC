@@ -64,6 +64,14 @@ void nv2a_sc_bin_put(uint64_t key, const void *data, uint32_t len, uint32_t form
 /* A saved binary the driver refused (an update since): forget it. */
 void nv2a_sc_bin_drop(uint64_t key);
 
+/* Removes the binaries files in the cache's folder other than the one this run
+ * keeps: an earlier driver's (on SteamOS a kernel or Mesa update names a new
+ * one), another GPU's, an older engine's. For a run that builds every program
+ * again from its sources at start-up, which reads none of them. Nothing when
+ * this run keeps no binaries; program and recipe files, and anything else in
+ * the folder, are never touched. Returns how many were removed. */
+int  nv2a_sc_sweep(void);
+
 /* For the report: programs and binaries on disk, and what this run added. */
 void nv2a_sc_stats(int *programs, int *binaries, int *added);
 

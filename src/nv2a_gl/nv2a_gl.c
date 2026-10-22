@@ -10490,7 +10490,8 @@ static void shader_cache_toggle(void)
  * again from its sources before the game's first frame -- whether or not this
  * driver kept a binary of it, so that each run starts from programs this
  * driver has just compiled -- with a box saying how far it has got. No cache
- * yet: nothing to build, no box.
+ * yet: nothing to build, no box. A run like that reads no other driver's
+ * binaries file, or an older engine's, so those are removed first.
  *
  * The game is not stopped for it: it waits for its first frame as it would
  * for a slow GPU. The display interrupt is answered after each program, as
@@ -10509,8 +10510,9 @@ static void sdl_shader_cache(void)
     uint32_t rt;
     double t0, period = 0.0, shown = 0.0;
     xbox_MenuAdd(&row, 1);
-    if (!nv2a_sc_is_open() || !G->cache_idle || !G->cache_rebuild || (total = G->cache_rebuild()) <= 0)
-        return;
+    if (!nv2a_sc_is_open() || !G->cache_idle || !G->cache_rebuild) return;
+    nv2a_sc_sweep();
+    if ((total = G->cache_rebuild()) <= 0) return;
     /* Black behind the box: nothing of the game's has been drawn yet. */
     if (!(rt = G->target_new(640, 480))) return;
     G->target_bind(rt);
