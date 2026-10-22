@@ -24,24 +24,25 @@ you own.
 Thanks to [JuMatt](https://github.com/JuMatt) for the original port, which
 this fork builds on.
 
-- **Portable mode:** a `portable` folder next to the launcher keeps the
-  settings, saves, logs and cache inside it. _(Linux, Windows)_
 - **In-game menu:** F1, or Back on a controller. _(Linux, Windows)_
 - **Free camera:** F8 gives the right stick to the camera, which turns around
   the player; the L trigger puts it back behind. _(Linux, Windows)_
+- **Anti-aliasing:** MSAA and FXAA, alone or together. _(Linux, Windows)_
+- **Anisotropic filtering:** sharper textures at an angle. _(Linux, Windows)_
+- **Portable mode:** a `portable` folder next to the launcher keeps the
+  settings, saves, logs and cache inside it. _(Linux, Windows)_
 - Various bug fixes.
 
 ---
 
 ## Download
 
-This fork's only release so far is a **release candidate** of the coming
-0.5.3a beta: a test build, so expect bugs.
+The latest release is **0.5.3a**.
 
 | Platform | Download |
 |---|---|
-| Linux, x86_64 (glibc 2.34 or later: SteamOS, Ubuntu 22.04, Debian 12, Fedora 36 and newer) | [JSRF-0.5.3a-rc-linux-x86_64.tar.gz](https://github.com/spriteice/JetSetRadioFuture-Unleashed/releases/download/v0.5.3a-rc/JSRF-0.5.3a-rc-linux-x86_64.tar.gz) — the main target, and the most tested |
-| Windows 10 or 11, 64-bit | [JSRF-0.5.3a-rc-windows-x86_64.zip](https://github.com/spriteice/JetSetRadioFuture-Unleashed/releases/download/v0.5.3a-rc/JSRF-0.5.3a-rc-windows-x86_64.zip) — starts and plays, but largely untested |
+| Linux, x86_64 (glibc 2.34 or later: SteamOS, Ubuntu 22.04, Debian 12, Fedora 36 and newer) | [JSRF-0.5.3a-linux-x86_64.tar.gz](https://github.com/spriteice/JetSetRadioFuture-Unleashed/releases/download/v0.5.3a/JSRF-0.5.3a-linux-x86_64.tar.gz) — the main target, and the most tested |
+| Windows 10 or 11, 64-bit | [JSRF-0.5.3a-windows-x86_64.zip](https://github.com/spriteice/JetSetRadioFuture-Unleashed/releases/download/v0.5.3a/JSRF-0.5.3a-windows-x86_64.zip) — starts and plays, but largely untested |
 
 Every version is on the [Releases](https://github.com/spriteice/JetSetRadioFuture-Unleashed/releases) page, with what changed in it; the [changelog](CHANGELOG.md) has the upstream versions this fork builds on.
 
@@ -117,15 +118,26 @@ works with a controller, the keyboard or the mouse; B or Esc goes back a step.
 The game keeps running while it is open, but your input goes to the menu.
 
 - **File:** About (the version and system details) and Exit.
-- **Graphics:** full screen, widescreen 16:9, the render scale (1× to 4×),
-  anisotropic filtering (Off to 16×) and the shader cache (on by default:
-  every shader the game has built is built again at start-up, behind a
-  progress bar, so none are built while you play).
+- **Graphics:** full screen, widescreen 16:9, the render scale (1× to 4×)
+  and the [graphics options](#graphics-options) below.
 - **Controller:** the free camera, and its inversion, sensitivity and
   deadzone.
 
 Everything is remembered. Exit and a new render scale ask
 first, as anything since your last save is lost.
+
+### Graphics options
+
+These are in the in-game menu, under **Graphics**.
+
+- **Anti-aliasing** smooths jagged edges. MSAA (2×, 4× or 8×) gives the
+  cleanest edges but asks the most of the graphics card; FXAA costs little
+  but softens the picture slightly. Use either, or both. Off by default.
+- **Anisotropic filtering** (2× to 16×) keeps textures sharp where they are
+  seen at an angle, such as streets running into the distance. Off by
+  default.
+- **Shader cache** keeps the shaders the game builds and builds them again
+  when it starts, so play doesn't pause for them. On by default.
 
 ### Portable limitations
 
@@ -178,7 +190,7 @@ Back is Esc on the keyboard.
 
 | Key | Does |
 |---|---|
-| F1, or Back on a controller | the in-game menu: **File** (About, Exit), **Graphics** (the next three, anisotropic filtering and the shader cache) and **Controller** (the free camera and its settings) |
+| F1, or Back on a controller | the in-game menu: **File** (About, Exit), **Graphics** (the next three and the [graphics options](#graphics-options)) and **Controller** (the free camera and its settings) |
 | F11 or Alt+Return | full screen. Remembered. |
 | F10 | widescreen 16:9: a wider field of view, not a stretch; the HUD and text keep their shape, and the title screen stays 4:3. Remembered. |
 | F9 | resolution: 1× to 4× the Xbox's 640×480 (2× by default). Remembered. The game restarts to apply it, so save first. |
