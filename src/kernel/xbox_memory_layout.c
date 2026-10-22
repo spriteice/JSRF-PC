@@ -3069,7 +3069,20 @@ uint32_t xbox_HeapBlockSize(uint32_t xbox_va)
     return 0;
 }
 
-const char *xbox_HeapDescribe(uint32_t xbox_va)
+/* Where an address stands with the heap, as an index into heap_where_text. */
+enum {
+    HEAP_LIVE_START, HEAP_LIVE_INSIDE, HEAP_FREE_START, HEAP_FREE_INSIDE,
+    HEAP_ABOVE_LAST, HEAP_NO_BLOCK, HEAP_RESERVED, HEAP_OUTSIDE
+};
+
+static const char *const heap_where_text[] = {
+    "a live heap block", "inside a live heap block",
+    "the start of free heap space", "inside free heap space",
+    "in free heap space above the last block", "in the heap but in no block",
+    "in a reservation above RAM", "outside the heap"
+};
+
+static int heap_where(uint32_t xbox_va)
 {
     int i;
 
@@ -3078,13 +3091,28 @@ const char *xbox_HeapDescribe(uint32_t xbox_va)
         if (xbox_va < a || xbox_va >= a + g_heap_blocks[i].size)
             continue;
         if (g_heap_blocks[i].free)
-            return xbox_va == a ? "the start of free heap space" : "inside free heap space";
-        return xbox_va == a ? "a live heap block" : "inside a live heap block";
+            return xbox_va == a ? HEAP_FREE_START : HEAP_FREE_INSIDE;
+        return xbox_va == a ? HEAP_LIVE_START : HEAP_LIVE_INSIDE;
     }
+    /* xbox_ReserveAlloc's range shares the top of the mapping with the heap. */
+    if (xbox_va >= g_xbox_total_ram && xbox_va < g_reserve_next)
+        return HEAP_RESERVED;
     if (xbox_va >= XBOX_HEAP_BASE && xbox_va < XBOX_HEAP_TOP)
-        return xbox_va >= g_heap_next ? "in free heap space above the last block"
-                                      : "in the heap but in no block";
-    return "outside the heap";
+        return xbox_va >= g_heap_next ? HEAP_ABOVE_LAST : HEAP_NO_BLOCK;
+    return HEAP_OUTSIDE;
+}
+
+const char *xbox_HeapDescribe(uint32_t xbox_va)
+{
+    return heap_where_text[heap_where(xbox_va)];
+}
+
+int xbox_HeapIsFreeSpace(uint32_t xbox_va)
+{
+    int w = heap_where(xbox_va);
+
+    return w != HEAP_LIVE_START && w != HEAP_LIVE_INSIDE &&
+           w != HEAP_RESERVED && w != HEAP_OUTSIDE;
 }
 
 void xbox_HeapFree(uint32_t xbox_va)

@@ -469,9 +469,15 @@ uint32_t xbox_HeapBlockSize(uint32_t xbox_va);
 
 /**
  * What the heap knows about an address outside its live blocks, in words for a
- * warning: free space it handed out and took back, or never its own.
+ * log line: free space it handed out and took back, or never its own.
  */
 const char *xbox_HeapDescribe(uint32_t xbox_va);
+
+/**
+ * Nonzero when the address is heap space that no live block holds: space the
+ * heap handed out and took back, or has not handed out yet.
+ */
+int xbox_HeapIsFreeSpace(uint32_t xbox_va);
 
 /**
  * Get the file mapping handle for the Xbox memory region.

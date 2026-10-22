@@ -1096,25 +1096,21 @@ static void bridge_NtFreeVirtualMemory(void)
             g_eax = 0;
             return;
         }
-        /* Not a block the heap holds: either the title is releasing it a
-         * second time or the heap gave it back early, and only the code that
-         * made the call tells the two apart. */
-        { static unsigned said;
-          if (said++ < 16) {
-              char chain[96]; int len = 0, shown = 0, k;
-              chain[0] = 0;
-              for (k = 0; k < 24 && shown < 6; k++) {
-                  uint32_t w = (uint32_t)BRIDGE_MEM32(g_esp + (uint32_t)k * 4);
-                  if (w > g_xbox_code_lo && w < g_xbox_code_hi) {
-                      len += snprintf(chain + len, sizeof chain - len, " %08X", w);
-                      shown++;
-                  }
-              }
-              fprintf(stderr, "  [KERNEL] NtFreeVirtualMemory: MEM_RELEASE of 0x%08X,"
-                              " %s; called from 0x%08X, guest code on the stack:%s\n",
-                      base, xbox_HeapDescribe(base), g_xbox_kernel_caller, chain);
-              fflush(stderr);
-          } }
+        /* Heap space no live block holds: the title released it already.
+         * JSRF's graffiti cache builder does this on every scene change. It
+         * releases each texture buffer after copying it into the sheet
+         * (0x2DA70), keeps the pointer, and releases it again after writing
+         * JSRF_TEXS0/1.JTX (0x2D8D0, 0x2D950). The console fails the second
+         * call and the title ignores the result. The host must not see it:
+         * Windows cannot release part of the guest view (error 487), and the
+         * POSIX shim's VirtualFree says yes to anything. */
+        if (xbox_HeapIsFreeSpace(base)) {
+            if (KERNEL_LOG_ON())
+                fprintf(stderr, "  [KERNEL] NtFreeVirtualMemory: MEM_RELEASE of 0x%08X,"
+                                " %s\n", base, xbox_HeapDescribe(base));
+            g_eax = 0xC00000A0u;   /* STATUS_MEMORY_NOT_ALLOCATED */
+            return;
+        }
     }
     g_eax = (uint32_t)xbox_NtFreeVirtualMemory(&nbase, &nsize, free_type);
     if (g_eax == 0 && base_ptr && (free_type & 0x8000u))   /* MEM_RELEASE */
