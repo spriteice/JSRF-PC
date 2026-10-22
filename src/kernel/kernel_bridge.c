@@ -375,6 +375,17 @@ static long kernel_log_budget(void)
 /* Some sites logged at a tighter cap than the rest; keep them proportional. */
 #define KERNEL_LOG_ON_HALF() (g_kernel_call_count <= kernel_log_budget() / 2)
 
+/* RECOMP_KERNEL_IO=1: a line for every file read and event as well as the
+ * periodic I/O counts. Without it those calls print nothing. In a 110 s run of
+ * JSRF they were 1,300 events and 217 reads, each line its own write to an
+ * unbuffered stderr, and the event lines written with the guest lock held. */
+static int kernel_io_on(void)
+{
+    static int on = -1;
+    if (on < 0) on = getenv("RECOMP_KERNEL_IO") ? 1 : 0;
+    return on;
+}
+
 /* Read Xbox stack arg as uint32_t.
  * After kernel_thunk_dispatch pops the dummy return address (g_esp += 4),
  * arg0 is at g_esp+0, arg1 at g_esp+4, etc. */
@@ -1604,9 +1615,10 @@ static void bridge_NtCreateEvent(void)
         bridge_write_handle(handle_ptr, local_handle);
     }
 
-    fprintf(stderr, "  [BRIDGE] NtCreateEvent: handle_ptr=0x%08X type=%u init=%u → status=0x%08X handle=0x%08X\n",
-            handle_ptr, event_type, initial_state, (uint32_t)status,
-            (uint32_t)(uintptr_t)local_handle);
+    if (kernel_io_on())
+        fprintf(stderr, "  [BRIDGE] NtCreateEvent: handle_ptr=0x%08X type=%u init=%u → status=0x%08X handle=0x%08X\n",
+                handle_ptr, event_type, initial_state, (uint32_t)status,
+                (uint32_t)(uintptr_t)local_handle);
 
     g_eax = (uint32_t)status;
 }
@@ -2449,11 +2461,12 @@ static void kernel_vblank_tick(void)
     {
         static unsigned n;
         int claimed = kernel_raise_interrupt(NV2A_VECTOR);
-        if (n++ < 3)
+        if (n++ < 3) {
             fprintf(stderr, "  [NV2A] vblank -> ISR %s\n",
                     claimed < 0 ? "not callable" :
                     claimed ? "claimed it" : "declined it");
-        fflush(stderr);
+            fflush(stderr);
+        }
     }
 }
 
@@ -3882,7 +3895,7 @@ static void bridge_NtReadFile(void)
     /* What a read actually delivered. A decoder that rejects its input cannot
      * say whether the bytes were wrong or the read was, and the two look
      * identical from inside the title -- the first bytes settle it. */
-    {
+    if (kernel_io_on()) {
         const uint8_t *p = (const uint8_t *)XBOX_TO_NATIVE(buffer_va);
         uint32_t got = (uint32_t)ios.Information;
         /* The offset matters as much as the length. A title streaming a pack
@@ -7327,7 +7340,7 @@ static void kernel_thunk_dispatch(void)
              * the top six. A loader that is not loading and a loader that is
              * loading slowly look identical in a ranking dominated by
              * critical sections. */
-            if (getenv("RECOMP_KERNEL_IO")) {
+            if (kernel_io_on()) {
                 /* Bytes as well as calls. The loading screen advances thirty
                  * times faster with the frame cap off, which says the loader
                  * is being driven by the frame loop -- but whether each step
@@ -7338,7 +7351,7 @@ static void kernel_thunk_dispatch(void)
                 fprintf(stderr, "  [KERNEL-IO] file reads: %llu calls, "
                         "%llu KB\n", g_read_calls, g_read_bytes / 1024);
             }
-            if (getenv("RECOMP_KERNEL_IO")) {
+            if (kernel_io_on()) {
                 static const struct { int ord; const char *nm; } io[] = {
                     { 158, "KeWaitForMultipleObjects" },
                     { 159, "KeWaitForSingleObject" },

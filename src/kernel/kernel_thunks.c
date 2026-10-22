@@ -333,7 +333,12 @@ ULONG_PTR xbox_resolve_ordinal(ULONG ordinal)
     case 164: return (ULONG_PTR)&xbox_LaunchDataPage;
 
     default:
-        xbox_log(XBOX_LOG_ERROR, XBOX_LOG_THUNK,
+        /* DEBUG, not ERROR. Nothing calls through this table -- the title's
+         * kernel calls go to the bridge (kernel_bridge.c) -- and in a JSRF log
+         * all 235 lines of this were ordinals of the reference list below,
+         * not anything the title was missing. The count still prints, in the
+         * summary after the loop. */
+        xbox_log(XBOX_LOG_DEBUG, XBOX_LOG_THUNK,
             "Unresolved kernel ordinal %u", ordinal);
         return 0;
     }
