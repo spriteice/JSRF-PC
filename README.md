@@ -117,7 +117,8 @@ works with a controller, the keyboard or the mouse; B or Esc goes back a step.
 The game keeps running while it is open, but your input goes to the menu.
 
 - **File:** About (the version and system details) and Exit.
-- **Graphics:** full screen, widescreen 16:9 and the render scale, 1× to 4×.
+- **Graphics:** full screen, widescreen 16:9, the render scale (1× to 4×) and
+  anisotropic filtering (Off to 16×).
 - **Controller:** the free camera, and its inversion, sensitivity and
   deadzone.
 
@@ -175,7 +176,7 @@ Back is Esc on the keyboard.
 
 | Key | Does |
 |---|---|
-| F1, or Back on a controller | the in-game menu: **File** (About, Exit), **Graphics** (the next three) and **Controller** (the free camera and its settings) |
+| F1, or Back on a controller | the in-game menu: **File** (About, Exit), **Graphics** (the next three, and anisotropic filtering) and **Controller** (the free camera and its settings) |
 | F11 or Alt+Return | full screen |
 | F10 | widescreen 16:9: a wider field of view, not a stretch; the HUD and text keep their shape, and the title screen stays 4:3. Remembered. |
 | F9 | resolution: 1× to 4× the Xbox's 640×480 (2× by default). Remembered. The game restarts to apply it, so save first. |

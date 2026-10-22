@@ -337,6 +337,54 @@ static int glx_target_read_depth(uint32_t h, uint32_t pw, uint32_t ph, float *ou
 
 /* ---- textures ------------------------------------------------------------ */
 
+/* The most anisotropy a texture can be sampled with. Asked once: a driver
+ * without the extension flags the query as an error, and every upload
+ * repeating it would pin errors on the draws the GL error check looks at.
+ * OpenGL ES has it only as an extension, so there it is looked for first. */
+static int glx_aniso_max(void)
+{
+    static GLfloat cap = -1.0f;
+    if (cap < 0.0f) {
+        cap = 1.0f;
+#if defined(NV2A_GLES)
+        if (!gles_has_ext("GL_EXT_texture_filter_anisotropic")) return 1;
+#endif
+        glGetFloatv(0x84FF, &cap);      /* MAX_TEXTURE_MAX_ANISOTROPY */
+    }
+    return cap > 1.0f ? (int)cap : 1;
+}
+
+/* A texture parameter, so it changes for a texture already made without
+ * its texels being sent again.
+ *
+ * A texture with one level gets a second, empty one first, the first time
+ * it is asked for more than none. Mesa's radeonsi sets the sampler's
+ * ANISO_OVERRIDE, which has AMD hardware ignore anisotropy on a texture
+ * whose base level is its last (RADV's "disable anisotropic filtering for
+ * single level images" is the same bit), and the title's textures are
+ * level zero alone. With GL_TEXTURE_MAX_LEVEL at 1 the texture's last
+ * level is 1; the minification filter is not a mipmap one, so level 1 is
+ * never sampled and the picture at 1x is what it was. A texture with a
+ * chain of its own already has the level. */
+static void glx_tex_aniso(uint32_t t, int n)
+{
+    int cap = glx_aniso_max();
+    GLint w = 0, h = 0;
+    if (!t || cap < 2) return;
+    scratch_bind(t);
+    if (n > 1) {
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 1, GL_TEXTURE_WIDTH, &w);
+        if (!w) {
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
+            glTexImage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w > 1 ? w / 2 : 1, h > 1 ? h / 2 : 1, 0,
+                         GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 1);
+        }
+    }
+    glTexParameterf(GL_TEXTURE_2D, 0x84FE, (GLfloat)(n < 1 ? 1 : n > cap ? cap : n));
+}
+
 static uint32_t glx_tex_new(uint32_t w, uint32_t h, const void *rgba,
                             const Nv2aSampler *s)
 {
@@ -355,16 +403,6 @@ static uint32_t glx_tex_new(uint32_t w, uint32_t h, const void *rgba,
         glGenerateMipmap(GL_TEXTURE_2D);
         mn = s->mip == 1 ? (s->min_linear ? GL_LINEAR_MIPMAP_NEAREST : GL_NEAREST_MIPMAP_NEAREST)
                          : (s->min_linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR);
-        if (s->aniso > 1) {
-            /* Asked once: a driver without the extension flags the query as
-             * an error, and every upload repeating it would pin errors on
-             * the draws the GL error check looks at. */
-            static GLfloat cap = -1.0f;
-            GLfloat a = (GLfloat)s->aniso;
-            if (cap < 0.0f) { cap = 1.0f; glGetFloatv(0x84FF, &cap); }   /* MAX_TEXTURE_MAX_ANISOTROPY */
-            if (a > cap) a = cap;
-            if (a > 1.0f) glTexParameterf(GL_TEXTURE_2D, 0x84FE, a);
-        }
     } else {
         mn = s->min_linear ? GL_LINEAR : GL_NEAREST;
     }
@@ -372,6 +410,9 @@ static uint32_t glx_tex_new(uint32_t w, uint32_t h, const void *rgba,
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, (GLint)mg);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap_of[s->wrap_s < 3 ? s->wrap_s : 0]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_of[s->wrap_t < 3 ? s->wrap_t : 0]);
+    /* With or without a chain (glx_tex_aniso gives one without a second
+     * level). */
+    if (s->aniso > 1) glx_tex_aniso(t, s->aniso);
     return t;
 }
 
@@ -1572,6 +1613,7 @@ static const Nv2aGfx g_gl = {
     glx_cache_open, glx_cache_idle,
     glx_target_fxaa,
     glx_samples_max, glx_samples,
+    glx_aniso_max, glx_tex_aniso,
 };
 
 const Nv2aGfx *nv2a_gfx_gl(void) { return &g_gl; }

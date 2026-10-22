@@ -394,6 +394,14 @@ typedef struct Nv2aGfx {
      * the device refuses one. NULL where the backend has none (Metal). */
     int      (*samples_max)(void);
     int      (*samples)(int n);
+
+    /* Anisotropic filtering. The most this device samples with (1: none);
+     * and sample texture `tex` (one tex_new made) with up to `n` from now
+     * on, capped at that, its texels untouched (the GL backend gives a
+     * texture of one level an empty second one, which some drivers need).
+     * NULL where the backend has none (Metal, today). */
+    int      (*aniso_max)(void);
+    void     (*tex_aniso)(uint32_t tex, int n);
 } Nv2aGfx;
 
 /* The implementations. Each returns NULL where it cannot run (no Metal

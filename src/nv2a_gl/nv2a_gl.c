@@ -932,8 +932,28 @@ static struct {
     uint32_t tex;           /* the device's texture */
     uint32_t va, serial;    /* read from: where, and the allocation (contig_serial) */
     int      bias;          /* uploaded as a bump source (g_upload_bias_bg) */
+    uint32_t filter;        /* the title's filter it was made with */
+    int      aniso;         /* filtered linearly both ways: takes anisotropy */
     int      used;
 } g_tcache[TEX_CACHE];
+
+/*
+ * Anisotropic filtering: more samples along a footprint the viewing angle
+ * stretches, for the textures the title filters linearly both ways (see
+ * upload_texture_inner). It can change while the game runs: asked for at any
+ * time (the in-game menu) and taken at the next flip, where every texture the
+ * cache holds gets the new level in place (aniso_take) -- a texture
+ * parameter, so nothing is decoded or sent again. RECOMP_GL_ANISO=n, or the
+ * window's aniso= setting; 0 or 1 is none.
+ */
+static volatile int g_aniso_want = 1;   /* the most samples asked for */
+static int          g_aniso_now = 1;    /* and in use */
+/* What it reaches, for the report: uploads the title filters linearly both
+ * ways or not, that declare a chain of levels, by the anisotropy the title
+ * asked for itself (NV097_SET_TEXTURE_CONTROL0 bits 4-5: 1x to 8x, which
+ * this does not apply); and lookups of a texture with min or mag filters
+ * other than the ones it was made with, which keeps those. */
+static struct { uint32_t linear, point, chain, own[4], refilter; } g_tfilt;
 
 /* ---- helpers ------------------------------------------------------------ */
 
@@ -1632,6 +1652,35 @@ static void sdl_menu_fxaa(void)
         .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE, .label = "Anti-aliasing (FXAA)",
         .state = sdl_fxaa_on, .run = sdl_fxaa_flip };
     if (G->target_fxaa) xbox_MenuAdd(&row, 1);
+}
+
+/* Graphics > Anisotropic filtering: none, then each level the device can
+ * sample with, taken at the next flip and kept as aniso= (0 for none), as
+ * F10 keeps widescreen=. Added once the device is up (aniso_start), after
+ * the rows above. */
+static const char *const sdl_aniso_names[] = { "Off", "2x", "4x", "8x", "16x" };
+#define SDL_ANISO_N ((int)(sizeof sdl_aniso_names / sizeof sdl_aniso_names[0]))
+static int sdl_aniso_now(void)
+{
+    int i = 0;
+    while (i + 1 < SDL_ANISO_N && (2 << i) <= g_aniso_want) i++;
+    return i;
+}
+static void sdl_aniso_pick(int i)
+{
+    g_aniso_want = 1 << i;
+    sdl_cfg_set("aniso", i ? 1 << i : 0);
+}
+static void sdl_menu_aniso(void)
+{
+    int n = 1;
+    while (n < SDL_ANISO_N && (1 << n) <= G->aniso_max()) n++;
+    if (n > 1) {
+        const XBOX_MENU_ITEM row = {
+            .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Anisotropic filtering",
+            .state = sdl_aniso_now, .pick = sdl_aniso_pick, .choices = sdl_aniso_names, .nchoices = n };
+        xbox_MenuAdd(&row, 1);
+    }
 }
 #endif
 
@@ -3116,6 +3165,19 @@ static void tcache_verify(void)
         }
     }
 }
+/* At the flip: a level of anisotropy asked for since the last one, given to
+ * every texture held that takes it. One uploaded later gets it at tex_new. */
+static void aniso_take(void)
+{
+    int want = g_aniso_want, was = g_aniso_now;
+    uint32_t k, n = 0;
+    if (want == was || !G->tex_aniso) return;
+    g_aniso_now = want;
+    for (k = 0; k < TEX_CACHE; k++)
+        if (g_tcache[k].tex && g_tcache[k].aniso) { G->tex_aniso(g_tcache[k].tex, want); n++; }
+    fprintf(stderr, "  [GL] anisotropic filtering: %dx from present %u (was %dx), %u textures\n",
+            want, S.flips, was, n);
+}
 static uint32_t upload_texture_inner(const TexStage *t)
 {
     uint32_t va = resolve(t->offset);
@@ -3170,6 +3232,8 @@ static uint32_t upload_texture_inner(const TexStage *t)
             }
             g_tcache[k].drawn = S.flips;
             g_tcache[k].last_draw = S.draws;
+            /* min and mag, the two fields the filtering below reads */
+            if ((g_tcache[k].filter ^ t->filter) & 0x0F0F0000u) g_tfilt.refilter++;
             return g_tcache[k].tex;
         }
         if (!g_tcache[k].used) { slot = (int)k; break; }
@@ -3437,17 +3501,6 @@ static uint32_t upload_texture_inner(const TexStage *t)
                  * 3 and 4 take the nearest level, 5 and 6 blend two. */
                 smp.min_linear = (minf == 4 || minf == 6);
                 smp.mip = (minf == 3 || minf == 4) ? 1 : 2;
-                /* Anisotropy only makes sense alongside a chain, and it was
-                 * the other half of what made distant surfaces look smeared
-                 * rather than sharp. It goes with the chain. */
-                { static int aniso = -1;
-                  if (aniso < 0) {
-                      const char *v = getenv("RECOMP_GL_ANISO");
-                      aniso = v ? atoi(v) : 4;
-                      if (aniso < 1) aniso = 1;
-                      if (aniso > 16) aniso = 16;
-                  }
-                  smp.aniso = (uint8_t)aniso; }
             } else {
                 smp.min_linear = !(minf == 3 || minf == 5);
             }
@@ -3455,6 +3508,19 @@ static uint32_t upload_texture_inner(const TexStage *t)
             smp.min_linear = (minf != 1);
         }
         smp.mag_linear = (magf != 1);
+
+        /* Anisotropy, with or without a chain: without one, the samples it
+         * adds along a stretched footprint still come from level zero, which
+         * is what makes a street at a steep angle shimmer. Only where the
+         * title filters linearly both ways, though. The extension leaves
+         * NEAREST with anisotropy to the driver -- "a 2-tap filter", says the
+         * spec, and AMD's hardware has an anisotropic point filter -- and a
+         * texture the title point-samples has texels meant to stay square.
+         * (Dolphin draws the same line.) */
+        smp.aniso = (uint8_t)(smp.min_linear && smp.mag_linear ? g_aniso_now : 1);
+        if (smp.min_linear && smp.mag_linear) g_tfilt.linear++; else g_tfilt.point++;
+        if (t->levels > 1) g_tfilt.chain++;
+        g_tfilt.own[(t->control0 >> 4) & 3]++;
     }
     /* Wrap. Mode 1 is repeat, 2 mirrors, 4 uses the border colour and 3 and 5
      * clamp; everything that was not 1 used to clamp, so a mirrored texture
@@ -3488,6 +3554,8 @@ static uint32_t upload_texture_inner(const TexStage *t)
     g_tcache[slot].w = w; g_tcache[slot].h = h; g_tcache[slot].pitch = t->pitch;
     g_tcache[slot].hash = hash; g_tcache[slot].tex = tex;
     g_tcache[slot].bias = g_upload_bias_bg;
+    g_tcache[slot].filter = t->filter;
+    g_tcache[slot].aniso = smp.min_linear && smp.mag_linear;
     g_tcache[slot].va = va; g_tcache[slot].serial = contig_serial(va);
     g_tcache[slot].content = tex_content(t->color, h, t->pitch, src, bytes);
     g_tcache[slot].drawn = S.flips;
@@ -8970,7 +9038,7 @@ static void present(int is_frame)
     uint8_t *dst;
 
     if (!g_ready || !g_fbo_w || !g_fbo_h || !S.color_offset) return;
-    if (is_frame) { S.frames++; prof_report(); tcache_sweep(); tcache_verify();
+    if (is_frame) { S.frames++; prof_report(); tcache_sweep(); tcache_verify(); aniso_take();
                     /* the census counts one frame, not everything since the
                      * last dump -- otherwise it measures the gap, not the
                      * picture next to it */
@@ -10289,6 +10357,11 @@ void nv2a_gl_report(void)
         surf_desc(4), surf_desc(5), surf_desc(6), surf_desc(7),
         g_tex_dead[0][0], g_tex_dead[0][1], g_tex_dead[0][2],
         g_tex_dead[1][0], g_tex_dead[1][1], g_tex_dead[1][2]);
+    fprintf(stderr, "  [GL] texture uploads: %u filtered linearly (anisotropic at %dx), %u point-sampled; "
+            "%u declare mip levels; the title's own anisotropy 1x/2x/4x/8x: %u/%u/%u/%u; "
+            "%u lookups with other filters than made with\n",
+            g_tfilt.linear, g_aniso_now, g_tfilt.point, g_tfilt.chain,
+            g_tfilt.own[0], g_tfilt.own[1], g_tfilt.own[2], g_tfilt.own[3], g_tfilt.refilter);
     if (G) G->report();
     fflush(stderr);
 }
@@ -10394,6 +10467,30 @@ static void msaa_start(void)
 #endif
 }
 
+/* Anisotropic filtering from the start, before the first texture is made:
+ * RECOMP_GL_ANISO, else the window's setting, as the most samples the device
+ * takes at or below it, in powers of two; and its menu row. */
+static void aniso_start(void)
+{
+    const char *v = getenv("RECOMP_GL_ANISO");
+    int n = (v && *v) ? atoi(v) : 0, max, a = 1;
+#if defined(NV2A_GL_USE_SDL)
+    if (!(v && *v)) n = sdl_cfg_get("aniso", 0);
+#endif
+    if (!G->aniso_max || !G->tex_aniso) {
+        if (n > 1) fprintf(stderr, "  [GL] anisotropic filtering: not on the %s backend\n", G->name);
+        return;
+    }
+    max = G->aniso_max();
+    while (a * 2 <= n && a * 2 <= max) a *= 2;
+    g_aniso_now = g_aniso_want = a;
+    fprintf(stderr, "  [GL] anisotropic filtering: %dx from %s (1x is none; up to %dx here)\n",
+            a, (v && *v) ? "RECOMP_GL_ANISO" : "the settings", max);
+#if defined(XBOXRECOMP_MENU)
+    sdl_menu_aniso();
+#endif
+}
+
 static int gfx_init(uint32_t w, uint32_t h)
 {
     const char *v = getenv("RECOMP_BACKEND");
@@ -10421,6 +10518,7 @@ static int gfx_init(uint32_t w, uint32_t h)
             shader_cache_start();
             msaa_start();
             fxaa_start();
+            aniso_start();
             return 1;
         }
         fprintf(stderr, "  [GL] Metal backend unavailable%s\n",
@@ -10439,6 +10537,7 @@ static int gfx_init(uint32_t w, uint32_t h)
     shader_cache_start();
     msaa_start();
     fxaa_start();
+    aniso_start();
     return 1;
 }
 
