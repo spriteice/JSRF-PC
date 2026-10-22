@@ -1265,6 +1265,135 @@ unsigned nv2a_gfx_gl_fbo(uint32_t rt)
     return rt_ok(rt) ? g_rt[rt - 1].fbo : 0;
 }
 
+/* ---- FXAA ---------------------------------------------------------------- */
+
+/*
+ * Fast approximate anti-aliasing (Timothy Lottes, NVIDIA, 2009-2011), written
+ * here from the published description of its "quality" variant: one pass over
+ * the finished frame, which finds the edges by their contrast and blends each
+ * pixel on one with its neighbour across the edge, by how near it is to the
+ * edge's end. Nothing about how the frame was drawn matters, so it costs one
+ * full-screen pass whatever the scene; but it sees the picture only, so
+ * the HUD's edges are smoothed with the rest.
+ *
+ * The vertex stage makes one triangle that covers the target, from
+ * gl_VertexID: no vertices.
+ */
+static const char fxaa_vs[] = NV2A_GLSL_VERSION
+    "out vec2 uv;\n"
+    "void main()\n"
+    "{\n"
+    "    uv = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));\n"
+    "    gl_Position = vec4(uv * 2.0 - 1.0, 0.0, 1.0);\n"
+    "}\n";
+
+static const char fxaa_fs[] = NV2A_GLSL_VERSION
+    "in vec2 uv;\n"
+    "out vec4 frag;\n"
+    "uniform sampler2D fxaaSrc;\n"
+    "uniform vec2 fxaaPx;\n"                /* one pixel, as a texture coordinate */
+    "float lum(vec2 p) { return dot(textureLod(fxaaSrc, p, 0.0).rgb, vec3(0.299, 0.587, 0.114)); }\n"
+    "float at(float x, float y) { return lum(uv + vec2(x, y) * fxaaPx); }\n"
+    "void main()\n"
+    "{\n"
+    "    vec4  c = textureLod(fxaaSrc, uv, 0.0);\n"
+    "    float m = dot(c.rgb, vec3(0.299, 0.587, 0.114));\n"
+    "    float n = at(0.0, 1.0), s = at(0.0, -1.0), e = at(1.0, 0.0), w = at(-1.0, 0.0);\n"
+    "    float lo = min(m, min(min(n, s), min(e, w)));\n"
+    "    float hi = max(m, max(max(n, s), max(e, w)));\n"
+    "    float range = hi - lo;\n"
+    /* Too little contrast to be an edge, for how bright it is: as it was. */
+    "    if (range < max(0.0625, hi * 0.125)) { frag = c; return; }\n"
+    "    float nw = at(-1.0, 1.0), ne = at(1.0, 1.0), sw = at(-1.0, -1.0), se = at(1.0, -1.0);\n"
+    /* Which way the edge runs: along the rows if the brightness changes
+     * more up and down than across. */
+    "    bool horz = abs(nw + sw - 2.0 * w) + 2.0 * abs(n + s - 2.0 * m) + abs(ne + se - 2.0 * e)\n"
+    "             >= abs(nw + ne - 2.0 * n) + 2.0 * abs(w + e - 2.0 * m) + abs(sw + se - 2.0 * s);\n"
+    /* The neighbour across it with the bigger step: the pixel is blended
+     * toward that side, from the edge's midline between the two. */
+    "    float l1 = horz ? s : w, l2 = horz ? n : e;\n"
+    "    bool  first = abs(l1 - m) >= abs(l2 - m);\n"
+    "    float big = 0.25 * max(abs(l1 - m), abs(l2 - m));\n"
+    "    float stp = horz ? fxaaPx.y : fxaaPx.x;\n"
+    "    float mid = 0.5 * ((first ? l1 : l2) + m);\n"
+    "    if (first) stp = -stp;\n"
+    "    vec2 p0 = uv + (horz ? vec2(0.0, 0.5 * stp) : vec2(0.5 * stp, 0.0));\n"
+    /* Along the edge both ways, in growing steps, to where the brightness
+     * along the midline stops being the edge's. */
+    "    vec2 dir = horz ? vec2(fxaaPx.x, 0.0) : vec2(0.0, fxaaPx.y);\n"
+    "    vec2 p1 = p0 - dir, p2 = p0 + dir;\n"
+    "    float end1 = lum(p1) - mid, end2 = lum(p2) - mid;\n"
+    "    bool done1 = abs(end1) >= big, done2 = abs(end2) >= big;\n"
+    "    if (!done1) p1 -= dir;\n"
+    "    if (!done2) p2 += dir;\n"
+    "    for (int i = 2; i < 12 && !(done1 && done2); i++) {\n"
+    "        float q = i < 5 ? 1.0 : i == 5 ? 1.5 : i < 10 ? 2.0 : i == 10 ? 4.0 : 8.0;\n"
+    "        if (!done1) { end1 = lum(p1) - mid; done1 = abs(end1) >= big; if (!done1) p1 -= dir * q; }\n"
+    "        if (!done2) { end2 = lum(p2) - mid; done2 = abs(end2) >= big; if (!done2) p2 += dir * q; }\n"
+    "    }\n"
+    /* Blended the more the nearer the end, and only toward an end whose
+     * brightness goes the other way from this pixel's. */
+    "    float d1 = horz ? uv.x - p1.x : uv.y - p1.y, d2 = horz ? p2.x - uv.x : p2.y - uv.y;\n"
+    "    float off = 0.5 - min(d1, d2) / (d1 + d2);\n"
+    "    if (((d1 < d2 ? end1 : end2) < 0.0) == (m < mid)) off = 0.0;\n"
+    /* And a pixel that stands out from all eight around it -- a thin line,
+     * a speck, which have no edge to follow -- by how much it does. */
+    "    float sub = clamp(abs((2.0 * (n + s + e + w) + nw + ne + sw + se) / 12.0 - m) / range, 0.0, 1.0);\n"
+    "    sub = (3.0 - 2.0 * sub) * sub * sub;\n"
+    "    off = max(off, 0.75 * sub * sub);\n"
+    "    frag = vec4(textureLod(fxaaSrc, uv + (horz ? vec2(0.0, off * stp) : vec2(off * stp, 0.0)), 0.0).rgb, c.a);\n"
+    "}\n";
+
+static GLuint   g_fx_prog, g_fx_vao;
+static GLint    g_fx_px;
+static int      g_fx_bad;           /* it would not build: the frame as it is */
+static uint32_t g_fx_rt;            /* the target it draws into */
+
+static uint32_t glx_target_fxaa(uint32_t h)
+{
+    uint32_t pw, ph;
+    if (!rt_ok(h) || g_fx_bad) return h;
+    pw = g_rt[h - 1].pw; ph = g_rt[h - 1].ph;
+    if (!g_fx_prog) {
+        g_fx_prog = glx_build(fxaa_vs, fxaa_fs, "FXAA");
+        if (!g_fx_prog) {
+            g_fx_bad = 1;
+            fprintf(stderr, "  [GL] FXAA: no program; frames are shown without it\n");
+            return h;
+        }
+        glGenVertexArrays(1, &g_fx_vao);
+        glUseProgram(g_fx_prog);
+        glUniform1i(glGetUniformLocation(g_fx_prog, "fxaaSrc"), SCRATCH_UNIT);
+        g_fx_px = glGetUniformLocation(g_fx_prog, "fxaaPx");
+    }
+    if (!rt_ok(g_fx_rt) || g_rt[g_fx_rt - 1].pw != pw || g_rt[g_fx_rt - 1].ph != ph) {
+        glx_target_free(g_fx_rt);
+        g_fx_rt = glx_target_new(pw, ph);
+        if (!g_fx_rt) return h;
+        fprintf(stderr, "  [GL] FXAA: the frame shown at %ux%u\n", pw, ph);
+    }
+    scratch_bind(g_rt[h - 1].tex);
+    glBindFramebuffer(GL_FRAMEBUFFER, g_rt[g_fx_rt - 1].fbo);
+    glViewport(0, 0, (GLsizei)pw, (GLsizei)ph);
+    glDisable(GL_BLEND);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_STENCIL_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_SCISSOR_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glBindVertexArray(g_fx_vao);
+    glUseProgram(g_fx_prog);
+    glUniform2f(g_fx_px, 1.0f / (float)pw, 1.0f / (float)ph);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    /* Back as the title's next draw expects it: its program and target, and
+     * the state it gives every draw set again in full. (Every draw binds its
+     * own vertex array: vertices(), vbuf_bind().) */
+    glUseProgram(prog_ok(g_cur_prog) ? g_prog[g_cur_prog - 1].prog : 0);
+    glx_state_invalidate();
+    if (rt_ok(g_cur_rt)) glx_target_bind(g_cur_rt);
+    return g_fx_rt;
+}
+
 static const Nv2aGfx g_gl = {
     "opengl", NV2A_LANG_GLSL, 1,
     glx_init,
@@ -1279,6 +1408,7 @@ static const Nv2aGfx g_gl = {
     glx_uniform_f_part,
     NULL,                       /* pipeline_ms: the link covers it */
     glx_cache_open, glx_cache_idle,
+    glx_target_fxaa,
 };
 
 const Nv2aGfx *nv2a_gfx_gl(void) { return &g_gl; }

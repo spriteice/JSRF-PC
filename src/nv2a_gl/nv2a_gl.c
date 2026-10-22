@@ -784,6 +784,23 @@ static uint32_t gl_scale(void)
     return sc;
 }
 
+/*
+ * FXAA: the frame is shown through one pass over it that blends across the
+ * edges it finds (the backend's target_fxaa), into a copy; the title's
+ * surfaces are left as they are, and so is everything it can observe. Asked
+ * for at any time (the in-game menu) and taken at the next flip.
+ * RECOMP_GL_FXAA=1, or the window's fxaa= setting.
+ */
+static volatile int g_fxaa_want;       /* asked for */
+static int          g_fxaa_now;        /* and in use */
+
+static void fxaa_take(void)
+{
+    if (g_fxaa_want == g_fxaa_now || !G->target_fxaa) return;
+    g_fxaa_now = g_fxaa_want;
+    fprintf(stderr, "  [GL] FXAA: %s from present %u\n", g_fxaa_now ? "on" : "off", S.flips);
+}
+
 static uint32_t g_cur_prog;
 static int      g_cur_slot = -1;
 
@@ -1547,6 +1564,23 @@ static void sdl_menu_graphics(void)
     /* A new scale is a restart, which not every port can do (F9 asks the same). */
     if (!recomp_restart_self) n--;          /* Render scale, the last row */
     xbox_MenuAdd(rows, n);
+}
+
+/* Graphics > Anti-aliasing (FXAA): taken at the next flip and kept as fxaa=,
+ * as F10 keeps widescreen=. Added once the device is up (fxaa_start), after
+ * the rows above, where the backend has it. */
+static int  sdl_fxaa_on(void)   { return g_fxaa_want; }
+static void sdl_fxaa_flip(void)
+{
+    g_fxaa_want = !g_fxaa_want;
+    sdl_cfg_set("fxaa", g_fxaa_want);
+}
+static void sdl_menu_fxaa(void)
+{
+    const XBOX_MENU_ITEM row = {
+        .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE, .label = "Anti-aliasing (FXAA)",
+        .state = sdl_fxaa_on, .run = sdl_fxaa_flip };
+    if (G->target_fxaa) xbox_MenuAdd(&row, 1);
 }
 #endif
 
@@ -8935,6 +8969,9 @@ static void present(int is_frame)
 
     if (is_frame) { PROF_T0(); cache_idle_frame(); frame_pace(); PROF_ADD(pace); }
 
+    /* FXAA turned on or off since the last flip: from this frame. */
+    if (is_frame) fxaa_take();
+
     /* Put the finished frame on screen: the surface the title has set up
      * when it flips, which is what the window showed while surfaces were
      * bound as their methods arrived (JSRF: the display buffer it copies
@@ -8950,6 +8987,8 @@ static void present(int is_frame)
             pw = g_surf[g_present_slot].w * gl_scale();
             ph = g_surf[g_present_slot].h * gl_scale();
         }
+        /* With FXAA, what is shown is the copy of it with its edges smoothed. */
+        if (g_fxaa_now) prt = G->target_fxaa(prt);
 #if defined(NV2A_GL_USE_CGL)
         /* OpenGL on a Mac: read the finished frame and hand it to the window.
          *
@@ -10258,6 +10297,27 @@ static void shader_cache_start(void)
     G->cache_open(dir, tag);
 }
 
+/* FXAA from the start: RECOMP_GL_FXAA, else the window's setting; and its
+ * menu row. */
+static void fxaa_start(void)
+{
+    const char *v = getenv("RECOMP_GL_FXAA");
+    int on = (v && *v) ? atoi(v) != 0 : 0;
+#if defined(NV2A_GL_USE_SDL)
+    if (!(v && *v)) on = sdl_cfg_get("fxaa", 0) != 0;
+#endif
+    if (!G->target_fxaa) {
+        if (on) fprintf(stderr, "  [GL] FXAA: not on the %s backend\n", G->name);
+        return;
+    }
+    g_fxaa_now = g_fxaa_want = on;
+    fprintf(stderr, "  [GL] FXAA: %s from %s\n", on ? "on" : "off",
+            (v && *v) ? "RECOMP_GL_FXAA" : "the settings");
+#if defined(XBOXRECOMP_MENU)
+    sdl_menu_fxaa();
+#endif
+}
+
 static int gfx_init(uint32_t w, uint32_t h)
 {
     const char *v = getenv("RECOMP_BACKEND");
@@ -10283,6 +10343,7 @@ static int gfx_init(uint32_t w, uint32_t h)
             g_is_gl = 0;
             fprintf(stderr, "  [GL] backend: %s\n", G->name);
             shader_cache_start();
+            fxaa_start();
             return 1;
         }
         fprintf(stderr, "  [GL] Metal backend unavailable%s\n",
@@ -10299,6 +10360,7 @@ static int gfx_init(uint32_t w, uint32_t h)
     if (!gl_init(w, h)) return 0;     /* the context, then the device */
     fprintf(stderr, "  [GL] backend: %s\n", G->name);
     shader_cache_start();
+    fxaa_start();
     return 1;
 }
 

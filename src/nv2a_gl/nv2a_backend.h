@@ -380,6 +380,13 @@ typedef struct Nv2aGfx {
      * queued, 0 when there is nothing left to do. NULL where the backend
      * builds them on a thread of its own. */
     int      (*cache_idle)(double budget_ms);
+
+    /* FXAA: target `rt`'s picture with its edges smoothed, by one pass over
+     * it into another target of the same size, which the backend keeps --
+     * the one to put on screen instead. `rt` itself is left as it was, and
+     * is what comes back where the pass cannot run. NULL where the backend
+     * has none (Metal). */
+    uint32_t (*target_fxaa)(uint32_t rt);
 } Nv2aGfx;
 
 /* The implementations. Each returns NULL where it cannot run (no Metal

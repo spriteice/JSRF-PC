@@ -58,8 +58,8 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
   C / V        left / right stick click
 
   F1                 the in-game menu (also Back on a controller, which is
-                     then the menu's alone): About, Exit, the next three, and
-                     the free camera's settings
+                     then the menu's alone): About, Exit, the next three,
+                     anti-aliasing and the free camera's settings
   F11 or Alt+Enter   full screen
   F10                widescreen 16:9 (a wider view, not a stretch; the HUD
                      keeps its shape, the title screen stays 4:3); remembered
@@ -68,6 +68,12 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
                      The game restarts to apply it, so save first.
   F8                 free camera: the right stick turns the camera around
                      the player; remembered (see Free camera below)
+
+Graphics > Anti-aliasing (FXAA) in the in-game menu smooths jagged edges
+with one quick pass over each finished frame, at the same small cost
+whatever is on screen. It softens the picture a little, the HUD included.
+Off by default; it changes straight away, with no restart, and is
+remembered as fxaa= in the settings file (0 or 1).
 
 
 Free camera
