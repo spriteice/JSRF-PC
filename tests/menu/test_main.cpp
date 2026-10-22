@@ -11,7 +11,8 @@
  * no further; the mouse leaving a menu, or a click in the game, leaves a
  * menu open -- and a pad still has somewhere to stand after each. Last,
  * numbers: - and + a step at a time, held down, at the ends, and from a
- * value between two steps.
+ * value between two steps. And the busy box (menu_build_busy) with no menu,
+ * in the middle of the window.
  */
 #include "menu.h"
 #include "imgui.h"
@@ -102,6 +103,15 @@ static void frame(ImGuiKey press = ImGuiKey_None)
     }
 }
 static void frames(int n) { while (n--) frame(); }
+
+/* One frame of only the busy box. */
+static void busy_frame(void)
+{
+    ImGui_ImplNull_NewFrame();
+    ImGui::NewFrame();
+    menu_build_busy("Building shaders", 57, 121);
+    ImGui::Render();
+}
 
 static const char *nav_state(void)
 {
@@ -413,6 +423,18 @@ int main(void)
     frame(ImGuiKey_GamepadFaceDown); frames(2);
     fprintf(stderr, "opened again, Right, A: [%s]\n", open_menu());
     CHECK(strstr(open_menu(), "Graphics") != NULL);
+
+    /* The busy box, centred. */
+    busy_frame();
+    busy_frame();
+    {   ImGuiWindow *w = ImGui::FindWindowByName("##busy");
+        CHECK(w != NULL);
+        if (w) {
+            float cx = w->Pos.x + w->Size.x * 0.5f, cy = w->Pos.y + w->Size.y * 0.5f;
+            fprintf(stderr, "busy box centre %.0f,%.0f in %.0fx%.0f\n", cx, cy, io.DisplaySize.x, io.DisplaySize.y);
+            CHECK(cx > io.DisplaySize.x * 0.45f && cx < io.DisplaySize.x * 0.55f);
+            CHECK(cy > io.DisplaySize.y * 0.45f && cy < io.DisplaySize.y * 0.55f);
+        } }
 
     ImGui_ImplNull_Shutdown();
     ImGui::DestroyContext();

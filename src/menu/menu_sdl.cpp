@@ -39,6 +39,11 @@ static int          g_just_opened;
 static float        g_scale;
 static ImGuiStyle   g_style;        /* before scaling */
 static const char  *g_about_gl;
+/* xbox_MenuBusy's box: set and built on the GL thread; the total is read by
+ * whichever thread swaps, as g_open is. */
+static const char  *g_busy_what;
+static int          g_busy_done;
+static volatile int g_busy_total;
 
 /* ---- File: About, Exit -------------------------------------------------- */
 
@@ -175,16 +180,17 @@ static void scale_to_window(void)
 
 extern "C" void xbox_MenuFrame(void)
 {
-    if (!g_ready || !g_open) return;
+    if (!g_ready || (!g_open && !g_busy_total)) return;
     SDL_LockMutex(g_mu);
     /* Full screen hides the pointer (nv2a_gl.c), and the menu can switch it:
      * ImGui draws its own then, which shows only once a mouse moves. */
-    ImGui::GetIO().MouseDrawCursor = SDL_ShowCursor(SDL_QUERY) == SDL_DISABLE;
+    ImGui::GetIO().MouseDrawCursor = g_open && SDL_ShowCursor(SDL_QUERY) == SDL_DISABLE;
     ImGui_ImplSDL2_NewFrame();
     scale_to_window();
     ImGui::NewFrame();
-    menu_build(g_just_opened);
+    if (g_open) menu_build(g_just_opened);
     g_just_opened = 0;
+    if (g_busy_total) menu_build_busy(g_busy_what, g_busy_done, g_busy_total);
     ImGui::Render();
     SDL_UnlockMutex(g_mu);
 }
@@ -192,7 +198,7 @@ extern "C" void xbox_MenuFrame(void)
 extern "C" void xbox_MenuDraw(void)
 {
     ImDrawData *dd;
-    if (!g_ready || !g_open) return;
+    if (!g_ready || (!g_open && !g_busy_total)) return;
     SDL_LockMutex(g_mu);
     dd = ImGui::GetDrawData();
     if (dd) {
@@ -203,6 +209,13 @@ extern "C" void xbox_MenuDraw(void)
         ImGui_ImplOpenGL3_RenderDrawData(dd);
     }
     SDL_UnlockMutex(g_mu);
+}
+
+extern "C" void xbox_MenuBusy(const char *what, int done, int total)
+{
+    g_busy_what = what;
+    g_busy_done = done;
+    g_busy_total = total;
 }
 
 extern "C" int xbox_MenuIsOpen(void)

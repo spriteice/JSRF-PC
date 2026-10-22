@@ -89,6 +89,13 @@ void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count);
  * somewhere to start. */
 void menu_build(int just_opened);
 
+/* The window's side too: a box in the middle of the window, over whatever is
+ * behind it, saying how far something the game is waiting for has got --
+ * `what`, and a bar of done out of total (nv2a_gl.c's shader cache, built
+ * before the first frame). Between ImGui::NewFrame() and ImGui::Render(), with
+ * the menu or without it. It takes no input. */
+void menu_build_busy(const char *what, int done, int total);
+
 #ifdef __cplusplus
 }
 #endif

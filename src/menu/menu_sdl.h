@@ -30,6 +30,11 @@ void xbox_MenuFrame(void);
  * framebuffer bound: draws what xbox_MenuFrame built. */
 void xbox_MenuDraw(void);
 
+/* A box over the window while the game waits for something, on the GL
+ * thread: `what`, done of total (menu_build_busy), from the next
+ * xbox_MenuFrame until total is 0. */
+void xbox_MenuBusy(const char *what, int done, int total);
+
 /* 1 while the menu has the controls, 0 while it is shut, -1 when there is
  * none (Dear ImGui did not start). Any thread. */
 int  xbox_MenuIsOpen(void);

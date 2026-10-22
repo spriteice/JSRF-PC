@@ -402,6 +402,12 @@ typedef struct Nv2aGfx {
      * NULL where the backend has none (Metal, today). */
     int      (*aniso_max)(void);
     void     (*tex_aniso)(uint32_t tex, int n);
+
+    /* Every program the cache holds queued for cache_idle, whether this
+     * driver kept a binary of it or not: for a caller that builds them all
+     * from their sources at once and says how far it has got. How many are
+     * queued. NULL where cache_idle is. */
+    int      (*cache_rebuild)(void);
 } Nv2aGfx;
 
 /* The implementations. Each returns NULL where it cannot run (no Metal

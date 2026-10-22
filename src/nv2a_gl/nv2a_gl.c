@@ -2196,6 +2196,18 @@ static void sdl_pump(void)
 #endif
 }
 
+/* A finished frame to the window, the way frames go -- handed to the
+ * presenter, or presented here -- and then the window's events. */
+static void sdl_show(GLuint fbo, int w, int h)
+{
+#if defined(NV2A_SDL_PRESENTER)
+    if (g_presenter == 1) sdl_hand_over(fbo, w, h);
+    else
+#endif
+    sdl_present(fbo, w, h);
+    sdl_pump();
+}
+
 #else
 
 static int gl_init(uint32_t w, uint32_t h)
@@ -9184,12 +9196,7 @@ static void present(int is_frame)
         }
 #elif defined(NV2A_GL_USE_SDL)
         if (g_window) {
-#if defined(NV2A_SDL_PRESENTER)
-            if (g_presenter == 1) sdl_hand_over(nv2a_gfx_gl_fbo(prt), (int)pw, (int)ph);
-            else
-#endif
-            sdl_present(nv2a_gfx_gl_fbo(prt), (int)pw, (int)ph);
-            sdl_pump();
+            sdl_show(nv2a_gfx_gl_fbo(prt), (int)pw, (int)ph);
         }
 #endif
         /* The device's end of the frame: Metal shows it in the window's
@@ -10451,17 +10458,93 @@ const Nv2aGfx *nv2a_gfx_metal(void) { return NULL; }
  * launcher sets the save folder, and a run without one has no cache. Its files
  * are named for the backend and for the translator -- a hash of a reference
  * pair of shaders generated now -- so that what an older engine built is
- * never loaded, only left behind. RECOMP_SHADER_CACHE=0 turns it off. */
+ * never loaded, only left behind. Graphics > Shader Cache: shaders= in the
+ * settings file, on when it is not there; RECOMP_SHADER_CACHE=0 or 1 wins.
+ * Read at start-up, the only time the cache is opened, so a change applies
+ * from the next one. */
+static int g_shaders = -1;
+
+static int shader_cache_on(void)
+{
+    if (g_shaders < 0) {
+        const char *e = getenv("RECOMP_SHADER_CACHE");
+#if defined(NV2A_GL_USE_SDL)
+        g_shaders = e ? atoi(e) != 0 : sdl_cfg_get("shaders", 1) != 0;
+#else
+        g_shaders = e ? atoi(e) != 0 : 1;
+#endif
+    }
+    return g_shaders;
+}
+
+#if defined(XBOXRECOMP_MENU)
+static void shader_cache_toggle(void)
+{
+    g_shaders = !shader_cache_on();
+    sdl_cfg_set("shaders", g_shaders);
+    fprintf(stderr, "  [SHADERS] shader cache %s, from the next start\n", g_shaders ? "on" : "off");
+}
+
+/*
+ * The menu's row for it, and, with the cache open, every program in it built
+ * again from its sources before the game's first frame -- whether or not this
+ * driver kept a binary of it, so that each run starts from programs this
+ * driver has just compiled -- with a box saying how far it has got. No cache
+ * yet: nothing to build, no box.
+ *
+ * The game is not stopped for it: it waits for its first frame as it would
+ * for a slow GPU. The display interrupt is answered after each program, as
+ * frame_pace answers it, so that the title's handler does not hold the guest
+ * lock all the while (xbox_nv2a_vblank_service). The box is shown at most
+ * once a display refresh: a compositor that holds each swap to the refresh
+ * (gamescope can) would otherwise add a refresh to every program.
+ */
+static void sdl_shader_cache(void)
+{
+    static const float black[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+    const XBOX_MENU_ITEM row = { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE,
+        .label = "Shader Cache", .state = shader_cache_on, .run = shader_cache_toggle };
+    SDL_DisplayMode mode;
+    int total, left, held;
+    uint32_t rt;
+    double t0, period = 0.0, shown = 0.0;
+    xbox_MenuAdd(&row, 1);
+    if (!nv2a_sc_is_open() || !G->cache_idle || !G->cache_rebuild || (total = G->cache_rebuild()) <= 0)
+        return;
+    /* Black behind the box: nothing of the game's has been drawn yet. */
+    if (!(rt = G->target_new(640, 480))) return;
+    G->target_bind(rt);
+    G->clear(1u, black, 1.0f, 0, NULL);
+    if (SDL_GetWindowDisplayMode(g_window, &mode) == 0 && mode.refresh_rate > 0)
+        period = 1.0 / mode.refresh_rate;
+    t0 = mono_now();
+    held = xbox_guest_lock_drop ? xbox_guest_lock_drop() : 0;
+    for (left = total; left > 0; left = G->cache_idle(0.0)) {       /* one program a call */
+        if (xbox_nv2a_vblank_service) xbox_nv2a_vblank_service();
+        if (shown > 0.0 && mono_now() - shown < period) continue;
+        xbox_MenuBusy("Building shaders", total - left, total);
+        sdl_show(nv2a_gfx_gl_fbo(rt), 640, 480);
+        shown = mono_now();
+    }
+    xbox_MenuBusy(NULL, 0, 0);
+    if (held && xbox_guest_lock_retake) xbox_guest_lock_retake(held);
+    G->target_free(rt);
+    G->state_invalidate();
+    fprintf(stderr, "  [SHADERS] rebuilt %d programs from the cache before the first frame, in %.0f ms\n",
+            total, 1000.0 * (mono_now() - t0));
+}
+#endif
+
 static void shader_cache_start(void)
 {
-    const char *save = getenv("JSRF_SAVE_DIR"), *off = getenv("RECOMP_SHADER_CACHE");
+    const char *save = getenv("JSRF_SAVE_DIR");
     char dir[1024], tag[96];
     char *v, *f;
     uint64_t fp = 0;
     Nv2aVshFixed f0;
     Nv2aPshState p0;
     int msl;
-    if (!G || !G->cache_open || (off && !atoi(off)) || !save || !*save) return;
+    if (!G || !G->cache_open || !shader_cache_on() || !save || !*save) return;
     msl = (G->lang == NV2A_LANG_MSL);
     snprintf(dir, sizeof dir, "%s/shaders", save);
     v = (char *)malloc(96 * 1024);
@@ -10591,6 +10674,9 @@ static int gfx_init(uint32_t w, uint32_t h)
     msaa_start();
     fxaa_start();
     aniso_start();
+#if defined(XBOXRECOMP_MENU)
+    sdl_shader_cache();
+#endif
     return 1;
 }
 

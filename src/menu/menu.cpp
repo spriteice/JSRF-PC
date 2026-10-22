@@ -283,3 +283,20 @@ extern "C" void menu_build(int just_opened)
         ImGui::EndPopup();
     }
 }
+
+extern "C" void menu_build_busy(const char *what, int done, int total)
+{
+    const ImGuiIO &io = ImGui::GetIO();
+    char line[32];
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x * 0.5f, 0.0f), ImGuiCond_Always);
+    if (ImGui::Begin("##busy", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+                     ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoSavedSettings |
+                     ImGuiWindowFlags_NoFocusOnAppearing)) {
+        ImGui::TextUnformatted(what);
+        snprintf(line, sizeof line, "%d of %d", done, total);
+        ImGui::ProgressBar(total > 0 ? (float)done / (float)total : 0.0f, ImVec2(-1.0f, 0.0f), line);
+    }
+    ImGui::End();
+}

@@ -783,12 +783,24 @@ static int glx_cache_idle(double budget_ms)
         avg += 0.2 * (glx_now_ms() - t - avg);
         built++;
         if (!prog) continue;
-        if (g_bin_ok) save_binary(key, prog);
+        if (g_bin_ok && !nv2a_sc_bin_has(key)) save_binary(key, prog);  /* rebuilt: kept already */
         g_warm[g_nwarm].key = key; g_warm[g_nwarm].prog = prog; g_nwarm++;
         g_cst.idle_built++;
     }
     g_cst.idle_ms += glx_now_ms() - t0;
     return g_nwarm < MAX_WARM ? g_ntodo - g_itodo : 0;
+}
+
+static int glx_cache_rebuild(void)
+{
+    int i, n = nv2a_sc_count();
+    int *all = n ? (int *)realloc(g_todo, (size_t)n * sizeof *g_todo) : NULL;
+    if (!all) return 0;
+    g_todo = all;
+    for (i = 0; i < n; i++) g_todo[i] = i;
+    g_ntodo = n;
+    g_itodo = 0;
+    return g_nwarm < MAX_WARM ? g_ntodo : 0;
 }
 
 static int prog_ok(uint32_t h) { return g_prog && h && h <= MAX_PROGS && g_prog[h - 1].used; }
@@ -1614,6 +1626,7 @@ static const Nv2aGfx g_gl = {
     glx_target_fxaa,
     glx_samples_max, glx_samples,
     glx_aniso_max, glx_tex_aniso,
+    glx_cache_rebuild,
 };
 
 const Nv2aGfx *nv2a_gfx_gl(void) { return &g_gl; }

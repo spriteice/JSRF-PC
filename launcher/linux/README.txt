@@ -59,8 +59,8 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
 
   F1                  the in-game menu (also Back on a controller, which is
                       then the menu's alone): About, Exit, the next three,
-                      anti-aliasing, anisotropic filtering and the free
-                      camera's settings
+                      anti-aliasing, anisotropic filtering, the shader cache
+                      and the free camera's settings
   F11 or Alt+Return   full screen; remembered
   F10                 widescreen 16:9 (a wider view, not a stretch; the HUD
                       keeps its shape, the title screen stays 4:3); remembered
@@ -88,6 +88,12 @@ the distance: Off (the default), 2x, 4x, 8x or 16x, as far as the graphics
 card goes. It changes straight away, with no restart, and is remembered as
 aniso= in the settings file (0, 2, 4, 8 or 16). It leaves things that face
 the screen, such as the HUD, as they were.
+
+Graphics > Shader Cache in the in-game menu (on by default) keeps the shaders
+the game builds, in the cache folder. Each time the game starts, they are all
+built again before it begins, behind a progress bar, so none are built while
+you play. It is remembered as shaders= in the settings file (1 or 0), and a
+change applies from the next start.
 
 
 Free camera
