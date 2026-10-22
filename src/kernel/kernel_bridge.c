@@ -6316,7 +6316,10 @@ static long long     g_slice_since;
  * put off because the holder was at DISPATCH_LEVEL or above or inside an
  * interrupt, DPC or synchronize routine. */
 static unsigned long g_slice_handoffs;
+static unsigned long g_slice_handoff_timeouts;
 static unsigned long g_slice_held_raised;
+/* Every take of the lock, by any thread: a hand-over waits for it to move. */
+static unsigned long g_lock_acquires;
 
 /* Per-thread queueing statistics, kept in a small fixed table so that
  * reporting them needs no allocation and no lock of its own. */
@@ -6427,6 +6430,7 @@ void xbox_guest_lock_acquire(void)
       __atomic_add_fetch(&g_xbox_guest_cpu_preempt, 1, __ATOMIC_RELAXED);
       EnterCriticalSection(&g_guest_lock);
       __atomic_sub_fetch(&g_xbox_guest_cpu_preempt, 1, __ATOMIC_RELAXED);
+      __atomic_add_fetch(&g_lock_acquires, 1, __ATOMIC_RELEASE);
       if (watch) {
           long long w = (long long)GetTickCount64() - t0;
           unsigned slot = lock_slot();
@@ -6534,10 +6538,12 @@ void xbox_guest_lock_stats(void)
                 g_lock_wait_ms[i]);
         g_lock_takes[i] = 0; g_lock_hold_ms[i] = 0; g_lock_wait_ms[i] = 0;
     }
-    fprintf(stderr, "        %lu time slices ended in a hand-over, %lu slice ends "
-                    "put off at raised IRQL or in an interrupt or DPC\n",
-            g_slice_handoffs, g_slice_held_raised);
+    fprintf(stderr, "        %lu time slices ended in a hand-over (%lu taken over by "
+                    "nobody within RECOMP_HANDOFF_US), %lu slice ends put off at "
+                    "raised IRQL or in an interrupt or DPC\n",
+            g_slice_handoffs, g_slice_handoff_timeouts, g_slice_held_raised);
     g_slice_handoffs = 0;
+    g_slice_handoff_timeouts = 0;
     g_slice_held_raised = 0;
     fflush(stderr);
 }
@@ -6647,6 +6653,7 @@ void xbox_guest_lock_yield_now(void)
               return;
           }
       } }
+    unsigned long taken = __atomic_load_n(&g_lock_acquires, __ATOMIC_RELAXED);
     xbox_guest_lock_release();
     /*
      * Hand the lock over, rather than merely offering it.
@@ -6663,21 +6670,39 @@ void xbox_guest_lock_yield_now(void)
      * a second, and the music played as correct fragments in the wrong order
      * because the voice read the ring faster than the thread could fill it.
      *
-     * So when anyone is queueing, stand back for a moment instead of
-     * re-entering. A few tens of microseconds is long enough for the woken
-     * thread to take the lock and far shorter than the slice just used.
-     * RECOMP_HANDOFF_US=0 restores the old behaviour.
+     * So when anyone is queueing, stand back until one of them has the lock
+     * instead of re-entering.
+     *
+     * Until a take is seen, not for a fixed time. It was a fixed time, 60 us
+     * by RECOMP_HANDOFF_US, but the shortest sleep this shim promises leaves
+     * the CPU is Sleep(1), so every hand-over cost a millisecond or more (up
+     * to 15.6 on Windows at the default timer resolution), and for much of
+     * it no guest thread ran at all: in a 5,014 ms sample of the lock, 330
+     * hand-overs left it without a holder for 234 ms. Watching the take
+     * count ends the wait as soon as the woken thread is in.
+     * RECOMP_HANDOFF_US is now the longest it waits (1000), because a queued
+     * thread that cannot run -- one suspended inside its wait -- must not
+     * hold up the rest; 0 still restores the old behaviour.
      */
     { static long handoff = -1;
       if (handoff < 0) { const char *e = getenv("RECOMP_HANDOFF_US");
-                         handoff = e ? atol(e) : 60; if (handoff < 0) handoff = 0; }
+                         handoff = e ? atol(e) : 1000; if (handoff < 0) handoff = 0;
+                         if (handoff > 1000000) handoff = 1000000; }
       if (handoff && __atomic_load_n(&g_xbox_guest_cpu_preempt,
                                      __ATOMIC_RELAXED) > 0) {
+          LARGE_INTEGER freq, t0, t;
+          long long limit;
           __atomic_add_fetch(&g_slice_handoffs, 1, __ATOMIC_RELAXED);
-          /* Sleep(0) yields only to equal-priority runnable threads, which a
-           * thread blocked on the lock is not; Sleep(1) is the shortest wait
-           * this shim guarantees actually leaves the CPU. */
-          Sleep(handoff > 1000 ? (DWORD)(handoff / 1000) : 1);
+          QueryPerformanceFrequency(&freq);
+          QueryPerformanceCounter(&t0);
+          limit = (long long)freq.QuadPart * handoff / 1000000;
+          do {
+              SwitchToThread();
+              QueryPerformanceCounter(&t);
+          } while (__atomic_load_n(&g_lock_acquires, __ATOMIC_ACQUIRE) == taken
+                   && (long long)(t.QuadPart - t0.QuadPart) < limit);
+          if (__atomic_load_n(&g_lock_acquires, __ATOMIC_RELAXED) == taken)
+              __atomic_add_fetch(&g_slice_handoff_timeouts, 1, __ATOMIC_RELAXED);
       } else {
           SwitchToThread();
       } }
