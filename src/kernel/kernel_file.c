@@ -936,10 +936,16 @@ NTSTATUS __stdcall xbox_NtReadFile(
         return STATUS_INVALID_HANDLE;
     }
 
-    if (ByteOffset && ByteOffset->QuadPart >= 0)
-        lseek(fd, (off_t)ByteOffset->QuadPart, SEEK_SET);
-
-    ssize_t n = read(fd, Buffer, Length);
+    /* A read at an offset is one call, not a seek and then a read: NtReadFile
+     * drops the guest lock, so another thread reading the same handle could
+     * move the position in between and this read would return its bytes.
+     * The position is still left after the read, where the console leaves it;
+     * the Windows twin above gets both from ReadFile with an OVERLAPPED offset. */
+    int at_offset = ByteOffset && ByteOffset->QuadPart >= 0;
+    ssize_t n = at_offset ? pread(fd, Buffer, Length, (off_t)ByteOffset->QuadPart)
+                          : read(fd, Buffer, Length);
+    if (n >= 0 && at_offset)
+        lseek(fd, (off_t)ByteOffset->QuadPart + n, SEEK_SET);
     if (n < 0) {
         XBOX_TRACE(XBOX_LOG_FILE, "NtReadFile(handle=%p) errno=%d", FileHandle, errno);
         IoStatusBlock->Status = STATUS_UNSUCCESSFUL;
@@ -964,7 +970,7 @@ NTSTATUS __stdcall xbox_NtReadFile(
      * the bytes the title can see are made deterministic.
      */
     if ((ULONG)n < Length) {
-        off_t pos = lseek(fd, 0, SEEK_CUR);
+        off_t pos = at_offset ? (off_t)ByteOffset->QuadPart + n : lseek(fd, 0, SEEK_CUR);
         ULONG more = 0;
         memset((uint8_t *)Buffer + n, 0, Length - (ULONG)n);
         if (pos >= 0)
