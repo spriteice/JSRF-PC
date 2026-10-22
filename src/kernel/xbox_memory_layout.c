@@ -162,26 +162,56 @@ static volatile LONG g_nv2a_ack_stop = 0;
 #if !defined(_WIN32) || defined(XBOXRECOMP_WIN_GL)
 #include <pthread.h>
 #include <sched.h>
+static int s_kick_on = -1;
+static volatile int s_hurry;
+#if defined(_WIN32)
+/* On Windows the wait is Windows' own: an auto-reset event for the kick and a
+ * high-resolution waitable timer (Windows 10 1803 on; a plain one before) for
+ * the timeout.
+ *
+ * pthread_cond_timedwait there is winpthreads': it waits whole milliseconds,
+ * then waits again until GetTickCount64, which moves in 15.6 ms steps, says
+ * the time is up. Measured on Windows 11, a 200 us wait that timed out took
+ * 12 ms on average and up to 17.5. This thread is also what ends the title's
+ * vblank handler's spin (vblank_intr_tick), and the handler holds the guest
+ * lock while it spins: the lock was held up to a third of the time, where
+ * Linux holds it for 2-5%, with the game thread queued behind it. */
+static HANDLE s_kick_ev, s_kick_timer;
+static void nv2a_kick_open(void)
+{
+    s_kick_ev = CreateEventW(NULL, FALSE, FALSE, NULL);
+    s_kick_timer = CreateWaitableTimerExW(NULL, NULL, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+                                          TIMER_ALL_ACCESS);
+    if (!s_kick_timer) s_kick_timer = CreateWaitableTimerExW(NULL, NULL, 0, TIMER_ALL_ACCESS);
+}
+static void nv2a_kick_signal(void)
+{
+    if (s_kick_ev) SetEvent(s_kick_ev);
+}
+/* Sleep up to us microseconds, or until kicked. Returns 1 if kicked. */
+static int nv2a_ack_wait(long us)
+{
+    HANDLE h[2];
+    LARGE_INTEGER due;
+    due.QuadPart = -(LONGLONG)us * 10;          /* relative, in 100 ns */
+    if (!s_kick_ev || !s_kick_timer || !SetWaitableTimer(s_kick_timer, &due, 0, NULL, NULL, FALSE)) {
+        Sleep(1);                               /* no handles: never spin */
+        return 0;
+    }
+    h[0] = s_kick_ev;
+    h[1] = s_kick_timer;
+    return WaitForMultipleObjects(2, h, FALSE, INFINITE) == WAIT_OBJECT_0;
+}
+#else
 static pthread_mutex_t s_kick_mu = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  s_kick_cv = PTHREAD_COND_INITIALIZER;
 static int s_kick_pending;
-static int s_kick_on = -1;
-static volatile int s_hurry;
-void xbox_nv2a_kick(void)
+static void nv2a_kick_signal(void)
 {
-    if (s_kick_on < 0) { const char *e = getenv("RECOMP_NV2A_KICK"); s_kick_on = e ? atoi(e) : 1; }
-    if (!s_kick_on) return;
     pthread_mutex_lock(&s_kick_mu);
     s_kick_pending = 1;
     pthread_cond_signal(&s_kick_cv);
     pthread_mutex_unlock(&s_kick_mu);
-}
-void xbox_nv2a_hurry(int on)
-{
-    if (s_kick_on < 0) { const char *e = getenv("RECOMP_NV2A_KICK"); s_kick_on = e ? atoi(e) : 1; }
-    if (!s_kick_on) return;
-    s_hurry = on;
-    if (on) xbox_nv2a_kick();   /* out of its sleep now, not at the end of it */
 }
 /* Sleep up to us microseconds, or until kicked. Returns 1 if kicked. */
 static int nv2a_ack_wait(long us)
@@ -198,6 +228,20 @@ static int nv2a_ack_wait(long us)
     s_kick_pending = 0;
     pthread_mutex_unlock(&s_kick_mu);
     return kicked;
+}
+#endif
+void xbox_nv2a_kick(void)
+{
+    if (s_kick_on < 0) { const char *e = getenv("RECOMP_NV2A_KICK"); s_kick_on = e ? atoi(e) : 1; }
+    if (!s_kick_on) return;
+    nv2a_kick_signal();
+}
+void xbox_nv2a_hurry(int on)
+{
+    if (s_kick_on < 0) { const char *e = getenv("RECOMP_NV2A_KICK"); s_kick_on = e ? atoi(e) : 1; }
+    if (!s_kick_on) return;
+    s_hurry = on;
+    if (on) xbox_nv2a_kick();   /* out of its sleep now, not at the end of it */
 }
 #else
 void xbox_nv2a_kick(void) { }
@@ -868,6 +912,9 @@ static DWORD WINAPI nv2a_ack_thread(LPVOID param)
 static void xbox_Nv2aAckStart(void)
 {
     g_nv2a_ack_stop = 0;
+#if defined(_WIN32) && defined(XBOXRECOMP_WIN_GL)
+    nv2a_kick_open();
+#endif
     g_nv2a_ack_thread = CreateThread(NULL, 0, nv2a_ack_thread,
                                      g_nv2a_memory, 0, NULL);
     if (g_nv2a_ack_thread) {

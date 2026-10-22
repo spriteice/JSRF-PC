@@ -8855,9 +8855,39 @@ static void fliplog(const char *why)
 /* How the pacing went, for the report: frames that reached the flip after
  * their moment, and the time from one released frame to the next. */
 static struct {
-    uint64_t frames, late, restarts, iv[5];
-    double   late_max, last;
+    uint64_t frames, late, restarts, iv[5], overslept;
+    double   late_max, last, overslept_max;
 } g_pace_st;
+
+/* Sleep for ts -- on Windows, for about as long as that.
+ *
+ * nanosleep there is winpthreads': it waits whole milliseconds, and after each
+ * wait asks GetTickCount64, which moves in 15.6 ms steps, whether the time is
+ * up. Measured on Windows 11 with the timer at 1 ms, the 1 ms slices below took
+ * 2-3 ms on average and up to 17.5, where Linux takes 1.06: seven waits in ten
+ * ended over half a millisecond past the frame's deadline, and the title's
+ * vblank handler, which waits for this thread between slices, held the guest
+ * lock up to a third of the time. A high-resolution waitable timer (Windows 10
+ * 1803 on) wakes within a fraction of a millisecond; before that, a plain one
+ * still does without the rounding. */
+#if defined(_WIN32)
+static void pace_sleep(const struct timespec *ts)
+{
+    static HANDLE timer;
+    LARGE_INTEGER due;
+    if (!timer)
+        timer = CreateWaitableTimerExW(NULL, NULL, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+                                       TIMER_ALL_ACCESS);
+    if (!timer) timer = CreateWaitableTimerExW(NULL, NULL, 0, TIMER_ALL_ACCESS);
+    due.QuadPart = -((LONGLONG)ts->tv_sec * 10000000 + ts->tv_nsec / 100);  /* relative */
+    if (timer && SetWaitableTimer(timer, &due, 0, NULL, NULL, FALSE))
+        WaitForSingleObject(timer, INFINITE);
+    else
+        nanosleep(ts, NULL);
+}
+#else
+#define pace_sleep(ts) nanosleep((ts), NULL)
+#endif
 
 static void frame_pace(void)
 {
@@ -8986,12 +9016,18 @@ static void frame_pace(void)
                      * guest still running. This is guest code holding the lock
                      * that serialises guest threads, so sleeping here without
                      * giving it up stops the loader and the sound thread too. */
-                    nanosleep(&ts, NULL);
+                    pace_sleep(&ts);
                     if (!service) break;
                     xbox_nv2a_vblank_service();
                     now = mono_now();
                 }
-                while (mono_now() < deadline) { if (service) xbox_nv2a_vblank_service(); }
+                while ((now = mono_now()) < deadline) { if (service) xbox_nv2a_vblank_service(); }
+                /* A sleep that overran the deadline lets the frame go late;
+                 * counted from half a millisecond. */
+                if (now - deadline > 0.0005) {
+                    g_pace_st.overslept++;
+                    if (now - deadline > g_pace_st.overslept_max) g_pace_st.overslept_max = now - deadline;
+                }
                 if (held && xbox_guest_lock_retake) xbox_guest_lock_retake(held);
             }
             { double t = mono_now();
@@ -10331,10 +10367,12 @@ void nv2a_gl_report(void)
         uint64_t n = g_pace_st.iv[0] + g_pace_st.iv[1] + g_pace_st.iv[2]
                    + g_pace_st.iv[3] + g_pace_st.iv[4];
         fprintf(stderr, "  [PACE] %llu frames paced at the flip: %llu reached it late "
-                "(worst %.1f ms), %llu restarts; flip to flip: under 14 ms %llu, "
+                "(worst %.1f ms), %llu let go late by the wait (worst %.1f ms), %llu restarts; "
+                "flip to flip: under 14 ms %llu, "
                 "a 60th of a second %llu, 19-30 ms %llu, 30-45 ms %llu, longer %llu (%llu)\n",
                 (unsigned long long)g_pace_st.frames, (unsigned long long)g_pace_st.late,
-                g_pace_st.late_max, (unsigned long long)g_pace_st.restarts,
+                g_pace_st.late_max, (unsigned long long)g_pace_st.overslept,
+                1000.0 * g_pace_st.overslept_max, (unsigned long long)g_pace_st.restarts,
                 (unsigned long long)g_pace_st.iv[0], (unsigned long long)g_pace_st.iv[1],
                 (unsigned long long)g_pace_st.iv[2], (unsigned long long)g_pace_st.iv[3],
                 (unsigned long long)g_pace_st.iv[4], (unsigned long long)n);
