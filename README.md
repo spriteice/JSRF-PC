@@ -122,7 +122,7 @@ The game keeps running while it is open, but your input goes to the menu.
 - **Controller:** the free camera, and its inversion, sensitivity and
   deadzone.
 
-Everything but full screen is remembered. Exit and a new render scale ask
+Everything is remembered. Exit and a new render scale ask
 first, as anything since your last save is lost.
 
 ### Portable limitations
@@ -177,7 +177,7 @@ Back is Esc on the keyboard.
 | Key | Does |
 |---|---|
 | F1, or Back on a controller | the in-game menu: **File** (About, Exit), **Graphics** (the next three, and anisotropic filtering) and **Controller** (the free camera and its settings) |
-| F11 or Alt+Return | full screen |
+| F11 or Alt+Return | full screen. Remembered. |
 | F10 | widescreen 16:9: a wider field of view, not a stretch; the HUD and text keep their shape, and the title screen stays 4:3. Remembered. |
 | F9 | resolution: 1× to 4× the Xbox's 640×480 (2× by default). Remembered. The game restarts to apply it, so save first. |
 | F8 | the free camera, below. Remembered. |

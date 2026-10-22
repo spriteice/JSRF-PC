@@ -1163,6 +1163,7 @@ static int gl_init(uint32_t w, uint32_t h)
 #if !defined(NV2A_GLES)
 static void pres_start(void);        /* the presenter, below */
 #endif
+static int  sdl_cfg_get(const char *key, int def); /* the settings file, below */
 #if defined(XBOXRECOMP_MENU)
 static void sdl_menu_graphics(void); /* the in-game menu's rows, below */
 #endif
@@ -1216,7 +1217,11 @@ static int gl_init(uint32_t w, uint32_t h)
         }
         if ((e = getenv("RECOMP_WINDOW_W")) && atoi(e) >= 320) ww = atoi(e);
         if ((e = getenv("RECOMP_WINDOW_H")) && atoi(e) >= 240) wh = atoi(e);
-        if ((e = getenv("RECOMP_FULLSCREEN")) && atoi(e)) flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+        /* Full screen as the player last left it (sdl_choose_fullscreen),
+         * unless RECOMP_FULLSCREEN says otherwise: the launchers' --fullscreen,
+         * or a new scale's restart (sdl_restart_at). */
+        if ((e = getenv("RECOMP_FULLSCREEN")) && *e ? atoi(e) : sdl_cfg_get("fullscreen", 0))
+            flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
         g_window = SDL_CreateWindow("JSRF Unleashed",
                                     SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                     ww, wh, flags);
@@ -1243,8 +1248,9 @@ static int gl_init(uint32_t w, uint32_t h)
 #endif
     if (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP)
         SDL_ShowCursor(SDL_DISABLE);
-    fprintf(stderr, "  [WIN] SDL window (%s video), %s\n", SDL_GetCurrentVideoDriver(),
-            nv2a_widescreen() ? "16:9" : "4:3");
+    fprintf(stderr, "  [WIN] SDL window (%s video), %s%s\n", SDL_GetCurrentVideoDriver(),
+            nv2a_widescreen() ? "16:9" : "4:3",
+            (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) ? ", full screen" : "");
 
     fprintf(stderr, "  [GL] %s | %s | GLSL %s\n",
             (const char *)glGetString(GL_VERSION),
@@ -1478,6 +1484,15 @@ static void sdl_toggle_fullscreen(void)
     fprintf(stderr, "[WIN] full screen %s\n", fs ? "off" : "on");
 }
 
+/* F11 and the in-game menu's Full screen: the player's choice, kept as
+ * "fullscreen" for the next start (gl_init). Not the resolution box's step
+ * out of full screen and back (sdl_choose_scale), which is no choice. */
+static void sdl_choose_fullscreen(void)
+{
+    sdl_toggle_fullscreen();
+    sdl_cfg_set("fullscreen", (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0);
+}
+
 /* Widescreen asked for from another thread (the Android app's settings): done
  * at the next sdl_pump, by the thread that owns the window, as F10 is. */
 static volatile int g_sdl_want_wide = -1;
@@ -1594,7 +1609,7 @@ static void sdl_menu_graphics(void)
 {
     const XBOX_MENU_ITEM rows[] = {
         { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE, .label = "Full screen",
-          .state = sdl_is_fullscreen, .run = sdl_toggle_fullscreen },
+          .state = sdl_is_fullscreen, .run = sdl_choose_fullscreen },
         { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE, .label = "Widescreen (16:9)",
           .state = nv2a_widescreen, .run = sdl_toggle_widescreen },
         { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Render scale",
@@ -2149,7 +2164,7 @@ static void sdl_pump(void)
                 SDL_Scancode k = ev.key.keysym.scancode;
                 if (k == SDL_SCANCODE_F11
                  || (k == SDL_SCANCODE_RETURN && (ev.key.keysym.mod & KMOD_ALT))) {
-                    sdl_toggle_fullscreen();
+                    sdl_choose_fullscreen();
                     break;
                 }
                 if (k == SDL_SCANCODE_F10) { sdl_toggle_widescreen(); break; }

@@ -38,7 +38,7 @@ it from a command prompt:
 
   "JSRF Unleashed.exe" --scale N     internal resolution, 1 to 4 (default 2; F9
                                      in game does the same); remembered
-  "JSRF Unleashed.exe" --fullscreen  starts full screen
+  "JSRF Unleashed.exe" --fullscreen  always starts full screen
   "JSRF Unleashed.exe" --choose      asks where the game is again
   "JSRF Unleashed.exe" --version     which version this is
 
@@ -61,7 +61,7 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
                      then the menu's alone): About, Exit, the next three,
                      anti-aliasing, anisotropic filtering and the free
                      camera's settings
-  F11 or Alt+Enter   full screen
+  F11 or Alt+Enter   full screen; remembered
   F10                widescreen 16:9 (a wider view, not a stretch; the HUD
                      keeps its shape, the title screen stays 4:3); remembered
   F9                 resolution: the game is drawn at 1x to 4x the Xbox's
