@@ -19,6 +19,15 @@ application.
 game files, no textures, no music, no video. It plays the files from a disc
 you own.
 
+### This fork
+
+- **Portable mode:** a `portable` folder next to the launcher keeps the
+  settings, saves, logs and cache inside it. _(Linux, Windows)_
+- **In-game menu:** F1, or Back on a controller. _(Linux, Windows)_
+- **Free camera:** F8 gives the right stick to the camera, which turns around
+  the player; the L trigger puts it back behind. _(Linux, Windows)_
+- Various bug fixes.
+
 ---
 
 ## Download
