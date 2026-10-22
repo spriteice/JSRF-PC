@@ -801,6 +801,28 @@ static void fxaa_take(void)
     fprintf(stderr, "  [GL] FXAA: %s from present %u\n", g_fxaa_now ? "on" : "off", S.flips);
 }
 
+/*
+ * Multisampling: every target drawn with several samples a pixel, which
+ * smooths the edges of what is drawn into it. As with the internal
+ * resolution, nothing the title can observe changes -- the surface and its
+ * size stay as they were, and so does the raster's -- but this one can
+ * change while the game runs: asked for at any time (the in-game menu) and
+ * taken at the next flip, between frames, where the device carries every
+ * target's picture across. RECOMP_GL_MSAA=n, or the window's msaa= setting;
+ * 0 or 1 is none.
+ */
+static volatile int g_msaa_want = 1;   /* samples a pixel asked for */
+static int          g_msaa_now = 1;    /* and in use */
+
+static void msaa_take(void)
+{
+    int want = g_msaa_want, was = g_msaa_now;
+    if (want == was || !G->samples) return;
+    g_msaa_now = g_msaa_want = G->samples(want);
+    fprintf(stderr, "  [GL] MSAA: %dx from present %u (was %dx%s)\n",
+            g_msaa_now, S.flips, was, g_msaa_now != want ? "; fewer than asked" : "");
+}
+
 static uint32_t g_cur_prog;
 static int      g_cur_slot = -1;
 
@@ -1564,6 +1586,35 @@ static void sdl_menu_graphics(void)
     /* A new scale is a restart, which not every port can do (F9 asks the same). */
     if (!recomp_restart_self) n--;          /* Render scale, the last row */
     xbox_MenuAdd(rows, n);
+}
+
+/* Graphics > Anti-aliasing (MSAA): none, then each count the device can draw
+ * with, taken at the next flip and kept as msaa= (0 for none), as F10 keeps
+ * widescreen=. Added once the device is up (msaa_start), after the rows
+ * above and before FXAA's, which it can be used with. */
+static const char *const sdl_msaa_names[] = { "Off", "2x", "4x", "8x" };
+#define SDL_MSAA_N ((int)(sizeof sdl_msaa_names / sizeof sdl_msaa_names[0]))
+static int sdl_msaa_now(void)
+{
+    int i = 0;
+    while (i + 1 < SDL_MSAA_N && (2 << i) <= g_msaa_want) i++;
+    return i;
+}
+static void sdl_msaa_pick(int i)
+{
+    g_msaa_want = 1 << i;
+    sdl_cfg_set("msaa", i ? 1 << i : 0);
+}
+static void sdl_menu_msaa(void)
+{
+    int n = 1;
+    while (n < SDL_MSAA_N && (1 << n) <= G->samples_max()) n++;
+    if (n > 1) {
+        const XBOX_MENU_ITEM row = {
+            .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Anti-aliasing (MSAA)",
+            .state = sdl_msaa_now, .pick = sdl_msaa_pick, .choices = sdl_msaa_names, .nchoices = n };
+        xbox_MenuAdd(&row, 1);
+    }
 }
 
 /* Graphics > Anti-aliasing (FXAA): taken at the next flip and kept as fxaa=,
@@ -8972,6 +9023,10 @@ static void present(int is_frame)
     /* FXAA turned on or off since the last flip: from this frame. */
     if (is_frame) fxaa_take();
 
+    /* A change of multisampling asked for since the last flip: between
+     * frames, before this one is shown. */
+    if (is_frame) msaa_take();
+
     /* Put the finished frame on screen: the surface the title has set up
      * when it flips, which is what the window showed while surfaces were
      * bound as their methods arrived (JSRF: the display buffer it copies
@@ -10318,6 +10373,27 @@ static void fxaa_start(void)
 #endif
 }
 
+/* Multisampling from the start, before the first target is made:
+ * RECOMP_GL_MSAA, else the window's setting; and its menu row. */
+static void msaa_start(void)
+{
+    const char *v = getenv("RECOMP_GL_MSAA");
+    int n = (v && *v) ? atoi(v) : 0;
+#if defined(NV2A_GL_USE_SDL)
+    if (!(v && *v)) n = sdl_cfg_get("msaa", 0);
+#endif
+    if (!G->samples) {
+        if (n > 1) fprintf(stderr, "  [GL] MSAA: not on the %s backend\n", G->name);
+        return;
+    }
+    g_msaa_now = g_msaa_want = G->samples(n > 1 ? n : 1);
+    fprintf(stderr, "  [GL] MSAA: %dx from %s (1x is none; up to %dx here)\n",
+            g_msaa_now, (v && *v) ? "RECOMP_GL_MSAA" : "the settings", G->samples_max());
+#if defined(XBOXRECOMP_MENU)
+    sdl_menu_msaa();
+#endif
+}
+
 static int gfx_init(uint32_t w, uint32_t h)
 {
     const char *v = getenv("RECOMP_BACKEND");
@@ -10343,6 +10419,7 @@ static int gfx_init(uint32_t w, uint32_t h)
             g_is_gl = 0;
             fprintf(stderr, "  [GL] backend: %s\n", G->name);
             shader_cache_start();
+            msaa_start();
             fxaa_start();
             return 1;
         }
@@ -10360,6 +10437,7 @@ static int gfx_init(uint32_t w, uint32_t h)
     if (!gl_init(w, h)) return 0;     /* the context, then the device */
     fprintf(stderr, "  [GL] backend: %s\n", G->name);
     shader_cache_start();
+    msaa_start();
     fxaa_start();
     return 1;
 }

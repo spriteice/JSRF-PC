@@ -83,6 +83,12 @@ static int gles_has_depth_clamp(void)
 #define MAX_TARGETS 64
 static struct {
     GLuint   fbo, tex, rb;
+    /* Multisampled (samples()): the framebuffer drawn into, with its colour
+     * and depth/stencil. fbo, tex and rb then hold the picture resolved from
+     * it, which is behind it while `drawn` is set. 0 when not multisampled. */
+    GLuint   msfbo, mscol, msds;
+    int      drawn;
+    int      flat;                  /* never multisampled: the FXAA target */
     uint32_t pw, ph;
     int      used;
 } g_rt[MAX_TARGETS];
@@ -91,8 +97,16 @@ static GLuint   g_vao, g_vbo;
 static GLuint   g_copy_tex;         /* target_snapshot()'s copy */
 static uint32_t g_copy_w, g_copy_h;
 static int      g_copies;
+static int      g_samples = 1;      /* every target's, samples() */
+static int      g_resolves;
 
 static int rt_ok(uint32_t h) { return h && h <= MAX_TARGETS && g_rt[h - 1].used; }
+
+/* The framebuffer target h is drawn into. */
+static GLuint draw_fbo(uint32_t h)
+{
+    return g_rt[h - 1].msfbo ? g_rt[h - 1].msfbo : g_rt[h - 1].fbo;
+}
 
 static void scratch_bind(GLuint tex)
 {
@@ -100,7 +114,68 @@ static void scratch_bind(GLuint tex)
     glBindTexture(GL_TEXTURE_2D, tex);
 }
 
-static uint32_t glx_target_new(uint32_t pw, uint32_t ph)
+/* Copy target slot i's buffers in `mask`, whole, from one of its
+ * framebuffers to the other. The scissor is the one fragment operation that
+ * applies to a blit, and a draw may have set it and be about to use it. */
+static void blit(int i, GLuint from, GLuint to, GLbitfield mask)
+{
+    GLboolean sc = glIsEnabled(GL_SCISSOR_TEST);
+    glDisable(GL_SCISSOR_TEST);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, from);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, to);
+    glBlitFramebuffer(0, 0, (GLint)g_rt[i].pw, (GLint)g_rt[i].ph,
+                      0, 0, (GLint)g_rt[i].pw, (GLint)g_rt[i].ph, mask, GL_NEAREST);
+    if (sc) glEnable(GL_SCISSOR_TEST);
+}
+
+/* Bring target h's texture up to what has been drawn into it. GL samples,
+ * copies, reads and scales only a single-sampled picture, so every path that
+ * does one of those resolves first; nothing drawn since costs nothing. */
+static void resolve(uint32_t h)
+{
+    if (!g_rt[h - 1].msfbo || !g_rt[h - 1].drawn) return;
+    blit((int)h - 1, g_rt[h - 1].msfbo, g_rt[h - 1].fbo, GL_COLOR_BUFFER_BIT);
+    if (rt_ok(g_cur_rt))
+        glBindFramebuffer(GL_FRAMEBUFFER, draw_fbo(g_cur_rt));
+    g_rt[h - 1].drawn = 0;
+    g_resolves++;
+}
+
+static void ms_free(int i)
+{
+    glDeleteFramebuffers(1, &g_rt[i].msfbo);
+    glDeleteRenderbuffers(1, &g_rt[i].mscol);
+    glDeleteRenderbuffers(1, &g_rt[i].msds);
+    g_rt[i].msfbo = g_rt[i].mscol = g_rt[i].msds = 0;
+}
+
+/* Target slot i's multisampled buffers, n samples a pixel, bound; 0 and
+ * none made if the device will not have that many at its size. */
+static int ms_new(int i, int n)
+{
+    GLsizei pw = (GLsizei)g_rt[i].pw, ph = (GLsizei)g_rt[i].ph;
+    glGenFramebuffers(1, &g_rt[i].msfbo);
+    glGenRenderbuffers(1, &g_rt[i].mscol);
+    glGenRenderbuffers(1, &g_rt[i].msds);
+    glBindRenderbuffer(GL_RENDERBUFFER, g_rt[i].mscol);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, n, GL_RGBA8, pw, ph);
+    glBindRenderbuffer(GL_RENDERBUFFER, g_rt[i].msds);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, n, GL_DEPTH24_STENCIL8, pw, ph);
+    glBindFramebuffer(GL_FRAMEBUFFER, g_rt[i].msfbo);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                              GL_RENDERBUFFER, g_rt[i].mscol);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
+                              GL_RENDERBUFFER, g_rt[i].msds);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE)
+        return 1;
+    ms_free(i);
+    /* The refusal is said by the caller; the error it left would be pinned
+     * on the next draw by the front half's error check. */
+    while (glGetError() != GL_NO_ERROR) ;
+    return 0;
+}
+
+static uint32_t target_new(uint32_t pw, uint32_t ph, int flat)
 {
     int i;
     for (i = 0; i < MAX_TARGETS; i++) if (!g_rt[i].used) break;
@@ -133,14 +208,24 @@ static uint32_t glx_target_new(uint32_t pw, uint32_t ph)
         glDeleteTextures(1, &g_rt[i].tex);
         glDeleteRenderbuffers(1, &g_rt[i].rb);
         if (rt_ok(g_cur_rt))
-            glBindFramebuffer(GL_FRAMEBUFFER, g_rt[g_cur_rt - 1].fbo);
+            glBindFramebuffer(GL_FRAMEBUFFER, draw_fbo(g_cur_rt));
         return 0;
     }
-    g_rt[i].pw = pw; g_rt[i].ph = ph; g_rt[i].used = 1;
+    g_rt[i].pw = pw; g_rt[i].ph = ph; g_rt[i].used = 1; g_rt[i].flat = flat;
+    /* Multisampled like the rest, or -- the device refusing that many at
+     * this size -- drawn single-sampled, which is still the right picture. */
+    if (g_samples > 1 && !flat && !ms_new(i, g_samples))
+        fprintf(stderr, "  [GL] %d samples refused at %ux%u: that target is not multisampled\n",
+                g_samples, pw, ph);
     /* Creating it bound it; the target being drawn into stays the target. */
     if (rt_ok(g_cur_rt))
-        glBindFramebuffer(GL_FRAMEBUFFER, g_rt[g_cur_rt - 1].fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, draw_fbo(g_cur_rt));
     return (uint32_t)i + 1;
+}
+
+static uint32_t glx_target_new(uint32_t pw, uint32_t ph)
+{
+    return target_new(pw, ph, 0);
 }
 
 static void glx_target_free(uint32_t h)
@@ -149,6 +234,7 @@ static void glx_target_free(uint32_t h)
     glDeleteFramebuffers(1, &g_rt[h - 1].fbo);
     glDeleteTextures(1, &g_rt[h - 1].tex);
     glDeleteRenderbuffers(1, &g_rt[h - 1].rb);
+    ms_free((int)h - 1);
     memset(&g_rt[h - 1], 0, sizeof g_rt[0]);
     if (g_cur_rt == h) g_cur_rt = 0;
 }
@@ -156,14 +242,16 @@ static void glx_target_free(uint32_t h)
 static void glx_target_bind(uint32_t h)
 {
     if (!rt_ok(h)) return;
-    glBindFramebuffer(GL_FRAMEBUFFER, g_rt[h - 1].fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, draw_fbo(h));
     glViewport(0, 0, (GLsizei)g_rt[h - 1].pw, (GLsizei)g_rt[h - 1].ph);
     g_cur_rt = h;
 }
 
 static uint32_t glx_target_texture(uint32_t h)
 {
-    return rt_ok(h) ? g_rt[h - 1].tex : 0;
+    if (!rt_ok(h)) return 0;
+    resolve(h);
+    return g_rt[h - 1].tex;
 }
 
 /* Sampling the surface being drawn into: GL forbids reading a texture that is
@@ -173,6 +261,12 @@ static uint32_t glx_target_snapshot(uint32_t h)
 {
     uint32_t pw, ph;
     if (!rt_ok(h)) return 0;
+    /* Multisampled, it is drawn into buffers of its own that the texture is
+     * not attached to: resolved, the texture is the copy. */
+    if (g_rt[h - 1].msfbo) {
+        resolve(h);
+        return g_rt[h - 1].tex;
+    }
     pw = g_rt[h - 1].pw; ph = g_rt[h - 1].ph;
     if (!g_copy_tex) glGenTextures(1, &g_copy_tex);
     scratch_bind(g_copy_tex);
@@ -188,7 +282,7 @@ static uint32_t glx_target_snapshot(uint32_t h)
     glBindFramebuffer(GL_READ_FRAMEBUFFER, g_rt[h - 1].fbo);
     glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, (GLsizei)pw, (GLsizei)ph);
     if (rt_ok(g_cur_rt))
-        glBindFramebuffer(GL_FRAMEBUFFER, g_rt[g_cur_rt - 1].fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, draw_fbo(g_cur_rt));
     g_copies++;
     return g_copy_tex;
 }
@@ -207,6 +301,7 @@ static int glx_target_read(uint32_t h, uint32_t x, uint32_t y, uint32_t w,
                            uint32_t ht, int bgra, void *out)
 {
     if (!rt_ok(h) || !out) return 0;
+    resolve(h);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, g_rt[h - 1].fbo);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
 #if defined(NV2A_GLES)
@@ -218,7 +313,7 @@ static int glx_target_read(uint32_t h, uint32_t x, uint32_t y, uint32_t w,
                  bgra ? GL_UNSIGNED_INT_8_8_8_8_REV : GL_UNSIGNED_BYTE, out);
 #endif
     if (rt_ok(g_cur_rt))
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, g_rt[g_cur_rt - 1].fbo);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, draw_fbo(g_cur_rt));
     return 1;
 }
 
@@ -230,11 +325,13 @@ static int glx_target_read_depth(uint32_t h, uint32_t pw, uint32_t ph, float *ou
     return 0;
 #endif
     if (!rt_ok(h) || !out) return 0;
+    if (g_rt[h - 1].msfbo)
+        blit((int)h - 1, g_rt[h - 1].msfbo, g_rt[h - 1].fbo, GL_DEPTH_BUFFER_BIT);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, g_rt[h - 1].fbo);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glReadPixels(0, 0, (GLsizei)pw, (GLsizei)ph, GL_DEPTH_COMPONENT, GL_FLOAT, out);
     if (rt_ok(g_cur_rt))
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, g_rt[g_cur_rt - 1].fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, draw_fbo(g_cur_rt));
     return 1;
 }
 
@@ -1163,12 +1260,14 @@ static GLenum gl_prim_of(int p)
 static void glx_draw(int prim, uint32_t count)
 {
     glDrawArrays(gl_prim_of(prim), 0, (GLsizei)count);
+    if (g_cur_rt) g_rt[g_cur_rt - 1].drawn = 1;
 }
 
 static void glx_draw_indexed(int prim, uint32_t count, int idx32)
 {
     glDrawElements(gl_prim_of(prim), (GLsizei)count,
                    idx32 ? GL_UNSIGNED_INT : GL_UNSIGNED_SHORT, (const void *)0);
+    if (g_cur_rt) g_rt[g_cur_rt - 1].drawn = 1;
 }
 
 /* ---- clears -------------------------------------------------------------- */
@@ -1223,6 +1322,7 @@ static void glx_clear(unsigned mask, const float rgba[4], float depth,
     }
     glClear(bits);
     glDisable(GL_SCISSOR_TEST);
+    if (g_cur_rt) g_rt[g_cur_rt - 1].drawn = 1;
 }
 
 /* ---- the rest ------------------------------------------------------------ */
@@ -1246,6 +1346,9 @@ static void glx_report(void)
 {
     if (g_copies)
         fprintf(stderr, "  [GL] %d copies of a surface sampled while drawn into\n", g_copies);
+    if (g_resolves)
+        fprintf(stderr, "  [GL] %d multisampled pictures resolved (%d samples a pixel at the end)\n",
+                g_resolves, g_samples);
     if (nv2a_sc_is_open()) {
         int progs = 0, bins = 0, added = 0;
         nv2a_sc_stats(&progs, &bins, &added);
@@ -1259,10 +1362,66 @@ static void glx_report(void)
 }
 
 /* For nv2a_gl.c's GL-only paths (the SDL window's blit, the occlusion-query
- * probe): the framebuffer object behind a target. */
+ * probe): the framebuffer object behind a target, holding its picture --
+ * resolved, when it is multisampled, which cannot be scaled into a window. */
 unsigned nv2a_gfx_gl_fbo(uint32_t rt)
 {
-    return rt_ok(rt) ? g_rt[rt - 1].fbo : 0;
+    if (!rt_ok(rt)) return 0;
+    resolve(rt);
+    return g_rt[rt - 1].fbo;
+}
+
+/* ---- multisampling ------------------------------------------------------- */
+
+static int glx_samples_max(void)
+{
+    GLint n = 1;
+    glGetIntegerv(GL_MAX_SAMPLES, &n);
+    return n > 1 ? (int)n : 1;
+}
+
+/*
+ * Every target drawn with n samples a pixel from now on (1: none), between
+ * frames. Each target's picture, depth and stencil is resolved into its own
+ * framebuffer, its multisampled buffers are made again at the new count, and
+ * what they held is copied back into every sample: through the single-sampled
+ * framebuffer, because GL will not blit between two counts. A count the
+ * device refuses for any target gives way to half of it, down to none.
+ *
+ * OpenGL ES will not blit into a multisampled framebuffer at all, so there
+ * the count is only taken while there are no targets (at start).
+ */
+static int glx_samples(int n)
+{
+    const GLbitfield all = GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
+    int i, max = glx_samples_max();
+    if (n > max) n = max;
+    if (n < 1) n = 1;
+    if (n == g_samples) return n;
+#if defined(NV2A_GLES)
+    for (i = 0; i < MAX_TARGETS; i++)
+        if (g_rt[i].used) return g_samples;
+#endif
+    for (i = 0; i < MAX_TARGETS; i++)
+        if (g_rt[i].msfbo) {
+            blit(i, g_rt[i].msfbo, g_rt[i].fbo, all);
+            ms_free(i);
+        }
+    for (; n > 1; n /= 2) {
+        for (i = 0; i < MAX_TARGETS; i++)
+            if (g_rt[i].used && !g_rt[i].flat && !ms_new(i, n)) break;
+        if (i == MAX_TARGETS) break;
+        fprintf(stderr, "  [GL] %d samples refused at %ux%u\n", n, g_rt[i].pw, g_rt[i].ph);
+        for (i = 0; i < MAX_TARGETS; i++) ms_free(i);
+    }
+    for (i = 0; i < MAX_TARGETS; i++) {
+        if (g_rt[i].msfbo) blit(i, g_rt[i].fbo, g_rt[i].msfbo, all);
+        g_rt[i].drawn = 0;
+    }
+    if (rt_ok(g_cur_rt))
+        glBindFramebuffer(GL_FRAMEBUFFER, draw_fbo(g_cur_rt));
+    g_samples = n;
+    return n;
 }
 
 /* ---- FXAA ---------------------------------------------------------------- */
@@ -1368,10 +1527,13 @@ static uint32_t glx_target_fxaa(uint32_t h)
     }
     if (!rt_ok(g_fx_rt) || g_rt[g_fx_rt - 1].pw != pw || g_rt[g_fx_rt - 1].ph != ph) {
         glx_target_free(g_fx_rt);
-        g_fx_rt = glx_target_new(pw, ph);
+        /* Flat: one triangle over the whole of it gains nothing from
+         * samples, which would only cost memory. */
+        g_fx_rt = target_new(pw, ph, 1);
         if (!g_fx_rt) return h;
         fprintf(stderr, "  [GL] FXAA: the frame shown at %ux%u\n", pw, ph);
     }
+    resolve(h);                     /* multisampled: its picture, up to date */
     scratch_bind(g_rt[h - 1].tex);
     glBindFramebuffer(GL_FRAMEBUFFER, g_rt[g_fx_rt - 1].fbo);
     glViewport(0, 0, (GLsizei)pw, (GLsizei)ph);
@@ -1409,6 +1571,7 @@ static const Nv2aGfx g_gl = {
     NULL,                       /* pipeline_ms: the link covers it */
     glx_cache_open, glx_cache_idle,
     glx_target_fxaa,
+    glx_samples_max, glx_samples,
 };
 
 const Nv2aGfx *nv2a_gfx_gl(void) { return &g_gl; }

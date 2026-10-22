@@ -1851,6 +1851,7 @@ static const Nv2aGfx g_metal = {
     mtl_pipeline_ms,
     mtl_cache_open, NULL,       /* builds on a thread of its own */
     NULL,                       /* target_fxaa: none yet */
+    NULL, NULL,                 /* samples_max, samples: no multisampling yet */
 };
 
 const Nv2aGfx *nv2a_gfx_metal(void) { return &g_metal; }

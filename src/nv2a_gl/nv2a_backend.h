@@ -387,6 +387,13 @@ typedef struct Nv2aGfx {
      * is what comes back where the pass cannot run. NULL where the backend
      * has none (Metal). */
     uint32_t (*target_fxaa)(uint32_t rt);
+
+    /* Multisampling: the most samples a pixel a target can have here (1:
+     * none), and every target drawn with `n` from now on, what each holds
+     * carried across. Returns the count now in use, fewer than asked where
+     * the device refuses one. NULL where the backend has none (Metal). */
+    int      (*samples_max)(void);
+    int      (*samples)(int n);
 } Nv2aGfx;
 
 /* The implementations. Each returns NULL where it cannot run (no Metal

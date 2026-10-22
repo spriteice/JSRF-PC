@@ -69,11 +69,17 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
   F8                 free camera: the right stick turns the camera around
                      the player; remembered (see Free camera below)
 
+Graphics > Anti-aliasing (MSAA) in the in-game menu smooths jagged edges:
+Off (the default), 2x, 4x or 8x, as far as the graphics card goes. It changes
+straight away, with no restart, and is remembered as msaa= in the settings
+file (0, 2, 4 or 8). More asks more of the graphics card, the more so at the
+higher resolutions.
+
 Graphics > Anti-aliasing (FXAA) in the in-game menu smooths jagged edges
 with one quick pass over each finished frame, at the same small cost
 whatever is on screen. It softens the picture a little, the HUD included.
-Off by default; it changes straight away, with no restart, and is
-remembered as fxaa= in the settings file (0 or 1).
+It works alone or on top of MSAA. Off by default; it changes straight away,
+with no restart, and is remembered as fxaa= in the settings file (0 or 1).
 
 
 Free camera
