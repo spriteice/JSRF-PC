@@ -21,6 +21,9 @@ you own.
 
 ### This fork
 
+Thanks to [JuMatt](https://github.com/JuMatt) for the original port, which
+this fork builds on.
+
 - **Portable mode:** a `portable` folder next to the launcher keeps the
   settings, saves, logs and cache inside it. _(Linux, Windows)_
 - **In-game menu:** F1, or Back on a controller. _(Linux, Windows)_
