@@ -4,7 +4,7 @@
 
 # JSRF Unleashed
 
-**Jet Set Radio Future, running natively on Mac, Windows, Linux, Android, iPhone and iPad.** Not an emulator — the
+**Jet Set Radio Future, running natively on Linux and Windows.** Not an emulator — the
 game's own code, statically recompiled into C and built as a native
 application.
 
@@ -35,35 +35,47 @@ this fork builds on.
 
 ## Download
 
+This fork's only release so far is a **release candidate** of the coming
+0.5.3a beta: a test build, so expect bugs.
+
 | Platform | Download |
 |---|---|
-| macOS 12 or later, Apple Silicon (M1 or later) | [JSRF-Unleashed-macOS-arm64.zip](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/releases/latest/download/JSRF-Unleashed-macOS-arm64.zip) |
-| Linux, x86_64 (glibc 2.34 or later: Ubuntu 22.04, Debian 12, Fedora 36 and newer) | [JSRF-Unleashed-linux-x86_64.tar.gz](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/releases/latest/download/JSRF-Unleashed-linux-x86_64.tar.gz) — less tested than the Mac build |
-| iPhone and iPad, iOS 15 or later (iPhone XS or newer recommended) | [JSRF-Unleashed-iOS.ipa](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/releases/latest/download/JSRF-Unleashed-iOS.ipa) — less tested on iPads |
-| Windows 10 or 11, 64-bit | [JSRF-Unleashed-windows-x86_64.zip](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/releases/latest/download/JSRF-Unleashed-windows-x86_64.zip) — tested under Wine |
-| Android 10 or later, 64-bit, OpenGL ES 3.0 | [JSRF-Unleashed-android-arm64.apk](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/releases/latest/download/JSRF-Unleashed-android-arm64.apk) — tested in the Android emulator |
+| Linux, x86_64 (glibc 2.34 or later: SteamOS, Ubuntu 22.04, Debian 12, Fedora 36 and newer) | [JSRF-0.5.3a-rc-linux-x86_64.tar.gz](https://github.com/spriteice/JetSetRadioFuture-Unleashed/releases/download/v0.5.3a-rc/JSRF-0.5.3a-rc-linux-x86_64.tar.gz) — the main target, and the most tested |
+| Windows 10 or 11, 64-bit | [JSRF-0.5.3a-rc-windows-x86_64.zip](https://github.com/spriteice/JetSetRadioFuture-Unleashed/releases/download/v0.5.3a-rc/JSRF-0.5.3a-rc-windows-x86_64.zip) — starts and plays, but largely untested |
 
-Every version is on the [Releases](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/releases) page; what changed is in the [changelog](CHANGELOG.md).
+Every version is on the [Releases](https://github.com/spriteice/JetSetRadioFuture-Unleashed/releases) page, with what changed in it; the [changelog](CHANGELOG.md) has the upstream versions this fork builds on.
 
-### Installing on macOS
+### Installing on Linux
 
-1. Unzip, and move **JSRF Unleashed** to Applications (or wherever you like).
-2. Open it. The app is not notarised by Apple — that needs a paid developer
-   account — so the first time, macOS says it cannot check it. Click
-   **Done**, open **System Settings › Privacy & Security**, find
-   *"JSRF Unleashed" was blocked* and click **Open Anyway**. (On macOS 13 or
-   earlier, right-click the app and choose **Open** instead.) This is needed
-   once.
-3. It asks where your game is: pick the folder that contains `default.xbe`,
-   or a disc image (`.iso`), which it unpacks once by itself — nothing else to
-   install. You can also drop either onto the app. It remembers the choice,
-   and if the files are not the right ones (another build of the game,
-   another game's disc, a zip), it says what they are.
+1. Extract the archive anywhere.
+2. Run `./jsrf-unleashed`. The first time, it asks for the folder that
+   contains `default.xbe`, or the one your disc image (`.iso`) is in (with a
+   folder picker if `zenity` or `kdialog` is installed, otherwise in the
+   terminal), and remembers it; an image is unpacked once, by the game
+   itself. `./jsrf-unleashed /path/to/game.iso` works too.
+3. `./jsrf-unleashed --install` adds it to your applications menu, if you
+   like.
 
+It needs OpenGL 3.3 drivers and an X11 or Wayland desktop; SDL2 is bundled.
 Saves are kept in the game folder, in `UDATA` (where an Xbox keeps them), so
 copy that folder to back them up, and keep it if you replace the game files.
-Each run writes `last-run.log` into the game folder (with a few older ones in
-`logs/`) — attach it when you report a bug.
+The `README.txt` inside lists the options (`--scale`, `--fullscreen`,
+`--choose`) and where the settings and logs (`last-run.log`) are kept.
+
+**Portable mode** keeps the settings, saves, logs and cache in one folder
+next to the launcher, and nothing in your home folder:
+
+1. Make a folder named `portable` next to `jsrf-unleashed`.
+2. Run `./jsrf-unleashed`. It asks where the game is again, then copies the
+   saves it finds in the game folder (`UDATA` and `TDATA`) into
+   `portable/saves`; the originals stay where they were.
+3. Back up `portable/saves` to keep your progress.
+
+Keep the game in the extracted folder too, and the whole folder can be moved,
+to an SD card for instance: a game folder inside it is remembered relative to it,
+and a disc image is unpacked into `portable/games`. To update, extract the
+new version over this folder, or move `portable` into the new one: deleting
+`portable` deletes your saves with it.
 
 ### Installing on Windows
 
@@ -77,144 +89,56 @@ Each run writes `last-run.log` into the game folder (with a few older ones in
    unpack once into `%LOCALAPPDATA%\JSRF Unleashed`. It remembers the choice.
 
 It needs graphics drivers with OpenGL 3.3, which any GPU from the last ten
-years has. The **Video** menu at the top of the window sets the resolution,
-from 1× to 4× the Xbox's 640×480 (2× by default; the game restarts to apply
-it), widescreen 16:9 and full screen; the first two are remembered. The same
-are on **F9**, **F10** and **F11** (or Alt+Enter), which also work in full
-screen, where the menu is hidden, and in the in-game menu: **F1**, or Back on
-a controller.
-Controllers work through SDL: Xbox, PlayStation, Switch Pro and many more.
-Saves are kept in the game folder, in `UDATA`, as on the Mac. The
-`README.txt` inside lists the options and where the settings and logs
-(`last-run.log`) are kept.
-A folder named `portable` next to **JSRF Unleashed.exe** keeps the settings,
-saves and logs in that folder instead.
+years has. Saves are kept in the game folder, in `UDATA` (where an Xbox keeps
+them), so copy that folder to back them up, and keep it if you replace the
+game files. The `README.txt` inside lists the options and where the settings
+and logs (`last-run.log`) are kept.
 
-On a Mac, the Windows build also runs in [CrossOver](https://www.codeweavers.com/crossover)
-(a Windows 10 64-bit bottle, then **Run Command…** on JSRF Unleashed.exe),
-but the Mac build is the better choice there.
+**Portable mode** keeps the settings, saves, logs and cache in one folder
+next to the launcher, and nothing in `%LOCALAPPDATA%`:
 
-### Installing on iPhone or iPad
+1. Make a folder named `portable` next to **JSRF Unleashed.exe**.
+2. Run **JSRF Unleashed.exe**. It asks where the game is again, then copies
+   the saves it finds in the game folder (`UDATA` and `TDATA`) into
+   `portable\saves`; the originals stay where they were.
+3. Back up `portable\saves` to keep your progress.
 
-The app is not on the App Store, so it is installed with **AltStore**, which
-signs it with your own Apple ID. The steps below use a Mac (AltServer also
-runs on Windows: see [altstore.io](https://altstore.io)).
-[SideStore](https://sidestore.io) and [Sideloadly](https://sideloadly.io) work
-too, with the same source or the `.ipa` from the release.
+Keep the game in the unzipped folder too, and the whole folder can be moved,
+to a USB stick for instance, even under another drive letter: a game folder inside
+it is remembered relative to it, and a disc image is unpacked into
+`portable\games`. To update, unzip the new version over this folder, or move
+`portable` into the new one: deleting `portable` deletes your saves with it.
 
-**1. Install AltStore** (once)
+### In-game menu (ImGui)
 
-1. Download [AltServer for macOS](https://cdn.altstore.io/file/altstore/altserver.zip),
-   unzip it, move **AltServer** to Applications and open it. It lives in the
-   menu bar.
-2. Plug the iPhone into the Mac, unlock it, and tap **Trust** if it asks.
-3. In Finder, select the iPhone and tick **Show this iPhone when on Wi-Fi**,
-   so AltStore can refresh apps later without the cable.
-4. Click the AltServer icon in the menu bar › **Install AltStore** › your
-   iPhone, and sign in with your Apple ID. If it asks to install a Mail
-   plug-in, follow its instructions.
-5. On the iPhone: **Settings › General › VPN & Device Management** › your
-   Apple ID › **Trust**.
-6. **Settings › Privacy & Security › Developer Mode** (iOS 16 or later): turn
-   it on and let the phone restart.
+The in-game menu is a [Dear ImGui](https://github.com/ocornut/imgui) menu bar
+drawn over the game. **F1**, or Back on a controller, opens and closes it. It
+works with a controller, the keyboard or the mouse; B or Esc goes back a step.
+The game keeps running while it is open, but your input goes to the menu.
 
-**2. Install JSRF Unleashed**
+- **File:** About (the version and system details) and Exit.
+- **Graphics:** full screen, widescreen 16:9 and the render scale, 1× to 4×.
+- **Controller:** the free camera, and its inversion, sensitivity and
+  deadzone.
 
-7. Open AltStore › **Sources** › **+**, and paste:
+Everything but full screen is remembered. Exit and a new render scale ask
+first, as anything since your last save is lost.
 
-   ```
-   https://raw.githubusercontent.com/JuMatt/JetSetRadioFuture-Unleashed/main/altstore/source.json
-   ```
+### Portable limitations
 
-8. **Browse** › **JSRF Unleashed** › **FREE**. New versions show up there as
-   updates.
-
-**3. Add your game**
-
-9. Open JSRF Unleashed once. It creates its folder and shows where the game
-   goes.
-10. Copy the game into **On My iPhone › JSRF Unleashed**: this folder, and
-    nowhere else. Copy either the disc image (`.iso`) or the extracted game
-    folder (the one with `default.xbe` in it; see [Your game files](#your-game-files)):
-    - from the Mac: Finder › your iPhone › **Files** tab, and drag it onto
-      **JSRF Unleashed**;
-    - on the iPhone: in the **Files** app, from iCloud Drive, Google Drive or
-      wherever it is.
-11. Back in the app: for an `.iso`, tap **Unpack** (once, a minute or two; it
-    then offers to delete the image). Then the game starts.
-
-> **Updates:** when a new version is out, AltStore shows it in **My Apps**:
-> tap **Update** (with AltServer reachable, as for a refresh). It installs
-> over the app and keeps the game and your saves; deleting the app first
-> deletes them.
->
-> **Free Apple ID:** the app stops opening after **7 days**. Refresh it in
-> AltStore › **My Apps** › **Refresh All**, with the Mac on the same Wi-Fi and
-> AltServer running. A free Apple ID also allows only 3 sideloaded apps at a
-> time, AltStore included.
->
-> **In the EU**, use this AltStore (AltStore Classic), not AltStore PAL: PAL
-> only installs apps notarised by Apple.
-
-A controller is the way to play (any one iOS supports: Xbox, PlayStation,
-MFi, Backbone and the like). Without one, the app shows on-screen controls,
-with Start and Back at the top. The ⚙ button has the picture (**16:9**, the
-default; **Fill the screen**, the game widened to the whole of an iPhone's
-screen; or the console's **4:3**), the on-screen controls and the resolution.
-Saves are kept inside the game's folder (in
-`UDATA`), so deleting or replacing that folder deletes them too; each run's log
-is in `Logs`.
-
-The game's memory map needs 4 GB of address space, which recent iPhones give
-an app. If an older device does not, the app says so when it starts.
-
-### Installing on Android
-
-1. Download **JSRF-Unleashed-android-arm64.apk** on the phone and open it.
-   It is not on Google Play, so Android asks you to allow installing apps
-   from your browser (or file manager): allow it, then **Install**.
-2. Open **JSRF Unleashed**. It shows where the game goes, and two ways to put
-   it there (see [Your game files](#your-game-files)):
-   - **Choose the disc image (.iso)**: pick your image, wherever it is; the
-     app unpacks it once into its own folder (about 3 GB of free space);
-   - or copy the extracted game folder (the one with `default.xbe` and `Media`
-     in it) from a computer over USB, named `game`, into
-     `Android/data/com.jumatt.jsrfunleashed/files/`, then tap
-     **I copied the folder: start**.
-3. The game starts, and from then on it starts straight away.
-
-A controller is the way to play: Xbox, PlayStation, Switch Pro and others,
-over Bluetooth or USB. Without one, the app shows on-screen controls, as on
-iPhone, with Start and Back at the top; Android's Back is the Xbox Back
-button. The ⚙ button has widescreen, the on-screen controls and the
-resolution (used from the next start). Saves are kept in the game folder (in
-`UDATA`), so **uninstalling the app deletes them** with the game: copy `UDATA`
-somewhere first. Each run's log is
-`Android/data/com.jumatt.jsrfunleashed/files/Logs/last-run.log`.
-
-It needs Android 10 or later on a 64-bit phone or tablet with OpenGL ES 3.0
-(any from the last several years). So far it has been run in the Android
-emulator only — unpacking a disc image, boot, title, attract demo, the
-on-screen controls — not on a phone yet: reports are welcome.
-
-### Installing on Linux
-
-Extract the archive anywhere and run `./jsrf-unleashed`. The first time, it
-asks for the folder that contains `default.xbe`, or the one your disc image
-(`.iso`) is in (with a folder picker if `zenity` or `kdialog` is installed,
-otherwise in the terminal), and remembers it; an image is unpacked once, by
-the game itself. `./jsrf-unleashed /path/to/game.iso` works too. `./jsrf-unleashed --install` adds it to your applications menu. It needs
-OpenGL 3.3 drivers and an X11 or Wayland desktop; SDL2 is bundled. The
-`README.txt` inside lists the options (`--scale`, `--fullscreen`, `--choose`)
-and where settings, saves and logs are kept. A folder named `portable` next to
-`jsrf-unleashed` keeps them all in that folder instead of your home folder.
-
-On Linux the keyboard layout is the same as below; **F11** (or Alt+Return)
-toggles full screen, **F10** widescreen, and **F9** sets the resolution (1× to
-4×; the game restarts to apply it). **F8** turns on the free camera, on Linux and
-Windows: the right stick turns the camera around the player (its settings are
-in `README.txt`). **F1**, or Back on a controller, opens the F11, F10 and F9
-settings, and the free camera's, in a menu over the game.
+- The `portable` folder has to be writable. If it is not, the game says so
+  and stops, rather than falling back to your home folder or
+  `%LOCALAPPDATA%`.
+- Saves are copied in from the game folder only the first time. Progress
+  made in portable mode stays in `portable`: remove the folder and the game
+  goes back to the older saves in the game folder.
+- Only a game kept inside the launcher's folder moves with it. A game
+  anywhere else is remembered by its full path, and if that changes (another
+  drive letter, say), the game asks for it again.
+- Graphics drivers, sound and the folder picker still keep their own small
+  files in your home folder or user profile, as they do for any program.
+- On Linux, `--install` does not work, as the applications menu is in your
+  home folder.
 
 ### Your game files
 
@@ -229,9 +153,10 @@ folder with `default.xbe`, `Media/` and the rest.
 
 ## Playing
 
-**Controller:** any pad macOS recognises — Xbox, DualSense, DualShock 4 and
-others, over Bluetooth or USB. On Windows, Linux and Android, any pad SDL
-knows.
+**Controller:** any pad SDL knows — Xbox, PlayStation, Switch Pro, Steam Deck
+and many more, over Bluetooth or USB. The buttons are the Xbox's, with the
+bumpers as Black and White. Back opens the in-game menu, so the game's own
+Back is Esc on the keyboard.
 
 **Keyboard.** Keys go by position, so `W A S D` on a QWERTY keyboard is
 `Z Q S D` on an AZERTY one:
@@ -246,16 +171,24 @@ knows.
 | Return | Start | Esc | Back |
 | C / V | left / right stick click | | |
 
-**Controls › Keyboard…** in the menu bar shows the same list.
+**Settings keys**, in a window or full screen:
 
-**Video menu:**
-- **Resolution** — the internal resolution, 1× to 4× (2× by default). The
-  game restarts to apply it.
-- **Renderer** — Metal (the default) or OpenGL. The game restarts to apply it.
-- **Full Screen** — Ctrl ⌘ F.
-- **Widescreen (16:9)** — ⇧ ⌘ W. The game is shown at 16:9 with a wider
-  field of view, not stretched; the HUD and text keep their shape. The title
-  screen stays 4:3.
+| Key | Does |
+|---|---|
+| F1, or Back on a controller | the in-game menu: **File** (About, Exit), **Graphics** (the next three) and **Controller** (the free camera and its settings) |
+| F11 or Alt+Return | full screen |
+| F10 | widescreen 16:9: a wider field of view, not a stretch; the HUD and text keep their shape, and the title screen stays 4:3. Remembered. |
+| F9 | resolution: 1× to 4× the Xbox's 640×480 (2× by default). Remembered. The game restarts to apply it, so save first. |
+| F8 | the free camera, below. Remembered. |
+
+**Free camera.** F8 gives the right stick to the camera, which turns around
+the player, and forward is wherever it looks. The L trigger puts it back
+behind the player, as it does the game's camera. It also turns the graffiti
+camera off, like the option in the Jet Set Radio re-release: spraying no
+longer turns the camera to the wall. Inversion, sensitivity and
+the deadzone are in the in-game menu's **Controller** menu, and in the
+settings file (see the `README.txt` in the download). With no keyboard, as in
+Steam's Game Mode, turn it on from that menu.
 
 ## Status
 
@@ -267,28 +200,21 @@ Playable, early, and not yet played from start to finish.
 | New Game through the tutorial, the DJ K scene and Dogenzaka Hill | works — the part played and tested most |
 | Skating, grinding, tricks, graffiti, the pause map | works |
 | Music, sound effects, voices | works |
-| Widescreen 16:9 (and the whole screen, on iPhone) | works in game; the title screen stays 4:3 |
-| Linux build | boots, menus, starting a new game; far less played than the Mac build |
-| Windows build | tested under Wine |
-| iPhone / iPad build | plays on iPhone; less tested on iPads |
-| Android build | boots to the title and the attract demo in the Android emulator; not yet tried on a phone |
+| Widescreen 16:9 | the game view mostly works; some menus and effects are still 4:3 |
+| Linux build | the main target, and the most tested |
+| Windows build | starts and plays, but largely untested |
 | Later areas | little tested — expect bugs |
 | Known issues | an occasional "disc error" screen during a load |
 
-Found a bug? [Open an issue](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/issues)
+Found a bug? [Open an issue](https://github.com/spriteice/JetSetRadioFuture-Unleashed/issues)
 with your `last-run.log` and what you were doing.
 
 ## Why static recompilation
 
 The game's x86 machine code is translated, function by function, into C, which
 is then compiled for whatever CPU you are on. There is no interpreter and no
-JIT at runtime. Two things follow from that:
-
-- **It is fast.** The game's logic runs as native code, at native speed.
-- **It can ship where JITs cannot.** iOS forbids runtime code generation, which
-  is why there is no real Xbox emulator on an iPhone. A statically recompiled
-  binary has nothing to generate — which is why there can be an iPhone build
-  at all.
+JIT at runtime, so **it is fast**: the game's logic runs as native code, at
+native speed.
 
 What still has to be emulated is the *hardware*: the NV2A graphics processor,
 the MCPX audio processor, and the Xbox kernel the game calls into. Those parts
@@ -310,7 +236,6 @@ result in `port/recomp/gen`, then:
 ```sh
 cmake -S port -B build -DCMAKE_BUILD_TYPE=Release    # on Linux add -DNV2A_GL_CONTEXT=sdl
 cmake --build build
-launcher/package_mac.sh build/jsrf_recomp             # macOS: the app, zipped
 ```
 
 On Linux, [`launcher/linux/package.sh`](launcher/linux/package.sh) packages the
@@ -319,15 +244,8 @@ cross-compiled on Linux with [llvm-mingw](https://github.com/mstorsjo/llvm-mingw
 and the toolchain file
 [`launcher/windows/llvm-mingw.cmake`](launcher/windows/llvm-mingw.cmake);
 [`launcher/windows/package.sh`](launcher/windows/package.sh) packages it and
-records the rest (SDL2, libepoxy). For iPhone and iPad, see
-[docs/ios.md](docs/ios.md) (Xcode's iOS SDK, the same CMake project,
-[`launcher/ios/package_ios.sh`](launcher/ios/package_ios.sh) for the `.ipa`); for
-Android, [launcher/android/README.md](launcher/android/README.md) (the NDK, SDL
-2.32's source, [`launcher/android/build_apk.sh`](launcher/android/build_apk.sh)
-for the `.apk`, no Gradle).
-How the Mac and iPhone renderer works is in
-[docs/metal-backend.md](docs/metal-backend.md). The version comes from the git
-tag the tree is at.
+records the rest (SDL2, libepoxy). The version comes from the git tag the
+tree is at.
 
 ### Linux
 
@@ -340,7 +258,7 @@ script also knows Debian, Arch and Fedora.
    Then:
 
    ```sh
-   git clone https://github.com/JuMatt/JetSetRadioFuture-Unleashed.git
+   git clone -b TESTING https://github.com/spriteice/JetSetRadioFuture-Unleashed.git
    cd JetSetRadioFuture-Unleashed
    bash tools/linux/install_deps.sh
    ```
@@ -425,6 +343,9 @@ xemu is LGPL-2.1-or-later. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 ## Credits
 
+- [JuMatt](https://github.com/JuMatt) — the original port,
+  [JSRF Unleashed](https://github.com/JuMatt/JetSetRadioFuture-Unleashed),
+  which this fork builds on.
 - [xboxrecomp](https://github.com/sp00nznet/xboxrecomp) — the static
   recompilation toolkit this is a port on top of. Its documentation is kept at
   [docs/xboxrecomp-toolkit.md](docs/xboxrecomp-toolkit.md).
