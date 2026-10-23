@@ -27,8 +27,8 @@ each menu's rows live with the setting they change (File in
   ` (Restart)`, after its name: "Render scale (Restart)".
 - Choosing it asks first, with the "Are you sure?" box (the row's `confirm`),
   and a message saying what the restart does and what is lost:
-  "The game restarts to <what it does>: anything since your last save is
-  lost."
+  "The game restarts <doing what>, losing unsaved progress.", as in "The
+  game restarts at the new scale, losing unsaved progress."
 - OK saves the change and restarts the game (`sdl_restart` in nv2a_gl.c).
   Cancel and B change nothing; the pad starts on Cancel.
 - Where the game cannot restart itself (Android), OK saves the change for the

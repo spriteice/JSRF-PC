@@ -23,7 +23,8 @@
  *     xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
  *     #endif
  *
- * Plain C; menu.cpp draws the rows with Dear ImGui.
+ * Plain C; menu.cpp draws the rows with Dear ImGui. Labels, (Restart), boxes
+ * and File > About follow docs/menu-format.md.
  */
 #ifndef XBOX_MENU_H
 #define XBOX_MENU_H

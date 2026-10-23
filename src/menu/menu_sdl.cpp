@@ -55,7 +55,7 @@ extern "C" const char *recomp_version(void) __attribute__((weak));
  * SDL, OpenGL, Dear ImGui. Every section is written the same way, and so is
  * any added later: its name on a line of its own, then each detail -- the
  * version first, where it has one -- on a line starting with "-", and a blank
- * line between one section and the next. */
+ * line between one section and the next (docs/menu-format.md). */
 static const char *about_text(void)
 {
     static char buf[768];
