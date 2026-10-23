@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-# JSRF Unleashed -- the game, built from this repository.
+# JSRF-PC -- the game, built from this repository.
 #
 # The generated code is not in the repository (it is derived from the game's
 # executable): produce it from your own default.xbe with the pipeline in
@@ -86,7 +86,7 @@ endif()
 if(NOT JSRF_VERSION)
     set(JSRF_VERSION "dev")
 endif()
-message(STATUS "JSRF Unleashed version: ${JSRF_VERSION}")
+message(STATUS "JSRF-PC version: ${JSRF_VERSION}")
 
 # Windows (MinGW): the runtime's OpenGL / SDL2 host layers, as on Linux and the
 # Mac, rather than its Direct3D 11 ones -- the title draws through its own D3D

@@ -25,7 +25,7 @@ add_compile_definitions(
 
 # Windows with the host layers the Mac and Linux builds use -- the OpenGL
 # renderer (nv2a_gl) through SDL2 and libepoxy, SDL2's sound and controllers --
-# instead of Direct3D 11, XAudio2 and XInput. JSRF Unleashed's Windows build
+# instead of Direct3D 11, XAudio2 and XInput. JSRF-PC's Windows build
 # (MinGW) turns it on: its title brings its own D3D and draws through the
 # pushbuffer, which is nv2a_gl's job on every other host.
 option(XBOXRECOMP_WIN_GL "Windows: OpenGL/SDL2 host layers instead of D3D11/XAudio2/XInput" OFF)

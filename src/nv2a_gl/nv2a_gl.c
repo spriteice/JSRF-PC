@@ -1222,7 +1222,7 @@ static int gl_init(uint32_t w, uint32_t h)
          * or a new scale's restart (sdl_restart_at). */
         if ((e = getenv("RECOMP_FULLSCREEN")) && *e ? atoi(e) : sdl_cfg_get("fullscreen", 0))
             flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
-        g_window = SDL_CreateWindow("JSRF Unleashed",
+        g_window = SDL_CreateWindow("JSRF-PC",
                                     SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                     ww, wh, flags);
     }
@@ -1280,7 +1280,7 @@ void nv2a_set_widescreen(int on);
 int  nv2a_wide_scene(void);
 float nv2a_wide_aspect(void);
 
-/* $XDG_CONFIG_HOME/jsrf-unleashed/settings (or JSRF_SETTINGS_FILE): lines of
+/* $XDG_CONFIG_HOME/jsrf-pc/settings (or JSRF_SETTINGS_FILE): lines of
  * key=value, shared with the launcher script, which keeps game_dir and
  * scale there. Only the keys this file owns are rewritten. */
 static void sdl_cfg_path(char *buf, size_t n)
@@ -1288,14 +1288,14 @@ static void sdl_cfg_path(char *buf, size_t n)
     const char *f = getenv("JSRF_SETTINGS_FILE"), *x = getenv("XDG_CONFIG_HOME"),
                *h = getenv("HOME");
 #if defined(_WIN32)
-    /* %LOCALAPPDATA%\JSRF Unleashed\settings: the launcher's, which also
+    /* %LOCALAPPDATA%\JSRF-PC\settings: the launcher's, which also
      * passes it as JSRF_SETTINGS_FILE. */
     const char *ad = getenv("LOCALAPPDATA");
-    if (!(f && *f) && ad && *ad) { snprintf(buf, n, "%s/JSRF Unleashed/settings", ad); return; }
+    if (!(f && *f) && ad && *ad) { snprintf(buf, n, "%s/JSRF-PC/settings", ad); return; }
 #endif
     if (f && *f)      snprintf(buf, n, "%s", f);
-    else if (x && *x) snprintf(buf, n, "%s/jsrf-unleashed/settings", x);
-    else if (h && *h) snprintf(buf, n, "%s/.config/jsrf-unleashed/settings", h);
+    else if (x && *x) snprintf(buf, n, "%s/jsrf-pc/settings", x);
+    else if (h && *h) snprintf(buf, n, "%s/.config/jsrf-pc/settings", h);
     else buf[0] = 0;
 }
 

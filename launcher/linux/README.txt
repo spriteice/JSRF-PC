@@ -1,8 +1,8 @@
-JSRF Unleashed for Linux (x86_64)
-=================================
+JSRF-PC for Linux (x86_64)
+==========================
 
 Jet Set Radio Future, statically recompiled and running natively.
-https://github.com/JuMatt/JetSetRadioFuture-Unleashed
+https://github.com/spriteice/JSRF-PC
 
 You need your own copy of the game -- the standalone US disc (not the Sega GT
 2002 + JSRF combo disc, whose JSRF is a different build). This package is the
@@ -25,21 +25,21 @@ What you need
 Playing
 -------
 1. Extract this archive anywhere.
-2. Run ./jsrf-unleashed
+2. Run ./jsrf-pc
 3. The first time, it asks where the game is: pick the folder that contains
    default.xbe, or the folder your disc image (.iso) is in. (With zenity or
    kdialog installed you get a folder picker; otherwise it asks in the
    terminal.) An image is unpacked once, by the game itself -- nothing else to
    install. It remembers the choice. You can also give the folder or the
-   image on the command line:  ./jsrf-unleashed /path/to/game.iso
+   image on the command line:  ./jsrf-pc /path/to/game.iso
    If the files are not the right ones (another build of the game, another
    game's disc, a zip), it says what they are.
 
-   ./jsrf-unleashed --install     adds JSRF Unleashed to your applications menu
-   ./jsrf-unleashed --scale N     internal resolution, 1 to 4 (default 2); remembered
-   ./jsrf-unleashed --fullscreen  always starts full screen
-   ./jsrf-unleashed --choose      asks where the game is again
-   ./jsrf-unleashed --version     which version this is
+   ./jsrf-pc --install     adds JSRF-PC to your applications menu
+   ./jsrf-pc --scale N     internal resolution, 1 to 4 (default 2); remembered
+   ./jsrf-pc --fullscreen  always starts full screen
+   ./jsrf-pc --choose      asks where the game is again
+   ./jsrf-pc --version     which version this is
 
 
 Controls
@@ -135,14 +135,14 @@ Where things are kept
 ---------------------
   Saves     in the game folder, under UDATA (where an Xbox keeps them): copy
             UDATA somewhere to back your progress up
-  Settings  ~/.config/jsrf-unleashed/settings
-  Cache     ~/.local/share/jsrf-unleashed/save
-  Logs      ~/.local/state/jsrf-unleashed/last-run.log (and logs/)
+  Settings  ~/.config/jsrf-pc/settings
+  Cache     ~/.local/share/jsrf-pc/save
+  Logs      ~/.local/state/jsrf-pc/last-run.log (and logs/)
 
 
 Portable mode
 -------------
-Make a folder named "portable" next to jsrf-unleashed, and everything is kept
+Make a folder named "portable" next to jsrf-pc, and everything is kept
 in it instead -- nothing in your home folder, nothing in the game folder:
 
   portable/settings.cfg   settings
@@ -167,8 +167,8 @@ Found a bug? Open an issue on GitHub with last-run.log and what you were doing.
 
 Steam Deck
 ----------
-Not tested yet, but it should work: in Desktop Mode, run ./jsrf-unleashed once
-to pick the game folder, then add the jsrf-unleashed script to Steam as a
+Not tested yet, but it should work: in Desktop Mode, run ./jsrf-pc once
+to pick the game folder, then add the jsrf-pc script to Steam as a
 non-Steam game.
 
 
@@ -182,4 +182,5 @@ data.
 Licences: MIT for this project's own code; the MCPX audio-processor code
 extracted from xemu is LGPL-2.1-or-later; the bundled SDL2 library is under
 the zlib licence. See the licences/ folder. Source code:
+https://github.com/spriteice/JSRF-PC, a fork of JuMatt's JSRF Unleashed:
 https://github.com/JuMatt/JetSetRadioFuture-Unleashed

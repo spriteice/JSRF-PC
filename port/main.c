@@ -686,7 +686,7 @@ static int host_main(void)
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
 
-    printf("=== JSRF Unleashed %s -- Jet Set Radio Future, statically recompiled ===\n",
+    printf("=== JSRF-PC %s -- Jet Set Radio Future, statically recompiled ===\n",
            JSRF_VERSION);
     /* The Developer menu's switches into the environment, before anything
      * reads them, and the log off if it was left off (port/developer.c). */

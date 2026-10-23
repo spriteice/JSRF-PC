@@ -38,7 +38,7 @@ static void wide_run(void);
 static int  scale_state(void)  { return s_scale; }
 static void scale_pick(int i)  { s_picks = i; }
 static void exit_run(void)     { s_exit = 1; }
-static const char *about_text(void) { return "JSRF Unleashed test"; }
+static const char *about_text(void) { return "JSRF-PC test"; }
 static const char *const k_scales[] = { "1x  (640 x 480)", "2x  (1280 x 960)",
                                         "3x  (1920 x 1440)", "4x  (2560 x 1920)" };
 

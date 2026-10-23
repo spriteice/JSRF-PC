@@ -1,5 +1,5 @@
 /*
- * JSRF Unleashed - is this the game the engine is made from?
+ * JSRF-PC - is this the game the engine is made from?
  *
  * The engine is one build of Jet Set Radio Future translated ahead of time:
  * the standalone US disc's default.xbe (NTSC, version 1, built 28 January
@@ -183,8 +183,8 @@ int jsrf_xbe_check(const unsigned char *x, size_t n, char *why, size_t whyn)
                      "is \"%s\" (%s, built %s).", name[0] ? name : "?", tid, when);
         else if ((region & 7u) == 1u)
             snprintf(why, whyn,
-                     "These are Jet Set Radio Future's files for North America, but not the build JSRF "
-                     "Unleashed is made from: their default.xbe is version %u, built %s, where the "
+                     "These are Jet Set Radio Future's files for North America, but not the build JSRF-PC "
+                     "is made from: their default.xbe is version %u, built %s, where the "
                      "standalone US disc's is version %u, built %s. The JSRF on the Sega GT 2002 + JSRF "
                      "combo disc (the copy that came with the Xbox) is a build like this.",
                      (unsigned)version, when, USA_VERSION, usa_when);
@@ -258,7 +258,7 @@ int jsrf_xbe_check_iso(const char *iso_path, char *why, size_t whyn)
         const char *kind = xiso_probe(iso_path) ? NULL : kind_of(iso_path);
         if (!why) return JSRF_XBE_NOT_IMAGE;
         if (kind && !strcmp(kind, "a compressed disc image (CSO)"))
-            snprintf(why, whyn, "That file is a compressed Xbox disc image (CSO), which JSRF Unleashed "
+            snprintf(why, whyn, "That file is a compressed Xbox disc image (CSO), which JSRF-PC "
                                 "cannot read: turn it back into a plain .iso first, or pick the folder "
                                 "of the game's extracted files.");
         else if (kind)

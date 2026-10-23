@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/images/banner.png" width="640" alt="Jet Set Radio Future Unleashed">
+  <img src="docs/images/banner-jsrf-pc.png" width="640" alt="Jet Set Radio Future: JSRF-PC">
 </p>
 
-# JSRF Unleashed
+# JSRF-PC
 
 **Jet Set Radio Future, running natively on Linux and Windows.** Not an emulator — the
 game's own code, statically recompiled into C and built as a native
@@ -21,7 +21,8 @@ you own.
 
 ### This fork
 
-Thanks to [JuMatt](https://github.com/JuMatt) for the original port, which
+Thanks to [JuMatt](https://github.com/JuMatt) for the original port,
+[JSRF Unleashed](https://github.com/JuMatt/JetSetRadioFuture-Unleashed), which
 this fork builds on.
 
 - **In-game menu:** F1, or Back on a controller. _(Linux, Windows)_
@@ -41,20 +42,20 @@ The latest release is **0.5.3a**.
 
 | Platform | Download |
 |---|---|
-| Linux, x86_64 (glibc 2.34 or later: SteamOS, Ubuntu 22.04, Debian 12, Fedora 36 and newer) | [JSRF-0.5.3a-linux-x86_64.tar.gz](https://github.com/spriteice/JetSetRadioFuture-Unleashed/releases/download/v0.5.3a/JSRF-0.5.3a-linux-x86_64.tar.gz) — the main target, and the most tested |
-| Windows 10 or 11, 64-bit | [JSRF-0.5.3a-windows-x86_64.zip](https://github.com/spriteice/JetSetRadioFuture-Unleashed/releases/download/v0.5.3a/JSRF-0.5.3a-windows-x86_64.zip) — starts and plays, but largely untested |
+| Linux, x86_64 (glibc 2.34 or later: SteamOS, Ubuntu 22.04, Debian 12, Fedora 36 and newer) | [JSRF-0.5.3a-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/v0.5.3a/JSRF-0.5.3a-linux-x86_64.tar.gz) — the main target, and the most tested |
+| Windows 10 or 11, 64-bit | [JSRF-0.5.3a-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/v0.5.3a/JSRF-0.5.3a-windows-x86_64.zip) — starts and plays, but largely untested |
 
-Every version is on the [Releases](https://github.com/spriteice/JetSetRadioFuture-Unleashed/releases) page, with what changed in it; the [changelog](CHANGELOG.md) has the upstream versions this fork builds on.
+Every version is on the [Releases](https://github.com/spriteice/JSRF-PC/releases) page, with what changed in it; the [changelog](CHANGELOG.md) has the upstream versions this fork builds on.
 
 ### Installing on Linux
 
 1. Extract the archive anywhere.
-2. Run `./jsrf-unleashed`. The first time, it asks for the folder that
+2. Run `./jsrf-pc`. The first time, it asks for the folder that
    contains `default.xbe`, or the one your disc image (`.iso`) is in (with a
    folder picker if `zenity` or `kdialog` is installed, otherwise in the
    terminal), and remembers it; an image is unpacked once, by the game
-   itself. `./jsrf-unleashed /path/to/game.iso` works too.
-3. `./jsrf-unleashed --install` adds it to your applications menu, if you
+   itself. `./jsrf-pc /path/to/game.iso` works too.
+3. `./jsrf-pc --install` adds it to your applications menu, if you
    like.
 
 It needs OpenGL 3.3 drivers and an X11 or Wayland desktop; SDL2 is bundled.
@@ -66,8 +67,8 @@ The `README.txt` inside lists the options (`--scale`, `--fullscreen`,
 **Portable mode** keeps the settings, saves, logs and cache in one folder
 next to the launcher, and nothing in your home folder:
 
-1. Make a folder named `portable` next to `jsrf-unleashed`.
-2. Run `./jsrf-unleashed`. It asks where the game is again, then copies the
+1. Make a folder named `portable` next to `jsrf-pc`.
+2. Run `./jsrf-pc`. It asks where the game is again, then copies the
    saves it finds in the game folder (`UDATA` and `TDATA`) into
    `portable/saves`; the originals stay where they were.
 3. Back up `portable/saves` to keep your progress.
@@ -81,13 +82,13 @@ new version over this folder, or move `portable` into the new one: deleting
 ### Installing on Windows
 
 1. Unzip the archive anywhere, and keep the `engine` folder beside
-   **JSRF Unleashed.exe**.
-2. Run **JSRF Unleashed.exe**. It is not signed (that costs money every
+   **JSRF-PC.exe**.
+2. Run **JSRF-PC.exe**. It is not signed (that costs money every
    year), so the first time Windows may say it protected your PC: click
    **More info**, then **Run anyway**.
 3. It asks where your game is: pick the folder that contains `default.xbe`,
    or the folder with your disc image (`.iso`) in it, which it offers to
-   unpack once into `%LOCALAPPDATA%\JSRF Unleashed`. It remembers the choice.
+   unpack once into `%LOCALAPPDATA%\JSRF-PC`. It remembers the choice.
 
 It needs graphics drivers with OpenGL 3.3, which any GPU from the last ten
 years has. Saves are kept in the game folder, in `UDATA` (where an Xbox keeps
@@ -98,8 +99,8 @@ and logs (`last-run.log`) are kept.
 **Portable mode** keeps the settings, saves, logs and cache in one folder
 next to the launcher, and nothing in `%LOCALAPPDATA%`:
 
-1. Make a folder named `portable` next to **JSRF Unleashed.exe**.
-2. Run **JSRF Unleashed.exe**. It asks where the game is again, then copies
+1. Make a folder named `portable` next to **JSRF-PC.exe**.
+2. Run **JSRF-PC.exe**. It asks where the game is again, then copies
    the saves it finds in the game folder (`UDATA` and `TDATA`) into
    `portable\saves`; the originals stay where they were.
 3. Back up `portable\saves` to keep your progress.
@@ -231,7 +232,7 @@ Playable, early, and not yet played from start to finish.
 | Later areas | little tested — expect bugs |
 | Known issues | an occasional "disc error" screen during a load |
 
-Found a bug? [Open an issue](https://github.com/spriteice/JetSetRadioFuture-Unleashed/issues)
+Found a bug? [Open an issue](https://github.com/spriteice/JSRF-PC/issues)
 with your `last-run.log` and what you were doing.
 
 ## Why static recompilation
@@ -283,8 +284,8 @@ script also knows Debian, Arch and Fedora.
    Then:
 
    ```sh
-   git clone -b TESTING https://github.com/spriteice/JetSetRadioFuture-Unleashed.git
-   cd JetSetRadioFuture-Unleashed
+   git clone https://github.com/spriteice/JSRF-PC.git
+   cd JSRF-PC
    bash tools/linux/install_deps.sh
    ```
 
@@ -334,8 +335,8 @@ script also knows Debian, Arch and Fedora.
 
    ```sh
    launcher/linux/package.sh build/jsrf_recomp "$(pkg-config --variable=libdir sdl2)/libSDL2-2.0.so.0"
-   tar xzf JSRF-Unleashed-linux-x86_64.tar.gz -C ~
-   ~/JSRF-Unleashed-linux-x86_64/jsrf-unleashed
+   tar xzf JSRF-PC-linux-x86_64.tar.gz -C ~
+   ~/JSRF-PC-linux-x86_64/jsrf-pc
    ```
 
    From here it works like the download: see

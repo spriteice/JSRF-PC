@@ -63,7 +63,7 @@ static const char *about_text(void)
     SDL_VERSION(&built);
     SDL_GetVersion(&running);
     snprintf(buf, sizeof buf,
-             "JSRF Unleashed\n"
+             "JSRF-PC\n"
              "-%s\n\n"
              "%s\n"
              "-Built with %s\n\n"

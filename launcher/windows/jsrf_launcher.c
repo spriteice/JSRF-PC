@@ -1,22 +1,22 @@
 /*
- * JSRF Unleashed -- the Windows launcher ("JSRF Unleashed.exe").
+ * JSRF-PC -- the Windows launcher ("JSRF-PC.exe").
  *
  * Finds your copy of Jet Set Radio Future (the folder with default.xbe and
  * Media in it, or a disc image, which it unpacks once), remembers it, and
  * starts the engine (engine\jsrf_recomp.exe) with the settings it needs --
  * what launcher/linux/jsrf-unleashed does on Linux and the app does on a Mac.
  *
- *   JSRF Unleashed.exe                    play (asks where the game is, the first time)
- *   JSRF Unleashed.exe <folder or .iso>   use that, and remember it (dropping a
- *                                         folder or an image on the .exe does this)
- *   JSRF Unleashed.exe --choose           ask where the game is again
- *   JSRF Unleashed.exe --scale N          internal resolution, 1 to 4 times 640x480
- *                                         (default 2); remembered
- *   JSRF Unleashed.exe --fullscreen       start full screen
- *   JSRF Unleashed.exe --version          which version this is
+ *   JSRF-PC.exe                    play (asks where the game is, the first time)
+ *   JSRF-PC.exe <folder or .iso>   use that, and remember it (dropping a
+ *                                  folder or an image on the .exe does this)
+ *   JSRF-PC.exe --choose           ask where the game is again
+ *   JSRF-PC.exe --scale N          internal resolution, 1 to 4 times 640x480
+ *                                  (default 2); remembered
+ *   JSRF-PC.exe --fullscreen       start full screen
+ *   JSRF-PC.exe --version          which version this is
  *
  * Settings, saves, logs and unpacked disc images live in
- * %LOCALAPPDATA%\JSRF Unleashed -- or, with a folder named "portable" beside
+ * %LOCALAPPDATA%\JSRF-PC -- or, with a folder named "portable" beside
  * the launcher, in that folder, as on Linux. In game: F11 (or Alt+Enter) full
  * screen, F10 widescreen 16:9.
  */
@@ -41,11 +41,11 @@
 #include "xiso.h"
 #include "xbe_check.h"
 
-#define APP L"JSRF Unleashed"
+#define APP L"JSRF-PC"
 
 static wchar_t g_here[MAX_PATH];       /* the launcher's folder */
 static wchar_t g_portable[MAX_PATH];   /* its "portable" folder, or "" when there is none */
-static wchar_t g_base[MAX_PATH];       /* %LOCALAPPDATA%\JSRF Unleashed (portable\games):
+static wchar_t g_base[MAX_PATH];       /* %LOCALAPPDATA%\JSRF-PC (portable\games):
                                         * disc images are unpacked here */
 static wchar_t g_cfg[MAX_PATH];        /* ...\settings (portable\settings.cfg), shared with the engine */
 static wchar_t g_save[MAX_PATH];       /* the engine's cache: ...\save (portable\cache) */
@@ -349,7 +349,7 @@ static int unpack(const wchar_t *iso, const wchar_t *dest)
     return 0;
 }
 
-/* An image is unpacked into %LOCALAPPDATA%\JSRF Unleashed\<its name> (in
+/* An image is unpacked into %LOCALAPPDATA%\JSRF-PC\<its name> (in
  * portable mode, portable\games\<its name>), once. */
 static int game_from_image(const wchar_t *iso, wchar_t *game, size_t n)
 {
@@ -379,7 +379,7 @@ static int game_from_image(const wchar_t *iso, wchar_t *game, size_t n)
             return 1;
         }
     }
-    _snwprintf(msg, 1024, L"JSRF Unleashed will unpack your disc image once, into:\n\n%ls\n\n"
+    _snwprintf(msg, 1024, L"JSRF-PC will unpack your disc image once, into:\n\n%ls\n\n"
                           L"It takes a minute or two and needs about as much free space as "
                           L"the image. Go ahead?", game);
     msg[1023] = 0;
@@ -519,7 +519,7 @@ static int run(const wchar_t *game, int scale, int fullscreen)
     join(engine, MAX_PATH * 2, g_here, L"engine\\jsrf_recomp.exe");
     if (!is_file(engine))
         return fail(L"engine\\jsrf_recomp.exe is missing. Unzip the whole download "
-                    L"and keep the engine folder beside JSRF Unleashed.exe.");
+                    L"and keep the engine folder beside JSRF-PC.exe.");
     SHCreateDirectoryExW(NULL, g_save, NULL);
     rotate_logs(g_log, g_logs);
 
@@ -574,7 +574,7 @@ static int run(const wchar_t *game, int scale, int fullscreen)
         msg[2047] = 0;
         say(msg, MB_ICONWARNING);
     } else if (code != 0) {
-        _snwprintf(msg, 2048, L"JSRF Unleashed stopped unexpectedly (exit %lu).\n\n"
+        _snwprintf(msg, 2048, L"JSRF-PC stopped unexpectedly (exit %lu).\n\n"
                               L"The log is at:\n%ls\n\nIf you report the problem, please attach it.\n\n"
                               L"Show the log in its folder?", (unsigned long)code, g_log);
         msg[2047] = 0;
@@ -625,7 +625,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
         if (!GetTempFileNameW(g_portable, L"jsr", 0, probe)) {
             _snwprintf(msg, 1024, L"The portable folder can't be written to:\n\n%ls\n\n"
                                   L"Make it writable, or remove it to keep the settings, saves "
-                                  L"and logs in %%LOCALAPPDATA%%\\JSRF Unleashed instead.", g_portable);
+                                  L"and logs in %%LOCALAPPDATA%%\\JSRF-PC instead.", g_portable);
             msg[1023] = 0;
             return fail(msg);
         }
@@ -634,11 +634,11 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
         PWSTR la = NULL;
         g_portable[0] = 0;
         if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, NULL, &la)) && la) {
-            join(g_base, MAX_PATH, la, L"JSRF Unleashed");
+            join(g_base, MAX_PATH, la, L"JSRF-PC");
             CoTaskMemFree(la);
         } else {
             const wchar_t *e = _wgetenv(L"LOCALAPPDATA");
-            join(g_base, MAX_PATH, e ? e : g_here, L"JSRF Unleashed");
+            join(g_base, MAX_PATH, e ? e : g_here, L"JSRF-PC");
         }
         SHCreateDirectoryExW(NULL, g_base, NULL);
         join(g_cfg, MAX_PATH, g_base, L"settings");
@@ -664,7 +664,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
                 if (fgets(v, sizeof v, f)) { size_t l = strlen(v); while (l && (v[l-1] == '\n' || v[l-1] == '\r')) v[--l] = 0; }
                 fclose(f);
             }
-            _snwprintf(msg, 256, L"JSRF Unleashed %hs", v);
+            _snwprintf(msg, 256, L"JSRF-PC %hs", v);
             msg[255] = 0;
             say(msg, MB_ICONINFORMATION);
             return 0;

@@ -10,12 +10,12 @@
 
 #ifdef JSRF_ENGINE
 1 24 "engine.manifest"
-#define JSRF_DESC "JSRF Unleashed engine"
+#define JSRF_DESC "JSRF-PC engine"
 #define JSRF_FILE "jsrf_recomp.exe"
 #else
 1 24 "launcher.manifest"
-#define JSRF_DESC "JSRF Unleashed"
-#define JSRF_FILE "JSRF Unleashed.exe"
+#define JSRF_DESC "JSRF-PC"
+#define JSRF_FILE "JSRF-PC.exe"
 #endif
 
 1 VERSIONINFO
@@ -29,7 +29,7 @@ BEGIN
     BLOCK "040904b0"
     BEGIN
       VALUE "FileDescription", JSRF_DESC
-      VALUE "ProductName", "JSRF Unleashed"
+      VALUE "ProductName", "JSRF-PC"
       VALUE "FileVersion", JSRF_VER_STR
       VALUE "ProductVersion", JSRF_VER_STR
       VALUE "OriginalFilename", JSRF_FILE

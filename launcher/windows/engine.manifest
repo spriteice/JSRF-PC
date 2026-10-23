@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity type="win32" name="JSRF.Unleashed.Engine" version="1.0.0.0" processorArchitecture="amd64"/>
-  <description>JSRF Unleashed</description>
+  <assemblyIdentity type="win32" name="JSRF.PC.Engine" version="1.0.0.0" processorArchitecture="amd64"/>
+  <description>JSRF-PC</description>
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
     <windowsSettings>
       <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>

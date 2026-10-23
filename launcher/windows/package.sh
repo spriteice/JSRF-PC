@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Package the Windows build: "JSRF Unleashed.exe" (the launcher, built here
+# Package the Windows build: "JSRF-PC.exe" (the launcher, built here
 # with the same MinGW toolchain) beside engine\jsrf_recomp.exe and the DLLs
 # it needs, zipped.
 #
@@ -27,7 +27,7 @@ tc="${2:?the llvm-mingw toolchain directory}"
 dlls="${3:?the folder with SDL2.dll and libepoxy-0.dll}"
 version="${4:?the version}"
 out="${5:-$PWD}"
-name=JSRF-Unleashed-windows-x86_64
+name=JSRF-PC-windows-x86_64
 stage="$(mktemp -d)"
 dir="$stage/$name"
 trap 'rm -rf "$stage"' EXIT
@@ -40,7 +40,7 @@ num="$(printf '%s' "$version" | sed -n 's/^\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\).*/
 printf '#define JSRF_VER_NUM %s\n#define JSRF_VER_STR "%s"\n' "$num" "$version" > "$stage/jsrf_version.h"
 "$tc/bin/x86_64-w64-mingw32-windres" -I "$stage" -I "$here" "$here/resources.rc" -O coff -o "$stage/launcher.res"
 "$tc/bin/x86_64-w64-mingw32-clang" -O2 -s -Wall -Wextra -municode -mwindows \
-    -I "$repo/port/ios" -I "$repo/port" -o "$dir/JSRF Unleashed.exe" \
+    -I "$repo/port/ios" -I "$repo/port" -o "$dir/JSRF-PC.exe" \
     "$here/jsrf_launcher.c" "$repo/port/ios/xiso.c" "$repo/port/xbe_check.c" "$stage/launcher.res" \
     -lshell32 -lole32 -luuid -lcomctl32
 
@@ -62,7 +62,7 @@ if [ -n "${LICENCES_DIR:-}" ]; then
     done
 fi
 
-echo "launcher needs:"; "$tc/bin/llvm-objdump" -p "$dir/JSRF Unleashed.exe" | sed -n 's/^ *DLL Name: */  /p' | grep -v '^  api-ms-win-crt' | tr '\n' ' '; echo
+echo "launcher needs:"; "$tc/bin/llvm-objdump" -p "$dir/JSRF-PC.exe" | sed -n 's/^ *DLL Name: */  /p' | grep -v '^  api-ms-win-crt' | tr '\n' ' '; echo
 echo "engine needs:";   "$tc/bin/llvm-objdump" -p "$dir/engine/jsrf_recomp.exe" | sed -n 's/^ *DLL Name: */  /p' | grep -v '^  api-ms-win-crt' | tr '\n' ' '; echo
 
 python3 - "$stage" "$name" "$out/$name.zip" <<'PY'

@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Package the Linux build: a folder with the engine, the launcher, a portable
-# SDL2 and the licences, as JSRF-Unleashed-linux-x86_64.tar.gz.
+# SDL2 and the licences, as JSRF-PC-linux-x86_64.tar.gz.
 #
 #   launcher/linux/package.sh <jsrf_recomp> <libSDL2-2.0.so.0> [out dir]
 #
@@ -27,12 +27,12 @@ repo="$(cd "$here/../.." && pwd)"
 engine="${1:?the jsrf_recomp to package}"
 sdl="${2:?a portable libSDL2-2.0.so.0}"
 out="${3:-$PWD}"
-name=JSRF-Unleashed-linux-x86_64
+name=JSRF-PC-linux-x86_64
 stage="$(mktemp -d)"
 dir="$stage/$name"
 
 mkdir -p "$dir/bin" "$dir/lib" "$dir/share" "$dir/licences"
-install -m 755 "$here/jsrf-unleashed" "$dir/jsrf-unleashed"
+install -m 755 "$here/jsrf-unleashed" "$dir/jsrf-pc"
 install -m 644 "$here/README.txt" "$dir/README.txt"
 install -m 755 "$engine" "$dir/bin/jsrf_recomp"
 # The version is the engine's own (port/CMakeLists.txt builds it in from the
@@ -41,7 +41,7 @@ install -m 755 "$engine" "$dir/bin/jsrf_recomp"
 echo "version: $(cat "$dir/VERSION")"
 install -m 644 "$sdl" "$dir/lib/libSDL2-2.0.so.0"
 strip --strip-unneeded "$dir/lib/libSDL2-2.0.so.0" 2>/dev/null || true
-install -m 644 "$repo/launcher/icon/AppIcon.iconset/icon_256x256.png" "$dir/share/jsrf-unleashed.png"
+install -m 644 "$repo/launcher/icon/AppIcon.iconset/icon_256x256.png" "$dir/share/jsrf-pc.png"
 install -m 644 "$repo/LICENSE" "$dir/licences/LICENSE.txt"
 install -m 644 "$repo/NOTICE" "$dir/licences/NOTICE.txt"
 install -m 644 "$repo/LICENSES/LGPL-2.1.txt" "$dir/licences/LGPL-2.1.txt"

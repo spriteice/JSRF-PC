@@ -1,8 +1,8 @@
-JSRF Unleashed for Windows (x86_64)
-===================================
+JSRF-PC for Windows (x86_64)
+============================
 
 Jet Set Radio Future, statically recompiled and running natively.
-https://github.com/JuMatt/JetSetRadioFuture-Unleashed
+https://github.com/spriteice/JSRF-PC
 
 You need your own copy of the game -- the standalone US disc (not the Sega GT
 2002 + JSRF combo disc, whose JSRF is a different build). This package is the
@@ -25,22 +25,22 @@ What you need
 Playing
 -------
 1. Unzip this archive anywhere. Keep the engine folder beside the .exe.
-2. Run "JSRF Unleashed.exe".
+2. Run "JSRF-PC.exe".
 3. The first time, it asks where the game is: pick the folder that contains
    default.xbe -- or the folder your .iso is in, and it offers to unpack it
-   (once, into %LOCALAPPDATA%\JSRF Unleashed). It remembers the choice.
+   (once, into %LOCALAPPDATA%\JSRF-PC). It remembers the choice.
 
 Windows may warn that the app is from an unknown publisher (it is not signed:
 that costs money every year). Click "More info", then "Run anyway".
 
-You can also drop a game folder or a .iso onto "JSRF Unleashed.exe", or use
+You can also drop a game folder or a .iso onto "JSRF-PC.exe", or use
 it from a command prompt:
 
-  "JSRF Unleashed.exe" --scale N     internal resolution, 1 to 4 (default 2; F9
-                                     in game does the same); remembered
-  "JSRF Unleashed.exe" --fullscreen  always starts full screen
-  "JSRF Unleashed.exe" --choose      asks where the game is again
-  "JSRF Unleashed.exe" --version     which version this is
+  "JSRF-PC.exe" --scale N     internal resolution, 1 to 4 (default 2; F9
+                              in game does the same); remembered
+  "JSRF-PC.exe" --fullscreen  always starts full screen
+  "JSRF-PC.exe" --choose      asks where the game is again
+  "JSRF-PC.exe" --version     which version this is
 
 
 Controls
@@ -134,9 +134,9 @@ Where things are kept
   Saves     in the game folder, under UDATA (where an Xbox keeps them), so
             the game folder has to be one you can write to. Copy UDATA
             somewhere to back your progress up.
-  Settings  %LOCALAPPDATA%\JSRF Unleashed\settings
-  Cache     %LOCALAPPDATA%\JSRF Unleashed\save
-  Logs      %LOCALAPPDATA%\JSRF Unleashed\last-run.log (and logs\)
+  Settings  %LOCALAPPDATA%\JSRF-PC\settings
+  Cache     %LOCALAPPDATA%\JSRF-PC\save
+  Logs      %LOCALAPPDATA%\JSRF-PC\last-run.log (and logs\)
 
 If the game stops unexpectedly, the launcher says so and offers to show the
 log. Found a bug? Open an issue on GitHub with last-run.log and what you were
@@ -145,7 +145,7 @@ doing.
 
 Portable mode
 -------------
-Make a folder named "portable" next to "JSRF Unleashed.exe", and everything
+Make a folder named "portable" next to "JSRF-PC.exe", and everything
 is kept in it instead -- nothing in %LOCALAPPDATA%, nothing in the game folder:
 
   portable\settings.cfg   settings
@@ -169,7 +169,7 @@ On a Mac or Linux, through Wine or CrossOver
 --------------------------------------------
 There are native Mac and Linux builds, which are the better choice. The
 Windows one should run under Wine too: in CrossOver, make a Windows 10
-64-bit bottle and use "Run Command..." on JSRF Unleashed.exe.
+64-bit bottle and use "Run Command..." on JSRF-PC.exe.
 
 
 Legal
@@ -182,4 +182,5 @@ data.
 Licences: MIT for this project's own code; the MCPX audio-processor code
 extracted from xemu is LGPL-2.1-or-later; the bundled SDL2 library is under
 the zlib licence, libepoxy under the MIT licence. See the licences folder.
-Source code: https://github.com/JuMatt/JetSetRadioFuture-Unleashed
+Source code: https://github.com/spriteice/JSRF-PC, a fork of JuMatt's
+JSRF Unleashed: https://github.com/JuMatt/JetSetRadioFuture-Unleashed

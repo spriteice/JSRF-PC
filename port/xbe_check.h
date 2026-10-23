@@ -1,5 +1,5 @@
 /*
- * JSRF Unleashed - is this the game the engine is made from?
+ * JSRF-PC - is this the game the engine is made from?
  *
  * The engine runs one build of Jet Set Radio Future: the standalone US disc's
  * default.xbe. See xbe_check.c.
@@ -33,13 +33,13 @@ const char *jsrf_xbe_detail(void);
 
 /* What a player is told when the code is JSRF_XBE_OTHER, after "why". */
 #define JSRF_XBE_OTHER_ADVICE \
-    "JSRF Unleashed is translated from one build of the game, address for address: the " \
+    "JSRF-PC is translated from one build of the game, address for address: the " \
     "standalone US disc of Jet Set Radio Future (NTSC, 2002). It runs only that disc's files. " \
     "The European and Japanese releases and the Sega GT 2002 + JSRF combo discs are built " \
     "differently, and the game would crash a few seconds in. Use the files of a standalone " \
     "US disc."
 
 /* The heading over any of these messages, in every app. */
-#define JSRF_XBE_HEADING "These files won't work with JSRF Unleashed"
+#define JSRF_XBE_HEADING "These files won't work with JSRF-PC"
 
 #endif
