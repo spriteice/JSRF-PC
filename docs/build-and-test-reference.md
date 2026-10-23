@@ -5,8 +5,9 @@ written by the maintainer ("I", who only runs the builds) for whoever makes
 them ("you"), and goes with the project rules.
 
 Where this file and the repo's own docs disagree, trust the repo's docs
-(README.md, tools/README.md, launcher/linux/package.sh and
-launcher/windows/package.sh) and tell me about the difference.
+(README.md, docs/building-on-linux.md, tools/README.md,
+launcher/linux/package.sh and launcher/windows/package.sh) and tell me
+about the difference.
 
 ## Test devices
 
@@ -38,7 +39,7 @@ launcher/windows/package.sh) and tell me about the difference.
 
 ### 1. Generated code
 
-Follow README.md, "Building from source", Linux steps 2 to 4: capstone in a
+Follow docs/building-on-linux.md, steps 2 to 4: capstone in a
 virtual environment, default.xbe in `game_files/`, then the pipeline into
 `port/recomp/gen`. Its last command must report `0 failed`. Use `python3`,
 not `py -3`.
@@ -48,9 +49,9 @@ sandbox and is never committed.
 
 ### 2. Linux package
 
-The README's own build links the system's SDL2, so its package only runs on
-the machine that built it. Test builds follow the release recipe at the top
-of launcher/linux/package.sh instead:
+docs/building-on-linux.md's own build links the system's SDL2, so its
+package only runs on the machine that built it. Test builds follow the
+release recipe at the top of launcher/linux/package.sh instead:
 
 - Ubuntu 22.04 (glibc 2.35), for example in a container, with clang and
   Ninja.
@@ -94,8 +95,8 @@ Run these on every build you deliver.
 ### Linux: glibc
 
 The Ally X has glibc 2.41, so a binary that needs anything newer won't
-start. The published floor is glibc 2.34 (README.md and the package's
-README.txt). Stay within it so other distributions keep working.
+start. The published floor is glibc 2.34 (the package's README.txt). Stay
+within it so other distributions keep working.
 
 package.sh prints the libraries the engine needs and its newest glibc
 symbol. In the extracted package, check the bundled SDL2 too, and that

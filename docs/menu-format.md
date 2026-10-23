@@ -17,7 +17,7 @@ each menu's rows live with the setting they change (File in
 - Acronyms, names and axis letters keep their own capitals: FXAA, MSAA, GPU,
   USB, SDL, OpenGL, Dear ImGui, JSRF-PC, "Invert X".
 - No keyboard shortcuts in a label: "Free camera", not "Free camera (F8)".
-  The READMEs list the keys.
+  docs/playing.md and the packages' README.txt list the keys.
 - A box's message is a whole sentence, ending in a full stop. It must be as
   short as possible, while still conveying the correct message.
 
