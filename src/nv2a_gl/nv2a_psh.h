@@ -46,7 +46,8 @@ enum {
 
 /* The raw register words a title writes, kept as they arrive. Translating at
  * capture time would mean re-deriving the state every method; keeping the
- * words means the whole thing hashes to one cache key. */
+ * words means the whole thing hashes to one cache key. The shader cache
+ * keeps it as bytes: a change here changes SC_LAYOUT (nv2a_gl.c). */
 typedef struct {
     uint32_t rgb_icw[NV2A_PSH_STAGES];   /* NV097_SET_COMBINER_COLOR_ICW  */
     uint32_t alpha_icw[NV2A_PSH_STAGES]; /* NV097_SET_COMBINER_ALPHA_ICW  */

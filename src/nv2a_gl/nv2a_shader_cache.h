@@ -14,7 +14,10 @@
  *                        makes one per program and blend state);
  *   binaries-<tag>-<driver>.dat   compiled programs, for a backend that can
  *                        save them (OpenGL's program binaries), valid only for
- *                        the driver that made them.
+ *                        the driver that made them;
+ *   states.dat           the NV2A state each program was translated from,
+ *                        for every backend and translator, so that a new
+ *                        translator can make its own programs from them.
  *
  * <tag> names the backend and the translator ("opengl-9f31c2a7"). Every file is
  * append-only records; a run that stopped half-way through writing one leaves a
@@ -48,6 +51,27 @@ int  nv2a_sc_entry(int i, uint64_t *key, const char **vsrc, const char **fsrc);
 /* Remember a program just built. Once per key; later calls do nothing. */
 void nv2a_sc_add(uint64_t key, const char *vsrc, const char *fsrc);
 
+/* Forget every program whose key is not one of keys[0..n-1], and write the
+ * programs file again with only the rest. For a run that makes its programs
+ * from their NV2A states at start-up, so that a program no state makes any
+ * more -- an older translator's, or one kept before its state was -- is not
+ * built again. Before any entry has been handed out. Returns how many went. */
+int  nv2a_sc_keep(const uint64_t *keys, int n);
+
+/* NV2A states: what a program was translated from, as the caller's bytes, of
+ * a `kind` the caller defines and laid out as `layout` says. Each distinct one
+ * is kept once. */
+void nv2a_sc_state_add(uint32_t layout, uint32_t kind, const void *data, uint32_t len);
+/* The states on disk, in the order they were first kept; -1 when there is no
+ * states file, and the programs are best left as they are. The bytes stay
+ * valid until nv2a_sc_state_keep drops them. */
+int  nv2a_sc_state_count(void);
+int  nv2a_sc_state(int i, uint32_t *layout, uint32_t *kind, const void **data, uint32_t *len);
+/* Forget every state not laid out as `layout`, and write the states file again
+ * with only the rest: for a run that reads no other layout, whose programs
+ * nv2a_sc_keep forgets with them. Returns how many went. */
+int  nv2a_sc_state_keep(uint32_t layout);
+
 /* Pipeline recipes: what else a program needed to be drawn (a backend's own
  * 32-bit description of a blend state). Each pair is kept once. */
 void nv2a_sc_recipe_add(uint64_t key, uint32_t recipe);
@@ -64,12 +88,14 @@ void nv2a_sc_bin_put(uint64_t key, const void *data, uint32_t len, uint32_t form
 /* A saved binary the driver refused (an update since): forget it. */
 void nv2a_sc_bin_drop(uint64_t key);
 
-/* Removes the binaries files in the cache's folder other than the one this run
- * keeps: an earlier driver's (on SteamOS a kernel or Mesa update names a new
- * one), another GPU's, an older engine's. For a run that builds every program
- * again from its sources at start-up, which reads none of them. Nothing when
- * this run keeps no binaries; program and recipe files, and anything else in
- * the folder, are never touched. Returns how many were removed. */
+/* Removes the files in the cache's folder that this run does not use: binaries
+ * files other than the one it keeps -- an earlier driver's (on SteamOS a kernel
+ * or Mesa update names a new one), another GPU's, an older engine's -- and this
+ * backend's programs and recipes files for another translator. For a run that
+ * makes its programs from their NV2A states and builds every one again at
+ * start-up, which reads none of them. Binaries files stay when this run keeps
+ * no binaries; states.dat, another backend's files and anything else in the
+ * folder are never touched. Returns how many were removed. */
 int  nv2a_sc_sweep(void);
 
 /* For the report: programs and binaries on disk, and what this run added. */

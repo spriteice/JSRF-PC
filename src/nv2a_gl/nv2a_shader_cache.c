@@ -60,7 +60,7 @@ static int sc_remove(const char *path)
     return MultiByteToWideChar(CP_UTF8, 0, path, -1, wp, 2048) && _wremove(wp) == 0;
 }
 /* fn(dir, name, arg) for each file in dir; the sum of what fn returns. */
-static int sc_each(const char *dir, int (*fn)(const char *, const char *, const char *), const char *arg)
+static int sc_each(const char *dir, int (*fn)(const char *, const char *, const void *), const void *arg)
 {
     wchar_t wp[2048];
     char name[MAX_PATH * 3];
@@ -91,7 +91,7 @@ static FILE *sc_fopen(const char *path, const char *mode) { return fopen(path, m
 static void sc_mkdir(const char *path) { mkdir(path, 0755); }
 static void sc_truncate(const char *path, long len) { if (truncate(path, (off_t)len)) { /* nothing */ } }
 static int sc_remove(const char *path) { return remove(path) == 0; }
-static int sc_each(const char *dir, int (*fn)(const char *, const char *, const char *), const char *arg)
+static int sc_each(const char *dir, int (*fn)(const char *, const char *, const void *), const void *arg)
 {
     DIR *d = opendir(dir);
     struct dirent *e;
@@ -113,28 +113,34 @@ static int sc_each(const char *dir, int (*fn)(const char *, const char *, const 
 #define MAGIC_RCP  0x3152534Au   /* "JSR1": a pipeline recipe */
 #define MAGIC_BIN  0x3242534Au   /* "JSB2": a compiled program, with a hash of its bytes */
 #define MAGIC_DROP 0x5842534Au   /* "JSBX": a compiled program to forget */
+#define MAGIC_STATE 0x314E534Au  /* "JSN1": an NV2A state, with a hash of its bytes */
 
 #define MAX_PROGRAMS_FILE (64L << 20)
 #define MAX_BINARIES_FILE (256L << 20)
+#define MAX_STATES_FILE   (16L << 20)
 #define MAX_TEXT          (512u << 10)
 #define MAX_BLOB          (8u << 20)
+#define MAX_STATE         (64u << 10)
 
 typedef struct { uint64_t h; uint32_t len; char *text; } Src;
 typedef struct { uint64_t key; int vi, fi; } Prog;
 typedef struct { uint64_t key; uint32_t recipe; } Rcp;
 typedef struct { uint64_t key, hash; uint32_t format, len; long off; } Bin;
+typedef struct { uint64_t h; uint32_t layout, kind, len; void *data; } State;
 
 static struct {
     int   open, bin_open;
-    char  pfile[1200], rfile[1200], bfile[1400];
-    FILE *pf, *rf, *bf;            /* appended to */
-    long  psize, bsize;
+    char  tag[160];
+    char  pfile[1200], rfile[1200], bfile[1400], sfile[1200];
+    FILE *pf, *rf, *bf, *sf;       /* appended to */
+    long  psize, bsize, ssize;
     Src  *src;  int nsrc,  capsrc;
     Prog *prog; int nprog, capprog;
     Rcp  *rcp;  int nrcp,  caprcp;
     Bin  *bin;  int nbin,  capbin;
+    State *st;  int nst,   capst;
     int   added;
-    int   pbad, rbad, bbad;          /* a write failed (a full disk): no more appends this run */
+    int   pbad, rbad, bbad, sbad;    /* a write failed (a full disk): no more appends this run */
 } C;
 
 static uint64_t fnv64(uint64_t h, const void *p, size_t n)
@@ -285,6 +291,47 @@ static long load_binaries(FILE *f)
     return good;
 }
 
+static uint64_t state_hash(uint32_t layout, uint32_t kind, const void *data, uint32_t len)
+{
+    uint64_t h = fnv64(0xCBF29CE484222325ull, &layout, sizeof layout);
+    h = fnv64(h, &kind, sizeof kind);
+    return fnv64(h, data, len);
+}
+static int state_find(uint64_t h)
+{
+    int i;
+    for (i = 0; i < C.nst; i++) if (C.st[i].h == h) return i;
+    return -1;
+}
+/* Keep a state, which takes `data` over. 0 if there is no room. */
+static int state_put(uint64_t h, uint32_t layout, uint32_t kind, void *data, uint32_t len)
+{
+    if (state_find(h) >= 0) { free(data); return 1; }
+    if (!grow((void **)&C.st, &C.capst, C.nst, sizeof *C.st)) return 0;
+    C.st[C.nst].h = h; C.st[C.nst].layout = layout; C.st[C.nst].kind = kind;
+    C.st[C.nst].len = len; C.st[C.nst].data = data;
+    C.nst++;
+    return 1;
+}
+
+/* Every state, whatever its layout: the caller says which it can read. */
+static long load_states(FILE *f)
+{
+    long good = 0;
+    for (;;) {
+        uint32_t magic, layout, kind, len; uint64_t h;
+        void *data;
+        if (fread(&magic, 4, 1, f) != 1 || magic != MAGIC_STATE) break;
+        if (fread(&layout, 4, 1, f) != 1 || fread(&kind, 4, 1, f) != 1 || fread(&len, 4, 1, f) != 1 ||
+            fread(&h, 8, 1, f) != 1 || len == 0 || len > MAX_STATE) break;
+        if (!(data = malloc(len))) break;
+        if (fread(data, 1, len, f) != len || state_hash(layout, kind, data, len) != h ||
+            !state_put(h, layout, kind, data, len)) { free(data); break; }
+        good = ftell(f);
+    }
+    return good;
+}
+
 /* Open `path` for reading, load it with `load`, cut off a damaged tail, and
  * open it again for appending. The size goes to *size. */
 static FILE *open_log(const char *path, long (*load)(FILE *), long *size)
@@ -310,17 +357,20 @@ int nv2a_sc_open(const char *dir, const char *tag)
     lock();
     if (C.open) { unlock(); return 1; }
     sc_mkdir(dir);
+    snprintf(C.tag, sizeof C.tag, "%s", tag);
     snprintf(C.pfile, sizeof C.pfile, "%s/programs-%s.dat", dir, tag);
     snprintf(C.rfile, sizeof C.rfile, "%s/recipes-%s.dat", dir, tag);
+    snprintf(C.sfile, sizeof C.sfile, "%s/states.dat", dir);
     C.pf = open_log(C.pfile, load_programs, &C.psize);
     { long rs; C.rf = open_log(C.rfile, load_recipes, &rs); }
+    C.sf = open_log(C.sfile, load_states, &C.ssize);
     ok = C.pf != NULL;
     if (ok) C.open = 1;
     else fprintf(stderr, "  [SHADERS] cannot write %s: %s -- no shader cache\n", C.pfile, strerror(errno));
     unlock();
     if (ok)
-        fprintf(stderr, "  [SHADERS] cache %s: %d programs from earlier runs (%d sources)\n",
-                C.pfile, C.nprog, C.nsrc);
+        fprintf(stderr, "  [SHADERS] cache %s: %d programs from earlier runs (%d sources), %d NV2A states%s\n",
+                C.pfile, C.nprog, C.nsrc, C.nst, C.sf ? "" : " (cannot write states.dat)");
     return ok;
 }
 
@@ -355,11 +405,19 @@ static int write_src(uint64_t h, const char *text, uint32_t len)
     C.psize += 16 + (long)len;
     return 1;
 }
+static int write_prog(uint64_t key, uint64_t vh, uint64_t fh)
+{
+    uint32_t magic = MAGIC_PROG;
+    if (fwrite(&magic, 4, 1, C.pf) != 1 || fwrite(&key, 8, 1, C.pf) != 1 ||
+        fwrite(&vh, 8, 1, C.pf) != 1 || fwrite(&fh, 8, 1, C.pf) != 1) return 0;
+    C.psize += 28;
+    return 1;
+}
 
 void nv2a_sc_add(uint64_t key, const char *vsrc, const char *fsrc)
 {
     uint64_t vh, fh;
-    uint32_t vl, fl, magic = MAGIC_PROG;
+    uint32_t vl, fl;
     int vi, fi, newv, newf;
     if (!C.open || !vsrc || !fsrc) return;
     vl = (uint32_t)strlen(vsrc); fl = (uint32_t)strlen(fsrc);
@@ -375,14 +433,122 @@ void nv2a_sc_add(uint64_t key, const char *vsrc, const char *fsrc)
     C.added++;
     /* A record half written would end the file for the next run's read, and
      * everything after it with it: so after a failed write, nothing more. */
-    if ((!newv || write_src(vh, vsrc, vl)) && (!newf || write_src(fh, fsrc, fl)) &&
-        fwrite(&magic, 4, 1, C.pf) == 1 && fwrite(&key, 8, 1, C.pf) == 1 &&
-        fwrite(&vh, 8, 1, C.pf) == 1 && fwrite(&fh, 8, 1, C.pf) == 1)
-        C.psize += 28;
-    else
+    if (!((!newv || write_src(vh, vsrc, vl)) && (!newf || write_src(fh, fsrc, fl)) && write_prog(key, vh, fh)))
         C.pbad = 1;
     if (fflush(C.pf)) C.pbad = 1;
     unlock();
+}
+
+/* The programs file written again from what is in memory, as a fresh one would
+ * hold it: every source still used, then every program. The sources no
+ * program uses any more are dropped first. Under the lock. */
+static void rewrite_programs(void)
+{
+    int *map = (int *)malloc((size_t)(C.nsrc ? C.nsrc : 1) * sizeof *map);
+    int i, n = 0;
+    if (!map) return;
+    for (i = 0; i < C.nsrc; i++) map[i] = -1;
+    for (i = 0; i < C.nprog; i++) map[C.prog[i].vi] = map[C.prog[i].fi] = 0;
+    for (i = 0; i < C.nsrc; i++) {
+        if (map[i] < 0) { free(C.src[i].text); continue; }
+        map[i] = n;
+        C.src[n++] = C.src[i];
+    }
+    C.nsrc = n;
+    for (i = 0; i < C.nprog; i++) { C.prog[i].vi = map[C.prog[i].vi]; C.prog[i].fi = map[C.prog[i].fi]; }
+    free(map);
+    if (!C.pf || C.pbad) return;
+    sc_truncate(C.pfile, 0);
+    C.psize = 0;
+    for (i = 0; i < C.nsrc && !C.pbad; i++)
+        if (!write_src(C.src[i].h, C.src[i].text, C.src[i].len)) C.pbad = 1;
+    for (i = 0; i < C.nprog && !C.pbad; i++)
+        if (!write_prog(C.prog[i].key, C.src[C.prog[i].vi].h, C.src[C.prog[i].fi].h)) C.pbad = 1;
+    if (fflush(C.pf)) C.pbad = 1;
+}
+
+int nv2a_sc_keep(const uint64_t *keys, int n)
+{
+    int i, j, k, gone;
+    lock();
+    for (i = j = 0; i < C.nprog; i++) {
+        for (k = 0; k < n && keys[k] != C.prog[i].key; k++) {}
+        if (k < n) C.prog[j++] = C.prog[i];
+    }
+    gone = C.nprog - j;
+    C.nprog = j;
+    if (gone) rewrite_programs();
+    unlock();
+    return gone;
+}
+
+static int write_state(const State *s)
+{
+    uint32_t magic = MAGIC_STATE;
+    if (fwrite(&magic, 4, 1, C.sf) != 1 || fwrite(&s->layout, 4, 1, C.sf) != 1 ||
+        fwrite(&s->kind, 4, 1, C.sf) != 1 || fwrite(&s->len, 4, 1, C.sf) != 1 ||
+        fwrite(&s->h, 8, 1, C.sf) != 1 || fwrite(s->data, 1, s->len, C.sf) != s->len) return 0;
+    C.ssize += 24 + (long)s->len;
+    return 1;
+}
+
+void nv2a_sc_state_add(uint32_t layout, uint32_t kind, const void *data, uint32_t len)
+{
+    uint64_t h;
+    void *copy;
+    if (!C.open || !data || !len || len > MAX_STATE) return;
+    h = state_hash(layout, kind, data, len);
+    lock();
+    if (!C.sf || C.sbad || state_find(h) >= 0 || C.ssize + (long)len + 24 > MAX_STATES_FILE ||
+        !(copy = malloc(len))) { unlock(); return; }
+    memcpy(copy, data, len);
+    if (!state_put(h, layout, kind, copy, len)) { free(copy); unlock(); return; }
+    /* As for programs: after a failed write, nothing more. */
+    if (!write_state(&C.st[C.nst - 1])) C.sbad = 1;
+    if (fflush(C.sf)) C.sbad = 1;
+    unlock();
+}
+
+int nv2a_sc_state_keep(uint32_t layout)
+{
+    int i, j, gone;
+    lock();
+    for (i = j = 0; i < C.nst; i++) {
+        if (C.st[i].layout == layout) C.st[j++] = C.st[i];
+        else free(C.st[i].data);
+    }
+    gone = C.nst - j;
+    C.nst = j;
+    /* The states file written again, as a fresh one would hold the rest. */
+    if (gone && C.sf && !C.sbad) {
+        sc_truncate(C.sfile, 0);
+        C.ssize = 0;
+        for (i = 0; i < C.nst && !C.sbad; i++)
+            if (!write_state(&C.st[i])) C.sbad = 1;
+        if (fflush(C.sf)) C.sbad = 1;
+    }
+    unlock();
+    return gone;
+}
+
+int nv2a_sc_state_count(void)
+{
+    int n;
+    lock(); n = C.sf ? C.nst : -1; unlock();
+    return n;
+}
+
+int nv2a_sc_state(int i, uint32_t *layout, uint32_t *kind, const void **data, uint32_t *len)
+{
+    int ok = 0;
+    lock();
+    if (i >= 0 && i < C.nst) {
+        *layout = C.st[i].layout; *kind = C.st[i].kind;
+        *data = C.st[i].data; *len = C.st[i].len;
+        ok = 1;
+    }
+    unlock();
+    return ok;
 }
 
 void nv2a_sc_recipe_add(uint64_t key, uint32_t recipe)
@@ -521,16 +687,21 @@ void nv2a_sc_stats(int *programs, int *binaries, int *added)
     unlock();
 }
 
-/* ---- binaries files no run reads any more ----------------------------------- */
+/* ---- files no run reads any more --------------------------------------------- */
 
-/* `name` in `dir` goes if it is a binaries file other than `keep`. */
-static int sweep_one(const char *dir, const char *name, const char *keep)
+/* One kind of file this run keeps one of: the names it starts with, and the
+ * one to keep. */
+typedef struct { char kind[200], keep[600]; } Sweep;
+
+/* `name` in `dir` goes if it is a file of that kind other than the one kept. */
+static int sweep_one(const char *dir, const char *name, const void *arg)
 {
-    static const char kind[] = "binaries-", ext[] = ".dat";
+    static const char ext[] = ".dat";
+    const Sweep *s = (const Sweep *)arg;
     char path[2048];
     size_t n = strlen(name);
-    if (strncmp(name, kind, sizeof kind - 1) || n < sizeof ext - 1
-        || strcmp(name + n - (sizeof ext - 1), ext) || !strcmp(name, keep))
+    if (strncmp(name, s->kind, strlen(s->kind)) || n < sizeof ext - 1
+        || strcmp(name + n - (sizeof ext - 1), ext) || !strcmp(name, s->keep))
         return 0;
     snprintf(path, sizeof path, "%s/%s", dir, name);
     if (!sc_remove(path)) return 0;
@@ -540,14 +711,31 @@ static int sweep_one(const char *dir, const char *name, const char *keep)
 
 int nv2a_sc_sweep(void)
 {
-    char dir[sizeof C.bfile], keep[sizeof C.bfile];
-    const char *slash;
+    char dir[sizeof C.pfile];
+    Sweep s[3];
+    const char *slash, *dash;
+    int i, ns = 0, sum = 0, backend;
     lock();
-    slash = C.bin_open ? strrchr(C.bfile, '/') : NULL;
+    slash = C.open ? strrchr(C.pfile, '/') : NULL;
     if (slash) {
-        snprintf(dir, sizeof dir, "%.*s", (int)(slash - C.bfile), C.bfile);
-        snprintf(keep, sizeof keep, "%s", slash + 1);
+        snprintf(dir, sizeof dir, "%.*s", (int)(slash - C.pfile), C.pfile);
+        /* <tag> is <backend>-<translator>: this backend's files for another
+         * translator go, another backend's stay. */
+        dash = strrchr(C.tag, '-');
+        backend = dash ? (int)(dash - C.tag) : (int)strlen(C.tag);
+        snprintf(s[ns].kind, sizeof s[ns].kind, "programs-%.*s-", backend, C.tag);
+        snprintf(s[ns].keep, sizeof s[ns].keep, "%s", slash + 1);
+        ns++;
+        snprintf(s[ns].kind, sizeof s[ns].kind, "recipes-%.*s-", backend, C.tag);
+        snprintf(s[ns].keep, sizeof s[ns].keep, "%s", strrchr(C.rfile, '/') + 1);
+        ns++;
+        if (C.bin_open) {
+            snprintf(s[ns].kind, sizeof s[ns].kind, "binaries-");
+            snprintf(s[ns].keep, sizeof s[ns].keep, "%s", strrchr(C.bfile, '/') + 1);
+            ns++;
+        }
     }
     unlock();
-    return slash ? sc_each(dir, sweep_one, keep) : 0;
+    for (i = 0; i < ns; i++) sum += sc_each(dir, sweep_one, &s[i]);
+    return sum;
 }

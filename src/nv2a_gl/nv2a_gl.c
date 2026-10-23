@@ -2604,6 +2604,52 @@ static void ff_describe(Nv2aVshFixed *f)
     }
 }
 
+/*
+ * What the shader cache keeps of a program besides its sources: the NV2A state
+ * it was translated from (nv2a_sc_state_add) -- the fixed-function descriptor
+ * or the vertex program's microcode, then the combiner state. At start-up each
+ * is translated again (shader_cache_states), so a new translator finds the
+ * programs it makes differently already built. SC_LAYOUT is how those bytes
+ * are laid out, and changes with Nv2aVshFixed and Nv2aPshState: a state of
+ * another layout is dropped at start-up, and its program with it, which is
+ * built again when the game next asks for it. Raising it is a change to note
+ * in CHANGELOG.md.
+ */
+enum { SC_FIXED, SC_PROGRAM };
+#define SC_LAYOUT 1
+
+static void sc_state_note(uint32_t kind, const void *head, uint32_t hlen)
+{
+    unsigned char st[NV2A_VSH_MAX_INSNS * 16 + sizeof(Nv2aPshState)];
+    if (!nv2a_sc_is_open() || hlen > NV2A_VSH_MAX_INSNS * 16) return;
+    memcpy(st, head, hlen);
+    memcpy(st + hlen, &S.psh, sizeof S.psh);
+    nv2a_sc_state_add(SC_LAYOUT, kind, st, hlen + (uint32_t)sizeof S.psh);
+}
+
+/* A state's sources, as the draw that kept it made them: 1, or 0 for one
+ * this translator cannot read. */
+static int sc_state_emit(uint32_t kind, const unsigned char *st, uint32_t len, int msl, char *v, char *f)
+{
+    Nv2aPshState ps;
+    uint32_t hlen = len - (uint32_t)sizeof ps;
+    int ok = 0;
+    if (len < sizeof ps) return 0;
+    memcpy(&ps, st + hlen, sizeof ps);
+    if (kind == SC_FIXED && hlen == sizeof(Nv2aVshFixed)) {
+        Nv2aVshFixed ff;
+        memcpy(&ff, st, sizeof ff);
+        ok = msl ? nv2a_vsh_emit_ff_msl(&ff, v, 96 * 1024) : nv2a_vsh_emit_ff_glsl(&ff, v, 96 * 1024);
+    } else if (kind == SC_PROGRAM && hlen && hlen % 16 == 0 && hlen <= NV2A_VSH_MAX_INSNS * 16) {
+        uint32_t tok[NV2A_VSH_MAX_INSNS * 4];
+        Nv2aVshProgram vp;
+        memcpy(tok, st, hlen);
+        ok = nv2a_vsh_decode(tok, (int)(hlen / 16), &vp) > 0
+          && (msl ? nv2a_vsh_emit_msl(&vp, v, 96 * 1024) : nv2a_vsh_emit_glsl(&vp, v, 96 * 1024));
+    }
+    return ok && (msl ? nv2a_psh_emit_msl(&ps, f, 96 * 1024) : nv2a_psh_emit_glsl(&ps, f, 96 * 1024));
+}
+
 
 /*
  * RECOMP_GL_DUMP_MSL=<dir>: the Metal translation of every shader this title
@@ -2674,6 +2720,7 @@ static int ff_program_for_current(void)
     free(vsrc);
     free(fsrc);
     if (!prog) { S.shader_fails++; return -1; }
+    sc_state_note(SC_FIXED, &f, sizeof f);
     if (g_pcache[slot].used && g_pcache[slot].prog) G->prog_free(g_pcache[slot].prog);
     free(g_pcache[slot].dis);
     memset(&g_pcache[slot], 0, sizeof g_pcache[slot]);
@@ -2864,6 +2911,7 @@ static int program_for_current(void)
     free(vsrc);
     free(fsrc);
     if (!prog) { S.shader_fails++; return -1; }
+    sc_state_note(SC_PROGRAM, S.prog + start * 4, (uint32_t)len * 16);
 
     if (g_pcache[slot].used && g_pcache[slot].prog)
         G->prog_free(g_pcache[slot].prog);
@@ -10458,7 +10506,8 @@ const Nv2aGfx *nv2a_gfx_metal(void) { return NULL; }
  * launcher sets the save folder, and a run without one has no cache. Its files
  * are named for the backend and for the translator -- a hash of a reference
  * pair of shaders generated now -- so that what an older engine built is
- * never loaded, only left behind. Graphics > Shader Cache: shaders= in the
+ * never loaded; its programs are made again from their NV2A states
+ * (shader_cache_states). Graphics > Shader Cache: shaders= in the
  * settings file, on when it is not there; RECOMP_SHADER_CACHE=0 or 1 wins.
  * Read at start-up, the only time the cache is opened, so a change applies
  * from the next one. */
@@ -10491,7 +10540,7 @@ static void shader_cache_toggle(void)
  * driver kept a binary of it, so that each run starts from programs this
  * driver has just compiled -- with a box saying how far it has got. No cache
  * yet: nothing to build, no box. A run like that reads no other driver's
- * binaries file, or an older engine's, so those are removed first.
+ * binaries file, and no older engine's files, so those are removed first.
  *
  * The game is not stopped for it: it waits for its first frame as it would
  * for a slow GPU. The display interrupt is answered after each program, as
@@ -10537,6 +10586,45 @@ static void sdl_shader_cache(void)
 }
 #endif
 
+/*
+ * Every program the cache keeps, made again by this translator from its NV2A
+ * state, before the backend builds any: a program it now translates
+ * differently is kept under its new key, and every program no state makes --
+ * an older translator's, or one kept before its state was -- is forgotten.
+ * So is every state of another SC_LAYOUT, which this engine cannot read.
+ * Without a states file, the programs stay as they are.
+ */
+static void shader_cache_states(int msl)
+{
+    int i, n = nv2a_sc_state_count(), made = 0, added = nv2a_sc_count(), gone, dropped;
+    double t0 = mono_now();
+    char *v, *f;
+    uint64_t *keys;
+    if (n < 0) return;
+    v = (char *)malloc(96 * 1024);
+    f = (char *)malloc(96 * 1024);
+    keys = (uint64_t *)malloc((size_t)(n ? n : 1) * sizeof *keys);
+    if (v && f && keys) {
+        for (i = 0; i < n; i++) {
+            uint32_t layout, kind, len;
+            const void *st;
+            if (!nv2a_sc_state(i, &layout, &kind, &st, &len) || layout != SC_LAYOUT
+                || !sc_state_emit(kind, (const unsigned char *)st, len, msl, v, f)) continue;
+            keys[made] = nv2a_sc_key(v, f);
+            nv2a_sc_add(keys[made++], v, f);
+        }
+        added = nv2a_sc_count() - added;
+        gone = nv2a_sc_keep(keys, made);
+        dropped = nv2a_sc_state_keep(SC_LAYOUT);
+        fprintf(stderr, "  [SHADERS] %d NV2A states of %d made into programs (%d added to the cache), "
+                "%d programs without a state forgotten, %d states of another layout dropped, in %.1f ms\n",
+                made, n, added, gone, dropped, 1000.0 * (mono_now() - t0));
+    }
+    free(v);
+    free(f);
+    free(keys);
+}
+
 static void shader_cache_start(void)
 {
     const char *save = getenv("JSRF_SAVE_DIR");
@@ -10560,6 +10648,7 @@ static void shader_cache_start(void)
     free(v);
     free(f);
     snprintf(tag, sizeof tag, "%s-%08X", G->name, (unsigned)(fp ^ (fp >> 32)));
+    if (nv2a_sc_open(dir, tag)) shader_cache_states(msl);
     G->cache_open(dir, tag);
 }
 

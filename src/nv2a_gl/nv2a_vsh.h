@@ -191,7 +191,9 @@ int nv2a_vsh_interp_a0(const Nv2aVshProgram *p, const float v[16][4],
 /* The fixed-function transform, described by the state that changes its
  * shape. Everything else it needs -- the composite matrix, the texture
  * matrices, the viewport -- arrives through the same uniforms a translated
- * program uses, so this carries only what has to be baked into the code. */
+ * program uses, so this carries only what has to be baked into the code.
+ * The shader cache keeps it as bytes: a change here changes SC_LAYOUT
+ * (nv2a_gl.c). */
 typedef struct {
     uint16_t inputs_read;   /* v registers the emitted shader declares */
     uint8_t  tex_matrix;    /* bit n: transform oTn by the stage matrix */
