@@ -35,7 +35,9 @@ trap 'rm -rf "$stage"' EXIT
 mkdir -p "$dir/engine" "$dir/licences"
 
 # The launcher, with the same icon, manifest and version information.
-num="$(printf '%s' "$version" | sed -n 's/^\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\).*/\1,\2,\3,0/p')"
+# A beta: bN.M is 0.0.N.M, and bN is 0.0.N.0 (as port/CMakeLists.txt gives the engine).
+num="$(printf '%s' "$version" | sed -n -e 's/^\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\).*/\1,\2,\3,0/p' \
+    -e 's/^b\([0-9][0-9]*\)\.\([0-9][0-9]*\).*/0,0,\1,\2/p' -e 's/^b\([0-9][0-9]*\).*/0,0,\1,0/p')"
 [ -n "$num" ] || num=0,0,0,0
 printf '#define JSRF_VER_NUM %s\n#define JSRF_VER_STR "%s"\n' "$num" "$version" > "$stage/jsrf_version.h"
 "$tc/bin/x86_64-w64-mingw32-windres" -I "$stage" -I "$here" "$here/resources.rc" -O coff -o "$stage/launcher.res"
