@@ -10,6 +10,64 @@ its version. Downloads are on the
 [Releases](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/releases)
 page.
 
+## 0.5.4 — 22 October 2026
+
+More of **spriteice**'s work from
+[his fork](https://github.com/spriteice/JetSetRadioFuture-Unleashed/tree/TESTING):
+fixes for the hitching some Windows players have seen, a quicker hand-over
+between game threads everywhere, and what it takes to build the game from
+your own disc, which could not be done before. Thank you again, spriteice!
+Each of these commits links the one of his it comes from. Every platform is
+new in 0.5.4.
+
+- **Windows: the engine's short waits last as long as asked.** They went
+  through winpthreads, part of the MinGW toolchain that builds the Windows
+  download, which waits whole milliseconds and then until GetTickCount64,
+  moving in 15.6 ms steps, says the time is up. On spriteice's PC (RTX 2080
+  Ti, 120 Hz) frame pacing's 1 ms slices took 2–3 ms on average and up to
+  17.5 ms, and the GPU thread's 200 µs wait took 12 ms when it timed out.
+  That is the wait the game's vertical-blank handler spins on with the guest
+  lock held, so every game thread waited with it: the timer thread held the
+  lock 13–37% of the time, against 2–5% on Linux. A player's 0.5.3 log (RTX
+  3070) has frames of 30 to 65 ms with no shader or texture work in them.
+  Both waits now use a high-resolution waitable timer: on spriteice's PC,
+  frames reaching the flip late went from 8–26% to 0.7%, and the timer
+  thread held the lock 4.8% of the time.
+- **A game thread hands the lock over without a pause.** When its time slice
+  ran out with another thread queueing, it stood back with Sleep(1): a
+  millisecond or more, with no game thread running for much of it. It now
+  waits until the other has taken the lock, at most 1 ms
+  (`RECOMP_HANDOFF_US`). On a Mac in 99th Street against 0.5.3 (Metal, 225 s
+  each): the lock without a holder 1.5% of the time instead of 7.1%, 727
+  frames late at the flip instead of 1,288 (of about 13,650), and 8 slow
+  frames instead of 34.
+- **Building from source works.** The repository now has spriteice's toolkit
+  (xboxrecomp v0.15.0's and v0.16.0's pipeline, with his disassembler fixes),
+  the runtime pieces the code it generates calls, and the steps in the
+  README. Before, code generated from a disc could not link: the downloads'
+  generated code came from an earlier version of the tools, with two tables
+  (`recomp_seeded.c`, `recomp_holes.c`) made by scripts that were never
+  committed. From a clean default.xbe, on a Mac and on Linux: 9333 of 9342
+  functions, none failed, and the same code on both. The Mac, Linux and
+  Android builds made from it build, and the Mac one plays 99th Street as
+  the downloads do. The downloads stay on the older generated code until the
+  new one has been played through.
+- Windows: MEM_DECOMMIT of guest memory failed every time (guest RAM is one
+  mapped view), about once a frame, each one a line flushed to
+  `xbox_kernel.log` with the guest lock held. The pages' access is taken away
+  instead, as on the other platforms.
+- Mac, Linux, iPhone and Android: a read at an offset is one `pread`, not a
+  seek and a read that another thread reading the same file could get
+  between.
+- The APU's and the NV2A's clocks no longer overflow: count × 10⁹ passed
+  INT64_MAX after 15 minutes of uptime at Windows' 10 MHz counter, and after
+  9 seconds at the 1 GHz the other platforms report.
+- Tested on a Mac in 99th Street against 0.5.3, as above: the same missions
+  reached and the same frame rate; with code generated from source, the
+  same. Linux and Windows (under Wine): the game starts and runs its title
+  screen; Wine does not have Windows' timer problem, so it cannot show that
+  fix. The Android and iPhone builds were built and checked, not run.
+
 ## 0.5.3 — 21 October 2026
 
 Fixes found by **spriteice**, who plays JSRF Unleashed on a ROG Xbox Ally X

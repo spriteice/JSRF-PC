@@ -27,6 +27,15 @@
       },
       "versions": [
         {
+          "version": "0.5.4",
+          "buildVersion": "0.5.4",
+          "date": "2026-10-22T21:30:27Z",
+          "localizedDescription": "Smoother: when the game's threads take turns, the one giving way no longer pauses for a millisecond with nothing running in between (on a Mac, 8 slow frames instead of 34 in four minutes of 99th Street). And everything needed to build the game yourself, from your own disc, is now in the repository. Fixes found by spriteice -- thank you!",
+          "downloadURL": "https://github.com/JuMatt/JetSetRadioFuture-Unleashed/releases/download/v0.5.4/JSRF-Unleashed-iOS.ipa",
+          "size": 13288053,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.5.3",
           "buildVersion": "0.5.3",
           "date": "2026-10-21T18:31:11Z",

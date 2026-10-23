@@ -90,13 +90,18 @@ void recomp_icall_observe_site(uint32_t site, uint32_t va)
 }
 
 /* icall_sites.dump beside the targets dump: `site t1 t2 ... [+]`, where `+`
- * says the site reached more targets than the record holds. */
+ * says the site reached more targets than the record holds. Only code lifted
+ * with the per-site record (RECOMP_ICALL_OBSERVE_SITE) has anything to put in
+ * it; the release builds' generated code has none, and then no file is
+ * written, rather than an empty one beside the game. */
 static void dump_sites(const char *targets_path)
 {
     char path[1024];
     size_t n = strlen(targets_path);
     const char *suffix = "targets.dump";
     size_t sl = strlen(suffix);
+    if (!s_site_records)
+        return;
     if (n >= sl && strcmp(targets_path + n - sl, suffix) == 0
             && n - sl + 12 < sizeof path) {
         memcpy(path, targets_path, n - sl);
