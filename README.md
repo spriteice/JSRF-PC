@@ -113,31 +113,39 @@ it is remembered relative to it, and a disc image is unpacked into
 ### In-game menu (ImGui)
 
 The in-game menu is a [Dear ImGui](https://github.com/ocornut/imgui) menu bar
-drawn over the game. **F1**, or Back on a controller, opens and closes it. It
-works with a controller, the keyboard or the mouse; B or Esc goes back a step.
-The game keeps running while it is open, but your input goes to the menu.
+drawn over the game. **F1**, or Back on a controller, opens and closes it,
+and it opens on the bar alone. It works with a controller, the keyboard or the
+mouse; B or Esc goes back a step, and a click outside the menus shuts them,
+back to the bar. The game keeps running while it is open, but your input goes
+to the menu.
 
 - **File:** About (the version and system details) and Exit.
-- **Graphics:** full screen, widescreen 16:9, the render scale (1× to 4×)
+- **Graphics:** fullscreen, widescreen 16:9, the render scale (1× to 4×)
   and the [graphics options](#graphics-options) below.
 - **Controller:** the free camera, and its inversion, sensitivity and
   deadzone.
+- **Developer:** Log to file, which stops or starts writing to
+  `last-run.log` at once, and Logging: the engine's diagnostic logs, for bug
+  reports. These are kept in `developer.cfg`, beside the settings file, and
+  apply from the next start.
 
-Everything is remembered. Exit and a new render scale ask
-first, as anything since your last save is lost.
+Everything is remembered. Exit, a new render scale and the shader cache ask
+first, as anything since your last save is lost: the last two restart the
+game. The other rows marked (Restart) apply from the next start.
 
 ### Graphics options
 
 These are in the in-game menu, under **Graphics**.
 
-- **Anti-aliasing** smooths jagged edges. MSAA (2×, 4× or 8×) gives the
-  cleanest edges but asks the most of the graphics card; FXAA costs little
-  but softens the picture slightly. Use either, or both. Off by default.
+- **Shader cache** keeps the shaders the game builds and builds them again
+  when it starts, so play doesn't pause for them. On by default; changing
+  it restarts the game.
 - **Anisotropic filtering** (2× to 16×) keeps textures sharp where they are
   seen at an angle, such as streets running into the distance. Off by
   default.
-- **Shader cache** keeps the shaders the game builds and builds them again
-  when it starts, so play doesn't pause for them. On by default.
+- **Anti-aliasing** smooths jagged edges. FXAA costs little but softens the
+  picture slightly; MSAA (2×, 4× or 8×) gives the cleanest edges but asks the
+  most of the graphics card. Use either, or both. Off by default.
 
 ### Portable limitations
 
@@ -190,7 +198,7 @@ Back is Esc on the keyboard.
 
 | Key | Does |
 |---|---|
-| F1, or Back on a controller | the in-game menu: **File** (About, Exit), **Graphics** (the next three and the [graphics options](#graphics-options)) and **Controller** (the free camera and its settings) |
+| F1, or Back on a controller | the in-game menu: **File** (About, Exit), **Graphics** (the next three and the [graphics options](#graphics-options)), **Controller** (the free camera and its settings) and **Developer** (logging) |
 | F11 or Alt+Return | full screen. Remembered. |
 | F10 | widescreen 16:9: a wider field of view, not a stretch; the HUD and text keep their shape, and the title screen stays 4:3. Remembered. |
 | F9 | resolution: 1× to 4× the Xbox's 640×480 (2× by default). Remembered. The game restarts to apply it, so save first. |

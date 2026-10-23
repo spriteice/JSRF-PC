@@ -13,10 +13,12 @@
 extern "C" {
 #endif
 
-/* Once, on the GL thread, with the window's context current. about_gl: one
- * line saying which OpenGL this is, for File > About. 0 if Dear ImGui could
- * not start; the game then runs without the menu. */
-int  xbox_MenuInit(SDL_Window *window, void *gl_context, const char *about_gl);
+/* Once, on the GL thread, with the window's context current. about_gpu and
+ * about_gl: the graphics card and the OpenGL version, for File > About; kept,
+ * not copied. 0 if Dear ImGui could not start; the game then runs without the
+ * menu. */
+int  xbox_MenuInit(SDL_Window *window, void *gl_context, const char *about_gpu,
+                   const char *about_gl);
 
 /* Each event, from sdl_pump, before the game's own handling. 1: it was the
  * menu's (F1, a pad's Back, or a key or click while it is open) and the game

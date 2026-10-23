@@ -165,6 +165,7 @@ void recomp_restart_self(void)
     return;
 #endif
     if (!g_argv || !g_argv[0]) return;
+    { extern void developer_restart(void); developer_restart(); }
     fflush(stdout); fflush(stderr);
     /* The relaunched process inherits this environment, and an explicit
      * RECOMP_GL_SCALE wins over the stored choice -- so the copy made at
@@ -687,6 +688,9 @@ static int host_main(void)
 
     printf("=== JSRF Unleashed %s -- Jet Set Radio Future, statically recompiled ===\n",
            JSRF_VERSION);
+    /* The Developer menu's switches into the environment, before anything
+     * reads them, and the log off if it was left off (port/developer.c). */
+    { extern void developer_start(void); developer_start(); }
     printf("Loading XBE...\n");
 
     /* Install VEH handler (first handler in chain) */

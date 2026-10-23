@@ -2,22 +2,25 @@
  *
  * The in-game menu, driven with a pad and no window: Dear ImGui's null
  * backends, the menu's own drawing (src/menu/menu.cpp), and rows standing in
- * for the window's settings. Checks the order of the menus, that a pad starts
- * in File, and that each kind of row reaches its owner's function -- through
- * the confirmation box when it has one. Then rows that arrive once the menu
- * is up: from one of its own rows, and from another thread while a box is
- * open over the rows it was asked from. Then that nothing but the window
- * (F1, Back) shuts it: B and Esc go back a level at a time, to the bar and
- * no further; the mouse leaving a menu, or a click in the game, leaves a
- * menu open -- and a pad still has somewhere to stand after each. Last,
- * numbers: - and + a step at a time, held down, at the ends, and from a
- * value between two steps. And the busy box (menu_build_busy) with no menu,
- * in the middle of the window.
+ * for the window's settings. Checks the order of the menus, that it opens to
+ * the bar alone with a pad on File's title, and that each kind of row reaches
+ * its owner's function -- through the confirmation box when it has one. Then
+ * rows that arrive once the menu is up: from one of its own rows, and from
+ * another thread while a box is open over the rows it was asked from. Then
+ * that nothing but the window (F1, Back) shuts it: B and Esc go back a level
+ * at a time, to the bar and no further; a click outside the menus, in the
+ * game or on the bar past its titles, shuts them all, back to the bar -- and
+ * a pad still has somewhere to stand after each. Then numbers: - and + a step
+ * at a time, held down, at the ends, and from a value between two steps. And
+ * a submenu of switches, as Developer > Logging: each flips its own, and the
+ * submenu stays open; and a toggle that asks first. Last, the busy box (menu_build_busy) with no menu, in
+ * the middle of the window.
  */
 #include "menu.h"
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "backends/imgui_impl_null.h"
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #if !defined(_WIN32)
@@ -55,6 +58,17 @@ static void   sens_set(double v)  { s_sens = v; s_sets++; }
 static double dead_value(void)    { return s_dead; }
 static void   dead_set(double v)  { s_dead = v; s_sets++; }
 
+/* Developer's rows: a toggle, a submenu of switches, a bit each, and a
+ * toggle that asks first, as Graphics > Shader cache does. */
+static int s_log = 1, s_log_runs, s_switches, s_flips, s_asked, s_asked_runs;
+static int  log_state(void)       { return s_log; }
+static void log_run(void)         { s_log = !s_log; s_log_runs++; }
+static int  switches_state(void)  { return s_switches; }
+static void switch_pick(int i)    { s_switches ^= 1 << i; s_flips++; }
+static int  asked_state(void)     { return s_asked; }
+static void asked_run(void)       { s_asked = !s_asked; s_asked_runs++; }
+static const char *const k_switches[] = { "First (Restart)", "Second (Restart)", "Third (Restart)" };
+
 /* Widescreen's owner adds a row as it runs, on the window's thread. */
 static void wide_run(void) { s_wide = !s_wide; s_wide_runs++; xbox_MenuAdd(&k_late, 1); }
 
@@ -82,12 +96,16 @@ static void count_bare(void)
     if (!bar_focused()) s_bare++;
 }
 
+/* The window's size, when not the null backend's 1920 x 1080. */
+static ImVec2 g_display;
+
 /* One frame, with these gamepad keys held for it. */
 static void frame(ImGuiKey press = ImGuiKey_None)
 {
     ImGuiIO &io = ImGui::GetIO();
     if (press != ImGuiKey_None) io.AddKeyEvent(press, true);
     ImGui_ImplNull_NewFrame();
+    if (g_display.x > 0.0f) io.DisplaySize = g_display;
     ImGui::NewFrame();
     menu_build(g_just);
     g_just = 0;
@@ -133,6 +151,17 @@ static int bar_focused(void)
     return g.NavWindow && !strcmp(g.NavWindow->Name, "##MainMenuBar") && g.NavLayer == ImGuiNavLayer_Menu;
 }
 
+/* The window by this name is up, in the middle of the display. */
+static int centred(const char *name)
+{
+    const ImGuiIO &io = ImGui::GetIO();
+    ImGuiWindow *w = ImGui::FindWindowByName(name);
+    if (!w || !w->Active) return 0;
+    float cx = w->Pos.x + w->Size.x * 0.5f, cy = w->Pos.y + w->Size.y * 0.5f;
+    fprintf(stderr, "%s: centre %.0f,%.0f in %.0fx%.0f\n", name, cx, cy, io.DisplaySize.x, io.DisplaySize.y);
+    return fabsf(cx - io.DisplaySize.x * 0.5f) < 2.0f && fabsf(cy - io.DisplaySize.y * 0.5f) < 2.0f;
+}
+
 /* The mouse: the pointer to x, y; a click where it is. */
 static void pointer(float x, float y) { ImGui::GetIO().AddMousePosEvent(x, y); }
 static void click(void)
@@ -144,8 +173,15 @@ static void click(void)
 
 int main(void)
 {
-    /* Controller first, then Graphics, then File: the order on screen is the
-     * enum's, not the order rows arrive in. */
+    /* Developer first, then Controller, then Graphics, then File: the order
+     * on screen is the enum's, not the order rows arrive in. */
+    const XBOX_MENU_ITEM developer[] = {
+        { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLE, "Log to file", log_state, log_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL },
+        { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLES, "Logging", switches_state, NULL, switch_pick, k_switches, 3, NULL, NULL,
+          NULL, NULL, 0, 0, 0, NULL },
+        { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLE, "Asks (Restart)", asked_state, asked_run, NULL, NULL, 0, NULL,
+          "The game restarts to apply it.", NULL, NULL, 0, 0, 0, NULL },
+    };
     const XBOX_MENU_ITEM controller[] = {
         { XBOX_MENU_CONTROLLER, XBOX_ITEM_NUMBER, "Sensitivity", NULL, NULL, NULL, NULL, 0, NULL, NULL,
           sens_value, sens_set, 1, 10, 1, "%g" },
@@ -153,17 +189,18 @@ int main(void)
           dead_value, dead_set, 0, 100, 5, "%g%%" },
     };
     const XBOX_MENU_ITEM graphics[] = {
-        { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLE, "Full screen", full_state, full_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL },
+        { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLE, "Fullscreen", full_state, full_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL },
         { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLE, "Widescreen (16:9)", wide_state, wide_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL },
         { XBOX_MENU_GRAPHICS, XBOX_ITEM_CHOICE, "Render scale", scale_state, NULL, scale_pick, k_scales, 4, NULL,
-          "The game restarts at the new scale: anything since your last save is lost.", NULL, NULL, 0, 0, 0, NULL },
+          "The game restarts at the new scale, losing unsaved progress.", NULL, NULL, 0, 0, 0, NULL },
     };
     const XBOX_MENU_ITEM file[] = {
         { XBOX_MENU_FILE, XBOX_ITEM_INFO, "About", NULL, NULL, NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL },
         { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL },
         { XBOX_MENU_FILE, XBOX_ITEM_ACTION, "Exit", NULL, exit_run, NULL, NULL, 0, NULL,
-          "Anything since your last save is lost.", NULL, NULL, 0, 0, 0, NULL },
+          "Unsaved progress is lost.", NULL, NULL, 0, 0, 0, NULL },
     };
+    xbox_MenuAdd(developer, 3);
     xbox_MenuAdd(controller, 2);
     xbox_MenuAdd(graphics, 3);
     xbox_MenuAdd(file, 3);
@@ -175,9 +212,13 @@ int main(void)
     ImGui_ImplNull_Init();
     io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
 
-    /* Opened: File is open, with a pad. */
+    /* Opened: the bar alone, the pad on File's title; A opens File. */
     frames(3);
-    fprintf(stderr, "open popup after opening: %s\n", open_menu());
+    fprintf(stderr, "open popup after opening: [%s] %s, cursor %d\n", open_menu(), nav_state(),
+            (int)ImGui::GetCurrentContext()->NavCursorVisible);
+    CHECK(!strcmp(open_menu(), "") && bar_focused());
+    CHECK(ImGui::GetCurrentContext()->NavCursorVisible);
+    frame(ImGuiKey_GamepadFaceDown); frames(2);
     CHECK(strstr(open_menu(), "File") != NULL);
     {   /* menu bar order */
         ImGuiWindow *bar = ImGui::FindWindowByName("##MainMenuBar");
@@ -306,16 +347,44 @@ int main(void)
     frame(ImGuiKey_GamepadDpadDown); frame(ImGuiKey_GamepadDpadDown); frames(1);
     frame(ImGuiKey_GamepadFaceDown); frames(3);
     CHECK(strstr(open_menu(), "Are you sure?") != NULL);
+    CHECK(centred("Are you sure?"));
     frame(ImGuiKey_GamepadFaceRight); frames(3);
     fprintf(stderr, "B in the box: [%s] %s, picks %d\n", open_menu(), nav_state(), s_picks);
     CHECK(strstr(open_menu(), "Graphics") != NULL);
     CHECK(s_picks == 2);
-    /* Back to File; About, and B: File again. Exit never ran. */
+    /* Back to File; About, in the middle, and B: File again. Exit never ran.
+     * Dragged by its title bar, the box stays where it is: ImGui never takes
+     * it to move. */
     frame(ImGuiKey_GamepadDpadLeft); frames(2);
     frame(ImGuiKey_GamepadFaceDown); frames(2);
     CHECK(strstr(open_menu(), "File") != NULL);
     frame(ImGuiKey_GamepadFaceDown); frames(2);
     CHECK(strstr(open_menu(), "About") != NULL);
+    CHECK(centred("About"));
+    {   ImGuiWindow *w = ImGui::FindWindowByName("About");
+        int moving = 0;
+        CHECK(w != NULL);
+        if (w) {
+            float x = w->Pos.x + w->Size.x * 0.5f, y = w->Pos.y + w->TitleBarHeight * 0.5f;
+            pointer(x, y); frames(1);
+            io.AddMouseButtonEvent(0, true); frames(1);
+            for (int i = 1; i <= 4; i++) {
+                pointer(x + 40.0f * i, y + 25.0f * i); frames(1);
+                moving |= ImGui::GetCurrentContext()->MovingWindow == w;
+            }
+            io.AddMouseButtonEvent(0, false); frames(2);
+        }
+        fprintf(stderr, "About dragged: [%s], moving %d\n", open_menu(), moving);
+        CHECK(!moving && centred("About"));
+        CHECK(strstr(open_menu(), "About") != NULL);
+    }
+    /* The window made smaller (out of full screen) with the box up: the box
+     * follows, to the middle of the new size. */
+    g_display = ImVec2(1280.0f, 720.0f);
+    frames(2);
+    CHECK(centred("About"));
+    g_display = ImVec2(0.0f, 0.0f);
+    frames(2);
     frame(ImGuiKey_GamepadFaceRight); frames(3);
     fprintf(stderr, "B in About: [%s] %s\n", open_menu(), nav_state());
     CHECK(strstr(open_menu(), "File") != NULL);
@@ -352,21 +421,43 @@ int main(void)
             (int)ImGui::GetCurrentContext()->NavCursorVisible);
     CHECK(!strcmp(open_menu(), "") && bar_focused());
     CHECK(ImGui::GetCurrentContext()->NavCursorVisible);
-    /* Out of the menu, and a click in the game: a menu is still open, in
-     * every frame, and the pad goes on from there. */
+    /* A click in the game, with File open: File shuts, and the pad is on
+     * its title on the bar -- never with nothing to stand on. */
+    frame(ImGuiKey_GamepadFaceDown); frames(2);
+    CHECK(strstr(open_menu(), "File") != NULL);
     s_bare = 0;
     pointer(bar->Size.x * 0.5f, bar->Pos.y + bar->Size.y * 20); frames(2);
     click(); frames(3);
     fprintf(stderr, "clicked in the game: [%s] %s, frames bare %d\n", open_menu(), nav_state(), s_bare);
-    CHECK(strstr(open_menu(), "File") != NULL);
+    CHECK(!strcmp(open_menu(), "") && bar_focused());
     CHECK(s_bare == 0);
-    /* A click on the bar past its titles: still File, with the pad in it. */
+    /* And in Render scale's list, two levels down: both shut. */
+    frame(ImGuiKey_GamepadDpadRight); frames(2);
+    frame(ImGuiKey_GamepadFaceDown); frames(2);
+    frame(ImGuiKey_GamepadDpadDown); frame(ImGuiKey_GamepadDpadDown); frames(1);
+    frame(ImGuiKey_GamepadDpadRight); frames(2);
+    CHECK(strstr(open_menu(), "Render scale") != NULL);
+    click(); frames(3);
+    fprintf(stderr, "clicked in the game from a list: [%s] %s, frames bare %d\n", open_menu(), nav_state(), s_bare);
+    CHECK(!strcmp(open_menu(), "") && bar_focused());
+    CHECK(s_bare == 0 && s_picks == 2);
+    /* A click on the bar past its titles, with File open: the same. */
+    frame(ImGuiKey_GamepadDpadLeft); frames(2);
+    frame(ImGuiKey_GamepadFaceDown); frames(2);
+    CHECK(strstr(open_menu(), "File") != NULL);
     pointer(bar->Pos.x + bar->Size.x - 4, bar_y); frames(2);
     click(); frames(3);
     fprintf(stderr, "clicked the bar's end: [%s] %s, frames bare %d\n", open_menu(), nav_state(), s_bare);
-    CHECK(strstr(open_menu(), "File") != NULL);
+    CHECK(!strcmp(open_menu(), "") && bar_focused());
     CHECK(s_bare == 0);
-    /* B there too: back to File's title, with the pad. */
+    /* With nothing open, a click in the game does nothing: no menu opens,
+     * and the pad stays on the bar. */
+    pointer(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f); frames(2);
+    click(); frames(3);
+    fprintf(stderr, "clicked in the game with nothing open: [%s] %s, frames bare %d\n", open_menu(), nav_state(), s_bare);
+    CHECK(!strcmp(open_menu(), "") && bar_focused());
+    CHECK(s_bare == 0);
+    /* B on the bar does nothing. */
     frame(ImGuiKey_GamepadFaceRight); frames(2);
     fprintf(stderr, "B: [%s] %s\n", open_menu(), nav_state());
     CHECK(!strcmp(open_menu(), "") && bar_focused());
@@ -375,7 +466,7 @@ int main(void)
     fprintf(stderr, "pad Right, A: [%s]\n", open_menu());
     CHECK(strstr(open_menu(), "Graphics") != NULL);
 
-    /* Numbers. Right to the bar's last menu, Controller; A opens it on the
+    /* Numbers. Right to Controller; A opens it on the
      * first row's -. A: one step down, set once. Right to +, A twice: two
      * steps up. */
     frame(ImGuiKey_GamepadDpadRight); frames(2);
@@ -414,11 +505,67 @@ int main(void)
     CHECK(s_dead == 0 && s_sets == 0);
     CHECK(strstr(open_menu(), "Controller") != NULL);
 
-    /* Shut on Controller and opened again: File, and Right goes on from File
-     * -- not from where the pad last was on the bar. */
+    /* Switches. B to Controller's title, Right to the bar's last menu,
+     * Developer; A opens it on Log to file, and A flips that, once. */
+    s_bare = 0;
+    frame(ImGuiKey_GamepadFaceRight); frames(2);
+    CHECK(!strcmp(open_menu(), "") && bar_focused());
+    frame(ImGuiKey_GamepadDpadRight); frames(2);
+    frame(ImGuiKey_GamepadFaceDown); frames(2);
+    fprintf(stderr, "developer: [%s] %s\n", open_menu(), nav_state());
+    CHECK(strstr(open_menu(), "Developer") != NULL);
+    frame(ImGuiKey_GamepadFaceDown); frames(2);
+    fprintf(stderr, "log to file: %d, runs %d\n", s_log, s_log_runs);
+    CHECK(s_log == 0 && s_log_runs == 1);
+    CHECK(strstr(open_menu(), "Developer") != NULL);
+    /* Down to Logging, Right into it (the pad on the first), Down, A: the
+     * second flips, and Logging stays open; Down, A: the third too. */
+    frame(ImGuiKey_GamepadDpadDown); frames(1);
+    frame(ImGuiKey_GamepadDpadRight); frames(2);
+    fprintf(stderr, "in logging: [%s]\n", open_menu());
+    CHECK(strstr(open_menu(), "Logging") != NULL);
+    frame(ImGuiKey_GamepadDpadDown); frames(1);
+    frame(ImGuiKey_GamepadFaceDown); frames(2);
+    fprintf(stderr, "switches %d, flips %d, menu [%s]\n", s_switches, s_flips, open_menu());
+    CHECK(s_switches == 2 && s_flips == 1);
+    CHECK(strstr(open_menu(), "Logging") != NULL);
+    frame(ImGuiKey_GamepadDpadDown); frames(1);
+    frame(ImGuiKey_GamepadFaceDown); frames(2);
+    CHECK(s_switches == 6 && s_flips == 2);
+    /* A on the third again: off, and the second stays on. */
+    frame(ImGuiKey_GamepadFaceDown); frames(2);
+    fprintf(stderr, "switches %d, flips %d\n", s_switches, s_flips);
+    CHECK(s_switches == 2 && s_flips == 3);
+    /* B: back to Developer, nothing flipped on the way, and the pad never
+     * left with nothing to stand on. */
+    frame(ImGuiKey_GamepadFaceRight); frames(2);
+    fprintf(stderr, "B in logging: [%s] %s, frames bare %d\n", open_menu(), nav_state(), s_bare);
+    CHECK(strstr(open_menu(), "Developer") != NULL);
+    CHECK(s_switches == 2 && s_flips == 3 && s_log_runs == 1 && s_bare == 0);
+    /* Down to the toggle that asks, A: the box, with Cancel the default, and
+     * nothing flipped; A cancels, and Developer comes back. */
+    frame(ImGuiKey_GamepadDpadDown); frames(1);
+    frame(ImGuiKey_GamepadFaceDown); frames(3);
+    fprintf(stderr, "toggle that asks: [%s], runs %d\n", open_menu(), s_asked_runs);
+    CHECK(strstr(open_menu(), "Are you sure?") != NULL && s_asked_runs == 0);
+    frame(ImGuiKey_GamepadFaceDown); frames(3);
+    CHECK(strstr(open_menu(), "Developer") != NULL && s_asked_runs == 0 && !s_asked);
+    /* Again (the pad back on the first row), Left to OK, A: flipped, once,
+     * and Developer is back. */
+    frame(ImGuiKey_GamepadDpadDown); frame(ImGuiKey_GamepadDpadDown); frames(1);
+    frame(ImGuiKey_GamepadFaceDown); frames(3);
+    CHECK(strstr(open_menu(), "Are you sure?") != NULL);
+    frame(ImGuiKey_GamepadDpadLeft); frames(1);
+    frame(ImGuiKey_GamepadFaceDown); frames(3);
+    fprintf(stderr, "after OK: [%s], on %d, runs %d\n", open_menu(), s_asked, s_asked_runs);
+    CHECK(strstr(open_menu(), "Developer") != NULL && s_asked && s_asked_runs == 1 && s_log_runs == 1);
+
+    /* Shut on Developer, with it open, and opened again: the bar alone, on
+     * File's title, and Right goes on from File -- not from where the pad
+     * last was. */
     g_just = 1;
     frames(2);
-    CHECK(strstr(open_menu(), "File") != NULL);
+    CHECK(!strcmp(open_menu(), "") && bar_focused());
     frame(ImGuiKey_GamepadDpadRight); frames(2);
     frame(ImGuiKey_GamepadFaceDown); frames(2);
     fprintf(stderr, "opened again, Right, A: [%s]\n", open_menu());
@@ -427,14 +574,7 @@ int main(void)
     /* The busy box, centred. */
     busy_frame();
     busy_frame();
-    {   ImGuiWindow *w = ImGui::FindWindowByName("##busy");
-        CHECK(w != NULL);
-        if (w) {
-            float cx = w->Pos.x + w->Size.x * 0.5f, cy = w->Pos.y + w->Size.y * 0.5f;
-            fprintf(stderr, "busy box centre %.0f,%.0f in %.0fx%.0f\n", cx, cy, io.DisplaySize.x, io.DisplaySize.y);
-            CHECK(cx > io.DisplaySize.x * 0.45f && cx < io.DisplaySize.x * 0.55f);
-            CHECK(cy > io.DisplaySize.y * 0.45f && cy < io.DisplaySize.y * 0.55f);
-        } }
+    CHECK(centred("##busy"));
 
     ImGui_ImplNull_Shutdown();
     ImGui::DestroyContext();

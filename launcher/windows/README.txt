@@ -59,8 +59,8 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
 
   F1                 the in-game menu (also Back on a controller, which is
                      then the menu's alone): About, Exit, the next three,
-                     anti-aliasing, anisotropic filtering, the shader cache
-                     and the free camera's settings
+                     the shader cache, anisotropic filtering, anti-aliasing,
+                     the free camera's settings and logging
   F11 or Alt+Enter   full screen; remembered
   F10                widescreen 16:9 (a wider view, not a stretch; the HUD
                      keeps its shape, the title screen stays 4:3); remembered
@@ -89,11 +89,20 @@ card goes. It changes straight away, with no restart, and is remembered as
 aniso= in the settings file (0, 2, 4, 8 or 16). It leaves things that face
 the screen, such as the HUD, as they were.
 
-Graphics > Shader Cache in the in-game menu (on by default) keeps the shaders
+Graphics > Shader cache in the in-game menu (on by default) keeps the shaders
 the game builds, in the cache folder. Each time the game starts, they are all
 built again before it begins, behind a progress bar, so none are built while
-you play. It is remembered as shaders= in the settings file (1 or 0), and a
-change applies from the next start.
+you play. It is remembered as shaders= in the settings file (1 or 0).
+Changing it in the menu restarts the game, after asking, as a new resolution
+does.
+
+Developer > Log to file in the in-game menu (on by default) writes the game's
+output to last-run.log. Turned off, nothing more is written to it until it is
+turned on again, and what is there already stays. It changes straight away
+and is remembered as logging= in the settings file (1 or 0). Developer >
+Logging adds the engine's own diagnostic lines to the log, for bug reports.
+Each is kept in developer.cfg, beside the settings file, as NAME=1 or NAME=0,
+and applies from the next start.
 
 
 Free camera

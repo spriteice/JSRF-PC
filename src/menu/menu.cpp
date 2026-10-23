@@ -13,14 +13,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char *const k_menu_title[] = { "File", "Graphics", "Controller" };
+static const char *const k_menu_title[] = { "File", "Graphics", "Controller", "Developer" };
 static_assert(IM_ARRAYSIZE(k_menu_title) == XBOX_MENU_COUNT, "a title for each menu in menu.h");
 
 /* The rows, and the boxes open over them -- by index: rows still arriving
  * can move them. The window's thread only. */
 static ImVector<XBOX_MENU_ITEM> g_items;
 static int g_ask = -1;          /* waiting for OK: its confirm text */
-static int g_ask_pick;          /* ... and the choice, for a CHOICE */
+static int g_ask_pick;          /* ... and the choice, for a CHOICE or TOGGLES */
 static int g_info = -1;         /* an INFO box to open */
 
 /* Rows come from any thread -- the input layer's, the game's -- and are drawn
@@ -61,8 +61,8 @@ static void take_queued(void)
 
 static void apply(const XBOX_MENU_ITEM *it, int pick)
 {
-    if (it->kind == XBOX_ITEM_CHOICE) it->pick(pick);
-    else                              it->run();
+    if (pick >= 0) it->pick(pick);
+    else           it->run();
 }
 
 /* Chosen: straight away, or once confirmed. The box is opened from the top
@@ -159,6 +159,14 @@ static void draw_item(const XBOX_MENU_ITEM *it, const number_cols *cols)
             ImGui::EndMenu();
         }
         break;
+    case XBOX_ITEM_TOGGLES:
+        if (ImGui::BeginMenu(it->label)) {
+            int on = it->state(), i;
+            for (i = 0; i < it->nchoices; i++)
+                if (ImGui::MenuItem(it->choices[i], NULL, (on >> i) & 1)) chosen(it, i);
+            ImGui::EndMenu();
+        }
+        break;
     case XBOX_ITEM_INFO:
         if (ImGui::MenuItem(it->label)) g_info = g_items.index_from_ptr(it);
         break;
@@ -175,8 +183,8 @@ static int menu_has_items(int m)
     return 0;
 }
 
-/* A box ends, or a frame starts with no menu open but not by B (menu_build):
- * back to the menu last open, so a pad is never left with nothing selected. */
+/* A box ends: back to the menu it was asked from, so a pad is never left
+ * with nothing selected. */
 static int g_last_menu, g_reopen = -1;
 
 static void box_closed(void)
@@ -185,19 +193,40 @@ static void box_closed(void)
     g_reopen = g_last_menu;
 }
 
+/* Every box sits in the middle of the window, and stays there: put back each
+ * frame, so it follows the window when that changes size. */
+static void box_centre(void)
+{
+    const ImGuiIO &io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+}
+
+/* A box over the menu: as big as what it says, and not to be dragged off. */
+static bool box_begin(const char *title)
+{
+    box_centre();
+    return ImGui::BeginPopupModal(title, NULL, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove);
+}
+
 extern "C" void menu_build(int just_opened)
 {
     ImGuiContext &g = *ImGui::GetCurrentContext();
     /* B, or Esc: ImGui's own cancel (ImGuiKey_NavGamepadCancel reads g). */
     bool back = ImGui::IsKeyPressed(ImGuiKey_Escape, false) || ImGui::IsKeyPressed(ImGuiKey_NavGamepadCancel, false);
-    int m, fold = 0;
+    int m, fold = 0, first = -1;
     const XBOX_MENU_ITEM *ask, *info;
     ImGuiWindow *bar;
 
     take_queued();
+    /* Opened: the bar alone, the pad on the first title (fold, below). A
+     * menu or box still open from the last time is shut: ImGui keeps it
+     * while the menu is hidden. */
     if (just_opened) {
         for (m = 0; m < XBOX_MENU_COUNT && !menu_has_items(m); m++) { }
-        g_reopen = m < XBOX_MENU_COUNT ? m : -1;
+        if (m < XBOX_MENU_COUNT) fold = 1, first = m;
+        if (g.OpenPopupStack.Size) ImGui::ClosePopupToLevel(0, false);
+        g_ask = g_info = g_reopen = -1;
     }
     if (ImGui::BeginMainMenuBar()) {
         bar = ImGui::GetCurrentWindow();
@@ -205,33 +234,34 @@ extern "C" void menu_build(int just_opened)
          * level at a time: it shuts a box, as Cancel does (below); ImGui
          * shuts a choice list, back to its menu, and a menu -- but leaves the
          * pad nowhere, so the pad goes to that menu's title on the bar
-         * (fold), where B does no more. When the frame starts with no menu
-         * open otherwise -- after a click in the game, or on the bar past its
-         * titles -- the last one comes back, in this frame. Not while the
-         * player walks the bar with Left / Right (the bar's titles have the
-         * pad), nor while the mouse moves from one menu to the next (the next
-         * is open, not yet drawn). */
+         * (fold), where B does no more. A click outside the menus -- in the
+         * game, or on the bar past its titles -- has ImGui shut them all, and
+         * the pad goes to the title of the one that was open, the same way.
+         * Not while the player walks the bar with Left / Right (the bar's
+         * titles have the pad), nor while the mouse moves from one menu to
+         * the next (the next is open, not yet drawn). */
         if (g_reopen < 0
-         && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) {
-            if (back)
-                fold = 1;
-            else if (!(ImGui::IsWindowFocused() && g.NavLayer == ImGuiNavLayer_Menu))
-                g_reopen = g_last_menu;
-        }
+         && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)
+         && (back || !(ImGui::IsWindowFocused() && g.NavLayer == ImGuiNavLayer_Menu)))
+            fold = 1;
         /* A row chosen leaves its menu open: the tick moves where it can be
          * seen, and a pad stays where it was. */
         ImGui::PushItemFlag(ImGuiItemFlags_AutoClosePopups, false);
         for (m = 0; m < XBOX_MENU_COUNT; m++) {
             if (!menu_has_items(m)) continue;
             if (m == g_reopen) ImGui::OpenPopup(k_menu_title[m]);
-            if (!ImGui::BeginMenu(k_menu_title[m])) continue;
+            bool open = ImGui::BeginMenu(k_menu_title[m]);
             /* Left / Right in a menu go on from its title on the bar, which
              * ImGui keeps only for a menu the pad opened there: not for one
              * the mouse opened, or one opened above. The title is the last
-             * item still (BeginMenu keeps it so). */
-            bar->NavLastIds[ImGuiNavLayer_Menu] = ImGui::GetItemID();
-            bar->NavRectRel[ImGuiNavLayer_Menu] =
-                ImGui::WindowRectAbsToRel(bar, ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()));
+             * item still (BeginMenu keeps it so). Opening, the pad goes to
+             * the first title from here too. */
+            if (open || m == first) {
+                bar->NavLastIds[ImGuiNavLayer_Menu] = ImGui::GetItemID();
+                bar->NavRectRel[ImGuiNavLayer_Menu] =
+                    ImGui::WindowRectAbsToRel(bar, ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()));
+            }
+            if (!open) continue;
             g_last_menu = m;
             if (m == g_reopen) g_reopen = -1;
             number_cols cols = number_columns(m);
@@ -260,8 +290,8 @@ extern "C" void menu_build(int just_opened)
     if (ask && !ImGui::IsPopupOpen("Are you sure?")) ImGui::OpenPopup("Are you sure?");
     if (info && !ImGui::IsPopupOpen(info->label)) ImGui::OpenPopup(info->label);
 
-    if (ask && ImGui::BeginPopupModal("Are you sure?", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextUnformatted(ask->kind == XBOX_ITEM_CHOICE ? ask->choices[g_ask_pick] : ask->label);
+    if (ask && box_begin("Are you sure?")) {
+        ImGui::TextUnformatted(g_ask_pick >= 0 ? ask->choices[g_ask_pick] : ask->label);
         ImGui::Spacing();
         ImGui::TextUnformatted(ask->confirm);
         ImGui::Spacing();
@@ -274,7 +304,7 @@ extern "C" void menu_build(int just_opened)
         ImGui::EndPopup();
     }
 
-    if (info && ImGui::BeginPopupModal(info->label, NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (info && box_begin(info->label)) {
         ImGui::TextUnformatted(info->text());
         ImGui::Spacing();
         bool ok = ImGui::Button("OK");
@@ -288,8 +318,7 @@ extern "C" void menu_build_busy(const char *what, int done, int total)
 {
     const ImGuiIO &io = ImGui::GetIO();
     char line[32];
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
-                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    box_centre();
     ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x * 0.5f, 0.0f), ImGuiCond_Always);
     if (ImGui::Begin("##busy", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
                      ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoSavedSettings |

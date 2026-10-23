@@ -1257,11 +1257,11 @@ static int gl_init(uint32_t w, uint32_t h)
             (const char *)glGetString(GL_RENDERER),
             (const char *)glGetString(GL_SHADING_LANGUAGE_VERSION));
 #if defined(XBOXRECOMP_MENU)
-    {   /* File > About's lines on the GPU, kept for the life of the window. */
-        static char about_gl[256];
-        snprintf(about_gl, sizeof about_gl, "%s\nOpenGL %s",
-                 (const char *)glGetString(GL_RENDERER), (const char *)glGetString(GL_VERSION));
-        if (xbox_MenuInit(g_window, g_sdl_ctx, about_gl)) sdl_menu_graphics();
+    {   /* File > About's graphics card and OpenGL, kept for the life of the window. */
+        static char about_gpu[160], about_gl[160];
+        snprintf(about_gpu, sizeof about_gpu, "%s", (const char *)glGetString(GL_RENDERER));
+        snprintf(about_gl, sizeof about_gl, "%s", (const char *)glGetString(GL_VERSION));
+        if (xbox_MenuInit(g_window, g_sdl_ctx, about_gpu, about_gl)) sdl_menu_graphics();
     }
 #endif
 
@@ -1299,18 +1299,39 @@ static void sdl_cfg_path(char *buf, size_t n)
     else buf[0] = 0;
 }
 
-static int sdl_cfg_get(const char *key, int def)
+/* developer.cfg, beside the settings file: the Developer menu's switches
+ * (port/developer.c), apart from the player's settings. */
+static void sdl_dev_path(char *buf, size_t n)
 {
-    char path[1024], line[1200];
+    char *sep;
+    sdl_cfg_path(buf, n);
+    if (!buf[0]) return;
+    sep = strrchr(buf, '/');
+#if defined(_WIN32)
+    { char *bs = strrchr(buf, '\\'); if (bs && (!sep || bs > sep)) sep = bs; }
+#endif
+    sep = sep ? sep + 1 : buf;
+    snprintf(sep, n - (size_t)(sep - buf), "developer.cfg");
+}
+
+static int sdl_cfg_read(const char *path, const char *key, int def)
+{
+    char line[1200];
     size_t kl = strlen(key);
     FILE *f;
     int v = def;
-    sdl_cfg_path(path, sizeof path);
     if (!path[0] || !(f = fopen(path, "r"))) return def;
     while (fgets(line, sizeof line, f))
         if (!strncmp(line, key, kl) && line[kl] == '=') v = atoi(line + kl + 1);
     fclose(f);
     return v;
+}
+
+static int sdl_cfg_get(const char *key, int def)
+{
+    char path[1024];
+    sdl_cfg_path(path, sizeof path);
+    return sdl_cfg_read(path, key, def);
 }
 
 /* A number from the same file, for the game's own keys (port/freecam.c):
@@ -1336,13 +1357,12 @@ int nv_window_pref_num(const char *key, double *v)
     return r;
 }
 
-static void sdl_cfg_put(const char *key, const char *val)
+static void sdl_cfg_write(const char *path, const char *key, const char *val)
 {
-    char path[1024], tmp[1100], line[1200];
+    char tmp[1100], line[1200];
     size_t kl = strlen(key);
     FILE *in, *out;
     int done = 0;
-    sdl_cfg_path(path, sizeof path);
     if (!path[0]) return;
     {   /* mkdir -p the directory */
         char dir[1024]; char *p;
@@ -1376,6 +1396,13 @@ static void sdl_cfg_put(const char *key, const char *val)
     }
 }
 
+static void sdl_cfg_put(const char *key, const char *val)
+{
+    char path[1024];
+    sdl_cfg_path(path, sizeof path);
+    sdl_cfg_write(path, key, val);
+}
+
 static void sdl_cfg_set(const char *key, int val)
 {
     char v[16];
@@ -1392,6 +1419,24 @@ void nv_window_pref_set_num(const char *key, double v)
     char s[32];
     snprintf(s, sizeof s, "%.15g", v);
     sdl_cfg_put(key, s);
+}
+
+/* A switch kept in developer.cfg (port/developer.c): its number, 0 when it
+ * is not there; and setting one. */
+int nv_window_dev_get(const char *key);
+int nv_window_dev_get(const char *key)
+{
+    char path[1024];
+    sdl_dev_path(path, sizeof path);
+    return sdl_cfg_read(path, key, 0);
+}
+void nv_window_dev_set(const char *key, int val);
+void nv_window_dev_set(const char *key, int val)
+{
+    char path[1024], v[16];
+    sdl_dev_path(path, sizeof path);
+    snprintf(v, sizeof v, "%d", val);
+    sdl_cfg_write(path, key, v);
 }
 
 /* nv2a_widescreen() asks this when RECOMP_WIDESCREEN is not set. */
@@ -1484,7 +1529,7 @@ static void sdl_toggle_fullscreen(void)
     fprintf(stderr, "[WIN] full screen %s\n", fs ? "off" : "on");
 }
 
-/* F11 and the in-game menu's Full screen: the player's choice, kept as
+/* F11 and the in-game menu's Fullscreen: the player's choice, kept as
  * "fullscreen" for the next start (gl_init). Not the resolution box's step
  * out of full screen and back (sdl_choose_scale), which is no choice. */
 static void sdl_choose_fullscreen(void)
@@ -1522,6 +1567,19 @@ static void sdl_toggle_widescreen(void)
  * (port/main.c), as the Mac's does -- in full screen again if that is where
  * it was. */
 extern void recomp_restart_self(void) __attribute__((weak));
+
+/* The engine started again, in full screen again if that is where it was:
+ * for a new scale, and for Graphics > Shader cache. */
+static void sdl_restart(int fs)
+{
+#if defined(_WIN32)
+    _putenv_s("RECOMP_FULLSCREEN", fs ? "1" : "0");
+#else
+    setenv("RECOMP_FULLSCREEN", fs ? "1" : "0", 1);
+#endif
+    recomp_restart_self();      /* does not return when it works */
+}
+
 static void sdl_restart_at(int pick, int fs)
 {
     char val[4];
@@ -1530,13 +1588,11 @@ static void sdl_restart_at(int pick, int fs)
     snprintf(val, sizeof val, "%d", pick);
 #if defined(_WIN32)
     _putenv_s("RECOMP_GL_SCALE", val);
-    _putenv_s("RECOMP_FULLSCREEN", fs ? "1" : "0");
 #else
     setenv("RECOMP_GL_SCALE", val, 1);
-    setenv("RECOMP_FULLSCREEN", fs ? "1" : "0", 1);
 #endif
     fprintf(stderr, "[WIN] resolution %dx chosen; restarting\n", pick);
-    recomp_restart_self();      /* does not return when it works */
+    sdl_restart(fs);
 }
 
 /* Keys held when a box took the keyboard never see their release. */
@@ -1608,14 +1664,14 @@ static void sdl_scale_pick(int i)   { sdl_restart_at(i + 1, sdl_is_fullscreen())
 static void sdl_menu_graphics(void)
 {
     const XBOX_MENU_ITEM rows[] = {
-        { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE, .label = "Full screen",
+        { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE, .label = "Fullscreen",
           .state = sdl_is_fullscreen, .run = sdl_choose_fullscreen },
         { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE, .label = "Widescreen (16:9)",
           .state = nv2a_widescreen, .run = sdl_toggle_widescreen },
-        { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Render scale",
+        { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Render scale (Restart)",
           .state = sdl_scale_now, .pick = sdl_scale_pick,
           .choices = sdl_scale_names, .nchoices = (int)(sizeof sdl_scale_names / sizeof sdl_scale_names[0]),
-          .confirm = "The game restarts at the new scale: anything since your last save is lost." },
+          .confirm = "The game restarts at the new scale, losing unsaved progress." },
     };
     int n = (int)(sizeof rows / sizeof rows[0]);
     /* A new scale is a restart, which not every port can do (F9 asks the same). */
@@ -1625,8 +1681,8 @@ static void sdl_menu_graphics(void)
 
 /* Graphics > Anti-aliasing (MSAA): none, then each count the device can draw
  * with, taken at the next flip and kept as msaa= (0 for none), as F10 keeps
- * widescreen=. Added once the device is up (msaa_start), after the rows
- * above and before FXAA's, which it can be used with. */
+ * widescreen=. Added once the device is up (msaa_start), the last of the
+ * rows, after FXAA's, which it can be used with. */
 static const char *const sdl_msaa_names[] = { "Off", "2x", "4x", "8x" };
 #define SDL_MSAA_N ((int)(sizeof sdl_msaa_names / sizeof sdl_msaa_names[0]))
 static int sdl_msaa_now(void)
@@ -1654,7 +1710,7 @@ static void sdl_menu_msaa(void)
 
 /* Graphics > Anti-aliasing (FXAA): taken at the next flip and kept as fxaa=,
  * as F10 keeps widescreen=. Added once the device is up (fxaa_start), after
- * the rows above, where the backend has it. */
+ * Anisotropic filtering's row, where the backend has it. */
 static int  sdl_fxaa_on(void)   { return g_fxaa_want; }
 static void sdl_fxaa_flip(void)
 {
@@ -1672,7 +1728,7 @@ static void sdl_menu_fxaa(void)
 /* Graphics > Anisotropic filtering: none, then each level the device can
  * sample with, taken at the next flip and kept as aniso= (0 for none), as
  * F10 keeps widescreen=. Added once the device is up (aniso_start), after
- * the rows above. */
+ * Shader cache's row. */
 static const char *const sdl_aniso_names[] = { "Off", "2x", "4x", "8x", "16x" };
 #define SDL_ANISO_N ((int)(sizeof sdl_aniso_names / sizeof sdl_aniso_names[0]))
 static int sdl_aniso_now(void)
@@ -10507,7 +10563,7 @@ const Nv2aGfx *nv2a_gfx_metal(void) { return NULL; }
  * are named for the backend and for the translator -- a hash of a reference
  * pair of shaders generated now -- so that what an older engine built is
  * never loaded; its programs are made again from their NV2A states
- * (shader_cache_states). Graphics > Shader Cache: shaders= in the
+ * (shader_cache_states). Graphics > Shader cache: shaders= in the
  * settings file, on when it is not there; RECOMP_SHADER_CACHE=0 or 1 wins.
  * Read at start-up, the only time the cache is opened, so a change applies
  * from the next one. */
@@ -10527,18 +10583,35 @@ static int shader_cache_on(void)
 }
 
 #if defined(XBOXRECOMP_MENU)
+/* Graphics > Shader cache, once its box has had OK: kept, and the game
+ * started again for it, as for a new render scale. Where it cannot start
+ * again (Android), from the next start. */
 static void shader_cache_toggle(void)
 {
     g_shaders = !shader_cache_on();
     sdl_cfg_set("shaders", g_shaders);
+    if (recomp_restart_self) {
+        fprintf(stderr, "  [SHADERS] shader cache %s; restarting\n", g_shaders ? "on" : "off");
+        sdl_restart(sdl_is_fullscreen());
+    }
     fprintf(stderr, "  [SHADERS] shader cache %s, from the next start\n", g_shaders ? "on" : "off");
 }
 
+/* Graphics > Shader cache (Restart): added from shader_cache_start, after
+ * Render scale and before Anisotropic filtering's row. */
+static void sdl_menu_shaders(void)
+{
+    const XBOX_MENU_ITEM row = { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE,
+        .label = "Shader cache (Restart)", .state = shader_cache_on, .run = shader_cache_toggle,
+        .confirm = "The game restarts to apply this, losing unsaved progress." };
+    if (G->cache_open) xbox_MenuAdd(&row, 1);
+}
+
 /*
- * The menu's row for it, and, with the cache open, every program in it built
- * again from its sources before the game's first frame -- whether or not this
- * driver kept a binary of it, so that each run starts from programs this
- * driver has just compiled -- with a box saying how far it has got. No cache
+ * With the cache open, every program in it built again from its sources
+ * before the game's first frame -- whether or not this driver kept a binary
+ * of it, so that each run starts from programs this driver has just
+ * compiled -- with a box saying how far it has got. No cache
  * yet: nothing to build, no box. A run like that reads no other driver's
  * binaries file, and no older engine's files, so those are removed first.
  *
@@ -10552,13 +10625,10 @@ static void shader_cache_toggle(void)
 static void sdl_shader_cache(void)
 {
     static const float black[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
-    const XBOX_MENU_ITEM row = { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE,
-        .label = "Shader Cache", .state = shader_cache_on, .run = shader_cache_toggle };
     SDL_DisplayMode mode;
     int total, left, held;
     uint32_t rt;
     double t0, period = 0.0, shown = 0.0;
-    xbox_MenuAdd(&row, 1);
     if (!nv2a_sc_is_open() || !G->cache_idle || !G->cache_rebuild) return;
     nv2a_sc_sweep();
     if ((total = G->cache_rebuild()) <= 0) return;
@@ -10634,6 +10704,9 @@ static void shader_cache_start(void)
     Nv2aVshFixed f0;
     Nv2aPshState p0;
     int msl;
+#if defined(XBOXRECOMP_MENU)
+    if (G) sdl_menu_shaders();
+#endif
     if (!G || !G->cache_open || !shader_cache_on() || !save || !*save) return;
     msl = (G->lang == NV2A_LANG_MSL);
     snprintf(dir, sizeof dir, "%s/shaders", save);
@@ -10743,9 +10816,9 @@ static int gfx_init(uint32_t w, uint32_t h)
             g_is_gl = 0;
             fprintf(stderr, "  [GL] backend: %s\n", G->name);
             shader_cache_start();
-            msaa_start();
-            fxaa_start();
             aniso_start();
+            fxaa_start();
+            msaa_start();
             return 1;
         }
         fprintf(stderr, "  [GL] Metal backend unavailable%s\n",
@@ -10762,9 +10835,9 @@ static int gfx_init(uint32_t w, uint32_t h)
     if (!gl_init(w, h)) return 0;     /* the context, then the device */
     fprintf(stderr, "  [GL] backend: %s\n", G->name);
     shader_cache_start();
-    msaa_start();
-    fxaa_start();
     aniso_start();
+    fxaa_start();
+    msaa_start();
 #if defined(XBOXRECOMP_MENU)
     sdl_shader_cache();
 #endif

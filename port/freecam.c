@@ -217,7 +217,7 @@ static void   menu_dz_set(double v)    { s_cfg.deadzone = v / 100; nv_window_pre
 static void freecam_menu(void)
 {
     const XBOX_MENU_ITEM rows[] = {
-        { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_TOGGLE, .label = "Free camera (F8)",
+        { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_TOGGLE, .label = "Free camera",
           .state = menu_on, .run = menu_on_run },
         { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_TOGGLE, .label = "Invert X",
           .state = menu_inv_x, .run = menu_inv_x_run },

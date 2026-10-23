@@ -38,7 +38,7 @@ static volatile int g_open;
 static int          g_just_opened;
 static float        g_scale;
 static ImGuiStyle   g_style;        /* before scaling */
-static const char  *g_about_gl;
+static const char  *g_about_gpu, *g_about_gl;
 /* xbox_MenuBusy's box: set and built on the GL thread; the total is read by
  * whichever thread swaps, as g_open is. */
 static const char  *g_busy_what;
@@ -51,6 +51,11 @@ static volatile int g_busy_total;
  * with it; the runtime is not. */
 extern "C" const char *recomp_version(void) __attribute__((weak));
 
+/* File > About, a section at a time: the build, the OS, the graphics card,
+ * SDL, OpenGL, Dear ImGui. Every section is written the same way, and so is
+ * any added later: its name on a line of its own, then each detail -- the
+ * version first, where it has one -- on a line starting with "-", and a blank
+ * line between one section and the next. */
 static const char *about_text(void)
 {
     static char buf[768];
@@ -58,22 +63,34 @@ static const char *about_text(void)
     SDL_VERSION(&built);
     SDL_GetVersion(&running);
     snprintf(buf, sizeof buf,
-             "JSRF Unleashed %s\n"
-             "%s, built with %s\n\n"
-             "SDL %u.%u.%u (built against %u.%u.%u), %s video\n"
+             "JSRF Unleashed\n"
+             "-%s\n\n"
              "%s\n"
-             "Dear ImGui %s",
+             "-Built with %s\n\n"
+             "Graphics\n"
+             "-%s\n\n"
+             "SDL\n"
+             "-%u.%u.%u\n"
+             "-Built against %u.%u.%u\n"
+             "-%s video\n\n"
+             "OpenGL\n"
+             "-%s\n\n"
+             "Dear ImGui\n"
+             "-%s",
              recomp_version ? recomp_version() : "dev",
              SDL_GetPlatform(),
-#if defined(__VERSION__)
+#if defined(__GNUC__) && !defined(__clang__)
+             "GCC " __VERSION__,        /* GCC's is the bare number; Clang's names it */
+#elif defined(__VERSION__)
              __VERSION__,
 #else
              "an unknown compiler",
 #endif
+             g_about_gpu ? g_about_gpu : "unknown",
              running.major, running.minor, running.patch,
              built.major, built.minor, built.patch,
              SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "no",
-             g_about_gl ? g_about_gl : "",
+             g_about_gl ? g_about_gl : "unknown",
              IMGUI_VERSION);
     return buf;
 }
@@ -92,7 +109,7 @@ static const XBOX_MENU_ITEM k_file[] = {
     { XBOX_MENU_FILE, XBOX_ITEM_INFO,      "About", NULL, NULL,      NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL },
     { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL,    NULL, NULL,      NULL, NULL, 0, NULL,       NULL, NULL, NULL, 0, 0, 0, NULL },
     { XBOX_MENU_FILE, XBOX_ITEM_ACTION,    "Exit",  NULL, exit_game, NULL, NULL, 0, NULL,
-      "Anything since your last save is lost.", NULL, NULL, 0, 0, 0, NULL },
+      "Unsaved progress is lost.", NULL, NULL, 0, 0, 0, NULL },
 };
 
 /* ---- opening and closing ------------------------------------------------ */
@@ -117,7 +134,8 @@ static void set_open(int on)
 
 /* ---- the calls from the window (nv2a_gl.c) ------------------------------ */
 
-extern "C" int xbox_MenuInit(SDL_Window *window, void *gl_context, const char *about_gl)
+extern "C" int xbox_MenuInit(SDL_Window *window, void *gl_context, const char *about_gpu,
+                             const char *about_gl)
 {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -136,6 +154,7 @@ extern "C" int xbox_MenuInit(SDL_Window *window, void *gl_context, const char *a
     }
     g_mu = SDL_CreateMutex();
     if (!g_mu) return 0;
+    g_about_gpu = about_gpu;
     g_about_gl = about_gl;
     xbox_MenuAdd(k_file, (int)(sizeof k_file / sizeof k_file[0]));
     g_ready = 1;

@@ -38,6 +38,7 @@ typedef enum {
     XBOX_MENU_FILE,
     XBOX_MENU_GRAPHICS,
     XBOX_MENU_CONTROLLER,
+    XBOX_MENU_DEVELOPER,
     XBOX_MENU_COUNT
 } XBOX_MENU_ID;
 
@@ -48,8 +49,10 @@ typedef enum {
                              * state(), pick(i) when another is chosen        */
     XBOX_ITEM_INFO,         /* text() in a box, with OK                       */
     XBOX_ITEM_SEPARATOR,
-    XBOX_ITEM_NUMBER        /* value() in a box, with - and + either side: a
+    XBOX_ITEM_NUMBER,       /* value() in a box, with - and + either side: a
                              * step down or up, from min to max; set(v)       */
+    XBOX_ITEM_TOGGLES       /* a submenu of choices[], each ticked while its
+                             * bit in state() is set; pick(i) flips it        */
 } XBOX_ITEM_KIND;
 
 /* state, run, pick, text, value and set are called on the window's thread
@@ -85,8 +88,8 @@ void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count);
 /* The window's side (menu_sdl.cpp, and tests/menu): one frame of the menu,
  * between ImGui::NewFrame() and ImGui::Render(), on the window's thread. It
  * stays until the window shuts it (F1, Back). just_opened: the first
- * frame after opening -- the first menu is opened for them, so a pad has
- * somewhere to start. */
+ * frame after opening -- the bar alone, the pad on the first menu's title,
+ * so a pad has somewhere to start. */
 void menu_build(int just_opened);
 
 /* The window's side too: a box in the middle of the window, over whatever is
