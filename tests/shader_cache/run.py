@@ -4,7 +4,8 @@ The shader cache (src/nv2a_gl/nv2a_shader_cache.c) as it is, with test_main.c,
 each start a run of its own: on a fresh folder, nv2a_sc_sweep removes the files
 other drivers and engines left; on another, the NV2A states and programs one
 start keeps come back at the next, and nv2a_sc_keep and nv2a_sc_state_keep
-forget programs and states on disk too. See test_main.c for each step.
+forget programs and states on disk too; last, nv2a_sc_purge removes them all.
+See test_main.c for each step.
 
 Requires a C compiler on PATH: cc, or CC.
 """
@@ -27,5 +28,5 @@ with tempfile.TemporaryDirectory(prefix="shader-cache-") as directory:
     (work / "shaders").mkdir()
     subprocess.run([exe, str(work / "shaders"), "sweep"], check=True, timeout=30)
     (work / "states").mkdir()
-    for phase in ("record", "keep", "reload", "damaged"):
+    for phase in ("record", "keep", "reload", "damaged", "purge"):
         subprocess.run([exe, str(work / "states"), phase], check=True, timeout=30)

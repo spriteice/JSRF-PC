@@ -102,7 +102,9 @@ turned on again, and what is there already stays. It changes straight away
 and is remembered as logging= in the settings file (1 or 0). Developer >
 Logging adds the engine's own diagnostic lines to the log, for bug reports.
 Each is kept in developer.cfg, beside the settings file, as NAME=1 or NAME=0,
-and applies from the next start.
+and applies from the next start. Developer > Purge shaders asks first, then
+restarts the game and deletes the shader cache, states.dat included, as it
+starts: each shader is built again when the game first needs it.
 
 
 Free camera

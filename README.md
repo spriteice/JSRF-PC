@@ -125,13 +125,15 @@ to the menu.
 - **Controller:** the free camera, and its inversion, sensitivity and
   deadzone.
 - **Developer:** Log to file, which stops or starts writing to
-  `last-run.log` at once, and Logging: the engine's diagnostic logs, for bug
-  reports. These are kept in `developer.cfg`, beside the settings file, and
-  apply from the next start.
+  `last-run.log` at once; Logging, the engine's diagnostic logs for bug
+  reports, kept in `developer.cfg` beside the settings file and applied from
+  the next start; and Purge shaders, which restarts the game and deletes the
+  shader cache, `states.dat` included, as it starts.
 
-Everything is remembered. Exit, a new render scale and the shader cache ask
-first, as anything since your last save is lost: the last two restart the
-game. The other rows marked (Restart) apply from the next start.
+Everything is remembered. Exit, a new render scale, the shader cache and
+Purge shaders ask first, as anything since your last save is lost: all but
+Exit restart the game. The other rows marked (Restart) apply from the next
+start.
 
 ### Graphics options
 

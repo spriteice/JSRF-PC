@@ -10597,14 +10597,35 @@ static void shader_cache_toggle(void)
     fprintf(stderr, "  [SHADERS] shader cache %s, from the next start\n", g_shaders ? "on" : "off");
 }
 
-/* Graphics > Shader cache (Restart): added from shader_cache_start, after
- * Render scale and before Anisotropic filtering's row. */
+/* Developer > Purge shaders (Restart), once its box has had OK: asked for as
+ * purge_shaders=1, and the game started again for it, as for Shader cache.
+ * The start does it, before it opens the cache (shader_cache_purge): this run
+ * has the cache's files open. Where it cannot start again (Android), at the
+ * next start. */
+static void shader_cache_purge_ask(void)
+{
+    sdl_cfg_set("purge_shaders", 1);
+    if (recomp_restart_self) {
+        fprintf(stderr, "  [SHADERS] purge asked for; restarting\n");
+        sdl_restart(sdl_is_fullscreen());
+    }
+    fprintf(stderr, "  [SHADERS] purge asked for: the shader cache and states.dat go at the next start\n");
+}
+
+/* Graphics > Shader cache (Restart), and Developer > Purge shaders (Restart):
+ * added from shader_cache_start, after Render scale and before Anisotropic
+ * filtering's row, and after Developer's own rows (port/developer.c). */
 static void sdl_menu_shaders(void)
 {
-    const XBOX_MENU_ITEM row = { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE,
-        .label = "Shader cache (Restart)", .state = shader_cache_on, .run = shader_cache_toggle,
-        .confirm = "The game restarts to apply this, losing unsaved progress." };
-    if (G->cache_open) xbox_MenuAdd(&row, 1);
+    const XBOX_MENU_ITEM rows[] = {
+        { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE, .label = "Shader cache (Restart)",
+          .state = shader_cache_on, .run = shader_cache_toggle,
+          .confirm = "The game restarts to apply this, losing unsaved progress." },
+        { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_ACTION, .label = "Purge shaders (Restart)",
+          .run = shader_cache_purge_ask,
+          .confirm = "The game restarts and deletes the shader cache, losing unsaved progress." },
+    };
+    if (G->cache_open) xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
 }
 
 /*
@@ -10695,6 +10716,18 @@ static void shader_cache_states(int msl)
     free(keys);
 }
 
+#if defined(NV2A_GL_USE_SDL)
+/* Developer > Purge shaders, asked for in an earlier run: every file of the
+ * cache goes, states.dat with them, before it is opened -- whether or not it
+ * is on. */
+static void shader_cache_purge(const char *dir)
+{
+    if (!sdl_cfg_get("purge_shaders", 0)) return;
+    sdl_cfg_set("purge_shaders", 0);
+    fprintf(stderr, "  [SHADERS] purged %d files of the shader cache, as asked\n", nv2a_sc_purge(dir));
+}
+#endif
+
 static void shader_cache_start(void)
 {
     const char *save = getenv("JSRF_SAVE_DIR");
@@ -10707,9 +10740,13 @@ static void shader_cache_start(void)
 #if defined(XBOXRECOMP_MENU)
     if (G) sdl_menu_shaders();
 #endif
-    if (!G || !G->cache_open || !shader_cache_on() || !save || !*save) return;
-    msl = (G->lang == NV2A_LANG_MSL);
+    if (!G || !G->cache_open || !save || !*save) return;
     snprintf(dir, sizeof dir, "%s/shaders", save);
+#if defined(NV2A_GL_USE_SDL)
+    shader_cache_purge(dir);
+#endif
+    if (!shader_cache_on()) return;
+    msl = (G->lang == NV2A_LANG_MSL);
     v = (char *)malloc(96 * 1024);
     f = (char *)malloc(96 * 1024);
     memset(&f0, 0, sizeof f0);

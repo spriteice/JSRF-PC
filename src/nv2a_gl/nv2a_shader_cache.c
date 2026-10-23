@@ -32,11 +32,15 @@ static void lock(void)
     EnterCriticalSection(&s_lock);
 }
 static void unlock(void) { LeaveCriticalSection(&s_lock); }
+/* Not inherited ("N"): a restart (recomp_restart_self) starts the game again
+ * with this process's inheritable handles, and a cache file it still held
+ * open could not be deleted there (nv2a_sc_purge). */
 static FILE *sc_fopen(const char *path, const char *mode)
 {
     wchar_t wp[2048], wm[8];
     if (!MultiByteToWideChar(CP_UTF8, 0, path, -1, wp, 2048)) return NULL;
-    if (!MultiByteToWideChar(CP_UTF8, 0, mode, -1, wm, 8)) return NULL;
+    if (!MultiByteToWideChar(CP_UTF8, 0, mode, -1, wm, 7)) return NULL;
+    wcscat(wm, L"N");
     return _wfopen(wp, wm);
 }
 static void sc_mkdir(const char *path)
@@ -80,6 +84,7 @@ static int sc_each(const char *dir, int (*fn)(const char *, const char *, const 
 }
 #else
 #  include <dirent.h>
+#  include <fcntl.h>
 #  include <pthread.h>
 #  include <sys/stat.h>
 #  include <sys/types.h>
@@ -87,7 +92,14 @@ static int sc_each(const char *dir, int (*fn)(const char *, const char *, const 
 static pthread_mutex_t s_mutex = PTHREAD_MUTEX_INITIALIZER;
 static void lock(void)   { pthread_mutex_lock(&s_mutex); }
 static void unlock(void) { pthread_mutex_unlock(&s_mutex); }
-static FILE *sc_fopen(const char *path, const char *mode) { return fopen(path, mode); }
+/* Closed on exec, as Windows' are not inherited: a restart's execv would hand
+ * the new run this one's cache files, kept open (and on disk) for its life. */
+static FILE *sc_fopen(const char *path, const char *mode)
+{
+    FILE *f = fopen(path, mode);
+    if (f) fcntl(fileno(f), F_SETFD, FD_CLOEXEC);
+    return f;
+}
 static void sc_mkdir(const char *path) { mkdir(path, 0755); }
 static void sc_truncate(const char *path, long len) { if (truncate(path, (off_t)len)) { /* nothing */ } }
 static int sc_remove(const char *path) { return remove(path) == 0; }
@@ -689,9 +701,9 @@ void nv2a_sc_stats(int *programs, int *binaries, int *added)
 
 /* ---- files no run reads any more --------------------------------------------- */
 
-/* One kind of file this run keeps one of: the names it starts with, and the
- * one to keep. */
-typedef struct { char kind[200], keep[600]; } Sweep;
+/* One kind of file this run keeps one of: the names it starts with, the one
+ * to keep, and why the rest go. */
+typedef struct { char kind[200], keep[600]; const char *why; } Sweep;
 
 /* `name` in `dir` goes if it is a file of that kind other than the one kept. */
 static int sweep_one(const char *dir, const char *name, const void *arg)
@@ -704,8 +716,11 @@ static int sweep_one(const char *dir, const char *name, const void *arg)
         || strcmp(name + n - (sizeof ext - 1), ext) || !strcmp(name, s->keep))
         return 0;
     snprintf(path, sizeof path, "%s/%s", dir, name);
-    if (!sc_remove(path)) return 0;
-    fprintf(stderr, "  [SHADERS] removed %s: not this driver's or this engine's\n", name);
+    if (!sc_remove(path)) {
+        fprintf(stderr, "  [SHADERS] could not remove %s: %s\n", name, strerror(errno));
+        return 0;
+    }
+    fprintf(stderr, "  [SHADERS] removed %s: %s\n", name, s->why);
     return 1;
 }
 
@@ -736,6 +751,27 @@ int nv2a_sc_sweep(void)
         }
     }
     unlock();
-    for (i = 0; i < ns; i++) sum += sc_each(dir, sweep_one, &s[i]);
+    for (i = 0; i < ns; i++) {
+        s[i].why = "not this driver's or this engine's";
+        sum += sc_each(dir, sweep_one, &s[i]);
+    }
+    return sum;
+}
+
+int nv2a_sc_purge(const char *dir)
+{
+    static const char *const kinds[] = { "programs-", "recipes-", "binaries-", "states.dat" };
+    Sweep s;
+    int i, open, sum = 0;
+    lock();
+    open = C.open;
+    unlock();
+    if (open) return 0;
+    s.keep[0] = 0;
+    s.why = "purged, as asked";
+    for (i = 0; i < (int)(sizeof kinds / sizeof kinds[0]); i++) {
+        snprintf(s.kind, sizeof s.kind, "%s", kinds[i]);
+        sum += sc_each(dir, sweep_one, &s);
+    }
     return sum;
 }

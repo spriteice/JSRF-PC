@@ -8,7 +8,8 @@
  *           backend's programs and recipes files for another translator, are
  *           removed; another backend's files, states.dat and anything that is
  *           not the cache's stay.
- *   record  a fresh folder: programs and NV2A states kept.
+ *   record  a fresh folder: programs and NV2A states kept, in files a
+ *           restart does not hand on (or the next run could not purge them).
  *   keep    the next start: the states come back as they were kept,
  *           nv2a_sc_keep forgets the programs not asked for, and
  *           nv2a_sc_state_keep the states of another layout, on disk too.
@@ -17,14 +18,22 @@
  *           half written at the end of states.dat, as a run stopped mid-write
  *           leaves;
  *   damaged the start after that drops it and keeps the rest.
+ *   purge   Developer > Purge shaders, at the start after: every file of the
+ *           cache goes (nv2a_sc_purge) -- every backend's, translator's and
+ *           driver's, and states.dat -- and nothing else; the cache then
+ *           opens empty, and an open cache is not purged.
  */
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #if defined(_WIN32)
+#  include <windows.h>
 #  include <direct.h>
+#  include <io.h>
 #  define make_dir(p) _mkdir(p)
 #else
+#  include <fcntl.h>
 #  include <sys/stat.h>
 #  define make_dir(p) mkdir(p, 0755)
 #endif
@@ -129,8 +138,47 @@ static void sweep(const char *dir)
     CHECK(nv2a_sc_sweep() == 0);
 }
 
+#if defined(_WIN32)
+static void no_complaint(const wchar_t *e, const wchar_t *f, const wchar_t *file, unsigned line, uintptr_t r)
+{
+    (void)e; (void)f; (void)file; (void)line; (void)r;
+}
+#endif
+
+/* Past stdin, stdout and stderr, every file this program has open is the
+ * cache's: how many there are, and how many of them a restart
+ * (recomp_restart_self) would hand the next run -- inheritable on Windows, not
+ * closed on exec elsewhere. Windows will not delete a file another process
+ * holds, so the next run could not purge one it was handed. */
+static void files_open(int *open, int *handed)
+{
+    int fd;
+#if defined(_WIN32)
+    _invalid_parameter_handler was = _set_invalid_parameter_handler(no_complaint);
+#endif
+    *open = *handed = 0;
+    for (fd = 3; fd < 256; fd++) {
+#if defined(_WIN32)
+        DWORD flags;
+        intptr_t h = _get_osfhandle(fd);
+        if (h == -1 || !GetHandleInformation((HANDLE)h, &flags)) continue;
+        ++*open;
+        if (flags & HANDLE_FLAG_INHERIT) ++*handed;
+#else
+        int flags = fcntl(fd, F_GETFD);
+        if (flags < 0) continue;
+        ++*open;
+        if (!(flags & FD_CLOEXEC)) ++*handed;
+#endif
+    }
+#if defined(_WIN32)
+    _set_invalid_parameter_handler(was);
+#endif
+}
+
 static void record(const char *dir)
 {
+    int open, handed;
     CHECK(nv2a_sc_state_count() == -1);                  /* not open: no states file */
     CHECK(nv2a_sc_open(dir, TAG));
     CHECK(nv2a_sc_state_count() == 0);
@@ -142,6 +190,11 @@ static void record(const char *dir)
     nv2a_sc_state_add(1, 1, "bb", 2);                    /* kept once */
     nv2a_sc_state_add(2, 0, "a", 1);                     /* another layout: another state */
     CHECK(nv2a_sc_state_count() == 3);
+    /* The programs, recipes and states files are open, and a restart would
+     * hand none of them on. */
+    files_open(&open, &handed);
+    fprintf(stderr, "%d files open, %d of them handed to a restart\n", open, handed);
+    CHECK(open >= 3 && handed == 0);
 }
 
 static void keep(const char *dir)
@@ -188,6 +241,26 @@ static void reload(const char *dir)
     if ((f = fopen(path, "ab")) != NULL) { fwrite("JSN1\1\0", 1, 6, f); fclose(f); }
 }
 
+static void purge(const char *dir)
+{
+    char sub[1200];
+    put(dir, "binaries-u-AAAAAAAA.dat");
+    put(dir, "programs-u-0BADF00D.dat");
+    put(dir, "notes.dat");
+    put(dir, "states.txt");
+    snprintf(sub, sizeof sub, "%s/programs-folder.dat", dir);
+    CHECK(make_dir(sub) == 0);
+    CHECK(there(dir, "programs-" TAG ".dat") && there(dir, "recipes-" TAG ".dat") && there(dir, "states.dat"));
+    CHECK(nv2a_sc_purge(dir) == 5);
+    CHECK(!there(dir, "programs-" TAG ".dat") && !there(dir, "recipes-" TAG ".dat") && !there(dir, "states.dat")
+          && !there(dir, "binaries-u-AAAAAAAA.dat") && !there(dir, "programs-u-0BADF00D.dat"));
+    CHECK(there(dir, "notes.dat") && there(dir, "states.txt"));
+    CHECK(nv2a_sc_open(dir, TAG));
+    CHECK(nv2a_sc_count() == 0 && nv2a_sc_state_count() == 0);
+    CHECK(nv2a_sc_purge(dir) == 0);                      /* open: does nothing */
+    CHECK(there(dir, "programs-" TAG ".dat") && there(dir, "states.dat"));
+}
+
 int main(int argc, char **argv)
 {
     const char *dir = argc > 1 ? argv[1] : ".", *phase = argc > 2 ? argv[2] : "sweep";
@@ -198,7 +271,8 @@ int main(int argc, char **argv)
     else if (!strcmp(phase, "damaged")) {
         CHECK(nv2a_sc_open(dir, TAG));
         CHECK(nv2a_sc_state_count() == 3 && state_is(2, 1, 0, "dd"));
-    } else {
+    } else if (!strcmp(phase, "purge")) purge(dir);
+    else {
         fprintf(stderr, "unknown phase %s\n", phase);
         return 2;
     }

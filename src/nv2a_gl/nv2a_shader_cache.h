@@ -98,6 +98,13 @@ void nv2a_sc_bin_drop(uint64_t key);
  * folder are never touched. Returns how many were removed. */
 int  nv2a_sc_sweep(void);
 
+/* Removes every file of the cache in `dir`: every backend's, translator's and
+ * driver's programs, recipes and binaries, and states.dat -- so that the next
+ * open starts from nothing (Developer > Purge shaders). Before the cache is
+ * opened: an open cache is left alone. Anything else in the folder stays.
+ * Returns how many were removed. */
+int  nv2a_sc_purge(const char *dir);
+
 /* For the report: programs and binaries on disk, and what this run added. */
 void nv2a_sc_stats(int *programs, int *binaries, int *added);
 
