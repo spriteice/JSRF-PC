@@ -2669,7 +2669,7 @@ static void ff_describe(Nv2aVshFixed *f)
  * are laid out, and changes with Nv2aVshFixed and Nv2aPshState: a state of
  * another layout is dropped at start-up, and its program with it, which is
  * built again when the game next asks for it. Raising it is a change to note
- * in CHANGELOG.md.
+ * in CHANGELOG-JSRF-PC.md.
  */
 enum { SC_FIXED, SC_PROGRAM };
 #define SC_LAYOUT 1

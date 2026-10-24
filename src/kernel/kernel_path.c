@@ -376,7 +376,7 @@ void xbox_path_init(const char* game_dir, const char* save_dir)
     }
 
     /* The player's own folder for E:\UDATA and E:\TDATA, when the launcher
-     * gives one (JSRF_USER_DIR, the Linux launcher's portable mode); without
+     * gives one (JSRF_USER_DIR, either launcher's portable mode); without
      * it they stay in the game dir. */
     {
         const char* user_dir = getenv("JSRF_USER_DIR");
@@ -760,7 +760,7 @@ void xbox_path_init(const char* game_dir, const char* save_dir)
     }
 
     /* The player's own folder for E:\UDATA and E:\TDATA, when the launcher
-     * gives one (JSRF_USER_DIR, the Linux launcher's portable mode); without
+     * gives one (JSRF_USER_DIR, either launcher's portable mode); without
      * it they stay in the game dir. */
     {
         const char* user_dir = getenv("JSRF_USER_DIR");

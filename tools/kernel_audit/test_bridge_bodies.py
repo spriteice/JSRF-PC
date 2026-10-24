@@ -1,7 +1,7 @@
 """
 Run kernel bridge bodies, compiled verbatim from kernel_bridge.c.
 
-Run: py -3 -m pytest tools/kernel_audit/test_bridge_bodies.py
+Run: python3 -m pytest tools/kernel_audit/test_bridge_bodies.py
 
 test_bridge_ordinals.py checks the routing and stack-size tables; it cannot
 see a bridge that reads the wrong argument or never writes its result. Each
