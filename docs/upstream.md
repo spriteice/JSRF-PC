@@ -254,11 +254,14 @@ git diff --name-status --diff-filter=MD upstream main
 - **Files:** launcher/linux/jsrf-unleashed,
   launcher/windows/jsrf_launcher.c, src/kernel/kernel_path.c
   (`JSRF_USER_DIR`: the game's saves, E:\UDATA and E:\TDATA, in the
-  portable folder).
+  portable folder). With that third folder, the path rules name the folder
+  each one goes to, `PATH_GAME_DIR`, `PATH_SAVE_DIR` or `PATH_USER_DIR`,
+  where upstream writes 0 or 1.
 - **Why:** a folder named `portable` beside the launcher keeps the
   settings, saves, logs and cache, so the whole game can move, as to an SD
   card (docs/portable-mode.md).
-- **At a merge:** keep ours, and run tests/user_dir.
+- **At a merge:** keep ours, give a path rule upstream adds or changes the
+  name for its 0 or 1, and run tests/user_dir.
 
 ### The Linux launcher's help
 

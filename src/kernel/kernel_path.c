@@ -33,23 +33,26 @@ static int match_prefix(const char* path, const char* prefix)
     return i;
 }
 
+/* The folder a rule's paths go to: game_dir, save_dir or user_dir. */
+enum { PATH_GAME_DIR, PATH_SAVE_DIR, PATH_USER_DIR };
+
 /* A device-path translation rule, shared by both backends. */
 typedef struct {
     const char* prefix;     /* Xbox path prefix (backslash form)         */
-    int         to_save;    /* 1 = save_dir, 0 = game_dir, 2 = user_dir  */
+    int         base;       /* PATH_GAME_DIR, _SAVE_DIR or _USER_DIR     */
     const char* sub_win;    /* sub-directory, Win32 backslash form       */
     const char* sub_posix;  /* sub-directory, POSIX slash form           */
 } path_rule;
 
 static const path_rule s_rules[] = {
-    { "\\Device\\CdRom0\\",                   0, NULL,         NULL          },
+    { "\\Device\\CdRom0\\",                   PATH_GAME_DIR, NULL,         NULL          },
     /* E:\UDATA and E:\TDATA, where XAPI keeps a title's saves (it links U:
      * and T: there). In the player's own folder when there is one -- see
      * xbox_path_init -- and otherwise left to the Partition1 rule below,
      * which keeps them in the game dir. */
-    { "\\Device\\Harddisk0\\Partition1\\UDATA", 2, "\\UDATA",    "/UDATA"      },
-    { "\\Device\\Harddisk0\\Partition1\\TDATA", 2, "\\TDATA",    "/TDATA"      },
-    { "\\Device\\Harddisk0\\Partition1\\",    0, NULL,         NULL          },
+    { "\\Device\\Harddisk0\\Partition1\\UDATA", PATH_USER_DIR, "\\UDATA",    "/UDATA"      },
+    { "\\Device\\Harddisk0\\Partition1\\TDATA", PATH_USER_DIR, "\\TDATA",    "/TDATA"      },
+    { "\\Device\\Harddisk0\\Partition1\\",    PATH_GAME_DIR, NULL,         NULL          },
     /* The rest of the disk. Partition 0 is the whole raw device, 2 holds
      * system data, and 3-5 are the per-title caches behind X:, Y: and Z:.
      * Without these the path layer reported "Unrecognized Xbox path" and
@@ -64,26 +67,26 @@ static const path_rule s_rules[] = {
      * ordinary asset read and belongs in the game dir -- the same place Y:
      * already goes. Only the bare device keeps the system-data image, which
      * is why this rule carries the trailing separator and is listed first. */
-    { "\\Device\\Harddisk0\\Partition2\\",    0, NULL,         NULL          },
-    { "C:\\",                                 0, NULL,         NULL          },
-    { "\\??\\C:\\",                           0, NULL,         NULL          },
-    { "\\Device\\Harddisk0\\Partition2",     1, "\\SystemData", "/SystemData" },
-    { "\\Device\\Harddisk0\\Partition3",     1, "\\Cache",   "/Cache"      },
-    { "\\Device\\Harddisk0\\Partition4",     1, "\\Cache",   "/Cache"      },
-    { "\\Device\\Harddisk0\\Partition5",     1, "\\Cache",   "/Cache"      },
-    { "D:\\",                                 0, NULL,         NULL          },
-    { "d:\\",                                 0, NULL,         NULL          },
+    { "\\Device\\Harddisk0\\Partition2\\",    PATH_GAME_DIR, NULL,         NULL          },
+    { "C:\\",                                 PATH_GAME_DIR, NULL,         NULL          },
+    { "\\??\\C:\\",                           PATH_GAME_DIR, NULL,         NULL          },
+    { "\\Device\\Harddisk0\\Partition2",     PATH_SAVE_DIR, "\\SystemData", "/SystemData" },
+    { "\\Device\\Harddisk0\\Partition3",     PATH_SAVE_DIR, "\\Cache",   "/Cache"      },
+    { "\\Device\\Harddisk0\\Partition4",     PATH_SAVE_DIR, "\\Cache",   "/Cache"      },
+    { "\\Device\\Harddisk0\\Partition5",     PATH_SAVE_DIR, "\\Cache",   "/Cache"      },
+    { "D:\\",                                 PATH_GAME_DIR, NULL,         NULL          },
+    { "d:\\",                                 PATH_GAME_DIR, NULL,         NULL          },
     /* Y: is the Xbox dashboard partition; the dashboard opens its assets
      * (e.g. "Y:\default.xip") from there. Map it to the game dir. */
-    { "Y:\\",                                 0, NULL,         NULL          },
-    { "y:\\",                                 0, NULL,         NULL          },
-    { "T:\\",                                 1, "\\TitleData","/TitleData"  },
-    { "U:\\",                                 1, "\\UserData", "/UserData"   },
-    { "Z:\\",                                 1, "\\Cache",    "/Cache"      },
-    { "\\??\\D:\\",                           0, NULL,         NULL          },
-    { "\\??\\Y:\\",                           0, NULL,         NULL          },
-    { "\\??\\y:\\",                           0, NULL,         NULL          },
-    { "\\??\\T:\\",                           1, "\\TitleData","/TitleData"  },
+    { "Y:\\",                                 PATH_GAME_DIR, NULL,         NULL          },
+    { "y:\\",                                 PATH_GAME_DIR, NULL,         NULL          },
+    { "T:\\",                                 PATH_SAVE_DIR, "\\TitleData","/TitleData"  },
+    { "U:\\",                                 PATH_SAVE_DIR, "\\UserData", "/UserData"   },
+    { "Z:\\",                                 PATH_SAVE_DIR, "\\Cache",    "/Cache"      },
+    { "\\??\\D:\\",                           PATH_GAME_DIR, NULL,         NULL          },
+    { "\\??\\Y:\\",                           PATH_GAME_DIR, NULL,         NULL          },
+    { "\\??\\y:\\",                           PATH_GAME_DIR, NULL,         NULL          },
+    { "\\??\\T:\\",                           PATH_SAVE_DIR, "\\TitleData","/TitleData"  },
 };
 #define PATH_RULE_COUNT ((int)(sizeof(s_rules) / sizeof(s_rules[0])))
 
@@ -93,10 +96,10 @@ static int match_rule(int i, const char* path, int have_user_dir)
 {
     int skip;
 
-    if (s_rules[i].to_save == 2 && !have_user_dir)
+    if (s_rules[i].base == PATH_USER_DIR && !have_user_dir)
         return 0;
     skip = match_prefix(path, s_rules[i].prefix);
-    if (skip && s_rules[i].to_save == 2
+    if (skip && s_rules[i].base == PATH_USER_DIR
         && path[skip] && path[skip] != '\\' && path[skip] != '/')
         return 0;
     return skip;
@@ -501,8 +504,8 @@ BOOL xbox_translate_path(const char* xbox_path, xbox_host_char* host_path_buf, D
         skip = match_rule(i, xbox_path, s_user_dir[0] != L'\0');
         if (skip) {
             remainder = xbox_path + skip;
-            base_dir  = s_rules[i].to_save == 2 ? s_user_dir
-                      : s_rules[i].to_save ? s_save_dir : s_game_dir;
+            base_dir  = s_rules[i].base == PATH_USER_DIR ? s_user_dir
+                      : s_rules[i].base == PATH_SAVE_DIR ? s_save_dir : s_game_dir;
             sub_dir   = s_rules[i].sub_win;
             goto translate;
         }
@@ -816,8 +819,8 @@ BOOL xbox_translate_path(const char* xbox_path, xbox_host_char* host_path_buf, D
         skip = match_rule(i, xbox_path, s_user_dir[0] != '\0');
         if (skip) {
             remainder = xbox_path + skip;
-            base_dir  = s_rules[i].to_save == 2 ? s_user_dir
-                      : s_rules[i].to_save ? s_save_dir : s_game_dir;
+            base_dir  = s_rules[i].base == PATH_USER_DIR ? s_user_dir
+                      : s_rules[i].base == PATH_SAVE_DIR ? s_save_dir : s_game_dir;
             sub_dir   = s_rules[i].sub_posix;
             goto translate;
         }
