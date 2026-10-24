@@ -6,13 +6,12 @@ JSRF Unleashed version it is based on, for example "b1, based on upstream
 
 ## Release names
 
-| Release | What it is | Git tag | Version shown |
-|---|---|---|---|
-| b1 | The first beta | `b1` | b1 |
-| b1.1, b1.2, ... | Bug fixes to b1 | `b1.1`, `b1.2` | b1.1, b1.2 |
-| b2 | The next feature release | `b2` | b2 |
-| b2.1, ... | Bug fixes to b2 | `b2.1` | b2.1 |
-| 1.0.0 | The final release | `1.0.0` | 1.0.0 |
+- **b1:** The first beta.
+- **b1.1, b1.2, and so on:** Bug fixes to b1.
+- **b2:** The next feature release, with b2.1 and so on for its bug fixes.
+- **1.0.0:** The final release.
+
+A release's git tag and the version it shows are both its name.
 
 - **No "v" in our tags.** Upstream tags its releases `v0.5.4`; ours have no
   "v", so the two never mix. This fork's older tags (`v0.5.3a`,
@@ -36,8 +35,10 @@ JSRF Unleashed version it is based on, for example "b1, based on upstream
 ## GitHub releases
 
 - **A full release,** not a pre-release.
-- **Title:** `JSRF-PC b1 (beta)`. The final release drops "(beta)".
-- **"Beta"** appears only in the release text and the changelog.
+- **Title:** `JSRF-PC beta 1`, and `JSRF-PC beta 1.1` for b1.1. The final
+  release is `JSRF-PC 1.0.0`.
+- **"Beta"** appears only in the release title, the release text, and the
+  changelog.
 - **Files:** `JSRF-PC-b1-linux-x86_64.tar.gz` and
   `JSRF-PC-b1-windows-x86_64.zip`.
 - **First line:** the upstream version it is based on: "JSRF-PC b1 (beta)
