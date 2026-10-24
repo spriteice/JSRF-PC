@@ -127,6 +127,13 @@ package.sh prints the DLLs the launcher and the engine import. Each must be
 bundled in `engine/` (SDL2, libepoxy-0, libwinpthread-1) or be part of
 Windows. Report the list.
 
+### Linux and Windows: package contents
+
+List what is in each package (`tar tzf` and `unzip -l`) and report it. It
+holds only the launcher, the engine and its bundled libraries, README.txt,
+VERSION, and `licences/` with a licence for each of them, plus the icon on
+Linux. No game files, logs, source, or anything left over from debugging.
+
 ## Delivery package
 
 One folder per build, named `<date>-<commit>-<topic>` (as in
@@ -159,6 +166,10 @@ except inside the packaged build.
   PC.
 - **Regression spots:** title screen, menus, starting a new game, tutorial,
   skating, graffiti.
+- **Release builds:** also a fresh start, with the settings, cache, and log
+  folders renamed first and put back after (not deleted: a disc image's
+  saves are in them). And an upgrade, starting the new build over the
+  previous release's settings and saves, which must carry over unchanged.
 - **What to send back:** the full last-run.log from each run, and
   screenshots of anything visual. The package's README.txt says where the
   log is kept ("Where things are kept", and `portable/logs/` in portable

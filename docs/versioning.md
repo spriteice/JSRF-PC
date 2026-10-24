@@ -48,6 +48,8 @@ A release's git tag and the version it shows are both its name.
   `JSRF-PC-b1-windows-x86_64.zip`.
 - **First line:** the upstream version it is based on: "JSRF-PC b1 (beta)
   is based on upstream JSRF Unleashed 0.5.4."
+- **Known issues:** the release text lists them, so testers don't report
+  them again.
 
 ## Changelog
 
