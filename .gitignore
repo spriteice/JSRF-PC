@@ -11,11 +11,12 @@ tools/func_id/output/
 tools/recomp/output/
 tools/abi_analysis/output/
 
-# Game files (user provides their own)
+# Game files (user provides their own), in either case: a disc copied on
+# Windows can come out upper case
 game_files/
-*.xbe
-*.iso
-*.xiso
+*.[xX][bB][eE]
+*.[iI][sS][oO]
+*.[xX][iI][sS][oO]
 
 # IDE
 .vs/
@@ -48,11 +49,11 @@ launcher/AppIcon.icns
 # The generated code: derived from the game's executable, never committed
 port/recomp/
 
-# The game's files, saves and logs, wherever a run puts them (the Linux
+# The game's files, saves, and logs, wherever a run puts them (either
 # launcher's portable/ folder holds all three)
-Media/
-UDATA/
-TDATA/
+[Mm][Ee][Dd][Ii][Aa]/
+[Uu][Dd][Aa][Tt][Aa]/
+[Tt][Dd][Aa][Tt][Aa]/
 portable/
 Partition*.img
 *.log
@@ -61,3 +62,6 @@ Partition*.img
 # Backups and merge leftovers
 *.bak*
 *.orig
+
+# Build notes kept beside the source (docs/build-and-test-reference.md)
+BRINGUP.md
