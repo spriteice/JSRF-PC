@@ -6,6 +6,7 @@
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
+#define GL_GLEXT_PROTOTYPES 1   /* GL 3 calls, such as glBindFramebuffer */
 #include <GL/gl.h>
 #include <stdio.h>
 
