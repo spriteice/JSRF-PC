@@ -146,10 +146,11 @@ static void no_complaint(const wchar_t *e, const wchar_t *f, const wchar_t *file
 #endif
 
 /* Past stdin, stdout and stderr, every file this program has open is the
- * cache's: how many there are, and how many of them a restart
- * (recomp_restart_self) would hand the next run -- inheritable on Windows, not
- * closed on exec elsewhere. Windows will not delete a file another process
- * holds, so the next run could not purge one it was handed. */
+ * cache's: how many there are, and how many of them a restart would hand the
+ * next run if it did not keep them back itself (recomp_restart_self) --
+ * inheritable on Windows, not closed on exec elsewhere. Windows will not
+ * delete a file another process holds, so the next run could not purge one
+ * it was handed. */
 static void files_open(int *open, int *handed)
 {
     int fd;

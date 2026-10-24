@@ -57,6 +57,7 @@
 #include <TargetConditionals.h>   /* TARGET_OS_IPHONE: the iOS build */
 #endif
 #include <unistd.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <dlfcn.h>
 #endif /* !_WIN32 */
@@ -155,6 +156,61 @@ static int g_scale_env_ours;
 const char *recomp_version(void);
 const char *recomp_version(void) { return JSRF_VERSION; }
 
+/* A restart hands the new run this run's standard handles -- the launchers'
+ * log, or a console -- and nothing else it has open, which the new run would
+ * keep, unused, for its life: on Windows every file the C library opened
+ * (xbox_kernel.log among them), as it makes them inheritable, and elsewhere
+ * every descriptor (the guest memory's memfd, the game's files). */
+#if defined(_WIN32)
+/* The standard handles in si listed for CreateProcessW, each once and made
+ * inheritable, as the list wants; keep holds them until the call. How many,
+ * 0 for none (and no list), -1 if the list could not be made. */
+static int restart_handle_list(STARTUPINFOEXW *si, HANDLE keep[3])
+{
+    const HANDLE std[3] = { si->StartupInfo.hStdInput, si->StartupInfo.hStdOutput,
+                            si->StartupInfo.hStdError };
+    SIZE_T size = 0;
+    int n = 0, i, j;
+    for (i = 0; i < 3; i++) {
+        if (!std[i] || std[i] == INVALID_HANDLE_VALUE) continue;
+        for (j = 0; j < n && keep[j] != std[i]; j++) { }
+        if (j == n && SetHandleInformation(std[i], HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT))
+            keep[n++] = std[i];
+    }
+    if (!n) return 0;
+    InitializeProcThreadAttributeList(NULL, 1, 0, &size);
+    if (!(si->lpAttributeList = malloc(size))) return -1;
+    if (InitializeProcThreadAttributeList(si->lpAttributeList, 1, 0, &size)) {
+        if (UpdateProcThreadAttribute(si->lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+                                      keep, (SIZE_T)n * sizeof keep[0], NULL, NULL)) {
+            si->StartupInfo.cb = sizeof *si;
+            return n;
+        }
+        DeleteProcThreadAttributeList(si->lpAttributeList);
+    }
+    free(si->lpAttributeList);
+    si->lpAttributeList = NULL;
+    return -1;
+}
+#else
+/* Every descriptor above the standard three closed by execv. Marked rather
+ * than closed, so that a failed execv leaves this run as it was: glibc's
+ * close_range (2.34, on Linux 5.11 and later) marks them in one call, and
+ * otherwise each open one is marked in turn. */
+static void restart_close_on_exec(void)
+{
+    long fd, max;
+#if defined(__GLIBC__) && defined(CLOSE_RANGE_CLOEXEC)
+    if (close_range(3, ~0U, CLOSE_RANGE_CLOEXEC) == 0) return;
+#endif
+    max = sysconf(_SC_OPEN_MAX);
+    for (fd = 3; fd < max; fd++) {
+        int flags = fcntl((int)fd, F_GETFD);
+        if (flags >= 0) fcntl((int)fd, F_SETFD, flags | FD_CLOEXEC);
+    }
+}
+#endif
+
 void recomp_restart_self(void);
 void recomp_restart_self(void)
 {
@@ -176,26 +232,36 @@ void recomp_restart_self(void)
      * Future (USA)") into several arguments: start the same command line
      * again, on the same console and log, and end this process. */
     {
-        STARTUPINFOW si;
+        STARTUPINFOEXW si;
         PROCESS_INFORMATION pi;
         wchar_t exe[MAX_PATH];
+        HANDLE keep[3];
+        int n;
         if (g_scale_env_ours) _putenv("RECOMP_GL_SCALE=");
         ZeroMemory(&si, sizeof si);
-        si.cb = sizeof si;
-        si.dwFlags = STARTF_USESTDHANDLES;
-        si.hStdInput  = GetStdHandle(STD_INPUT_HANDLE);
-        si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
-        si.hStdError  = GetStdHandle(STD_ERROR_HANDLE);
-        if (GetModuleFileNameW(NULL, exe, MAX_PATH)
-            && CreateProcessW(exe, GetCommandLineW(), NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
+        si.StartupInfo.cb = sizeof si.StartupInfo;
+        si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+        si.StartupInfo.hStdInput  = GetStdHandle(STD_INPUT_HANDLE);
+        si.StartupInfo.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+        si.StartupInfo.hStdError  = GetStdHandle(STD_ERROR_HANDLE);
+        if ((n = restart_handle_list(&si, keep)) >= 0
+            && GetModuleFileNameW(NULL, exe, MAX_PATH)
+            && CreateProcessW(exe, GetCommandLineW(), NULL, NULL, n > 0,
+                              n > 0 ? EXTENDED_STARTUPINFO_PRESENT : 0, NULL, NULL,
+                              &si.StartupInfo, &pi)) {
             CloseHandle(pi.hThread);
             CloseHandle(pi.hProcess);
             ExitProcess(0);
         }
         fprintf(stderr, "  [WIN] could not relaunch (error %lu)\n", GetLastError());
+        if (n > 0) {
+            DeleteProcThreadAttributeList(si.lpAttributeList);
+            free(si.lpAttributeList);
+        }
     }
 #else
     if (g_scale_env_ours) unsetenv("RECOMP_GL_SCALE");
+    restart_close_on_exec();
     execv(g_argv[0], g_argv);          /* only returns on failure */
     fprintf(stderr, "  [WIN] could not relaunch: %s\n", strerror(errno));
 #endif

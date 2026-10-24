@@ -32,9 +32,9 @@ static void lock(void)
     EnterCriticalSection(&s_lock);
 }
 static void unlock(void) { LeaveCriticalSection(&s_lock); }
-/* Not inherited ("N"): a restart (recomp_restart_self) starts the game again
- * with this process's inheritable handles, and a cache file it still held
- * open could not be deleted there (nv2a_sc_purge). */
+/* Not inherited ("N"), as a restart (recomp_restart_self) also makes sure: a
+ * cache file the new run still held open could not be deleted there
+ * (nv2a_sc_purge). */
 static FILE *sc_fopen(const char *path, const char *mode)
 {
     wchar_t wp[2048], wm[8];
@@ -92,8 +92,9 @@ static int sc_each(const char *dir, int (*fn)(const char *, const char *, const 
 static pthread_mutex_t s_mutex = PTHREAD_MUTEX_INITIALIZER;
 static void lock(void)   { pthread_mutex_lock(&s_mutex); }
 static void unlock(void) { pthread_mutex_unlock(&s_mutex); }
-/* Closed on exec, as Windows' are not inherited: a restart's execv would hand
- * the new run this one's cache files, kept open (and on disk) for its life. */
+/* Closed on exec, as Windows' are not inherited, and as a restart
+ * (recomp_restart_self) also makes sure: the new run would otherwise keep
+ * this one's cache files open (and on disk) for its life. */
 static FILE *sc_fopen(const char *path, const char *mode)
 {
     FILE *f = fopen(path, mode);
