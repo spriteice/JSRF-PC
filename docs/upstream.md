@@ -240,7 +240,9 @@ git diff --name-status --diff-filter=MD upstream main
 
 ### Developer menu
 
-- **Files:** port/main.c, port/CMakeLists.txt.
+- **Files:** port/main.c, port/CMakeLists.txt, src/nv2a_gl/nv2a_gl.c
+  (`nv_window_file_get` and `_set`: a number kept in a file beside the
+  settings file, which port/developer.c uses for developer.cfg).
 - **Why:** the in-game menu's Developer menu: Log to file, and the
   engine's logging switches, which the start puts into the environment
   before anything reads them. Our own file: port/developer.c.

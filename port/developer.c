@@ -28,11 +28,12 @@
 #endif
 
 #if defined(NV2A_GL_USE_SDL)
-/* nv2a_gl.c: the settings file, and developer.cfg beside it. */
+/* nv2a_gl.c: the settings file, and a file of ours beside it. */
 extern int  nv_window_pref_num(const char *key, double *v);
 extern void nv_window_pref_set_num(const char *key, double v);
-extern int  nv_window_dev_get(const char *key);
-extern void nv_window_dev_set(const char *key, int val);
+extern int  nv_window_file_get(const char *file, const char *key, int def);
+extern void nv_window_file_set(const char *file, const char *key, int val);
+#define DEV_FILE "developer.cfg"
 
 /* The switches, and their rows in Developer > Logging: each only adds lines
  * to the log. */
@@ -100,7 +101,7 @@ static int  switches_on(void)  { return s_on; }
 static void switch_flip(int i)
 {
     s_on ^= 1 << i;
-    nv_window_dev_set(k_switch[i], (s_on >> i) & 1);
+    nv_window_file_set(DEV_FILE, k_switch[i], (s_on >> i) & 1);
     fprintf(stderr, "[DEV] %s %s from the next start\n", k_switch[i], (s_on >> i) & 1 ? "on" : "off");
 }
 #endif
@@ -114,12 +115,12 @@ void developer_start(void)
     double v;
     int i;
     for (i = 0; i < DEV_SWITCHES; i++) {
-        if (!nv_window_dev_get(k_switch[i])) continue;
+        if (!nv_window_file_get(DEV_FILE, k_switch[i], 0)) continue;
         s_on |= 1 << i;
         if (getenv(k_switch[i])) continue;
         set_env(k_switch[i], "1");
         s_ours |= 1 << i;
-        fprintf(stderr, "[DEV] %s=1 from developer.cfg\n", k_switch[i]);
+        fprintf(stderr, "[DEV] %s=1 from " DEV_FILE "\n", k_switch[i]);
     }
 #if defined(XBOXRECOMP_MENU)
     {

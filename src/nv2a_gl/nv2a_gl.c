@@ -1299,9 +1299,9 @@ static void sdl_cfg_path(char *buf, size_t n)
     else buf[0] = 0;
 }
 
-/* developer.cfg, beside the settings file: the Developer menu's switches
- * (port/developer.c), apart from the player's settings. */
-static void sdl_dev_path(char *buf, size_t n)
+/* A file named `file`, beside the settings file: for a port's own keys
+ * apart from the player's settings (port/developer.c keeps developer.cfg). */
+static void sdl_cfg_beside(char *buf, size_t n, const char *file)
 {
     char *sep;
     sdl_cfg_path(buf, n);
@@ -1311,7 +1311,7 @@ static void sdl_dev_path(char *buf, size_t n)
     { char *bs = strrchr(buf, '\\'); if (bs && (!sep || bs > sep)) sep = bs; }
 #endif
     sep = sep ? sep + 1 : buf;
-    snprintf(sep, n - (size_t)(sep - buf), "developer.cfg");
+    snprintf(sep, n - (size_t)(sep - buf), "%s", file);
 }
 
 static int sdl_cfg_read(const char *path, const char *key, int def)
@@ -1421,20 +1421,20 @@ void nv_window_pref_set_num(const char *key, double v)
     sdl_cfg_put(key, s);
 }
 
-/* A switch kept in developer.cfg (port/developer.c): its number, 0 when it
- * is not there; and setting one. */
-int nv_window_dev_get(const char *key);
-int nv_window_dev_get(const char *key)
+/* A number kept in a file beside the settings file (sdl_cfg_beside): its
+ * value, def when it is not there; and setting one. */
+int nv_window_file_get(const char *file, const char *key, int def);
+int nv_window_file_get(const char *file, const char *key, int def)
 {
     char path[1024];
-    sdl_dev_path(path, sizeof path);
-    return sdl_cfg_read(path, key, 0);
+    sdl_cfg_beside(path, sizeof path, file);
+    return sdl_cfg_read(path, key, def);
 }
-void nv_window_dev_set(const char *key, int val);
-void nv_window_dev_set(const char *key, int val)
+void nv_window_file_set(const char *file, const char *key, int val);
+void nv_window_file_set(const char *file, const char *key, int val)
 {
     char path[1024], v[16];
-    sdl_dev_path(path, sizeof path);
+    sdl_cfg_beside(path, sizeof path, file);
     snprintf(v, sizeof v, "%d", val);
     sdl_cfg_write(path, key, v);
 }
