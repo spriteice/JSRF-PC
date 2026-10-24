@@ -21,7 +21,12 @@ A release's git tag and the version it shows are both its name.
   checked against the project's rules, and anything found is fixed before
   tagging. It looks for game files, generated code, or logs in the repo,
   session links in commit messages, band-aid fixes, address lists, sleeps,
-  and docs that break the writing rules.
+  docs that break the writing rules, and upstream files changed with no
+  entry in docs/upstream.md. It also searches the code in `port/` for the
+  game function overrides and hooks added since the last release, in our
+  own files too (which have no entry in docs/upstream.md), and flags any
+  that look alike (the same kind of instruction, or the same symptom):
+  those usually mean one recompiler or runtime bug, to fix there instead.
 
 ## The version string
 

@@ -27,7 +27,8 @@ about the difference.
 
 ### Before you start
 
-- **Source:** `main`. `upstream` only tracks JuMatt's repository.
+- **Source:** `main`. `upstream` only tracks JuMatt's repository, and
+  docs/upstream.md says how it is merged.
 - **Tags:** fetch this repository's tags (`git fetch --tags origin`). The
   version comes from them, and without them it is `dev`.
 - **Game files:** my own USA (NTSC-U) disc, the standalone one. Other
@@ -179,6 +180,8 @@ except inside the packaged build.
 
 - **Root cause,** with your confidence and the evidence.
 - **Files touched,** with lines added and removed.
+- **Upstream files:** those of them upstream has, and their entry in
+  docs/upstream.md.
 - **Why it is the minimal root-cause fix,** and which existing helpers it
   reuses.
 - **New functions,** each with why no existing one does the job.
