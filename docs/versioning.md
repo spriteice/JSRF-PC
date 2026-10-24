@@ -17,6 +17,11 @@ A release's git tag and the version it shows are both its name.
   "v", so the two never mix. This fork's older tags (`v0.5.3a`,
   `v0.5.3a-rc`) stay as they are, and upstream's tags are never changed.
 - **One tag per release,** on the commit the release is built from.
+- **A rules check before the tag:** everything since the last release is
+  checked against the project's rules, and anything found is fixed before
+  tagging. It looks for game files, generated code, or logs in the repo,
+  session links in commit messages, band-aid fixes, address lists, sleeps,
+  and docs that break the writing rules.
 
 ## The version string
 
