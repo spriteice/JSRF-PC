@@ -35,6 +35,14 @@
 #  include <GL/gl.h>
 #  include <GL/glext.h>
 #endif
+/* EXT_texture_filter_anisotropic, core since GL 4.6: OpenGL ES has only
+ * these extension names, and some headers have neither. */
+#ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
+#  define GL_TEXTURE_MAX_ANISOTROPY_EXT     0x84FE
+#endif
+#ifndef GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT
+#  define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT 0x84FF
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -349,7 +357,7 @@ static int glx_aniso_max(void)
 #if defined(NV2A_GLES)
         if (!gles_has_ext("GL_EXT_texture_filter_anisotropic")) return 1;
 #endif
-        glGetFloatv(0x84FF, &cap);      /* MAX_TEXTURE_MAX_ANISOTROPY */
+        glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &cap);
     }
     return cap > 1.0f ? (int)cap : 1;
 }
@@ -382,7 +390,8 @@ static void glx_tex_aniso(uint32_t t, int n)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 1);
         }
     }
-    glTexParameterf(GL_TEXTURE_2D, 0x84FE, (GLfloat)(n < 1 ? 1 : n > cap ? cap : n));
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT,
+                    (GLfloat)(n < 1 ? 1 : n > cap ? cap : n));
 }
 
 static uint32_t glx_tex_new(uint32_t w, uint32_t h, const void *rgba,
@@ -1504,6 +1513,10 @@ static const char fxaa_fs[] = NV2A_GLSL_VERSION
     "out vec4 frag;\n"
     "uniform sampler2D fxaaSrc;\n"
     "uniform vec2 fxaaPx;\n"                /* one pixel, as a texture coordinate */
+    /* The quality variant's published defaults: the least contrast that is
+     * an edge, and the least for the pixel's brightness; and how far a pixel
+     * with no edge to follow is blended, at most. */
+    "const float EDGE_THRESHOLD_MIN = 0.0625, EDGE_THRESHOLD = 0.125, SUBPIX = 0.75;\n"
     "float lum(vec2 p) { return dot(textureLod(fxaaSrc, p, 0.0).rgb, vec3(0.299, 0.587, 0.114)); }\n"
     "float at(float x, float y) { return lum(uv + vec2(x, y) * fxaaPx); }\n"
     "void main()\n"
@@ -1515,7 +1528,7 @@ static const char fxaa_fs[] = NV2A_GLSL_VERSION
     "    float hi = max(m, max(max(n, s), max(e, w)));\n"
     "    float range = hi - lo;\n"
     /* Too little contrast to be an edge, for how bright it is: as it was. */
-    "    if (range < max(0.0625, hi * 0.125)) { frag = c; return; }\n"
+    "    if (range < max(EDGE_THRESHOLD_MIN, hi * EDGE_THRESHOLD)) { frag = c; return; }\n"
     "    float nw = at(-1.0, 1.0), ne = at(1.0, 1.0), sw = at(-1.0, -1.0), se = at(1.0, -1.0);\n"
     /* Which way the edge runs: along the rows if the brightness changes
      * more up and down than across. */
@@ -1552,7 +1565,7 @@ static const char fxaa_fs[] = NV2A_GLSL_VERSION
      * a speck, which have no edge to follow -- by how much it does. */
     "    float sub = clamp(abs((2.0 * (n + s + e + w) + nw + ne + sw + se) / 12.0 - m) / range, 0.0, 1.0);\n"
     "    sub = (3.0 - 2.0 * sub) * sub * sub;\n"
-    "    off = max(off, 0.75 * sub * sub);\n"
+    "    off = max(off, SUBPIX * sub * sub);\n"
     "    frag = vec4(textureLod(fxaaSrc, uv + (horz ? vec2(0.0, off * stp) : vec2(off * stp, 0.0)), 0.0).rgb, c.a);\n"
     "}\n";
 

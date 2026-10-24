@@ -10681,7 +10681,8 @@ static void sdl_shader_cache(void)
     if (!nv2a_sc_is_open() || !G->cache_idle || !G->cache_rebuild) return;
     nv2a_sc_sweep();
     if ((total = G->cache_rebuild()) <= 0) return;
-    /* Black behind the box: nothing of the game's has been drawn yet. */
+    /* Black behind the box: nothing of the game's has been drawn yet. It is
+     * only cleared, so any size would do; 640x480 is the console's own. */
     if (!(rt = G->target_new(640, 480))) return;
     G->target_bind(rt);
     G->clear(1u, black, 1.0f, 0, NULL);
