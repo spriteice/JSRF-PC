@@ -11,7 +11,7 @@ about the difference.
 
 ## Test devices
 
-- **Primary:** ROG Xbox Ally X: x86_64, SteamOS 3.8.28, glibc 2.41, Z2
+- **Primary:** ROG Xbox Ally X: x86_64, SteamOS 3.9.5, glibc 2.43, Z2
   Extreme with AMD Radeon Graphics, 24 GB shared memory.
 - **Windows:** desktop PC: Windows 11, i7-10700K, 32 GB DDR4, RTX 2080 Ti
   with 11 GB video memory.
@@ -94,7 +94,7 @@ Run these on every build you deliver.
 
 ### Linux: glibc
 
-The Ally X has glibc 2.41, so a binary that needs anything newer won't
+The Ally X has glibc 2.43, so a binary that needs anything newer won't
 start. The published floor is glibc 2.34 (the package's README.txt). Stay
 within it so other distributions keep working.
 
@@ -119,7 +119,7 @@ Also report:
 
 If the newest version is above 2.34, name the symbol responsible
 (`objdump -T <binary> | grep GLIBC_<version>`) and tell me before
-delivering. If it is above 2.41, do not deliver; fix it first.
+delivering. If it is above 2.43, do not deliver; fix it first.
 
 ### Windows: DLLs
 
