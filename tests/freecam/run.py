@@ -2,8 +2,9 @@
 
 Takes port/freecam.c as it is, and the settings file code from
 src/nv2a_gl/nv2a_gl.c verbatim (sdl_cfg_path through sdl_cfg_set, with
-nv_window_pref_num between them). Each case gets its own settings file, passed
-as JSRF_SETTINGS_FILE, and its own run, since the settings are read once.
+nv_window_pref_num between them); test_main.c stands in for the window's key
+hook. Each case gets its own settings file, passed as JSRF_SETTINGS_FILE, and
+its own run, since the settings are read once.
 Requires GCC on PATH, including MinGW on Windows.
 """
 import os
@@ -47,7 +48,7 @@ cases = {
     "steer": ("freecam=1\n", ["steering the camera", "idle: the follow camera is not running"]),
     "reset": ("freecam=1\n", ["from heading -90, pitch 0, as the game put it back behind the player"]),
     "toggle": ("game_dir=/games/jsrf\nfreecam=0\nsensitivity_x=7\n",
-               ["[FREECAM] on (F8)", "[FREECAM] off (F8)"]),
+               ["[FREECAM] on (F8 or the menu)", "[FREECAM] off (F8 or the menu)"]),
 }
 
 with tempfile.TemporaryDirectory(prefix="freecam-") as directory:

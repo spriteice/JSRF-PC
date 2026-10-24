@@ -1450,10 +1450,8 @@ int nv_window_pref_widescreen(void) { return sdl_cfg_get("widescreen", 0) != 0; 
  *   R          Black                    F  White
  *   Return     Start                    Esc  Back (and Android's Back)
  *   C / V      left / right stick click
- * F11 or Alt+Return: full screen. F10: widescreen. F9: resolution. F8: the
- * free camera, kept as "freecam" (port/freecam.c, which the runtime does
- * without: the symbol is weak). */
-extern int jsrf_freecam_toggle(void) __attribute__((weak));
+ * F11 or Alt+Return: full screen. F10: widescreen. F9: resolution. And the
+ * keys the game binds for itself (nv_window_hotkey). */
 static volatile unsigned short g_sdl_kb_buttons;
 static volatile unsigned char  g_sdl_kb_analog[8];
 
@@ -1489,6 +1487,39 @@ static void sdl_key(SDL_Scancode sc, int down)
         else      g_sdl_kb_buttons &= (unsigned short)~bit;
     }
     if (analog >= 0) g_sdl_kb_analog[analog] = down ? 255 : 0;
+}
+
+/* A key the game binds for itself (port/freecam.c's F8), by SDL's name for
+ * it, at start, before the window opens. It runs on the window's thread, as
+ * F9 to F11 do, after them, and the game does not see the key. */
+#define NV_WINDOW_HOTKEYS 8     /* places for such keys */
+static struct { SDL_Scancode key; void (*run)(void); } g_sdl_hotkey[NV_WINDOW_HOTKEYS];
+static int g_sdl_hotkeys;
+
+void nv_window_hotkey(const char *name, void (*run)(void));
+void nv_window_hotkey(const char *name, void (*run)(void))
+{
+    SDL_Scancode k = SDL_GetScancodeFromName(name);
+    if (k == SDL_SCANCODE_UNKNOWN || g_sdl_hotkeys == NV_WINDOW_HOTKEYS) {
+        fprintf(stderr, "  [GL] key %s not bound: %s\n", name,
+                k == SDL_SCANCODE_UNKNOWN ? "SDL has no key by that name" : "no place left");
+        return;
+    }
+    g_sdl_hotkey[g_sdl_hotkeys].key = k;
+    g_sdl_hotkey[g_sdl_hotkeys].run = run;
+    g_sdl_hotkeys++;
+}
+
+/* A key the game bound: runs it, and 1. */
+static int sdl_hotkey(SDL_Scancode k)
+{
+    int i;
+    for (i = 0; i < g_sdl_hotkeys; i++)
+        if (g_sdl_hotkey[i].key == k) {
+            g_sdl_hotkey[i].run();
+            return 1;
+        }
+    return 0;
 }
 
 #if defined(__ANDROID__)
@@ -2225,10 +2256,7 @@ static void sdl_pump(void)
                 }
                 if (k == SDL_SCANCODE_F10) { sdl_toggle_widescreen(); break; }
                 if (k == SDL_SCANCODE_F9)  { sdl_choose_scale(); break; }
-                if (k == SDL_SCANCODE_F8 && jsrf_freecam_toggle) {
-                    sdl_cfg_set("freecam", jsrf_freecam_toggle());
-                    break;
-                }
+                if (sdl_hotkey(k)) break;
             }
             sdl_key(ev.key.keysym.scancode, 1);
             break;

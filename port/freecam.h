@@ -10,6 +10,10 @@
 
 #include <stdint.h>
 
+/* At start, before the game runs: reads the settings, adds the in-game menu's
+ * Controller rows and binds F8, which turns freecam on or off. */
+void freecam_start(void);
+
 /* Once a game frame: freecam steers the camera, and takes the stick, while it
  * is on and the follow camera ran since the last frame. */
 void freecam_frame(void);
@@ -30,9 +34,5 @@ int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float s
 /* Whether freecam is on: the camera update leaves out the graffiti camera
  * while it is. */
 int freecam_on(void);
-
-/* F8: freecam on or off. Returns the new state, which the caller keeps in the
- * settings file as freecam=. */
-int jsrf_freecam_toggle(void);
 
 #endif

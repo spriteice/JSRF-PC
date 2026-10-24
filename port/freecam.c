@@ -12,7 +12,7 @@
  * The stick is used as it comes: past the deadzone the turn per frame is in
  * proportion to how far it is pushed, with nothing carried from one frame to
  * the next -- no acceleration, no smoothing. The settings are read once, at
- * the first use:
+ * start (freecam_start):
  *
  *   freecam        0 / 1    on at start (F8 flips it and keeps it here)
  *   invert_x       0 / 1    0: right turns the view right
@@ -46,8 +46,11 @@
 static const double k_rad = 3.14159265358979323846 / 180.0;
 
 #if defined(NV2A_GL_USE_SDL)
-/* nv2a_gl.c: a number from the settings file the engine already keeps. */
-extern int nv_window_pref_num(const char *key, double *v);
+/* nv2a_gl.c: a number from the settings file the engine already keeps, a
+ * number kept there, and a key the game binds for itself. */
+extern int  nv_window_pref_num(const char *key, double *v);
+extern void nv_window_pref_set_num(const char *key, double v);
+extern void nv_window_hotkey(const char *name, void (*run)(void));
 #else
 /* The Mac and iOS keep their settings as preferences of their own: no keys. */
 static int nv_window_pref_num(const char *key, double *v)
@@ -61,7 +64,6 @@ static struct {
     int invert_x, invert_y;
     double sens_x, sens_y, deadzone;
 } s_cfg = { 0, 0, 5.0, 5.0, 0.05 };      /* the defaults */
-static int s_loaded;
 static volatile int s_on;
 static volatile int s_steer;    /* on, and the follow camera ran last frame */
 static int s_follow_ran;        /* the follow camera ran since freecam_frame */
@@ -84,17 +86,24 @@ static double cfg_num(const char *key, double def, double lo, double hi)
     return def;
 }
 
+#if defined(NV2A_GL_USE_SDL)
+/* F8, and the menu's Free camera row: on or off, kept in the settings file as
+ * freecam=. On the window's thread. */
+static void freecam_flip(void)
+{
+    s_on = !s_on;
+    s_cam = 0;
+    fprintf(stderr, "[FREECAM] %s (F8 or the menu)\n", s_on ? "on" : "off");
+    nv_window_pref_set_num("freecam", s_on);
+}
+#endif
+
 #if defined(XBOXRECOMP_MENU)
 static void freecam_menu(void);
 #endif
 
-static void freecam_load(void)
+void freecam_start(void)
 {
-    if (s_loaded) return;
-    s_loaded = 1;
-#if defined(XBOXRECOMP_MENU)
-    freecam_menu();
-#endif
     s_on = cfg_num("freecam", 0, -HUGE_VAL, HUGE_VAL) != 0;
     s_cfg.invert_x = cfg_num("invert_x", s_cfg.invert_x, -HUGE_VAL, HUGE_VAL) != 0;
     s_cfg.invert_y = cfg_num("invert_y", s_cfg.invert_y, -HUGE_VAL, HUGE_VAL) != 0;
@@ -104,6 +113,12 @@ static void freecam_load(void)
     fprintf(stderr, "[FREECAM] %s (settings); invert x %d y %d, sensitivity x %g y %g, deadzone %g\n",
             s_on ? "on" : "off", s_cfg.invert_x, s_cfg.invert_y, s_cfg.sens_x, s_cfg.sens_y,
             s_cfg.deadzone);
+#if defined(XBOXRECOMP_MENU)
+    freecam_menu();
+#endif
+#if defined(NV2A_GL_USE_SDL)
+    nv_window_hotkey("F8", freecam_flip);
+#endif
 }
 
 void freecam_frame(void)
@@ -119,7 +134,6 @@ void freecam_frame(void)
 
 void freecam_pad(unsigned port, short *rx, short *ry)
 {
-    freecam_load();
     if (!rx) { s_stick[port & 3][0] = s_stick[port & 3][1] = 0; return; }
     s_stick[port & 3][0] = *rx;
     s_stick[port & 3][1] = *ry;
@@ -148,7 +162,6 @@ int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float s
 {
     const double pmax = FREECAM_PITCH_MAX_DEG * k_rad, step = FREECAM_STEP_DEG * k_rad;
     double v[3], d, x, y, cp;
-    freecam_load();
     s_follow_ran = 1;
     if (!s_on) return 0;
     v[0] = seye[0] - tgt[0]; v[1] = seye[1] - tgt[1]; v[2] = seye[2] - tgt[2];
@@ -180,16 +193,6 @@ int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float s
 
 int freecam_on(void)
 {
-    freecam_load();
-    return s_on;
-}
-
-int jsrf_freecam_toggle(void)
-{
-    freecam_load();
-    s_on = !s_on;
-    s_cam = 0;
-    fprintf(stderr, "[FREECAM] %s (F8)\n", s_on ? "on" : "off");
     return s_on;
 }
 
@@ -199,10 +202,7 @@ int jsrf_freecam_toggle(void)
  * freecam=; it runs on the window's thread, as F8 does. The deadzone is
  * shown, and stepped, in percent. */
 
-extern void nv_window_pref_set_num(const char *key, double v);   /* nv2a_gl.c */
-
 static int    menu_on(void)            { return s_on; }
-static void   menu_on_run(void)        { nv_window_pref_set_num("freecam", jsrf_freecam_toggle()); }
 static int    menu_inv_x(void)         { return s_cfg.invert_x; }
 static void   menu_inv_x_run(void)     { s_cfg.invert_x = !s_cfg.invert_x; nv_window_pref_set_num("invert_x", s_cfg.invert_x); }
 static int    menu_inv_y(void)         { return s_cfg.invert_y; }
@@ -218,7 +218,7 @@ static void freecam_menu(void)
 {
     const XBOX_MENU_ITEM rows[] = {
         { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_TOGGLE, .label = "Free camera",
-          .state = menu_on, .run = menu_on_run },
+          .state = menu_on, .run = freecam_flip },
         { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_TOGGLE, .label = "Invert X",
           .state = menu_inv_x, .run = menu_inv_x_run },
         { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_TOGGLE, .label = "Invert Y",

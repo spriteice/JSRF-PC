@@ -17,6 +17,16 @@ static const float tgt[3] = { 0, 0, 0 }, seye[3] = { 0, 0, -10 };
 static const double deg = 3.14159265358979323846 / 180.0;
 #define CAM 0x00401000u
 
+/* The window's key hook (nv2a_gl.c): the key freecam binds, and what sdl_pump
+ * runs for it. */
+static const char *s_key;
+static void (*s_key_run)(void);
+void nv_window_hotkey(const char *name, void (*run)(void))
+{
+    s_key = name;
+    s_key_run = run;
+}
+
 /* One frame: a pad read, then the camera. Returns 1 if freecam placed the eye. */
 static int frame(short rx, short ry, float eye[3])
 {
@@ -63,6 +73,7 @@ int main(int argc, char **argv)
     const char *c = argc > 1 ? argv[1] : "";
     double h, p;
     float eye[3];
+    freecam_start();
     if (!strcmp(c, "off")) {
         /* No key: off, and the game's eye stands, its reset too. */
         assert(!freecam_on());
@@ -177,15 +188,16 @@ int main(int argc, char **argv)
         angles(eye, &h, &p);
         near(h, -87, "turning on from the game's view");
     } else if (!strcmp(c, "toggle")) {
-        /* freecam=0 in the file: F8 turns it on and keeps that there, as
-         * sdl_pump does, leaving the other lines as they were. */
+        /* freecam=0 in the file: F8 turns it on and keeps that there,
+         * leaving the other lines as they were, and off again. */
         double v = -1;
+        assert(s_key && !strcmp(s_key, "F8") && s_key_run);
         assert(!frame(0, 0, eye) && !freecam_on());
-        sdl_cfg_set("freecam", jsrf_freecam_toggle());
+        s_key_run();
         assert(frame(0, 0, eye) && freecam_on());
         assert(nv_window_pref_num("freecam", &v) == 1 && v == 1);
         assert(nv_window_pref_num("sensitivity_x", &v) == 1 && v == 7);
-        sdl_cfg_set("freecam", jsrf_freecam_toggle());
+        s_key_run();
         assert(!frame(0, 0, eye) && !freecam_on());
         assert(nv_window_pref_num("freecam", &v) == 1 && v == 0);
     } else {

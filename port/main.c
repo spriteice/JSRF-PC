@@ -691,6 +691,9 @@ static int host_main(void)
     /* The Developer menu's switches into the environment, before anything
      * reads them, and the log off if it was left off (port/developer.c). */
     { extern void developer_start(void); developer_start(); }
+    /* The free camera's settings, its rows on the Controller page and F8
+     * (port/freecam.c). */
+    { extern void freecam_start(void); freecam_start(); }
     printf("Loading XBE...\n");
 
     /* Install VEH handler (first handler in chain) */
