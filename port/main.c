@@ -162,16 +162,18 @@ const char *recomp_version(void) { return JSRF_VERSION; }
  * (xbox_kernel.log among them), as it makes them inheritable, and elsewhere
  * every descriptor (the guest memory's memfd, the game's files). */
 #if defined(_WIN32)
+#define RESTART_STD_HANDLES 3   /* input, output and error */
 /* The standard handles in si listed for CreateProcessW, each once and made
  * inheritable, as the list wants; keep holds them until the call. How many,
  * 0 for none (and no list), -1 if the list could not be made. */
-static int restart_handle_list(STARTUPINFOEXW *si, HANDLE keep[3])
+static int restart_handle_list(STARTUPINFOEXW *si, HANDLE keep[RESTART_STD_HANDLES])
 {
-    const HANDLE std[3] = { si->StartupInfo.hStdInput, si->StartupInfo.hStdOutput,
-                            si->StartupInfo.hStdError };
+    const HANDLE std[RESTART_STD_HANDLES] = { si->StartupInfo.hStdInput,
+                                              si->StartupInfo.hStdOutput,
+                                              si->StartupInfo.hStdError };
     SIZE_T size = 0;
     int n = 0, i, j;
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < RESTART_STD_HANDLES; i++) {
         if (!std[i] || std[i] == INVALID_HANDLE_VALUE) continue;
         for (j = 0; j < n && keep[j] != std[i]; j++) { }
         if (j == n && SetHandleInformation(std[i], HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT))
@@ -201,10 +203,10 @@ static void restart_close_on_exec(void)
 {
     long fd, max;
 #if defined(__GLIBC__) && defined(CLOSE_RANGE_CLOEXEC)
-    if (close_range(3, ~0U, CLOSE_RANGE_CLOEXEC) == 0) return;
+    if (close_range(STDERR_FILENO + 1, ~0U, CLOSE_RANGE_CLOEXEC) == 0) return;
 #endif
     max = sysconf(_SC_OPEN_MAX);
-    for (fd = 3; fd < max; fd++) {
+    for (fd = STDERR_FILENO + 1; fd < max; fd++) {
         int flags = fcntl((int)fd, F_GETFD);
         if (flags >= 0) fcntl((int)fd, F_SETFD, flags | FD_CLOEXEC);
     }
@@ -235,7 +237,7 @@ void recomp_restart_self(void)
         STARTUPINFOEXW si;
         PROCESS_INFORMATION pi;
         wchar_t exe[MAX_PATH];
-        HANDLE keep[3];
+        HANDLE keep[RESTART_STD_HANDLES];
         int n;
         if (g_scale_env_ours) _putenv("RECOMP_GL_SCALE=");
         ZeroMemory(&si, sizeof si);
