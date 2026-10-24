@@ -8,8 +8,8 @@ You need your own copy of the game -- the standalone US disc (not the Sega GT
 2002 + JSRF combo disc, whose JSRF is a different build). This package is the
 engine only: no game files, no textures, no music, no video.
 
-The Windows build is the same engine as the Mac and Linux builds, tested
-under Wine. Bug reports are very welcome.
+The Windows build is the same engine as the Linux build, tested on
+Windows 11. Bug reports are very welcome.
 
 
 What you need
@@ -17,7 +17,7 @@ What you need
 - Windows 10 or 11, 64-bit.
 - Graphics drivers with OpenGL 3.3 (any GPU from the last ten years, with its
   maker's driver -- the one Windows Update installs is usually fine).
-- Your game files: the folder with default.xbe, Media\ and the rest in it,
+- Your game files: the folder with default.xbe, Media\, and the rest in it,
   extracted from your own disc -- or a disc image (.iso) of it, which the
   launcher unpacks once.
 
@@ -45,7 +45,7 @@ it from a command prompt:
 
 Controls
 --------
-Controller: any pad SDL knows -- Xbox, PlayStation, Switch Pro and many more.
+Controller: any pad SDL knows -- Xbox, PlayStation, Switch Pro, and many more.
 
 Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
 
@@ -58,9 +58,8 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
   C / V        left / right stick click
 
   F1                 the in-game menu (also Back on a controller, which is
-                     then the menu's alone): About, Exit, the next three,
-                     the shader cache, anisotropic filtering, anti-aliasing,
-                     the free camera's settings and logging
+                     then the menu's alone): File, Graphics, Controller,
+                     and Developer
   F11 or Alt+Enter   full screen; remembered
   F10                widescreen 16:9 (a wider view, not a stretch; the HUD
                      keeps its shape, the title screen stays 4:3); remembered
@@ -71,9 +70,9 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
                      the player; remembered (see Free camera below)
 
 Graphics > Anti-aliasing (MSAA) in the in-game menu smooths jagged edges:
-Off (the default), 2x, 4x or 8x, as far as the graphics card goes. It changes
+Off (the default), 2x, 4x, or 8x, as far as the graphics card goes. It changes
 straight away, with no restart, and is remembered as msaa= in the settings
-file (0, 2, 4 or 8). More asks more of the graphics card, the more so at the
+file (0, 2, 4, or 8). More asks more of the graphics card, the more so at the
 higher resolutions.
 
 Graphics > Anti-aliasing (FXAA) in the in-game menu smooths jagged edges
@@ -84,9 +83,9 @@ with no restart, and is remembered as fxaa= in the settings file (0 or 1).
 
 Graphics > Anisotropic filtering in the in-game menu keeps textures sharp
 where they are seen at a steep angle, such as streets and walls running into
-the distance: Off (the default), 2x, 4x, 8x or 16x, as far as the graphics
+the distance: Off (the default), 2x, 4x, 8x, or 16x, as far as the graphics
 card goes. It changes straight away, with no restart, and is remembered as
-aniso= in the settings file (0, 2, 4, 8 or 16). It leaves things that face
+aniso= in the settings file (0, 2, 4, 8, or 16). It leaves things that face
 the screen, such as the HUD, as they were.
 
 Graphics > Shader cache in the in-game menu (on by default) keeps the shaders
@@ -103,8 +102,8 @@ and is remembered as logging= in the settings file (1 or 0). Developer >
 Logging adds the engine's own diagnostic lines to the log, for bug reports.
 Each is kept in developer.cfg, beside the settings file, as NAME=1 or NAME=0,
 and applies from the next start. Developer > Purge shaders asks first, then
-restarts the game and deletes the shader cache, states.dat included, as it
-starts: each shader is built again when the game first needs it.
+restarts the game and deletes the shader cache as it starts: each shader is
+built again when the game first needs it.
 
 
 Free camera
@@ -167,9 +166,9 @@ profile as they do for any program.
 
 On a Mac or Linux, through Wine or CrossOver
 --------------------------------------------
-There are native Mac and Linux builds, which are the better choice. The
-Windows one should run under Wine too: in CrossOver, make a Windows 10
-64-bit bottle and use "Run Command..." on JSRF-PC.exe.
+On Linux, the native build is the better choice. The Windows one should
+run under Wine too: in CrossOver, make a Windows 10 64-bit bottle and use
+"Run Command..." on JSRF-PC.exe.
 
 
 Legal

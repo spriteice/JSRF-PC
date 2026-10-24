@@ -16,10 +16,10 @@ What you need
   or anything newer.
 - Graphics drivers with OpenGL 3.3 (Mesa or NVIDIA's, on any GPU from the last
   ten years).
-- A desktop session, X11 or Wayland. Sound goes through PipeWire, PulseAudio
+- A desktop session, X11 or Wayland. Sound goes through PipeWire, PulseAudio,
   or ALSA.
 - Your game files: an image of your own disc (.iso), or the folder its files
-  were extracted into -- the one with default.xbe, Media/ and the rest in it.
+  were extracted into -- the one with default.xbe, Media/, and the rest in it.
 
 
 Playing
@@ -44,7 +44,7 @@ Playing
 
 Controls
 --------
-Controller: any pad SDL knows -- Xbox, PlayStation, Switch Pro, Steam Deck
+Controller: any pad SDL knows -- Xbox, PlayStation, Switch Pro, Steam Deck,
 and many more.
 
 Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
@@ -58,9 +58,8 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
   C / V        left / right stick click
 
   F1                  the in-game menu (also Back on a controller, which is
-                      then the menu's alone): About, Exit, the next three,
-                      the shader cache, anisotropic filtering, anti-aliasing,
-                      the free camera's settings and logging
+                      then the menu's alone): File, Graphics, Controller,
+                      and Developer
   F11 or Alt+Return   full screen; remembered
   F10                 widescreen 16:9 (a wider view, not a stretch; the HUD
                       keeps its shape, the title screen stays 4:3); remembered
@@ -71,9 +70,9 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
                       the player; remembered (see Free camera below)
 
 Graphics > Anti-aliasing (MSAA) in the in-game menu smooths jagged edges:
-Off (the default), 2x, 4x or 8x, as far as the graphics card goes. It changes
+Off (the default), 2x, 4x, or 8x, as far as the graphics card goes. It changes
 straight away, with no restart, and is remembered as msaa= in the settings
-file (0, 2, 4 or 8). More asks more of the graphics card, the more so at the
+file (0, 2, 4, or 8). More asks more of the graphics card, the more so at the
 higher resolutions.
 
 Graphics > Anti-aliasing (FXAA) in the in-game menu smooths jagged edges
@@ -84,9 +83,9 @@ with no restart, and is remembered as fxaa= in the settings file (0 or 1).
 
 Graphics > Anisotropic filtering in the in-game menu keeps textures sharp
 where they are seen at a steep angle, such as streets and walls running into
-the distance: Off (the default), 2x, 4x, 8x or 16x, as far as the graphics
+the distance: Off (the default), 2x, 4x, 8x, or 16x, as far as the graphics
 card goes. It changes straight away, with no restart, and is remembered as
-aniso= in the settings file (0, 2, 4, 8 or 16). It leaves things that face
+aniso= in the settings file (0, 2, 4, 8, or 16). It leaves things that face
 the screen, such as the HUD, as they were.
 
 Graphics > Shader cache in the in-game menu (on by default) keeps the shaders
@@ -103,8 +102,8 @@ and is remembered as logging= in the settings file (1 or 0). Developer >
 Logging adds the engine's own diagnostic lines to the log, for bug reports.
 Each is kept in developer.cfg, beside the settings file, as NAME=1 or NAME=0,
 and applies from the next start. Developer > Purge shaders asks first, then
-restarts the game and deletes the shader cache, states.dat included, as it
-starts: each shader is built again when the game first needs it.
+restarts the game and deletes the shader cache as it starts: each shader is
+built again when the game first needs it.
 
 
 Free camera
@@ -159,7 +158,7 @@ can be moved, to an SD card for instance.
 To update, extract the new version over this folder, or move portable/ into
 the new one: deleting the folder deletes your saves with it. --install does
 not work in portable mode (the applications menu is in your home folder).
-Graphics drivers, sound and the folder picker keep their own small files in
+Graphics drivers, sound, and the folder picker keep their own small files in
 your home folder as they do for any program.
 
 Found a bug? Open an issue on GitHub with last-run.log and what you were doing.

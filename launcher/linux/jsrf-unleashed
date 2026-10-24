@@ -15,8 +15,9 @@
 #
 # A disc image (.iso) is unpacked once, by the game itself: nothing else to install.
 # Portable: with a folder named "portable" beside this script, the settings,
-# saves and logs are kept in it, and nothing in your home folder.
-# In game: F11 (or Alt+Return) full screen, F10 widescreen 16:9, F9 resolution.
+# saves, and logs are kept in it, and nothing in your home folder.
+# In game: F1 the in-game menu, F11 (or Alt+Return) full screen, F10 widescreen
+# 16:9, F9 resolution, and F8 the free camera.
 #
 set -u
 HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
@@ -195,7 +196,7 @@ while [ $# -gt 0 ]; do
         --fullscreen) FULLSCREEN=1 ;;
         --install)    install_desktop; exit 0 ;;
         --version)    cat "$HERE/VERSION" 2>/dev/null || "$HERE/bin/jsrf_recomp" --version; exit 0 ;;
-        -h|--help)    sed -n '4,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help)    sed -n '4,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *)            GAME="$1" ;;
     esac
     shift
