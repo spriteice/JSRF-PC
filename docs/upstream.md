@@ -276,7 +276,7 @@ git diff --name-status --diff-filter=MD upstream main
 
 - **Files:** src/kernel/kernel_bridge.c, kernel.h, kernel_hal.c,
   kernel_thunks.c, kernel_rtl.c, and xbox_memory_layout.c and .h.
-- **Why:** five fixes, each of which could suit upstream:
+- **Why:** six fixes, each of which could suit upstream:
   - **NtProtectVirtualMemory and KeSetDisableBoostThread** (ordinals 204
     and 144) are bridged (kernel_bridge.c). JSRF calls both, and upstream
     leaves them to the fallback, which never writes the old protection.
@@ -296,6 +296,12 @@ git diff --name-status --diff-filter=MD upstream main
   - **printf formats:** `GetCurrentThreadId()` and `GetLastError()` cast
     to unsigned long for `%lu`, as DWORD is 32 bits on Linux (kernel_rtl.c,
     xbox_memory_layout.c).
+  - **A display interrupt acknowledged inside a DPC is completed at a loop
+    back edge** (kernel_bridge.c), as the hardware completes it at the
+    write. The title's vblank DPC writes its acknowledgement and spins,
+    holding the guest lock, until PMC_INTR_0 is quiet. Upstream completes
+    it only when the GPU thread next looks (`vblank_intr_tick`).
+    tests/vblank_ack (ours) tests it.
 - **At a merge:** keep each fix. Where upstream fixes the same thing, take
   upstream's and drop ours from this entry.
 
