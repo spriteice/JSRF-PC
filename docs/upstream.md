@@ -258,6 +258,15 @@ git diff --name-status --diff-filter=MD upstream main
   card (docs/portable-mode.md).
 - **At a merge:** keep ours, and run tests/user_dir.
 
+### The Linux launcher's help
+
+- **Files:** launcher/linux/jsrf-unleashed.
+- **Why:** `--help` prints the header comment, up to the first line that
+  isn't a comment. Upstream's prints a fixed range of lines (4 to 18), so a
+  header that changes length cuts the help short or prints code, as ours
+  did. Could suit upstream.
+- **At a merge:** keep ours.
+
 ### Kernel fixes
 
 - **Files:** src/kernel/kernel_bridge.c, kernel.h, kernel_hal.c,
