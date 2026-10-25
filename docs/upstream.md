@@ -255,6 +255,17 @@ git diff --name-status --diff-filter=MD upstream main
 - **At a merge:** keep the seven `PROF_STEP` lines at the ends of their
   steps in `do_draw_body` when upstream moves code around them.
 
+### The always-on probes' clock
+
+- **Files:** src/nv2a_gl/nv2a_gl.c (`g_probe_now`).
+- **Why:** the probes that print every few seconds with no switch
+  (`[SURFACE]`, `[MOVERPOS]`, `[SINTAB]`, `[PIPE]`, the mover-box budget
+  and `[TIMELINE]`) read a clock taken once a pass, in `present`, where
+  upstream's read one each in every draw. They print as before. Could
+  suit upstream.
+- **At a merge:** an upstream probe of the same kind that reads the clock
+  in `do_draw_body` can use `g_probe_now` too.
+
 ### Full screen remembered
 
 - **Files:** src/nv2a_gl/nv2a_gl.c.

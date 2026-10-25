@@ -535,6 +535,11 @@ static double g_step_t;     /* ... and when that began */
 #define PROF_STEP(s) do { if (g_step_on) { double t_ = prof_now();      \
         g_prof.step[s] += t_ - g_step_t; g_step_t = t_; g_step_cur = (s) + 1; } } while (0)
 
+/* The time at the last present, for the always-on probes in do_draw_body.
+ * They report every few seconds, so a clock read once a pass does what one
+ * read in every draw did, and the draws are spared it. */
+static double g_probe_now;
+
 /* Time spent walking the pushbuffer, measured by the walker and reported here
  * so that it lands beside the GL numbers. See nv2a_pb_scan. */
 static double g_pb_time;
@@ -6649,7 +6654,7 @@ static void do_draw_body(void)
       int mover = (slot >= 0 && g_pcache[slot].uses_a0
                    && S.xf_mode != NV2A_XF_MODE_FIXED);
       int ci;
-      double now_cls = prof_now();
+      double now_cls = g_probe_now;
       for (ci = 0; ci < ncls; ci++) if (cls[ci].surf == S.color_offset) break;
       if (ci == ncls && ncls < 8) { cls[ncls].surf = S.color_offset; ncls++; }
       if (ci < ncls) { if (mover) cls[ci].mover++; else cls[ci].world++; }
@@ -6678,7 +6683,7 @@ static void do_draw_body(void)
     if (slot >= 0 && g_pcache[slot].uses_a0 && out_n >= 3
         && S.xf_mode != NV2A_XF_MODE_FIXED) {
         static double last_pos; static int per_burst;
-        double now_pos = prof_now();
+        double now_pos = g_probe_now;
         if (now_pos - last_pos > 5.0) { last_pos = now_pos; per_burst = 0; }
         if (per_burst < 4 && now_pos - last_pos < 0.25) {
             Nv2aVshProgram vp2;
@@ -6788,7 +6793,7 @@ static void do_draw_body(void)
     { static double last_st; static int armed_st = -1;
       extern uint32_t g_recomp_watch_lo, g_recomp_watch_span;
       uint32_t tab = *(const uint32_t *)guest(0x264BA4);
-      double now_st = prof_now();
+      double now_st = g_probe_now;
       if (armed_st < 0) armed_st = getenv("RECOMP_WATCH_SINTAB") ? 0 : 2;
       if (tab && armed_st == 0) {
           g_recomp_watch_lo = tab; g_recomp_watch_span = 0x8000;
@@ -6838,7 +6843,7 @@ static void do_draw_body(void)
 
     { static double last_pipe; static unsigned long fixed_n, prog_n;
       static unsigned long fixed_big, prog_big;
-      double now_pipe = prof_now();
+      double now_pipe = g_probe_now;
       if (S.xf_mode == NV2A_XF_MODE_FIXED) {
           fixed_n++; if (n >= 150) fixed_big++;
       } else {
@@ -6856,7 +6861,7 @@ static void do_draw_body(void)
                       && S.xf_mode != NV2A_XF_MODE_FIXED);
       static double last_box; static int box_mover, box_world;
       int probe_this = 0;
-      { double now_box = prof_now();
+      { double now_box = g_probe_now;
         if (now_box - last_box > 5.0) { last_box = now_box;
                                         box_mover = 0; box_world = 0; } }
       /* RECOMP_GL_CHARDIAG=1 turns on everything in this block. It runs a
@@ -7517,7 +7522,7 @@ static void do_draw_body(void)
       { static double last_tl; static uint32_t tl_frame = 0xFFFFFFFFu;
         static uint32_t tl_surf; static int tl_events;
         static uint32_t tl_seen = 0xFFFFFFFFu; static int tl_arm;
-        double now_tl = prof_now();
+        double now_tl = g_probe_now;
         /* Arming in the middle of a frame shows only its tail, which is
          * exactly the part that cannot answer the question. Wait for the
          * frame to turn over, then record that whole frame. */
@@ -9778,6 +9783,7 @@ static void present(int is_frame)
     uint8_t *dst;
 
     if (!g_ready || !g_fbo_w || !g_fbo_h || !S.color_offset) return;
+    g_probe_now = mono_now();
     if (is_frame) { S.frames++; prof_report(); tcache_sweep(); tcache_verify(); aniso_take();
                     /* the census counts one frame, not everything since the
                      * last dump -- otherwise it measures the gap, not the
