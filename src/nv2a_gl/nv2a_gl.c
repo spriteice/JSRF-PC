@@ -506,9 +506,8 @@ static int g_imm_drawing;
 enum { STEP_SETUP, STEP_VERTS, STEP_UNIF, STEP_TEX, STEP_STATE, STEP_PROBES,
        STEP_DRAW, STEP_AFTER, DRAW_STEPS };
 #define DRAW_STEP_EVERY 16
-/* The pushbuffer walk outside the draws, by kind of method (pb_kind). The
- * kinds that come by the hundred thousand a frame have one call in
- * PB_KIND_EVERY timed; the rest, every call. */
+/* The pushbuffer walk outside the draws, by kind of method (pb_kind): one
+ * call of each kind in PB_KIND_EVERY timed. */
 enum { PBK_INLINE, PBK_ATTR, PBK_INDEX, PBK_CONST, PBK_MATRIX, PBK_ARRAYS,
        PBK_BEGIN, PBK_PROG, PBK_TEX, PBK_SURFACE, PBK_FLIP, PBK_OTHER, PB_KINDS };
 #define PB_KIND_EVERY 61
@@ -527,6 +526,7 @@ typedef struct {
     unsigned long long tex_verified;    /* source bytes tcache_verify compared */
     double pbk_t[PB_KINDS];             /* the methods, by kind, net of draws and presents */
     unsigned long pbk_words[PB_KINDS];  /* ... and how many of each */
+    double pbk_clock;                   /* the clock reads timing them took */
 } GlProfile;
 static void vc_report(const char *when);
 static GlProfile g_prof;
@@ -671,13 +671,16 @@ static void prof_report(void)
             /* The walk outside the draws and the flip, by kind of method
              * (pb_kind). "The walk itself" is what is left: reading the
              * words, decoding them, the executor's own checks, and the
-             * counting by kind. */
+             * counting by kind. The clock reads timing the kinds are this
+             * profile's, not the walk's, so they get their own figure. */
             { static const char *const name[PB_KINDS] = {
                   "inline vertices", "vertex attributes", "indices",
                   "constants", "matrices", "vertex arrays", "begin/end",
                   "vertex programs", "textures", "surfaces and clears",
                   "flips and fences", "other state" };
-              double rest = (g_pb_time - prev_pb) - d.whole_draw - d.present - d.pace;
+              double clock = g_prof.pbk_clock - prev.pbk_clock;
+              double rest = (g_pb_time - prev_pb) - d.whole_draw - d.present - d.pace
+                          - clock;
               int k;
               fprintf(stderr, "[GLPROF]   the walk outside the draws by method, "
                       "%% of wall time (K words/s, ns each):");
@@ -688,7 +691,8 @@ static void prof_report(void)
                   if (n) fprintf(stderr, " %s %.1f%% (%lu, %.1f)", name[k],
                                  100 * t / dt, n / 1000, 1e9 * t / n);
               }
-              fprintf(stderr, "; the walk itself %.1f%%\n", 100 * rest / dt); }
+              fprintf(stderr, "; the walk itself %.1f%%; timing them %.1f%%\n",
+                      100 * rest / dt, 100 * clock / dt); }
             prev_pb = g_pb_time; prev_words = g_pb_words;
         }
         fflush(stderr);
@@ -10777,10 +10781,15 @@ static void methtrace_note(uint32_t method, uint32_t param)
  * On the Ally X at 99th Street the walk outside the draws took more of a
  * frame than the draws did, a steady 25 ns or so for each of 250,000 to
  * 330,000 words a frame, and the profile could not say on what. Each kind is
- * counted, and its calls are timed net of the draws and presents they set
- * off: every call of the rare kinds, one in PB_KIND_EVERY of the frequent
- * ones, scaled up. A clock read costs about as much as a cheap method, so its
- * own cost, measured once, comes off every timed call. */
+ * counted, and one call of each kind in PB_KIND_EVERY is timed, net of the
+ * draws and presents it sets off, and scaled up.
+ *
+ * A clock read costs about as much as a cheap method. Timing every call of
+ * the rarer kinds read the clock four to nine million times a second in
+ * Shibuya Terminal's crowd, a quarter to a third of the renderer thread's
+ * time, which the profile then showed as the walk's own. So each timed
+ * call's two reads, at the cost measured once, come off its own time and
+ * the walk's, and the report gives them a figure of their own. */
 static int pb_kind(uint32_t m)
 {
     if (m == M_INLINE_ARRAY)                                     return PBK_INLINE;
@@ -10824,17 +10833,17 @@ static void pb_kind_method(uint32_t method, uint32_t param)
 {
     static unsigned skip[PB_KINDS];
     int k = pb_kind(method);
-    unsigned every = k <= PBK_ARRAYS ? PB_KIND_EVERY : 1;
     double cost, nested, t0;
     g_prof.pbk_words[k]++;
-    if (++skip[k] < every) { gl_method(method, param); return; }
+    if (++skip[k] < PB_KIND_EVERY) { gl_method(method, param); return; }
     skip[k] = 0;
     cost = pb_clock_cost();
     nested = g_prof.whole_draw + g_prof.present + g_prof.pace;
     t0 = prof_now();
     gl_method(method, param);
-    g_prof.pbk_t[k] += every * (prof_now() - t0 - cost
+    g_prof.pbk_t[k] += PB_KIND_EVERY * (prof_now() - t0 - cost
                        - (g_prof.whole_draw + g_prof.present + g_prof.pace - nested));
+    g_prof.pbk_clock += 2 * cost;
 }
 
 void nv2a_gl_method(uint32_t method, uint32_t param)
