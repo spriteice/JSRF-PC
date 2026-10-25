@@ -27,6 +27,15 @@
       },
       "versions": [
         {
+          "version": "0.5.6",
+          "buildVersion": "0.5.6",
+          "date": "2026-10-25T12:34:11Z",
+          "localizedDescription": "Shadows: skaters cast their shadows on the ground, and buildings and bridges shade the streets -- and whoever skates through the shade. The game worked them out every frame, but its last step, the one that darkens the shadowed places, was never drawn.",
+          "downloadURL": "https://github.com/JuMatt/JetSetRadioFuture-Unleashed/releases/download/v0.5.6/JSRF-Unleashed-iOS.ipa",
+          "size": 13354057,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.5.5",
           "buildVersion": "0.5.5",
           "date": "2026-10-24T18:53:38Z",

@@ -1282,7 +1282,14 @@ static int encode_state(void)
     if (!E.valid || E.pso != pso) { [g_enc setRenderPipelineState:pso]; E.pso = pso; }
     dss = dss_for();
     if (!E.valid || E.dss != dss) { [g_enc setDepthStencilState:dss]; E.dss = dss; }
-    if (g_rs.stencil_test && (!E.valid || E.stencil_ref != (g_rs.stencil_ref & 0xFFu))) {
+    /* The reference whether or not this draw tests the stencil. A pass
+     * starts with a reference of 0, and a draw without the test, the first
+     * of a pass, marked the encoder state valid while E still held the last
+     * pass's reference -- so the next draw that did test, with that same
+     * reference, never sent it and tested against 0. The shadow pass tests
+     * "1 <= stencil": against 0 it passes everywhere, and darkened the whole
+     * frame. */
+    if (!E.valid || E.stencil_ref != (g_rs.stencil_ref & 0xFFu)) {
         [g_enc setStencilReferenceValue:g_rs.stencil_ref & 0xFFu];
         E.stencil_ref = g_rs.stencil_ref & 0xFFu;
     }

@@ -118,7 +118,7 @@ checked again at every merge, so it is kept small and visible:
 
 ## Where we differ from upstream
 
-Checked against upstream 0.5.5 (`9875cf0`). Every file this lists, the
+Checked against upstream 0.5.6 (`4d31983`). Every file this lists, the
 upstream files `main` changes (M) or removes (D), is named in an entry
 below:
 

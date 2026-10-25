@@ -481,6 +481,9 @@ static struct {
     int      surf_dirty;    /* offset or clip changed since the last bind */
 } S;
 
+/* do_draw is drawing a batch sent one vertex at a time (see imm_draw). */
+static int g_imm_drawing;
+
 /* ── where a frame's CPU time goes ────────────────────────────────────────
  *
  * RECOMP_GL_PROFILE=1 prints a breakdown once a second. Every guess about why
@@ -5408,6 +5411,14 @@ static void do_draw_body(void)
                            only_xf = v ? atol(v) : -1; }
       if (only_xf >= 0 && (long)S.xf_mode != only_xf) return; }
     if (S.xf_mode == NV2A_XF_MODE_FIXED && texgen_note(n)) return;
+    /* RECOMP_GL_SKIPVOL=1 / =2 (a probe): leave out the shadow volumes drawn
+     * by vertex programs (the characters') / by the fixed-function pipeline
+     * (the scenery's): the batches that only count in the stencil buffer. */
+    { static int sv = -1;
+      if (sv < 0) { const char *e = getenv("RECOMP_GL_SKIPVOL"); sv = e ? atoi(e) : 0; }
+      if (sv && S.stencil_en && S.stencil_func == 0x207
+          && (S.stencil_op[2] == 0x1E02 || S.stencil_op[2] == 0x1E03)
+          && (sv == 1) == (S.xf_mode != NV2A_XF_MODE_FIXED)) return; }
     /* RECOMP_GL_SKIP_LIT=1: leave out the fixed-function batches the T&L
      * unit lights (=ab: every other displayed frame), to see what they are. */
     { static int sk = -1;
@@ -9280,6 +9291,10 @@ static void do_draw_body(void)
          * wide, the data is there and the loss is downstream. One line
          * splits the search in half. */
         float t0lo[2] = { 1e30f, 1e30f }, t0hi[2] = { -1e30f, -1e30f };
+        /* And the positions as they came in: whether two draws are the
+         * same polygons (a second pass, a decal over its wall) or merely
+         * close to each other. */
+        float plo[3] = { 1e30f, 1e30f, 1e30f }, phi[3] = { -1e30f, -1e30f, -1e30f }, p0[3] = { 0, 0, 0 };
         uint32_t v; int c;
         for (v = 0; v < out_n; v++)
             for (c = 0; c < 2; c++) {
@@ -9287,11 +9302,21 @@ static void do_draw_body(void)
                 if (t < t0lo[c]) t0lo[c] = t;
                 if (t > t0hi[c]) t0hi[c] = t;
             }
+        if (attr_at[0] >= 0 && out_n) {
+            for (v = 0; v < out_n; v++)
+                for (c = 0; c < 3; c++) {
+                    float t = vbuf[(size_t)v * stride_floats + (size_t)attr_at[0] + (size_t)c];
+                    if (t < plo[c]) plo[c] = t;
+                    if (t > phi[c]) phi[c] = t;
+                }
+            for (c = 0; c < 3; c++) p0[c] = vbuf[(size_t)attr_at[0] + (size_t)c];
+        }
         fprintf(stderr, "[DRAW] f%ld %4u verts %5u prim %u prog %2d "
                 "vp %s tex0 %08X %ux%u f%02X en%d tex1 en%d "
                 "blend %d %04X/%04X depth %d/%d ctl %08X final %08X/%08X "
                 "| xf%u a9 off=%08X t%u s%u st%u u[%.3f..%.3f] v[%.3f..%.3f] "
-                "in%04X | sten %u f%X r%X m%X w%X op%X/%X/%X dfunc %X cm %08X%s\n",
+                "in%04X | sten %u f%X r%X m%X w%X op%X/%X/%X dfunc %X cm %08X | cull %d %X %X zc %X"
+                " | a0 off=%08X st%u p0 %.3f %.3f %.3f box %.3f..%.3f %.3f..%.3f %.3f..%.3f%s%s\n",
                 (long)S.flips, S.since_present, out_n, S.prim, slot,
                 S.u.vp_off[0] > 100.0f ? "3D" : "2D",
                 S.tex[0].offset, S.tex[0].width, S.tex[0].height,
@@ -9306,6 +9331,10 @@ static void do_draw_body(void)
                 S.stencil_en, S.stencil_func, S.stencil_ref, S.stencil_fmask,
                 S.stencil_wmask, S.stencil_op[0], S.stencil_op[1], S.stencil_op[2],
                 (unsigned)S.depth_func, S.color_mask,
+                S.cull_enable, (unsigned)S.cull_face, (unsigned)S.front_face, S.zminmax,
+                S.attr[0].offset, S.attr[0].stride, p0[0], p0[1], p0[2],
+                plo[0], phi[0], plo[1], phi[1], plo[2], phi[2],
+                g_imm_drawing ? " | IMMEDIATE" : "",
                 g_wide_squeeze ? " | WIDE-SQUEEZED" : "");
         if (nv2a_wide_scene() && g_pcache[slot].inputs == 0x1F9B)
             fprintf(stderr, "[DRAW] f%ld %4u   2D ndc x[%.2f..%.2f] y[%.2f..%.2f]%s\n",
@@ -9327,6 +9356,34 @@ static void do_draw_body(void)
                     S.const_attr[2][0], S.const_attr[2][1], S.const_attr[2][2], S.const_attr[2][3],
                     S.ff_imv[0][0], S.ff_imv[0][1], S.ff_imv[0][2], S.ff_imv[1][0], S.ff_imv[1][1], S.ff_imv[1][2],
                     S.ff_imv[2][0], S.ff_imv[2][1], S.ff_imv[2][2]);
+        /* RECOMP_GL_VOLDUMP=1: a fixed-function shadow volume (stencil
+         * incremented or decremented, colour untouched) of the first logged
+         * frame, every vertex: as sent, then through the composite matrix
+         * (clip x y z w, and z/w). */
+        { static int vd = -1;
+          if (vd < 0) vd = getenv("RECOMP_GL_VOLDUMP") ? 1 : 0;
+          if (vd && (long)S.flips <= g_draw_log_flip + 1 && S.xf_mode == NV2A_XF_MODE_FIXED
+              && S.stencil_en && (S.stencil_op[2] == 0x1E02 || S.stencil_op[2] == 0x1E03)
+              && attr_at[0] >= 0) {
+              const float (*m)[4] = S.u.ff_mat;
+              uint32_t q;
+              fprintf(stderr, "[VOLM] f%ld %u mat %g %g %g %g | %g %g %g %g | %g %g %g %g | %g %g %g %g | vpoff %g %g clip %g %g\n",
+                      (long)S.flips, S.since_present,
+                      m[0][0], m[0][1], m[0][2], m[0][3], m[1][0], m[1][1], m[1][2], m[1][3],
+                      m[2][0], m[2][1], m[2][2], m[2][3], m[3][0], m[3][1], m[3][2], m[3][3],
+                      S.vp_off_reg[0], S.vp_off_reg[1], S.u.z_clip[0], S.u.z_clip[1]);
+              for (q = 0; q < out_n && q < 1200; q++) {
+                  const float *vv = &vbuf[(size_t)q * stride_floats + (size_t)attr_at[0]];
+                  float c4[4]; int r;
+                  for (r = 0; r < 4; r++)
+                      c4[r] = vv[0] * m[r][0] + vv[1] * m[r][1] + vv[2] * m[r][2] + vv[3] * m[r][3];
+                  fprintf(stderr, "[VOLV] f%ld %u %u %.3f %.3f %.3f %.3f | %.3f %.3f %.1f %.4f | %.2f %.2f %.1f\n",
+                          (long)S.flips, S.since_present, q, vv[0], vv[1], vv[2], vv[3],
+                          c4[0], c4[1], c4[2], c4[3],
+                          c4[3] != 0.0f ? c4[0] / c4[3] : 0.0f, c4[3] != 0.0f ? c4[1] / c4[3] : 0.0f,
+                          c4[3] != 0.0f ? c4[2] / c4[3] : 0.0f);
+              }
+          } }
     }
 
     /* Record what this draw was, for the order dump. The extent only while
@@ -10395,6 +10452,295 @@ static void methval_note(uint32_t method, uint32_t param)
     }
 }
 
+/*
+ * Immediate-mode vertices.
+ *
+ * Besides its vertex arrays, the NV2A takes vertices one attribute write at a
+ * time between SET_BEGIN_END and its END: NV097_SET_VERTEX3F/4F and the
+ * SET_VERTEX_DATA* methods write the current value of an attribute, and the
+ * write that completes the POSITION (attribute 0) sends a vertex made of every
+ * attribute's current value (xemu: pgraph_finish_inline_buffer_vertex). The
+ * XDK's D3DDevice_Begin / SetVertexData4f / End is this path.
+ *
+ * Here those methods only ever set the constant an array-less attribute
+ * reads, so a batch sent this way ended with no vertices and drew nothing --
+ * among them, the one that darkens what this title's shadow volumes marked in
+ * the stencil buffer: the volumes were drawn, the shadows never were.
+ *
+ * RECOMP_GL_IMMEDIATE=0: as before, nothing drawn.
+ */
+#define MAX_IMM 2048
+static float    g_imm[MAX_IMM][NUM_ATTRS][4];
+static uint32_t g_imm_n, g_imm_dropped;
+
+static int imm_on(void)
+{
+    static int on = -1;
+    if (on < 0) { const char *v = getenv("RECOMP_GL_IMMEDIATE"); on = v ? atoi(v) != 0 : 1; }
+    return on;
+}
+
+/* The position is complete: a vertex, of every attribute's current value. */
+static void imm_emit(void)
+{
+    if (!S.prim || !imm_on()) return;     /* outside Begin/End: a value, not a vertex */
+    if (g_imm_n >= MAX_IMM) { g_imm_dropped++; return; }
+    memcpy(g_imm[g_imm_n], S.const_attr, sizeof g_imm[0]);
+    g_imm_n++;
+}
+
+static void imm_set(uint32_t a, int c, float v)
+{
+    S.const_attr[a][c] = v;
+    S.const_set[a][c] = v;
+}
+
+/* 1 if `method` is one of the per-vertex attribute methods (handled here). */
+static int imm_method(uint32_t method, uint32_t param)
+{
+    float f;
+    uint32_t a, part;
+    memcpy(&f, &param, 4);
+    if (method >= 0x1500 && method < 0x150C) {            /* SET_VERTEX3F */
+        part = (method - 0x1500) / 4;
+        imm_set(0, (int)part, f); imm_set(0, 3, 1.0f);
+        if (part == 2) imm_emit();
+        return 1;
+    }
+    if (method >= 0x1518 && method < 0x1528) {            /* SET_VERTEX4F */
+        part = (method - 0x1518) / 4;
+        imm_set(0, (int)part, f);
+        if (part == 3) imm_emit();
+        return 1;
+    }
+    if (method >= 0x1530 && method < 0x153C) {            /* SET_NORMAL3F */
+        imm_set(2, (int)((method - 0x1530) / 4), f);
+        return 1;
+    }
+    if (method >= 0x1540 && method < 0x1548) {            /* SET_NORMAL3S */
+        float lo = (float)(int16_t)(param & 0xFFFF) / 32767.0f;
+        float hi = (float)(int16_t)(param >> 16) / 32767.0f;
+        if (lo < -1.0f) lo = -1.0f;
+        if (hi < -1.0f) hi = -1.0f;
+        if (method == 0x1540) { imm_set(2, 0, lo); imm_set(2, 1, hi); }
+        else imm_set(2, 2, lo);
+        return 1;
+    }
+    /* Diffuse (3) and specular (4): 4F, 3F (alpha 1), 4UB. */
+    if ((method >= 0x1550 && method < 0x1560) || (method >= 0x1570 && method < 0x1580)) {
+        a = method < 0x1570 ? 3 : 4;
+        imm_set(a, (int)((method & 0xF) / 4), f);
+        return 1;
+    }
+    if ((method >= 0x1560 && method < 0x156C) || (method >= 0x1580 && method < 0x158C)) {
+        a = method < 0x1570 ? 3 : 4;
+        imm_set(a, (int)(((method - (a == 3 ? 0x1560 : 0x1580))) / 4), f);
+        imm_set(a, 3, 1.0f);
+        return 1;
+    }
+    if (method == 0x156C || method == 0x158C) {           /* SET_*_COLOR4UB */
+        int c;
+        a = method == 0x156C ? 3 : 4;
+        for (c = 0; c < 4; c++) imm_set(a, c, (float)((param >> (8 * c)) & 0xFF) / 255.0f);
+        return 1;
+    }
+    /* Texture coordinates 0..3 (attributes 9..12): 2F, 2S, 4F, 4S. */
+    {
+        static const uint32_t b2f[4] = { 0x1590, 0x15B8, 0x15E0, 0x1608 };
+        static const uint32_t b2s[4] = { 0x1598, 0x15C0, 0x15E8, 0x1610 };
+        static const uint32_t b4f[4] = { 0x15A0, 0x15C8, 0x15F0, 0x1620 };
+        static const uint32_t b4s[4] = { 0x15B0, 0x15D8, 0x1600, 0x1630 };
+        int t;
+        for (t = 0; t < 4; t++) {
+            a = 9 + (uint32_t)t;
+            if (method >= b2f[t] && method < b2f[t] + 8) {
+                imm_set(a, (int)((method - b2f[t]) / 4), f);
+                imm_set(a, 2, 0.0f); imm_set(a, 3, 1.0f);
+                return 1;
+            }
+            if (method == b2s[t]) {
+                imm_set(a, 0, (float)(int16_t)(param & 0xFFFF));
+                imm_set(a, 1, (float)(int16_t)(param >> 16));
+                imm_set(a, 2, 0.0f); imm_set(a, 3, 1.0f);
+                return 1;
+            }
+            if (method >= b4f[t] && method < b4f[t] + 16) {
+                imm_set(a, (int)((method - b4f[t]) / 4), f);
+                return 1;
+            }
+            if (method >= b4s[t] && method < b4s[t] + 8) {
+                part = (method - b4s[t]) / 4;
+                imm_set(a, (int)part * 2, (float)(int16_t)(param & 0xFFFF));
+                imm_set(a, (int)part * 2 + 1, (float)(int16_t)(param >> 16));
+                return 1;
+            }
+        }
+    }
+    if (method == 0x1698) { imm_set(5, 0, f); return 1; }  /* SET_FOG_COORD */
+    if (method == 0x169C) { imm_set(1, 0, f); return 1; }  /* SET_WEIGHT1F */
+    if (method >= 0x16A0 && method < 0x16A8) { imm_set(1, (int)((method - 0x16A0) / 4), f); return 1; }
+    if (method >= 0x16B0 && method < 0x16BC) { imm_set(1, (int)((method - 0x16B0) / 4), f); return 1; }
+    if (method >= 0x16C0 && method < 0x16D0) { imm_set(1, (int)((method - 0x16C0) / 4), f); return 1; }
+    if (method >= 0x1880 && method < 0x1900) {            /* SET_VERTEX_DATA2F_M */
+        a = (method - 0x1880) / 8; part = ((method - 0x1880) / 4) & 1;
+        imm_set(a, (int)part, f); imm_set(a, 2, 0.0f); imm_set(a, 3, 1.0f);
+        if (a == 0 && part == 1) imm_emit();
+        return 1;
+    }
+    if (method >= 0x1900 && method < 0x1940) {            /* SET_VERTEX_DATA2S */
+        a = (method - 0x1900) / 4;
+        imm_set(a, 0, (float)(int16_t)(param & 0xFFFF));
+        imm_set(a, 1, (float)(int16_t)(param >> 16));
+        imm_set(a, 2, 0.0f); imm_set(a, 3, 1.0f);
+        if (a == 0) imm_emit();
+        return 1;
+    }
+    if (method >= 0x1940 && method < 0x1980) {            /* SET_VERTEX_DATA4UB */
+        int c;
+        a = (method - 0x1940) / 4;
+        for (c = 0; c < 4; c++) imm_set(a, c, (float)((param >> (8 * c)) & 0xFF) / 255.0f);
+        if (a == 0) imm_emit();
+        return 1;
+    }
+    if (method >= 0x1980 && method < 0x1A00) {            /* SET_VERTEX_DATA4S_M */
+        a = (method - 0x1980) / 8; part = ((method - 0x1980) / 4) & 1;
+        imm_set(a, (int)part * 2, (float)(int16_t)(param & 0xFFFF));
+        imm_set(a, (int)part * 2 + 1, (float)(int16_t)(param >> 16));
+        if (a == 0 && part == 1) imm_emit();
+        return 1;
+    }
+    if (method >= 0x1A00 && method < 0x1B00) {            /* SET_VERTEX_DATA4F_M */
+        a = (method - 0x1A00) / 16; part = ((method - 0x1A00) / 4) & 3;
+        imm_set(a, (int)part, f);
+        if (a == 0 && part == 3) imm_emit();
+        return 1;
+    }
+    return 0;
+}
+
+static void do_draw(void);
+
+/* The batch Begin/End sent one vertex at a time, drawn as an inline array of
+ * floats: the attributes that differ between its vertices (and the position)
+ * as arrays, the rest as the constants they are. */
+static void imm_draw(void)
+{
+    static Attr saved[NUM_ATTRS];
+    uint32_t live = 1u, a, v, k = 0;
+    for (a = 1; a < NUM_ATTRS; a++)
+        for (v = 0; v < g_imm_n; v++)
+            if (memcmp(g_imm[v][a], S.const_attr[a], sizeof g_imm[0][0])) { live |= 1u << a; break; }
+    memcpy(saved, S.attr, sizeof saved);
+    for (a = 0; a < NUM_ATTRS; a++) {
+        S.attr[a].size = (live >> a) & 1u ? 4 : 0;
+        S.attr[a].type = 2;
+        S.attr[a].stride = 0;
+    }
+    for (v = 0; v < g_imm_n; v++)
+        for (a = 0; a < NUM_ATTRS; a++)
+            if ((live >> a) & 1u) {
+                if (k + 4 > MAX_INLINE) break;
+                memcpy(&S.inline_buf[k], g_imm[v][a], 16);
+                k += 4;
+            }
+    S.inline_count = k;
+    /* [IMM]: each kind of batch sent this way, once, the first time it is
+     * drawn (its primitive and size, which attributes vary from vertex to
+     * vertex, the stencil test, the blend), then every kind's count every
+     * 30 s -- what this path adds to the picture, at a glance. */
+    { enum { NK = 48 };
+      static struct { uint64_t key; unsigned long n; } kinds[NK];
+      static int nk; static double next;
+      uint64_t key = (uint64_t)S.prim | (uint64_t)(g_imm_n < 15 ? g_imm_n : 15) << 4
+                   | (uint64_t)live << 8 | (uint64_t)(S.stencil_en ? 1 : 0) << 24
+                   | (uint64_t)(S.stencil_func & 0xF) << 25 | (uint64_t)(S.blend_enable ? 1 : 0) << 29
+                   | (uint64_t)(S.blend_src & 0xFFF) << 30 | (uint64_t)(S.blend_dst & 0xFFF) << 42
+                   | (uint64_t)(S.xf_mode & 3) << 54 | (uint64_t)(S.tex[0].enabled ? 1 : 0) << 56;
+      int k;
+      for (k = 0; k < nk; k++) if (kinds[k].key == key) break;
+      if (k == nk && nk < NK) {
+          kinds[nk].key = key; kinds[nk].n = 0; nk++;
+          fprintf(stderr, "[IMM] kind %d, first at flip %u draw %u: %u vertices (prim %u), per-vertex "
+                  "attributes %04X, first (%.1f %.1f %.3f %.3f) diffuse (%.2f %.2f %.2f %.2f) | stencil %u "
+                  "func %X ref %X ops %X/%X/%X | blend %d %04X/%04X depth %d/%d func %X | xf %u tex0 %d%s\n",
+                  k, S.flips, S.since_present, g_imm_n, S.prim, live,
+                  g_imm[0][0][0], g_imm[0][0][1], g_imm[0][0][2], g_imm[0][0][3],
+                  g_imm[0][3][0], g_imm[0][3][1], g_imm[0][3][2], g_imm[0][3][3],
+                  S.stencil_en, S.stencil_func, S.stencil_ref,
+                  S.stencil_op[0], S.stencil_op[1], S.stencil_op[2],
+                  S.blend_enable, S.blend_src, S.blend_dst, S.depth_test, S.depth_mask,
+                  (unsigned)S.depth_func, S.xf_mode, S.tex[0].enabled,
+                  g_imm_dropped ? " (vertices dropped: batch too long)" : "");
+          fflush(stderr);
+      }
+      if (k < nk) kinds[k].n++;
+      if (mono_now() >= next) {
+          if (next > 0.0) {
+              fprintf(stderr, "[IMM] so far:");
+              for (k = 0; k < nk; k++) fprintf(stderr, " kind %d %lu;", k, kinds[k].n);
+              fprintf(stderr, "\n");
+          }
+          next = mono_now() + 30.0;
+      } }
+    g_imm_drawing = 1;
+    /* RECOMP_GL_STENCILVIS=1 (a probe): a batch drawn under a stencil test
+     * other than "always" -- this title's shadow passes -- is replaced by
+     * the stencil buffer's contents over the area it covers: 1 red, 2 green,
+     * 3 blue, 4 and more white, 0 left alone. */
+    { static int vis = -1;
+      if (vis < 0) { const char *e = getenv("RECOMP_GL_STENCILVIS"); vis = e ? atoi(e) : 0; }
+      if (vis && S.stencil_en && S.stencil_func != 0x207) {
+          static const float col[4][4] = { { 1, 0, 0, 1 }, { 0, 1, 0, 1 }, { 0, 0, 1, 1 }, { 1, 1, 1, 1 } };
+          uint32_t f = S.stencil_func, r = S.stencil_ref, fm = S.stencil_fmask, o2 = S.stencil_op[2];
+          int be = S.blend_enable, cv;
+          float keep[4];
+          memcpy(keep, S.const_attr[3], sizeof keep);
+          S.blend_enable = 0; S.stencil_fmask = 0xFF; S.stencil_op[2] = 0x1E00;
+          for (cv = 0; cv < 4; cv++) {
+              /* EQUAL k for 1..3, LEQUAL 4 (4 <= stencil) for the rest. The
+               * colour as the diffuse constant, unless the batch sends one. */
+              S.stencil_func = cv < 3 ? 0x202 : 0x203;
+              S.stencil_ref = (uint32_t)cv + 1;
+              memcpy(S.const_attr[3], col[cv], sizeof col[cv]);
+              if ((live >> 3) & 1u)
+                  for (v = 0; v < g_imm_n; v++)
+                      memcpy(&S.inline_buf[(v * (uint32_t)__builtin_popcount(live)
+                                            + (uint32_t)__builtin_popcount(live & 7u)) * 4],
+                             col[cv], 16);
+              do_draw();
+          }
+          memcpy(S.const_attr[3], keep, sizeof keep);
+          S.stencil_func = f; S.stencil_ref = r; S.stencil_fmask = fm; S.stencil_op[2] = o2;
+          S.blend_enable = be;
+          g_imm_drawing = 0;
+          memcpy(S.attr, saved, sizeof saved);
+          S.inline_count = 0;
+          return;
+      } }
+    do_draw();
+    g_imm_drawing = 0;
+    memcpy(S.attr, saved, sizeof saved);
+    S.inline_count = 0;
+}
+
+/* RECOMP_GL_METHTRACE=<from>-<to>: in the frames RECOMP_GL_DRAW_LOG follows,
+ * every method between those draws of the frame (the vertex program and
+ * constant uploads and the vertex data itself left out). */
+static void methtrace_note(uint32_t method, uint32_t param)
+{
+    static int init; static long lo = -1, hi = -1;
+    float f;
+    if (!init) { const char *v = getenv("RECOMP_GL_METHTRACE"); init = 1;
+                 if (v) { lo = atol(v); { const char *d = strchr(v, '-'); hi = d ? atol(d + 1) : lo; } } }
+    if (lo < 0 || g_draw_log_flip < 0) return;
+    if ((long)S.flips < g_draw_log_flip || (long)S.flips >= g_draw_log_flip + 2) return;
+    if ((long)S.since_present < lo || (long)S.since_present > hi) return;
+    if ((method >= 0x0B00 && method < 0x0C00) || method == 0x1800 || method == 0x1808
+        || method == 0x1818) return;
+    memcpy(&f, &param, 4);
+    fprintf(stderr, "[MT] f%u d%u %04X = %08X (%g)\n", S.flips, S.since_present, method, param, f);
+}
+
 /* RECOMP_GL_PROFILE: the pushbuffer walk outside the draws, by kind of
  * method.
  *
@@ -10473,6 +10819,7 @@ static void gl_method(uint32_t method, uint32_t param)
 {
     if (!nv2a_gl_enabled() || g_failed) return;
     methval_note(method, param);
+    methtrace_note(method, param);
 
     if (!S.const_attr_init) {
         int i;
@@ -10691,21 +11038,9 @@ static void gl_method(uint32_t method, uint32_t param)
         if (on && n < 200) { float fv; memcpy(&fv, &param, 4); n++;
             fprintf(stderr, "[INLINE] m %04X = %08X (%g) at draw %u flip %u\n", method, param, fv, S.draws, S.flips); }
     }
-    if (method >= M_SET_VERTEX_DATA4F && method < M_SET_VERTEX_DATA4F + NUM_ATTRS * 16) {
-        uint32_t i = (method - M_SET_VERTEX_DATA4F) / 16;
-        memcpy(&S.const_attr[i][((method - M_SET_VERTEX_DATA4F) / 4) & 3], &param, 4);
-        memcpy(&S.const_set[i][((method - M_SET_VERTEX_DATA4F) / 4) & 3], &param, 4);
-        return;
-    }
-    if (method >= M_SET_VERTEX_DATA4UB && method < M_SET_VERTEX_DATA4UB + NUM_ATTRS * 4) {
-        uint32_t i = (method - M_SET_VERTEX_DATA4UB) / 4;
-        S.const_attr[i][0] = ((param >>  0) & 0xFF) / 255.0f;
-        S.const_attr[i][1] = ((param >>  8) & 0xFF) / 255.0f;
-        S.const_attr[i][2] = ((param >> 16) & 0xFF) / 255.0f;
-        S.const_attr[i][3] = ((param >> 24) & 0xFF) / 255.0f;
-        memcpy(S.const_set[i], S.const_attr[i], sizeof S.const_set[i]);
-        return;
-    }
+    /* Every per-vertex attribute method: the attribute's current value, and
+     * inside Begin/End the position's last component sends a vertex. */
+    if (imm_method(method, param)) return;
     if (method >= M_SET_VERTEX_ARRAY_OFFSET && method < M_SET_VERTEX_ARRAY_OFFSET + 0x40) {
         uint32_t ai = (method - M_SET_VERTEX_ARRAY_OFFSET) / 4;
         if (S.attr[ai].offset != param) S.arrays_since_geom = 1;
@@ -11105,12 +11440,17 @@ static void gl_method(uint32_t method, uint32_t param)
             S.draw_count = 0;
             S.consts_since_geom = 0;
             S.arrays_since_geom = 0;
+            g_imm_n = 0;
+            g_imm_dropped = 0;
         } else {
             ensure_ready();
-            do_draw();
+            /* No array or inline vertices, but some sent one at a time. */
+            if (g_imm_n && !S.idx_count && !S.inline_count) imm_draw();
+            else do_draw();
             S.prim = 0;
             S.idx_count = 0;
             S.inline_count = 0;
+            g_imm_n = 0;
         }
         break;
     case M_ARRAY_ELEMENT16:

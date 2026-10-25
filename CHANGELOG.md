@@ -10,6 +10,42 @@ its version. Downloads are on the
 [Releases](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/releases)
 page.
 
+## 0.5.6 — 25 October 2026
+
+Shadows, which a Windows player reported missing from 0.5.5: they had never
+been drawn, on any platform. Every platform is new in 0.5.6.
+
+- **Shadows are drawn.** The game draws its shadows with stencil volumes:
+  every frame the shadow volume of each character (made by a vertex
+  program) and of the scenery -- buildings, bridges, signs, rails -- is
+  counted into the stencil buffer, and then a black quad at half opacity is
+  drawn over the screen wherever the count says shadow. That quad is sent
+  one vertex at a time (the XDK's `D3DDevice_Begin` / `SetVertexData4f` /
+  `End`), a way of drawing the renderer did not know: such a batch arrived
+  with no vertices and drew nothing. The volumes were counted and the
+  shadows never shown. Now a skater's silhouette falls on the ground under
+  them, and the buildings and bridges shade the streets and whoever skates
+  through the shade. No other batch of this title is sent that way (the log
+  lists each kind, `[IMM]`).
+- Metal: the stencil reference is sent with the first draw of each pass. A
+  pass starts at 0, and the reference went only with draws that tested the
+  stencil, so a test after a pass's first draw could run against 0 -- with
+  the shadows drawn, the whole frame was darkened.
+- For looking into shadows: `RECOMP_GL_STENCILVIS=1` paints, in place of
+  the shadow pass, what the stencil buffer holds there;
+  `RECOMP_GL_SKIPVOL=1`/`2` leaves out the characters' or the scenery's
+  volumes; `RECOMP_GL_IMMEDIATE=0` leaves the one-vertex-at-a-time batches
+  out, as before. `RECOMP_GL_METHTRACE` and `RECOMP_GL_VOLDUMP` log the
+  methods between two draws and the scenery's volumes.
+- Tested on a Mac (Metal and OpenGL): the title's attract demo and Dogenzaka
+  Hill, free and in the race against Beat, with the stencil buffer painted
+  in (Metal and OpenGL identical) and with the characters' or the scenery's
+  volumes left out; then the release build on the title and on Dogenzaka
+  Hill with SMAA and MSAA 4×, on Metal and on OpenGL. Linux (Mesa): the
+  attract demo, with its shadows. Windows (under Wine): the game starts and
+  runs its title screen. The Android and iPhone builds were built and
+  checked, not run.
+
 ## 0.5.5 — 24 October 2026
 
 The picture: the game's own mipmaps with anisotropic filtering, anti-aliasing,
