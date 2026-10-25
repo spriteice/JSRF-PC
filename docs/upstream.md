@@ -295,6 +295,21 @@ git diff --name-status --diff-filter=MD upstream main
   `Nv2aPshState`, so `SC_LAYOUT` stays. Run tests/gl_backend (test_revz.c)
   and tests/shader_cache.
 
+### GL errors once a frame
+
+- **Files:** src/nv2a_gl/nv2a_gl.c (`gl_error_check`, and the switch on
+  `vc_debug_switch`'s list).
+- **Why:** upstream asks `glGetError` after every draw. With Mesa's GL
+  thread, on by default for radeonsi, the call waits for the driver's
+  thread to run everything queued before it, so every draw waited for the
+  driver: on the Ally X a draw took 7.8 us with it and 5.1 without. It is
+  asked once a frame, in `present` before frame pacing, and says the frame
+  and the draw count. `RECOMP_GL_ERRORS_PER_DRAW=1` asks after every draw,
+  as upstream does, to name the draw; it reads nothing back, so it leaves
+  the vertex cache on. Could suit upstream.
+- **At a merge:** an upstream error check in `do_draw_body` goes through
+  `gl_error_check` too.
+
 ### Full screen remembered
 
 - **Files:** src/nv2a_gl/nv2a_gl.c.

@@ -4708,6 +4708,8 @@ static const char *vc_debug_switch(void)
         "NOREVZ",
         /* precise fixed-function depth off: one uniform and shaders */
         "NOPRECZ",
+        /* GL errors after every draw (gl_error_check): reads nothing back */
+        "ERRORS_PER_DRAW",
         /* the frame dumps: taken at the flip, from the picture */
         "DUMP_FB", "DUMP_AFTER", "DUMP_EVERY", "DUMP_3D", "DUMP_TRIS",
         "DUMP_CHARS", "DUMP_DEPTH", NULL
@@ -5150,6 +5152,46 @@ static int texgen_note(uint32_t n)
     /* =ab: every other displayed frame without them */
     return skip == 2 ? (int)(S.frames & 1u) : skip;
 }
+
+/* A GL error turns every later call into a no-op, so a single bad enum
+ * early on reads as "nothing draws" for the rest of the run. Say the first
+ * few, and where they were found.
+ *
+ * Once a frame, not after every draw. glGetError is a round trip to the
+ * driver: with Mesa's GL thread, on by default for radeonsi, it waits until
+ * the driver's thread has run every call queued before it, so asked after
+ * every draw it made every draw wait for the driver. On the Ally X, at 99th
+ * Street, a draw took 7.8 us with it and 5.1 without.
+ * RECOMP_GL_ERRORS_PER_DRAW=1 asks after every draw again, to name the draw
+ * that raised one. */
+#ifdef NV2A_GL_HAVE_GL
+static int gl_errors_per_draw(void)
+{
+    static int on = -1;
+    if (on < 0) on = getenv("RECOMP_GL_ERRORS_PER_DRAW") ? 1 : 0;
+    return on;
+}
+static void gl_error_check(int after_draw, uint32_t verts)
+{
+    static int said;
+    GLenum e;
+    if (!g_is_gl || said >= 8) return;
+    e = glGetError();
+    if (e == GL_NO_ERROR) return;
+    if (after_draw)
+        fprintf(stderr, "  [GL] glGetError 0x%04X after draw %u "
+                "(prim=%u verts=%u fbo=%ux%u status=0x%04X)\n",
+                e, S.draws, S.prim, verts, g_fbo_w, g_fbo_h,
+                glCheckFramebufferStatus(GL_FRAMEBUFFER));
+    else
+        fprintf(stderr, "  [GL] glGetError 0x%04X in frame %u, by draw %u "
+                "(fbo=%ux%u status=0x%04X); RECOMP_GL_ERRORS_PER_DRAW=1 "
+                "names the draw\n",
+                e, S.frames, S.draws, g_fbo_w, g_fbo_h,
+                glCheckFramebufferStatus(GL_FRAMEBUFFER));
+    said++;
+}
+#endif
 
 static void do_draw_body(void);
 /* A draw, timed whole for the profile (it has a great many ways out), and
@@ -8944,23 +8986,9 @@ static void do_draw_body(void)
       } }
     g_prof.n_draws++;
     S.since_present++;
-    /* A GL error turns every later call into a no-op, so a single bad enum
-     * early on reads as "nothing draws" for the rest of the run. Check the
-     * first few draws and say which one broke. */
+    /* The draw's GL errors: once a frame, in present (see gl_error_check). */
 #ifdef NV2A_GL_HAVE_GL
-    {
-        static int checked;
-        if (g_is_gl && checked < 8) {
-            GLenum e = glGetError();
-            if (e != GL_NO_ERROR) {
-                fprintf(stderr, "  [GL] glGetError 0x%04X after draw "
-                        "(prim=%u verts=%u fbo=%ux%u status=0x%04X)\n",
-                        e, S.prim, out_n, g_fbo_w, g_fbo_h,
-                        glCheckFramebufferStatus(GL_FRAMEBUFFER));
-                checked++;
-            }
-        }
-    }
+    if (gl_errors_per_draw()) gl_error_check(1, out_n);
 #endif
     /* RECOMP_GL_STATE_AT=<draw number>: the full per-draw state for a few
      * draws at a chosen point in the run. Early draws answer questions about
@@ -9936,6 +9964,12 @@ static void present(int is_frame)
             }
         }
     }
+
+    /* The frame's GL errors (see gl_error_check), before pacing: its sleep
+     * covers the wait for the driver's thread. */
+#ifdef NV2A_GL_HAVE_GL
+    if (is_frame && !gl_errors_per_draw()) gl_error_check(0, 0);
+#endif
 
     if (is_frame) { PROF_T0(); cache_idle_frame(); frame_pace(); PROF_ADD(pace); }
 
