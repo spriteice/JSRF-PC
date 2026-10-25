@@ -119,6 +119,7 @@ if(ANDROID)
         recomp_manual.c
         freecam.c
         developer.c
+        cpuprof.c
         xbe_check.c
         android/jsrf_android.c
         ios/xiso.c
@@ -131,6 +132,7 @@ else()
         recomp_manual.c
         freecam.c
         developer.c
+        cpuprof.c
         xbe_check.c
         ios/xiso.c
         ${JSRF_GEN_SOURCES}

@@ -9,6 +9,7 @@ launchers' does. Requires GCC on PATH, including MinGW on Windows.
 import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
@@ -43,6 +44,13 @@ cases = {
                 ["Log to file off", "restarting:"], ["started:"]),
     "log_on": ("logging=1\n", None, {}, ["started:", "restarting:"], ["Log to file off"]),
 }
+# The CPU profile (port/cpuprof.c), Linux's only: started from developer.cfg,
+# with its last report as the restart stops it.
+linux = sys.platform.startswith("linux")
+cases["cpu_profile"] = (None, "RECOMP_CPU_PROFILE=1\n", {},
+                        ["[DEV] RECOMP_CPU_PROFILE=1 from developer.cfg", "[CPUPROF] on:",
+                         "[CPUPROF] the last "] if linux else ["started:"],
+                        [] if linux else ["CPU_PROFILE", "[CPUPROF]"])
 
 with tempfile.TemporaryDirectory(prefix="developer-") as directory:
     work = pathlib.Path(directory)
@@ -50,7 +58,9 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
     # -Wno-unused-function: the settings code has helpers only the rest of
     # nv2a_gl.c calls.
     command = ["gcc", "-std=c11", "-Wall", "-Wextra", "-Wno-unused-function", "-DNV2A_GL_USE_SDL=1",
-               "-x", "c", "-", "port/developer.c", "-o", exe]
+               "-x", "c", "-", "port/developer.c", "-x", "none", "port/cpuprof.c", "-o", exe]
+    if linux:
+        command.insert(1, "-pthread")
     subprocess.run(command, cwd=root, input=source, text=True, check=True)
     for name, (settings_text, dev_text, extra, want, unwanted) in cases.items():
         folder = work / name
@@ -59,7 +69,8 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
             (folder / "settings.cfg").write_text(settings_text)
         if dev_text is not None:
             (folder / "developer.cfg").write_text(dev_text)
-        env = {k: v for k, v in os.environ.items() if k not in ("RECOMP_GL_PROFILE", "RECOMP_LOCK_WATCH")}
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("RECOMP_GL_PROFILE", "RECOMP_LOCK_WATCH", "RECOMP_CPU_PROFILE")}
         env.update(extra, JSRF_SETTINGS_FILE=str(folder / "settings.cfg"))
         log = folder / "last-run.log"
         with open(log, "w") as out:

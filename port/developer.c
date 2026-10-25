@@ -27,6 +27,9 @@
 #  include "menu.h"
 #endif
 
+void cpuprof_start(void);
+void cpuprof_stop(void);
+
 #if defined(NV2A_GL_USE_SDL)
 /* nv2a_gl.c: the settings file, and a file of ours beside it. */
 extern int  nv_window_pref_num(const char *key, double *v);
@@ -36,15 +39,23 @@ extern void nv_window_file_set(const char *file, const char *key, int val);
 #define DEV_FILE "developer.cfg"
 
 /* The switches, and their rows in Developer > Logging: each only adds lines
- * to the log. */
+ * to the log. The CPU profile is Linux's only for now (port/cpuprof.c). */
 static const char *const k_switch[] = {
-    "RECOMP_GL_PROFILE", "RECOMP_LOCK_WATCH", "RECOMP_WAITLOG", "RECOMP_KERNEL_IO",
-    "RECOMP_APU_STATS", "RECOMP_GL_UNHANDLED", "RECOMP_GL_VERBOSE", "RECOMP_USB_TRACE",
+    "RECOMP_GL_PROFILE",
+#if defined(__linux__) && !defined(__ANDROID__)
+    "RECOMP_CPU_PROFILE",
+#endif
+    "RECOMP_LOCK_WATCH", "RECOMP_WAITLOG", "RECOMP_KERNEL_IO", "RECOMP_APU_STATS",
+    "RECOMP_GL_UNHANDLED", "RECOMP_GL_VERBOSE", "RECOMP_USB_TRACE",
 };
 static const char *const k_switch_row[] = {
-    "GPU time profile (Restart)", "Guest lock (Restart)", "Waits and DPCs (Restart)",
-    "File reads and events (Restart)", "Audio levels (Restart)",
-    "Unhandled GPU methods (Restart)", "Renderer details (Restart)", "Controller USB (Restart)",
+    "GPU time profile (Restart)",
+#if defined(__linux__) && !defined(__ANDROID__)
+    "CPU profile (Restart)",
+#endif
+    "Guest lock (Restart)", "Waits and DPCs (Restart)", "File reads and events (Restart)",
+    "Audio levels (Restart)", "Unhandled GPU methods (Restart)", "Renderer details (Restart)",
+    "Controller USB (Restart)",
 };
 #define DEV_SWITCHES ((int)(sizeof k_switch / sizeof k_switch[0]))
 _Static_assert(sizeof k_switch == sizeof k_switch_row, "a row for each switch");
@@ -139,6 +150,9 @@ void developer_start(void)
         log_output(0);
     }
 #endif
+    /* The CPU profile is the one switch no engine code reads: it starts here,
+     * before the game does (port/cpuprof.c). */
+    cpuprof_start();
 }
 
 /* Before the game starts itself again: what this run put in the environment
@@ -147,6 +161,7 @@ void developer_start(void)
 void developer_restart(void);
 void developer_restart(void)
 {
+    cpuprof_stop();
 #if defined(NV2A_GL_USE_SDL)
     int i;
     for (i = 0; i < DEV_SWITCHES; i++)

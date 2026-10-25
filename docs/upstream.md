@@ -364,9 +364,12 @@ git diff --name-status --diff-filter=MD upstream main
   settings file, which port/developer.c uses for developer.cfg).
 - **Why:** the in-game menu's Developer menu: Log to file, and the
   engine's logging switches, which the start puts into the environment
-  before anything reads them. Our own file: port/developer.c.
-- **At a merge:** keep the two calls in port/main.c, and run
-  tests/developer.
+  before anything reads them. Among them the CPU profile (Linux only),
+  which the start sets going: where each thread's time goes, by function.
+  Our own files: port/developer.c and port/cpuprof.c, both built from
+  port/CMakeLists.txt.
+- **At a merge:** keep the two calls in port/main.c and the two files in
+  port/CMakeLists.txt, and run tests/developer and tests/cpuprof.
 
 ### Portable mode
 
