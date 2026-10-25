@@ -140,6 +140,12 @@ typedef struct Nv2aRenderState {
     int      stencil_test;
     uint32_t stencil_func, stencil_ref, stencil_rmask, stencil_wmask;
     uint32_t stencil_op[3];
+    /* NV097_SET_POLY_OFFSET_FILL_ENABLE, and the slope factor and the bias
+     * (NV097_SET_POLYGON_OFFSET_SCALE_FACTOR / _BIAS) as glPolygonOffset
+     * takes them for a 24-bit depth buffer at this raster's scale: the front
+     * half has converted them from the title's surface. */
+    int      poly_offset;
+    float    poly_factor, poly_units;
 } Nv2aRenderState;
 
 /* How a texture is sampled. Set when it is created and kept with it, which is
@@ -210,7 +216,8 @@ typedef enum {
     NV2A_U_BUMPMAT0  = NV2A_U_TEXOFF0 + 4,    /* ..3 */
     NV2A_U_BUMPSCALE0 = NV2A_U_BUMPMAT0 + 4,  /* ..3 */
     NV2A_U_BUMPOFF0  = NV2A_U_BUMPSCALE0 + 4, /* ..3 */
-    NV2A_U_COUNT     = NV2A_U_BUMPOFF0 + 4
+    NV2A_U_POLYOFF   = NV2A_U_BUMPOFF0 + 4,   /* the depth bias, where the shader writes depth */
+    NV2A_U_COUNT
 } Nv2aUniformId;
 
 enum { NV2A_UT_FLOAT, NV2A_UT_VEC2, NV2A_UT_VEC3, NV2A_UT_VEC4,

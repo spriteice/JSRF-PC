@@ -267,9 +267,22 @@ extern uint32_t  xbox_ContiguousBlockSerial(uint32_t va);
  * register after it. Culling has never had correct inputs here. */
 #define M_SET_CULL_FACE             0x039C   /* 0x404 front, 0x405 back */
 #define M_SET_FRONT_FACE            0x03A0   /* 0x900 CW, 0x901 CCW */
+/* Polygon offset, which a D3D z-bias becomes. The point and line enables
+ * (0x0330, 0x0334) are not decoded: OpenGL ES has neither. */
+#define M_SET_POLY_OFFSET_FILL_ENABLE     0x0338
+#define M_SET_POLYGON_OFFSET_SCALE_FACTOR 0x0384   /* a float */
+#define M_SET_POLYGON_OFFSET_BIAS         0x0388   /* a float */
 
 #define M_FLIP_INCREMENT_WRITE      0x012C
 #define M_FLIP_STALL                0x0130
+
+/* Fields of the words those methods carry, by src/nv2a/nv2a_regs.h's names. */
+#define SURFACE_FORMAT_ZETA(v)       (((v) >> 4) & 0xFu)  /* NV097_SET_SURFACE_FORMAT_ZETA */
+#define SURFACE_FORMAT_ZETA_Z16      1u
+/* Bits in a depth value: the buffer every backend draws into, and a 16-bit
+ * one the title can ask for. */
+#define DEPTH_BITS                   24
+#define DEPTH_BITS_Z16               16
 
 /* Primitive types, numbered from one. */
 #define PRIM_POINTS         1
@@ -381,6 +394,10 @@ static struct {
     /* Stencil (0x032C, 0x0360..0x0378). Recorded; see stencil_apply. */
     uint32_t stencil_en, stencil_wmask, stencil_func, stencil_ref,
              stencil_fmask, stencil_op[3];
+    /* Polygon offset (M_SET_POLY_OFFSET_FILL_ENABLE and the two after it):
+     * the fill enable, and the slope factor and bias as the title wrote them. */
+    uint32_t poly_fill_en;
+    float    poly_factor, poly_bias;
     int      blend_enable, blend_src, blend_dst;
     int      cull_enable, cull_face, front_face;
     int      alpha_test, alpha_func;
@@ -660,6 +677,10 @@ static struct {
     uint32_t last_draw;   /* S.draws when last drawn or cleared into */
     uint32_t fmt;         /* SET_SURFACE_FORMAT when it was last bound */
     uint32_t serial;      /* allocation holding its memory when last bound */
+    /* Draws into it since it was made: with the depth or stencil test on,
+     * and with neither, for the report. A target that never takes one of
+     * the first has no use for depth samples. */
+    uint32_t dtest, dother;
 } g_surf[SURF_CACHE];
 static uint32_t g_surf_clock;
 static int      g_dump_burst_left, g_dump_burst_every = 1;
@@ -773,6 +794,11 @@ static struct {
     unsigned long long hitches, logged, compiles;
     double   compile_s, compile_worst;
 } g_ht;                                         /* the whole run */
+/* Textures made, for the report: the time spent decoding them and the time
+ * spent handing them to the device, apart, and the longest any one took. A
+ * lookup that finds one is not timed: it hashes 64 bytes, and it is never
+ * what a hitch is made of. */
+static struct { unsigned n; double decode_s, upload_s, worst; } g_tmake;
 /*
  * Internal resolution.
  *
@@ -798,6 +824,21 @@ static uint32_t gl_scale(void)
             fprintf(stderr, "  [GL] internal resolution x%u\n", sc);
     }
     return sc;
+}
+
+/* The title's polygon offset (NV097_SET_POLYGON_OFFSET_SCALE_FACTOR / _BIAS)
+ * as glPolygonOffset takes it for the 24-bit depth buffer every backend draws
+ * into, or zeros when the title has it off. The bias counts steps of the
+ * title's own depth buffer, and a step of a 16-bit one is 2^8 steps of a
+ * 24-bit one. The factor
+ * multiplies a depth slope per pixel of the title's surface, and across a
+ * pixel of this raster the slope is 1/scale of that. */
+static void poly_offset_gl(float *factor, float *units)
+{
+    int z16 = SURFACE_FORMAT_ZETA(S.surf_format) == SURFACE_FORMAT_ZETA_Z16;
+    if (!S.poly_fill_en) { *factor = *units = 0.0f; return; }
+    *factor = S.poly_factor * (float)gl_scale();
+    *units  = S.poly_bias * (z16 ? (float)(1u << (DEPTH_BITS - DEPTH_BITS_Z16)) : 1.0f);
 }
 
 /*
@@ -2433,6 +2474,7 @@ static void surface_bind(uint32_t offset, uint32_t w, uint32_t h)
         g_surf[slot].used = 1;
         g_surf[slot].offset = offset;
         g_surf[slot].w = w; g_surf[slot].h = h;
+        g_surf[slot].dtest = g_surf[slot].dother = 0;
         fprintf(stderr, "  [GL] surface %08X: new %ux%u render target\n",
                 offset, w, h);
     }
@@ -3411,10 +3453,8 @@ static uint32_t surface_texture_for(const TexStage *t, float *sx, float *sy, int
 static uint32_t upload_texture(const TexStage *t)
 {
     uint32_t r; PROF_T0();
-    double t0 = mono_now();
     g_prof.n_tex_lookup++;
     r = upload_texture_inner(t);
-    g_hf.tex_s += mono_now() - t0;
     PROF_ADD(tex);
     return r;
 }
@@ -3696,6 +3736,7 @@ static uint32_t upload_texture_inner(const TexStage *t)
     size_t rgba_bytes = 0;
     Nv2aSampler smp;
     int slot = -1, stale = -1, tomb = -1;
+    double start, dec;
 
     if (!w || !h || w > 4096 || h > 4096) return 0;
     nlev = tex_title_levels(t, w, h);
@@ -3790,6 +3831,7 @@ static uint32_t upload_texture_inner(const TexStage *t)
       } }
     /* Until the new texture exists the slot holds nothing. */
     tcache_drop((uint32_t)slot);
+    start = mono_now();
 
     /* Level 0, and the rest of the title's chain after it when it has one
      * (tex_title_levels): each level decoded as the base is, from where the
@@ -3827,6 +3869,7 @@ static uint32_t upload_texture_inner(const TexStage *t)
             wl = wl > 1 ? wl / 2 : 1;
             hl = hl > 1 ? hl / 2 : 1;
         }
+        dec = mono_now() - start;
         tex_alpha_census(rgba, w, h, t->color, fmt_is_dxt(t->color));
         /* How much of the city has a chain, once a while: uploads with one,
          * and the levels they carried. */
@@ -3918,6 +3961,13 @@ static uint32_t upload_texture_inner(const TexStage *t)
     free(rgba);
     if (!tex) return 0;
 
+    /* Made: what it took, decoding and the rest apart (see g_tmake). */
+    { double dt = mono_now() - start;
+      g_hf.tex_s += dt;
+      g_tmake.n++;
+      g_tmake.decode_s += dec;
+      g_tmake.upload_s += dt - dec;
+      if (dt > g_tmake.worst) g_tmake.worst = dt; }
     g_prof.n_tex_upload++;
     g_hf.tex_new++;
     g_prof.tex_held++;
@@ -6121,6 +6171,14 @@ static void do_draw_body(void)
                     ((S.fog_color >> 8) & 0xFF) / 255.0f,
                     ((S.fog_color >> 16) & 0xFF) / 255.0f,  /* B */
                     ((S.fog_color >> 24) & 0xFF) / 255.0f);
+    /* The W-buffer variant writes its own depth, which GL's polygon offset
+     * never reaches, so that shader adds the offset itself (nv2a_psh.c): the
+     * bias goes over in depth units, one step of a 24-bit buffer each. */
+    if (uses(slot, NV2A_U_POLYOFF)) {
+        float factor, units;
+        poly_offset_gl(&factor, &units);
+        uni2f(NV2A_U_POLYOFF, factor, units / (float)(1u << DEPTH_BITS));
+    }
     {
         /* RECOMP_GL_NOALPHATEST=1 passes every fragment.
          *
@@ -6268,6 +6326,8 @@ static void do_draw_body(void)
           rs.stencil_op[0] = S.stencil_op[0];
           rs.stencil_op[1] = S.stencil_op[1];
           rs.stencil_op[2] = S.stencil_op[2]; }
+        rs.poly_offset = S.poly_fill_en ? 1 : 0;
+        poly_offset_gl(&rs.poly_factor, &rs.poly_units);
         /* The window clip. A rectangle that covers the surface is the same as
          * none and costs a state change per draw to say so, which is why the
          * test is here and not in a backend. */
@@ -6316,6 +6376,10 @@ static void do_draw_body(void)
     if (S.ff_skin_mode && S.xf_mode == NV2A_XF_MODE_FIXED)
         S.draws_skinned++;
     if (S.depth_test) S.draws_depth_on++;
+    if (g_cur_surf >= 0) {
+        if (S.depth_test || S.stencil_en) g_surf[g_cur_surf].dtest++;
+        else g_surf[g_cur_surf].dother++;
+    }
     {
         static int shown;
         if (verbose() && !inl && shown < 8) {
@@ -10836,6 +10900,9 @@ void nv2a_gl_method(uint32_t method, uint32_t param)
     case 0x0370: S.stencil_op[0] = param; break;    /* SET_STENCIL_OP_FAIL */
     case 0x0374: S.stencil_op[1] = param; break;    /* SET_STENCIL_OP_ZFAIL */
     case 0x0378: S.stencil_op[2] = param; break;    /* SET_STENCIL_OP_ZPASS */
+    case M_SET_POLY_OFFSET_FILL_ENABLE:     S.poly_fill_en = param; break;
+    case M_SET_POLYGON_OFFSET_SCALE_FACTOR: memcpy(&S.poly_factor, &param, sizeof param); break;
+    case M_SET_POLYGON_OFFSET_BIAS:         memcpy(&S.poly_bias, &param, sizeof param); break;
     case M_SET_DEPTH_FUNC:        S.depth_func = (int)param; break;
     case M_SET_ALPHA_TEST_ENABLE: S.alpha_test = (int)param; break;
     case M_SET_ALPHA_FUNC:        S.alpha_func = (int)param; break;
@@ -10952,10 +11019,12 @@ void nv2a_gl_method(uint32_t method, uint32_t param)
 /* One cached render target, for the end-of-run report. */
 static const char *surf_desc(int i)
 {
-    static char buf[8][48];
-    if (i < 0 || i >= SURF_CACHE || !g_surf[i].used) return "";
-    snprintf(buf[i], sizeof buf[i], " [%d]%08X %ux%u",
-             i, g_surf[i].offset, g_surf[i].w, g_surf[i].h);
+    static char buf[8][96];
+    if (i < 0 || i >= (int)(sizeof buf / sizeof buf[0]) || !g_surf[i].used) return "";
+    snprintf(buf[i], sizeof buf[i], " [%d]%08X %ux%u (target %u: %u draws depth- or "
+             "stencil-tested, %u not)",
+             i, g_surf[i].offset, g_surf[i].w, g_surf[i].h, g_surf[i].rt,
+             g_surf[i].dtest, g_surf[i].dother);
     return buf[i];
 }
 
@@ -11021,6 +11090,13 @@ void nv2a_gl_report(void)
         surf_desc(4), surf_desc(5), surf_desc(6), surf_desc(7),
         g_tex_dead[0][0], g_tex_dead[0][1], g_tex_dead[0][2],
         g_tex_dead[1][0], g_tex_dead[1][1], g_tex_dead[1][2]);
+    if (g_tmake.n)
+        fprintf(stderr, "  [GL] %u textures made in %.0f ms: %.0f ms decoding, %.0f ms handing "
+                "them to the device; %.2f ms each, the longest %.1f ms\n",
+                g_tmake.n, 1000.0 * (g_tmake.decode_s + g_tmake.upload_s),
+                1000.0 * g_tmake.decode_s, 1000.0 * g_tmake.upload_s,
+                1000.0 * (g_tmake.decode_s + g_tmake.upload_s) / (double)g_tmake.n,
+                1000.0 * g_tmake.worst);
     if (G) G->report();
     fflush(stderr);
 }

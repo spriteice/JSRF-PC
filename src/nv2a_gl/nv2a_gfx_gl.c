@@ -88,10 +88,13 @@ static int gles_has_depth_clamp(void)
 
 #define MAX_TARGETS 64
 static struct {
+    /* rb, the depth/stencil beside tex, exists only while fbo is what is
+     * drawn into, or a multisampled one's depth is carried through it (see
+     * rb_need): 0 otherwise. */
     GLuint   fbo, tex, rb;
     /* Multisampled (samples()): the framebuffer drawn into, with its colour
-     * and depth/stencil. fbo, tex and rb then hold the picture resolved from
-     * it, which is behind it while `drawn` is set. 0 when not multisampled. */
+     * and depth/stencil. fbo and tex then hold the picture resolved from it,
+     * which is behind it while `drawn` is set. 0 when not multisampled. */
     GLuint   msfbo, mscol, msds;
     int      drawn;
     int      flat;                  /* never multisampled: SMAA's own target */
@@ -188,6 +191,44 @@ static int ms_new(int i, int n)
     return 0;
 }
 
+/*
+ * Target slot i's single-sampled depth/stencil, made and attached if it has
+ * none. A multisampled target draws into a depth buffer of its own (msds)
+ * and never into this one, which at 3x scale is tens of megabytes a target
+ * held for nothing. So it is made for a target drawn single-sampled, and
+ * for the moment it takes to carry a multisampled one's depth and stencil
+ * across a change of count (glx_samples) or to read its depth back; and
+ * SMAA's own target, drawn with no depth or stencil test, has none.
+ */
+static void rb_need(int i)
+{
+    if (g_rt[i].rb) return;
+    glGenRenderbuffers(1, &g_rt[i].rb);
+    glBindRenderbuffer(GL_RENDERBUFFER, g_rt[i].rb);
+    /* With a stencil: the title keeps its shadow counts there. */
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8,
+                          (GLsizei)g_rt[i].pw, (GLsizei)g_rt[i].ph);
+    glBindFramebuffer(GL_FRAMEBUFFER, g_rt[i].fbo);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
+                              GL_RENDERBUFFER, g_rt[i].rb);
+    if (rt_ok(g_cur_rt))
+        glBindFramebuffer(GL_FRAMEBUFFER, draw_fbo(g_cur_rt));
+}
+
+/* And let go again where the multisampled one is what is drawn into. Taken
+ * off the framebuffer first: a renderbuffer deleted while attached to one
+ * that is not bound keeps its storage until it is. */
+static void rb_idle(int i)
+{
+    if (!g_rt[i].rb || !g_rt[i].msfbo) return;
+    glBindFramebuffer(GL_FRAMEBUFFER, g_rt[i].fbo);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0);
+    glDeleteRenderbuffers(1, &g_rt[i].rb);
+    g_rt[i].rb = 0;
+    if (rt_ok(g_cur_rt))
+        glBindFramebuffer(GL_FRAMEBUFFER, draw_fbo(g_cur_rt));
+}
+
 static uint32_t target_new(uint32_t pw, uint32_t ph, int flat)
 {
     int i;
@@ -198,7 +239,6 @@ static uint32_t target_new(uint32_t pw, uint32_t ph, int flat)
     }
     glGenFramebuffers(1, &g_rt[i].fbo);
     glGenTextures(1, &g_rt[i].tex);
-    glGenRenderbuffers(1, &g_rt[i].rb);
     scratch_bind(g_rt[i].tex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)pw, (GLsizei)ph, 0,
                  GL_RGBA, GL_UNSIGNED_BYTE, NULL);
@@ -206,30 +246,31 @@ static uint32_t target_new(uint32_t pw, uint32_t ph, int flat)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glBindRenderbuffer(GL_RENDERBUFFER, g_rt[i].rb);
-    /* With a stencil: the title keeps its shadow counts there. */
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8,
-                          (GLsizei)pw, (GLsizei)ph);
     glBindFramebuffer(GL_FRAMEBUFFER, g_rt[i].fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                            GL_TEXTURE_2D, g_rt[i].tex, 0);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
-                              GL_RENDERBUFFER, g_rt[i].rb);
+    g_rt[i].pw = pw; g_rt[i].ph = ph;
+    if (!flat && g_samples == 1) rb_need(i);
+    glBindFramebuffer(GL_FRAMEBUFFER, g_rt[i].fbo);
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         fprintf(stderr, "  [GL] framebuffer incomplete at %ux%u\n", pw, ph);
         glDeleteFramebuffers(1, &g_rt[i].fbo);
         glDeleteTextures(1, &g_rt[i].tex);
         glDeleteRenderbuffers(1, &g_rt[i].rb);
+        memset(&g_rt[i], 0, sizeof g_rt[0]);
         if (rt_ok(g_cur_rt))
             glBindFramebuffer(GL_FRAMEBUFFER, draw_fbo(g_cur_rt));
         return 0;
     }
-    g_rt[i].pw = pw; g_rt[i].ph = ph; g_rt[i].used = 1; g_rt[i].flat = flat;
+    g_rt[i].used = 1; g_rt[i].flat = flat;
     /* Multisampled like the rest, or -- the device refusing that many at
-     * this size -- drawn single-sampled, which is still the right picture. */
-    if (g_samples > 1 && !flat && !ms_new(i, g_samples))
+     * this size -- drawn single-sampled, which is still the right picture,
+     * into a depth buffer of its own. */
+    if (g_samples > 1 && !flat && !ms_new(i, g_samples)) {
         fprintf(stderr, "  [GL] %d samples refused at %ux%u: that target is not multisampled\n",
                 g_samples, pw, ph);
+        rb_need(i);
+    }
     /* Creating it bound it; the target being drawn into stays the target. */
     if (rt_ok(g_cur_rt))
         glBindFramebuffer(GL_FRAMEBUFFER, draw_fbo(g_cur_rt));
@@ -337,12 +378,15 @@ static int glx_target_read_depth(uint32_t h, uint32_t pw, uint32_t ph, float *ou
     (void)h; (void)pw; (void)ph; (void)out;
     return 0;
 #endif
-    if (!rt_ok(h) || !out) return 0;
-    if (g_rt[h - 1].msfbo)
+    if (!rt_ok(h) || !out || g_rt[h - 1].flat) return 0;
+    if (g_rt[h - 1].msfbo) {
+        rb_need((int)h - 1);
         blit((int)h - 1, g_rt[h - 1].msfbo, g_rt[h - 1].fbo, GL_DEPTH_BUFFER_BIT);
+    }
     glBindFramebuffer(GL_READ_FRAMEBUFFER, g_rt[h - 1].fbo);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glReadPixels(0, 0, (GLsizei)pw, (GLsizei)ph, GL_DEPTH_COMPONENT, GL_FLOAT, out);
+    rb_idle((int)h - 1);
     if (rt_ok(g_cur_rt))
         glBindFramebuffer(GL_FRAMEBUFFER, draw_fbo(g_cur_rt));
     return 1;
@@ -904,6 +948,7 @@ static struct {
 static int g_last_cm_reset;        /* a clear forced the colour mask on */
 static int g_last_stencil_reset;   /* a clear changed the stencil write mask */
 static int g_last_clamp = -1;      /* GL_DEPTH_CLAMP as last set */
+static int g_last_poly_reset;      /* the polygon offset is to be set again */
 
 static GLenum gl_blend(uint32_t f)
 {
@@ -954,6 +999,7 @@ static void glx_state_invalidate(void)
     g_last_cm_reset = 1;
     g_last_stencil_reset = 1;
     g_last_clamp = -1;
+    g_last_poly_reset = 1;
 }
 
 /* The per-draw state, still compared against what was last set rather than
@@ -1055,6 +1101,23 @@ static void glx_state(const Nv2aRenderState *rs)
               glDisable(GL_STENCIL_TEST);
           }
           last = *rs; valid = 1;
+      } }
+
+    /* Polygon offset: a decal or a second layer drawn on the plane of a
+     * surface already in the buffer, moved off it by the title so that the
+     * depth test settles the tie the same way at every pixel. Fill only:
+     * OpenGL ES has no offset for lines and points. A draw that writes its
+     * own depth does the same sum in its shader (nv2a_psh.c). */
+    { static int on = -1, set; static float factor, units;
+      if (g_last_poly_reset) { on = -1; set = 0; g_last_poly_reset = 0; }
+      if (rs->poly_offset != on) {
+          if (rs->poly_offset) glEnable(GL_POLYGON_OFFSET_FILL);
+          else glDisable(GL_POLYGON_OFFSET_FILL);
+          on = rs->poly_offset;
+      }
+      if (on && (!set || rs->poly_factor != factor || rs->poly_units != units)) {
+          glPolygonOffset(rs->poly_factor, rs->poly_units);
+          factor = rs->poly_factor; units = rs->poly_units; set = 1;
       } }
 
     g_last.valid = 1;
@@ -1401,6 +1464,31 @@ static void glx_present(uint32_t rt, uint32_t pw, uint32_t ph)
 
 static void glx_report(void)
 {
+    /* What the render targets hold: each one's colour, the depth/stencil
+     * beside it if it has one, and its multisampled buffers -- colour and
+     * depth/stencil, a sample each. */
+    { enum { RGBA8_BYTES = 4, D24S8_BYTES = 4 };
+      static const double mib = 1024.0 * 1024.0;
+      char line[1024] = ""; int len = 0, i, n = 0, ms = 0;
+      double all = 0.0;
+      for (i = 0; i < MAX_TARGETS; i++) {
+          double mb;
+          if (!g_rt[i].used) continue;
+          mb = (double)g_rt[i].pw * g_rt[i].ph
+             * (RGBA8_BYTES + (g_rt[i].rb ? D24S8_BYTES : 0)
+                + (g_rt[i].msfbo ? (RGBA8_BYTES + D24S8_BYTES) * g_samples : 0)) / mib;
+          all += mb; n++;
+          if (g_rt[i].msfbo) ms++;
+          /* Cut short where the line is full: snprintf stops at its end. */
+          if (len < (int)sizeof line)
+              len += snprintf(line + len, sizeof line - (size_t)len, " %d:%ux%u%s%s %.1f MB",
+                              i + 1, g_rt[i].pw, g_rt[i].ph, g_rt[i].msfbo ? " ms" : "",
+                              g_rt[i].rb ? " +depth" : g_rt[i].msfbo ? "" : " no depth", mb);
+      }
+      if (n)
+          fprintf(stderr, "  [GL] %d render targets, %d multisampled at %dx: %.0f MB in all;%s\n",
+                  n, ms, g_samples, all, line);
+    }
     if (g_copies)
         fprintf(stderr, "  [GL] %d copies of a surface sampled while drawn into\n", g_copies);
     if (g_resolves)
@@ -1461,6 +1549,7 @@ static int glx_samples(int n)
 #endif
     for (i = 0; i < MAX_TARGETS; i++)
         if (g_rt[i].msfbo) {
+            rb_need(i);             /* to carry its depth and stencil across */
             blit(i, g_rt[i].msfbo, g_rt[i].fbo, all);
             ms_free(i);
         }
@@ -1472,7 +1561,7 @@ static int glx_samples(int n)
         for (i = 0; i < MAX_TARGETS; i++) ms_free(i);
     }
     for (i = 0; i < MAX_TARGETS; i++) {
-        if (g_rt[i].msfbo) blit(i, g_rt[i].fbo, g_rt[i].msfbo, all);
+        if (g_rt[i].msfbo) { blit(i, g_rt[i].fbo, g_rt[i].msfbo, all); rb_idle(i); }
         g_rt[i].drawn = 0;
     }
     if (rt_ok(g_cur_rt))

@@ -220,6 +220,30 @@ git diff --name-status --diff-filter=MD upstream main
   nv2a_gl.c, and note it in CHANGELOG-JSRF-PC.md. Run tests/shader_cache
   and tests/gl_backend.
 
+### Renderer fixes: depth bias, texture timing, MSAA depth
+
+- **Files:** src/nv2a_gl/nv2a_gl.c, nv2a_gfx_gl.c, nv2a_backend.h (three
+  members added to `Nv2aRenderState`: `poly_offset`, `poly_factor` and
+  `poly_units`; and `NV2A_U_POLYOFF`), nv2a_psh.c and nv2a_uniforms.c.
+- **Why:** renderer bugs the audit for b1.1 found, fixed in the renderer:
+  - **Depth bias:** the polygon offset methods (0x0338, 0x0384, 0x0388)
+    are decoded and applied, and the W-buffer shader adds the same offset
+    (`polyOffset`). Upstream ignores them.
+  - **Texture creation timed,** decoding and handing to the device apart
+    (`g_tmake`, an end-of-run line), where upstream reads the clock at
+    every lookup, a cache hit included.
+  - **No idle single-sampled depth** beside a multisampled target
+    (`rb_need`, `rb_idle`): at 3x scale that is 10.5 MB a target, about
+    40 MB in a level on the Ally X, held for nothing. The end-of-run
+    report lists what each target holds.
+
+  Could suit upstream. The game's mip levels and a texture per sampling,
+  which this entry also had before 0.5.5, are upstream's now.
+- **At a merge:** `NV2A_U_POLYOFF` is the last uniform: keep it after
+  upstream's, in the same place in nv2a_uniforms.c's table. None of this
+  changes `Nv2aVshFixed` or `Nv2aPshState`, so `SC_LAYOUT` stays. Run
+  tests/gl_backend (test_polyoffset.c, test_msaa.c) and tests/shader_cache.
+
 ### Full screen remembered
 
 - **Files:** src/nv2a_gl/nv2a_gl.c.

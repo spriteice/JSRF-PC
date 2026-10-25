@@ -6,6 +6,7 @@
  * white triangle with two slanted edges at depth 0.5, stencil 1, over a black
  * clear at depth 1, stencil 0.
  */
+#define GL_GLEXT_PROTOTYPES 1      /* glBindFramebuffer and the like */
 #include <stdlib.h>
 #include <string.h>
 #include "context.h"
@@ -101,6 +102,17 @@ static int is(const uint8_t *p, int r, int g, int b)
     return p[0] == r && p[1] == g && p[2] == b;
 }
 
+/* Whether target t's single-sampled framebuffer has a depth buffer: it
+ * should only while that is the one drawn into. */
+static int flat_depth(uint32_t t)
+{
+    GLint type = GL_NONE;
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, nv2a_gfx_gl_fbo(t));
+    glGetFramebufferAttachmentParameteriv(GL_READ_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                                          GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE, &type);
+    return type != GL_NONE;
+}
+
 /* The count changed with the picture, depth and stencil carried across: the
  * picture reads back the same, a quad at depth 0.75 drawn LESS lands only
  * outside the triangle, and one drawn where the stencil is 1 only inside. */
@@ -117,6 +129,8 @@ static void carried(int n)
     snprintf(msg, sizeof msg, "%s: samples(%d) gives %d", what, n, got);
     check(got == n, msg);
     now = n;
+    snprintf(msg, sizeof msg, "%s: a single-sampled depth buffer only at 1x", what);
+    check(flat_depth(rt) == (n == 1), msg);
     read_rt(after);
     snprintf(msg, sizeof msg, "%s: the picture is carried", what);
     check(!memcmp(before, after, sizeof before), msg);
@@ -164,6 +178,7 @@ int main(void)
     check((now = G->samples(hi)) == hi, "samples() before any target");
     rt = G->target_new(W, H);
     check(rt != 0, "target_new");
+    check(!flat_depth(rt), "multisampled: no single-sampled depth beside it");
     G->target_bind(rt);
     scene();
     read_rt(px);
@@ -176,6 +191,7 @@ int main(void)
     check(G->target_read_depth(rt, W, H, depth), "target_read_depth");
     check(depth[16 * W + 16] > 0.49f && depth[16 * W + 16] < 0.51f && depth[56 * W + 56] == 1.0f,
           "the depth reads back");
+    check(!flat_depth(rt), "and none kept once it has");
     rs = plain();
     quad(&rs, 0, 0, 1, 0);
     check(G->tex_read(G->target_texture(rt), W, H, tx), "target_texture");

@@ -293,6 +293,10 @@ static int psh_emit(const Nv2aPshState *ps, char *buf, int bufsize, int msl)
             if (ps->tex_bound[i] && (ps->tex_mode[i] == 6 || ps->tex_mode[i] == 7))
                 sb(&s, "uniform mat2 bumpMat%d;\nuniform float bumpScale%d;\n"
                        "uniform float bumpOffset%d;\n", i, i, i);
+        /* The polygon offset, for the variant that writes its own depth: GL
+         * offsets the depth it rasterised, and this one replaces that. */
+        if (ps->w_buffer)
+            sb(&s, "uniform vec2 polyOffset;\n");
     }
     { int any = 0;
       for (i = 1; i < 4; i++)
@@ -672,9 +676,17 @@ static int psh_emit(const Nv2aPshState *ps, char *buf, int bufsize, int msl)
      *
      * A separate shader variant, keyed by the w_buffer field in the hash, so
      * that draws which do not use it keep early depth testing.
+     *
+     * Writing depth also takes it out of GL's polygon offset, so the offset is
+     * GL's own formula done here: the slope factor times the larger of the
+     * depth's two screen-space slopes, plus the bias in units of the buffer's
+     * smallest step. The front half sets polyOffset to zero when the title
+     * has the offset off.
      */
     if (ps->w_buffer && !msl)
-        sb(&s, "    gl_FragDepth = (1.0 / gl_FragCoord.w) / 16777216.0;\n");
+        sb(&s, "    { float d = (1.0 / gl_FragCoord.w) / 16777216.0;\n"
+               "      gl_FragDepth = d + polyOffset.x * max(abs(dFdx(d)), abs(dFdy(d)))"
+               " + polyOffset.y; }\n");
     if (!msl)
         sb(&s, "}\n");
     else if (ps->w_buffer)

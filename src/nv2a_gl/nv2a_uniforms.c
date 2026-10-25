@@ -72,6 +72,7 @@ const Nv2aUniformDesc nv2a_uniform_desc[NV2A_U_COUNT] = {
     F("bumpScale2", FLOAT, 1), F("bumpScale3", FLOAT, 1),
     F("bumpOffset0", FLOAT, 1), F("bumpOffset1", FLOAT, 1),
     F("bumpOffset2", FLOAT, 1), F("bumpOffset3", FLOAT, 1),
+    F("polyOffset", VEC2, 1),
 };
 
 #undef V
