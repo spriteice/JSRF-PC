@@ -474,7 +474,8 @@ static struct {
     uint32_t skipped_no_prog, skipped_no_pos, shader_fails;
     float    vp_off_reg[4];       /* NV097_SET_VIEWPORT_OFFSET exactly as written:
                                    * the fixed-function shader adds it after its
-                                   * divide, the way the hardware does */
+                                   * divide, the way the hardware does, but less
+                                   * the driver's nudge (nv2a_vsh_ff_vpoff) */
     uint32_t draws_inline, draws_array, draws_depth_on, surface_switches;
     uint32_t draws_xf[4];   /* draws by transform execution mode */
     int      surf_dirty;    /* offset or clip changed since the last bind */
@@ -6174,8 +6175,11 @@ static void do_draw_body(void)
             ff_revz_row(rr);
             G->uniform_f(NV2A_U_FFREVZ, rr, 1);
         }
-        if (uses(slot, NV2A_U_FFVPOFF))
-            G->uniform_f(NV2A_U_FFVPOFF, S.vp_off_reg, 1);
+        if (uses(slot, NV2A_U_FFVPOFF)) {
+            float off[4];
+            nv2a_vsh_ff_vpoff(S.vp_off_reg, off);
+            G->uniform_f(NV2A_U_FFVPOFF, off, 1);
+        }
         if (uses(slot, NV2A_U_FFTEXMAT))
             G->uniform_f(NV2A_U_FFTEXMAT, &S.u.ff_texmat[0][0], 16);
     }
@@ -6267,20 +6271,11 @@ static void do_draw_body(void)
         G->uniform_f(NV2A_U_VPOFF, S.u.vp_off, 1);
         uni2f(NV2A_U_VPSURFACE, (float)g_fbo_w, (float)g_fbo_h);
         {   /* Where the viewport is on the surface, for a vertex program's
-             * screen-space oPos (see the epilogue): its centre -- the offset
-             * register less the driver's 0.53125 nudge, which puts a whole-
-             * surface viewport's centre at exactly half the surface -- and
-             * its half size. Unscaled by the widescreen squeeze, which acts
-             * inside the viewport through vpScale. */
+             * screen-space oPos (nv2a_vsh_vprect). Unscaled by the widescreen
+             * squeeze, which acts inside the viewport through vpScale. */
             float r[4];
-            r[0] = S.u.vp_off[0] - 0.53125f;
-            r[1] = S.u.vp_off[1] - 0.53125f;
-            r[2] = fabsf(S.u.vp_scale[0]);
-            r[3] = fabsf(S.u.vp_scale[1]);
-            if (r[2] < 1e-6f || r[3] < 1e-6f) {      /* no viewport: the surface */
-                r[0] = (float)g_fbo_w * 0.5f; r[1] = (float)g_fbo_h * 0.5f;
-                r[2] = (float)g_fbo_w * 0.5f; r[3] = (float)g_fbo_h * 0.5f;
-            }
+            nv2a_vsh_vprect(S.u.vp_off, S.u.vp_scale,
+                            (float)g_fbo_w, (float)g_fbo_h, r);
             G->uniform_f(NV2A_U_VPRECT, r, 1);
         }
         uni1f(NV2A_U_WIDESHIFT, g_wide_shift);

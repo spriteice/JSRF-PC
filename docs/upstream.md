@@ -326,6 +326,29 @@ git diff --name-status --diff-filter=MD upstream main
 - **At a merge:** upstream's changes to `nv2a_gl_method`'s body go into
   `gl_method`.
 
+### The driver's nudge off both paths
+
+- **Files:** src/nv2a_gl/nv2a_vsh.c and .h (`NV2A_D3D_NUDGE`,
+  `nv2a_vsh_ff_vpoff` and `nv2a_vsh_vprect`, and the comment on the
+  fixed-function shader's `ffVpOff`), nv2a_gl.c (the `ffVpOff` and `vpRect`
+  uploads in `do_draw_body`, which worked `vpRect` out inline).
+- **Why:** the console's D3D driver adds 0.53125 of a pixel to every
+  position it hands the hardware. Upstream took it off the vertex programs'
+  viewport (`vpRect`) but not the fixed-function offset (`ffVpOff`), so every
+  vertex-program draw landed half a pixel up and left of the fixed-function
+  world. On a wall seen at an angle that is many depth steps: the garage's
+  graffiti tiles, drawn by a program onto fixed-function walls at the wall's
+  own depth, flickered and fell behind them. Both are now worked out in
+  nv2a_vsh.c, both less the nudge. It comes off rather than staying on so
+  that the title's whole pixels are pixel edges at every internal
+  resolution: kept on both, as xemu does, it moves the title's 2D too, and
+  a letterbox bar drawn from the corner leaves a pixel and a half bare at
+  3x. Could suit upstream.
+- **At a merge:** upstream changes to the `vpRect` block or the `ffVpOff`
+  upload in `do_draw_body` go into those two functions. `Nv2aVshFixed` is
+  unchanged, so `SC_LAYOUT` stays. Run tests/gl_backend (test_nudge.c) and
+  tests/shader_cache.
+
 ### Full screen remembered
 
 - **Files:** src/nv2a_gl/nv2a_gl.c.

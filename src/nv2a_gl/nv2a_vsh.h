@@ -191,6 +191,17 @@ int  nv2a_glsl_revz(void);
 void nv2a_glsl_set_precz(int on);
 int  nv2a_glsl_precz(void);
 
+/* The 0.53125 of a pixel the console's D3D driver adds to every position it
+ * hands the hardware, and the two viewport uniforms the epilogues read, both
+ * with it taken back off. See nv2a_vsh.c. */
+#define NV2A_D3D_NUDGE 0.53125f
+/* ffVpOff, from NV097_SET_VIEWPORT_OFFSET as written. */
+void nv2a_vsh_ff_vpoff(const float reg[4], float out[4]);
+/* vpRect, from the viewport offset and scale registers and the size of the
+ * surface they apply to, in pixels. */
+void nv2a_vsh_vprect(const float off[4], const float scale[4],
+                     float surf_w, float surf_h, float out[4]);
+
 #ifdef __cplusplus
 }
 #endif

@@ -19,6 +19,7 @@
 #include "nv2a_backend.h"
 #include <stdlib.h>
 
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -486,6 +487,64 @@ static const char REVZ_FROM_RANGE[] =
     "            / (vpScale.z != 0.0 ? vpScale.z : 1.0);\n";
 
 /*
+ * The driver's nudge, taken off both paths alike.
+ *
+ * The console's D3D driver adds 0.53125 of a pixel to every screen position
+ * it hands the hardware: through the viewport offset register for a
+ * fixed-function draw (0.53125, or a viewport's corner plus 0.53125), and
+ * through the constants for a vertex program (320.53, 240.53 for a whole
+ * 640 by 480 viewport, and the 0.53125 its pass-through program for
+ * pre-transformed vertices adds). D3D puts a pixel's centre at a whole
+ * number and the console's rasteriser at a half, and the nudge turns one
+ * into the other. The 1/32 over the half is half a sixteenth: the
+ * rasteriser truncates positions to sixteenths of a pixel (xemu,
+ * hw/xbox/nv2a/pgraph/glsl/vsh.c, roundScreenCoords), and with it they
+ * round instead.
+ *
+ * The two paths have to agree. The vertex programs' viewport took the nudge
+ * off and the fixed-function offset kept it, which put every program's draw
+ * half a pixel up and left of the fixed-function world; on a wall seen at
+ * an angle half a pixel is many depth steps, and the garage's graffiti
+ * tiles, drawn by a program onto fixed-function walls at the wall's own
+ * depth, fell behind them (the M tile at the end of the Create your own
+ * graffiti pan: 17 steps in front of its wall with the two agreeing, 3 to
+ * 5 behind with them half a pixel apart).
+ *
+ * And it comes off rather than staying on, because this renderer draws at
+ * several times the console's resolution. Kept, the nudge puts a title's
+ * whole pixels, where its 2D starts and stops, half a 640 by 480 pixel in:
+ * a cutscene's letterbox bar, drawn from x = 0 and y = 0, left a pixel and
+ * a half bare along the top and left of the screen at 3x. Off, whole pixels
+ * are pixel edges at every scale, so 2D drawn edge to edge covers the
+ * screen. What moves is the picture as a whole, half a pixel up and left
+ * (tests/gl_backend/test_nudge.c).
+ */
+void nv2a_vsh_ff_vpoff(const float reg[4], float out[4])
+{
+    out[0] = reg[0] - NV2A_D3D_NUDGE;
+    out[1] = reg[1] - NV2A_D3D_NUDGE;
+    out[2] = reg[2];
+    out[3] = reg[3];
+}
+
+/* Where the viewport is on the surface, for a vertex program's screen-space
+ * oPos (the mode-0 epilogue below): its centre, the offset register less the
+ * nudge -- exactly half the surface for a whole-surface viewport -- and its
+ * half size. A viewport with no size is the whole surface. */
+void nv2a_vsh_vprect(const float off[4], const float scale[4],
+                     float surf_w, float surf_h, float out[4])
+{
+    out[0] = off[0] - NV2A_D3D_NUDGE;
+    out[1] = off[1] - NV2A_D3D_NUDGE;
+    out[2] = fabsf(scale[0]);
+    out[3] = fabsf(scale[1]);
+    if (out[2] < 1e-6f || out[3] < 1e-6f) {
+        out[0] = surf_w * 0.5f; out[1] = surf_h * 0.5f;
+        out[2] = surf_w * 0.5f; out[3] = surf_h * 0.5f;
+    }
+}
+
+/*
  * Screen space back to clip space.
  *
  * Shared by the translated programs and by the fixed-function emitter: the
@@ -514,8 +573,10 @@ static void emit_viewport_epilogue(SB *sb, int ff)
          * to (0.53125, 0.53125) for the duration of its fixed-function draws
          * and to (320.53, 240.53) for its vertex-program draws, is added on
          * top by the hardware and is only the half-pixel nudge here. The
-         * body has added it already. Then back to clip space by the surface
-         * size, exactly as the programmable path in xemu does.
+         * body has added it already, with the nudge taken back off as the
+         * vertex programs' viewport takes it off (nv2a_vsh_ff_vpoff, above).
+         * Then back to clip space by the surface size, as the programmable
+         * path in xemu does.
          *
          * Before this, the shared mode-0 conversion below subtracted that
          * (0.53, 0.53) offset and divided by the viewport scale -- which is
@@ -900,7 +961,7 @@ static int emit_ff(const Nv2aVshFixed *f, char *buf, int bufsize, int msl)
         sb_add(&sb, "\nuniform vec4 ffRevZ;        // the reversed depth row (precise depth)\n");
     sb_add(&sb,
         "\nuniform vec4 ffMat[4];      // NV097_SET_COMPOSITE_MATRIX\n"
-        "uniform vec4 ffVpOff;       // NV097_SET_VIEWPORT_OFFSET, as written\n"
+        "uniform vec4 ffVpOff;       // NV097_SET_VIEWPORT_OFFSET less the driver's nudge\n"
         "uniform float litAmbient;   // stand-in for the T&L unit's lighting\n"
         "uniform vec4 ffTexMat[16];  // NV097_SET_TEXTURE_MATRIX, 4 stages\n"
         "\nvoid main() {\n");
