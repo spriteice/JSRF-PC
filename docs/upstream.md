@@ -365,6 +365,26 @@ git diff --name-status --diff-filter=MD upstream main
   lie in `attr_method`'s ranges. Run tests/attr_method, which fails if one
   doesn't.
 
+### Targets sampled without alpha
+
+- **Files:** src/nv2a_gl/nv2a_gl.c (`fmt_opaque`, and its call where each
+  stage's texture is bound in `do_draw_body`), nv2a_gfx_gl.c and
+  nv2a_backend.h (`texture_opaque`, a member added to `Nv2aGfx`).
+- **Why:** the jet boost renders the world into a 512x512 and a 128x128
+  target, both R5G6B5, which has no alpha bits, and lays the 512x512 one
+  over the frame blended by the alpha it samples there, as
+  LU_IMAGE_R5G6B5. The console reads that alpha as 1. Our targets are
+  RGBA8 and keep the alpha every draw into them wrote, so the copy let the
+  frame under it show through in hard-edged patches: a dark hexagon on the
+  ground around the skater, and ghosting. A target sampled as a format with
+  no alpha bits (R5G6B5, X1R5G5B5, X8R8G8B8, Y8) now reads alpha 1, as
+  `decode_texel` gives it from memory, by a texture swizzle. Metal leaves
+  `texture_opaque` NULL and keeps the bug. Could suit upstream.
+- **At a merge:** keep `texture_opaque` after our other `Nv2aGfx` members,
+  and the call right after the stage's texture is bound: the swizzle
+  belongs to the texture, so it is set on every draw that samples a target.
+  Run tests/gl_backend (test_opaque.c).
+
 ### Full screen remembered
 
 - **Files:** src/nv2a_gl/nv2a_gl.c.

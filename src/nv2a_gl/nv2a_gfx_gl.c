@@ -950,6 +950,13 @@ static void glx_texture(int unit, uint32_t tex)
     glBindTexture(GL_TEXTURE_2D, (GLuint)tex);
 }
 
+/* A swizzle, so the shaders stay as they are: core since GL 3.3 and ES 3.0. */
+static void glx_texture_opaque(int unit, int opaque)
+{
+    glActiveTexture((GLenum)(GL_TEXTURE0 + unit));
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A, opaque ? GL_ONE : GL_ALPHA);
+}
+
 /* ---- state --------------------------------------------------------------- */
 
 /* Last state actually pushed to GL.
@@ -1801,6 +1808,7 @@ static const Nv2aGfx g_gl = {
     glx_samples_max, glx_samples,
     glx_aniso_max,
     glx_cache_rebuild,
+    glx_texture_opaque,
 };
 
 const Nv2aGfx *nv2a_gfx_gl(void) { return &g_gl; }

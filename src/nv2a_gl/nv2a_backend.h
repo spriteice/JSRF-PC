@@ -420,6 +420,13 @@ typedef struct Nv2aGfx {
      * from their sources at once and says how far it has got. How many are
      * queued. NULL where cache_idle is. */
     int      (*cache_rebuild)(void);
+
+    /* The texture bound to `unit`, sampled with alpha 1 (`opaque`) or with
+     * the alpha it holds: for a target sampled as a format with no alpha
+     * bits, which the console reads as alpha 1 whatever was drawn into the
+     * target. Set on every draw that samples a target. NULL where the
+     * backend has none (Metal, today). */
+    void     (*texture_opaque)(int unit, int opaque);
 } Nv2aGfx;
 
 /* The implementations. Each returns NULL where it cannot run (no Metal

@@ -3372,6 +3372,14 @@ static uint32_t decode_texel(uint32_t f, const uint8_t *p)
     }
 }
 
+/* A format with no alpha bits (R5G6B5, X1R5G5B5, X8R8G8B8, Y8), which the
+ * console samples as alpha 1: the texel of all zero bits decodes opaque. */
+static int fmt_opaque(uint32_t f)
+{
+    static const uint32_t zero = 0;
+    return decode_texel(swz_to_linear(f), (const uint8_t *)&zero) >> 24 == 0xFF;
+}
+
 /*
  * How much of each uploaded texture is transparent, by source format.
  *
@@ -6330,6 +6338,15 @@ static void do_draw_body(void)
                 }
             }
             G->texture(st, tex);
+            /* A surface sampled as a format with no alpha bits reads alpha 1
+             * on the console, as decode_texel gives it from memory. Our
+             * targets are RGBA8 and keep the alpha every draw wrote, which
+             * the console's R5G6B5 surface has no bits for. The boost dash
+             * samples its 512x512 copy as R5G6B5 and lays it over the frame
+             * by that alpha, so the stray alpha let the frame under it show
+             * through in hard-edged patches. */
+            if (sslot >= 0 && tex && G->texture_opaque)
+                G->texture_opaque(st, fmt_opaque(S.tex[st].color));
             /* A surface this backend rendered holds its picture the GL way
              * up: the vertex stage sends screen y = 0 to NDC +1, so the top
              * row of the picture is the LAST row of the framebuffer. A
