@@ -244,6 +244,17 @@ git diff --name-status --diff-filter=MD upstream main
   changes `Nv2aVshFixed` or `Nv2aPshState`, so `SC_LAYOUT` stays. Run
   tests/gl_backend (test_polyoffset.c, test_msaa.c) and tests/shader_cache.
 
+### Draw profile by step
+
+- **Files:** src/nv2a_gl/nv2a_gl.c (`PROF_STEP`, and a `[GLPROF]` line).
+- **Why:** with `RECOMP_GL_PROFILE=1`, every 16th draw is also timed step
+  by step, and the log says where a draw's time goes: setup, vertices,
+  uniforms, textures, state, probes, glDraw and after. The other draws
+  read no more clocks than before, so the profile's other figures stay
+  comparable. Could suit upstream.
+- **At a merge:** keep the seven `PROF_STEP` lines at the ends of their
+  steps in `do_draw_body` when upstream moves code around them.
+
 ### Full screen remembered
 
 - **Files:** src/nv2a_gl/nv2a_gl.c.

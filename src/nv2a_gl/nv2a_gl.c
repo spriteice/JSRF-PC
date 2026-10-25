@@ -492,9 +492,20 @@ static struct {
  * thread, which on this platform is most of the cost: an OpenGL draw call on
  * macOS is a substantial piece of CPU work before it is anything else.
  */
+/* Where a draw's time goes, step by step, in the order do_draw_body takes
+ * them. Only every DRAW_STEP_EVERY-th draw reads the clock at each step's
+ * end, so the others pay nothing for it and the per-draw figures stay
+ * comparable with a profile that has no steps. A draw that returns early
+ * leaves the rest of its time with the step it was in. */
+enum { STEP_SETUP, STEP_VERTS, STEP_UNIF, STEP_TEX, STEP_STATE, STEP_PROBES,
+       STEP_DRAW, STEP_AFTER, DRAW_STEPS };
+#define DRAW_STEP_EVERY 16
+
 typedef struct {
     double tex, verts, vbo, unif, draw, state;
     double whole_draw;      /* all of do_draw, the above included */
+    double step[DRAW_STEPS];            /* the timed draws, by step */
+    unsigned n_step;                    /* ... and how many there were */
     double present, pace;   /* at the flip: showing the frame, waiting for its time */
     unsigned n_draws, n_const_upload, n_prog_switch, n_tex_upload, n_tex_lookup;
     unsigned long vbo_bytes, unif_vec4;
@@ -517,6 +528,12 @@ static double prof_now(void)
         ? (g_prof_on = getenv("RECOMP_GL_PROFILE") ? 1 : 0) : g_prof_on)
 #define PROF_T0() double _t0 = PROF_ON() ? prof_now() : 0.0
 #define PROF_ADD(field) do { if (PROF_ON()) g_prof.field += prof_now() - _t0; } while (0)
+/* The end of a step, on a timed draw (see DRAW_STEPS). */
+static int    g_step_on;    /* this draw is one of the timed ones */
+static int    g_step_cur;   /* the step it is in */
+static double g_step_t;     /* ... and when that began */
+#define PROF_STEP(s) do { if (g_step_on) { double t_ = prof_now();      \
+        g_prof.step[s] += t_ - g_step_t; g_step_t = t_; g_step_cur = (s) + 1; } } while (0)
 
 /* Time spent walking the pushbuffer, measured by the walker and reported here
  * so that it lands beside the GL numbers. See nv2a_pb_scan. */
@@ -575,6 +592,19 @@ static void prof_report(void)
                 ? 1e6 * (d.whole_draw - d.tex - d.verts - d.vbo - d.unif - d.draw - d.state)
                   / (g_prof.n_draws - prev.n_draws) : 0.0,
             100 * d.present / dt, 100 * d.pace / dt);
+        if (g_prof.n_step != prev.n_step) {
+            unsigned ns = g_prof.n_step - prev.n_step;
+            double us[DRAW_STEPS];
+            int s;
+            for (s = 0; s < DRAW_STEPS; s++)
+                us[s] = 1e6 * (g_prof.step[s] - prev.step[s]) / ns;
+            fprintf(stderr,
+                "[GLPROF]   a draw by step, us (every %dth timed): setup %.2f  "
+                "vertices %.2f  uniforms %.2f  textures %.2f  state %.2f  "
+                "probes %.2f  glDraw %.2f  after %.2f\n", DRAW_STEP_EVERY,
+                us[STEP_SETUP], us[STEP_VERTS], us[STEP_UNIF], us[STEP_TEX],
+                us[STEP_STATE], us[STEP_PROBES], us[STEP_DRAW], us[STEP_AFTER]);
+        }
         { static double last_vc;
           if (now - last_vc >= 10.0) { last_vc = now; vc_report(" (so far)"); } }
         /* Per second, not per frame -- which is what it used to say, and the
@@ -5035,13 +5065,24 @@ static int texgen_note(uint32_t n)
 }
 
 static void do_draw_body(void);
-/* A draw, timed whole for the profile (it has a great many ways out). */
+/* A draw, timed whole for the profile (it has a great many ways out), and
+ * every DRAW_STEP_EVERY-th one step by step. */
 static void do_draw(void)
 {
     if (PROF_ON()) {
-        double t0 = prof_now();
+        static unsigned nth;
+        double t0 = prof_now(), t1;
+        g_step_on = (nth++ % DRAW_STEP_EVERY) == 0;
+        g_step_cur = STEP_SETUP;
+        g_step_t = t0;
         do_draw_body();
-        g_prof.whole_draw += prof_now() - t0;
+        t1 = prof_now();
+        g_prof.whole_draw += t1 - t0;
+        if (g_step_on) {
+            g_prof.step[g_step_cur] += t1 - g_step_t;
+            g_prof.n_step++;
+            g_step_on = 0;
+        }
     } else {
         do_draw_body();
     }
@@ -5377,6 +5418,7 @@ static void do_draw_body(void)
           fflush(stderr);
       } }
 
+    PROF_STEP(STEP_SETUP);
     /* The 2D draws the widescreen squeeze measures (below): it reads their
      * converted positions back, so they take the old path. */
     wide2d = nv2a_wide_scene() && S.xf_mode != NV2A_XF_MODE_FIXED
@@ -5616,6 +5658,7 @@ static void do_draw_body(void)
           g_prof.vbo_bytes += (unsigned long)out_n * stride_floats * sizeof(float);
       }
       PROF_ADD(vbo); }
+    PROF_STEP(STEP_VERTS);
 
     if (g_cur_slot != slot) {
         g_prof.n_prog_switch++;
@@ -6066,6 +6109,7 @@ static void do_draw_body(void)
         g_last.fbo_w = g_fbo_w; g_last.fbo_h = g_fbo_h;
     }
 
+    PROF_STEP(STEP_UNIF);
     /* Bind every stage the combiner shader samples.
      *
      * Coordinates are normalised for a swizzled or compressed texture and in
@@ -6130,6 +6174,7 @@ static void do_draw_body(void)
             srcslot[st] = sslot;
         }
         g_last.tex0 = 0;    /* unit 0 is no longer what the cache remembers */
+        PROF_STEP(STEP_TEX);
 
         /* [PASS]: every draw while nv2a_gl_trace_frames() is active, and the
          * first draws that use a BUMPENVMAP stage: what each stage samples,
@@ -6370,6 +6415,7 @@ static void do_draw_body(void)
         g_draw_rs = rs;
         G->state(&rs);
     }
+    PROF_STEP(STEP_STATE);
 
     if (inl) S.draws_inline++; else S.draws_array++;
     S.draws_xf[S.xf_mode & 3]++;
@@ -7531,6 +7577,7 @@ static void do_draw_body(void)
             goto xray_done;
         } }
     }
+    PROF_STEP(STEP_PROBES);
     if (!curtain_skip && !g_surf_lost) {
         PROF_T0();
         if (vc_vb && !vc_seq) G->draw_indexed(mode, out_n, vc_i32);
@@ -7538,6 +7585,7 @@ static void do_draw_body(void)
         PROF_ADD(draw);
     }
     xray_done: ;
+    PROF_STEP(STEP_DRAW);
     /*
      * RECOMP_GL_DARKHUNT=<n>: which draw makes the frame dark.
      *
