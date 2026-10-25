@@ -349,6 +349,22 @@ git diff --name-status --diff-filter=MD upstream main
   unchanged, so `SC_LAYOUT` stays. Run tests/gl_backend (test_nudge.c) and
   tests/shader_cache.
 
+### Per-vertex methods told apart first
+
+- **Files:** src/nv2a_gl/nv2a_gl.c (`attr_method`, with `M_SET_VERTEX3F`
+  and `M_SET_VERTEX_DATA2F_M`, and the first test in `imm_method`).
+- **Why:** upstream's `imm_method`, new in 0.5.6, tests a method against
+  some 40 ranges in turn before it says the method isn't a per-vertex
+  attribute, and every method `gl_method` hasn't dealt with by then reaches
+  it: the index words among them, about 8 million a second on 99th Street. `attr_method` tests
+  the two ranges the per-vertex methods lie in first, so the rest leave at
+  once. In the sandbox an index word took 11 to 20 ns in `imm_method`, and
+  takes about 2 ns with it. `pb_kind`'s vertex attributes are the same two
+  ranges and use it too. Could suit upstream.
+- **At a merge:** a per-vertex method upstream adds to `imm_method` must
+  lie in `attr_method`'s ranges. Run tests/attr_method, which fails if one
+  doesn't.
+
 ### Full screen remembered
 
 - **Files:** src/nv2a_gl/nv2a_gl.c.

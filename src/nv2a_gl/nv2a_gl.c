@@ -182,6 +182,8 @@ extern uint32_t  xbox_ContiguousBlockSerial(uint32_t va);
 #define M_SET_TRANSFORM_PROGRAM_ST  0x1EA0
 #define M_SET_TRANSFORM_CONSTANT_LD 0x1EA4
 
+#define M_SET_VERTEX3F              0x1500   /* the first per-vertex method */
+#define M_SET_VERTEX_DATA2F_M       0x1880   /* +i*8,  constant attribute */
 #define M_SET_VERTEX_DATA4UB        0x1940   /* +i*4,  constant attribute */
 #define M_SET_VERTEX_DATA4F         0x1A00   /* +i*16, constant attribute */
 #define M_SET_VERTEX_ARRAY_OFFSET   0x1720   /* +i*4, 16 attributes */
@@ -10495,11 +10497,22 @@ static void imm_set(uint32_t a, int c, float v)
     S.const_set[a][c] = v;
 }
 
+/* 1 if `m` is where the per-vertex attribute methods lie: SET_VERTEX3F up to
+ * the vertex arrays, and SET_VERTEX_DATA2F_M up to the textures. */
+static int attr_method(uint32_t m)
+{
+    return (m >= M_SET_VERTEX3F && m < M_SET_VERTEX_ARRAY_OFFSET)
+        || (m >= M_SET_VERTEX_DATA2F_M && m < M_SET_TEXTURE_OFFSET);
+}
+
 /* 1 if `method` is one of the per-vertex attribute methods (handled here). */
 static int imm_method(uint32_t method, uint32_t param)
 {
     float f;
     uint32_t a, part;
+    /* Every other method, the index words among them, leaves here, not after
+     * each of the tests below. */
+    if (!attr_method(method)) return 0;
     memcpy(&f, &param, 4);
     if (method >= 0x1500 && method < 0x150C) {            /* SET_VERTEX3F */
         part = (method - 0x1500) / 4;
@@ -10756,9 +10769,7 @@ static int pb_kind(uint32_t m)
     if (m == M_INLINE_ARRAY)                                     return PBK_INLINE;
     if ((m >= M_SET_TRANSFORM_CONSTANT && m < M_SET_TRANSFORM_CONSTANT + 0x80)
      || m == M_SET_TRANSFORM_CONSTANT_LD)                        return PBK_CONST;
-    /* SET_VERTEX3F up to the arrays, SET_VERTEX_DATA2F_M up to the textures */
-    if ((m >= 0x1500 && m < M_SET_VERTEX_ARRAY_OFFSET)
-     || (m >= 0x1880 && m < M_SET_TEXTURE_OFFSET))               return PBK_ATTR;
+    if (attr_method(m))                                          return PBK_ATTR;
     if (m >= M_ARRAY_ELEMENT16 && m < M_INLINE_ARRAY)            return PBK_INDEX;
     /* the projection matrix up to the end of the texture matrices */
     if (m >= 0x0440 && m < M_SET_TEXTURE_MATRIX + 4 * 64)        return PBK_MATRIX;
