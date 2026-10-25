@@ -672,6 +672,7 @@ static int      g_failed;
  * (nv2a_metal.m). Chosen once, in gfx_init(). */
 static const Nv2aGfx *G;
 static int g_is_gl;        /* G is OpenGL: the GL-only diagnostics may run */
+static int g_revz;         /* depth is reversed (revz_start) */
 unsigned nv2a_gfx_gl_fbo(uint32_t rt);   /* nv2a_gfx_gl.c */
 #if defined(NV2A_GL_USE_CGL)
 static CGLContextObj g_cgl_ctx;
@@ -1183,12 +1184,75 @@ static int gl_init(uint32_t w, uint32_t h)
 
 #else
 
+#if defined(NV2A_GL_USE_SDL) && !defined(NV2A_GLES) && !defined(__APPLE__)
+#ifndef GL_LOWER_LEFT
+#  define GL_LOWER_LEFT      0x8CA1
+#endif
+#ifndef GL_ZERO_TO_ONE
+#  define GL_ZERO_TO_ONE     0x935F
+#endif
+#ifndef GL_CLIP_DEPTH_MODE
+#  define GL_CLIP_DEPTH_MODE 0x935D
+#endif
+/* glClipControl is core from OpenGL 4.5 (major * 10 + minor). */
+#define REVZ_CORE_VERSION 45
+void nv2a_gfx_gl_set_revz(int on);   /* nv2a_gfx_gl.c */
+/* Reversed depth, on unless RECOMP_GL_NOREVZ is set.
+ *
+ * Clip control gives OpenGL the console's 0..w depth range, and the emitters
+ * then count depth down from the far end rather than up from the near one,
+ * so that the far end -- where this title layers its decals and menus a
+ * step or two apart -- is where floats are finest (nv2a_vsh.c). The backend
+ * turns its depth comparisons, clear, polygon offset and readback round to
+ * match. Desktop OpenGL only, with 4.5 or ARB_clip_control; anywhere else
+ * depth is as before, and the log says so. With it comes the precise
+ * fixed-function depth (nv2a_vsh.c), unless RECOMP_GL_NOPRECZ is set.
+ * Before init and before any program is emitted: the shader cache's programs
+ * are made with it. */
+static void revz_start(void)
+{
+    typedef void (APIENTRY *ClipControlFn)(GLenum, GLenum);
+    ClipControlFn fn = NULL;
+    GLint maj = 0, min = 0, mode = 0;
+    if (getenv("RECOMP_GL_NOREVZ")) {
+        fprintf(stderr, "  [GL] reversed depth: off (RECOMP_GL_NOREVZ)\n");
+        return;
+    }
+    glGetIntegerv(GL_MAJOR_VERSION, &maj);
+    glGetIntegerv(GL_MINOR_VERSION, &min);
+    if (maj * 10 + min >= REVZ_CORE_VERSION || SDL_GL_ExtensionSupported("GL_ARB_clip_control"))
+        fn = (ClipControlFn)SDL_GL_GetProcAddress("glClipControl");
+    if (fn) {
+        fn(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
+        glGetIntegerv(GL_CLIP_DEPTH_MODE, &mode);
+    }
+    if (mode != GL_ZERO_TO_ONE) {
+        fprintf(stderr, "  [GL] reversed depth: not available on OpenGL %d.%d"
+                " (no clip control); depth as usual\n", (int)maj, (int)min);
+        return;
+    }
+    g_revz = 1;
+    nv2a_glsl_set_revz(1);
+    nv2a_gfx_gl_set_revz(1);
+    fprintf(stderr, "  [GL] reversed depth: on, with clip control (0..w)\n");
+    if (getenv("RECOMP_GL_NOPRECZ"))
+        fprintf(stderr, "  [GL] precise depth: off (RECOMP_GL_NOPRECZ)\n");
+    else {
+        nv2a_glsl_set_precz(1);
+        fprintf(stderr, "  [GL] precise depth: on, fixed-function depth worked out in double\n");
+    }
+}
+#endif
+
 /* Everything that is the same whichever way the context was obtained. */
 static int gl_init_common(uint32_t w, uint32_t h)
 {
     (void)w; (void)h;
     G = nv2a_gfx_gl();
     g_is_gl = 1;
+#if defined(NV2A_GL_USE_SDL) && !defined(NV2A_GLES) && !defined(__APPLE__)
+    revz_start();
+#endif
     return G->init();
 }
 
@@ -4141,6 +4205,20 @@ static GLenum gl_depth_func(uint32_t f)
     default:     return GL_LEQUAL;
     }
 }
+
+/* A depth comparison set here behind the backend's back, turned round when
+ * depth is reversed (g_revz), as the backend turns its own. */
+static GLenum depth_dir(GLenum f)
+{
+    if (!g_revz) return f;
+    switch (f) {
+    case GL_LESS:    return GL_GREATER;
+    case GL_LEQUAL:  return GL_GEQUAL;
+    case GL_GREATER: return GL_LESS;
+    case GL_GEQUAL:  return GL_LEQUAL;
+    default:         return f;
+    }
+}
 #endif /* NV2A_GL_HAVE_GL */
 
 
@@ -4626,6 +4704,10 @@ static const char *vc_debug_switch(void)
         "SCALE", "READBACK", "CURTAIN", "PRESENTER", "PROFILE", "VCACHE",
         "VCACHE_MB", "VCACHE_VERIFY", "CONST_PART", "ANISO", "MIPMAP", "DEPTHCLAMP",
         "TEXHASH_FULL", "CONTIG_ALL", "HEAP_FIRST", "STICKY_ATTRS",
+        /* reversed depth off (revz_start): shaders and depth state only */
+        "NOREVZ",
+        /* precise fixed-function depth off: one uniform and shaders */
+        "NOPRECZ",
         /* the frame dumps: taken at the flip, from the picture */
         "DUMP_FB", "DUMP_AFTER", "DUMP_EVERY", "DUMP_3D", "DUMP_TRIS",
         "DUMP_CHARS", "DUMP_DEPTH", NULL
@@ -5091,6 +5173,24 @@ static void do_draw(void)
     } else {
         do_draw_body();
     }
+}
+
+/* The reversed depth row for the precise depth (nv2a_vsh.c): far * row w
+ * minus row z, over the range, in double, so the cancellation near the far
+ * end is exact. The far end and range are REVZ_FROM_RANGE's. */
+static void ff_revz_row(float out[4])
+{
+    double far_end, range;
+    int c;
+    if (S.u.z_clip[1] > S.u.z_clip[0]) {
+        far_end = S.u.z_clip[1];
+        range = (double)S.u.z_clip[1] - S.u.z_clip[0];
+    } else {
+        range = S.u.vp_scale[2] != 0.0f ? S.u.vp_scale[2] : 1.0;
+        far_end = (double)S.u.vp_off[2] + range;
+    }
+    for (c = 0; c < 4; c++)
+        out[c] = (float)((far_end * S.u.ff_mat[3][c] - S.u.ff_mat[2][c]) / range);
 }
 
 static void do_draw_body(void)
@@ -5998,6 +6098,11 @@ static void do_draw_body(void)
     }
     if (uses(slot, NV2A_U_FFMAT)) {
         G->uniform_f(NV2A_U_FFMAT, &S.u.ff_mat[0][0], 4);
+        if (uses(slot, NV2A_U_FFREVZ)) {
+            float rr[4];
+            ff_revz_row(rr);
+            G->uniform_f(NV2A_U_FFREVZ, rr, 1);
+        }
         if (uses(slot, NV2A_U_FFVPOFF))
             G->uniform_f(NV2A_U_FFVPOFF, S.vp_off_reg, 1);
         if (uses(slot, NV2A_U_FFTEXMAT))
@@ -7442,7 +7547,7 @@ static void do_draw_body(void)
                    * name the culprit instead of merely proving there is one.
                    * Each pass starts from the state the title asked for. */
                   if (S.depth_test) { glEnable(GL_DEPTH_TEST);
-                                      glDepthFunc(gl_depth_func((uint32_t)S.depth_func)); }
+                                      glDepthFunc(depth_dir(gl_depth_func((uint32_t)S.depth_func))); }
                   else glDisable(GL_DEPTH_TEST);
                   if (S.cull_enable) glEnable(GL_CULL_FACE);
                   else glDisable(GL_CULL_FACE);
@@ -7455,7 +7560,7 @@ static void do_draw_body(void)
                   if (uses(slot, NV2A_U_ALPHAFUNC))
                       G->uniform_i(NV2A_U_ALPHAFUNC, 0);
                   glEnable(GL_DEPTH_TEST);
-                  glDepthFunc(dfn[pass]);
+                  glDepthFunc(depth_dir(dfn[pass]));
 
                   r[pass] = 0;
 #if defined(NV2A_GLES)
@@ -7483,7 +7588,7 @@ static void do_draw_body(void)
                * believes it already set all of this, so restoring it here is
                * not optional and cannot be left to the next draw. */
               if (S.depth_test) { glEnable(GL_DEPTH_TEST);
-                                  glDepthFunc(gl_depth_func((uint32_t)S.depth_func)); }
+                                  glDepthFunc(depth_dir(gl_depth_func((uint32_t)S.depth_func))); }
               else glDisable(GL_DEPTH_TEST);
               glDepthMask(S.depth_mask ? GL_TRUE : GL_FALSE);
               if (S.blend_enable) { glEnable(GL_BLEND);

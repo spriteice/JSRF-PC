@@ -441,6 +441,51 @@ NV2A_GLSL_VERSION
 "float nv_rcc(float x) { return nv_away0(1.0 / x); }\n";
 
 /*
+ * Reversed depth: set by the OpenGL backend once clip control gives it the
+ * console's 0..w depth range, before any program is emitted (nv2a_gl.c,
+ * revz_start), unless RECOMP_GL_NOREVZ is set. Metal never sets it.
+ *
+ * The title layers decals and its menus a step or two of the 24-bit range
+ * apart, near the far end, with LEQUAL and no polygon offset. Converted to
+ * 0..1, then -1..1 and back, a depth there passes through floats at their
+ * coarsest and moves by up to two steps, so the depth test settles those ties
+ * by rounding. Counted down from the far end instead -- the far end of the
+ * clip range minus the screen z -- the subtraction is exact and the result
+ * small, where floats are finest. Nearer is then larger: the backend turns
+ * every comparison, the clear and the polygon offset round to match.
+ */
+static int g_revz;
+void nv2a_glsl_set_revz(int on) { g_revz = on; }
+int  nv2a_glsl_revz(void) { return g_revz; }
+
+/*
+ * Precise depth (with reversed depth, unless RECOMP_GL_NOPRECZ is set): the
+ * fixed-function depth without float32's rounding at the far end.
+ *
+ * The composite matrix has the 0..16777215 depth scale folded in, so a wall
+ * near the far end has a z of about three billion before the divide, where
+ * a float's step is 256: summed on the GPU and divided, its screen z lands
+ * up to a depth step or two off, differently every frame as the camera
+ * moves. That is the distant flicker reversed depth alone left. Counted
+ * down from the far end the same depth is (far * w - z) / (range * w). The
+ * backend works out that row, (far * row w - row z) / range, in double once
+ * a draw, where the cancellation is exact, and hands it over as ffRevZ, so
+ * the shader's own sum is of small numbers and its error a few thousandths
+ * of a step (tests/gl_backend/test_revz.c).
+ */
+static int g_precz;
+void nv2a_glsl_set_precz(int on) { g_precz = on; }
+int  nv2a_glsl_precz(void) { return g_precz; }
+
+/* The reversed 0..1 depth from the clip range, or the viewport z when the
+ * title set no range: the forward form's 1 - z, done without the 1. */
+static const char REVZ_FROM_RANGE[] =
+    "    ndc.z = (zClip.y > zClip.x)\n"
+    "          ? (zClip.y - oPos.z) / (zClip.y - zClip.x)\n"
+    "          : (vpOff.z + (vpScale.z != 0.0 ? vpScale.z : 1.0) - oPos.z)\n"
+    "            / (vpScale.z != 0.0 ? vpScale.z : 1.0);\n";
+
+/*
  * Screen space back to clip space.
  *
  * Shared by the translated programs and by the fixed-function emitter: the
@@ -486,13 +531,20 @@ static void emit_viewport_epilogue(SB *sb, int ff)
          */
         sb_add(sb,
             "    ndc.x = (oPos.x - wideShift) * 2.0 / vpSurface.x - 1.0;\n"
-            "    ndc.y = 1.0 - oPos.y * 2.0 / vpSurface.y;\n"
+            "    ndc.y = 1.0 - oPos.y * 2.0 / vpSurface.y;\n");
+        if (g_revz && g_precz)
+            sb_add(sb, "    ndc.z = dot(v0, ffRevZ) / oPos.w;   // precise depth\n");
+        else if (g_revz)
+            sb_add(sb, "%s", REVZ_FROM_RANGE);
+        else
+            sb_add(sb,
             "    ndc.z = (zClip.y > zClip.x)\n"
             "          ? (oPos.z - zClip.x) / (zClip.y - zClip.x)\n"
             "          : (oPos.z - vpOff.z) / (vpScale.z != 0.0 ? vpScale.z : 1.0);\n"
             "#if !NV2A_CLIP_Z01\n"
             "    ndc.z = ndc.z * 2.0 - 1.0;   // D3D depth [0,1] -> GL [-1,1]\n"
-            "#endif\n"
+            "#endif\n");
+        sb_add(sb,
             "    ndc.w = oPos.w;\n"
             "    gl_Position = vec4(ndc.xyz * ndc.w, ndc.w);\n"
             "    oFogC = nv_fog(oFog.x);\n"
@@ -502,12 +554,18 @@ static void emit_viewport_epilogue(SB *sb, int ff)
     sb_add(sb,
         "    if (posMode == 1) {\n"
         "        // The program left clip space alone: hand it over as is,\n"
-        "        // remapping depth only where the target API wants [-w,w].\n"
+        "        // remapping depth only where the target API wants [-w,w].\n");
+    if (g_revz)
+        sb_add(sb,
+        "        gl_Position = vec4(oPos.xy, oPos.w - oPos.z, oPos.w);\n");
+    else
+        sb_add(sb,
         "#if NV2A_CLIP_Z01\n"
         "        gl_Position = vec4(oPos.xyz, oPos.w);\n"
         "#else\n"
         "        gl_Position = vec4(oPos.xy, 2.0 * oPos.z - oPos.w, oPos.w);\n"
-        "#endif\n"
+        "#endif\n");
+    sb_add(sb,
         "        gl_Position.x -= wideShift * 2.0 / vpSurface.x * oPos.w;\n"
         "    } else if (posMode == 2) {\n"
         "        // Screen space in pixels, converted with the render target's\n"
@@ -515,11 +573,17 @@ static void emit_viewport_epilogue(SB *sb, int ff)
         "        // title may be using for its clip volume rather than for the\n"
         "        // transform its program already applied.\n"
         "        ndc.x = (oPos.x - wideShift) * 2.0 / vpSurface.x - 1.0;\n"
-        "        ndc.y = 1.0 - oPos.y * 2.0 / vpSurface.y;\n"
+        "        ndc.y = 1.0 - oPos.y * 2.0 / vpSurface.y;\n");
+    if (g_revz)
+        sb_add(sb,
+        "        ndc.z = (16777215.0 - oPos.z) / 16777215.0;\n");
+    else
+        sb_add(sb,
         "        ndc.z = oPos.z / 16777215.0;\n"
         "#if !NV2A_CLIP_Z01\n"
         "        ndc.z = ndc.z * 2.0 - 1.0;\n"
-        "#endif\n"
+        "#endif\n");
+    sb_add(sb,
         "        ndc.w = nv_away0(oPos.w);\n"
         "        gl_Position = vec4(ndc.xyz * ndc.w, ndc.w);\n"
         "    } else {\n"
@@ -568,7 +632,15 @@ static void emit_viewport_epilogue(SB *sb, int ff)
         "    // the ratio is the 0..1 depth. x and y are recovered from the\n"
         "    // viewport registers, which is the same divide wearing a\n"
         "    // different hat; z has no viewport scale to recover it with,\n"
-        "    // because this title never applied one.\n"
+        "    // because this title never applied one.\n");
+    if (g_revz)
+        sb_add(sb,
+        "    ndc.z = (nv_away0(oPos.w) - oPos.z) / nv_away0(oPos.w);\n"
+        "#else\n"
+        "%s"
+        "#endif\n", REVZ_FROM_RANGE);
+    else
+        sb_add(sb,
         "    ndc.z = oPos.z / nv_away0(oPos.w);\n"
         "#else\n"
         "    ndc.z = (zClip.y > zClip.x)\n"
@@ -577,7 +649,8 @@ static void emit_viewport_epilogue(SB *sb, int ff)
         "#endif\n"
         "#if !NV2A_CLIP_Z01\n"
         "    ndc.z = ndc.z * 2.0 - 1.0;   // D3D depth [0,1] -> GL [-1,1]\n"
-        "#endif\n"
+        "#endif\n");
+    sb_add(sb,
         "    // w held away from zero and infinity, as the hardware does: a w of\n"
         "    // exactly zero gave (0, 0, 0, 0), a vertex the rasteriser divides by\n"
         "    // nothing.\n"
@@ -823,6 +896,8 @@ static int emit_ff(const Nv2aVshFixed *f, char *buf, int bufsize, int msl)
         if (tg_nrm)
             sb_add(&sb, "uniform vec4 ffIMV[4];      // NV097_SET_INVERSE_MODEL_VIEW_MATRIX 0\n");
     }
+    if (g_revz && g_precz)
+        sb_add(&sb, "\nuniform vec4 ffRevZ;        // the reversed depth row (precise depth)\n");
     sb_add(&sb,
         "\nuniform vec4 ffMat[4];      // NV097_SET_COMPOSITE_MATRIX\n"
         "uniform vec4 ffVpOff;       // NV097_SET_VIEWPORT_OFFSET, as written\n"

@@ -183,6 +183,14 @@ extern uint16_t g_interp_written;
 int nv2a_vsh_interp_a0(const Nv2aVshProgram *p, const float v[16][4],
                        const float c[][4], int *a0_out, int a0_max);
 
+/* Reversed depth for the GLSL emitters, vertex and fragment: 1 once the
+ * OpenGL backend has clip control on, before any program is emitted, and the
+ * precise fixed-function depth that goes with it. See nv2a_vsh.c. */
+void nv2a_glsl_set_revz(int on);
+int  nv2a_glsl_revz(void);
+void nv2a_glsl_set_precz(int on);
+int  nv2a_glsl_precz(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -683,7 +683,12 @@ static int psh_emit(const Nv2aPshState *ps, char *buf, int bufsize, int msl)
      * smallest step. The front half sets polyOffset to zero when the title
      * has the offset off.
      */
-    if (ps->w_buffer && !msl)
+    /* Reversed depth (nv2a_glsl_revz): the same depth, stored as 1 - d. */
+    if (ps->w_buffer && !msl && nv2a_glsl_revz())
+        sb(&s, "    { float d = (1.0 / gl_FragCoord.w) / 16777216.0;\n"
+               "      gl_FragDepth = 1.0 - (d + polyOffset.x * max(abs(dFdx(d)), abs(dFdy(d)))"
+               " + polyOffset.y); }\n");
+    else if (ps->w_buffer && !msl)
         sb(&s, "    { float d = (1.0 / gl_FragCoord.w) / 16777216.0;\n"
                "      gl_FragDepth = d + polyOffset.x * max(abs(dFdx(d)), abs(dFdy(d)))"
                " + polyOffset.y; }\n");

@@ -78,6 +78,28 @@ static int gles_has_depth_clamp(void)
 #endif
 #include <string.h>
 
+/* Reversed depth: nv2a_gl.c turns it on with clip control, before init,
+ * unless RECOMP_GL_NOREVZ is set. The emitters store nearer as larger
+ * (nv2a_vsh.c), so every depth comparison, the depth clear, the polygon
+ * offset and the depth readback turn round with them here. */
+static int g_revz;
+void nv2a_gfx_gl_set_revz(int on);
+void nv2a_gfx_gl_set_revz(int on) { g_revz = on; }
+
+/* A depth comparison, turned round when depth is reversed: equal, not
+ * equal, never and always stay as they are. */
+static GLenum depth_dir(GLenum f)
+{
+    if (!g_revz) return f;
+    switch (f) {
+    case GL_LESS:    return GL_GREATER;
+    case GL_LEQUAL:  return GL_GEQUAL;
+    case GL_GREATER: return GL_LESS;
+    case GL_GEQUAL:  return GL_LEQUAL;
+    default:         return f;
+    }
+}
+
 /* Texture units 0..3 are the combiner stages. Creating or reading a texture
  * binds it somewhere, and it used to be wherever the active unit happened to
  * be -- which is how an upload on stage 1 once rebound stage 0 for that draw.
@@ -386,6 +408,10 @@ static int glx_target_read_depth(uint32_t h, uint32_t pw, uint32_t ph, float *ou
     glBindFramebuffer(GL_READ_FRAMEBUFFER, g_rt[h - 1].fbo);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glReadPixels(0, 0, (GLsizei)pw, (GLsizei)ph, GL_DEPTH_COMPONENT, GL_FLOAT, out);
+    if (g_revz) {
+        size_t i, n = (size_t)pw * ph;
+        for (i = 0; i < n; i++) out[i] = 1.0f - out[i];
+    }
     rb_idle((int)h - 1);
     if (rt_ok(g_cur_rt))
         glBindFramebuffer(GL_FRAMEBUFFER, draw_fbo(g_cur_rt));
@@ -1010,7 +1036,7 @@ static void glx_state(const Nv2aRenderState *rs)
     if (rs->depth_test != g_last.depth_test || rs->depth_func != g_last.depth_func) {
         if (rs->depth_test) {
             glEnable(GL_DEPTH_TEST);
-            glDepthFunc(gl_depth_func((uint32_t)rs->depth_func));
+            glDepthFunc(depth_dir(gl_depth_func((uint32_t)rs->depth_func)));
         } else glDisable(GL_DEPTH_TEST);
         g_last.depth_test = rs->depth_test;
         g_last.depth_func = rs->depth_func;
@@ -1116,7 +1142,8 @@ static void glx_state(const Nv2aRenderState *rs)
           on = rs->poly_offset;
       }
       if (on && (!set || rs->poly_factor != factor || rs->poly_units != units)) {
-          glPolygonOffset(rs->poly_factor, rs->poly_units);
+          if (g_revz) glPolygonOffset(-rs->poly_factor, -rs->poly_units);
+          else glPolygonOffset(rs->poly_factor, rs->poly_units);
           factor = rs->poly_factor; units = rs->poly_units; set = 1;
       } }
 
@@ -1407,6 +1434,7 @@ static void glx_clear(unsigned mask, const float rgba[4], float depth,
         bits |= GL_COLOR_BUFFER_BIT;
     }
     if (mask & 2u) {
+        if (g_revz) depth = 1.0f - depth;
 #if defined(NV2A_GLES)
         glClearDepthf(depth);
 #else

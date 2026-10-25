@@ -266,6 +266,35 @@ git diff --name-status --diff-filter=MD upstream main
 - **At a merge:** an upstream probe of the same kind that reads the clock
   in `do_draw_body` can use `g_probe_now` too.
 
+### Reversed and precise depth
+
+- **Files:** src/nv2a_gl/nv2a_gl.c (`revz_start`, `ff_revz_row`, and
+  `depth_dir` for the diagnostics' depth state), nv2a_gfx_gl.c (`g_revz`
+  and `depth_dir`: the depth comparisons, clear, polygon offset and
+  readback), nv2a_vsh.c and .h (`nv2a_glsl_set_revz` and
+  `nv2a_glsl_set_precz`, and the depth in the epilogues), nv2a_psh.c (the
+  W-buffer depth), nv2a_backend.h and nv2a_uniforms.c (`NV2A_U_FFREVZ`,
+  `ffRevZ`).
+- **Why:** near the far end of the 24-bit range a float holds only whole
+  depth steps, and the title layers its menus and decals a step or two
+  apart there. Upstream's depth, taken to -1..1 and back, and its
+  fixed-function z, summed at about three billion before the divide, moved
+  by a step or more there, so distant objects flickered and the Graffiti
+  menu's icons tied. Clip control gives OpenGL the console's 0..w range,
+  the emitters count depth down from the far end, where floats are finest,
+  and the fixed-function depth row is worked out in double once a draw.
+  Desktop OpenGL only, with 4.5 or ARB_clip_control, on by default;
+  `RECOMP_GL_NOREVZ` and `RECOMP_GL_NOPRECZ` turn them off. With reversed
+  depth off, and on OpenGL ES and Metal, the shaders are as they were
+  without it. Could suit upstream.
+- **At a merge:** keep `NV2A_U_FFREVZ` the last of the vertex uniforms,
+  after upstream's, in the same place in nv2a_uniforms.c's table. A
+  glDepthFunc, glClearDepth or glPolygonOffset upstream adds turns round
+  with `depth_dir` and `g_revz`, and a new depth in an epilogue needs its
+  reversed form beside it. None of this changes `Nv2aVshFixed` or
+  `Nv2aPshState`, so `SC_LAYOUT` stays. Run tests/gl_backend (test_revz.c)
+  and tests/shader_cache.
+
 ### Full screen remembered
 
 - **Files:** src/nv2a_gl/nv2a_gl.c.
