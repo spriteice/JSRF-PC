@@ -27,4 +27,4 @@ Based on upstream JSRF Unleashed 0.5.4.
 - **Menu behaviour:** Adjusted to be more consistent, with the menus tidied up
   and put in a clearer order. A click outside the in-game menus now closes
   them, back to the bar, instead of opening the last menu again.
-- **Version numbers:** Distinct from upstream, beta until 1.0.0.
+- **Version numbers:** Distinct from upstream, beta until 1.0.

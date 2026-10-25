@@ -17,7 +17,7 @@ cmake_minimum_required(VERSION 3.20)
 # "b1-3-gabc1234-dirty" between releases); a tree without its git history
 # (an export) passes it with -DJSRF_VERSION=. The engine prints it on its
 # first line and answers --version; the launchers take it from there.
-# This fork's tags have no "v" (b1, b1.1, b2, then 1.0.0), so upstream's
+# This fork's tags have no "v" (b1, b1.1, b2, then 1.0), so upstream's
 # vX.Y.Z tags, in a clone that has fetched them, are never taken for ours.
 
 # The Mac build is Apple Silicon only. Said before project(), so that a cmake
@@ -166,6 +166,9 @@ if(WIN32 AND XBOXRECOMP_WIN_GL)
     string(REGEX MATCH "^([0-9]+)[.]([0-9]+)[.]([0-9]+)" _jsrf_v "${JSRF_VERSION}")
     if(_jsrf_v)
         set(_jsrf_vnum "${CMAKE_MATCH_1},${CMAKE_MATCH_2},${CMAKE_MATCH_3},0")
+    elseif(JSRF_VERSION MATCHES "^([0-9]+)[.]([0-9]+)")
+        # Two numbers, as the full release's 1.0: X.Y is X.Y.0.0.
+        set(_jsrf_vnum "${CMAKE_MATCH_1},${CMAKE_MATCH_2},0,0")
     elseif(JSRF_VERSION MATCHES "^b([0-9]+)[.]([0-9]+)")
         # A beta: bN.M is 0.0.N.M, and bN is 0.0.N.0.
         set(_jsrf_vnum "0,0,${CMAKE_MATCH_1},${CMAKE_MATCH_2}")

@@ -1,6 +1,6 @@
 # Versioning
 
-JSRF-PC releases are betas until 1.0.0. Every release says which upstream
+JSRF-PC releases are betas until 1.0. Every release says which upstream
 JSRF Unleashed version it is based on, for example "b1, based on upstream
 0.5.4".
 
@@ -9,7 +9,7 @@ JSRF Unleashed version it is based on, for example "b1, based on upstream
 - **b1:** The first beta.
 - **b1.1, b1.2, and so on:** Bug fixes to b1.
 - **b2:** The next feature release, with b2.1 and so on for its bug fixes.
-- **1.0.0:** The final release.
+- **1.0:** The final release.
 
 A release's git tag and the version it shows are both its name.
 
@@ -40,13 +40,13 @@ A release's git tag and the version it shows are both its name.
   version. It never says "beta".
 - **Windows File version:** this field must be four numbers. bN.M is
   0.0.N.M and bN is 0.0.N.0: b1 is 0.0.1.0, b1.1 is 0.0.1.1, b2 is 0.0.2.0
-  and b2.1 is 0.0.2.1. 1.0.0 is 1.0.0.0.
+  and b2.1 is 0.0.2.1. 1.0 is 1.0.0.0.
 
 ## GitHub releases
 
 - **A full release,** not a pre-release.
 - **Title:** `JSRF-PC beta 1`, and `JSRF-PC beta 1.1` for b1.1. The final
-  release is `JSRF-PC 1.0.0`.
+  release is `JSRF-PC 1.0`.
 - **"Beta"** appears only in the release title, the release text, and the
   changelog.
 - **Files:** `JSRF-PC-b1-linux-x86_64.tar.gz` and

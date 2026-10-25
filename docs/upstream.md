@@ -143,7 +143,7 @@ git diff --name-status --diff-filter=MD upstream main
 ### Version from our tags
 
 - **Files:** port/CMakeLists.txt, launcher/windows/package.sh.
-- **Why:** the version comes from our tags (b1, b1.1, 1.0.0), never
+- **Why:** the version comes from our tags (b1, b1.1, 1.0), never
   upstream's v-tags, and a beta's Windows file version is 0.0.N.M
   (docs/versioning.md).
 - **At a merge:** keep ours.
