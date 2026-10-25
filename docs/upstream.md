@@ -310,6 +310,22 @@ git diff --name-status --diff-filter=MD upstream main
 - **At a merge:** an upstream error check in `do_draw_body` goes through
   `gl_error_check` too.
 
+### The walk by kind of method
+
+- **Files:** src/nv2a_gl/nv2a_gl.c (`pb_kind`, `pb_kind_method`, and a
+  `[GLPROF]` line).
+- **Why:** with `RECOMP_GL_PROFILE=1`, the pushbuffer walk outside the
+  draws is broken down by kind of method (inline vertices, vertex
+  attributes, indices, constants, matrices, vertex arrays, begin/end,
+  vertex programs, textures, surfaces and clears, flips and fences, other
+  state), with what is left as the walk itself. Each kind is counted and
+  timed net of the draws and presents it sets off: the frequent kinds one
+  call in 61, the rest every call. Upstream's `nv2a_gl_method` is
+  `gl_method` here, behind a wrapper that only counts with the profile on.
+  Could suit upstream.
+- **At a merge:** upstream's changes to `nv2a_gl_method`'s body go into
+  `gl_method`.
+
 ### Full screen remembered
 
 - **Files:** src/nv2a_gl/nv2a_gl.c.

@@ -500,6 +500,12 @@ static struct {
 enum { STEP_SETUP, STEP_VERTS, STEP_UNIF, STEP_TEX, STEP_STATE, STEP_PROBES,
        STEP_DRAW, STEP_AFTER, DRAW_STEPS };
 #define DRAW_STEP_EVERY 16
+/* The pushbuffer walk outside the draws, by kind of method (pb_kind). The
+ * kinds that come by the hundred thousand a frame have one call in
+ * PB_KIND_EVERY timed; the rest, every call. */
+enum { PBK_INLINE, PBK_ATTR, PBK_INDEX, PBK_CONST, PBK_MATRIX, PBK_ARRAYS,
+       PBK_BEGIN, PBK_PROG, PBK_TEX, PBK_SURFACE, PBK_FLIP, PBK_OTHER, PB_KINDS };
+#define PB_KIND_EVERY 61
 
 typedef struct {
     double tex, verts, vbo, unif, draw, state;
@@ -513,6 +519,8 @@ typedef struct {
     unsigned long long tex_held_bytes;  /* ... and their size, uploaded as RGBA8 */
     unsigned n_tex_rewritten;           /* dropped by tcache_verify: rewritten in place */
     unsigned long long tex_verified;    /* source bytes tcache_verify compared */
+    double pbk_t[PB_KINDS];             /* the methods, by kind, net of draws and presents */
+    unsigned long pbk_words[PB_KINDS];  /* ... and how many of each */
 } GlProfile;
 static void vc_report(const char *when);
 static GlProfile g_prof;
@@ -654,6 +662,27 @@ static void prof_report(void)
                 "accounted for is the recompiled guest itself\n",
                 100 * (g_pb_time - prev_pb) / dt,
                 (g_pb_words - prev_words) / 1000);
+            /* The walk outside the draws and the flip, by kind of method
+             * (pb_kind). "The walk itself" is what is left: reading the
+             * words, decoding them, the executor's own checks, and the
+             * counting by kind. */
+            { static const char *const name[PB_KINDS] = {
+                  "inline vertices", "vertex attributes", "indices",
+                  "constants", "matrices", "vertex arrays", "begin/end",
+                  "vertex programs", "textures", "surfaces and clears",
+                  "flips and fences", "other state" };
+              double rest = (g_pb_time - prev_pb) - d.whole_draw - d.present - d.pace;
+              int k;
+              fprintf(stderr, "[GLPROF]   the walk outside the draws by method, "
+                      "%% of wall time (K words/s, ns each):");
+              for (k = 0; k < PB_KINDS; k++) {
+                  double t = g_prof.pbk_t[k] - prev.pbk_t[k];
+                  unsigned long n = g_prof.pbk_words[k] - prev.pbk_words[k];
+                  rest -= t;
+                  if (n) fprintf(stderr, " %s %.1f%% (%lu, %.1f)", name[k],
+                                 100 * t / dt, n / 1000, 1e9 * t / n);
+              }
+              fprintf(stderr, "; the walk itself %.1f%%\n", 100 * rest / dt); }
             prev_pb = g_pb_time; prev_words = g_pb_words;
         }
         fflush(stderr);
@@ -10371,7 +10400,81 @@ static void methval_note(uint32_t method, uint32_t param)
     }
 }
 
+/* RECOMP_GL_PROFILE: the pushbuffer walk outside the draws, by kind of
+ * method.
+ *
+ * On the Ally X at 99th Street the walk outside the draws took more of a
+ * frame than the draws did, a steady 25 ns or so for each of 250,000 to
+ * 330,000 words a frame, and the profile could not say on what. Each kind is
+ * counted, and its calls are timed net of the draws and presents they set
+ * off: every call of the rare kinds, one in PB_KIND_EVERY of the frequent
+ * ones, scaled up. A clock read costs about as much as a cheap method, so its
+ * own cost, measured once, comes off every timed call. */
+static int pb_kind(uint32_t m)
+{
+    if (m == M_INLINE_ARRAY)                                     return PBK_INLINE;
+    if ((m >= M_SET_TRANSFORM_CONSTANT && m < M_SET_TRANSFORM_CONSTANT + 0x80)
+     || m == M_SET_TRANSFORM_CONSTANT_LD)                        return PBK_CONST;
+    /* SET_VERTEX3F up to the arrays, SET_VERTEX_DATA2F_M up to the textures */
+    if ((m >= 0x1500 && m < M_SET_VERTEX_ARRAY_OFFSET)
+     || (m >= 0x1880 && m < M_SET_TEXTURE_OFFSET))               return PBK_ATTR;
+    if (m >= M_ARRAY_ELEMENT16 && m < M_INLINE_ARRAY)            return PBK_INDEX;
+    /* the projection matrix up to the end of the texture matrices */
+    if (m >= 0x0440 && m < M_SET_TEXTURE_MATRIX + 4 * 64)        return PBK_MATRIX;
+    if (m >= M_SET_VERTEX_ARRAY_OFFSET
+     && m < M_SET_VERTEX_ARRAY_FORMAT + 16 * 4)                  return PBK_ARRAYS;
+    if (m == M_SET_BEGIN_END)                                    return PBK_BEGIN;
+    if ((m >= M_SET_TRANSFORM_PROGRAM && m < M_SET_TRANSFORM_CONSTANT)
+     || (m >= M_SET_TRANSFORM_EXEC_MODE && m <= M_SET_TRANSFORM_PROGRAM_ST))
+        return PBK_PROG;
+    if (m >= M_SET_TEXTURE_OFFSET && m < M_SET_TEXTURE_OFFSET + 4 * 0x40)
+        return PBK_TEX;
+    /* SET_SURFACE_CLIP_HORIZONTAL up to the zeta offset, and the clears */
+    if ((m >= 0x0200 && m < 0x0218)
+     || (m >= M_SET_ZSTENCIL_CLEAR_VALUE && m <= M_SET_CLEAR_RECT_V)) return PBK_SURFACE;
+    /* the no-operation (software methods) and the flips, and the fences */
+    if ((m >= 0x0100 && m < 0x0140) || m == 0x1D6C || m == 0x1D70) return PBK_FLIP;
+    return PBK_OTHER;
+}
+
+static void gl_method(uint32_t method, uint32_t param);
+
+static double pb_clock_cost(void)
+{
+    static double cost = -1.0;
+    if (cost < 0.0) {
+        double t0 = prof_now(), t = t0;
+        int i;
+        for (i = 0; i < 1000; i++) t = prof_now();
+        cost = (t - t0) / 1000;
+    }
+    return cost;
+}
+
+static void pb_kind_method(uint32_t method, uint32_t param)
+{
+    static unsigned skip[PB_KINDS];
+    int k = pb_kind(method);
+    unsigned every = k <= PBK_ARRAYS ? PB_KIND_EVERY : 1;
+    double cost, nested, t0;
+    g_prof.pbk_words[k]++;
+    if (++skip[k] < every) { gl_method(method, param); return; }
+    skip[k] = 0;
+    cost = pb_clock_cost();
+    nested = g_prof.whole_draw + g_prof.present + g_prof.pace;
+    t0 = prof_now();
+    gl_method(method, param);
+    g_prof.pbk_t[k] += every * (prof_now() - t0 - cost
+                       - (g_prof.whole_draw + g_prof.present + g_prof.pace - nested));
+}
+
 void nv2a_gl_method(uint32_t method, uint32_t param)
+{
+    if (PROF_ON()) pb_kind_method(method, param);
+    else           gl_method(method, param);
+}
+
+static void gl_method(uint32_t method, uint32_t param)
 {
     if (!nv2a_gl_enabled() || g_failed) return;
     methval_note(method, param);
