@@ -542,23 +542,53 @@ static int ring_target_frames(void)
     return t;
 }
 
+/*
+ * What the device has yet to play of what this thread has made, in frames:
+ * the ring, the voice processor frames made since the encode processor last
+ * sent eight of them (mcpx_apu_monitor_frame), less what the device has
+ * played of its last pull. It takes a buffer at a time (512 frames, 10.7 ms,
+ * from SDL) but plays it at 48 frames a millisecond, so between pulls the
+ * ring alone overstates what is left.
+ */
+static int ring_ahead(MCPXAPUState *d, int ms_since_pull)
+{
+    int played = ms_since_pull * 48;
+    int pull = xa2_get_buffer_size();
+    if (pull > 0 && played > pull) played = pull;
+    return xa2_ring_level() + (d->ep_frame_div % 8) * NUM_SAMPLES_PER_FRAME - played;
+}
+
+/*
+ * One voice processor frame at a time, when the console would make it.
+ *
+ * The voice processor runs a frame every 32 samples, two thirds of a
+ * millisecond, and DirectSound waits on it: to restart a sound it turns the
+ * voice off, then spins (sub_001A308E, inlined in sub_001A3E58) until a frame
+ * has found the voice idle and the APU interrupt handler has retired it. This
+ * thread used to pace eight frames at a time, and with the ring it made
+ * sixteen at each pull of the device, every 10.7 ms; a restart then waited
+ * 5 ms or so, against under one on the console. In Shibuya Terminal one sound
+ * is restarted two to four times a frame, and the game fell to 30 fps there.
+ * So every frame is paced: with the ring, made once the device has played
+ * enough to want it (ring_ahead); on the wall clock, at its eighth of the
+ * encode frame. The waits are still whole milliseconds, so frames come one or
+ * two at a time.
+ */
 static void throttle(MCPXAPUState *d)
 {
-    if (d->ep_frame_div % 8) {
-        return;
-    }
-
     int64_t now_us = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
 
     if (ring_target_frames() > 0 && xa2_ring_level() >= 0) {
         for (;;) {
             int since;
-            if (xa2_ring_level() < ring_target_frames()) break;   /* room: produce */
+            if (ring_ahead(d, 0) < ring_target_frames()) break;   /* room: produce */
             if (d->pause_requested) break;
             since = xa2_ms_since_pull();
             /* Nothing is pulling (the device stopped): fall back to the
              * wall clock rather than stop the title's audio time. */
             if (since < 0 || since > 60) goto wall_clock;
+            /* ... or room once the device has played part of its pull */
+            if (ring_ahead(d, since) < ring_target_frames()) break;
             qemu_cond_timedwait(&d->cond, &d->lock, 1);
         }
         d->next_frame_time_us = 0;
@@ -567,29 +597,39 @@ static void throttle(MCPXAPUState *d)
     }
 
 wall_clock:
+    {
+        int64_t due;
+        int j = d->ep_frame_div % 8;      /* this frame's eighth of the encode frame */
 
-    if (d->next_frame_time_us == 0 ||
-        now_us - d->next_frame_time_us > EP_FRAME_US) {
-        /* RECOMP_APU_STATS: how often the thread fell behind and gave up
-         * the time it had lost (each is up to 8 frames never produced). */
-        extern int g_apu_throttle_resets; extern int64_t g_apu_throttle_lost_us;
-        if (d->next_frame_time_us) {
-            g_apu_throttle_resets++;
-            g_apu_throttle_lost_us += now_us - d->next_frame_time_us;
-        }
-        d->next_frame_time_us = now_us;
-    }
-
-    while (!d->pause_requested) {
-        now_us = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
-        int64_t remaining_ms = (d->next_frame_time_us - now_us) / 1000;
-        if (remaining_ms > 0) {
-            qemu_cond_timedwait(&d->cond, &d->lock, (int)remaining_ms);
+        if (j == 0) {
+            if (d->next_frame_time_us == 0 ||
+                now_us - d->next_frame_time_us > EP_FRAME_US) {
+                /* RECOMP_APU_STATS: how often the thread fell behind and gave
+                 * up the time it had lost (each is up to 8 frames never
+                 * produced). */
+                extern int g_apu_throttle_resets; extern int64_t g_apu_throttle_lost_us;
+                if (d->next_frame_time_us) {
+                    g_apu_throttle_resets++;
+                    g_apu_throttle_lost_us += now_us - d->next_frame_time_us;
+                }
+                d->next_frame_time_us = now_us;
+            }
+            due = d->next_frame_time_us;
+            d->next_frame_time_us += EP_FRAME_US;
         } else {
-            break;
+            due = d->next_frame_time_us - EP_FRAME_US + j * EP_FRAME_US / 8;
+        }
+
+        while (!d->pause_requested) {
+            now_us = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
+            int64_t remaining_ms = (due - now_us) / 1000;
+            if (remaining_ms > 0) {
+                qemu_cond_timedwait(&d->cond, &d->lock, (int)remaining_ms);
+            } else {
+                break;
+            }
         }
     }
-    d->next_frame_time_us += EP_FRAME_US;
 
     d->sleep_acc_us += (int)(qemu_clock_get_us(QEMU_CLOCK_REALTIME) - now_us);
 }
@@ -860,10 +900,11 @@ MCPXAPUState *mcpx_apu_init_standalone(uint8_t *ram_ptr)
     qemu_thread_create(&d->apu_thread, "mcpx.apu_thread",
                        mcpx_apu_frame_thread, d, QEMU_THREAD_JOINABLE);
 #if defined(_WIN32)
-    /* It makes the sound the device plays, 5 ms at a time, and sleeps in
-     * between: above the game's own threads, so that a busy moment delays
-     * the picture rather than the music (SDL's device thread, which takes
-     * what it makes, is at TIME_CRITICAL already). */
+    /* It makes the sound the device plays, a millisecond or so at a time
+     * (throttle), and sleeps in between: above the game's own threads, so
+     * that a busy moment delays the picture rather than the music (SDL's
+     * device thread, which takes what it makes, is at TIME_CRITICAL
+     * already). */
     SetThreadPriority(d->apu_thread.thread, THREAD_PRIORITY_HIGHEST);
 #endif
     mcpx_apu_wait_for_idle(d);

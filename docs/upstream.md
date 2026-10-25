@@ -486,6 +486,27 @@ git diff --name-status --diff-filter=MD upstream main
 - **At a merge:** keep each fix. Where upstream fixes the same thing, take
   upstream's and drop ours from this entry.
 
+### The sound chip a frame at a time
+
+- **Files:** src/apu/apu_core.c (`throttle`, `ring_ahead`).
+- **Why:** the APU's frame thread made the voice processor's frames eight
+  at a time on the wall clock, and with the output ring sixteen at each
+  pull of the device, every 10.7 ms with SDL. DirectSound waits for the
+  voice processor whenever it restarts a sound: it turns the voice off and
+  spins until a frame has found it idle and the APU interrupt handler has
+  retired it. Each restart waited 5 ms or so, against under one on the
+  console (a frame is 32 samples, two thirds of a millisecond), and where
+  JSRF restarts one sound two to four times a frame, in Shibuya Terminal,
+  the game fell to 30 fps. Now each frame is paced on its own: with the
+  ring, once the device has played enough of its last pull to want it; on
+  the wall clock, at its eighth of the encode frame. tests/apu_pacing
+  (ours) tests both: 0.6 ms on average to the next frame, against 5.3 with
+  the ring and 2.9 on the wall clock before. In Shibuya Terminal on the
+  Ally X, frames that missed a refresh went from 1.6-1.7% to 0.5%. Could
+  suit upstream.
+- **At a merge:** keep ours. If upstream changes the frame thread's
+  pacing, make it pace single frames as here and run tests/apu_pacing.
+
 ### Diagnostics only in Debug builds
 
 - **Files:** port/CMakeLists.txt.
