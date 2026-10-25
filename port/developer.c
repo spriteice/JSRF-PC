@@ -39,7 +39,9 @@ extern void nv_window_file_set(const char *file, const char *key, int val);
 #define DEV_FILE "developer.cfg"
 
 /* The switches, and their rows in Developer > Logging: each only adds lines
- * to the log. The CPU profile is Linux's only for now (port/cpuprof.c). */
+ * to the log. The CPU profile is Linux's only for now (port/cpuprof.c).
+ * The last DEV_TRIES change what the game does, for a comparison, and have
+ * their rows in Developer > Experiments. */
 static const char *const k_switch[] = {
     "RECOMP_GL_PROFILE",
 #if defined(__linux__) && !defined(__ANDROID__)
@@ -47,6 +49,7 @@ static const char *const k_switch[] = {
 #endif
     "RECOMP_LOCK_WATCH", "RECOMP_WAITLOG", "RECOMP_KERNEL_IO", "RECOMP_APU_STATS",
     "RECOMP_GL_UNHANDLED", "RECOMP_GL_VERBOSE", "RECOMP_USB_TRACE",
+    "RECOMP_NV2A_QUEUE",
 };
 static const char *const k_switch_row[] = {
     "GPU time profile (Restart)",
@@ -56,8 +59,11 @@ static const char *const k_switch_row[] = {
     "Guest lock (Restart)", "Waits and DPCs (Restart)", "File reads and events (Restart)",
     "Audio levels (Restart)", "Unhandled GPU methods (Restart)", "Renderer details (Restart)",
     "Controller USB (Restart)",
+    "Game runs ahead of the GPU (Restart)",
 };
 #define DEV_SWITCHES ((int)(sizeof k_switch / sizeof k_switch[0]))
+#define DEV_TRIES    1
+#define DEV_LOGGING  (DEV_SWITCHES - DEV_TRIES)
 _Static_assert(sizeof k_switch == sizeof k_switch_row, "a row for each switch");
 _Static_assert(DEV_SWITCHES <= 31, "a bit of an int for each switch");
 
@@ -108,13 +114,16 @@ static void log_flip(void)
     log_output(s_log);
     if (s_log) fprintf(stderr, "[DEV] Log to file on again\n");
 }
-static int  switches_on(void)  { return s_on; }
 static void switch_flip(int i)
 {
     s_on ^= 1 << i;
     nv_window_file_set(DEV_FILE, k_switch[i], (s_on >> i) & 1);
     fprintf(stderr, "[DEV] %s %s from the next start\n", k_switch[i], (s_on >> i) & 1 ? "on" : "off");
 }
+static int  logging_on(void)   { return s_on & ((1 << DEV_LOGGING) - 1); }
+static void logging_flip(int i) { switch_flip(i); }
+static int  tries_on(void)     { return s_on >> DEV_LOGGING; }
+static void tries_flip(int i)   { switch_flip(DEV_LOGGING + i); }
 #endif
 #endif
 
@@ -139,7 +148,10 @@ void developer_start(void)
             { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_TOGGLE, .label = "Log to file",
               .state = log_on, .run = log_flip },
             { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_TOGGLES, .label = "Logging",
-              .state = switches_on, .pick = switch_flip, .choices = k_switch_row, .nchoices = DEV_SWITCHES },
+              .state = logging_on, .pick = logging_flip, .choices = k_switch_row, .nchoices = DEV_LOGGING },
+            { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_TOGGLES, .label = "Experiments",
+              .state = tries_on, .pick = tries_flip, .choices = k_switch_row + DEV_LOGGING,
+              .nchoices = DEV_TRIES },
         };
         xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
     }

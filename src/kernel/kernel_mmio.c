@@ -60,6 +60,9 @@ void recomp_mmio_write(uint32_t addr, uint32_t val, unsigned size)
     case 2:  *(volatile uint16_t *)plain(addr) = (uint16_t)val; break;
     default: *(volatile uint32_t *)plain(addr) = val; break;
     }
+    /* The NV2A's registers are plain memory but for the few the runtime
+     * answers itself: D3D's pushbuffer flush, for one (xbox_memory_layout.c). */
+    xbox_Nv2aRegisterWritten(addr, size);
     if (g_recomp_mmio_write_fn)
         g_recomp_mmio_write_fn(addr, val, size);
 }

@@ -2467,7 +2467,10 @@ static void kernel_vblank_tick(void)
      * line and the DPC below found nothing pending -- see vblank_intr_tick(). */
     BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PCRTC_INTR_0) |=
         NV2A_PCRTC_INTR_VBLANK | NV2A_VBLANK_PENDING_TAG;
-    BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PMC_INTR_0)   |= NV2A_PMC_INTR_PCRTC;
+    /* One atomic operation: PMC_INTR_0 is shared with the software methods
+     * below, and the GPU thread clears it as this runs. */
+    __atomic_fetch_or(&BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PMC_INTR_0),
+                      NV2A_PMC_INTR_PCRTC, __ATOMIC_SEQ_CST);
 
     g_vblank_count++;
     {
@@ -2507,6 +2510,19 @@ static void kernel_vblank_tick(void)
  * without such a wrapper (nv2a_title_acks_pgraph): an interrupt nothing can
  * clear would hold its DPC in that loop for good.
  *
+ * The two status bits a software method raises -- PGRAPH_INTR's error bit
+ * and PMC_INTR_0's PGRAPH bit -- are set here and cleared by the title's
+ * handler (the port's wrapper on it), both on this thread. The GPU thread
+ * completes the same two registers for the other sources (vblank_intr_tick
+ * and nv2a_ack_thread in xbox_memory_layout.c) and leaves these bits alone
+ * while software methods are delivered (xbox_nv2a_swm_on); every change to
+ * the registers is one atomic operation. It used to clear them whole when
+ * nothing was in flight, and between its asking and its clearing, one could
+ * be raised: the DPC then never called the handler, or the handler found
+ * nothing to acknowledge, nothing more was delivered, and D3D slept for good
+ * on the NOP(5) it had been sent. tests/nv2a_queue loses one that way within
+ * a few hundred.
+ *
  * Only the parameters a title is known to need are delivered -- JSRF's 5 --
  * because the others were never delivered either and the rest of the runtime
  * may already stand in for what their handlers do (parameter 1's, for one,
@@ -2526,7 +2542,7 @@ static volatile uint32_t g_swm_head, g_swm_tail;
 static volatile int      g_swm_in_flight;
 static unsigned long     g_swm_raised, g_swm_dropped;
 
-static int swm_wanted(uint32_t param)
+static int swm_mode(void)
 {
     static int mode = -1;                 /* 0 none, 1 the known ones, 2 all */
     if (mode < 0) {
@@ -2534,8 +2550,16 @@ static int swm_wanted(uint32_t param)
         mode = !nv2a_title_acks_pgraph() ? 0
              : (e && !strcmp(e, "all")) ? 2 : (e && e[0] == '0') ? 0 : 1;
     }
+    return mode;
+}
+
+static int swm_wanted(uint32_t param)
+{
+    int mode = swm_mode();
     return mode == 2 || (mode == 1 && param == 5);
 }
+
+int xbox_nv2a_swm_on(void) { return swm_mode() != 0; }
 
 int xbox_nv2a_swm_in_flight(void) { return g_swm_in_flight; }
 
@@ -2570,8 +2594,10 @@ static void kernel_pgraph_tick(void)
     BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PGRAPH_TRAP_DATA) = g_swm_q[t % SWM_QUEUE].param;
     BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PGRAPH_NSOURCE) = 1u;   /* a notification */
     g_swm_in_flight = 1;
-    BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PGRAPH_INTR) |= NV2A_PGRAPH_INTR_ERROR;
-    BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PMC_INTR_0)  |= NV2A_PMC_INTR_PGRAPH;
+    __atomic_fetch_or(&BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PGRAPH_INTR),
+                      NV2A_PGRAPH_INTR_ERROR, __ATOMIC_SEQ_CST);
+    __atomic_fetch_or(&BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PMC_INTR_0),
+                      NV2A_PMC_INTR_PGRAPH, __ATOMIC_SEQ_CST);
     claimed = kernel_raise_interrupt(NV2A_VECTOR);
     g_swm_raised++;
     if (g_swm_raised <= 3 || claimed <= 0) {

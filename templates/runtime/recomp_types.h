@@ -694,7 +694,9 @@ void recomp_fp_exit(uint32_t va);
  * expressions; writes are emitted by the lifter as MEMWxx(addr, value).
  */
 #ifndef RECOMP_MMIO_LO
-#define RECOMP_MMIO_LO 0xFE800000u     /* MCPX APU ... */
+#define RECOMP_MMIO_LO 0xFD000000u     /* the NV2A's registers (D3D's
+                                        * pushbuffer flush is answered at
+                                        * the write), the MCPX APU ... */
 #define RECOMP_MMIO_HI 0xFEE00000u     /* ... the AC'97 controller and the
                                         * two USB host controllers, which
                                         * begin exactly at the old bound */

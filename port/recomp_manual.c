@@ -2110,7 +2110,9 @@ void sub_001912A0(void)
  * again and again. What it read, it acknowledged; that is cleared once it
  * returns, PMC_INTR_0's PGRAPH bit goes with it, the return value is the
  * register as the console would read it then, and the runtime may deliver the
- * next one. The hang this ends: the make-space wait at 0x0019151B, for good. */
+ * next one. The hang this ends: the make-space wait at 0x0019151B, for good.
+ * Both clears are atomic: the GPU thread clears these registers too, at the
+ * same time (vblank_intr_tick in xboxrecomp's xbox_memory_layout.c). */
 int nv2a_title_acks_pgraph(void) { return 1; }
 extern void sub_00194210_gen(void);
 extern void xbox_nv2a_software_method_done(void);
@@ -2121,8 +2123,9 @@ void sub_00194210(void)
     volatile uint32_t *pmc  = (volatile uint32_t *)(m + 0xFD000100u);
     uint32_t seen = *intr;
     sub_00194210_gen();
-    *intr &= ~seen;
-    if (!*intr) *pmc &= ~0x1000u;
+    __atomic_fetch_and(intr, ~seen, __ATOMIC_SEQ_CST);
+    if (!__atomic_load_n(intr, __ATOMIC_SEQ_CST))
+        __atomic_fetch_and(pmc, ~0x1000u, __ATOMIC_SEQ_CST);
     g_eax = *intr;
     if (seen & 0x00100000u) xbox_nv2a_software_method_done();
 }

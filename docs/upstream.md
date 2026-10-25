@@ -429,6 +429,8 @@ git diff --name-status --diff-filter=MD upstream main
   engine's logging switches, which the start puts into the environment
   before anything reads them. Among them the CPU profile (Linux only),
   which the start sets going: where each thread's time goes, by function.
+  Under Experiments, switches that change what the game does, for a
+  comparison: the GPU queue (below).
   Our own files: port/developer.c and port/cpuprof.c, both built from
   port/CMakeLists.txt.
 - **At a merge:** keep the two calls in port/main.c and the two files in
@@ -460,8 +462,9 @@ git diff --name-status --diff-filter=MD upstream main
 ### Kernel fixes
 
 - **Files:** src/kernel/kernel_bridge.c, kernel.h, kernel_hal.c,
-  kernel_thunks.c, kernel_rtl.c, and xbox_memory_layout.c and .h.
-- **Why:** six fixes, each of which could suit upstream:
+  kernel_thunks.c, kernel_rtl.c, xbox_memory_layout.c and .h, and
+  port/recomp_manual.c.
+- **Why:** seven fixes, each of which could suit upstream:
   - **NtProtectVirtualMemory and KeSetDisableBoostThread** (ordinals 204
     and 144) are bridged (kernel_bridge.c). JSRF calls both, and upstream
     leaves them to the fallback, which never writes the old protection.
@@ -487,8 +490,63 @@ git diff --name-status --diff-filter=MD upstream main
     holding the guest lock, until PMC_INTR_0 is quiet. Upstream completes
     it only when the GPU thread next looks (`vblank_intr_tick`).
     tests/vblank_ack (ours) tests it.
+  - **A software method's interrupt bits are cleared only by the title's
+    handler** (kernel_bridge.c, xbox_memory_layout.c, and `sub_00194210`
+    in port/recomp_manual.c). The GPU thread cleared PGRAPH_INTR and
+    PMC_INTR_0 whole whenever no software method was in flight, and wiped
+    one raised between its check and its clear: D3D's handler never saw
+    it, and the game slept for good in its wait for the GPU (0x0019151B).
+    Now the GPU thread leaves those two bits alone while software methods
+    are delivered (`xbox_nv2a_swm_on`), and every change to the two
+    registers is one atomic operation. Rare while each flush waited for the
+    GPU thread; once in 13,228 wake-ups in a run with the queue (below).
+    tests/nv2a_queue (ours) tests it: the old code loses a wake-up within a
+    few thousand, this none in fourteen million.
 - **At a merge:** keep each fix. Where upstream fixes the same thing, take
   upstream's and drop ours from this entry.
+
+### The game running ahead of the GPU thread
+
+- **Files:** src/kernel/xbox_memory_layout.c and .h
+  (`xbox_Nv2aRegisterWritten`, `nv2a_queue_on`, `nv2a_queue_report`, and
+  where `nv2a_ack_thread` sets DMA_GET and walks the ring's tail),
+  src/kernel/nv2a_pb_scan.c (`nv2a_pb_scan_keep_get`: the walk moves
+  DMA_GET, and the barrier), src/kernel/kernel_mmio.c (the call into
+  xbox_memory_layout.c), templates/runtime/recomp_types.h
+  (`RECOMP_MMIO_LO` takes in the NV2A).
+- **Why:** D3D's KickOff asks for a write-combine flush and spins until
+  the GPU thread clears it, and with the pushbuffer executor that thread
+  is the renderer: it clears it only between walks, and not while frame
+  pacing sleeps at a flip. So the game was never more than one kick ahead
+  of the renderer, and a frame cost the two one after the other. In
+  Shibuya Terminal's crowd on the Ally X the game's thread spent 43-67% of
+  its time in that spin. With `RECOMP_NV2A_QUEUE=1` (Developer >
+  Experiments) the flush is complete at the write, as xemu answers it, and
+  DMA_GET says how far the walk has read instead of being set to DMA_PUT
+  before it, so D3D's own waits on GET and on the fences hold the game
+  back, as on the console. D3D's wait for the GPU turns a NOP ahead of GET
+  into NOP(5), flushes, reads GET again, and sleeps until the GPU reaches
+  that NOP. So GET moves with each command the walk reaches, and is
+  published before the command is read with a full barrier between them,
+  as the flush is one on the game's side. With GET a whole walk behind, or
+  with either barrier missing (x86 lets a read overtake an earlier write),
+  the walk could read the NOP before the patch while D3D still saw GET
+  short of it, and the game slept for good. When the ring wraps, the walk
+  reads its tail to the jump however far that is: it read at most 128 KB,
+  enough while each flush waited for the walk, but the game can now be
+  most of the ring ahead, and the fence D3D slept on was in the part left
+  unread. On the Ally X in Shibuya Terminal, with the sound fix below, the
+  game's thread went from 96-97% of a core to 27-32%, and frames that
+  missed a refresh from 0.5% to 0.1%. Off by default for now.
+  The generated code's recomp_types.h has to be the new one, and the
+  pipeline never overwrites it: delete it and generate it again. With an
+  old one the flush waits as before, and the queue's report says so.
+  tests/nv2a_queue (ours) tests it, D3D's wait for the GPU included: twenty
+  thousand waits against the real walk without a wake-up lost, and a wrap
+  with 499 KB of tail, all of it walked. Could suit upstream.
+- **At a merge:** keep ours. If upstream changes how the GPU thread sets
+  DMA_GET or the device window's bounds, merge around it, and run
+  tests/nv2a_queue.
 
 ### The sound chip a frame at a time
 

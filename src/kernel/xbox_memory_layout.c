@@ -335,6 +335,100 @@ static const struct { uint32_t offset; uint32_t idle_mask; } NV2A_IDLE[] = {
 #define NV2A_USER_DMA_GET 0x800044u
 
 /*
+ * The title running ahead of the GPU thread, as it runs ahead of the GPU.
+ *
+ * D3D's KickOff (JSRF's sub_001912A0) asks PFB for a write-combine flush --
+ * 0x10000 in 0x100410 -- and spins until the bit clears; only then does it
+ * write DMA_PUT. The ack thread clears it at the top of its loop. But with the
+ * pushbuffer executor running that thread is also the renderer: it is at the
+ * top of its loop only between one walk and the next, and not at all while
+ * frame pacing sleeps at a flip. So the title could never be more than one
+ * kick ahead of the renderer. The two took turns, and a frame cost the game's
+ * work plus the renderer's rather than the larger of the two. Profiled in
+ * Shibuya Terminal's crowd on a ROG Xbox Ally X, the game's thread spent
+ * 43-67% of its time in that spin, while the game's own work was about a
+ * third of a core and the renderer's about half.
+ *
+ * RECOMP_NV2A_QUEUE=1 lets the title run ahead, in two parts that only work
+ * together:
+ *
+ *   - The flush is complete at the write. Nothing here buffers writes, so
+ *     there is never one to wait for; xemu answers the same (its NV_PFB_WBC
+ *     always reads "flush not pending"). The device window in recomp_types.h
+ *     takes in the NV2A for this, and kernel_mmio.c hands each write there
+ *     to xbox_Nv2aRegisterWritten, after the write.
+ *   - DMA_GET says how far the walk has read. Setting it to DMA_PUT before
+ *     the walk claimed every command read before any was; harmless while the
+ *     flush kept the title a kick behind, but once it no longer does, GET is
+ *     what keeps D3D from writing over commands not yet read -- as on the
+ *     console, where D3D waits on GET for room in the ring and on the fences
+ *     the executor writes before reusing a buffer. It moves with the walk,
+ *     command by command (nv2a_pb_scan.c), not once a walk has ended: D3D
+ *     also patches a NOP ahead of GET to be woken when the GPU reaches it,
+ *     and with GET a whole walk behind, the walk had sometimes read that NOP
+ *     already and the game slept for good. For the same reason GET is
+ *     published before each command is read, and the flush below is a full
+ *     barrier: nv2a_pb_scan.c says why.
+ *
+ * The title may then queue a frame or two, as it does on the console.
+ * Without the executor nothing walks, so GET is set to PUT as before.
+ */
+#define NV2A_PFB_WBC       0x100410u
+#define NV2A_PFB_WBC_FLUSH 0x00010000u
+
+static int nv2a_queue_on(void)
+{
+    static int on = -1;
+    if (on < 0) { const char *e = getenv("RECOMP_NV2A_QUEUE"); on = e ? atoi(e) != 0 : 0; }
+    return on;
+}
+
+/* What the queue did, for the report every ten seconds. */
+static struct {
+    unsigned long flushes, walks, wraps;
+    uint64_t bytes;
+    uint32_t most;
+} s_queue;
+
+void xbox_Nv2aRegisterWritten(uint32_t addr, unsigned size)
+{
+    uint32_t off = addr - XBOX_NV2A_BASE;
+    if (off >= XBOX_NV2A_SIZE || !g_nv2a_memory || !nv2a_queue_on())
+        return;
+    if (off < NV2A_PFB_WBC + 4u && off + size > NV2A_PFB_WBC) {
+        volatile uint32_t *wbc = (volatile uint32_t *)((char *)g_nv2a_memory + NV2A_PFB_WBC);
+        if (*wbc & NV2A_PFB_WBC_FLUSH) {
+            /* What the flush promises: every write before it is where the
+             * GPU will read it, before the title reads anything back. A
+             * full barrier, on the title's thread (see nv2a_pb_scan.c). */
+            __atomic_thread_fence(__ATOMIC_SEQ_CST);
+            *wbc &= ~NV2A_PFB_WBC_FLUSH;
+            s_queue.flushes++;
+        }
+    }
+}
+
+static void nv2a_queue_report(void)
+{
+    static int said_stale;
+    fprintf(stderr, "  [NV2A] queue: %lu flushes complete at the write; %lu walks, "
+            "%.0f KB on average, the most %.0f KB at once; %lu across the ring's end\n",
+            s_queue.flushes, s_queue.walks,
+            s_queue.walks ? (double)s_queue.bytes / s_queue.walks / 1024.0 : 0.0,
+            s_queue.most / 1024.0, s_queue.wraps);
+    /* Walks but no flush seen: the lifted code's device window stops above
+     * the NV2A, so the flush still waits for the ack thread. */
+    if (!s_queue.flushes && s_queue.walks && !said_stale) {
+        said_stale = 1;
+        fprintf(stderr, "  [NV2A] queue: no flush reached the register model; the "
+                "generated recomp_types.h predates the NV2A in the device window "
+                "(delete it and generate it again)\n");
+    }
+    fflush(stderr);
+    memset(&s_queue, 0, sizeof s_queue);
+}
+
+/*
  * Free-running counters in the MCPX aperture.
  *
  * Some hardware registers are clocks, not flags: software reads them and waits
@@ -691,13 +785,20 @@ static void vblank_intr_tick(volatile uint32_t *regs)
     if (v & NV2A_VBLANK_PENDING_TAG)
         return;                       /* raised, not yet acknowledged */
 
-    /* Acknowledged (or never raised): complete it. A PGRAPH software method
-     * still with the title keeps its bit (see kernel_pgraph_tick). */
+    /* Acknowledged (or never raised): complete it. A software method's
+     * PGRAPH bit is left to the title (below). */
     if (v)
         *pcrtc = 0;
-    if (*pmc) {
-        extern int xbox_nv2a_swm_in_flight(void);
-        *pmc = xbox_nv2a_swm_in_flight() ? (*pmc & (1u << 12)) : 0;
+    /* Everything but a software method's PGRAPH bit, while they are
+     * delivered: the timer thread raises it as this runs, and the title's
+     * handler clears it once it has looked (kernel_pgraph_tick in
+     * kernel_bridge.c). Clearing the register whole unless one was in
+     * flight, as this did, wiped a bit raised between the question and the
+     * store, and D3D slept for good on the NOP(5) it was waiting for. One
+     * atomic operation, as the timer thread sets bits here too. */
+    if (__atomic_load_n(pmc, __ATOMIC_SEQ_CST)) {
+        extern int xbox_nv2a_swm_on(void);
+        __atomic_fetch_and(pmc, xbox_nv2a_swm_on() ? (1u << 12) : 0u, __ATOMIC_SEQ_CST);
     }
 }
 
@@ -721,18 +822,24 @@ void xbox_nv2a_vblank_service(void)
 static DWORD WINAPI nv2a_ack_thread(LPVOID param)
 {
     volatile uint32_t *regs = (volatile uint32_t *)param;
+    if (nv2a_queue_on()) {
+        extern void nv2a_pb_scan_keep_get(volatile uint32_t *get);
+        nv2a_pb_scan_keep_get((volatile uint32_t *)((char *)regs + NV2A_USER_DMA_GET));
+    }
     while (!InterlockedCompareExchange(&g_nv2a_ack_stop, 0, 0)) {
         vblank_intr_tick(regs);
         for (size_t i = 0; i < sizeof(NV2A_ACK) / sizeof(NV2A_ACK[0]); i++) {
             volatile uint32_t *r =
                 (volatile uint32_t *)((char *)regs + NV2A_ACK[i].offset);
-            extern int xbox_nv2a_swm_in_flight(void);
-            /* A software method the title has not acknowledged yet keeps its
-             * PGRAPH status: the handler is about to read it. */
-            if (NV2A_ACK[i].offset == 0x400100u && xbox_nv2a_swm_in_flight())
-                continue;
-            if (*r & NV2A_ACK[i].busy_mask) {
-                *r &= ~NV2A_ACK[i].busy_mask;
+            extern int xbox_nv2a_swm_on(void);
+            uint32_t mask = NV2A_ACK[i].busy_mask;
+            /* PGRAPH_INTR's error bit is a software method's, for the title's
+             * handler to clear, as PMC_INTR_0's PGRAPH bit is (see
+             * vblank_intr_tick). */
+            if (NV2A_ACK[i].offset == 0x400100u && xbox_nv2a_swm_on())
+                mask &= ~(1u << 20);
+            if (*r & mask) {
+                __atomic_fetch_and(r, ~mask, __ATOMIC_SEQ_CST);
             }
         }
         for (size_t i = 0; i < sizeof(NV2A_IDLE) / sizeof(NV2A_IDLE[0]); i++) {
@@ -747,7 +854,9 @@ static DWORD WINAPI nv2a_ack_thread(LPVOID param)
                 (volatile uint32_t *)((char *)regs + NV2A_USER_DMA_PUT);
             volatile uint32_t *get =
                 (volatile uint32_t *)((char *)regs + NV2A_USER_DMA_GET);
-            if (*get != *put) {
+            /* With the queue on and the pushbuffer walked, the walk below
+             * sets GET, once it has read up to it. */
+            if (*get != *put && !(nv2a_queue_on() && s_nv2a_trace)) {
                 *get = *put;
             }
         }
@@ -796,20 +905,32 @@ static DWORD WINAPI nv2a_ack_thread(LPVOID param)
                     if (last_put && put > last_put) {
                         nv2a_pb_scan(XBOX_CONTIG_BASE | (last_put & 0x0FFFFFFFu),
                                      XBOX_CONTIG_BASE | (put      & 0x0FFFFFFFu));
+                        s_queue.walks++;
+                        s_queue.bytes += put - last_put;
+                        if (put - last_put > s_queue.most) s_queue.most = put - last_put;
                     } else if (last_put && put < last_put) {
                         /* The ring wrapped: PUT went back to its start.
                          * The tail from the old PUT to the jump used to be
                          * skipped outright, and with it whatever the title
                          * had written there -- at worst the fence it was
                          * about to wait on. Walk the tail up to the jump,
-                         * then from the jump's target to the new PUT. */
+                         * then from the jump's target to the new PUT.
+                         *
+                         * Up to the jump however far it is: the tail is as
+                         * long as the title got ahead of the walk, which with
+                         * RECOMP_NV2A_QUEUE can be most of the ring. Walking
+                         * at most 128 KB of it, as this did, left the rest
+                         * unread -- the fence D3D then slept on among it --
+                         * and the game froze. nv2a_pb_scan bounds a walk
+                         * itself. */
                         uint32_t from = XBOX_CONTIG_BASE | (last_put & 0x0FFFFFFFu);
                         uint32_t to   = XBOX_CONTIG_BASE | (put      & 0x0FFFFFFFu);
-                        uint32_t j = nv2a_pb_scan(from, from + 0x20000u);
+                        uint32_t j = nv2a_pb_scan(from, UINT32_MAX);
                         if (j) {
                             j = XBOX_CONTIG_BASE | (j & 0x0FFFFFFFu);
                             if (j < to) nv2a_pb_scan(j, to);
                         }
+                        s_queue.wraps++;
                     }
                     /* Periodic, because what the title submits at init is not
                      * what it submits once it is drawing a menu, and the
@@ -817,10 +938,14 @@ static DWORD WINAPI nv2a_ack_thread(LPVOID param)
                     if (now_ms - last_report > 10000) {
                         last_report = now_ms;
                         nv2a_pb_scan_report();
+                        if (nv2a_queue_on()) nv2a_queue_report();
                         reported = 1;
                     }
                 }
                 last_put = put; last_put_ms = now_ms;
+                /* Read up to here: the room behind it is D3D's again. */
+                if (nv2a_queue_on())
+                    *(volatile uint32_t *)((char *)regs + NV2A_USER_DMA_GET) = put;
                 /* GET as well as PUT. A title that stops submitting has either
                  * finished or is spinning on the GPU catching up, and only GET
                  * tells those apart -- D3D waits for GET to reach PUT before it

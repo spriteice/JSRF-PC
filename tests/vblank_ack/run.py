@@ -36,7 +36,7 @@ source = ("""
           + define(bridge, "NV2A_PMC_INTR_PCRTC") + define(bridge, "NV2A_PCRTC_INTR_0")
           + define(bridge, "NV2A_PCRTC_INTR_VBLANK") + """
 static void *g_nv2a_memory;
-int xbox_nv2a_swm_in_flight(void) { return 0; }
+int xbox_nv2a_swm_on(void) { return 0; }
 """ + vblank + """
 static RECOMP_TLS int t_guest_holds, t_in_callback;
 static volatile uint32_t g_lock_owner_edge;

@@ -197,6 +197,9 @@ void xbox_nv2a_hurry(int on);
 /* Completes a pending vblank acknowledgement now; for the renderer's frame
  * pacing, which sleeps on the thread that normally does it. */
 void xbox_nv2a_vblank_service(void);
+/* A guest write landed in the NV2A's registers (recomp_mmio_write, after the
+ * write): the register model answers what has to be answered at once. */
+void xbox_Nv2aRegisterWritten(uint32_t addr, unsigned size);
 
 int xbox_Nv2aMirrorFence(uint32_t device_ptr_va,
                          uint32_t put_off, uint32_t get_ptr_off);

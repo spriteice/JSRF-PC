@@ -46,6 +46,25 @@ extern void nv2a_pb_exec_report(void);
 static int s_exec_enabled = -1;
 static int s_scan_enabled = -1;
 
+/* DMA_GET, when the walk keeps it (RECOMP_NV2A_QUEUE, xbox_memory_layout.c):
+ * set to each command's address as the walk reaches it, the way the GPU's
+ * read pointer moves. D3D's wait for the GPU (JSRF's sub_00191440) turns a
+ * NOP it reserved ahead of GET into NOP(5) and sleeps until the GPU raises
+ * it; GET set only once a walk had ended let D3D patch a NOP the walk had
+ * already read, and the game slept for good. Not inside a call: there the
+ * console's GET leaves the ring, and D3D reads the return address instead,
+ * so GET stays at the call.
+ *
+ * GET is published before the command is read, with a full barrier between
+ * the two. D3D's side is the mirror image: it patches the NOP, flushes (which
+ * is a full barrier too, xbox_Nv2aRegisterWritten), and only then reads GET.
+ * x86 lets a load overtake an earlier store to another address, so without
+ * both barriers each side can read the other's old value -- D3D a GET still
+ * short of the NOP, the walk the NOP before the patch -- and the wake-up is
+ * lost. With them, a GET short of the NOP means the walk reads the patch. */
+static volatile uint32_t *s_get;
+void nv2a_pb_scan_keep_get(volatile uint32_t *get) { s_get = get; }
+
 /* An index from (subchannel, method) straight to the inventory slot.
  *
  * This function used to walk the inventory looking for the pair, and it runs
@@ -212,7 +231,10 @@ uint32_t nv2a_pb_scan(uint32_t start_va, uint32_t end_va)
         end_va = start_va + 0x400000u;
 
     while (va < end_va && words < 0x100000u) {
-        uint32_t w = *(const uint32_t *)(mem + va);
+        uint32_t w;
+        if (s_get && !s_in_sub)
+            __atomic_store_n(s_get, va & 0x0FFFFFFFu, __ATOMIC_SEQ_CST);
+        w = *(const uint32_t *)(mem + va);
         va += 4;
         words++;
 

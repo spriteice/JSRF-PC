@@ -52,6 +52,11 @@ cases["cpu_profile"] = (None, "RECOMP_CPU_PROFILE=1\n", {},
                          "[CPUPROF] the last "] if linux else ["started:"],
                         [] if linux else ["CPU_PROFILE", "[CPUPROF]"])
 
+# A switch in Developer > Experiments, the last of the list: from developer.cfg
+# into the environment like the others.
+cases["experiment"] = (None, "RECOMP_NV2A_QUEUE=1\n", {},
+                       ["[DEV] RECOMP_NV2A_QUEUE=1 from developer.cfg", "started:"], [])
+
 with tempfile.TemporaryDirectory(prefix="developer-") as directory:
     work = pathlib.Path(directory)
     exe = str(work / "test.exe")
@@ -70,7 +75,8 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
         if dev_text is not None:
             (folder / "developer.cfg").write_text(dev_text)
         env = {k: v for k, v in os.environ.items()
-               if k not in ("RECOMP_GL_PROFILE", "RECOMP_LOCK_WATCH", "RECOMP_CPU_PROFILE")}
+               if k not in ("RECOMP_GL_PROFILE", "RECOMP_LOCK_WATCH", "RECOMP_CPU_PROFILE",
+                             "RECOMP_NV2A_QUEUE")}
         env.update(extra, JSRF_SETTINGS_FILE=str(folder / "settings.cfg"))
         log = folder / "last-run.log"
         with open(log, "w") as out:
