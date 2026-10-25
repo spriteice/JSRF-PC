@@ -28,7 +28,7 @@ contains no game files.
   yet.
 - **Free camera:** Modern right-stick camera controls and options, with the
   graffiti camera turned off. Reset with the left trigger.
-- **Anti-aliasing:** MSAA and FXAA, alone or together.
+- **Anti-aliasing:** SMAA and MSAA, alone or together.
 - **Anisotropic filtering:** Sharper textures at an angle.
 - **Portable mode:** Everything in one folder that can be moved.
 

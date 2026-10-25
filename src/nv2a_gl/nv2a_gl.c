@@ -170,6 +170,12 @@ extern uint32_t  xbox_ContiguousBlockSerial(uint32_t va);
 #define M_SET_SKIN_MODE             0x0328   /* 0 off, else N-matrix blend */
 #define M_SET_MODEL_VIEW_MATRIX     0x0480   /* 4 matrices of 16 floats */
 #define M_SET_TEXTURE_MATRIX_ENABLE 0x0420   /* +i*4, 4 stages */
+#define M_SET_TEXGEN_S              0x03C0   /* +0x10 a stage, S T R Q at +0 +4 +8 +C */
+#define M_SET_TEXGEN_PLANE_S        0x0840   /* +0x40 a stage, S T R Q at +0 +0x10 ..., 4 floats */
+#define M_SET_POINT_PARAMS_ENABLE   0x0318
+#define M_SET_POINT_SMOOTH_ENABLE   0x031C
+#define M_SET_POINT_SIZE            0x043C
+#define M_SET_POINT_PARAMS          0x0A30   /* 8 floats */
 #define M_SET_COMPOSITE_MATRIX      0x0680   /* 16 floats, model*view*proj */
 #define M_SET_TEXTURE_MATRIX        0x06C0   /* +i*64, 4 matrices of 16 */
 #define M_SET_TRANSFORM_PROGRAM_LD  0x1E9C
@@ -315,6 +321,16 @@ static struct {
     uint32_t prog_load, prog_start, prog_sub;
     uint32_t xf_mode;        /* SET_TRANSFORM_EXECUTION_MODE, low 2 bits */
     uint32_t ff_texmat_enable;   /* bit per stage */
+    /* NV097_SET_TEXGEN_S..Q (0x03C0, 0x10 a stage, 4 a component): the
+     * OpenGL enum the title wrote, 0 for none; and the planes the two linear
+     * modes would dot with (NV097_SET_TEXGEN_PLANE_S..Q, 0x0840, 0x40 a
+     * stage, 0x10 a component), kept for the log. */
+    uint32_t texgen[4][4];
+    float    texgen_plane[16][4];
+    /* Points (NV097_SET_POINT_PARAMS_ENABLE, _SMOOTH_ENABLE, _SIZE,
+     * _PARAMS), kept for the log: point lists are not drawn. */
+    uint32_t point_params_enable, point_smooth_enable, point_size;
+    float    point_params[8];
     uint32_t ff_skin_mode;       /* NV097_SET_SKIN_MODE */
     uint32_t draws_skinned;      /* draws made with it non-zero */
     int      ff_lighting;
@@ -785,42 +801,62 @@ static uint32_t gl_scale(void)
 }
 
 /*
- * FXAA: the frame is shown through one pass over it that blends across the
- * edges it finds (the backend's target_fxaa), into a copy; the title's
- * surfaces are left as they are, and so is everything it can observe. Asked
- * for at any time (the in-game menu) and taken at the next flip.
- * RECOMP_GL_FXAA=1, or the window's fxaa= setting.
+ * Anti-aliasing, two kinds, either or both:
+ *
+ *   SMAA (nv2a_smaa.h): the frame is shown through three passes over it that
+ *   find its edges and blend across them (the backend's target_smaa), into a
+ *   copy. Switched on and off at any time, taken at the next flip.
+ *
+ *   Multisampling: every target drawn with 2, 4 or 8 samples a pixel (the
+ *   backend's samples), which smooths what is drawn rather than the picture
+ *   afterwards. OpenGL takes a new count at the next flip, carrying every
+ *   target across; OpenGL ES and Metal only at start, so there a change is
+ *   kept for the next one.
+ *
+ * Nothing the title can observe changes with either -- its surfaces, their
+ * sizes and the raster stay what they were. RECOMP_GL_SMAA=0|1 and
+ * RECOMP_GL_MSAA=n win over the settings (the window's smaa= and msaa=, the
+ * Mac's and the iPhone's preferences); both are off by default.
  */
-static volatile int g_fxaa_want;       /* asked for */
-static int          g_fxaa_now;        /* and in use */
-
-static void fxaa_take(void)
-{
-    if (g_fxaa_want == g_fxaa_now || !G->target_fxaa) return;
-    g_fxaa_now = g_fxaa_want;
-    fprintf(stderr, "  [GL] FXAA: %s from present %u\n", g_fxaa_now ? "on" : "off", S.flips);
-}
-
-/*
- * Multisampling: every target drawn with several samples a pixel, which
- * smooths the edges of what is drawn into it. As with the internal
- * resolution, nothing the title can observe changes -- the surface and its
- * size stay as they were, and so does the raster's -- but this one can
- * change while the game runs: asked for at any time (the in-game menu) and
- * taken at the next flip, between frames, where the device carries every
- * target's picture across. RECOMP_GL_MSAA=n, or the window's msaa= setting;
- * 0 or 1 is none.
- */
-static volatile int g_msaa_want = 1;   /* samples a pixel asked for */
+static volatile int g_smaa_want;       /* asked for */
+static int          g_smaa_now;        /* and in use */
+static volatile int g_msaa_want = 1;   /* samples a pixel asked for, 1 none */
 static int          g_msaa_now = 1;    /* and in use */
+static int          g_msaa_max;        /* the most the device offers; 0 not up yet */
+static uint32_t     g_shown_rt;        /* what was put on screen at the last flip */
+
+/* For the windows' menus and settings (nv2a_window_mac.m, the iPhone app's):
+ * what is in use and what can be asked for. Storing a choice is theirs to
+ * do; this only takes it. */
+void nv2a_set_smaa(int on);
+void nv2a_set_smaa(int on) { g_smaa_want = on ? 1 : 0; }
+int  nv2a_smaa(void);
+int  nv2a_smaa(void) { return g_smaa_want; }
+int  nv2a_msaa(void);
+int  nv2a_msaa(void) { return g_msaa_now; }
+int  nv2a_msaa_max(void);
+int  nv2a_msaa_max(void) { return g_msaa_max; }
+static int g_msaa_live;                /* the device takes a new count while running */
+int  nv2a_msaa_live(void);
+int  nv2a_msaa_live(void) { return g_msaa_live; }
+void nv2a_set_msaa(int n);
+void nv2a_set_msaa(int n) { g_msaa_want = n > 1 ? n : 1; }
+
+static void smaa_take(void)
+{
+    if (g_smaa_want == g_smaa_now || !G->target_smaa) return;
+    g_smaa_now = g_smaa_want;
+    fprintf(stderr, "  [GL] SMAA: %s from present %u\n", g_smaa_now ? "on" : "off", S.flips);
+}
 
 static void msaa_take(void)
 {
     int want = g_msaa_want, was = g_msaa_now;
-    if (want == was || !G->samples) return;
-    g_msaa_now = g_msaa_want = G->samples(want);
+    if (want == was || !G->samples || !g_msaa_live) return;
+    g_msaa_now = G->samples(want);
     fprintf(stderr, "  [GL] MSAA: %dx from present %u (was %dx%s)\n",
             g_msaa_now, S.flips, was, g_msaa_now != want ? "; fewer than asked" : "");
+    g_msaa_want = g_msaa_now;
 }
 
 static uint32_t g_cur_prog;
@@ -926,34 +962,28 @@ static uint32_t g_frame_chars_prev;  /* ... and in the frame just finished */
 #define TEX_CACHE 4096
 static struct {
     uint32_t offset, format, w, h, pitch, hash;
+    uint32_t levels;        /* of the title's mipmap chain uploaded (tex_title_levels) */
     uint32_t content;       /* every byte of it, hashed (see tcache_verify) */
     uint32_t drawn;         /* the frame it was last looked up in */
     uint32_t last_draw;     /* when this entry was last looked up */
     uint32_t tex;           /* the device's texture */
     uint32_t va, serial;    /* read from: where, and the allocation (contig_serial) */
+    uint32_t sampling;      /* how it is sampled (sampler_key): part of what it is */
     int      bias;          /* uploaded as a bump source (g_upload_bias_bg) */
-    uint32_t filter;        /* the title's filter it was made with */
-    int      aniso;         /* filtered linearly both ways: takes anisotropy */
+    int      aniso;         /* has mipmaps, so takes the setting (tex_aniso) */
     int      used;
 } g_tcache[TEX_CACHE];
 
 /*
- * Anisotropic filtering: more samples along a footprint the viewing angle
- * stretches, for the textures the title filters linearly both ways (see
- * upload_texture_inner). It can change while the game runs: asked for at any
- * time (the in-game menu) and taken at the next flip, where every texture the
- * cache holds gets the new level in place (aniso_take) -- a texture
- * parameter, so nothing is decoded or sent again. RECOMP_GL_ANISO=n, or the
- * window's aniso= setting; 0 or 1 is none.
+ * Anisotropic filtering: the most samples a texture with mipmaps is given
+ * (tex_aniso), 16x unless RECOMP_GL_ANISO=n or the window's aniso= setting
+ * asks for another; 0 or 1 is none beyond what the title asks for itself. It
+ * can change while the game runs: asked for at any time (the in-game menu)
+ * and taken at the next flip, where every texture it reaches is made again
+ * (aniso_take).
  */
-static volatile int g_aniso_want = 1;   /* the most samples asked for */
-static int          g_aniso_now = 1;    /* and in use */
-/* What it reaches, for the report: uploads the title filters linearly both
- * ways or not, that declare a chain of levels, by the anisotropy the title
- * asked for itself (NV097_SET_TEXTURE_CONTROL0 bits 4-5: 1x to 8x, which
- * this does not apply); and lookups of a texture with min or mag filters
- * other than the ones it was made with, which keeps those. */
-static struct { uint32_t linear, point, chain, own[4], refilter; } g_tfilt;
+static volatile int g_aniso_want = 16;  /* the most samples asked for */
+static int          g_aniso_now = 16;   /* and in use */
 
 /* ---- helpers ------------------------------------------------------------ */
 
@@ -1712,8 +1742,8 @@ static void sdl_menu_graphics(void)
 
 /* Graphics > Anti-aliasing (MSAA): none, then each count the device can draw
  * with, taken at the next flip and kept as msaa= (0 for none), as F10 keeps
- * widescreen=. Added once the device is up (msaa_start), the last of the
- * rows, after FXAA's, which it can be used with. */
+ * widescreen=. Added once the device is up (gfx_init), the last of the
+ * rows, after SMAA's, which it can be used with. */
 static const char *const sdl_msaa_names[] = { "Off", "2x", "4x", "8x" };
 #define SDL_MSAA_N ((int)(sizeof sdl_msaa_names / sizeof sdl_msaa_names[0]))
 static int sdl_msaa_now(void)
@@ -1730,7 +1760,7 @@ static void sdl_msaa_pick(int i)
 static void sdl_menu_msaa(void)
 {
     int n = 1;
-    while (n < SDL_MSAA_N && (1 << n) <= G->samples_max()) n++;
+    while (n < SDL_MSAA_N && (1 << n) <= g_msaa_max) n++;
     if (n > 1) {
         const XBOX_MENU_ITEM row = {
             .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Anti-aliasing (MSAA)",
@@ -1739,21 +1769,21 @@ static void sdl_menu_msaa(void)
     }
 }
 
-/* Graphics > Anti-aliasing (FXAA): taken at the next flip and kept as fxaa=,
- * as F10 keeps widescreen=. Added once the device is up (fxaa_start), after
+/* Graphics > Anti-aliasing (SMAA): taken at the next flip and kept as smaa=,
+ * as F10 keeps widescreen=. Added once the device is up (gfx_init), after
  * Anisotropic filtering's row, where the backend has it. */
-static int  sdl_fxaa_on(void)   { return g_fxaa_want; }
-static void sdl_fxaa_flip(void)
+static int  sdl_smaa_on(void)   { return g_smaa_want; }
+static void sdl_smaa_flip(void)
 {
-    g_fxaa_want = !g_fxaa_want;
-    sdl_cfg_set("fxaa", g_fxaa_want);
+    g_smaa_want = !g_smaa_want;
+    sdl_cfg_set("smaa", g_smaa_want);
 }
-static void sdl_menu_fxaa(void)
+static void sdl_menu_smaa(void)
 {
     const XBOX_MENU_ITEM row = {
-        .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE, .label = "Anti-aliasing (FXAA)",
-        .state = sdl_fxaa_on, .run = sdl_fxaa_flip };
-    if (G->target_fxaa) xbox_MenuAdd(&row, 1);
+        .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE, .label = "Anti-aliasing (SMAA)",
+        .state = sdl_smaa_on, .run = sdl_smaa_flip };
+    if (G->target_smaa) xbox_MenuAdd(&row, 1);
 }
 
 /* Graphics > Anisotropic filtering: none, then each level the device can
@@ -2652,6 +2682,59 @@ static uint32_t psh_hash(void)
  * fetch(), which copies the constant into the packed vertex, so "has an
  * array" and "has a value" are the same question here. Position is always
  * present -- do_draw() rejects a batch without it before this is reached. */
+/* RECOMP_GL_TEXGEN=0: no generated coordinates, as before; =ab: every other
+ * displayed frame without them, for a before-and-after from one run. */
+static int texgen_off(void)
+{
+    static int off = -1;
+    if (off < 0) { const char *v = getenv("RECOMP_GL_TEXGEN");
+                   off = !v ? 0 : *v == '0' ? 1 : (*v == 'a' || *v == 'A') ? 2 : 0; }
+    return off == 2 ? (int)(S.frames & 1u) : off;
+}
+
+/*
+ * Texture coordinate generation, for the fixed-function transform
+ * (NV097_SET_TEXGEN_S..Q): which components of which stage the T&L unit makes
+ * itself, and what that needs read.
+ *
+ * The normal-based modes are made (see emit_ff). The two linear modes would
+ * need the planes as uniforms of their own and this title has not been seen
+ * to ask for them: their components stay the vertex's own, and the first
+ * batch that asks says so. RECOMP_GL_TEXGEN=0 makes none, as before.
+ */
+static void texgen_describe(Nv2aVshFixed *f)
+{
+    int s, c, nrm = 0;
+    if (texgen_off()) return;
+    for (s = 0; s < 4; s++) {
+        int any = 0;
+        for (c = 0; c < 4; c++) {
+            uint8_t code = NV2A_TEXGEN_OFF;
+            switch (S.texgen[s][c]) {
+            case 0x2402: if (c < 2) code = NV2A_TEXGEN_SPHERE_MAP; break;
+            case 0x8511: if (c < 3) code = NV2A_TEXGEN_NORMAL_MAP; break;
+            case 0x8512: if (c < 3) code = NV2A_TEXGEN_REFLECTION_MAP; break;
+            case 0: break;
+            default: {
+                static int said;
+                if (said++ < 4)
+                    fprintf(stderr, "[GL] texture coordinates generated by mode %04X (stage %d, %c) "
+                            "are not made: the vertex's own are used\n", S.texgen[s][c], s, "STRQ"[c]);
+                break; }
+            }
+            f->texgen[s][c] = code;
+            if (code) { any = 1; nrm = 1; }
+        }
+        /* The components left to the vertex read its coordinate -- the
+         * attribute's latched value when the batch has no array of them. */
+        if (any) f->inputs_read |= 1u << (9 + s);
+    }
+    if (nrm && !f->lit) {
+        if (S.attr[2].size || sticky_attrs()) { f->inputs_read |= 1u << 2; f->has_normal = 1; }
+        f->tg_normalize = S.normalization ? 1 : 0;
+    }
+}
+
 static void ff_describe(Nv2aVshFixed *f)
 {
     int i;
@@ -2686,6 +2769,7 @@ static void ff_describe(Nv2aVshFixed *f)
                             | (S.normalization ? 8 : 0));
         f->light_mask = (uint16_t)(S.light_enable_mask & 0xFFFFu);
     }
+    texgen_describe(f);
 }
 
 /*
@@ -2700,7 +2784,7 @@ static void ff_describe(Nv2aVshFixed *f)
  * in CHANGELOG-JSRF-PC.md.
  */
 enum { SC_FIXED, SC_PROGRAM };
-#define SC_LAYOUT 1
+#define SC_LAYOUT 2
 
 static void sc_state_note(uint32_t kind, const void *head, uint32_t hlen)
 {
@@ -3171,6 +3255,128 @@ static void tex_alpha_census(const uint8_t *rgba, uint32_t w, uint32_t h,
     fflush(stderr);
 }
 
+/* One level of a texture -- w x h texels at `src`, `pitch` bytes a row for a
+ * linear one -- decoded to RGBA8, row 0 first, into `rgba`. 0 for a format
+ * this cannot decode. */
+static int g_upload_bias_bg;   /* see psh_sync_textures: bump sources */
+static int decode_level(uint32_t color, const uint8_t *src, uint32_t w, uint32_t h,
+                        uint32_t pitch, uint8_t *rgba)
+{
+    if (fmt_is_dxt(color)) {
+        /* Decoded here rather than handed to the driver compressed.
+         *
+         * Passing the blocks straight through is faster and exact, but it
+         * makes every texture in the game depend on the host advertising
+         * S3TC -- and when it does not, glCompressedTexImage2D fails, the
+         * texture stays undefined, and every surface samples black. That is
+         * a whole-screen failure caused by a driver capability, which is not
+         * a trade worth making for an upload that happens once per texture
+         * and is cached afterwards.
+         *
+         * A block at a time: decoded per texel, every block was decoded
+         * sixteen times -- 4 ms a texture, and the 49 a new area brings at
+         * once were a 200 ms stall in the middle of play. */
+        uint32_t bw = (w + 3) / 4, bh = (h + 3) / 4, bb = d3d8_format_dxt_block_bytes(color);
+        uint32_t bx, by, k;
+        for (by = 0; by < bh; by++)
+            for (bx = 0; bx < bw; bx++) {
+                uint32_t px[16];
+                d3d8_dxt_decode_block(src + ((size_t)by * bw + bx) * bb, color, px);
+                for (k = 0; k < 16; k++) {
+                    uint32_t x = bx * 4 + (k & 3u), y = by * 4 + (k >> 2), argb = px[k];
+                    uint8_t *o;
+                    if (x >= w || y >= h) continue;
+                    if (g_upload_bias_bg) argb ^= 0x00008080u;
+                    o = rgba + ((size_t)y * w + x) * 4;
+                    o[0] = (uint8_t)(argb >> 16);
+                    o[1] = (uint8_t)(argb >> 8);
+                    o[2] = (uint8_t)argb;
+                    o[3] = (uint8_t)(argb >> 24);
+                }
+            }
+        return 1;
+    } else {
+        /* Where each column and each row lands in a swizzled image, worked
+         * out once per level: swizzle_offset(x, y) is offx[x] | offy[y], and
+         * working it out per texel was most of the time a swizzled upload
+         * took. */
+        static uint32_t offx[4096], offy[4096];
+        uint32_t lin = fmt_is_swz(color) ? swz_to_linear(color) : color;
+        uint32_t bpp = linear_bpp(lin);
+        uint32_t x, y;
+        int swz = fmt_is_swz(color);
+        if (!bpp) return 0;
+        if (swz) {
+            uint32_t mx, my;
+            xbox_swizzle_masks(w, h, &mx, &my);
+            for (x = 0; x < w; x++) offx[x] = swizzle_deposit(x, mx);
+            for (y = 0; y < h; y++) offy[y] = swizzle_deposit(y, my);
+        }
+        for (y = 0; y < h; y++) {
+            for (x = 0; x < w; x++) {
+                const uint8_t *p;
+                uint32_t argb;
+                if (swz)
+                    p = src + (size_t)(offx[x] | offy[y]) * bpp;
+                else
+                    p = src + (size_t)y * (pitch ? pitch : w * bpp) + (size_t)x * bpp;
+                argb = decode_texel(lin, p);
+                if (g_upload_bias_bg) argb ^= 0x00008080u;
+                rgba[((size_t)y * w + x) * 4 + 0] = (uint8_t)(argb >> 16);
+                rgba[((size_t)y * w + x) * 4 + 1] = (uint8_t)(argb >> 8);
+                rgba[((size_t)y * w + x) * 4 + 2] = (uint8_t)argb;
+                rgba[((size_t)y * w + x) * 4 + 3] = (uint8_t)(argb >> 24);
+            }
+        }
+        return 1;
+    }
+}
+
+/*
+ * The title's own mipmap chain: how many of its levels to upload.
+ *
+ * The console sampled a mipmapped texture from the chain stored in it, level
+ * after level -- each a swizzled or compressed image half the size of the one
+ * before, packed one after another from the texture's address, as many as
+ * the format register's MIPMAP_LEVELS says. For a long time only level 0 was
+ * decoded here, and a chain made by box-filtering it (RECOMP_GL_MIPMAP=1)
+ * blurred this title's texture atlases into each other; so a distant surface
+ * sampled its full-size image at several texels a pixel and shimmered. The
+ * title's chain is what it was drawn with.
+ *
+ * All of it when the stage samples with a mipmapped filter (3 to 6), as many
+ * as the format register says -- no more than the size allows, and no more
+ * than TEXTURE_CONTROL0's MAX_LOD_CLAMP lets the sampler reach, as xemu reads
+ * it -- and 1 otherwise: a linear texture has no chain. RECOMP_GL_TITLE_MIPS=0
+ * uploads the base level alone, as before.
+ */
+static uint32_t tex_title_levels(const TexStage *t, uint32_t w, uint32_t h)
+{
+    static int on = -1;
+    uint32_t minf = (t->filter >> 16) & 0xF, n, m, maxl, clamp;
+    if (on < 0) { const char *v = getenv("RECOMP_GL_TITLE_MIPS"); on = v ? atoi(v) != 0 : 1; }
+    if (!on || minf < 3 || minf > 6 || t->levels < 2) return 1;
+    if (!fmt_is_swz(t->color) && !fmt_is_dxt(t->color)) return 1;
+    m = w > h ? w : h;
+    for (maxl = 1; (1u << (maxl - 1)) < m; maxl++) { }
+    n = t->levels < maxl ? t->levels : maxl;
+    clamp = ((t->control0 >> 6) & 0xFFFu) >> 8;      /* MAX_LOD_CLAMP, 4.8 fixed point */
+    if (clamp + 1 < n) n = clamp + 1;
+    return n ? n : 1;
+}
+
+/* Anisotropic filtering for a mipmapped texture: the level in use
+ * (g_aniso_now, 16x unless asked otherwise), and never less than the title
+ * asked for itself (TEXTURE_CONTROL0's LOG_MAX_ANISO). With the chain, the
+ * level is chosen for a surface's narrow side and up to that many samples are
+ * taken along its long one: a road or a wall seen at a glancing angle stays
+ * sharp instead of going to the blur of the level its long side needs. */
+static uint8_t tex_aniso(const TexStage *t)
+{
+    int title = 1 << ((t->control0 >> 4) & 3);
+    return (uint8_t)(g_aniso_now > title ? g_aniso_now : title);
+}
+
 static uint32_t upload_texture_inner(const TexStage *t);
 /*
  * The texture for a stage whose address is a surface this backend renders
@@ -3185,7 +3391,6 @@ static uint32_t upload_texture_inner(const TexStage *t);
  * undefined; the console reads whatever is there. The surface is copied
  * first and the copy is sampled.
  */
-static int g_upload_bias_bg;   /* see psh_sync_textures: bump sources */
 static int g_fb_copies;
 static uint32_t surface_texture_for(const TexStage *t, float *sx, float *sy, int *slot_out)
 {
@@ -3257,9 +3462,14 @@ static uint32_t tex_content(uint32_t color, uint32_t height, uint32_t pitch,
 static void tcache_drop(uint32_t k)
 {
     if (g_tcache[k].used && g_tcache[k].tex) {
+        uint32_t l, wl = g_tcache[k].w, hl = g_tcache[k].h;
         G->tex_free(g_tcache[k].tex);
         g_prof.tex_held--;
-        g_prof.tex_held_bytes -= (unsigned long long)g_tcache[k].w * g_tcache[k].h * 4;
+        for (l = 0; l < (g_tcache[k].levels ? g_tcache[k].levels : 1); l++) {
+            g_prof.tex_held_bytes -= (unsigned long long)wl * hl * 4;
+            wl = wl > 1 ? wl / 2 : 1;
+            hl = hl > 1 ? hl / 2 : 1;
+        }
     }
     g_tcache[k].tex = 0;
     g_tcache[k].offset = 0xFFFFFFFFu;
@@ -3324,30 +3534,180 @@ static void tcache_verify(void)
         }
     }
 }
-/* At the flip: a level of anisotropy asked for since the last one, given to
- * every texture held that takes it. One uploaded later gets it at tex_new. */
+
+/* How a texture is sampled, from its stage's registers: filtering and
+ * wrapping, for `nlev` levels of the title's chain (tex_title_levels). */
+static void tex_sampler(const TexStage *t, uint32_t nlev, Nv2aSampler *out)
+{
+    Nv2aSampler smp;
+    /*
+     * Filtering, as the title asked for it.
+     *
+     * NV097_SET_TEXTURE_FILTER was being read into t->filter and then
+     * ignored: every texture in the game got LINEAR/LINEAR and no mipmaps at
+     * all. That is wrong in both directions. A title that asks for point
+     * sampling -- interface art, palettised sprites, anything whose texels
+     * are meant to be square -- got it blurred; and a title that asks for a
+     * mipmapped minification filter, which this one does for most of the
+     * city, got none, so every surface at a distance sampled its full-size
+     * texture at one texel per several pixels and aliased.
+     *
+     * The aliasing gets worse the better the rest of the renderer gets. At
+     * 640x480 it is a shimmer; at the 2560x1920 the launcher now uses, the
+     * same surfaces are being minified four times as hard and it is the most
+     * obvious thing left in a still frame.
+     *
+     * The chain is generated rather than decoded from the title's own levels.
+     * The console supplies its mipmaps in the texture and this reads only
+     * level zero, so glGenerateMipmap is not what the hardware sampled -- it
+     * is a box filter over the same image. For a title's own artist-authored
+     * chain the difference is visible in principle and small in practice, and
+     * it costs one call at upload against decoding a swizzled, DXT-compressed
+     * chain per level. Worth revisiting; not worth blocking the fix on.
+     */
+    {
+        uint32_t minf = (t->filter >> 16) & 0xF;
+        uint32_t magf = (t->filter >> 24) & 0xF;
+        static int want_mips = -1;
+        if (want_mips < 0) {
+            const char *v = getenv("RECOMP_GL_MIPMAP");
+            want_mips = v ? atoi(v) : 0;
+        }
+
+        /* A generated chain is not the title's chain, and on this title's art
+         * that difference is not small.
+         *
+         * The reasoning above was that a box filter over level zero is close
+         * enough to an artist's chain to be worth having. On a photograph it
+         * would be. This title's textures are mostly ATLASES -- many small
+         * pieces packed into one image, addressed by uv rectangle -- and a box
+         * filter does not know where the seams are. Every level mixes
+         * neighbouring pieces into each other, and by the third level a sign
+         * is carrying its neighbour's colour. Trilinear then blends toward
+         * those levels for anything not filling the screen, so the whole
+         * world goes soft and slightly wrong at once. The first player to
+         * see it called it straight away: worse than before.
+         *
+         * The console had the real chain sitting in the texture. Until this
+         * decodes it -- swizzled and DXT-compressed, per level -- the honest
+         * thing is to sample level zero, which is what the port did for
+         * months and what nobody complained about. The half of the fix that
+         * was a real bug stays: the title asks for NEAREST on art that must
+         * not be blurred, and for mirrored wrap, and was getting neither.
+         *
+         * So a mipmapped mode is honoured as its base filter -- 3 and 5 are
+         * the NEAREST pair, 4 and 6 the LINEAR pair -- and no chain is
+         * invented. RECOMP_GL_MIPMAP=1 puts the generated chain back for
+         * anyone who wants to compare.
+         *
+         * The title's own chain is decoded now (tex_title_levels), and a
+         * texture that has one is sampled as the title asked, mipmaps,
+         * trilinear and all, with anisotropic filtering (tex_aniso). One
+         * without a chain is still sampled at its base level.
+         */
+        memset(&smp, 0, sizeof smp);
+        if (minf >= 3 && minf <= 6) {
+            if (nlev > 1 || want_mips) {
+                /* 3 and 5 sample nearest within a level, 4 and 6 linear;
+                 * 3 and 4 take the nearest level, 5 and 6 blend two. */
+                smp.min_linear = (minf == 4 || minf == 6);
+                smp.mip = (minf == 3 || minf == 4) ? 1 : 2;
+                /* The title's levels, in rgba after the base; none (0)
+                 * asks the device to make a chain itself. */
+                smp.levels = (uint8_t)(nlev > 1 ? nlev : 0);
+                /* Anisotropy only makes sense alongside a chain, and it was
+                 * the other half of what made distant surfaces look smeared
+                 * rather than sharp. It goes with the chain. */
+                smp.aniso = tex_aniso(t);
+            } else {
+                smp.min_linear = !(minf == 3 || minf == 5);
+            }
+        } else {
+            smp.min_linear = (minf != 1);
+        }
+        smp.mag_linear = (magf != 1);
+    }
+    /* Wrap. Mode 1 is repeat, 2 mirrors, 4 uses the border colour and 3 and 5
+     * clamp; everything that was not 1 used to clamp, so a mirrored texture
+     * came out as its left half stretched across the whole surface. Fixing
+     * that was the point and it stays fixed.
+     *
+     * Mode 4 goes back to clamping, though, and for the same reason the
+     * invented mipmaps had to go: it needs a border colour this does not
+     * read yet. NV097_SET_TEXTURE_BORDER_COLOR is not decoded anywhere here,
+     * so asking GL for CLAMP_TO_BORDER asks for GL's default border, which
+     * is transparent black -- and a texture atlas sampled a hair outside its
+     * rectangle then returns black instead of the neighbouring texel. That
+     * is a thin dark line along every seam in the world, which is exactly
+     * what the player saw appear. Clamping is wrong in the same small way it was
+     * wrong before, and wrong invisibly rather than wrong in black. */
+    /* 0 clamp, 1 repeat, 2 mirrored repeat -- in the device's terms. */
+    { static const uint8_t wrap_of[8] = { 0, 1, 2, 0, 0, 0, 0, 0 };
+      smp.wrap_s = wrap_of[t->addr & 7u];
+      smp.wrap_t = wrap_of[(t->addr >> 8) & 7u]; }
+    *out = smp;
+}
+
+/*
+ * The sampler as one number, for the texture cache to tell two apart.
+ *
+ * A device texture is made with its sampling (Nv2aSampler) and keeps it, so
+ * the cache has to treat one picture sampled two ways as two textures. It did
+ * not: whichever draw uploaded a texture first fixed its wrapping and filtering
+ * for every draw after it. The characters are shaded through one shared
+ * texture of tone ramps -- a coordinate from the light on the surface picks
+ * the tone -- which some of their materials address clamped and some wrapped.
+ * A ramp read past its end then came back from the far side of the picture
+ * where the title asked for its edge, or the other way round, depending on
+ * which material happened to be drawn first in the session: a face or an arm
+ * in another material's tones.
+ */
+static uint32_t sampler_key(const Nv2aSampler *s)
+{
+    return (uint32_t)s->min_linear | (uint32_t)s->mag_linear << 1 | (uint32_t)(s->mip & 3) << 2
+         | (uint32_t)(s->wrap_s & 3) << 4 | (uint32_t)(s->wrap_t & 3) << 6 | (uint32_t)s->aniso << 8
+         | (uint32_t)s->levels << 16;
+}
+
+/* At the flip: a level of anisotropy asked for since the last one. How a
+ * texture is sampled is part of what it is in the cache (sampler_key), so
+ * every texture held that takes the level is dropped, and made again at the
+ * new one when next drawn. */
 static void aniso_take(void)
 {
     int want = g_aniso_want, was = g_aniso_now;
     uint32_t k, n = 0;
-    if (want == was || !G->tex_aniso) return;
+    if (want == was) return;
     g_aniso_now = want;
     for (k = 0; k < TEX_CACHE; k++)
-        if (g_tcache[k].tex && g_tcache[k].aniso) { G->tex_aniso(g_tcache[k].tex, want); n++; }
-    fprintf(stderr, "  [GL] anisotropic filtering: %dx from present %u (was %dx), %u textures\n",
+        if (g_tcache[k].tex && g_tcache[k].aniso) { tcache_drop(k); n++; }
+    fprintf(stderr, "  [GL] anisotropic filtering: %dx from present %u (was %dx), %u textures made again\n",
             want, S.flips, was, n);
 }
+
 static uint32_t upload_texture_inner(const TexStage *t)
 {
     uint32_t va = resolve(t->offset);
     const uint8_t *src = guest(va);
-    uint32_t w = t->width, h = t->height, i, hash, key, bytes;
+    uint32_t w = t->width, h = t->height, i, hash, key, bytes, nlev, sampling;
+    int other_sampling = 0;
     uint32_t tex;
     uint8_t *rgba = NULL;
+    size_t rgba_bytes = 0;
     Nv2aSampler smp;
     int slot = -1, stale = -1, tomb = -1;
 
     if (!w || !h || w > 4096 || h > 4096) return 0;
+    nlev = tex_title_levels(t, w, h);
+    tex_sampler(t, nlev, &smp);
+    sampling = sampler_key(&smp);
+    /* RECOMP_GL_TEX_ONESAMPLER=1: one texture however it is sampled -- the
+     * first draw's sampling for all -- as before, to compare (=ab: every
+     * other displayed frame, from textures of their own). */
+    { static int one = -1;
+      if (one < 0) { const char *v = getenv("RECOMP_GL_TEX_ONESAMPLER");
+                     one = !v ? 0 : (*v == 'a' || *v == 'A') ? 2 : 1; }
+      if (one == 1 || (one == 2 && (S.frames & 1u))) sampling = 0x80000000u; }
 
     /* Same routing census as the vertex arrays, for textures: a texture at
      * a heap VA below the arena mark is decoded from the window instead. */
@@ -3382,7 +3742,8 @@ static uint32_t upload_texture_inner(const TexStage *t)
         uint32_t k = (key + i) % TEX_CACHE;
         if (g_tcache[k].used && g_tcache[k].offset == t->offset
          && g_tcache[k].format == t->color && g_tcache[k].w == w
-         && g_tcache[k].h == h && g_tcache[k].bias == g_upload_bias_bg) {
+         && g_tcache[k].h == h && g_tcache[k].bias == g_upload_bias_bg
+         && g_tcache[k].levels == nlev && g_tcache[k].sampling == sampling) {
             if (g_tcache[k].hash != hash) {
                 /* The sample changed. Not this frame's: upload over it,
                  * unless a later entry already holds the new picture. */
@@ -3391,10 +3752,11 @@ static uint32_t upload_texture_inner(const TexStage *t)
             }
             g_tcache[k].drawn = S.flips;
             g_tcache[k].last_draw = S.draws;
-            /* min and mag, the two fields the filtering below reads */
-            if ((g_tcache[k].filter ^ t->filter) & 0x0F0F0000u) g_tfilt.refilter++;
             return g_tcache[k].tex;
         }
+        if (g_tcache[k].used && g_tcache[k].offset == t->offset && g_tcache[k].format == t->color
+         && g_tcache[k].w == w && g_tcache[k].h == h && g_tcache[k].sampling != sampling)
+            other_sampling = 1;
         if (!g_tcache[k].used) { slot = (int)k; break; }
         if (!g_tcache[k].tex && tomb < 0) tomb = (int)k;   /* see tcache_drop */
     }
@@ -3429,94 +3791,53 @@ static uint32_t upload_texture_inner(const TexStage *t)
     /* Until the new texture exists the slot holds nothing. */
     tcache_drop((uint32_t)slot);
 
-    if (fmt_is_dxt(t->color)) {
-        /* Decoded here rather than handed to the driver compressed.
-         *
-         * Passing the blocks straight through is faster and exact, but it
-         * makes every texture in the game depend on the host advertising
-         * S3TC -- and when it does not, glCompressedTexImage2D fails, the
-         * texture stays undefined, and every surface samples black. That is
-         * a whole-screen failure caused by a driver capability, which is not
-         * a trade worth making for an upload that happens once per texture
-         * and is cached afterwards.
-         *
-         * A block at a time: decoded per texel, every block was decoded
-         * sixteen times -- 4 ms a texture, and the 49 a new area brings at
-         * once were a 200 ms stall in the middle of play. */
-        uint32_t bw = (w + 3) / 4, bh = (h + 3) / 4, bb = d3d8_format_dxt_block_bytes(t->color);
-        uint32_t bx, by, k;
-
-        rgba = (uint8_t *)malloc((size_t)w * h * 4);
+    /* Level 0, and the rest of the title's chain after it when it has one
+     * (tex_title_levels): each level decoded as the base is, from where the
+     * last one ended, into one buffer level after level. */
+    {
+        uint32_t l, wl = w, hl = h;
+        size_t so = 0, dof = 0;
+        for (l = 0; l < nlev; l++) {
+            rgba_bytes += (size_t)wl * hl * 4;
+            wl = wl > 1 ? wl / 2 : 1;
+            hl = hl > 1 ? hl / 2 : 1;
+        }
+        rgba = (uint8_t *)malloc(rgba_bytes);
         if (!rgba) return 0;
-        for (by = 0; by < bh; by++)
-            for (bx = 0; bx < bw; bx++) {
-                uint32_t px[16];
-                d3d8_dxt_decode_block(src + ((size_t)by * bw + bx) * bb, t->color, px);
-                for (k = 0; k < 16; k++) {
-                    uint32_t x = bx * 4 + (k & 3u), y = by * 4 + (k >> 2), argb = px[k];
-                    uint8_t *o;
-                    if (x >= w || y >= h) continue;
-                    if (g_upload_bias_bg) argb ^= 0x00008080u;
-                    o = rgba + ((size_t)y * w + x) * 4;
-                    o[0] = (uint8_t)(argb >> 16);
-                    o[1] = (uint8_t)(argb >> 8);
-                    o[2] = (uint8_t)argb;
-                    o[3] = (uint8_t)(argb >> 24);
+        for (l = 0, wl = w, hl = h; l < nlev; l++) {
+            if (!decode_level(t->color, src + so, wl, hl, t->pitch, rgba + dof)) {
+                /* Say so: a texture in a format this cannot decode draws as
+                 * nothing (or black), and it is otherwise invisible in every
+                 * log. Once per distinct format and size, then a count. */
+                static uint32_t seen[32]; static int nseen; static unsigned long total;
+                uint32_t k = (t->color << 16) ^ (w << 4) ^ h; int q, found = 0;
+                total++;
+                for (q = 0; q < nseen; q++) if (seen[q] == k) { found = 1; break; }
+                if (!found && nseen < 32) {
+                    seen[nseen++] = k;
+                    fprintf(stderr, "  [GL] TEXTURE FORMAT %02X NOT DECODED: %ux%u at %08X "
+                            "(pitch %u, draw %u; %lu such uploads so far)\n",
+                            t->color, w, h, t->offset, t->pitch, S.draws, total);
                 }
+                free(rgba);
+                return 0;
             }
-        tex_alpha_census(rgba, w, h, t->color, 1);
-    } else {
-        uint32_t lin = fmt_is_swz(t->color) ? swz_to_linear(t->color) : t->color;
-        uint32_t bpp = linear_bpp(lin);
-        uint32_t x, y;
-
-        if (!bpp) {
-            /* Say so: a texture in a format this cannot decode draws as
-             * nothing (or black), and it is otherwise invisible in every log.
-             * Once per distinct format and size, then a count. */
-            static uint32_t seen[32]; static int nseen; static unsigned long total;
-            uint32_t k = (t->color << 16) ^ (w << 4) ^ h; int q, found = 0;
-            total++;
-            for (q = 0; q < nseen; q++) if (seen[q] == k) { found = 1; break; }
-            if (!found && nseen < 32) {
-                seen[nseen++] = k;
-                fprintf(stderr, "  [GL] TEXTURE FORMAT %02X NOT DECODED: %ux%u at %08X "
-                        "(pitch %u, draw %u; %lu such uploads so far)\n",
-                        t->color, w, h, t->offset, t->pitch, S.draws, total);
-            }
-            return 0;
+            so  += tex_bytes(t->color, wl, hl);
+            dof += (size_t)wl * hl * 4;
+            wl = wl > 1 ? wl / 2 : 1;
+            hl = hl > 1 ? hl / 2 : 1;
         }
-        /* Where each column and each row lands in a swizzled image, worked
-         * out once: swizzle_offset(x, y) is offx[x] | offy[y], and working
-         * it out per texel was most of the time a swizzled upload took. */
-        static uint32_t offx[4096], offy[4096];
-        int swz = fmt_is_swz(t->color);
-        if (swz) {
-            uint32_t mx, my;
-            xbox_swizzle_masks(w, h, &mx, &my);
-            for (x = 0; x < w; x++) offx[x] = swizzle_deposit(x, mx);
-            for (y = 0; y < h; y++) offy[y] = swizzle_deposit(y, my);
-        }
-        rgba = (uint8_t *)malloc((size_t)w * h * 4);
-        if (!rgba) return 0;
-        for (y = 0; y < h; y++) {
-            for (x = 0; x < w; x++) {
-                const uint8_t *p;
-                uint32_t argb;
-                if (swz)
-                    p = src + (size_t)(offx[x] | offy[y]) * bpp;
-                else
-                    p = src + (size_t)y * (t->pitch ? t->pitch : w * bpp)
-                            + (size_t)x * bpp;
-                argb = decode_texel(lin, p);
-                if (g_upload_bias_bg) argb ^= 0x00008080u;
-                rgba[((size_t)y * w + x) * 4 + 0] = (uint8_t)(argb >> 16);
-                rgba[((size_t)y * w + x) * 4 + 1] = (uint8_t)(argb >> 8);
-                rgba[((size_t)y * w + x) * 4 + 2] = (uint8_t)argb;
-                rgba[((size_t)y * w + x) * 4 + 3] = (uint8_t)(argb >> 24);
-            }
-        }
-        tex_alpha_census(rgba, w, h, t->color, 0);
+        tex_alpha_census(rgba, w, h, t->color, fmt_is_dxt(t->color));
+        /* How much of the city has a chain, once a while: uploads with one,
+         * and the levels they carried. */
+        { static unsigned long n, with, lv, twice;
+          n++;
+          if (nlev > 1) { with++; lv += nlev; }
+          if (other_sampling) twice++;
+          if (n == 200 || n % 2000 == 0)
+              fprintf(stderr, "  [GL] mipmaps: %lu of %lu textures uploaded with the title's own "
+                              "chain (%.1f levels each); %lu a second time, sampled another way\n",
+                      with, n, with ? (double)lv / with : 0.0, twice); }
     }
     /* RECOMP_GL_DUMP_TEX=<prefix>: every texture as uploaded. A frame that
      * shades to black is either sampling the wrong place or sampling a black
@@ -3593,128 +3914,22 @@ static uint32_t upload_texture_inner(const TexStage *t)
             }
         } }
     }
-    /*
-     * Filtering, as the title asked for it.
-     *
-     * NV097_SET_TEXTURE_FILTER was being read into t->filter and then
-     * ignored: every texture in the game got LINEAR/LINEAR and no mipmaps at
-     * all. That is wrong in both directions. A title that asks for point
-     * sampling -- interface art, palettised sprites, anything whose texels
-     * are meant to be square -- got it blurred; and a title that asks for a
-     * mipmapped minification filter, which this one does for most of the
-     * city, got none, so every surface at a distance sampled its full-size
-     * texture at one texel per several pixels and aliased.
-     *
-     * The aliasing gets worse the better the rest of the renderer gets. At
-     * 640x480 it is a shimmer; at the 2560x1920 the launcher now uses, the
-     * same surfaces are being minified four times as hard and it is the most
-     * obvious thing left in a still frame.
-     *
-     * The chain is generated rather than decoded from the title's own levels.
-     * The console supplies its mipmaps in the texture and this reads only
-     * level zero, so glGenerateMipmap is not what the hardware sampled -- it
-     * is a box filter over the same image. For a title's own artist-authored
-     * chain the difference is visible in principle and small in practice, and
-     * it costs one call at upload against decoding a swizzled, DXT-compressed
-     * chain per level. Worth revisiting; not worth blocking the fix on.
-     */
-    {
-        uint32_t minf = (t->filter >> 16) & 0xF;
-        uint32_t magf = (t->filter >> 24) & 0xF;
-        static int want_mips = -1;
-        if (want_mips < 0) {
-            const char *v = getenv("RECOMP_GL_MIPMAP");
-            want_mips = v ? atoi(v) : 0;
-        }
-
-        /* A generated chain is not the title's chain, and on this title's art
-         * that difference is not small.
-         *
-         * The reasoning above was that a box filter over level zero is close
-         * enough to an artist's chain to be worth having. On a photograph it
-         * would be. This title's textures are mostly ATLASES -- many small
-         * pieces packed into one image, addressed by uv rectangle -- and a box
-         * filter does not know where the seams are. Every level mixes
-         * neighbouring pieces into each other, and by the third level a sign
-         * is carrying its neighbour's colour. Trilinear then blends toward
-         * those levels for anything not filling the screen, so the whole
-         * world goes soft and slightly wrong at once. The first player to
-         * see it called it straight away: worse than before.
-         *
-         * The console had the real chain sitting in the texture. Until this
-         * decodes it -- swizzled and DXT-compressed, per level -- the honest
-         * thing is to sample level zero, which is what the port did for
-         * months and what nobody complained about. The half of the fix that
-         * was a real bug stays: the title asks for NEAREST on art that must
-         * not be blurred, and for mirrored wrap, and was getting neither.
-         *
-         * So a mipmapped mode is honoured as its base filter -- 3 and 5 are
-         * the NEAREST pair, 4 and 6 the LINEAR pair -- and no chain is
-         * invented. RECOMP_GL_MIPMAP=1 puts the generated chain back for
-         * anyone who wants to compare.
-         */
-        memset(&smp, 0, sizeof smp);
-        if (minf >= 3 && minf <= 6) {
-            if (want_mips) {
-                /* 3 and 5 sample nearest within a level, 4 and 6 linear;
-                 * 3 and 4 take the nearest level, 5 and 6 blend two. */
-                smp.min_linear = (minf == 4 || minf == 6);
-                smp.mip = (minf == 3 || minf == 4) ? 1 : 2;
-            } else {
-                smp.min_linear = !(minf == 3 || minf == 5);
-            }
-        } else {
-            smp.min_linear = (minf != 1);
-        }
-        smp.mag_linear = (magf != 1);
-
-        /* Anisotropy, with or without a chain: without one, the samples it
-         * adds along a stretched footprint still come from level zero, which
-         * is what makes a street at a steep angle shimmer. Only where the
-         * title filters linearly both ways, though. The extension leaves
-         * NEAREST with anisotropy to the driver -- "a 2-tap filter", says the
-         * spec, and AMD's hardware has an anisotropic point filter -- and a
-         * texture the title point-samples has texels meant to stay square.
-         * (Dolphin draws the same line.) */
-        smp.aniso = (uint8_t)(smp.min_linear && smp.mag_linear ? g_aniso_now : 1);
-        if (smp.min_linear && smp.mag_linear) g_tfilt.linear++; else g_tfilt.point++;
-        if (t->levels > 1) g_tfilt.chain++;
-        g_tfilt.own[(t->control0 >> 4) & 3]++;
-    }
-    /* Wrap. Mode 1 is repeat, 2 mirrors, 4 uses the border colour and 3 and 5
-     * clamp; everything that was not 1 used to clamp, so a mirrored texture
-     * came out as its left half stretched across the whole surface. Fixing
-     * that was the point and it stays fixed.
-     *
-     * Mode 4 goes back to clamping, though, and for the same reason the
-     * invented mipmaps had to go: it needs a border colour this does not
-     * read yet. NV097_SET_TEXTURE_BORDER_COLOR is not decoded anywhere here,
-     * so asking GL for CLAMP_TO_BORDER asks for GL's default border, which
-     * is transparent black -- and a texture atlas sampled a hair outside its
-     * rectangle then returns black instead of the neighbouring texel. That
-     * is a thin dark line along every seam in the world, which is exactly
-     * what the player saw appear. Clamping is wrong in the same small way it was
-     * wrong before, and wrong invisibly rather than wrong in black. */
-    /* 0 clamp, 1 repeat, 2 mirrored repeat -- in the device's terms. */
-    { static const uint8_t wrap_of[8] = { 0, 1, 2, 0, 0, 0, 0, 0 };
-      smp.wrap_s = wrap_of[t->addr & 7u];
-      smp.wrap_t = wrap_of[(t->addr >> 8) & 7u]; }
-
     tex = G->tex_new(w, h, rgba, &smp);
     free(rgba);
     if (!tex) return 0;
 
     g_prof.n_tex_upload++;
-    g_prof.tex_held++;
-    g_prof.tex_held_bytes += (unsigned long long)w * h * 4;
     g_hf.tex_new++;
+    g_prof.tex_held++;
+    g_prof.tex_held_bytes += (unsigned long long)rgba_bytes;
     g_tcache[slot].used = 1;
     g_tcache[slot].offset = t->offset; g_tcache[slot].format = t->color;
     g_tcache[slot].w = w; g_tcache[slot].h = h; g_tcache[slot].pitch = t->pitch;
+    g_tcache[slot].levels = nlev;
+    g_tcache[slot].sampling = sampling;
     g_tcache[slot].hash = hash; g_tcache[slot].tex = tex;
     g_tcache[slot].bias = g_upload_bias_bg;
-    g_tcache[slot].filter = t->filter;
-    g_tcache[slot].aniso = smp.min_linear && smp.mag_linear;
+    g_tcache[slot].aniso = smp.mip != 0;
     g_tcache[slot].va = va; g_tcache[slot].serial = contig_serial(va);
     g_tcache[slot].content = tex_content(t->color, h, t->pitch, src, bytes);
     g_tcache[slot].drawn = S.flips;
@@ -3939,6 +4154,16 @@ static void write_bmp(const char *nm, const uint8_t *buf,
     fclose(f);
 }
 
+/* How many times the frame dumps (RECOMP_GL_DUMP_FB) fire: 24, or
+ * RECOMP_GL_DUMP_MAX (up to the 72 pictures a surface is allowed). */
+static int dump_max(void)
+{
+    static int n = -1;
+    if (n < 0) { const char *v = getenv("RECOMP_GL_DUMP_MAX");
+                 n = v ? atoi(v) : 24; if (n < 1) n = 24; if (n > 72) n = 72; }
+    return n;
+}
+
 /* Write the current framebuffer out as a BMP, for looking at.
  *
  * Reads back rather than sharing the present path's buffer: the two are asked
@@ -4014,6 +4239,16 @@ static void dump_fbo(uint32_t rt, const char *prefix, int *counter, int limit)
                   if (z >= 1.0f) { at1++; continue; }
                   h[(int)(z * 10.0f) % 10]++;
               }
+              /* And what a w-buffered frame's depths are in the title's own
+               * units (w = depth x 2^24): the spread of a sample of them. */
+              { static float smp[4096]; uint32_t ns = 0, step = np / 4096 + 1, a, b;
+                for (j = 0; j < np && ns < 4096; j += step) if (zb[j] < 1.0f) smp[ns++] = zb[j];
+                for (a = 1; a < ns; a++) { float v = smp[a]; for (b = a; b > 0 && smp[b-1] > v; b--) smp[b] = smp[b-1]; smp[b] = v; }
+                if (ns) fprintf(stderr, "  [GL] depth as w (x 2^24): 1%% %.2f, 10%% %.2f, median %.2f, "
+                                "90%% %.2f, 99%% %.2f (%u samples)\n",
+                                smp[ns / 100] * 16777216.0, smp[ns / 10] * 16777216.0,
+                                smp[ns / 2] * 16777216.0, smp[ns * 9 / 10] * 16777216.0,
+                                smp[ns * 99 / 100] * 16777216.0, ns); }
               snprintf(nm, sizeof nm, "%s%03d_z.bmp", prefix, *counter - 1);
               write_bmp(nm, buf, pw, ph);
               fprintf(stderr, "  [GL] wrote %s -- %u px at the far plane "
@@ -4659,6 +4894,96 @@ static void vc_report(const char *when)
             g_vc_st.converted / 1000, g_vc_st.hashed >> 10, g_vc_st.uploaded >> 10);
 }
 
+/*
+ * RECOMP_GL_POINTLOG=<s>: the point lists the title draws -- which are not
+ * drawn (see do_draw_body) -- a line each for the first few, with the point
+ * state, then a count every s seconds.
+ */
+static void points_note(int inl)
+{
+    static int on = -1, lines; static double every, next;
+    static unsigned long draws[2], verts[2];
+    int k;
+    uint32_t n = inl ? S.inline_count : S.idx_count;
+    if (on < 0) { const char *v = getenv("RECOMP_GL_POINTLOG");
+                  on = v ? 1 : 0; every = v ? atof(v) : 0.0; if (every <= 0) every = 10.0;
+                  next = mono_now() + every; }
+    if (!on) return;
+    k = (S.xf_mode == NV2A_XF_MODE_FIXED) ? 0 : 1;
+    draws[k]++; verts[k] += n;
+    if (lines < 24) {
+        lines++;
+        fprintf(stderr, "[POINTS] draw %u flip %u %s start %u, %u %s; size %u/8, params %s "
+                "(%g %g %g %g %g %g %g %g), smooth %s; tex0 %s %ux%u fmt %08X; blend %d, depth test %d mask %d\n",
+                S.draws, S.flips, k ? "prog" : "ff", S.prog_start, n, inl ? "inline words" : "indices",
+                S.point_size, S.point_params_enable ? "on" : "off",
+                S.point_params[0], S.point_params[1], S.point_params[2], S.point_params[3],
+                S.point_params[4], S.point_params[5], S.point_params[6], S.point_params[7],
+                S.point_smooth_enable ? "on" : "off",
+                S.tex[0].enabled ? "on" : "off", S.tex[0].width, S.tex[0].height, S.tex[0].format,
+                S.blend_enable, S.depth_test, S.depth_mask);
+    }
+    if (mono_now() >= next) {
+        next = mono_now() + every;
+        fprintf(stderr, "[POINTS] so far: %lu fixed-function draws (%lu), %lu programmable (%lu)\n",
+                draws[0], verts[0], draws[1], verts[1]);
+    }
+}
+
+/*
+ * RECOMP_GL_TEXGENLOG=<s>: the fixed-function batches that generate texture
+ * coordinates -- a line for each new arrangement, with its texture matrix,
+ * then a count every s seconds. RECOMP_GL_SKIP_TEXGEN=1 leaves them out of the
+ * picture, to see what they are (=ab: every other frame). Returns 1 to drop
+ * the draw.
+ */
+static int texgen_note(uint32_t n)
+{
+    static int on = -1, skip, lines; static double every, next;
+    static unsigned long draws, tris;
+    static uint32_t seen[64]; static int nseen;
+    int s, c, any = 0;
+    uint32_t key = 0;
+    if (on < 0) { const char *v = getenv("RECOMP_GL_TEXGENLOG");
+                  on = v ? 1 : 0; every = v ? atof(v) : 0.0; if (every <= 0) every = 10.0;
+                  next = mono_now() + every;
+                  { const char *k = getenv("RECOMP_GL_SKIP_TEXGEN");
+                    skip = !k ? 0 : (*k == 'a' || *k == 'A') ? 2 : 1; } }
+    if (!on && !skip) return 0;
+    for (s = 0; s < 4; s++)
+        for (c = 0; c < 4; c++)
+            if (S.texgen[s][c]) { any = 1; key = key * 31u + (uint32_t)(s * 4 + c) * 0x10001u + S.texgen[s][c]; }
+    if (!any) return 0;
+    if (on) {
+        int i, found = 0;
+        draws++; tris += n / 3;
+        key = key * 31u + S.ff_texmat_enable * 7u + (uint32_t)S.ff_lighting * 3u
+            + (S.attr[2].size ? 1u : 0u) + (S.tex[0].enabled ? 0x100u : 0u) + (S.tex[1].enabled ? 0x200u : 0u);
+        for (i = 0; i < nseen; i++) if (seen[i] == key) { found = 1; break; }
+        if (!found && nseen < 64 && lines < 40) {
+            const float *m = &S.u.ff_texmat[0][0];
+            seen[nseen++] = key; lines++;
+            fprintf(stderr, "[TEXGEN] draw %u flip %u n %u: stage0 %04X %04X %04X %04X stage1 %04X %04X %04X %04X; "
+                    "texmat %X; lit %d normal array %d normalize %u; tex0 %s %ux%u fmt %08X tex1 %s %ux%u fmt %08X; "
+                    "texmat0 [%g %g %g %g | %g %g %g %g | %g %g %g %g | %g %g %g %g]\n",
+                    S.draws, S.flips, n,
+                    S.texgen[0][0], S.texgen[0][1], S.texgen[0][2], S.texgen[0][3],
+                    S.texgen[1][0], S.texgen[1][1], S.texgen[1][2], S.texgen[1][3],
+                    S.ff_texmat_enable, S.ff_lighting, S.attr[2].size ? 1 : 0, S.normalization,
+                    S.tex[0].enabled ? "on" : "off", S.tex[0].width, S.tex[0].height, S.tex[0].format,
+                    S.tex[1].enabled ? "on" : "off", S.tex[1].width, S.tex[1].height, S.tex[1].format,
+                    m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7],
+                    m[8], m[9], m[10], m[11], m[12], m[13], m[14], m[15]);
+        }
+        if (mono_now() >= next) {
+            next = mono_now() + every;
+            fprintf(stderr, "[TEXGEN] so far: %lu draws, %lu triangles\n", draws, tris);
+        }
+    }
+    /* =ab: every other displayed frame without them */
+    return skip == 2 ? (int)(S.frames & 1u) : skip;
+}
+
 static void do_draw_body(void);
 /* A draw, timed whole for the profile (it has a great many ways out). */
 static void do_draw(void)
@@ -4695,6 +5020,7 @@ static void do_draw_body(void)
     surface_sync();
 
     mode = nv2a_prim(S.prim, &fan_expand);
+    if (mode == NV2A_PRIM_POINTS) points_note(inl);
     /* Points included: this tested a GLenum against zero, and GL_POINTS is
      * zero, so point lists have never been drawn. Kept that way here so the
      * two backends agree; drawing them is a change to make on purpose. */
@@ -4813,6 +5139,14 @@ static void do_draw_body(void)
       if (only_xf == -2) { const char *v = getenv("RECOMP_GL_ONLY_XF");
                            only_xf = v ? atol(v) : -1; }
       if (only_xf >= 0 && (long)S.xf_mode != only_xf) return; }
+    if (S.xf_mode == NV2A_XF_MODE_FIXED && texgen_note(n)) return;
+    /* RECOMP_GL_SKIP_LIT=1: leave out the fixed-function batches the T&L
+     * unit lights (=ab: every other displayed frame), to see what they are. */
+    { static int sk = -1;
+      if (sk < 0) { const char *k = getenv("RECOMP_GL_SKIP_LIT");
+                    sk = !k ? 0 : (*k == 'a' || *k == 'A') ? 2 : 1; }
+      if (sk && S.xf_mode == NV2A_XF_MODE_FIXED && S.ff_lighting
+          && (sk == 1 || (S.frames & 1u))) return; }
 
     slot = program_for_current();
     if (slot < 0) return;
@@ -5538,8 +5872,11 @@ static void do_draw_body(void)
     /* Model-view 0: the lighting's eye space, and the fog distance's. */
     if (uses(slot, NV2A_U_FFMV))
         G->uniform_f(NV2A_U_FFMV, &S.ff_mv[0][0], 4);
-    if (uses(slot, NV2A_U_LTSCENEAMB)) {
+    /* Its inverse: the lighting's normals, and the generated texture
+     * coordinates' of an unlit batch. */
+    if (uses(slot, NV2A_U_FFIMV))
         G->uniform_f(NV2A_U_FFIMV, &S.ff_imv[0][0], 4);
+    if (uses(slot, NV2A_U_LTSCENEAMB)) {
         G->uniform_f(NV2A_U_LTSCENEAMB, S.scene_ambient, 1);
         G->uniform_f(NV2A_U_LTMATEM, S.material_emission, 1);
         uni1f(NV2A_U_LTMATALPHA, S.material_alpha);
@@ -7730,6 +8067,102 @@ static void do_draw_body(void)
      * whether it is a wrong constant, a wrong viewport, or the title
      * genuinely drawing off-screen and relying on a clip we do not apply.
      */
+    /* RECOMP_GL_CHARLOG=<dir>: the characters' draws -- programmable ones
+     * that pick their matrices with the address register -- one entry per
+     * distinct program, combiner and set of textures (the first 40): every
+     * texture stage's words, the combiners, what the program writes for the
+     * first three vertices (run on the CPU), the program and the fragment
+     * shader once each, and each texture written into the directory as it
+     * sits in memory, level 0. Which texture a skin samples, and where, is
+     * what this answers. */
+    { static const char *dir = (const char *)1; static uint32_t seen[64]; static int nseen;
+      static uint32_t seen_prog[64], seen_psh[64]; static int nprog, npsh;
+      if (dir == (const char *)1) dir = getenv("RECOMP_GL_CHARLOG");
+      if (dir && nseen < 40 && slot >= 0 && S.xf_mode != NV2A_XF_MODE_FIXED
+          && g_pcache[slot].uses_a0 && out_n >= 30 && !vc_vb) {
+          uint32_t ph = psh_hash(), key, i;
+          int q, found = 0, k;
+          key = S.prog_start * 2654435761u ^ ph;
+          for (i = 0; i < 4; i++) key = key * 31u + (S.psh.tex_bound[i] ? S.tex[i].offset : 0u);
+          for (q = 0; q < nseen; q++) if (seen[q] == key) { found = 1; break; }
+          if (!found) {
+              Nv2aVshProgram vp;
+              uint32_t pstart = S.prog_start < NV2A_VSH_MAX_INSNS ? S.prog_start : 0;
+              int have_vp = nv2a_vsh_decode(S.prog + pstart * 4, (int)(NV2A_VSH_MAX_INSNS - pstart), &vp) > 0;
+              seen[nseen++] = key;
+              fprintf(stderr, "[CHAR] #%d draw %u flip %u: prog start %u psh %08X n %u prim %u | blend %d %04X/%04X | alpha test %d func %X ref %.3f"
+                              " | depth %d func %X mask %d | cull %d face %X | stages 0x%05X\n",
+                      nseen - 1, S.draws, S.flips, S.prog_start, ph, out_n, S.prim, S.blend_enable, S.blend_src, S.blend_dst,
+                      S.alpha_test, S.alpha_func, S.alpha_ref, S.depth_test, S.depth_func, S.depth_mask,
+                      S.cull_enable, S.cull_face, S.shader_stage_prog);
+              for (i = 0; i < 4; i++) {
+                  fprintf(stderr, "[CHAR]   tex%u off %08X fmt %08X (colour %02X) %ux%u levels %u addr %08X ctl0 %08X filt %08X en %d bound %d mode %u\n",
+                          i, S.tex[i].offset, S.tex[i].format, S.tex[i].color, S.tex[i].width, S.tex[i].height, S.tex[i].levels,
+                          S.tex[i].addr, S.tex[i].control0, S.tex[i].filter, S.tex[i].enabled, S.psh.tex_bound[i],
+                          (unsigned)S.psh.tex_mode[i]);
+                  /* the texture itself, level 0, as the title stored it */
+                  if (S.psh.tex_bound[i] && S.tex[i].width && S.tex[i].height
+                      && S.tex[i].width <= 1024 && S.tex[i].height <= 1024) {
+                      uint32_t w = S.tex[i].width, h = S.tex[i].height;
+                      uint8_t *rgba = (uint8_t *)malloc((size_t)w * h * 4);
+                      if (rgba && decode_level(S.tex[i].color, guest(resolve(S.tex[i].offset)), w, h,
+                                               S.tex[i].pitch, rgba)) {
+                          char nm[512]; FILE *f;
+                          snprintf(nm, sizeof nm, "%s/char%02d_t%u_%08X_f%02X_%ux%u.ppm", dir, nseen - 1, i,
+                                   S.tex[i].offset, S.tex[i].color, w, h);
+                          f = fopen(nm, "wb");
+                          if (f) { uint32_t p; fprintf(f, "P6\n%u %u\n255\n", w, h);
+                                   for (p = 0; p < w * h; p++) fwrite(rgba + p * 4, 1, 3, f); fclose(f); }
+                          snprintf(nm, sizeof nm, "%s/char%02d_t%u_%08X_alpha.pgm", dir, nseen - 1, i, S.tex[i].offset);
+                          f = fopen(nm, "wb");
+                          if (f) { uint32_t p; fprintf(f, "P5\n%u %u\n255\n", w, h);
+                                   for (p = 0; p < w * h; p++) fputc(rgba[p * 4 + 3], f); fclose(f); }
+                      }
+                      free(rgba);
+                  }
+              }
+              fprintf(stderr, "[CHAR]   combiners control %08X final %08X %08X c0 %08X c1 %08X\n", S.psh.control,
+                      S.psh.final_abcd, S.psh.final_efg, S.psh.final_c0, S.psh.final_c1);
+              for (k = 0; k < (int)(S.psh.control & 0xF) && k < NV2A_PSH_STAGES; k++)
+                  fprintf(stderr, "[CHAR]   stage %d rgb icw %08X ocw %08X | alpha icw %08X ocw %08X | c0 %08X c1 %08X\n",
+                          k, S.psh.rgb_icw[k], S.psh.rgb_ocw[k], S.psh.alpha_icw[k], S.psh.alpha_ocw[k], S.psh.c0[k], S.psh.c1[k]);
+              if (have_vp) {
+                  uint32_t v;
+                  for (v = 0; v < out_n && v < 3; v++) {
+                      float vin[16][4], op[4]; int a;
+                      memset(vin, 0, sizeof vin);
+                      for (a = 0; a < NUM_ATTRS; a++) {
+                          if (attr_at[a] >= 0) memcpy(vin[a], &vbuf[(size_t)v * stride_floats + attr_at[a]], 16);
+                          else memcpy(vin[a], S.const_attr[a], 16);
+                      }
+                      if (nv2a_vsh_interp(&vp, vin, S.u.c, op))
+                          fprintf(stderr, "[CHAR]   vertex %u: oD0 %.3f %.3f %.3f %.3f oD1 %.3f %.3f %.3f %.3f | oT0 %.4f %.4f %.4f %.4f"
+                                          " | oT1 %.4f %.4f %.4f %.4f | oT2 %.4f %.4f %.4f %.4f | oT3 %.4f %.4f %.4f %.4f\n", v,
+                                  g_interp_out[3][0], g_interp_out[3][1], g_interp_out[3][2], g_interp_out[3][3],
+                                  g_interp_out[4][0], g_interp_out[4][1], g_interp_out[4][2], g_interp_out[4][3],
+                                  g_interp_out[9][0], g_interp_out[9][1], g_interp_out[9][2], g_interp_out[9][3],
+                                  g_interp_out[10][0], g_interp_out[10][1], g_interp_out[10][2], g_interp_out[10][3],
+                                  g_interp_out[11][0], g_interp_out[11][1], g_interp_out[11][2], g_interp_out[11][3],
+                                  g_interp_out[12][0], g_interp_out[12][1], g_interp_out[12][2], g_interp_out[12][3]);
+                  }
+              }
+              for (q = 0; q < nprog; q++) if (seen_prog[q] == S.prog_start) break;
+              if (q == nprog && nprog < 64 && have_vp) {
+                  static char dis[16384];
+                  seen_prog[nprog++] = S.prog_start;
+                  if (nv2a_vsh_disasm(&vp, dis, sizeof dis)) fprintf(stderr, "[CHAR] ----- program at %u -----\n%s", S.prog_start, dis);
+              }
+              for (q = 0; q < npsh; q++) if (seen_psh[q] == ph) break;
+              if (q == npsh && npsh < 64) {
+                  char *fs = (char *)malloc(96 * 1024);
+                  seen_psh[npsh++] = ph;
+                  if (fs && nv2a_psh_emit_glsl(&S.psh, fs, 96 * 1024))
+                      fprintf(stderr, "[CHAR] ----- combiners %08X -----\n%s\n", ph, fs);
+                  free(fs);
+              }
+              fflush(stderr);
+          }
+      } }
     /* RECOMP_GL_SPY_TEX=<hex offset>: everything about the first draws that
      * sample the texture at that address -- combiner words, texture words,
      * blend and test state, the vertex program, and the fragment shader as
@@ -9283,12 +9716,9 @@ static void present(int is_frame)
 
     if (is_frame) { PROF_T0(); cache_idle_frame(); frame_pace(); PROF_ADD(pace); }
 
-    /* FXAA turned on or off since the last flip: from this frame. */
-    if (is_frame) fxaa_take();
-
-    /* A change of multisampling asked for since the last flip: between
+    /* Anti-aliasing turned on, off or changed since the last flip: between
      * frames, before this one is shown. */
-    if (is_frame) msaa_take();
+    if (is_frame) { smaa_take(); msaa_take(); }
 
     /* Put the finished frame on screen: the surface the title has set up
      * when it flips, which is what the window showed while surfaces were
@@ -9305,8 +9735,9 @@ static void present(int is_frame)
             pw = g_surf[g_present_slot].w * gl_scale();
             ph = g_surf[g_present_slot].h * gl_scale();
         }
-        /* With FXAA, what is shown is the copy of it with its edges smoothed. */
-        if (g_fxaa_now) prt = G->target_fxaa(prt);
+        /* With SMAA, what is shown is the copy of it with its edges smoothed. */
+        if (g_smaa_now && G->target_smaa) prt = G->target_smaa(prt);
+        g_shown_rt = prt;
 #if defined(NV2A_GL_USE_CGL)
         /* OpenGL on a Mac: read the finished frame and hand it to the window.
          *
@@ -9449,11 +9880,25 @@ static void present(int is_frame)
             g_dump_burst_left--;
             dump_due = 1;
         } else
-        dump_due = pfx && dump_shots < 24 && chars_ok
+        dump_due = pfx && dump_shots < dump_max() && chars_ok
                 && (dump_after_tris ? S.frame_tris >= dump_after_tris
                     : dump_3d ? S.draws_3d >= dump_3d
                     : S.flips >= dump_after)
                 && (S.flips % dump_every) == 0;
+        /* RECOMP_GL_DUMP_SECS=<s>: none before s seconds into the run --
+         * flips are no clock, a loading screen runs hundreds a second. */
+        { static double t0 = -1.0, after_s = -1.0;
+          if (t0 < 0.0) { const char *v = getenv("RECOMP_GL_DUMP_SECS");
+                          t0 = mono_now(); after_s = v ? atof(v) : 0.0; }
+          if (dump_due && after_s > 0.0 && mono_now() - t0 < after_s) dump_due = 0; }
+        /* RECOMP_GL_DUMP_PAIRS=1: each dump and the frame straight after it --
+         * with RECOMP_GL_TEXGEN=ab, the same moment with and without. */
+        { static int pairs = -1, second;
+          if (pairs < 0) pairs = getenv("RECOMP_GL_DUMP_PAIRS") ? 1 : 0;
+          if (pairs && is_frame) {
+              if (second && pfx && dump_shots < dump_max()) { dump_due = 1; second = 0; }
+              else if (dump_due) second = 1;
+          } }
 
         if (!dump_due && (!every || (S.flips % (uint32_t)every) != 0)) {
             S.flips++;
@@ -9466,9 +9911,13 @@ static void present(int is_frame)
             /* Every surface, not just the one that happens to be current: a
              * title that builds its frame off-screen and composites leaves
              * the picture somewhere other than where the capture is pointed,
-             * and one image per surface says which. */
+             * and one image per surface says which. RECOMP_GL_DUMP_SHOWN=1:
+             * only what the window is given, for looking at the picture
+             * rather than at how it was made. */
             int k;
-            for (k = 0; k < SURF_CACHE; k++) {
+            static int shown_only = -1;
+            if (shown_only < 0) shown_only = getenv("RECOMP_GL_DUMP_SHOWN") ? 1 : 0;
+            for (k = 0; k < SURF_CACHE && !shown_only; k++) {
                 char pf[256];
                 static int per_surf[SURF_CACHE];
                 if (!g_surf[k].used) continue;
@@ -9490,9 +9939,16 @@ static void present(int is_frame)
                 g_fbo_w = g_surf[k2].w; g_fbo_h = g_surf[k2].h;
                 g_fbo_pw = g_surf[k2].w * gl_scale(); g_fbo_ph = g_surf[k2].h * gl_scale();
                 dump_fbo(g_surf[k2].rt, pf, &shown_n, 72);
+                /* And the picture the window was given, where anti-aliasing
+                 * made it another one: the same frame, before and after. */
+                if (g_shown_rt && g_shown_rt != g_surf[k2].rt) {
+                    static int aa_n;
+                    snprintf(pf, sizeof pf, "%s_shown_aa_", pfx);
+                    dump_fbo(g_shown_rt, pf, &aa_n, 72);
+                }
                 g_fbo_w = sw; g_fbo_h = sh; g_fbo_pw = spw; g_fbo_ph = sph;
-                fprintf(stderr, "  [GL] shown at this flip: slot %d = surface %08X %ux%u\n",
-                        k2, g_surf[k2].offset, g_surf[k2].w, g_surf[k2].h);
+                fprintf(stderr, "  [GL] shown at this flip: slot %d = surface %08X %ux%u (frame %u, %d shown)\n",
+                        k2, g_surf[k2].offset, g_surf[k2].w, g_surf[k2].h, S.frames, shown_n);
             }
             { char nm[256]; FILE *sf;
               snprintf(nm, sizeof nm, "%s_slots_%03d.txt",
@@ -9849,6 +10305,22 @@ void nv2a_gl_method(uint32_t method, uint32_t param)
         uint32_t i = (method - M_SET_TEXTURE_MATRIX_ENABLE) / 4;
         if (param) S.ff_texmat_enable |= 1u << i;
         else       S.ff_texmat_enable &= ~(1u << i);
+        return;
+    }
+    if (method >= M_SET_TEXGEN_S && method < M_SET_TEXGEN_S + 0x40) {
+        S.texgen[(method - M_SET_TEXGEN_S) >> 4][((method - M_SET_TEXGEN_S) >> 2) & 3] = param;
+        return;
+    }
+    if (method >= M_SET_TEXGEN_PLANE_S && method < M_SET_TEXGEN_PLANE_S + 0x100) {
+        uint32_t k = (method - M_SET_TEXGEN_PLANE_S) >> 2;   /* stage*16 + comp*4 + element */
+        memcpy(&S.texgen_plane[k >> 2][k & 3], &param, 4);
+        return;
+    }
+    if (method == M_SET_POINT_PARAMS_ENABLE) { S.point_params_enable = param; return; }
+    if (method == M_SET_POINT_SMOOTH_ENABLE) { S.point_smooth_enable = param; return; }
+    if (method == M_SET_POINT_SIZE)          { S.point_size = param; return; }
+    if (method >= M_SET_POINT_PARAMS && method < M_SET_POINT_PARAMS + 32) {
+        memcpy(&S.point_params[(method - M_SET_POINT_PARAMS) >> 2], &param, 4);
         return;
     }
     /* RECOMP_GL_INLINELOG=1: the named per-vertex constant methods
@@ -10549,11 +11021,6 @@ void nv2a_gl_report(void)
         surf_desc(4), surf_desc(5), surf_desc(6), surf_desc(7),
         g_tex_dead[0][0], g_tex_dead[0][1], g_tex_dead[0][2],
         g_tex_dead[1][0], g_tex_dead[1][1], g_tex_dead[1][2]);
-    fprintf(stderr, "  [GL] texture uploads: %u filtered linearly (anisotropic at %dx), %u point-sampled; "
-            "%u declare mip levels; the title's own anisotropy 1x/2x/4x/8x: %u/%u/%u/%u; "
-            "%u lookups with other filters than made with\n",
-            g_tfilt.linear, g_aniso_now, g_tfilt.point, g_tfilt.chain,
-            g_tfilt.own[0], g_tfilt.own[1], g_tfilt.own[2], g_tfilt.own[3], g_tfilt.refilter);
     if (G) G->report();
     fflush(stderr);
 }
@@ -10791,69 +11258,58 @@ static void shader_cache_start(void)
     G->cache_open(dir, tag);
 }
 
-/* FXAA from the start: RECOMP_GL_FXAA, else the window's setting; and its
- * menu row. */
-static void fxaa_start(void)
+/* Anti-aliasing from the start: RECOMP_GL_SMAA and RECOMP_GL_MSAA, else the
+ * settings -- the window's (smaa=, msaa=) or, on a Mac or an iPhone, the
+ * app's preferences. Before the shader cache opens: the Metal backend builds
+ * pipelines ahead from it, and a pipeline is made for one count of samples. */
+extern int nv_window_pref_smaa(void) __attribute__((weak));
+extern int nv_window_pref_msaa(void) __attribute__((weak));
+static void aa_start(void)
 {
-    const char *v = getenv("RECOMP_GL_FXAA");
-    int on = (v && *v) ? atoi(v) != 0 : 0;
+    const char *vs = getenv("RECOMP_GL_SMAA"), *vm = getenv("RECOMP_GL_MSAA");
+    int smaa = 0, msaa = 0;
 #if defined(NV2A_GL_USE_SDL)
-    if (!(v && *v)) on = sdl_cfg_get("fxaa", 0) != 0;
+    smaa = sdl_cfg_get("smaa", 0) != 0;
+    msaa = sdl_cfg_get("msaa", 0);
+#else
+    if (nv_window_pref_smaa) smaa = nv_window_pref_smaa() != 0;
+    if (nv_window_pref_msaa) msaa = nv_window_pref_msaa();
 #endif
-    if (!G->target_fxaa) {
-        if (on) fprintf(stderr, "  [GL] FXAA: not on the %s backend\n", G->name);
-        return;
-    }
-    g_fxaa_now = g_fxaa_want = on;
-    fprintf(stderr, "  [GL] FXAA: %s from %s\n", on ? "on" : "off",
-            (v && *v) ? "RECOMP_GL_FXAA" : "the settings");
-#if defined(XBOXRECOMP_MENU)
-    sdl_menu_fxaa();
+    if (vs && *vs) smaa = atoi(vs) != 0;
+    if (vm && *vm) msaa = atoi(vm);
+    g_msaa_max = G->samples_max ? G->samples_max() : 1;
+#if !defined(NV2A_GLES)
+    g_msaa_live = g_is_gl && G->samples != NULL;
 #endif
-}
-
-/* Multisampling from the start, before the first target is made:
- * RECOMP_GL_MSAA, else the window's setting; and its menu row. */
-static void msaa_start(void)
-{
-    const char *v = getenv("RECOMP_GL_MSAA");
-    int n = (v && *v) ? atoi(v) : 0;
-#if defined(NV2A_GL_USE_SDL)
-    if (!(v && *v)) n = sdl_cfg_get("msaa", 0);
-#endif
-    if (!G->samples) {
-        if (n > 1) fprintf(stderr, "  [GL] MSAA: not on the %s backend\n", G->name);
-        return;
-    }
-    g_msaa_now = g_msaa_want = G->samples(n > 1 ? n : 1);
-    fprintf(stderr, "  [GL] MSAA: %dx from %s (1x is none; up to %dx here)\n",
-            g_msaa_now, (v && *v) ? "RECOMP_GL_MSAA" : "the settings", G->samples_max());
-#if defined(XBOXRECOMP_MENU)
-    sdl_menu_msaa();
-#endif
+    if (G->samples) g_msaa_now = G->samples(msaa > 1 ? msaa : 1);
+    else if (msaa > 1) fprintf(stderr, "  [GL] MSAA: not on the %s backend\n", G->name);
+    g_msaa_want = g_msaa_now;
+    if (G->target_smaa) g_smaa_now = g_smaa_want = smaa;
+    else if (smaa) fprintf(stderr, "  [GL] SMAA: not on the %s backend\n", G->name);
+    fprintf(stderr, "  [GL] anti-aliasing: SMAA %s, MSAA %dx (from %s; up to %dx here%s)\n",
+            g_smaa_now ? "on" : "off", g_msaa_now,
+            (vs && *vs) || (vm && *vm) ? "the environment" : "the settings", g_msaa_max,
+            g_msaa_live ? ", changed while running" : ", changed at the next start");
 }
 
 /* Anisotropic filtering from the start, before the first texture is made:
- * RECOMP_GL_ANISO, else the window's setting, as the most samples the device
- * takes at or below it, in powers of two; and its menu row. */
+ * RECOMP_GL_ANISO, else the window's setting, else 16x (tex_aniso), as the
+ * most samples the device takes at or below it, in powers of two; and its
+ * menu row. */
 static void aniso_start(void)
 {
     const char *v = getenv("RECOMP_GL_ANISO");
-    int n = (v && *v) ? atoi(v) : 0, max, a = 1;
+    int n = (v && *v) ? atoi(v) : 16, max = 16, a = 1;
 #if defined(NV2A_GL_USE_SDL)
-    if (!(v && *v)) n = sdl_cfg_get("aniso", 0);
+    if (!(v && *v)) n = sdl_cfg_get("aniso", 16);
 #endif
-    if (!G->aniso_max || !G->tex_aniso) {
-        if (n > 1) fprintf(stderr, "  [GL] anisotropic filtering: not on the %s backend\n", G->name);
-        return;
-    }
-    max = G->aniso_max();
+    if (G->aniso_max) max = G->aniso_max();
     while (a * 2 <= n && a * 2 <= max) a *= 2;
     g_aniso_now = g_aniso_want = a;
     fprintf(stderr, "  [GL] anisotropic filtering: %dx from %s (1x is none; up to %dx here)\n",
             a, (v && *v) ? "RECOMP_GL_ANISO" : "the settings", max);
 #if defined(XBOXRECOMP_MENU)
-    sdl_menu_aniso();
+    if (G->aniso_max) sdl_menu_aniso();
 #endif
 }
 
@@ -10881,10 +11337,9 @@ static int gfx_init(uint32_t w, uint32_t h)
             G = m;
             g_is_gl = 0;
             fprintf(stderr, "  [GL] backend: %s\n", G->name);
+            aa_start();
             shader_cache_start();
             aniso_start();
-            fxaa_start();
-            msaa_start();
             return 1;
         }
         fprintf(stderr, "  [GL] Metal backend unavailable%s\n",
@@ -10900,11 +11355,12 @@ static int gfx_init(uint32_t w, uint32_t h)
     }
     if (!gl_init(w, h)) return 0;     /* the context, then the device */
     fprintf(stderr, "  [GL] backend: %s\n", G->name);
+    aa_start();
     shader_cache_start();
     aniso_start();
-    fxaa_start();
-    msaa_start();
 #if defined(XBOXRECOMP_MENU)
+    sdl_menu_smaa();
+    sdl_menu_msaa();
     sdl_shader_cache();
 #endif
     return 1;

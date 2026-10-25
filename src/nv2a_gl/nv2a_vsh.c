@@ -771,7 +771,18 @@ static void msl_vertex_tail(SB *sb);
 static int emit_ff(const Nv2aVshFixed *f, char *buf, int bufsize, int msl)
 {
     SB sb = { buf, bufsize, 0, 0 };
-    int i;
+    int i, j;
+    /* Generated texture coordinates (NV097_SET_TEXGEN_*): what they are made
+     * from -- the eye-space position, the eye-space normal, or both. */
+    int tg_eye = 0, tg_nrm = 0, tg_sph = 0;
+    for (i = 0; i < 4; i++)
+        for (j = 0; j < 4; j++)
+            switch (f->texgen[i][j]) {
+            case NV2A_TEXGEN_SPHERE_MAP:     tg_sph = 1; /* fall through */
+            case NV2A_TEXGEN_REFLECTION_MAP: tg_eye = 1; tg_nrm = 1; break;
+            case NV2A_TEXGEN_NORMAL_MAP:     tg_nrm = 1; break;
+            default: break;
+            }
 
     if (msl) {
         msl_vertex_head(&sb, f->inputs_read);
@@ -805,6 +816,13 @@ static int emit_ff(const Nv2aVshFixed *f, char *buf, int bufsize, int msl)
         sb_add(&sb,
             "\n// For the fog distance, which is measured in eye space.\n"
             "uniform vec4 ffMV[4];       // NV097_SET_MODEL_VIEW_MATRIX 0, as sent\n");
+    if (!f->lit && (tg_eye || tg_nrm)) {
+        sb_add(&sb, "\n// For the generated texture coordinates, made in eye space.\n");
+        if (tg_eye && !(f->fog_gen == 1 || f->fog_gen == 2 || f->fog_gen == 3))
+            sb_add(&sb, "uniform vec4 ffMV[4];       // NV097_SET_MODEL_VIEW_MATRIX 0, as sent\n");
+        if (tg_nrm)
+            sb_add(&sb, "uniform vec4 ffIMV[4];      // NV097_SET_INVERSE_MODEL_VIEW_MATRIX 0\n");
+    }
     sb_add(&sb,
         "\nuniform vec4 ffMat[4];      // NV097_SET_COMPOSITE_MATRIX\n"
         "uniform vec4 ffVpOff;       // NV097_SET_VIEWPORT_OFFSET, as written\n"
@@ -952,9 +970,79 @@ static int emit_ff(const Nv2aVshFixed *f, char *buf, int bufsize, int msl)
         sb_add(&sb, "    oD0 = clamp(oD0, 0.0, 1.0);\n    oD1 = clamp(oD1, 0.0, 1.0);\n");
     }
 
+    /*
+     * Generated texture coordinates, as the T&L unit makes them (xemu
+     * vsh-ff.c, after OpenGL's texgen): per component, the eye-space normal
+     * (NORMAL_MAP), the eye ray reflected about it (REFLECTION_MAP), or that
+     * reflection folded onto a sphere map (SPHERE_MAP) -- and then the stage's
+     * texture matrix, as for coordinates the vertex brings.
+     *
+     * None of it was done before: every one of these components was the
+     * vertex's own texture coordinate instead. This title asks for the normal
+     * on its first stage for a quarter of its batches -- a texture looked up
+     * by the direction a surface faces -- and those batches sampled it at
+     * whatever the vertex's own coordinates happened to be.
+     *
+     * The two linear modes, which dot the position with a plane, are not
+     * made here: ff_describe hands their components over as the vertex's own.
+     */
+    if (tg_eye || tg_nrm) {
+        if (!f->lit) {
+            sb_add(&sb, "    // Generated texture coordinates are made in eye space.\n");
+            if (tg_eye)
+                sb_add(&sb,
+                    "    vec4 tPosition = vec4(dot(v0, ffMV[0]), dot(v0, ffMV[1]),\n"
+                    "                          dot(v0, ffMV[2]), dot(v0, ffMV[3]));\n");
+            if (tg_nrm) {
+                sb_add(&sb,
+                    "    vec4 tgN4 = vec4(%s, 0.0);\n"
+                    "    vec3 tNormal = vec3(dot(tgN4, ffIMV[0]), dot(tgN4, ffIMV[1]), dot(tgN4, ffIMV[2]));\n",
+                    f->has_normal ? "v2.xyz" : "vec3(0.0, 0.0, 1.0)");
+                if (f->tg_normalize) sb_add(&sb, "    tNormal = normalize(tNormal);\n");
+            }
+        }
+        if (tg_eye)
+            sb_add(&sb, "    vec3 tgR = reflect(normalize(tPosition.xyz), tNormal);\n");
+        if (tg_sph)
+            sb_add(&sb, "    float tgM = 1.0 / (2.0 * length(tgR + vec3(0.0, 0.0, 1.0)));\n");
+    }
     for (i = 0; i < 4; i++) {
         const char *o[4] = { "oT0", "oT1", "oT2", "oT3" };
         int v = 9 + i;
+        int tg = f->texgen[i][0] | f->texgen[i][1] | f->texgen[i][2] | f->texgen[i][3];
+        if (tg) {
+            /* The vertex's own coordinate for the components left to it --
+             * the attribute's latched value when the batch has no array of
+             * them, which ff_describe arranges. */
+            if (f->inputs_read & (1u << v))
+                sb_add(&sb, "    %s = v%d;   // stage %d: partly generated\n", o[i], v, i);
+            else
+                sb_add(&sb, "    %s = vec4(0.0, 0.0, 0.0, 1.0);   // stage %d: generated\n", o[i], i);
+            for (j = 0; j < 4; j++) {
+                char c = "xyzw"[j];
+                switch (f->texgen[i][j]) {
+                case NV2A_TEXGEN_NORMAL_MAP:
+                    if (j < 3) sb_add(&sb, "    %s.%c = tNormal.%c;\n", o[i], c, c);
+                    break;
+                case NV2A_TEXGEN_REFLECTION_MAP:
+                    if (j < 3) sb_add(&sb, "    %s.%c = tgR.%c;\n", o[i], c, c);
+                    break;
+                case NV2A_TEXGEN_SPHERE_MAP:
+                    if (j < 2) sb_add(&sb, "    %s.%c = tgR.%c * tgM + 0.5;\n", o[i], c, c);
+                    break;
+                default:
+                    break;
+                }
+            }
+            if (f->tex_matrix & (1u << i)) {
+                int b = 4 * i;
+                sb_add(&sb,
+                    "    %s = vec4(dot(%s, ffTexMat[%d]), dot(%s, ffTexMat[%d]),\n"
+                    "              dot(%s, ffTexMat[%d]), dot(%s, ffTexMat[%d]));\n",
+                    o[i], o[i], b, o[i], b + 1, o[i], b + 2, o[i], b + 3);
+            }
+            continue;
+        }
         if (!(f->inputs_read & (1u << v))) {
             sb_add(&sb, "    %s = vec4(0.0);\n", o[i]);
         } else if (f->tex_matrix & (1u << i)) {

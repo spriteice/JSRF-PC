@@ -14,7 +14,7 @@ each menu's rows live with the setting they change (File in
   are lower case, as in a sentence: "Render scale", "Shader cache", "Log to
   file", "Purge shaders", "Free camera". This covers menu titles, rows,
   choices, box titles and buttons.
-- Acronyms, names and axis letters keep their own capitals: FXAA, MSAA, GPU,
+- Acronyms, names and axis letters keep their own capitals: SMAA, MSAA, GPU,
   USB, SDL, OpenGL, Dear ImGui, JSRF-PC, "Invert X".
 - No keyboard shortcuts in a label: "Free camera", not "Free camera (F8)".
   docs/playing.md and the packages' README.txt list the keys.

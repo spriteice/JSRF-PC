@@ -41,13 +41,15 @@ difference.
    git checkout upstream && git merge --ff-only origin/upstream
    ```
 
-2. **Move `upstream`** to the release's commit (upstream tags it, as in
-   `v0.5.5`), as a fast-forward. If it can't fast-forward, upstream has
-   rewritten its history: stop and ask.
+2. **Move `upstream`** to the release's "Changelog: 0.5.5" commit, as a
+   fast-forward. Upstream tags the release (`v0.5.5`) a commit or two
+   before it, so check that the tag is in its history. If it can't
+   fast-forward, upstream has rewritten its history: stop and ask.
 
    ```sh
-   git fetch https://github.com/JuMatt/JetSetRadioFuture-Unleashed.git tag v0.5.5
-   git checkout upstream && git merge --ff-only v0.5.5
+   git fetch https://github.com/JuMatt/JetSetRadioFuture-Unleashed.git main tag v0.5.5
+   git log --oneline -3 FETCH_HEAD     # the "Changelog: 0.5.5" commit
+   git checkout upstream && git merge --ff-only <that commit>
    ```
 
 3. **Merge it into `main`** with a merge commit named "Merge upstream
@@ -116,7 +118,7 @@ checked again at every merge, so it is kept small and visible:
 
 ## Where we differ from upstream
 
-Checked against upstream 0.5.4 (`dc2c2e3`). Every file this lists, the
+Checked against upstream 0.5.5 (`9875cf0`). Every file this lists, the
 upstream files `main` changes (M) or removes (D), is named in an entry
 below:
 
@@ -175,23 +177,33 @@ git diff --name-status --diff-filter=MD upstream main
   launcher/windows/package.sh (Dear ImGui's licence),
   tools/linux/install_deps.sh (a C++ compiler).
 - **Why:** one menu (F1, or Back) for every setting, usable with a
-  controller, in a window or under gamescope. On Windows it replaces
-  upstream's Video menu bar (removed from nv2a_gl.c), whose three settings
-  it has. It is built only for the SDL window: Android, the Mac and the
-  iPhone keep their own menus. Our own files: src/menu/, third_party/imgui/.
+  controller, in a window or under gamescope. It replaces upstream's Video
+  menu bar on Windows and its anti-aliasing box on F8 (both removed from
+  nv2a_gl.c), whose settings it has; F8 is the free camera's. It is built
+  only for the SDL window: Android, the Mac and the iPhone keep their own
+  menus. Our own files: src/menu/, third_party/imgui/.
 - **At a merge:** check upstream's changes to the SDL window, keys and pad
-  input against the menu, and run tests/menu.
+  input against the menu, give a setting upstream adds to its Video menu or
+  keys a Graphics row, and run tests/menu.
 
-### Graphics: FXAA, MSAA and anisotropic filtering
+### Graphics: the anisotropic filtering setting
 
-- **Files:** src/nv2a_gl/nv2a_gl.c, nv2a_gfx_gl.c and nv2a_backend.h (five
-  members added to `Nv2aGfx`), src/nv2a_metal/nv2a_metal.m (NULL for them).
-- **Why:** three settings, changed while the game runs, each off by
-  default, which is upstream's picture. Upstream's `RECOMP_GL_ANISO` (4x
-  unless set, and only with `RECOMP_GL_MIPMAP=1`) now overrides the setting.
-- **At a merge:** the `Nv2aGfx` tables are filled in by position, so a
-  member upstream adds must be in the same order in the struct and in both
-  tables (nv2a_gfx_gl.c and nv2a_metal.m). Run tests/gl_backend.
+- **Files:** src/nv2a_gl/nv2a_gl.c (`tex_aniso` takes the level in use, set
+  by `aniso_start` and `aniso_take`, and the Graphics row), nv2a_gfx_gl.c
+  and nv2a_backend.h (`aniso_max`, a member added to `Nv2aGfx`).
+- **Why:** upstream gives every texture with mipmaps 16x anisotropic
+  filtering, or `RECOMP_GL_ANISO`'s level. Ours is also a setting,
+  Graphics > Anisotropic filtering, Off to 16x (16x by default, as
+  upstream), kept as aniso= and changed while the game runs: upstream's
+  texture cache tells textures apart by how they are sampled, so a new
+  level drops the textures it reaches, which are made again when next drawn.
+  `RECOMP_GL_ANISO` still wins over the setting. MSAA, which upstream took
+  from this fork in 0.5.5, and SMAA, which took the place of our FXAA, are
+  upstream's, with rows in the in-game menu.
+- **At a merge:** the `Nv2aGfx` tables are filled in by position, and our
+  members come last: a member upstream adds goes before `aniso_max`, in the
+  same order in the struct and in nv2a_gfx_gl.c's table. Metal's table
+  leaves ours out (NULL). Run tests/gl_backend and tests/gl_aa.
 
 ### Shader cache
 
@@ -231,7 +243,8 @@ git diff --name-status --diff-filter=MD upstream main
 - **Files:** port/recomp_manual.c (hooks in `sub_00116E30`,
   `sub_001C3E14`, `sub_000A5070` and `sub_000A6100`), port/main.c and
   port/CMakeLists.txt (starting and building it), src/nv2a_gl/nv2a_gl.c
-  (`nv_window_hotkey`, keys a title binds for itself: F8).
+  (`nv_window_hotkey`, keys a title binds for itself: F8, in place of
+  upstream's anti-aliasing box).
 - **Why:** the right stick turns the camera around the player, and the
   graffiti camera stays off while it does. Our own files: port/freecam.c
   and freecam.h.

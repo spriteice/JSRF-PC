@@ -10,6 +10,52 @@ its version. Downloads are on the
 [Releases](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/releases)
 page.
 
+## 0.5.5 — 24 October 2026
+
+The picture: the game's own mipmaps with anisotropic filtering, anti-aliasing,
+and three rendering faults found while looking into a Windows player's
+report. Every platform is new in 0.5.5.
+
+- **Distant surfaces are drawn from the game's own mipmaps.** Every texture
+  was sampled from its full-size image, so a facade a few hundred units away
+  read it at several texels a pixel and shimmered as the camera moved --
+  what the player took for z-fighting on distant windows. The console
+  sampled the chain of smaller images stored in the texture after its base
+  level; that chain is decoded now (swizzled or DXT-compressed, level by
+  level), as deep as the texture's registers allow, and sampled with 16×
+  anisotropic filtering. `RECOMP_GL_TITLE_MIPS=0` and `RECOMP_GL_ANISO=1`
+  turn them off. A chain made by box-filtering the base image is still not
+  used: on this game's texture atlases it bleeds the pieces into each other.
+- **Anti-aliasing: SMAA and MSAA**, either or both, off by default. SMAA is
+  the reference implementation (Jimenez et al., MIT; its licence is in
+  NOTICE), a pass over each finished frame. MSAA draws every edge with 2, 4
+  or 8 samples a pixel; on OpenGL it follows
+  [spriteice's](https://github.com/spriteice/JetSetRadioFuture-Unleashed/commit/e406839d4f3c28618faa3f805a4a2ac96b9afba9),
+  and anisotropic filtering came first in his fork too
+  ([46c523b](https://github.com/spriteice/JetSetRadioFuture-Unleashed/commit/46c523b19fe1a0f379c44a886df51bc6fe33438b)).
+  Mac: Video › Anti-aliasing (on Metal, a new MSAA count restarts the game).
+  Windows: the Video menu and F8. Linux: F8. iPhone and iPad: the ⚙ sheet.
+  Not on Android yet.
+- **Reflective glass and panels reflect.** The console's transform unit makes
+  the texture coordinates of reflective surfaces from the direction each one
+  faces (`NV097_SET_TEXGEN_*`; this game asks for the eye-space normal), and
+  the renderer did not: those surfaces sampled their reflection texture
+  wherever their own coordinates pointed. On Dogenzaka Hill's footbridge that
+  was dark bars across the roof and glass in odd stripes, shimmering as the
+  camera moved. Normal, reflection and sphere maps are made now, as xemu
+  makes them.
+- **A texture sampled two ways is two textures.** Whichever draw used a
+  texture first fixed its filtering and wrapping for every later draw. The
+  characters are shaded through one shared texture of tone ramps, which some
+  of their materials read clamped and others wrapped, so an arm or a face
+  could take another material's tones depending on what was drawn first.
+- Tested on a Mac (Metal): Dogenzaka Hill, free and in the race against
+  Beat, each change compared on consecutive frames of one run, with and
+  without it; then the release build on the title and on Dogenzaka Hill
+  with SMAA and MSAA 4×, on Metal and on OpenGL. Linux (Mesa) and Windows
+  (under Wine): the game starts and runs its title screen, Windows with
+  SMAA on. The Android and iPhone builds were built and checked, not run.
+
 ## 0.5.4 — 22 October 2026
 
 More of **spriteice**'s work from

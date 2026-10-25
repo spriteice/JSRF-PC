@@ -169,6 +169,27 @@ int nv_window_pref_widescreen(void) { return picture_pref() != 0; }
 int nv_window_pref_metal(void);
 int nv_window_pref_metal(void) { return 1; }
 
+/* Anti-aliasing (aa_start in nv2a_gl.c asks): SMAA on or off ("smaa"),
+ * applied at once, and multisampling's samples a pixel ("msaa", 0 none),
+ * read when the renderer starts -- Metal makes its pipelines for one count. */
+int nv_window_pref_smaa(void);
+int nv_window_pref_smaa(void)
+{
+    @autoreleasepool { return [[NSUserDefaults standardUserDefaults] boolForKey:@"smaa"] ? 1 : 0; }
+}
+static int msaa_pref(void)
+{
+    @autoreleasepool {
+        NSInteger v = [[NSUserDefaults standardUserDefaults] integerForKey:@"msaa"];
+        return v == 2 || v == 4 ? (int)v : 0;
+    }
+}
+int nv_window_pref_msaa(void);
+int nv_window_pref_msaa(void) { return msaa_pref(); }
+extern void nv2a_set_smaa(int on);
+extern int  nv2a_smaa(void);
+extern int  nv2a_msaa_max(void);
+
 extern int  nv2a_widescreen(void);
 extern void nv2a_set_widescreen(int on);
 extern void nv2a_set_wide_aspect(float aspect);
@@ -974,6 +995,9 @@ static BOOL touch_pref(void)
             [self updateControls]; }]];
     [a addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"Resolution: %dx", nv_window_pref_scale()]
         style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) { (void)x; [self pickScale]; }]];
+    [a addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"Anti-aliasing: %@",
+                                                 [self aaName]]
+        style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) { (void)x; [self pickAA]; }]];
     [a addAction:[UIAlertAction actionWithTitle:@"Controls" style:UIAlertActionStyleDefault
         handler:^(UIAlertAction *x) { (void)x;
             [self alert:@"Controls" text:
@@ -1005,6 +1029,45 @@ static BOOL touch_pref(void)
                 fprintf(stderr, "[IOS] picture: %s\n", m == 0 ? "4:3" : m == 1 ? "16:9" : "fill the screen");
                 fflush(stderr); }]];
     [a addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:a animated:YES completion:nil];
+}
+
+/* What the anti-aliasing is set to, in a few words. */
+- (NSString *)aaName
+{
+    int sm = nv2a_smaa(), ms = msaa_pref();
+    if (!sm && !ms) return @"off";
+    if (sm && ms) return [NSString stringWithFormat:@"SMAA, MSAA %dx", ms];
+    return sm ? @"SMAA" : [NSString stringWithFormat:@"MSAA %dx", ms];
+}
+
+/* SMAA, on or off at once; or multisampling, from the next start. */
+- (void)pickAA
+{
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Anti-aliasing"
+        message:@"SMAA smooths jagged edges in each finished frame, at a small cost. MSAA draws "
+                 "every edge with more samples a pixel: cleaner, and more work for the phone; "
+                 "a new MSAA is used the next time the app starts. The two can be on together."
+        preferredStyle:UIAlertControllerStyleAlert];
+    int sm = nv2a_smaa(), ms = msaa_pref(), max = nv2a_msaa_max();
+    [a addAction:[UIAlertAction actionWithTitle:sm ? @"SMAA: on  ✓" : @"SMAA: off"
+        style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) { (void)x;
+            nv2a_set_smaa(!sm);
+            [[NSUserDefaults standardUserDefaults] setBool:(!sm ? YES : NO) forKey:@"smaa"];
+            fprintf(stderr, "[IOS] SMAA %s\n", !sm ? "on" : "off");
+            fflush(stderr); }]];
+    for (int n = 1; n <= 4; n *= 2) {
+        if (max && n > max) break;
+        [a addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@%@",
+                                                     n > 1 ? [NSString stringWithFormat:@"MSAA %dx", n]
+                                                           : @"MSAA off",
+                                                     (n > 1 ? n : 0) == ms ? @"  ✓" : @""]
+            style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) { (void)x;
+                [[NSUserDefaults standardUserDefaults] setInteger:(n > 1 ? n : 0) forKey:@"msaa"];
+                fprintf(stderr, "[IOS] MSAA %dx from the next start\n", n);
+                fflush(stderr); }]];
+    }
+    [a addAction:[UIAlertAction actionWithTitle:@"Done" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:a animated:YES completion:nil];
 }
 

@@ -75,18 +75,19 @@ straight away, with no restart, and is remembered as msaa= in the settings
 file (0, 2, 4, or 8). More asks more of the graphics card, the more so at the
 higher resolutions.
 
-Graphics > Anti-aliasing (FXAA) in the in-game menu smooths jagged edges
-with one quick pass over each finished frame, at the same small cost
-whatever is on screen. It softens the picture a little, the HUD included.
-It works alone or on top of MSAA. Off by default; it changes straight away,
-with no restart, and is remembered as fxaa= in the settings file (0 or 1).
+Graphics > Anti-aliasing (SMAA) in the in-game menu smooths jagged edges
+with a quick pass over each finished frame, at much the same small cost
+whatever is on screen. It smooths the HUD too. It works alone or on top of
+MSAA. Off by default; it changes straight away, with no restart, and is
+remembered as smaa= in the settings file (0 or 1).
 
 Graphics > Anisotropic filtering in the in-game menu keeps textures sharp
 where they are seen at a steep angle, such as streets and walls running into
-the distance: Off (the default), 2x, 4x, 8x, or 16x, as far as the graphics
-card goes. It changes straight away, with no restart, and is remembered as
-aniso= in the settings file (0, 2, 4, 8, or 16). It leaves things that face
-the screen, such as the HUD, as they were.
+the distance: Off, 2x, 4x, 8x, or 16x (the default), as far as the graphics
+card goes. It changes straight away, with no restart, though the textures it
+reaches take a moment to load again, and is remembered as aniso= in the
+settings file (0, 2, 4, 8, or 16). It leaves things that face the screen,
+such as the HUD, as they were.
 
 Graphics > Shader cache in the in-game menu (on by default) keeps the shaders
 the game builds, in the cache folder. Each time the game starts, they are all

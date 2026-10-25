@@ -1,13 +1,15 @@
 /* Run with: python tests/gl_backend/run.py
  *
- * Anisotropic filtering in the OpenGL backend (aniso_max, tex_aniso and
- * tex_new in src/nv2a_gl/nv2a_gfx_gl.c), driven through the device interface
- * the way the front half drives it, on a headless EGL context (context.h).
- * The level is read back from each texture, which is what the backend sets;
- * the picture is only checked to change and to change back, since how a
- * driver spends its samples is its own business. The texture is 256x256 of
- * one-texel stripes across v, drawn on a plane leaning away from the eye, so
- * the far end squeezes many stripes into a pixel along v and few along u.
+ * Anisotropic filtering in the OpenGL backend (aniso_max, and tex_new in
+ * src/nv2a_gl/nv2a_gfx_gl.c), driven through the device interface the way
+ * the front half drives it, on a headless EGL context (context.h): a texture
+ * with mipmaps is made with the level the front half asks for (the in-game
+ * menu's, or the title's own if more), one without them with none. The
+ * level is read back from each texture, which is what the backend sets; the
+ * picture is only checked to change, since how a driver spends its samples
+ * is its own business. The texture is 256x256 of one-texel stripes across v,
+ * drawn on a plane leaning away from the eye, so the far end squeezes many
+ * stripes into a pixel along v and few along u.
  */
 #include "context.h"
 #include <stdlib.h>
@@ -45,27 +47,6 @@ static int level(uint32_t tex)
     return (int)a;
 }
 
-/* Whether a texture has a level 1, and what its GL_TEXTURE_MAX_LEVEL is. */
-static int has_level1(uint32_t tex, int *max_level)
-{
-    GLint w = 0, ml = 0;
-    glActiveTexture(GL_TEXTURE0 + 5);
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 1, GL_TEXTURE_WIDTH, &w);
-    glGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, &ml);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    if (max_level) *max_level = (int)ml;
-    return w > 0;
-}
-
-static int bound(int unit)
-{
-    GLint t = 0;
-    glActiveTexture((GLenum)(GL_TEXTURE0 + unit));
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &t);
-    return (int)t;
-}
-
 /* The plane, its near edge along the bottom and its far edge along the top
  * eight times as far away, sampling `tex` on stage 0. */
 static void plane(uint32_t tex, uint8_t *px)
@@ -101,9 +82,9 @@ static int differ(const uint8_t *a, const uint8_t *b)
 
 int main(void)
 {
-    static uint8_t stripes[TW * TW * 4], one[W * H * 4], many[W * H * 4], again[W * H * 4];
+    static uint8_t stripes[TW * TW * 4], one[W * H * 4], many[W * H * 4];
     Nv2aSampler lin = { 1, 1, 0, 1, 1, 1 }, point = { 0, 0, 0, 1, 1, 1 };
-    uint32_t t, p, m, other;
+    uint32_t t, p, m;
     int max, hi, i;
     char msg[96];
 
@@ -130,67 +111,32 @@ int main(void)
     rt = G->target_new(W, H);
     check(rt != 0, "target_new");
 
-    /* Made with the level the front half asks for: none, some, more than
-     * the device has; and, as the front half asks, none on a point-sampled
-     * texture whatever the setting. */
-    t = G->tex_new(TW, TW, stripes, &lin);
-    check(level(t) == 1, "linear, made at 1x: 1x");
-    check(!has_level1(t, NULL), "made at 1x: one level, as before");
-    lin.aniso = 8;
-    m = G->tex_new(TW, TW, stripes, &lin);
-    check(level(m) == (max < 8 ? max : 8), "linear, made at 8x: 8x");
-    /* A texture whose base level is its last is not filtered
-     * anisotropically on radeonsi (ANISO_OVERRIDE): it gets a second. */
-    check(has_level1(m, &i) && i == 1, "made at 8x: a second level, the last");
+    /* Made with the level the front half asks for: with mipmaps, none, some
+     * and more than the device has; without them, none whatever is asked. */
     lin.mip = 2;
-    lin.aniso = 4;
-    G->tex_free(m);
-    m = G->tex_new(TW, TW, stripes, &lin);
-    check(level(m) == 4, "with a chain, made at 4x: 4x");
-    check(has_level1(m, &i) && i > 1, "with a chain: its own levels, all of them");
-    p = G->tex_new(TW, TW, stripes, &point);
-    check(level(p) == 1, "point-sampled: 1x");
-
-    /* Changed in place, every way, clamped to what the device has. */
-    G->tex_aniso(t, hi);
-    snprintf(msg, sizeof msg, "tex_aniso(%d): %dx", hi, hi);
-    check(level(t) == hi, msg);
-    check(has_level1(t, &i) && i == 1, "switched on: a second level, the last");
-    G->tex_aniso(t, 1);
-    check(level(t) == 1, "tex_aniso(1): 1x");
-    G->tex_aniso(t, max * 4);
-    check(level(t) == max, "a level past the most is the most");
-    G->tex_aniso(t, 0);
-    check(level(t) == 1, "a level under one is none");
-
-    /* Without moving what the combiner stages have bound. */
-    other = G->tex_new(TW, TW, stripes, &point);
-    G->texture(0, t);
-    G->texture(1, p);
-    G->tex_aniso(other, hi);
-    check(bound(0) == (int)t && bound(1) == (int)p, "the stages keep their textures");
-
-    /* And it reaches the sampling: the far end changes at the new level, and
-     * going back gives the first picture exactly -- drawn from a texture of
-     * one level, so the second is never sampled. */
-    G->tex_free(t);
-    lin.mip = 0;
-    lin.aniso = 1;
     t = G->tex_new(TW, TW, stripes, &lin);
+    check(level(t) == 1, "with mipmaps, made at 1x: 1x");
+    lin.aniso = (uint8_t)hi;
+    m = G->tex_new(TW, TW, stripes, &lin);
+    snprintf(msg, sizeof msg, "with mipmaps, made at %dx: %dx", hi, hi);
+    check(level(m) == hi, msg);
+    G->tex_free(m);
+    lin.aniso = (uint8_t)(max < 64 ? max * 4 : 255);
+    m = G->tex_new(TW, TW, stripes, &lin);
+    check(level(m) == max, "a level past the most is the most");
+    point.aniso = (uint8_t)hi;
+    p = G->tex_new(TW, TW, stripes, &point);
+    check(level(p) == 1, "without mipmaps: 1x");
+
+    /* And it reaches the sampling: the far end changes at the level. */
     plane(t, one);
-    G->tex_aniso(t, hi);
-    plane(t, many);
-    G->tex_aniso(t, 1);
-    plane(t, again);
-    printf("1x to %dx: %d of %d pixels change\n", hi, differ(one, many), W * H);
-    check(differ(one, many) > 0, "the picture changes at the new level");
-    check(has_level1(t, NULL), "drawn at the new level with a second");
-    check(!memcmp(one, again, sizeof one), "back at 1x, the picture is the first one");
+    plane(m, many);
+    printf("1x to %dx: %d of %d pixels change\n", max, differ(one, many), W * H);
+    check(differ(one, many) > 0, "the picture changes at the level");
 
     G->tex_free(t);
     G->tex_free(m);
     G->tex_free(p);
-    G->tex_free(other);
     G->target_free(rt);
     check(1, "tex_free");
     printf("gl_backend: anisotropic filtering passes\n");

@@ -213,7 +213,23 @@ typedef struct {
                              * 3 abs planar, 6 the fog coordinate (v5) */
     uint16_t light_mask;    /* NV097_SET_LIGHT_ENABLE_MASK, 2 bits a light:
                              * 0 off, 1 infinite, 2 local, 3 spot */
+    /* NV097_SET_TEXGEN_S..Q: where each stage's texture coordinates come
+     * from, a code per component (S, T, R, Q) -- NV2A_TEXGEN_*, 0 the
+     * vertex's own. */
+    uint8_t  texgen[4][4];
+    uint8_t  tg_normalize;  /* NV097_SET_NORMALIZATION_ENABLE, for the normal
+                             * the generated coordinates of an unlit batch are
+                             * made from (a lit one has it in lflags) */
 } Nv2aVshFixed;
+
+enum {
+    NV2A_TEXGEN_OFF = 0,        /* the vertex's own coordinate */
+    NV2A_TEXGEN_EYE_LINEAR,     /* the eye-space position against a plane */
+    NV2A_TEXGEN_OBJECT_LINEAR,  /* the position as given against a plane */
+    NV2A_TEXGEN_SPHERE_MAP,     /* S, T: the reflected eye ray, sphere-mapped */
+    NV2A_TEXGEN_NORMAL_MAP,     /* S, T, R: the eye-space normal */
+    NV2A_TEXGEN_REFLECTION_MAP  /* S, T, R: the reflected eye ray */
+};
 
 int nv2a_vsh_emit_ff_glsl(const Nv2aVshFixed *f, char *buf, int bufsize);
 

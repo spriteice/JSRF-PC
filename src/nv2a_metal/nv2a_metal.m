@@ -57,6 +57,7 @@
 
 #include "../nv2a_gl/nv2a_backend.h"
 #include "../nv2a_gl/nv2a_shader_cache.h"
+#include "../nv2a_gl/nv2a_smaa.h"
 
 #if !__has_feature(objc_arc)
 #error "nv2a_metal.m is written for ARC: compile it with -fobjc-arc"
@@ -113,11 +114,18 @@ static uint32_t g_tex_hint;
 typedef struct {
     uint32_t       color;      /* texture handle of the colour buffer */
     id<MTLTexture> ds;         /* depth32float + stencil8 */
+    /* Multisampled (samples()): the colour and depth/stencil drawn into, and
+     * `color` the picture resolved from them at the end of every pass. Then
+     * there is no `ds`. nil when not multisampled. */
+    id<MTLTexture> mscol, msds;
+    int            flat;       /* colour only, never drawn into by the title:
+                                  SMAA's own target */
     uint32_t       pw, ph;
     int            used;
 } MtlRT;
 static MtlRT    g_rt[MTL_MAX_RT];
 static uint32_t g_cur_rt;
+static int      g_samples = 1;  /* every target's, samples(): set before the first */
 
 typedef struct {
     id<MTLFunction> vf, ff;
@@ -324,21 +332,31 @@ static int enc_begin(void)
     if (g_enc) return 1;
     if (!rt_ok(g_cur_rt)) return 0;
     rt = &g_rt[g_cur_rt - 1];
+    if (rt->flat) return 0;                 /* nothing the title draws goes there */
     frame_begin();
 
     clear = g_pending_clear.mask;
     rp = [MTLRenderPassDescriptor renderPassDescriptor];
-    rp.colorAttachments[0].texture = g_tex[rt->color - 1].tex;
+    if (rt->mscol) {
+        /* Multisampled: drawn into its samples, which are kept for the next
+         * pass on it, and resolved into its picture as each pass ends -- so
+         * whatever samples, copies or shows the picture has it as drawn. */
+        rp.colorAttachments[0].texture = rt->mscol;
+        rp.colorAttachments[0].resolveTexture = g_tex[rt->color - 1].tex;
+        rp.colorAttachments[0].storeAction = MTLStoreActionStoreAndMultisampleResolve;
+    } else {
+        rp.colorAttachments[0].texture = g_tex[rt->color - 1].tex;
+        rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+    }
     rp.colorAttachments[0].loadAction = (clear & 1) ? MTLLoadActionClear : MTLLoadActionLoad;
-    rp.colorAttachments[0].storeAction = MTLStoreActionStore;
     rp.colorAttachments[0].clearColor =
         MTLClearColorMake(g_pending_clear.rgba[0], g_pending_clear.rgba[1],
                           g_pending_clear.rgba[2], g_pending_clear.rgba[3]);
-    rp.depthAttachment.texture = rt->ds;
+    rp.depthAttachment.texture = rt->mscol ? rt->msds : rt->ds;
     rp.depthAttachment.loadAction = (clear & 2) ? MTLLoadActionClear : MTLLoadActionLoad;
     rp.depthAttachment.storeAction = MTLStoreActionStore;
     rp.depthAttachment.clearDepth = g_pending_clear.depth;
-    rp.stencilAttachment.texture = rt->ds;
+    rp.stencilAttachment.texture = rt->mscol ? rt->msds : rt->ds;
     rp.stencilAttachment.loadAction = (clear & 4) ? MTLLoadActionClear : MTLLoadActionLoad;
     rp.stencilAttachment.storeAction = MTLStoreActionStore;
     rp.stencilAttachment.clearStencil = g_pending_clear.stencil & 0xFFu;
@@ -403,9 +421,11 @@ static uint32_t mtl_tex_new(uint32_t w, uint32_t h, const void *rgba, const Nv2a
     hnd = tex_slot();
     if (!hnd) return 0;
     @autoreleasepool {
+        int given = s->mip && s->levels > 1 && rgba;    /* the title's own chain */
         td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
                                                                 width:w height:h
                                                             mipmapped:s->mip ? YES : NO];
+        if (given && s->levels < td.mipmapLevelCount) td.mipmapLevelCount = s->levels;
         td.usage = MTLTextureUsageShaderRead;
         td.storageMode = MTLStorageModeShared;
         t = [g_dev newTextureWithDescriptor:td];
@@ -413,7 +433,18 @@ static uint32_t mtl_tex_new(uint32_t w, uint32_t h, const void *rgba, const Nv2a
         if (rgba)
             [t replaceRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:0
                    withBytes:rgba bytesPerRow:w * 4];
-        if (s->mip && [t mipmapLevelCount] > 1) {
+        if (given) {
+            /* Level after level, as rgba holds them. */
+            const uint8_t *p = (const uint8_t *)rgba + (size_t)w * h * 4;
+            NSUInteger l, wl = w, hl = h;
+            for (l = 1; l < [t mipmapLevelCount]; l++) {
+                wl = wl > 1 ? wl / 2 : 1;
+                hl = hl > 1 ? hl / 2 : 1;
+                [t replaceRegion:MTLRegionMake2D(0, 0, wl, hl) mipmapLevel:l
+                       withBytes:p bytesPerRow:wl * 4];
+                p += wl * hl * 4;
+            }
+        } else if (s->mip && [t mipmapLevelCount] > 1) {
             /* A command buffer of its own, committed now: queued ahead of
              * the frame being recorded, so the chain exists before any draw
              * of this frame samples it. */
@@ -484,33 +515,55 @@ static int mtl_tex_read(uint32_t hnd, uint32_t w, uint32_t h, void *bgra)
 
 /* ---- render targets -------------------------------------------------------------------- */
 
-static uint32_t mtl_target_new(uint32_t pw, uint32_t ph)
+/* A texture for a target: `fmt`, pw x ph, `samples` a pixel. */
+static id<MTLTexture> rt_texture(MTLPixelFormat fmt, uint32_t pw, uint32_t ph, int samples,
+                                 MTLTextureUsage usage)
 {
-    int i;
+    MTLTextureDescriptor *d =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:fmt width:pw height:ph mipmapped:NO];
+    if (samples > 1) {
+        d.textureType = MTLTextureType2DMultisample;
+        d.sampleCount = (NSUInteger)samples;
+    }
+    d.usage = usage;
+    d.storageMode = MTLStorageModePrivate;
+    return [g_dev newTextureWithDescriptor:d];
+}
+
+/* A target: its colour as a texture handle, and its depth/stencil -- both
+ * multisampled as well while samples() asks for it, unless `flat` (colour
+ * only, and never more than one sample: SMAA's own target). */
+static uint32_t target_new(uint32_t pw, uint32_t ph, int flat)
+{
+    int i, ms;
     uint32_t c;
-    MTLTextureDescriptor *cd, *dd;
     Nv2aSampler s;
     for (i = 0; i < MTL_MAX_RT; i++) if (!g_rt[i].used) break;
     if (i == MTL_MAX_RT) { fprintf(stderr, "  [MTL] out of render targets\n"); return 0; }
     c = tex_slot();
     if (!c) return 0;
+    ms = !flat && g_samples > 1;
     memset(&s, 0, sizeof s);
     s.min_linear = s.mag_linear = 1;
     @autoreleasepool {
-        cd = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
-                                                                width:pw height:ph mipmapped:NO];
-        cd.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
-        cd.storageMode = MTLStorageModePrivate;
-        dd = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float_Stencil8
-                                                                width:pw height:ph mipmapped:NO];
-        dd.usage = MTLTextureUsageRenderTarget;
-        dd.storageMode = MTLStorageModePrivate;
-        g_tex[c - 1].tex = [g_dev newTextureWithDescriptor:cd];
-        g_rt[i].ds = [g_dev newTextureWithDescriptor:dd];
-        if (!g_tex[c - 1].tex || !g_rt[i].ds) {
+        g_tex[c - 1].tex = rt_texture(MTLPixelFormatRGBA8Unorm, pw, ph, 1,
+                                      MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead);
+        g_rt[i].ds = nil;
+        g_rt[i].mscol = g_rt[i].msds = nil;
+        if (ms) {
+            g_rt[i].mscol = rt_texture(MTLPixelFormatRGBA8Unorm, pw, ph, g_samples,
+                                       MTLTextureUsageRenderTarget);
+            g_rt[i].msds = rt_texture(MTLPixelFormatDepth32Float_Stencil8, pw, ph, g_samples,
+                                      MTLTextureUsageRenderTarget);
+        } else if (!flat) {
+            g_rt[i].ds = rt_texture(MTLPixelFormatDepth32Float_Stencil8, pw, ph, 1,
+                                    MTLTextureUsageRenderTarget);
+        }
+        if (!g_tex[c - 1].tex || (ms && (!g_rt[i].mscol || !g_rt[i].msds)) || (!ms && !flat && !g_rt[i].ds)) {
             g_tex[c - 1].tex = nil;
-            g_rt[i].ds = nil;
-            fprintf(stderr, "  [MTL] could not make a %ux%u target\n", pw, ph);
+            g_rt[i].ds = g_rt[i].mscol = g_rt[i].msds = nil;
+            fprintf(stderr, "  [MTL] could not make a %ux%u target%s\n", pw, ph,
+                    ms ? " (multisampled)" : "");
             return 0;
         }
         g_tex[c - 1].smp = sampler_for(&s);
@@ -519,6 +572,7 @@ static uint32_t mtl_target_new(uint32_t pw, uint32_t ph)
     }
     g_rt[i].color = c;
     g_rt[i].pw = pw; g_rt[i].ph = ph;
+    g_rt[i].flat = flat;
     g_rt[i].used = 1;
     /* A new texture holds whatever the memory held. Zero it now, the way a
      * driver's fresh renderbuffer usually comes, so that a surface sampled
@@ -530,22 +584,36 @@ static uint32_t mtl_target_new(uint32_t pw, uint32_t ph)
     @autoreleasepool {
         MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
         id<MTLRenderCommandEncoder> e;
-        rp.colorAttachments[0].texture = g_tex[c - 1].tex;
+        id<MTLTexture> dst = ms ? g_rt[i].msds : g_rt[i].ds;
+        if (ms) {
+            rp.colorAttachments[0].texture = g_rt[i].mscol;
+            rp.colorAttachments[0].resolveTexture = g_tex[c - 1].tex;
+            rp.colorAttachments[0].storeAction = MTLStoreActionStoreAndMultisampleResolve;
+        } else {
+            rp.colorAttachments[0].texture = g_tex[c - 1].tex;
+            rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+        }
         rp.colorAttachments[0].loadAction = MTLLoadActionClear;
         rp.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0);
-        rp.colorAttachments[0].storeAction = MTLStoreActionStore;
-        rp.depthAttachment.texture = g_rt[i].ds;
-        rp.depthAttachment.loadAction = MTLLoadActionClear;
-        rp.depthAttachment.clearDepth = 1.0;
-        rp.depthAttachment.storeAction = MTLStoreActionStore;
-        rp.stencilAttachment.texture = g_rt[i].ds;
-        rp.stencilAttachment.loadAction = MTLLoadActionClear;
-        rp.stencilAttachment.clearStencil = 0;
-        rp.stencilAttachment.storeAction = MTLStoreActionStore;
+        if (dst) {
+            rp.depthAttachment.texture = dst;
+            rp.depthAttachment.loadAction = MTLLoadActionClear;
+            rp.depthAttachment.clearDepth = 1.0;
+            rp.depthAttachment.storeAction = MTLStoreActionStore;
+            rp.stencilAttachment.texture = dst;
+            rp.stencilAttachment.loadAction = MTLLoadActionClear;
+            rp.stencilAttachment.clearStencil = 0;
+            rp.stencilAttachment.storeAction = MTLStoreActionStore;
+        }
         e = [g_cb renderCommandEncoderWithDescriptor:rp];
         [e endEncoding];
     }
     return (uint32_t)i + 1;
+}
+
+static uint32_t mtl_target_new(uint32_t pw, uint32_t ph)
+{
+    return target_new(pw, ph, 0);
 }
 
 static void mtl_target_free(uint32_t h)
@@ -554,6 +622,8 @@ static void mtl_target_free(uint32_t h)
     if (g_cur_rt == h) { flush_pending_clear(); enc_end(); g_cur_rt = 0; g_pending_clear.mask = 0; }
     mtl_tex_free(g_rt[h - 1].color);
     g_rt[h - 1].ds = nil;
+    g_rt[h - 1].mscol = g_rt[h - 1].msds = nil;
+    g_rt[h - 1].flat = 0;
     g_rt[h - 1].used = 0;
     g_rt[h - 1].color = 0;
 }
@@ -975,6 +1045,7 @@ static id<MTLRenderPipelineState> make_pso(id<MTLFunction> vf, id<MTLFunction> f
         }
         pd.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
         pd.stencilAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+        pd.rasterSampleCount = (NSUInteger)g_samples;
         pso = [g_dev newRenderPipelineStateWithDescriptor:pd error:err];
     }
     return pso;
@@ -1356,18 +1427,13 @@ static const char *UTIL_MSL =
 "    return float4(t.sample(s, in.uv).rgb, 1.0);\n"
 "}\n";
 
-static int util_init(void)
+/* The clear's two pipelines, drawn into the title's targets: at their
+ * number of samples. */
+static int clear_psos(void)
 {
     NSError *err = nil;
     MTLRenderPipelineDescriptor *pd;
-    MTLSamplerDescriptor *sd;
     int i;
-    g_util_lib = [g_dev newLibraryWithSource:[NSString stringWithUTF8String:UTIL_MSL]
-                                     options:[MTLCompileOptions new] error:&err];
-    if (!g_util_lib) {
-        fprintf(stderr, "  [MTL] utility shaders: %s\n", [[err localizedDescription] UTF8String]);
-        return 0;
-    }
     for (i = 0; i < 2; i++) {
         pd = [MTLRenderPipelineDescriptor new];
         pd.vertexFunction = [g_util_lib newFunctionWithName:@"nv_clear_v"];
@@ -1376,12 +1442,28 @@ static int util_init(void)
         pd.colorAttachments[0].writeMask = i ? MTLColorWriteMaskAll : MTLColorWriteMaskNone;
         pd.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
         pd.stencilAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+        pd.rasterSampleCount = (NSUInteger)g_samples;
         g_clear_pso[i] = [g_dev newRenderPipelineStateWithDescriptor:pd error:&err];
         if (!g_clear_pso[i]) {
             fprintf(stderr, "  [MTL] clear pipeline: %s\n", [[err localizedDescription] UTF8String]);
             return 0;
         }
     }
+    return 1;
+}
+
+static int util_init(void)
+{
+    NSError *err = nil;
+    MTLRenderPipelineDescriptor *pd;
+    MTLSamplerDescriptor *sd;
+    g_util_lib = [g_dev newLibraryWithSource:[NSString stringWithUTF8String:UTIL_MSL]
+                                     options:[MTLCompileOptions new] error:&err];
+    if (!g_util_lib) {
+        fprintf(stderr, "  [MTL] utility shaders: %s\n", [[err localizedDescription] UTF8String]);
+        return 0;
+    }
+    if (!clear_psos()) return 0;
     pd = [MTLRenderPipelineDescriptor new];
     pd.vertexFunction = [g_util_lib newFunctionWithName:@"nv_blit_v"];
     pd.fragmentFunction = [g_util_lib newFunctionWithName:@"nv_blit_f"];
@@ -1780,6 +1862,8 @@ static int mtl_init(void)
     return 1;
 }
 
+static uint64_t smaa_frames(void);     /* below, with SMAA */
+
 static void mtl_report(void)
 {
     if (nv2a_sc_is_open()) {
@@ -1804,6 +1888,9 @@ static void mtl_report(void)
     fprintf(stderr, "  [MTL] building: %.0f ms compiling %u programs, %.0f ms making %u "
             "pipelines (slowest %.1f ms)\n", g_ms_compile, g_n_progs, g_ms_pso, g_n_psos,
             g_ms_pso_max);
+    if (g_samples > 1 || smaa_frames())
+        fprintf(stderr, "  [MTL] anti-aliasing: %d samples a pixel; SMAA on %llu frames\n",
+                g_samples, (unsigned long long)smaa_frames());
     fprintf(stderr, "  [MTL] clears: %llu as load actions, %llu drawn; %u surface copies, "
             "%u read-backs; arena peak %.1f MB a frame\n",
             (unsigned long long)g_n_load_clears, (unsigned long long)g_n_quad_clears,
@@ -1836,6 +1923,209 @@ static void mtl_report(void)
 
 static double mtl_pipeline_ms(void) { return g_ms_pso; }
 
+/* ---- multisampling ------------------------------------------------------------------------------ */
+
+static int mtl_samples_max(void)
+{
+    int n;
+    for (n = 8; n > 1; n /= 2)
+        if ([g_dev supportsTextureSampleCount:(NSUInteger)n]) return n;
+    return 1;
+}
+
+/* Every target drawn with n samples a pixel (1: none) -- taken only before
+ * the first target is made and the first pipeline built: every pipeline is
+ * compiled for one count, those built ahead from the shader cache included,
+ * and Metal draws a pipeline into a target of that count only. So the front
+ * half asks at start, and a change waits for the next start. The count is a
+ * power of two the device supports, and no more than asked. */
+static int mtl_samples(int n)
+{
+    int i, p = 1, max = mtl_samples_max();
+    while (p * 2 <= n && p * 2 <= max) p *= 2;
+    while (p > 1 && ![g_dev supportsTextureSampleCount:(NSUInteger)p]) p /= 2;
+    if (p == g_samples) return p;
+    for (i = 0; i < MTL_MAX_RT; i++)
+        if (g_rt[i].used && !g_rt[i].flat) return g_samples;
+    if (g_n_psos || atomic_load(&g_warm_running)) return g_samples;
+    pthread_mutex_lock(&g_warm_mu);
+    i = g_nwpso;
+    pthread_mutex_unlock(&g_warm_mu);
+    if (i) return g_samples;
+    g_samples = p;
+    if (!clear_psos()) { g_samples = 1; clear_psos(); }
+    return g_samples;
+}
+
+/* ---- SMAA (nv2a_smaa.h) ------------------------------------------------------------------------
+ *
+ * Three passes over the frame being shown -- its edges into an RG8 image, the
+ * blending weights into an RGBA8 one, and the frame blended by them into a
+ * target of this backend's own (colour only, one sample), which the window
+ * is then given -- recorded into the frame's command buffer ahead of the
+ * flip. The title's surfaces are untouched; a multisampled frame is already
+ * resolved, as every pass is when it ends.
+ *
+ * The library is compiled for the frame's size (nv2a_smaa_msl_source) in the
+ * background, as Metal offers: until it is ready the frame is shown as it is,
+ * so turning SMAA on never holds the game for the compiler.
+ */
+static pthread_mutex_t g_sm_mu = PTHREAD_MUTEX_INITIALIZER;
+static struct {
+    /* under g_sm_mu: what the compiler has finished, and what it is doing */
+    uint32_t ready_w, ready_h;
+    id<MTLRenderPipelineState> ready[3];
+    uint32_t building_w, building_h;
+    /* the render thread's */
+    id<MTLTexture> area, search, edges, weights;
+    uint32_t out;                       /* the target pass 3 draws into */
+    uint32_t w, h;                      /* of edges, weights and out */
+    uint64_t frames;
+} g_sm;
+static atomic_int g_sm_bad;            /* would not build: frames as they are */
+
+static uint64_t smaa_frames(void) { return g_sm.frames; }
+
+static void smaa_build(uint32_t pw, uint32_t ph)
+{
+    char *src = nv2a_smaa_msl_source(pw, ph);
+    NSString *ns;
+    double t0 = now_ms();
+    if (!src) { atomic_store(&g_sm_bad, 1); return; }
+    ns = [NSString stringWithUTF8String:src];
+    free(src);
+    pthread_mutex_lock(&g_sm_mu);
+    g_sm.building_w = pw; g_sm.building_h = ph;
+    pthread_mutex_unlock(&g_sm_mu);
+    [g_dev newLibraryWithSource:ns options:[MTLCompileOptions new]
+              completionHandler:^(id<MTLLibrary> lib, NSError *err) {
+        static NSString *const fn[3][2] = { { @"smaa_edge_v", @"smaa_edge_f" },
+                                            { @"smaa_weight_v", @"smaa_weight_f" },
+                                            { @"smaa_blend_v", @"smaa_blend_f" } };
+        id<MTLRenderPipelineState> pso[3];
+        int p;
+        if (!lib) {
+            fprintf(stderr, "  [MTL] SMAA failed to compile; frames are shown without it:\n%s\n",
+                    [[err localizedDescription] UTF8String]);
+            atomic_store(&g_sm_bad, 1);
+            return;
+        }
+        for (p = 0; p < 3; p++) {
+            NSError *e2 = nil;
+            MTLRenderPipelineDescriptor *pd = [MTLRenderPipelineDescriptor new];
+            pd.vertexFunction = [lib newFunctionWithName:fn[p][0]];
+            pd.fragmentFunction = [lib newFunctionWithName:fn[p][1]];
+            pd.colorAttachments[0].pixelFormat = p == 0 ? MTLPixelFormatRG8Unorm
+                                                        : MTLPixelFormatRGBA8Unorm;
+            pso[p] = pd.vertexFunction && pd.fragmentFunction
+                   ? [g_dev newRenderPipelineStateWithDescriptor:pd error:&e2] : nil;
+            if (!pso[p]) {
+                fprintf(stderr, "  [MTL] SMAA pipeline %d failed; frames are shown without it: %s\n",
+                        p, e2 ? [[e2 localizedDescription] UTF8String] : "no function");
+                atomic_store(&g_sm_bad, 1);
+                return;
+            }
+        }
+        pthread_mutex_lock(&g_sm_mu);
+        for (p = 0; p < 3; p++) g_sm.ready[p] = pso[p];
+        g_sm.ready_w = pw; g_sm.ready_h = ph;
+        g_sm.building_w = g_sm.building_h = 0;
+        pthread_mutex_unlock(&g_sm_mu);
+        fprintf(stderr, "  [MTL] SMAA: built for %ux%u in %.0f ms\n", pw, ph, now_ms() - t0);
+    }];
+}
+
+static id<MTLTexture> smaa_texture(MTLPixelFormat fmt, uint32_t w, uint32_t h, const void *px,
+                                   uint32_t bpr)
+{
+    MTLTextureDescriptor *d =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:fmt width:w height:h mipmapped:NO];
+    id<MTLTexture> t;
+    if (px) {
+        d.usage = MTLTextureUsageShaderRead;
+        d.storageMode = MTLStorageModeShared;
+    } else {
+        d.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+        d.storageMode = MTLStorageModePrivate;
+    }
+    t = [g_dev newTextureWithDescriptor:d];
+    if (t && px) [t replaceRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:0 withBytes:px bytesPerRow:bpr];
+    return t;
+}
+
+/* One pass: a triangle over `dst`, which is cleared to 0 first if `cleared`
+ * (a pass that discards where it has nothing to write). */
+static void smaa_pass(id<MTLTexture> dst, int cleared, id<MTLRenderPipelineState> pso,
+                      id<MTLTexture> t0, id<MTLTexture> t1, id<MTLTexture> t2)
+{
+    MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
+    id<MTLRenderCommandEncoder> e;
+    rp.colorAttachments[0].texture = dst;
+    rp.colorAttachments[0].loadAction = cleared ? MTLLoadActionClear : MTLLoadActionDontCare;
+    rp.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0);
+    rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+    e = [g_cb renderCommandEncoderWithDescriptor:rp];
+    if (!e) return;
+    [e setRenderPipelineState:pso];
+    [e setFragmentTexture:t0 atIndex:0];
+    if (t1) [e setFragmentTexture:t1 atIndex:1];
+    if (t2) [e setFragmentTexture:t2 atIndex:2];
+    [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    [e endEncoding];
+}
+
+static uint32_t mtl_target_smaa(uint32_t h)
+{
+    MtlRT *rt;
+    id<MTLRenderPipelineState> pso[3];
+    uint32_t pw, ph;
+    int have, building, p;
+    if (!rt_ok(h) || atomic_load(&g_sm_bad)) return h;
+    rt = &g_rt[h - 1];
+    pw = rt->pw; ph = rt->ph;
+    pthread_mutex_lock(&g_sm_mu);
+    have = g_sm.ready_w == pw && g_sm.ready_h == ph;
+    for (p = 0; p < 3; p++) pso[p] = have ? g_sm.ready[p] : nil;
+    building = g_sm.building_w != 0;
+    pthread_mutex_unlock(&g_sm_mu);
+    if (!have) {
+        if (!building) smaa_build(pw, ph);
+        return h;                       /* as it is, until the passes exist */
+    }
+    @autoreleasepool {
+        if (!g_sm.area) {
+            g_sm.area = smaa_texture(MTLPixelFormatRG8Unorm, NV2A_SMAA_AREA_W, NV2A_SMAA_AREA_H,
+                                     nv2a_smaa_area(), NV2A_SMAA_AREA_W * 2);
+            g_sm.search = smaa_texture(MTLPixelFormatR8Unorm, NV2A_SMAA_SEARCH_W, NV2A_SMAA_SEARCH_H,
+                                       nv2a_smaa_search(), NV2A_SMAA_SEARCH_W);
+        }
+        if (g_sm.w != pw || g_sm.h != ph || !rt_ok(g_sm.out)) {
+            mtl_target_free(g_sm.out);
+            g_sm.edges = smaa_texture(MTLPixelFormatRG8Unorm, pw, ph, NULL, 0);
+            g_sm.weights = smaa_texture(MTLPixelFormatRGBA8Unorm, pw, ph, NULL, 0);
+            g_sm.out = target_new(pw, ph, 1);
+            g_sm.w = pw; g_sm.h = ph;
+            if (!g_sm.area || !g_sm.search || !g_sm.edges || !g_sm.weights || !g_sm.out) {
+                fprintf(stderr, "  [MTL] SMAA: no images at %ux%u; frames are shown without it\n", pw, ph);
+                atomic_store(&g_sm_bad, 1);
+                return h;
+            }
+            fprintf(stderr, "  [MTL] SMAA: the frame shown at %ux%u\n", pw, ph);
+        }
+        /* A clear still waiting on the frame: the passes see it done. */
+        if (h == g_cur_rt) flush_pending_clear();
+        enc_end();
+        frame_begin();
+        smaa_pass(g_sm.edges, 1, pso[0], g_tex[rt->color - 1].tex, nil, nil);
+        smaa_pass(g_sm.weights, 1, pso[1], g_sm.edges, g_sm.area, g_sm.search);
+        smaa_pass(g_tex[g_rt[g_sm.out - 1].color - 1].tex, 0, pso[2],
+                  g_tex[rt->color - 1].tex, g_sm.weights, nil);
+    }
+    E.valid = 0;
+    g_sm.frames++;
+    return g_sm.out;
+}
+
 static const Nv2aGfx g_metal = {
     "metal", NV2A_LANG_MSL, 0,
     mtl_init,
@@ -1850,9 +2140,8 @@ static const Nv2aGfx g_metal = {
     NULL,                               /* uniform_f_part */
     mtl_pipeline_ms,
     mtl_cache_open, NULL,       /* builds on a thread of its own */
-    NULL,                       /* target_fxaa: none yet */
-    NULL, NULL,                 /* samples_max, samples: no multisampling yet */
-    NULL, NULL,                 /* aniso_max, tex_aniso: no anisotropic filtering yet */
+    mtl_target_smaa,
+    mtl_samples_max, mtl_samples,
 };
 
 const Nv2aGfx *nv2a_gfx_metal(void) { return &g_metal; }

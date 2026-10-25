@@ -143,7 +143,6 @@ int main(void)
     static uint8_t px[W * H * 4], tx[W * H * 4];
     static float depth[W * H];
     Nv2aRenderState rs;
-    uint32_t shown;
     int max, hi;
 
     if (!gl_backend_context()) return 1;
@@ -220,27 +219,6 @@ int main(void)
     scene();
     read_rt(px);
     check(partial(px) > 0, "multisampled again: edges are smoothed");
-
-    /* FXAA over it sees the latest draw, which only the samples hold until
-     * something resolves them: here, the triangle over a red picture already
-     * resolved. And again after a change of count, into the same target. */
-    rs = plain();
-    quad(&rs, 0, 1, 0, 0);
-    read_rt(px);
-    scene();
-    shown = G->target_fxaa(rt);
-    check(shown != 0 && shown != rt, "target_fxaa over a multisampled target");
-    check(G->target_read(shown, 0, 0, W, H, 0, px), "target_read of FXAA's");
-    check(is(at(px, 16, 16), 255, 255, 255) && is(at(px, 56, 56), 0, 0, 0) && partial(px) > 0,
-          "FXAA has the multisampled picture");
-    carried(2);
-    quad(&rs, 0, 1, 0, 0);
-    read_rt(px);
-    scene();
-    check(G->target_fxaa(rt) == shown, "FXAA keeps its target across a change of count");
-    check(G->target_read(shown, 0, 0, W, H, 0, px), "target_read of FXAA's");
-    check(is(at(px, 16, 16), 255, 255, 255) && is(at(px, 56, 56), 0, 0, 0) && partial(px) > 0,
-          "FXAA has the picture after a change of count");
 
     /* More than the device has is as many as it has; fewer than one is none. */
     check(G->samples(max * 4) == max, "a count past the most is clamped");

@@ -501,6 +501,33 @@ int nv_window_pref_metal(void)
     }
 }
 
+/* Video > Anti-aliasing: SMAA on or off ("smaa", applied at once,
+ * nv2a_set_smaa) and multisampling, samples a pixel ("msaa", 0 for none),
+ * read when the renderer starts -- Metal makes every pipeline for one count
+ * -- or applied at once where it can be (OpenGL, nv2a_msaa_live).
+ * RECOMP_GL_SMAA and RECOMP_GL_MSAA in the environment win (aa_start in
+ * nv2a_gl.c reads them first). */
+int nv_window_pref_smaa(void);
+int nv_window_pref_smaa(void)
+{
+    @autoreleasepool {
+        return [[NSUserDefaults standardUserDefaults] boolForKey:@"smaa"] ? 1 : 0;
+    }
+}
+int nv_window_pref_msaa(void);
+int nv_window_pref_msaa(void)
+{
+    @autoreleasepool {
+        NSInteger v = [[NSUserDefaults standardUserDefaults] integerForKey:@"msaa"];
+        return v == 2 || v == 4 || v == 8 ? (int)v : 0;
+    }
+}
+extern void nv2a_set_smaa(int on);
+extern int  nv2a_smaa(void);
+extern void nv2a_set_msaa(int n);
+extern int  nv2a_msaa_max(void);
+extern int  nv2a_msaa_live(void);
+
 /* The window in the picture's shape: 16:9 or 4:3, keeping its height (and
  * fitting the screen). Not while full screen -- the frame is letterboxed
  * there anyway. */
@@ -532,6 +559,8 @@ static void nv_window_shape_for_mode(void)
 - (void)pickScale:(id)sender;
 - (void)pickRenderer:(id)sender;
 - (void)toggleWidescreen:(id)sender;
+- (void)toggleSmaa:(id)sender;
+- (void)pickMsaa:(id)sender;
 - (void)showKeys:(id)sender;
 - (void)showPad:(id)sender;
 @end
@@ -585,6 +614,81 @@ static void nv_window_shape_for_mode(void)
             [b runModal];
         }
     }
+}
+/* SMAA: a pass over each finished frame, on or off at once. */
+- (void)toggleSmaa:(id)sender
+{
+    int on = !nv2a_smaa();
+    nv2a_set_smaa(on);
+    [[NSUserDefaults standardUserDefaults] setBool:(on ? YES : NO) forKey:@"smaa"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    [(NSMenuItem *)sender setState:on ? NSControlStateValueOn : NSControlStateValueOff];
+    fprintf(stderr, "[WIN] SMAA %s\n", on ? "on" : "off");
+}
+/* Multisampling. OpenGL takes a new count at the next frame; Metal when the
+ * game starts, which is asked like the resolution is. */
+- (void)pickMsaa:(id)sender
+{
+    NSInteger want = [(NSMenuItem *)sender tag];        /* 1 none, 2, 4, 8 */
+    NSInteger stored = [[NSUserDefaults standardUserDefaults] integerForKey:@"msaa"];
+    NSAlert *a;
+    NSModalResponse r;
+    if (stored < 2) stored = 1;
+    if (want == stored) return;
+    if (nv2a_msaa_live()) {
+        nv2a_set_msaa((int)want);
+        [[NSUserDefaults standardUserDefaults] setInteger:(want > 1 ? want : 0) forKey:@"msaa"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        fprintf(stderr, "[WIN] MSAA %ldx\n", (long)want);
+        return;
+    }
+    kb_release_all();
+    a = [[NSAlert alloc] init];
+    a.messageText = want > 1 ? [NSString stringWithFormat:@"Use MSAA %ldx?", (long)want]
+                             : @"Turn MSAA off?";
+    a.informativeText = @"Multisampling is set when the game starts. "
+                         "Restarting now loses anything you have not saved.";
+    [a addButtonWithTitle:@"Restart Now"];
+    [a addButtonWithTitle:@"At Next Launch"];
+    [a addButtonWithTitle:@"Cancel"];
+    r = [a runModal];
+    if (r != NSAlertFirstButtonReturn && r != NSAlertSecondButtonReturn) return;
+    [[NSUserDefaults standardUserDefaults] setInteger:(want > 1 ? want : 0) forKey:@"msaa"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    fprintf(stderr, "[WIN] MSAA %ldx from the next launch\n", (long)want);
+    if (r != NSAlertFirstButtonReturn) return;
+    {
+        extern void recomp_restart_self(void) __attribute__((weak));
+        /* The relaunch inherits the environment, where RECOMP_GL_MSAA would
+         * outrank the choice just made. */
+        unsetenv("RECOMP_GL_MSAA");
+        if (recomp_restart_self) recomp_restart_self();   /* does not return on success */
+        {
+            NSAlert *b = [[NSAlert alloc] init];
+            b.messageText = @"Restart to change the anti-aliasing";
+            b.informativeText = @"Quit and launch again and the game will use the "
+                                 "multisampling you picked.";
+            [b runModal];
+        }
+    }
+}
+/* The anti-aliasing items as things stand when the menu opens: SMAA as it
+ * is, multisampling as chosen (what the next start uses, where that is when
+ * it applies), and no more samples than the device offers. */
+- (BOOL)validateMenuItem:(NSMenuItem *)item
+{
+    if ([item action] == @selector(toggleSmaa:)) {
+        [item setState:nv2a_smaa() ? NSControlStateValueOn : NSControlStateValueOff];
+        return YES;
+    }
+    if ([item action] == @selector(pickMsaa:)) {
+        NSInteger stored = [[NSUserDefaults standardUserDefaults] integerForKey:@"msaa"];
+        int max = nv2a_msaa_max();
+        if (stored < 2) stored = 1;
+        [item setState:[item tag] == stored ? NSControlStateValueOn : NSControlStateValueOff];
+        return !max || [item tag] <= max;
+    }
+    return YES;
 }
 - (void)toggleWidescreen:(id)sender
 {
@@ -732,6 +836,32 @@ static void build_menu(void)
     }
     [resItem setSubmenu:res];
     [video addItem:resItem];
+    {
+        /* Anti-aliasing: SMAA, and multisampling's counts. */
+        NSMenu *aa = [[NSMenu alloc] initWithTitle:@"Anti-aliasing"];
+        NSMenuItem *aaItem = [[NSMenuItem alloc] initWithTitle:@"Anti-aliasing"
+                                                        action:nil keyEquivalent:@""];
+        NSMenuItem *sm = [[NSMenuItem alloc] initWithTitle:@"SMAA"
+                                                    action:@selector(toggleSmaa:)
+                                             keyEquivalent:@""];
+        static const int counts[4] = { 1, 2, 4, 8 };
+        int k;
+        [sm setTarget:g_menu_target];
+        [aa addItem:sm];
+        [aa addItem:[NSMenuItem separatorItem]];
+        for (k = 0; k < 4; k++) {
+            NSMenuItem *it = [[NSMenuItem alloc]
+                initWithTitle:counts[k] > 1 ? [NSString stringWithFormat:@"MSAA %dx", counts[k]]
+                                            : @"MSAA Off"
+                       action:@selector(pickMsaa:)
+                keyEquivalent:@""];
+            [it setTag:counts[k]];
+            [it setTarget:g_menu_target];
+            [aa addItem:it];
+        }
+        [aaItem setSubmenu:aa];
+        [video addItem:aaItem];
+    }
     {
         /* Renderer: which API draws the game, checked as it is running. */
         NSMenu *ren = [[NSMenu alloc] initWithTitle:@"Renderer"];

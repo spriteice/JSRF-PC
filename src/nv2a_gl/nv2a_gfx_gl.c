@@ -15,6 +15,7 @@
 
 #include "nv2a_backend.h"
 #include "nv2a_shader_cache.h"
+#include "nv2a_smaa.h"
 
 #define GL_GLEXT_PROTOTYPES 1
 #if defined(NV2A_GLES)
@@ -35,11 +36,8 @@
 #  include <GL/gl.h>
 #  include <GL/glext.h>
 #endif
-/* EXT_texture_filter_anisotropic, core since GL 4.6: OpenGL ES has only
- * these extension names, and some headers have neither. */
-#ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
-#  define GL_TEXTURE_MAX_ANISOTROPY_EXT     0x84FE
-#endif
+/* EXT_texture_filter_anisotropic's limit, core since GL 4.6: OpenGL ES has
+ * only the extension's name, and some headers have neither. */
 #ifndef GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT
 #  define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT 0x84FF
 #endif
@@ -96,7 +94,7 @@ static struct {
      * it, which is behind it while `drawn` is set. 0 when not multisampled. */
     GLuint   msfbo, mscol, msds;
     int      drawn;
-    int      flat;                  /* never multisampled: the FXAA target */
+    int      flat;                  /* never multisampled: SMAA's own target */
     uint32_t pw, ph;
     int      used;
 } g_rt[MAX_TARGETS];
@@ -121,6 +119,13 @@ static void scratch_bind(GLuint tex)
     glActiveTexture(GL_TEXTURE0 + SCRATCH_UNIT);
     glBindTexture(GL_TEXTURE_2D, tex);
 }
+
+/*
+ * Multisampling, as spriteice wrote it for the OpenGL backend (e406839 in
+ * the fork): each target is drawn into a multisampled framebuffer of its own,
+ * and its texture holds the picture resolved from it -- by a blit, made only
+ * when something reads the picture and only if it was drawn into since.
+ */
 
 /* Copy target slot i's buffers in `mask`, whole, from one of its
  * framebuffers to the other. The scissor is the one fragment operation that
@@ -151,9 +156,9 @@ static void resolve(uint32_t h)
 
 static void ms_free(int i)
 {
-    glDeleteFramebuffers(1, &g_rt[i].msfbo);
-    glDeleteRenderbuffers(1, &g_rt[i].mscol);
-    glDeleteRenderbuffers(1, &g_rt[i].msds);
+    if (g_rt[i].msfbo) glDeleteFramebuffers(1, &g_rt[i].msfbo);
+    if (g_rt[i].mscol) glDeleteRenderbuffers(1, &g_rt[i].mscol);
+    if (g_rt[i].msds)  glDeleteRenderbuffers(1, &g_rt[i].msds);
     g_rt[i].msfbo = g_rt[i].mscol = g_rt[i].msds = 0;
 }
 
@@ -345,9 +350,9 @@ static int glx_target_read_depth(uint32_t h, uint32_t pw, uint32_t ph, float *ou
 
 /* ---- textures ------------------------------------------------------------ */
 
-/* The most anisotropy a texture can be sampled with. Asked once: a driver
- * without the extension flags the query as an error, and every upload
- * repeating it would pin errors on the draws the GL error check looks at.
+/* The most anisotropy a texture can be sampled with, for the in-game menu's
+ * choices. Asked once: a driver without the extension flags the query as an
+ * error, which would be pinned on the next draw the GL error check looks at.
  * OpenGL ES has it only as an extension, so there it is looked for first. */
 static int glx_aniso_max(void)
 {
@@ -360,38 +365,6 @@ static int glx_aniso_max(void)
         glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &cap);
     }
     return cap > 1.0f ? (int)cap : 1;
-}
-
-/* A texture parameter, so it changes for a texture already made without
- * its texels being sent again.
- *
- * A texture with one level gets a second, empty one first, the first time
- * it is asked for more than none. Mesa's radeonsi sets the sampler's
- * ANISO_OVERRIDE, which has AMD hardware ignore anisotropy on a texture
- * whose base level is its last (RADV's "disable anisotropic filtering for
- * single level images" is the same bit), and the title's textures are
- * level zero alone. With GL_TEXTURE_MAX_LEVEL at 1 the texture's last
- * level is 1; the minification filter is not a mipmap one, so level 1 is
- * never sampled and the picture at 1x is what it was. A texture with a
- * chain of its own already has the level. */
-static void glx_tex_aniso(uint32_t t, int n)
-{
-    int cap = glx_aniso_max();
-    GLint w = 0, h = 0;
-    if (!t || cap < 2) return;
-    scratch_bind(t);
-    if (n > 1) {
-        glGetTexLevelParameteriv(GL_TEXTURE_2D, 1, GL_TEXTURE_WIDTH, &w);
-        if (!w) {
-            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
-            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
-            glTexImage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w > 1 ? w / 2 : 1, h > 1 ? h / 2 : 1, 0,
-                         GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 1);
-        }
-    }
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT,
-                    (GLfloat)(n < 1 ? 1 : n > cap ? cap : n));
 }
 
 static uint32_t glx_tex_new(uint32_t w, uint32_t h, const void *rgba,
@@ -408,10 +381,35 @@ static uint32_t glx_tex_new(uint32_t w, uint32_t h, const void *rgba,
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)w, (GLsizei)h, 0,
                  GL_RGBA, GL_UNSIGNED_BYTE, rgba);
     mg = s->mag_linear ? GL_LINEAR : GL_NEAREST;
-    if (s->mip) {
+    if (s->mip && s->levels > 1 && rgba) {
+        /* The title's own chain, level after level as rgba holds it. */
+        const uint8_t *p = (const uint8_t *)rgba + (size_t)w * h * 4;
+        uint32_t l, wl = w, hl = h;
+        for (l = 1; l < s->levels; l++) {
+            wl = wl > 1 ? wl / 2 : 1;
+            hl = hl > 1 ? hl / 2 : 1;
+            glTexImage2D(GL_TEXTURE_2D, (GLint)l, GL_RGBA8, (GLsizei)wl, (GLsizei)hl, 0,
+                         GL_RGBA, GL_UNSIGNED_BYTE, p);
+            p += (size_t)wl * hl * 4;
+        }
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, (GLint)s->levels - 1);
+    } else if (s->mip) {
         glGenerateMipmap(GL_TEXTURE_2D);
+    }
+    if (s->mip) {
         mn = s->mip == 1 ? (s->min_linear ? GL_LINEAR_MIPMAP_NEAREST : GL_NEAREST_MIPMAP_NEAREST)
                          : (s->min_linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR);
+        if (s->aniso > 1) {
+            /* Asked once: a driver without the extension flags the query as
+             * an error, and every upload repeating it would pin errors on
+             * the draws the GL error check looks at. */
+            static GLfloat cap = -1.0f;
+            GLfloat a = (GLfloat)s->aniso;
+            if (cap < 0.0f) { cap = 1.0f; glGetFloatv(0x84FF, &cap); }   /* MAX_TEXTURE_MAX_ANISOTROPY */
+            if (a > cap) a = cap;
+            if (a > 1.0f) glTexParameterf(GL_TEXTURE_2D, 0x84FE, a);
+        }
     } else {
         mn = s->min_linear ? GL_LINEAR : GL_NEAREST;
     }
@@ -419,9 +417,6 @@ static uint32_t glx_tex_new(uint32_t w, uint32_t h, const void *rgba,
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, (GLint)mg);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap_of[s->wrap_s < 3 ? s->wrap_s : 0]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_of[s->wrap_t < 3 ? s->wrap_t : 0]);
-    /* With or without a chain (glx_tex_aniso gives one without a second
-     * level). */
-    if (s->aniso > 1) glx_tex_aniso(t, s->aniso);
     return t;
 }
 
@@ -1486,140 +1481,189 @@ static int glx_samples(int n)
     return n;
 }
 
-/* ---- FXAA ---------------------------------------------------------------- */
-
-/*
- * Fast approximate anti-aliasing (Timothy Lottes, NVIDIA, 2009-2011), written
- * here from the published description of its "quality" variant: one pass over
- * the finished frame, which finds the edges by their contrast and blends each
- * pixel on one with its neighbour across the edge, by how near it is to the
- * edge's end. Nothing about how the frame was drawn matters, so it costs one
- * full-screen pass whatever the scene; but it sees the picture only, so
- * the HUD's edges are smoothed with the rest.
+/* ---- SMAA (nv2a_smaa.h) ----------------------------------------------------
  *
- * The vertex stage makes one triangle that covers the target, from
- * gl_VertexID: no vertices.
+ * Three passes over the frame being shown, each one triangle over a target of
+ * the frame's size: its edges into an RG8 image, the blending weights into an
+ * RGBA8 one, and the frame blended by them into a target of this backend's
+ * own, which the window then shows. The title's surfaces are untouched, and
+ * so is everything it can observe; a multisampled frame is resolved first.
+ * The pass leaves the backend as the next draw expects it, as target_fxaa did
+ * in spriteice's fork: the program in use and the target being drawn into
+ * bound again (with its viewport), and the state the front half gives every
+ * draw set again in full (state_invalidate). Units 4 to 6 hold its textures;
+ * the title's combiner stages sample 0 to 3 and nothing samples those.
  */
-static const char fxaa_vs[] = NV2A_GLSL_VERSION
-    "out vec2 uv;\n"
-    "void main()\n"
-    "{\n"
-    "    uv = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));\n"
-    "    gl_Position = vec4(uv * 2.0 - 1.0, 0.0, 1.0);\n"
-    "}\n";
+#define SMAA_UNIT 4
+static struct {
+    GLuint   prog[3];
+    GLint    rt_loc[3];
+    GLuint   vao;
+    GLuint   area, search;              /* the look-up textures */
+    GLuint   edges, edges_fbo;          /* pass 1's image */
+    GLuint   weights, weights_fbo;      /* pass 2's */
+    uint32_t out;                       /* the target pass 3 draws into */
+    uint32_t w, h;
+    int      bad;                       /* it would not build: frames as they are */
+} g_sm;
 
-static const char fxaa_fs[] = NV2A_GLSL_VERSION
-    "in vec2 uv;\n"
-    "out vec4 frag;\n"
-    "uniform sampler2D fxaaSrc;\n"
-    "uniform vec2 fxaaPx;\n"                /* one pixel, as a texture coordinate */
-    /* The quality variant's published defaults: the least contrast that is
-     * an edge, and the least for the pixel's brightness; and how far a pixel
-     * with no edge to follow is blended, at most. */
-    "const float EDGE_THRESHOLD_MIN = 0.0625, EDGE_THRESHOLD = 0.125, SUBPIX = 0.75;\n"
-    "float lum(vec2 p) { return dot(textureLod(fxaaSrc, p, 0.0).rgb, vec3(0.299, 0.587, 0.114)); }\n"
-    "float at(float x, float y) { return lum(uv + vec2(x, y) * fxaaPx); }\n"
-    "void main()\n"
-    "{\n"
-    "    vec4  c = textureLod(fxaaSrc, uv, 0.0);\n"
-    "    float m = dot(c.rgb, vec3(0.299, 0.587, 0.114));\n"
-    "    float n = at(0.0, 1.0), s = at(0.0, -1.0), e = at(1.0, 0.0), w = at(-1.0, 0.0);\n"
-    "    float lo = min(m, min(min(n, s), min(e, w)));\n"
-    "    float hi = max(m, max(max(n, s), max(e, w)));\n"
-    "    float range = hi - lo;\n"
-    /* Too little contrast to be an edge, for how bright it is: as it was. */
-    "    if (range < max(EDGE_THRESHOLD_MIN, hi * EDGE_THRESHOLD)) { frag = c; return; }\n"
-    "    float nw = at(-1.0, 1.0), ne = at(1.0, 1.0), sw = at(-1.0, -1.0), se = at(1.0, -1.0);\n"
-    /* Which way the edge runs: along the rows if the brightness changes
-     * more up and down than across. */
-    "    bool horz = abs(nw + sw - 2.0 * w) + 2.0 * abs(n + s - 2.0 * m) + abs(ne + se - 2.0 * e)\n"
-    "             >= abs(nw + ne - 2.0 * n) + 2.0 * abs(w + e - 2.0 * m) + abs(sw + se - 2.0 * s);\n"
-    /* The neighbour across it with the bigger step: the pixel is blended
-     * toward that side, from the edge's midline between the two. */
-    "    float l1 = horz ? s : w, l2 = horz ? n : e;\n"
-    "    bool  first = abs(l1 - m) >= abs(l2 - m);\n"
-    "    float big = 0.25 * max(abs(l1 - m), abs(l2 - m));\n"
-    "    float stp = horz ? fxaaPx.y : fxaaPx.x;\n"
-    "    float mid = 0.5 * ((first ? l1 : l2) + m);\n"
-    "    if (first) stp = -stp;\n"
-    "    vec2 p0 = uv + (horz ? vec2(0.0, 0.5 * stp) : vec2(0.5 * stp, 0.0));\n"
-    /* Along the edge both ways, in growing steps, to where the brightness
-     * along the midline stops being the edge's. */
-    "    vec2 dir = horz ? vec2(fxaaPx.x, 0.0) : vec2(0.0, fxaaPx.y);\n"
-    "    vec2 p1 = p0 - dir, p2 = p0 + dir;\n"
-    "    float end1 = lum(p1) - mid, end2 = lum(p2) - mid;\n"
-    "    bool done1 = abs(end1) >= big, done2 = abs(end2) >= big;\n"
-    "    if (!done1) p1 -= dir;\n"
-    "    if (!done2) p2 += dir;\n"
-    "    for (int i = 2; i < 12 && !(done1 && done2); i++) {\n"
-    "        float q = i < 5 ? 1.0 : i == 5 ? 1.5 : i < 10 ? 2.0 : i == 10 ? 4.0 : 8.0;\n"
-    "        if (!done1) { end1 = lum(p1) - mid; done1 = abs(end1) >= big; if (!done1) p1 -= dir * q; }\n"
-    "        if (!done2) { end2 = lum(p2) - mid; done2 = abs(end2) >= big; if (!done2) p2 += dir * q; }\n"
-    "    }\n"
-    /* Blended the more the nearer the end, and only toward an end whose
-     * brightness goes the other way from this pixel's. */
-    "    float d1 = horz ? uv.x - p1.x : uv.y - p1.y, d2 = horz ? p2.x - uv.x : p2.y - uv.y;\n"
-    "    float off = 0.5 - min(d1, d2) / (d1 + d2);\n"
-    "    if (((d1 < d2 ? end1 : end2) < 0.0) == (m < mid)) off = 0.0;\n"
-    /* And a pixel that stands out from all eight around it -- a thin line,
-     * a speck, which have no edge to follow -- by how much it does. */
-    "    float sub = clamp(abs((2.0 * (n + s + e + w) + nw + ne + sw + se) / 12.0 - m) / range, 0.0, 1.0);\n"
-    "    sub = (3.0 - 2.0 * sub) * sub * sub;\n"
-    "    off = max(off, SUBPIX * sub * sub);\n"
-    "    frag = vec4(textureLod(fxaaSrc, uv + (horz ? vec2(0.0, off * stp) : vec2(off * stp, 0.0)), 0.0).rgb, c.a);\n"
-    "}\n";
+static const char *const smaa_pass_name[3] = { "SMAA edges", "SMAA weights", "SMAA blend" };
 
-static GLuint   g_fx_prog, g_fx_vao;
-static GLint    g_fx_px;
-static int      g_fx_bad;           /* it would not build: the frame as it is */
-static uint32_t g_fx_rt;            /* the target it draws into */
+static void smaa_sampler(GLuint prog, const char *name, int unit)
+{
+    GLint loc = glGetUniformLocation(prog, name);
+    if (loc >= 0) glUniform1i(loc, unit);
+}
 
-static uint32_t glx_target_fxaa(uint32_t h)
+/* A texture for SMAA, w x h, bound to the scratch unit. */
+static GLuint smaa_tex(GLint ifmt, GLenum fmt, uint32_t w, uint32_t h, const void *px, GLint filter)
+{
+    GLuint t = 0;
+    glGenTextures(1, &t);
+    scratch_bind(t);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, ifmt, (GLsizei)w, (GLsizei)h, 0, fmt, GL_UNSIGNED_BYTE, px);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    return t;
+}
+
+/* The programs and the look-up textures, once. */
+static int smaa_build(void)
+{
+    double t0 = glx_now_ms();
+    int p;
+    for (p = 0; p < 3; p++) {
+        char *vs = nv2a_smaa_glsl_source(p, 0), *fs = nv2a_smaa_glsl_source(p, 1);
+        g_sm.prog[p] = (vs && fs) ? glx_build(vs, fs, smaa_pass_name[p]) : 0;
+        free(vs);
+        free(fs);
+        if (!g_sm.prog[p]) return 0;
+        glUseProgram(g_sm.prog[p]);
+        g_sm.rt_loc[p] = glGetUniformLocation(g_sm.prog[p], "smaaRt");
+        smaa_sampler(g_sm.prog[p], "colorTex", SMAA_UNIT);
+        smaa_sampler(g_sm.prog[p], "edgesTex", SMAA_UNIT);
+        smaa_sampler(g_sm.prog[p], "areaTex", SMAA_UNIT + 1);
+        smaa_sampler(g_sm.prog[p], "searchTex", SMAA_UNIT + 2);
+        smaa_sampler(g_sm.prog[p], "blendTex", SMAA_UNIT + 1);
+    }
+    glGenVertexArrays(1, &g_sm.vao);
+    g_sm.area = smaa_tex(GL_RG8, GL_RG, NV2A_SMAA_AREA_W, NV2A_SMAA_AREA_H,
+                         nv2a_smaa_area(), GL_LINEAR);
+    g_sm.search = smaa_tex(GL_R8, GL_RED, NV2A_SMAA_SEARCH_W, NV2A_SMAA_SEARCH_H,
+                           nv2a_smaa_search(), GL_NEAREST);
+    fprintf(stderr, "  [GL] SMAA: built in %.0f ms\n", glx_now_ms() - t0);
+    return 1;
+}
+
+static void smaa_unsize(void)
+{
+    if (g_sm.edges_fbo)   glDeleteFramebuffers(1, &g_sm.edges_fbo);
+    if (g_sm.weights_fbo) glDeleteFramebuffers(1, &g_sm.weights_fbo);
+    if (g_sm.edges)       glDeleteTextures(1, &g_sm.edges);
+    if (g_sm.weights)     glDeleteTextures(1, &g_sm.weights);
+    glx_target_free(g_sm.out);
+    g_sm.edges_fbo = g_sm.weights_fbo = g_sm.edges = g_sm.weights = 0;
+    g_sm.out = 0;
+    g_sm.w = g_sm.h = 0;
+}
+
+/* The two images and the target, at the frame's size. */
+static int smaa_size(uint32_t pw, uint32_t ph)
+{
+    int ok;
+    smaa_unsize();
+    g_sm.edges = smaa_tex(GL_RG8, GL_RG, pw, ph, NULL, GL_LINEAR);
+    g_sm.weights = smaa_tex(GL_RGBA8, GL_RGBA, pw, ph, NULL, GL_LINEAR);
+    glGenFramebuffers(1, &g_sm.edges_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, g_sm.edges_fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_sm.edges, 0);
+    ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    glGenFramebuffers(1, &g_sm.weights_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, g_sm.weights_fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_sm.weights, 0);
+    ok = ok && glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    /* Flat: one triangle over the whole of it gains nothing from samples. */
+    g_sm.out = ok ? target_new(pw, ph, 1) : 0;
+    if (rt_ok(g_cur_rt)) glBindFramebuffer(GL_FRAMEBUFFER, draw_fbo(g_cur_rt));
+    if (!g_sm.out) { smaa_unsize(); return 0; }
+    g_sm.w = pw; g_sm.h = ph;
+    fprintf(stderr, "  [GL] SMAA: the frame shown at %ux%u\n", pw, ph);
+    return 1;
+}
+
+static void smaa_bind(int unit, GLuint tex)
+{
+    glActiveTexture((GLenum)(GL_TEXTURE0 + unit));
+    glBindTexture(GL_TEXTURE_2D, tex);
+}
+
+static uint32_t glx_target_smaa(uint32_t h)
 {
     uint32_t pw, ph;
-    if (!rt_ok(h) || g_fx_bad) return h;
+    float rt[4];
+    if (!rt_ok(h) || g_sm.bad) return h;
     pw = g_rt[h - 1].pw; ph = g_rt[h - 1].ph;
-    if (!g_fx_prog) {
-        g_fx_prog = glx_build(fxaa_vs, fxaa_fs, "FXAA");
-        if (!g_fx_prog) {
-            g_fx_bad = 1;
-            fprintf(stderr, "  [GL] FXAA: no program; frames are shown without it\n");
-            return h;
-        }
-        glGenVertexArrays(1, &g_fx_vao);
-        glUseProgram(g_fx_prog);
-        glUniform1i(glGetUniformLocation(g_fx_prog, "fxaaSrc"), SCRATCH_UNIT);
-        g_fx_px = glGetUniformLocation(g_fx_prog, "fxaaPx");
+    if (!g_sm.prog[2] && !smaa_build()) {
+        g_sm.bad = 1;
+        fprintf(stderr, "  [GL] SMAA: no programs; frames are shown without it\n");
+        glUseProgram(prog_ok(g_cur_prog) ? g_prog[g_cur_prog - 1].prog : 0);
+        return h;
     }
-    if (!rt_ok(g_fx_rt) || g_rt[g_fx_rt - 1].pw != pw || g_rt[g_fx_rt - 1].ph != ph) {
-        glx_target_free(g_fx_rt);
-        /* Flat: one triangle over the whole of it gains nothing from
-         * samples, which would only cost memory. */
-        g_fx_rt = target_new(pw, ph, 1);
-        if (!g_fx_rt) return h;
-        fprintf(stderr, "  [GL] FXAA: the frame shown at %ux%u\n", pw, ph);
+    if ((g_sm.w != pw || g_sm.h != ph || !rt_ok(g_sm.out)) && !smaa_size(pw, ph)) {
+        g_sm.bad = 1;
+        fprintf(stderr, "  [GL] SMAA: no images at %ux%u; frames are shown without it\n", pw, ph);
+        return h;
     }
     resolve(h);                     /* multisampled: its picture, up to date */
-    scratch_bind(g_rt[h - 1].tex);
-    glBindFramebuffer(GL_FRAMEBUFFER, g_rt[g_fx_rt - 1].fbo);
-    glViewport(0, 0, (GLsizei)pw, (GLsizei)ph);
+    rt[0] = 1.0f / (float)pw; rt[1] = 1.0f / (float)ph; rt[2] = (float)pw; rt[3] = (float)ph;
+
     glDisable(GL_BLEND);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_STENCIL_TEST);
     glDisable(GL_CULL_FACE);
     glDisable(GL_SCISSOR_TEST);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    glBindVertexArray(g_fx_vao);
-    glUseProgram(g_fx_prog);
-    glUniform2f(g_fx_px, 1.0f / (float)pw, 1.0f / (float)ph);
+    glBindVertexArray(g_sm.vao);
+    glViewport(0, 0, (GLsizei)pw, (GLsizei)ph);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+
+    /* 1: the edges. A pixel without one is discarded: cleared first. */
+    glBindFramebuffer(GL_FRAMEBUFFER, g_sm.edges_fbo);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glUseProgram(g_sm.prog[0]);
+    glUniform4fv(g_sm.rt_loc[0], 1, rt);
+    smaa_bind(SMAA_UNIT, g_rt[h - 1].tex);
     glDrawArrays(GL_TRIANGLES, 0, 3);
+
+    /* 2: the weights, only where there are edges; the rest stays 0. */
+    glBindFramebuffer(GL_FRAMEBUFFER, g_sm.weights_fbo);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glUseProgram(g_sm.prog[1]);
+    glUniform4fv(g_sm.rt_loc[1], 1, rt);
+    smaa_bind(SMAA_UNIT, g_sm.edges);
+    smaa_bind(SMAA_UNIT + 1, g_sm.area);
+    smaa_bind(SMAA_UNIT + 2, g_sm.search);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+
+    /* 3: the frame, blended by them, into the target that is shown. */
+    glBindFramebuffer(GL_FRAMEBUFFER, g_rt[g_sm.out - 1].fbo);
+    glUseProgram(g_sm.prog[2]);
+    glUniform4fv(g_sm.rt_loc[2], 1, rt);
+    smaa_bind(SMAA_UNIT, g_rt[h - 1].tex);
+    smaa_bind(SMAA_UNIT + 1, g_sm.weights);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+
     /* Back as the title's next draw expects it: its program and target, and
      * the state it gives every draw set again in full. (Every draw binds its
      * own vertex array: vertices(), vbuf_bind().) */
+    glActiveTexture(GL_TEXTURE0 + SCRATCH_UNIT);
     glUseProgram(prog_ok(g_cur_prog) ? g_prog[g_cur_prog - 1].prog : 0);
     glx_state_invalidate();
     if (rt_ok(g_cur_rt)) glx_target_bind(g_cur_rt);
-    return g_fx_rt;
+    return g_sm.out;
 }
 
 static const Nv2aGfx g_gl = {
@@ -1636,9 +1680,9 @@ static const Nv2aGfx g_gl = {
     glx_uniform_f_part,
     NULL,                       /* pipeline_ms: the link covers it */
     glx_cache_open, glx_cache_idle,
-    glx_target_fxaa,
+    glx_target_smaa,
     glx_samples_max, glx_samples,
-    glx_aniso_max, glx_tex_aniso,
+    glx_aniso_max,
     glx_cache_rebuild,
 };
 

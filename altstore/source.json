@@ -27,6 +27,15 @@
       },
       "versions": [
         {
+          "version": "0.5.5",
+          "buildVersion": "0.5.5",
+          "date": "2026-10-24T18:53:38Z",
+          "localizedDescription": "Sharper in the distance: faraway buildings and windows no longer shimmer -- the game's own mipmaps are used now, with 16x anisotropic filtering. Anti-aliasing, SMAA and MSAA, in the settings (the gear button). Reflective glass, like Dogenzaka Hill's footbridge, reflects as on the console. Thanks to spriteice, whose fork had MSAA and anisotropic filtering first!",
+          "downloadURL": "https://github.com/JuMatt/JetSetRadioFuture-Unleashed/releases/download/v0.5.5/JSRF-Unleashed-iOS.ipa",
+          "size": 13351565,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.5.4",
           "buildVersion": "0.5.4",
           "date": "2026-10-22T21:30:27Z",
