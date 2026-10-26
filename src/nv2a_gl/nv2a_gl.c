@@ -168,6 +168,7 @@ extern uint32_t  xbox_ContiguousBlockSerial(uint32_t va);
 #define M_SET_CLIP_MAX              0x0398
 #define M_SET_LIGHTING_ENABLE       0x0314
 #define M_SET_SKIN_MODE             0x0328   /* 0 off, else N-matrix blend */
+#define M_SET_PROJECTION_MATRIX     0x0440   /* 16 floats */
 #define M_SET_MODEL_VIEW_MATRIX     0x0480   /* 4 matrices of 16 floats */
 #define M_SET_TEXTURE_MATRIX_ENABLE 0x0420   /* +i*4, 4 stages */
 #define M_SET_TEXGEN_S              0x03C0   /* +0x10 a stage, S T R Q at +0 +4 +8 +C */
@@ -275,8 +276,11 @@ extern uint32_t  xbox_ContiguousBlockSerial(uint32_t va);
 #define M_SET_POLYGON_OFFSET_SCALE_FACTOR 0x0384   /* a float */
 #define M_SET_POLYGON_OFFSET_BIAS         0x0388   /* a float */
 
+#define M_NO_OPERATION              0x0100
 #define M_FLIP_INCREMENT_WRITE      0x012C
 #define M_FLIP_STALL                0x0130
+#define M_SET_SEMAPHORE_OFFSET      0x1D6C   /* the fences */
+#define M_BACK_END_WRITE_SEMAPHORE_RELEASE 0x1D70
 
 /* Fields of the words those methods carry, by src/nv2a/nv2a_regs.h's names. */
 #define SURFACE_FORMAT_ZETA(v)       (((v) >> 4) & 0xFu)  /* NV097_SET_SURFACE_FORMAT_ZETA */
@@ -10790,6 +10794,13 @@ static void methtrace_note(uint32_t method, uint32_t param)
     fprintf(stderr, "[MT] f%u d%u %04X = %08X (%g)\n", S.flips, S.since_present, method, param, f);
 }
 
+/* The sizes of the windows of methods pb_kind takes whole, as the M_ list
+ * gives them: methods are a word apart. */
+#define PB_WORD             4
+#define PB_CONST_WINDOW     (32 * PB_WORD)  /* the transform constants */
+#define PB_MATRIX_BYTES     (16 * PB_WORD)  /* a matrix of 16 floats */
+#define PB_TEX_STAGE_BYTES  0x40            /* a texture stage's methods */
+
 /* RECOMP_GL_PROFILE: the pushbuffer walk outside the draws, by kind of
  * method.
  *
@@ -10808,38 +10819,42 @@ static void methtrace_note(uint32_t method, uint32_t param)
 static int pb_kind(uint32_t m)
 {
     if (m == M_INLINE_ARRAY)                                     return PBK_INLINE;
-    if ((m >= M_SET_TRANSFORM_CONSTANT && m < M_SET_TRANSFORM_CONSTANT + 0x80)
+    if ((m >= M_SET_TRANSFORM_CONSTANT && m < M_SET_TRANSFORM_CONSTANT + PB_CONST_WINDOW)
      || m == M_SET_TRANSFORM_CONSTANT_LD)                        return PBK_CONST;
     if (attr_method(m))                                          return PBK_ATTR;
     if (m >= M_ARRAY_ELEMENT16 && m < M_INLINE_ARRAY)            return PBK_INDEX;
     /* the projection matrix up to the end of the texture matrices */
-    if (m >= 0x0440 && m < M_SET_TEXTURE_MATRIX + 4 * 64)        return PBK_MATRIX;
+    if (m >= M_SET_PROJECTION_MATRIX
+     && m < M_SET_TEXTURE_MATRIX + NUM_STAGES * PB_MATRIX_BYTES) return PBK_MATRIX;
     if (m >= M_SET_VERTEX_ARRAY_OFFSET
-     && m < M_SET_VERTEX_ARRAY_FORMAT + 16 * 4)                  return PBK_ARRAYS;
+     && m < M_SET_VERTEX_ARRAY_FORMAT + NUM_ATTRS * PB_WORD)     return PBK_ARRAYS;
     if (m == M_SET_BEGIN_END)                                    return PBK_BEGIN;
     if ((m >= M_SET_TRANSFORM_PROGRAM && m < M_SET_TRANSFORM_CONSTANT)
      || (m >= M_SET_TRANSFORM_EXEC_MODE && m <= M_SET_TRANSFORM_PROGRAM_ST))
         return PBK_PROG;
-    if (m >= M_SET_TEXTURE_OFFSET && m < M_SET_TEXTURE_OFFSET + 4 * 0x40)
+    if (m >= M_SET_TEXTURE_OFFSET && m < M_SET_TEXTURE_OFFSET + NUM_STAGES * PB_TEX_STAGE_BYTES)
         return PBK_TEX;
     /* SET_SURFACE_CLIP_HORIZONTAL up to the zeta offset, and the clears */
-    if ((m >= 0x0200 && m < 0x0218)
+    if ((m >= M_SET_SURFACE_CLIP_H && m <= M_SET_SURFACE_ZETA_OFFSET)
      || (m >= M_SET_ZSTENCIL_CLEAR_VALUE && m <= M_SET_CLEAR_RECT_V)) return PBK_SURFACE;
     /* the no-operation (software methods) and the flips, and the fences */
-    if ((m >= 0x0100 && m < 0x0140) || m == 0x1D6C || m == 0x1D70) return PBK_FLIP;
+    if ((m >= M_NO_OPERATION && m <= M_FLIP_STALL)
+     || m == M_SET_SEMAPHORE_OFFSET || m == M_BACK_END_WRITE_SEMAPHORE_RELEASE)
+        return PBK_FLIP;
     return PBK_OTHER;
 }
 
 static void gl_method(uint32_t method, uint32_t param);
 
+#define PB_CLOCK_READS 1000     /* the clock reads pb_clock_cost averages */
 static double pb_clock_cost(void)
 {
     static double cost = -1.0;
     if (cost < 0.0) {
         double t0 = prof_now(), t = t0;
         int i;
-        for (i = 0; i < 1000; i++) t = prof_now();
-        cost = (t - t0) / 1000;
+        for (i = 0; i < PB_CLOCK_READS; i++) t = prof_now();
+        cost = (t - t0) / PB_CLOCK_READS;
     }
     return cost;
 }
