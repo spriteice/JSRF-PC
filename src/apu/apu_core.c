@@ -542,6 +542,11 @@ static int ring_target_frames(void)
     return t;
 }
 
+/* The device plays 48 frames a millisecond, at 48 kHz, and the encode
+ * processor sends the voice processor's frames eight at a time. */
+#define FRAMES_PER_MS           48
+#define VP_FRAMES_PER_EP_FRAME  8
+
 /*
  * What the device has yet to play of what this thread has made, in frames:
  * the ring, the voice processor frames made since the encode processor last
@@ -552,10 +557,11 @@ static int ring_target_frames(void)
  */
 static int ring_ahead(MCPXAPUState *d, int ms_since_pull)
 {
-    int played = ms_since_pull * 48;
+    int played = ms_since_pull * FRAMES_PER_MS;
     int pull = xa2_get_buffer_size();
     if (pull > 0 && played > pull) played = pull;
-    return xa2_ring_level() + (d->ep_frame_div % 8) * NUM_SAMPLES_PER_FRAME - played;
+    return xa2_ring_level()
+         + (d->ep_frame_div % VP_FRAMES_PER_EP_FRAME) * NUM_SAMPLES_PER_FRAME - played;
 }
 
 /*
@@ -599,7 +605,8 @@ static void throttle(MCPXAPUState *d)
 wall_clock:
     {
         int64_t due;
-        int j = d->ep_frame_div % 8;      /* this frame's eighth of the encode frame */
+        /* this frame's eighth of the encode frame */
+        int j = d->ep_frame_div % VP_FRAMES_PER_EP_FRAME;
 
         if (j == 0) {
             if (d->next_frame_time_us == 0 ||
@@ -617,7 +624,7 @@ wall_clock:
             due = d->next_frame_time_us;
             d->next_frame_time_us += EP_FRAME_US;
         } else {
-            due = d->next_frame_time_us - EP_FRAME_US + j * EP_FRAME_US / 8;
+            due = d->next_frame_time_us - EP_FRAME_US + j * EP_FRAME_US / VP_FRAMES_PER_EP_FRAME;
         }
 
         while (!d->pause_requested) {
