@@ -58,6 +58,7 @@ static const DevSwitch k_logging[] = {
     { "RECOMP_LOCK_WATCH", 1 }, { "RECOMP_WAITLOG", 1 }, { "RECOMP_KERNEL_IO", 1 },
     { "RECOMP_APU_STATS", 1 }, { "RECOMP_GL_UNHANDLED", 1 }, { "RECOMP_GL_VERBOSE", 1 },
     { "RECOMP_GL_ERRORS_PER_DRAW", 1 }, { "RECOMP_USB_TRACE", 1 },
+    { "JSRF_CAM_LOG", 1 },                  /* the game's camera (port/recomp_manual.c) */
 };
 static const DevSwitch k_engine[] = {
     { "RECOMP_GL_NOREVZ", 1 },              /* no reversed depth */

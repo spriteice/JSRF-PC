@@ -69,6 +69,11 @@ cases["cpu_profile"] = (None, "RECOMP_CPU_PROFILE=1\n", {},
 cases["experiment"] = (None, "RECOMP_NV2A_QUEUE=1\n", {},
                        ["[DEV] RECOMP_NV2A_QUEUE=1 from developer.cfg", "started:"], [])
 
+# The game's camera log, the one switch in Logging that port/recomp_manual.c
+# reads: from developer.cfg into the environment like the others.
+cases["camera_log"] = (None, "JSRF_CAM_LOG=1\n", {},
+                       ["[DEV] JSRF_CAM_LOG=1 from developer.cfg", "started:"], [])
+
 with tempfile.TemporaryDirectory(prefix="developer-") as directory:
     work = pathlib.Path(directory)
     exe = str(work / "test.exe")
@@ -87,7 +92,7 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
         if dev_text is not None:
             (folder / "developer.cfg").write_text(dev_text)
         env = {k: v for k, v in os.environ.items()
-               if k not in (*switches, "RECOMP_CPU_PROFILE", "RECOMP_NV2A_QUEUE")}
+               if k not in (*switches, "RECOMP_CPU_PROFILE", "RECOMP_NV2A_QUEUE", "JSRF_CAM_LOG")}
         env.update(extra, JSRF_SETTINGS_FILE=str(folder / "settings.cfg"))
         log = folder / "last-run.log"
         with open(log, "w") as out:
