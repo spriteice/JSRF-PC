@@ -171,7 +171,7 @@ git diff --name-status --diff-filter=MD upstream main
 - **Files:** CMakeLists.txt, port/CMakeLists.txt (C++, and libstdc++
   linked in statically on Linux), src/nv2a_gl/CMakeLists.txt
   (`NV2A_GL_MENU`), src/nv2a_gl/nv2a_gl.c (the menu over the window, its
-  Graphics rows, and `nv_window_restart` for File > Restart),
+  Display and Graphics rows, and `nv_window_restart` for File > Restart),
   src/input/xinput_device.c (the menu has the pad while it is open, and a
   pad's Back opens it), CONTRIBUTING.md, NOTICE, LICENSES/README.md,
   launcher/linux/package.sh and launcher/windows/package.sh (Dear ImGui's
@@ -184,7 +184,7 @@ git diff --name-status --diff-filter=MD upstream main
   menus. Our own files: src/menu/, third_party/imgui/.
 - **At a merge:** check upstream's changes to the SDL window, keys and pad
   input against the menu, give a setting upstream adds to its Video menu or
-  keys a Graphics row, and run tests/menu.
+  keys a Display or Graphics row, and run tests/menu.
 
 ### Graphics: the anisotropic filtering setting
 

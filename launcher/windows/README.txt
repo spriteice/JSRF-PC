@@ -58,8 +58,8 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
   C / V        left / right stick click
 
   F1                 the in-game menu (also Back on a controller, which is
-                     then the menu's alone): File, Graphics, Controller,
-                     and Developer
+                     then the menu's alone): File, Display, Graphics,
+                     Controller, and Developer
   F11 or Alt+Enter   full screen; remembered
   F10                widescreen 16:9 (a wider view, not a stretch; the HUD
                      keeps its shape, the title screen stays 4:3); remembered

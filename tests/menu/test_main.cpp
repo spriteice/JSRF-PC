@@ -47,7 +47,7 @@ static int s_late_drawn;
 static int  late_state(void) { s_late_drawn++; return 0; }
 static void late_run(void)   { }
 static const XBOX_MENU_ITEM k_late = {
-    XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLE, "Late", late_state, late_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL };
+    XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Late", late_state, late_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL };
 
 /* Numbers, as the Controller menu's: a sensitivity in whole steps, and a
  * deadzone in 5% steps that starts between two (as the settings file may). */
@@ -173,7 +173,7 @@ static void click(void)
 
 int main(void)
 {
-    /* Developer first, then Controller, then Graphics, then File: the order
+    /* Developer first, then Controller, then Display, then File: the order
      * on screen is the enum's, not the order rows arrive in. */
     const XBOX_MENU_ITEM developer[] = {
         { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLE, "Log to file", log_state, log_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL },
@@ -188,10 +188,10 @@ int main(void)
         { XBOX_MENU_CONTROLLER, XBOX_ITEM_NUMBER, "Deadzone", NULL, NULL, NULL, NULL, 0, NULL, NULL,
           dead_value, dead_set, 0, 100, 5, "%g%%" },
     };
-    const XBOX_MENU_ITEM graphics[] = {
-        { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLE, "Fullscreen", full_state, full_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL },
-        { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLE, "Widescreen (16:9)", wide_state, wide_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL },
-        { XBOX_MENU_GRAPHICS, XBOX_ITEM_CHOICE, "Render scale", scale_state, NULL, scale_pick, k_scales, 4, NULL,
+    const XBOX_MENU_ITEM display[] = {
+        { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Fullscreen", full_state, full_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL },
+        { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Widescreen (16:9)", wide_state, wide_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL },
+        { XBOX_MENU_DISPLAY, XBOX_ITEM_CHOICE, "Render scale", scale_state, NULL, scale_pick, k_scales, 4, NULL,
           "The game restarts at the new scale, losing unsaved progress.", NULL, NULL, 0, 0, 0, NULL },
     };
     const XBOX_MENU_ITEM file[] = {
@@ -202,7 +202,7 @@ int main(void)
     };
     xbox_MenuAdd(developer, 3);
     xbox_MenuAdd(controller, 2);
-    xbox_MenuAdd(graphics, 3);
+    xbox_MenuAdd(display, 3);
     xbox_MenuAdd(file, 3);
 
     ImGui::CreateContext();
@@ -225,20 +225,20 @@ int main(void)
         CHECK(bar != NULL);
     }
 
-    /* Right walks the bar to Graphics (File closes); A opens it, the cursor
-     * on its first row. Down, A: Widescreen flipped, once, and Graphics is
+    /* Right walks the bar to Display (File closes); A opens it, the cursor
+     * on its first row. Down, A: Widescreen flipped, once, and Display is
      * still open with the cursor where it was. */
     frame(ImGuiKey_GamepadDpadRight); frames(2);
     fprintf(stderr, "after right: [%s] %s\n", open_menu(), nav_state());
     CHECK(bar_focused());
     frame(ImGuiKey_GamepadFaceDown); frames(2);
     fprintf(stderr, "after A: [%s]\n", open_menu());
-    CHECK(strstr(open_menu(), "Graphics") != NULL);
+    CHECK(strstr(open_menu(), "Display") != NULL);
     frame(ImGuiKey_GamepadDpadDown); frames(1);
     frame(ImGuiKey_GamepadFaceDown); frames(2);
     fprintf(stderr, "full runs %d, wide runs %d, menu [%s] %s\n", s_full_runs, s_wide_runs, open_menu(), nav_state());
     CHECK(s_wide_runs == 1 && s_full_runs == 0);
-    CHECK(strstr(open_menu(), "Graphics") != NULL);
+    CHECK(strstr(open_menu(), "Display") != NULL);
     fprintf(stderr, "the row Widescreen added: drawn %d times\n", s_late_drawn);
     CHECK(s_late_drawn > 0);
 
@@ -252,12 +252,12 @@ int main(void)
     fprintf(stderr, "after choosing: [%s], picks %d\n", open_menu(), s_picks);
     CHECK(strstr(open_menu(), "Are you sure?") != NULL);
     CHECK(s_picks == -1);
-    /* ... so A there cancels, and Graphics comes back. */
+    /* ... so A there cancels, and Display comes back. */
     frame(ImGuiKey_GamepadFaceDown); frames(3);
     fprintf(stderr, "after Cancel: [%s], picks %d\n", open_menu(), s_picks);
     CHECK(s_picks == -1);
-    CHECK(strstr(open_menu(), "Graphics") != NULL);
-    /* Again (Graphics came back with the cursor on its first row), and this
+    CHECK(strstr(open_menu(), "Display") != NULL);
+    /* Again (Display came back with the cursor on its first row), and this
      * time Left to OK, A: picked, index 2. */
     frame(ImGuiKey_GamepadDpadDown); frame(ImGuiKey_GamepadDpadDown); frames(1);
     fprintf(stderr, "cursor before right: %s\n", nav_state());
@@ -283,11 +283,11 @@ int main(void)
     frame(ImGuiKey_GamepadFaceDown); frames(2);
     fprintf(stderr, "after OK: picks %d, menu [%s]\n", s_picks, open_menu());
     CHECK(s_picks == 2);
-    /* Graphics is back, with every row: Widescreen's and the other thread's. */
+    /* Display is back, with every row: Widescreen's and the other thread's. */
     s_late_drawn = 0;
     frames(1);
     fprintf(stderr, "late rows drawn in one frame: %d of %d\n", s_late_drawn, 1 + LATE_ROWS);
-    CHECK(strstr(open_menu(), "Graphics") != NULL);
+    CHECK(strstr(open_menu(), "Display") != NULL);
     CHECK(s_late_drawn == 1 + LATE_ROWS);
 
     /* About: Left walks the bar back to File, A opens it, A on About: a box.
@@ -319,13 +319,13 @@ int main(void)
     frame(ImGuiKey_GamepadFaceDown); frames(2);
     fprintf(stderr, "A: [%s]\n", open_menu());
     CHECK(strstr(open_menu(), "File") != NULL);
-    /* Right to Graphics' title, and B there: the pad stays on Graphics. */
+    /* Right to Display's title, and B there: the pad stays on Display. */
     frame(ImGuiKey_GamepadDpadRight); frames(2);
     frame(ImGuiKey_GamepadFaceRight); frames(2);
     frame(ImGuiKey_GamepadFaceDown); frames(2);
     fprintf(stderr, "Right, B, A: [%s]\n", open_menu());
-    CHECK(strstr(open_menu(), "Graphics") != NULL);
-    /* In Render scale's list, B goes back to Graphics; B again, to its title.
+    CHECK(strstr(open_menu(), "Display") != NULL);
+    /* In Render scale's list, B goes back to Display; B again, to its title.
      * Nothing was picked, and the bar never stood empty. */
     frame(ImGuiKey_GamepadDpadDown); frame(ImGuiKey_GamepadDpadDown); frames(1);
     frame(ImGuiKey_GamepadDpadRight); frames(2);
@@ -333,14 +333,14 @@ int main(void)
     CHECK(strstr(open_menu(), "Render scale") != NULL);
     frame(ImGuiKey_GamepadFaceRight); frames(2);
     fprintf(stderr, "B: [%s] %s\n", open_menu(), nav_state());
-    CHECK(strstr(open_menu(), "Graphics") != NULL);
+    CHECK(strstr(open_menu(), "Display") != NULL);
     frame(ImGuiKey_GamepadFaceRight); frames(2);
     CHECK(!strcmp(open_menu(), "") && bar_focused());
     frame(ImGuiKey_GamepadFaceDown); frames(2);
     fprintf(stderr, "B, A: [%s], picks %d, frames bare %d\n", open_menu(), s_picks, s_bare);
-    CHECK(strstr(open_menu(), "Graphics") != NULL);
+    CHECK(strstr(open_menu(), "Display") != NULL);
     CHECK(s_picks == 2 && s_bare == 0);
-    /* In a box, B is its Cancel: 3x asked for, B, and Graphics is back with
+    /* In a box, B is its Cancel: 3x asked for, B, and Display is back with
      * nothing picked. */
     frame(ImGuiKey_GamepadDpadDown); frame(ImGuiKey_GamepadDpadDown); frames(1);
     frame(ImGuiKey_GamepadDpadRight); frames(2);
@@ -350,7 +350,7 @@ int main(void)
     CHECK(centred("Are you sure?"));
     frame(ImGuiKey_GamepadFaceRight); frames(3);
     fprintf(stderr, "B in the box: [%s] %s, picks %d\n", open_menu(), nav_state(), s_picks);
-    CHECK(strstr(open_menu(), "Graphics") != NULL);
+    CHECK(strstr(open_menu(), "Display") != NULL);
     CHECK(s_picks == 2);
     /* Back to File; About, in the middle, and B: File again. Exit never ran.
      * Dragged by its title bar, the box stays where it is: ImGui never takes
@@ -393,22 +393,22 @@ int main(void)
     /* The mouse. Where the titles are: slid along the bar, the pointer opens
      * each menu it passes while one is open. */
     ImGuiWindow *bar = ImGui::FindWindowByName("##MainMenuBar");
-    float bar_y = bar->Pos.y + bar->Size.y * 0.5f, file_x = -1, gfx_x = -1, x;
-    for (x = bar->Pos.x + 1; x < bar->Pos.x + bar->Size.x && gfx_x < 0; x += 1) {
+    float bar_y = bar->Pos.y + bar->Size.y * 0.5f, file_x = -1, disp_x = -1, x;
+    for (x = bar->Pos.x + 1; x < bar->Pos.x + bar->Size.x && disp_x < 0; x += 1) {
         pointer(x, bar_y); frame();
-        if (strstr(open_menu(), "Graphics")) gfx_x = x;
+        if (strstr(open_menu(), "Display")) disp_x = x;
     }
-    for (x = bar->Pos.x + 1; x < gfx_x && file_x < 0; x += 1) {
+    for (x = bar->Pos.x + 1; x < disp_x && file_x < 0; x += 1) {
         pointer(x, bar_y); frame();
         if (strstr(open_menu(), "File")) file_x = x;
     }
-    fprintf(stderr, "File at x=%g, Graphics at x=%g\n", file_x, gfx_x);
-    CHECK(file_x >= 0 && gfx_x > file_x);
-    /* Graphics clicked open, then back along the bar to File: File opens in
+    fprintf(stderr, "File at x=%g, Display at x=%g\n", file_x, disp_x);
+    CHECK(file_x >= 0 && disp_x > file_x);
+    /* Display clicked open, then back along the bar to File: File opens in
      * its place (the whole menu shut, here, before). */
-    pointer(gfx_x, bar_y); frame(); click(); frames(2);
-    fprintf(stderr, "clicked Graphics: [%s]\n", open_menu());
-    CHECK(strstr(open_menu(), "Graphics") != NULL);
+    pointer(disp_x, bar_y); frame(); click(); frames(2);
+    fprintf(stderr, "clicked Display: [%s]\n", open_menu());
+    CHECK(strstr(open_menu(), "Display") != NULL);
     pointer(file_x, bar_y); frames(4);
     fprintf(stderr, "back to File: [%s]\n", open_menu());
     CHECK(strstr(open_menu(), "File") != NULL);
@@ -464,7 +464,7 @@ int main(void)
     frame(ImGuiKey_GamepadDpadRight); frames(2);
     frame(ImGuiKey_GamepadFaceDown); frames(2);
     fprintf(stderr, "pad Right, A: [%s]\n", open_menu());
-    CHECK(strstr(open_menu(), "Graphics") != NULL);
+    CHECK(strstr(open_menu(), "Display") != NULL);
 
     /* Numbers. Right to Controller; A opens it on the
      * first row's -. A: one step down, set once. Right to +, A twice: two
@@ -569,7 +569,7 @@ int main(void)
     frame(ImGuiKey_GamepadDpadRight); frames(2);
     frame(ImGuiKey_GamepadFaceDown); frames(2);
     fprintf(stderr, "opened again, Right, A: [%s]\n", open_menu());
-    CHECK(strstr(open_menu(), "Graphics") != NULL);
+    CHECK(strstr(open_menu(), "Display") != NULL);
 
     /* The busy box, centred. */
     busy_frame();

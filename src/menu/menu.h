@@ -17,7 +17,7 @@
  *     #if defined(XBOXRECOMP_MENU)
  *     #include "menu.h"
  *     static const XBOX_MENU_ITEM rows[] = {
- *         { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE,
+ *         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE,
  *           .label = "Widescreen (16:9)", .state = is_wide, .run = toggle_wide },
  *     };
  *     xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
@@ -37,6 +37,7 @@ extern "C" {
  * menu.cpp; a menu nobody has added rows to is not shown. */
 typedef enum {
     XBOX_MENU_FILE,
+    XBOX_MENU_DISPLAY,
     XBOX_MENU_GRAPHICS,
     XBOX_MENU_CONTROLLER,
     XBOX_MENU_DEVELOPER,

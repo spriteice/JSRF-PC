@@ -13,7 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char *const k_menu_title[] = { "File", "Graphics", "Controller", "Developer" };
+static const char *const k_menu_title[] = { "File", "Display", "Graphics", "Controller", "Developer" };
 static_assert(IM_ARRAYSIZE(k_menu_title) == XBOX_MENU_COUNT, "a title for each menu in menu.h");
 
 /* The rows, and the boxes open over them -- by index: rows still arriving

@@ -64,8 +64,8 @@ the bar. The game keeps running while it is open, but your input goes to the
 menu.
 
 - **File:** About (the version and system details), Restart, and Exit.
-- **Graphics:** Full screen, widescreen 16:9, the render scale (1× to 4×),
-  and the [graphics options](#graphics-options) below.
+- **Display:** Full screen, widescreen 16:9, and the render scale (1× to 4×).
+- **Graphics:** The [graphics options](#graphics-options) below.
 - **Controller:** The free camera, and its inversion, sensitivity, and deadzone.
 - **Developer:** Settings for testing and bug reports.
   - **Log to file:** Stops or starts writing to `last-run.log` at once.

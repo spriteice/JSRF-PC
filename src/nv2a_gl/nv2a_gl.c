@@ -1379,7 +1379,7 @@ static void pres_start(void);        /* the presenter, below */
 #endif
 static int  sdl_cfg_get(const char *key, int def); /* the settings file, below */
 #if defined(XBOXRECOMP_MENU)
-static void sdl_menu_graphics(void); /* the in-game menu's rows, below */
+static void sdl_menu_display(void);  /* the in-game menu's rows, below */
 #endif
 
 static int gl_init(uint32_t w, uint32_t h)
@@ -1475,7 +1475,7 @@ static int gl_init(uint32_t w, uint32_t h)
         static char about_gpu[160], about_gl[160];
         snprintf(about_gpu, sizeof about_gpu, "%s", (const char *)glGetString(GL_RENDERER));
         snprintf(about_gl, sizeof about_gl, "%s", (const char *)glGetString(GL_VERSION));
-        if (xbox_MenuInit(g_window, g_sdl_ctx, about_gpu, about_gl)) sdl_menu_graphics();
+        if (xbox_MenuInit(g_window, g_sdl_ctx, about_gpu, about_gl)) sdl_menu_display();
     }
 #endif
 
@@ -1900,7 +1900,7 @@ static void sdl_choose_scale(void)
 }
 
 #if defined(XBOXRECOMP_MENU)
-/* The in-game menu's Graphics rows (menu.h): the switches F11, F10 and F9
+/* The in-game menu's Display rows (menu.h): the switches F11, F10 and F9
  * are, so each setting still lives here, once, and is saved as before. */
 static int  sdl_is_fullscreen(void) { return (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0; }
 static int  sdl_scale_now(void)     { return (int)gl_scale() - 1; }
@@ -1916,14 +1916,14 @@ void nv_window_restart(void)
     sdl_restart(sdl_is_fullscreen());
 }
 
-static void sdl_menu_graphics(void)
+static void sdl_menu_display(void)
 {
     const XBOX_MENU_ITEM rows[] = {
-        { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE, .label = "Fullscreen",
+        { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Fullscreen",
           .state = sdl_is_fullscreen, .run = sdl_choose_fullscreen },
-        { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE, .label = "Widescreen (16:9)",
+        { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Widescreen (16:9)",
           .state = nv2a_widescreen, .run = sdl_toggle_widescreen },
-        { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Render scale (Restart)",
+        { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Render scale (Restart)",
           .state = sdl_scale_now, .pick = sdl_scale_pick,
           .choices = sdl_scale_names, .nchoices = (int)(sizeof sdl_scale_names / sizeof sdl_scale_names[0]),
           .confirm = "The game restarts at the new scale, losing unsaved progress." },
@@ -11852,8 +11852,8 @@ static void shader_cache_purge_ask(void)
 }
 
 /* Graphics > Shader cache (Restart), and Developer > Purge shaders (Restart):
- * added from shader_cache_start, after Render scale and before Anisotropic
- * filtering's row, and after Developer's own rows (port/developer.c). */
+ * added from shader_cache_start, Graphics' first row, before Anisotropic
+ * filtering's, and after Developer's own rows (port/developer.c). */
 static void sdl_menu_shaders(void)
 {
     const XBOX_MENU_ITEM rows[] = {
