@@ -93,7 +93,7 @@ These are in the in-game menu, under Graphics.
   when it starts, so play doesn't pause for them. On by default. Changing it
   restarts the game.
 - **Anisotropic filtering:** 2× to 16×. It keeps textures sharp where they are
-  seen at an angle, such as streets running into the distance. 16× by default.
+  seen at an angle, such as streets running into the distance. Off by default.
 - **Anti-aliasing:** Smooths jagged edges. SMAA costs little and smooths the
   finished picture, the HUD included. MSAA (2×, 4×, or 8×) gives the cleanest
   edges but asks the most of the graphics card. Use either, or both. Off by

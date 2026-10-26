@@ -83,7 +83,7 @@ remembered as smaa= in the settings file (0 or 1).
 
 Graphics > Anisotropic filtering in the in-game menu keeps textures sharp
 where they are seen at a steep angle, such as streets and walls running into
-the distance: Off, 2x, 4x, 8x, or 16x (the default), as far as the graphics
+the distance: Off (the default), 2x, 4x, 8x, or 16x, as far as the graphics
 card goes. It changes straight away, with no restart, though the textures it
 reaches take a moment to load again, and is remembered as aniso= in the
 settings file (0, 2, 4, 8, or 16). It leaves things that face the screen,

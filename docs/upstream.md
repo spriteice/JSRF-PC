@@ -193,8 +193,8 @@ git diff --name-status --diff-filter=MD upstream main
   and nv2a_backend.h (`aniso_max`, a member added to `Nv2aGfx`).
 - **Why:** upstream gives every texture with mipmaps 16x anisotropic
   filtering, or `RECOMP_GL_ANISO`'s level. Ours is also a setting,
-  Graphics > Anisotropic filtering, Off to 16x (16x by default, as
-  upstream), kept as aniso= and changed while the game runs: upstream's
+  Graphics > Anisotropic filtering, Off to 16x (off by default, where
+  upstream has 16x), kept as aniso= and changed while the game runs: upstream's
   texture cache tells textures apart by how they are sampled, so a new
   level drops the textures it reaches, which are made again when next drawn.
   `RECOMP_GL_ANISO` still wins over the setting. MSAA, which upstream took
@@ -203,7 +203,8 @@ git diff --name-status --diff-filter=MD upstream main
 - **At a merge:** the `Nv2aGfx` tables are filled in by position, and our
   members come last: a member upstream adds goes before `aniso_max`, in the
   same order in the struct and in nv2a_gfx_gl.c's table. Metal's table
-  leaves ours out (NULL). Run tests/gl_backend and tests/gl_aa.
+  leaves ours out (NULL). Our default stays `ANISO_NONE`, off, whatever
+  upstream's is. Run tests/gl_backend and tests/gl_aa.
 
 ### Shader cache
 

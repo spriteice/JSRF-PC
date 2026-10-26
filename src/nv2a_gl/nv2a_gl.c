@@ -1096,14 +1096,15 @@ static struct {
 
 /*
  * Anisotropic filtering: the most samples a texture with mipmaps is given
- * (tex_aniso), 16x unless RECOMP_GL_ANISO=n or the window's aniso= setting
- * asks for another; 0 or 1 is none beyond what the title asks for itself. It
+ * (tex_aniso), none unless RECOMP_GL_ANISO=n or the window's aniso= setting
+ * asks for some; 0 or 1 is none beyond what the title asks for itself. It
  * can change while the game runs: asked for at any time (the in-game menu)
  * and taken at the next flip, where every texture it reaches is made again
  * (aniso_take).
  */
-static volatile int g_aniso_want = 16;  /* the most samples asked for */
-static int          g_aniso_now = 16;   /* and in use */
+#define ANISO_NONE 1            /* one sample: off, our default (upstream's is 16x) */
+static volatile int g_aniso_want = ANISO_NONE;  /* the most samples asked for */
+static int          g_aniso_now = ANISO_NONE;   /* and in use */
 
 /* ---- helpers ------------------------------------------------------------ */
 
@@ -3568,7 +3569,7 @@ static uint32_t tex_title_levels(const TexStage *t, uint32_t w, uint32_t h)
 }
 
 /* Anisotropic filtering for a mipmapped texture: the level in use
- * (g_aniso_now, 16x unless asked otherwise), and never less than the title
+ * (g_aniso_now, none unless asked for), and never less than the title
  * asked for itself (TEXTURE_CONTROL0's LOG_MAX_ANISO). With the chain, the
  * level is chosen for a surface's narrow side and up to that many samples are
  * taken along its long one: a road or a wall seen at a glancing angle stays
@@ -12067,15 +12068,15 @@ static void aa_start(void)
 }
 
 /* Anisotropic filtering from the start, before the first texture is made:
- * RECOMP_GL_ANISO, else the window's setting, else 16x (tex_aniso), as the
+ * RECOMP_GL_ANISO, else the window's setting, else none, as the
  * most samples the device takes at or below it, in powers of two; and its
  * menu row. */
 static void aniso_start(void)
 {
     const char *v = getenv("RECOMP_GL_ANISO");
-    int n = (v && *v) ? atoi(v) : 16, max = 16, a = 1;
+    int n = (v && *v) ? atoi(v) : ANISO_NONE, max = 16, a = 1;
 #if defined(NV2A_GL_USE_SDL)
-    if (!(v && *v)) n = sdl_cfg_get("aniso", 16);
+    if (!(v && *v)) n = sdl_cfg_get("aniso", ANISO_NONE);
 #endif
     if (G->aniso_max) max = G->aniso_max();
     while (a * 2 <= n && a * 2 <= max) a *= 2;
