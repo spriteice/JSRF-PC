@@ -18,8 +18,9 @@ What you need
   ten years).
 - A desktop session, X11 or Wayland. Sound goes through PipeWire, PulseAudio,
   or ALSA.
-- Your game files: an image of your own disc (.iso), or the folder its files
-  were extracted into -- the one with default.xbe, Media/, and the rest in it.
+- Your game files: an image of your own disc (an XISO or a full disc image,
+  usually .iso), or the folder its files were extracted into -- the one with
+  default.xbe, Media/, and the rest in it.
 
 
 Playing

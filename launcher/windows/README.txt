@@ -14,12 +14,12 @@ Windows 11. Bug reports are very welcome.
 
 What you need
 -------------
-- Windows 10 or 11, 64-bit.
+- Windows 10 or 11, x86_64.
 - Graphics drivers with OpenGL 3.3 (any GPU from the last ten years, with its
   maker's driver -- the one Windows Update installs is usually fine).
 - Your game files: the folder with default.xbe, Media\, and the rest in it,
-  extracted from your own disc -- or a disc image (.iso) of it, which the
-  launcher unpacks once.
+  extracted from your own disc -- or a disc image of it (an XISO or a full
+  disc image, usually .iso), which the launcher unpacks once.
 
 
 Playing
