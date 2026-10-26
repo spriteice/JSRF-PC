@@ -32,7 +32,7 @@ A release's git tag and the version it shows are both its name.
   every log, the launchers' `--version`, and the Windows exe's Product
   version. It never says "beta".
 - **Windows File version:** this field must be four numbers. bN.M is
-  0.0.N.M and bN is 0.0.N.0: b1 is 0.0.1.0, b1.1 is 0.0.1.1, b2 is 0.0.2.0
+  0.0.N.M and bN is 0.0.N.0: b1 is 0.0.1.0, b1.1 is 0.0.1.1, b2 is 0.0.2.0,
   and b2.1 is 0.0.2.1. 1.0 is 1.0.0.0.
 
 ## GitHub releases

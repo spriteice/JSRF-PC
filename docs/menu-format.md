@@ -1,7 +1,7 @@
 # In-game menu format
 
-Every row, box and line of text in the in-game menu (Dear ImGui, F1 or Back on
-a controller) follows these rules, and so does anything added to it later.
+Every row, box, and line of text in the in-game menu (Dear ImGui, F1 or Back
+on a controller) follows these rules, and so does anything added to it later.
 The rows are declared in `src/menu/menu.h` and drawn by `src/menu/menu.cpp`;
 each menu's rows live with the setting they change (File in
 `src/menu/menu_sdl.cpp`, Graphics and Purge shaders in
@@ -13,8 +13,8 @@ each menu's rows live with the setting they change (File in
 - **Sentence case.** The first letter of a phrase is a capital and the rest
   are lower case, as in a sentence: "Render scale", "Shader cache", "Log to
   file", "Purge shaders", "Free camera". This covers menu titles, rows,
-  choices, box titles and buttons.
-- Acronyms, names and axis letters keep their own capitals: SMAA, MSAA, GPU,
+  choices, box titles, and buttons.
+- Acronyms, names, and axis letters keep their own capitals: SMAA, MSAA, GPU,
   USB, SDL, OpenGL, Dear ImGui, JSRF-PC, "Invert X".
 - **Developer's switches are the exception.** Each row under Developer >
   Logging and Developer > Engine switches is the environment variable as
@@ -41,7 +41,7 @@ each menu's rows live with the setting they change (File in
   next start, and a row that means nothing without a restart (Render scale)
   is not shown.
 - **Developer's switches are the exception.** The rows under Developer >
-  Logging, Engine switches and Experimental are marked (Restart) and apply
+  Logging, Engine switches, and Experimental are marked (Restart) and apply
   from the next start, but they do not offer to restart, so several can be
   changed first. File > Restart then applies them. Log to file changes at
   once and has no (Restart).
@@ -76,7 +76,7 @@ For example, on Linux:
 
 ```
 JSRF-PC
--testing-ce20630-menu
+-b1.1
 
 Linux
 -Built with Ubuntu Clang 14.0.0

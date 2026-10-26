@@ -67,14 +67,18 @@ menu.
 - **Graphics:** Full screen, widescreen 16:9, the render scale (1× to 4×),
   and the [graphics options](#graphics-options) below.
 - **Controller:** The free camera, and its inversion, sensitivity, and deadzone.
-- **Developer:** Log to file, which stops or starts writing to `last-run.log`
-  at once. Logging, the engine's diagnostic logs for bug reports, and Engine
-  switches, which turn parts of the renderer off or back to how they were, to
-  compare: each row is the environment variable it sets. Experimental, changes
-  to how the game runs, to try out. All are kept in `developer.cfg` beside the
-  settings file and applied from the next start.
-  Purge shaders, which restarts the game and deletes the shader cache,
-  `states.dat` included, as it starts.
+- **Developer:** Settings for testing and bug reports.
+  - **Log to file:** Stops or starts writing to `last-run.log` at once.
+  - **Logging:** The engine's diagnostic logs, for bug reports.
+  - **Engine switches:** Turn parts of the renderer off, or back to how they
+    were, to compare.
+  - **Experimental:** Changes to how the game runs, to try out.
+  - **Purge shaders:** Restarts the game and deletes the shader cache as it
+    starts.
+
+  Logging's and Engine switches' rows are named by the environment variable
+  each one sets. Those two and Experimental are kept in `developer.cfg` beside
+  the settings file, and apply from the next start.
 
 Everything is remembered. Restart, Exit, a new render scale, the shader cache,
 and Purge shaders ask first, as anything since your last save is lost: all but

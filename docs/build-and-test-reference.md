@@ -1,12 +1,12 @@
 # Build and test reference
 
-How test builds of JSRF-PC are made, checked, delivered and reported. It is
+How test builds of JSRF-PC are made, checked, delivered, and reported. It is
 written by the maintainer ("I", who only runs the builds) for whoever makes
 them ("you"), and goes with the project rules.
 
 Where this file and the repo's own docs disagree, trust the repo's docs
 (README.md, docs/building-on-linux.md, tools/README.md,
-launcher/linux/package.sh and launcher/windows/package.sh) and tell me
+launcher/linux/package.sh, and launcher/windows/package.sh) and tell me
 about the difference.
 
 ## Test devices
@@ -83,7 +83,7 @@ libepoxy 1.5.10 (cross-built with the same toolchain), then CMake with
 
 ### 4. Tests
 
-- Tool tests: `python3 -m pytest -q tools`, with pytest, pefile and numpy
+- Tool tests: `python3 -m pytest -q tools`, with pytest, pefile, and numpy
   installed beside capstone.
 - Engine tests: `python3 tests/<name>/run.py`, for each folder in `tests/`
   that has a run.py. gl_backend needs EGL and OpenGL headers.
@@ -149,7 +149,7 @@ One folder per build, named `<date>-<commit>-<topic>` (as in
 - The full diff against the commit it was built from, when the tree has
   uncommitted changes.
 
-Never include game files, generated code or logs in what you send me,
+Never include game files, generated code, or logs in what you send me,
 except inside the packaged build.
 
 ## Test checklist (TESTING.md)
@@ -157,13 +157,13 @@ except inside the packaged build.
 - **What it is:** the change in one or two lines, the version string, and
   the packages with their SHA-256.
 - **Built from:** the commit, whether the tree had uncommitted changes, the
-  generated code (functions translated, 0 failed) and the toolchains.
+  generated code (functions translated, 0 failed), and the toolchains.
 - **Checks done here:** the compatibility checks, the tests, and anything
   run in the sandbox. Everything else is unverified.
 - **What to test:** numbered steps, each saying exactly what to do and on
   which device, what I should see if it works, and what I'd see if it
   doesn't.
-- **Where:** Desktop Mode, Game Mode or both on the Ally X, and the Windows
+- **Where:** Desktop Mode, Game Mode, or both on the Ally X, and the Windows
   PC.
 - **Regression spots:** title screen, menus, starting a new game, tutorial,
   skating, graffiti.
@@ -186,7 +186,7 @@ except inside the packaged build.
 - **Why it is the minimal root-cause fix,** and which existing helpers it
   reuses.
 - **New functions,** each with why no existing one does the job.
-- **Platform impact:** Linux, Windows, macOS, iOS and Android, saying which
+- **Platform impact:** Linux, Windows, macOS, iOS, and Android, saying which
   were built or verified and which were not.
 - **Gamescope (Game Mode) risk,** if any.
 - **What to test:** the checklist.

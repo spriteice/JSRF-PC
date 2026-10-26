@@ -12,7 +12,7 @@ engine only: no game files, no textures, no music, no video.
 What you need
 -------------
 - A 64-bit PC (x86_64) with a recent Linux: glibc 2.34 or later, which means
-  Ubuntu 22.04, Debian 12, Fedora 36, Linux Mint 21, current Arch and SteamOS,
+  Ubuntu 22.04, Debian 12, Fedora 36, Linux Mint 21, current Arch, SteamOS,
   or anything newer.
 - Graphics drivers with OpenGL 3.3 (Mesa or NVIDIA's, on any GPU from the last
   ten years).

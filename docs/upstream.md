@@ -67,7 +67,7 @@ difference.
    spots.
 8. **The merge commit's message** lists what is new from upstream, what of
    ours upstream took, each conflict and how it was resolved, and the
-   entries added, changed or removed. The full diff against `main` goes
+   entries added, changed, or removed. The full diff against `main` goes
    with it as a file.
 
 The next release's changelog entry names the upstream version and credits
@@ -132,8 +132,8 @@ git diff --name-status --diff-filter=MD upstream main
   src/nv2a_gl/nv2a_gl.c (the window's title, the settings file's folder),
   CMakeLists.txt (a comment), and the launchers: jsrf-unleashed and
   package.sh in launcher/linux/, and jsrf_launcher.c, package.sh,
-  resources.rc, engine.manifest and launcher.manifest in launcher/windows/.
-- **Why:** the program, its packages, window, messages and folders are
+  resources.rc, engine.manifest, and launcher.manifest in launcher/windows/.
+- **Why:** the program, its packages, window, messages, and folders are
   named JSRF-PC (jsrf-pc). The Linux launcher keeps its upstream file name
   in the repository, so upstream's changes to it still merge, and is
   packaged as jsrf-pc.
@@ -153,7 +153,7 @@ git diff --name-status --diff-filter=MD upstream main
 - **Files:** README.md, launcher/linux/README.txt,
   launcher/windows/README.txt.
 - **Why:** they are our own: Linux and Windows only, our downloads, the
-  in-game menu, the keys and portable mode.
+  in-game menu, the keys, and portable mode.
 - **At a merge:** keep ours. Read upstream's changes for anything players
   or builders need, and write it into ours (build steps go in
   docs/building-on-linux.md).
@@ -162,7 +162,7 @@ git diff --name-status --diff-filter=MD upstream main
 
 - **Files:** .gitignore.
 - **Why:** game files in upper or lower case, Media/, UDATA/, TDATA/,
-  portable/, partition images, logs and dumps can't be committed, nor
+  portable/, partition images, logs, and dumps can't be committed, nor
   .venv/ or BRINGUP.md.
 - **At a merge:** keep ours, and add upstream's new lines.
 
@@ -180,7 +180,7 @@ git diff --name-status --diff-filter=MD upstream main
   controller, in a window or under gamescope. It replaces upstream's Video
   menu bar on Windows and its anti-aliasing box on F8 (both removed from
   nv2a_gl.c), whose settings it has; F8 is the free camera's. It is built
-  only for the SDL window: Android, the Mac and the iPhone keep their own
+  only for the SDL window: Android, the Mac, and the iPhone keep their own
   menus. Our own files: src/menu/, third_party/imgui/.
 - **At a merge:** check upstream's changes to the SDL window, keys and pad
   input against the menu, give a setting upstream adds to its Video menu or
@@ -213,7 +213,7 @@ git diff --name-status --diff-filter=MD upstream main
   upstream has it). Every program it keeps is built again at each start,
   from its sources and from the NV2A state it came from, so none is built
   while the game draws, even after a driver update or a translator change.
-  Old drivers' binaries files are removed, and Developer > Purge shaders
+  Old drivers' binary files are removed, and Developer > Purge shaders
   deletes the cache.
 - **At a merge:** a change upstream makes to `Nv2aVshFixed` or
   `Nv2aPshState` changes what the cache keeps: raise `SC_LAYOUT` in
@@ -223,7 +223,7 @@ git diff --name-status --diff-filter=MD upstream main
 ### Renderer fixes: depth bias, texture timing, MSAA depth
 
 - **Files:** src/nv2a_gl/nv2a_gl.c, nv2a_gfx_gl.c, nv2a_backend.h (three
-  members added to `Nv2aRenderState`: `poly_offset`, `poly_factor` and
+  members added to `Nv2aRenderState`: `poly_offset`, `poly_factor`, and
   `poly_units`; and `NV2A_U_POLYOFF`), nv2a_psh.c and nv2a_uniforms.c.
 - **Why:** renderer bugs the audit for b1.1 found, fixed in the renderer:
   - **Depth bias:** the polygon offset methods (0x0338, 0x0384, 0x0388)
@@ -249,7 +249,7 @@ git diff --name-status --diff-filter=MD upstream main
 - **Files:** src/nv2a_gl/nv2a_gl.c (`PROF_STEP`, and a `[GLPROF]` line).
 - **Why:** with `RECOMP_GL_PROFILE=1`, every 16th draw is also timed step
   by step, and the log says where a draw's time goes: setup, vertices,
-  uniforms, textures, state, probes, glDraw and after. The other draws
+  uniforms, textures, state, probes, glDraw, and after. The other draws
   read no more clocks than before, so the profile's other figures stay
   comparable. Could suit upstream.
 - **At a merge:** keep the seven `PROF_STEP` lines at the ends of their
@@ -259,7 +259,7 @@ git diff --name-status --diff-filter=MD upstream main
 
 - **Files:** src/nv2a_gl/nv2a_gl.c (`g_probe_now`).
 - **Why:** the probes that print every few seconds with no switch
-  (`[SURFACE]`, `[MOVERPOS]`, `[SINTAB]`, `[PIPE]`, the mover-box budget
+  (`[SURFACE]`, `[MOVERPOS]`, `[SINTAB]`, `[PIPE]`, the mover-box budget,
   and `[TIMELINE]`) read a clock taken once a pass, in `present`, where
   upstream's read one each in every draw. They print as before. Could
   suit upstream.
@@ -270,7 +270,7 @@ git diff --name-status --diff-filter=MD upstream main
 
 - **Files:** src/nv2a_gl/nv2a_gl.c (`revz_start`, `ff_revz_row`, and
   `depth_dir` for the diagnostics' depth state), nv2a_gfx_gl.c (`g_revz`
-  and `depth_dir`: the depth comparisons, clear, polygon offset and
+  and `depth_dir`: the depth comparisons, clear, polygon offset, and
   readback), nv2a_vsh.c and .h (`nv2a_glsl_set_revz` and
   `nv2a_glsl_set_precz`, and the depth in the epilogues), nv2a_psh.c (the
   W-buffer depth), nv2a_backend.h and nv2a_uniforms.c (`NV2A_U_FFREVZ`,
@@ -289,7 +289,7 @@ git diff --name-status --diff-filter=MD upstream main
   without it. Could suit upstream.
 - **At a merge:** keep `NV2A_U_FFREVZ` the last of the vertex uniforms,
   after upstream's, in the same place in nv2a_uniforms.c's table. A
-  glDepthFunc, glClearDepth or glPolygonOffset upstream adds turns round
+  glDepthFunc, glClearDepth, or glPolygonOffset upstream adds turns round
   with `depth_dir` and `g_revz`, and a new depth in an epilogue needs its
   reversed form beside it. None of this changes `Nv2aVshFixed` or
   `Nv2aPshState`, so `SC_LAYOUT` stays. Run tests/gl_backend (test_revz.c)
@@ -333,7 +333,7 @@ git diff --name-status --diff-filter=MD upstream main
 ### The driver's nudge off both paths
 
 - **Files:** src/nv2a_gl/nv2a_vsh.c and .h (`NV2A_D3D_NUDGE`,
-  `nv2a_vsh_ff_vpoff` and `nv2a_vsh_vprect`, and the comment on the
+  `nv2a_vsh_ff_vpoff`, and `nv2a_vsh_vprect`, and the comment on the
   fixed-function shader's `ffVpOff`), nv2a_gl.c (the `ffVpOff` and `vpRect`
   uploads in `do_draw_body`, which worked `vpRect` out inline).
 - **Why:** the console's D3D driver adds 0.53125 of a pixel to every
@@ -360,11 +360,11 @@ git diff --name-status --diff-filter=MD upstream main
 - **Why:** upstream's `imm_method`, new in 0.5.6, tests a method against
   some 40 ranges in turn before it says the method isn't a per-vertex
   attribute, and every method `gl_method` hasn't dealt with by then reaches
-  it: the index words among them, about 8 million a second on 99th Street. `attr_method` tests
-  the two ranges the per-vertex methods lie in first, so the rest leave at
-  once. In the sandbox an index word took 11 to 20 ns in `imm_method`, and
-  takes about 2 ns with it. `pb_kind`'s vertex attributes are the same two
-  ranges and use it too. Could suit upstream.
+  it: the index words among them, about 8 million a second on 99th Street.
+  `attr_method` tests the two ranges the per-vertex methods lie in first, so
+  the rest leave at once. In the sandbox an index word took 11 to 20 ns in
+  `imm_method`, and takes about 2 ns with it. `pb_kind`'s vertex attributes
+  are the same two ranges and use it too. Could suit upstream.
 - **At a merge:** a per-vertex method upstream adds to `imm_method` must
   lie in `attr_method`'s ranges. Run tests/attr_method, which fails if one
   doesn't.
@@ -410,7 +410,7 @@ git diff --name-status --diff-filter=MD upstream main
 ### Free camera
 
 - **Files:** port/recomp_manual.c (hooks in `sub_00116E30`,
-  `sub_001C3E14`, `sub_000A5070` and `sub_000A6100`, and the names of the
+  `sub_001C3E14`, `sub_000A5070`, and `sub_000A6100`, and the names of the
   camera fields and addresses they use, at the top of the camera section),
   port/main.c and port/CMakeLists.txt (starting and building it),
   src/nv2a_gl/nv2a_gl.c (`nv_window_hotkey`, keys a title binds for itself:
@@ -429,7 +429,7 @@ git diff --name-status --diff-filter=MD upstream main
   (`nv_window_file_get` and `_set`: a number kept in a file beside the
   settings file, which port/developer.c uses for developer.cfg; and in
   `vc_debug_switch`, six switches that leave the vertex cache on:
-  TITLE_MIPS, TEX_ONESAMPLER, TEXGEN, UNHANDLED, IMMEDIATE and STENCILVIS).
+  TITLE_MIPS, TEX_ONESAMPLER, TEXGEN, UNHANDLED, IMMEDIATE, and STENCILVIS).
 - **Why:** the in-game menu's Developer menu: Log to file, the engine's
   logging switches, Engine switches, which turn parts of the renderer off to
   compare, and Experimental, switches that change what the game does, for a
@@ -442,7 +442,7 @@ git diff --name-status --diff-filter=MD upstream main
   port/cpuprof.c, both built from port/CMakeLists.txt. Could suit upstream
   (the list).
 - **At a merge:** keep the two calls in port/main.c, the two files in
-  port/CMakeLists.txt and the six names in `vc_debug_switch`, and run
+  port/CMakeLists.txt, and the six names in `vc_debug_switch`, and run
   tests/developer and tests/cpuprof.
 
 ### Portable mode
@@ -451,10 +451,10 @@ git diff --name-status --diff-filter=MD upstream main
   launcher/windows/jsrf_launcher.c, src/kernel/kernel_path.c
   (`JSRF_USER_DIR`: the game's saves, E:\UDATA and E:\TDATA, in the
   portable folder). With that third folder, the path rules name the folder
-  each one goes to, `PATH_GAME_DIR`, `PATH_SAVE_DIR` or `PATH_USER_DIR`,
+  each one goes to, `PATH_GAME_DIR`, `PATH_SAVE_DIR`, or `PATH_USER_DIR`,
   where upstream writes 0 or 1.
 - **Why:** a folder named `portable` beside the launcher keeps the
-  settings, saves, logs and cache, so the whole game can move, as to an SD
+  settings, saves, logs, and cache, so the whole game can move, as to an SD
   card (docs/portable-mode.md).
 - **At a merge:** keep ours, give a path rule upstream adds or changes the
   name for its 0 or 1, and run tests/user_dir.
@@ -605,7 +605,7 @@ git diff --name-status --diff-filter=MD upstream main
 
 - **Files:** src/d3d/d3d8_gl.c (removed), src/d3d/CMakeLists.txt and
   d3d8_internal.h; src/nv2a/nv2a_pgraph_d3d11.c and .h, nv2a_pb_replay.c,
-  nv2a_pb_test.c, menu_pb_*.h, menu_pushbuffer_data.h and
+  nv2a_pb_test.c, menu_pb_*.h, menu_pushbuffer_data.h, and
   font_atlas_data.h (removed), src/nv2a/CMakeLists.txt and nv2a_core.c;
   and what named them: src/nv2a/README.md, docs/technical/nv2a-shaders.md,
   src/kernel/nv2a_pb_exec.c, src/kernel/recomp_trace.c,
