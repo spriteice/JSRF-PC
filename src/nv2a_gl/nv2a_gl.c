@@ -9851,43 +9851,12 @@ static void frame_pace(void)
             period = (fps > 0.0) ? 1.0 / fps : 0.0;
         }
         /*
-         * No cap while the title is not drawing a scene.
-         *
-         * The cap exists so that gameplay runs at the speed it was written
-         * for. A logo screen and a loading screen have no gameplay in them --
-         * and this title's loader is driven by its frame loop, so capping the
-         * frame rate caps the loading with it. Measured on an M2 Pro: uncapped
-         * the level arrives in about a hundred seconds; capped at sixty it had
-         * not arrived after three minutes, and the guest had done six times
-         * less work in the same wall time.
-         *
-         * A frame with a handful of draws in it is a logo or a loading screen.
-         * A frame of this game is four hundred. The threshold does not have to
-         * be precise because nothing sits between those two numbers.
+         * From the first frame, the boot sequence included. The title times
+         * its opening cards in frames (about 360 a logo, and at least 420
+         * for the disclaimer), so they last as long as on the console only
+         * at its 60 a second. The wait gives the guest lock up (below), so
+         * the title's other threads run on through it.
          */
-        {
-            /*
-             * Only until the first real scene, and then never again.
-             *
-             * The rule was "a frame with a handful of draws is a loading
-             * screen", and a five-minute soak showed what is wrong with it:
-             * when the attract loop dropped to a low-geometry screen the cap
-             * disengaged and the emulator ran at six hundred frames a second.
-             * A menu has as few draws as a loading screen, and a menu
-             * animating ten times too fast is a worse bug than a slow load.
-             *
-             * Before the title has ever drawn a scene there is no gameplay to
-             * run at the wrong speed, and that is the whole of the boot
-             * sequence this needed to skip. After it, the cap is the cap.
-             */
-            static uint32_t prev_draws;
-            static int seen_scene;
-            uint32_t this_frame = S.draws - prev_draws;
-            prev_draws = S.draws;
-            if (this_frame >= 100) seen_scene = 1;
-            if (!seen_scene) period = -period;        /* remembered, not lost */
-            else if (period < 0.0) period = -period;
-        }
         if (period > 0.0) {
             /*
              * Pace against a deadline that advances by exactly one period,

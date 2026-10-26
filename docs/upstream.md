@@ -390,6 +390,19 @@ git diff --name-status --diff-filter=MD upstream main
   belongs to the texture, so it is set on every draw that samples a target.
   Run tests/gl_backend (test_opaque.c).
 
+### Frame pacing from the first frame
+
+- **Files:** src/nv2a_gl/nv2a_gl.c (`frame_pace`).
+- **Why:** upstream leaves the frame rate uncapped until the first frame
+  with 100 draws or more, so that the cap doesn't hold loading back. The
+  opening cards come before it, and the game times them in frames, so they
+  went by in under a second each. Paced from the first frame, they play as
+  on the console: about 6 seconds a logo, and at least 7 for the
+  disclaimer. The pacing's wait gives up the guest lock, so the game's
+  other threads run on through it. Could suit upstream.
+- **At a merge:** keep ours, with no exception for the boot in
+  `frame_pace`.
+
 ### Full screen remembered
 
 - **Files:** src/nv2a_gl/nv2a_gl.c.
