@@ -171,6 +171,7 @@ except inside the packaged build.
   folders renamed first and put back after (not deleted: a disc image's
   saves are in them). And an upgrade, starting the new build over the
   previous release's settings and saves, which must carry over unchanged.
+  docs/release-checklist.md has the rest of a release's steps.
 - **What to send back:** the full last-run.log from each run, and
   screenshots of anything visual. The package's README.txt says where the
   log is kept ("Where things are kept", and `portable/logs/` in portable

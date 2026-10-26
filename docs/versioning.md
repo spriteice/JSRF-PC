@@ -17,16 +17,9 @@ A release's git tag and the version it shows are both its name.
   "v", so the two never mix. This fork's older tags (`v0.5.3a`,
   `v0.5.3a-rc`) stay as they are, and upstream's tags are never changed.
 - **One tag per release,** on the commit the release is built from.
-- **A rules check before the tag:** everything since the last release is
-  checked against the project's rules, and anything found is fixed before
-  tagging. It looks for game files, generated code, or logs in the repo,
-  session links in commit messages, band-aid fixes, address lists, sleeps,
-  docs that break the writing rules, and upstream files changed with no
-  entry in docs/upstream.md. It also searches the code in `port/` for the
-  game function overrides and hooks added since the last release, in our
-  own files too (which have no entry in docs/upstream.md), and flags any
-  that look alike (the same kind of instruction, or the same symptom):
-  those usually mean one recompiler or runtime bug, to fix there instead.
+- **The release checklist before the tag:** every release goes through
+  docs/release-checklist.md, which includes a check of everything since the
+  last release against the project's rules.
 
 ## The version string
 
