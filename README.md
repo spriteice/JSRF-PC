@@ -6,7 +6,8 @@
 
 JSRF-PC is a fork of upstream
 [JSRF Unleashed](https://github.com/JuMatt/JetSetRadioFuture-Unleashed) by
-[JuMatt](https://github.com/JuMatt).
+[JuMatt](https://github.com/JuMatt). This fork aims to add various features and
+bug fixes, whilst focusing on Linux and Windows compatibility.
 
 > ⚠️ **Written by AI:** All of JSRF-PC's additions to the upstream code are
 > written by AI, taking care to test features, fix bugs, and follow the
