@@ -333,6 +333,11 @@ static const struct { uint32_t offset; uint32_t idle_mask; } NV2A_IDLE[] = {
  */
 #define NV2A_USER_DMA_PUT 0x800040u
 #define NV2A_USER_DMA_GET 0x800044u
+/* A software method's interrupt bits (vblank_intr_tick, nv2a_ack_thread), as
+ * kernel_bridge.c names them. */
+#define NV2A_PGRAPH_INTR       0x00400100u
+#define NV2A_PGRAPH_INTR_ERROR (1u << 20)
+#define NV2A_PMC_INTR_PGRAPH   (1u << 12)
 
 /*
  * The title running ahead of the GPU thread, as it runs ahead of the GPU.
@@ -798,7 +803,7 @@ static void vblank_intr_tick(volatile uint32_t *regs)
      * atomic operation, as the timer thread sets bits here too. */
     if (__atomic_load_n(pmc, __ATOMIC_SEQ_CST)) {
         extern int xbox_nv2a_swm_on(void);
-        __atomic_fetch_and(pmc, xbox_nv2a_swm_on() ? (1u << 12) : 0u, __ATOMIC_SEQ_CST);
+        __atomic_fetch_and(pmc, xbox_nv2a_swm_on() ? NV2A_PMC_INTR_PGRAPH : 0u, __ATOMIC_SEQ_CST);
     }
 }
 
@@ -836,8 +841,8 @@ static DWORD WINAPI nv2a_ack_thread(LPVOID param)
             /* PGRAPH_INTR's error bit is a software method's, for the title's
              * handler to clear, as PMC_INTR_0's PGRAPH bit is (see
              * vblank_intr_tick). */
-            if (NV2A_ACK[i].offset == 0x400100u && xbox_nv2a_swm_on())
-                mask &= ~(1u << 20);
+            if (NV2A_ACK[i].offset == NV2A_PGRAPH_INTR && xbox_nv2a_swm_on())
+                mask &= ~NV2A_PGRAPH_INTR_ERROR;
             if (*r & mask) {
                 __atomic_fetch_and(r, ~mask, __ATOMIC_SEQ_CST);
             }

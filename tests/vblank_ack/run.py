@@ -34,7 +34,7 @@ source = ("""
 #define APU_VECTOR 5u
 """ + define(header, "NV2A_VBLANK_PENDING_TAG") + define(bridge, "NV2A_PMC_INTR_0")
           + define(bridge, "NV2A_PMC_INTR_PCRTC") + define(bridge, "NV2A_PCRTC_INTR_0")
-          + define(bridge, "NV2A_PCRTC_INTR_VBLANK") + """
+          + define(bridge, "NV2A_PCRTC_INTR_VBLANK") + define(layout, "NV2A_PMC_INTR_PGRAPH") + """
 static void *g_nv2a_memory;
 int xbox_nv2a_swm_on(void) { return 0; }
 """ + vblank + """
