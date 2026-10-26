@@ -1207,6 +1207,7 @@ void sub_0017CAB0(void)
  * ====================================================================== */
 #include "xinput_xbox.h"
 #include "freecam.h"
+#include "intro.h"
 #define XPP_TYPE_GAMEPAD 0x001BC860u
 #define XPP_HANDLE_BASE  0x58580000u
 
@@ -1863,6 +1864,55 @@ void sub_00051FC0(void)
         }
     }
     sub_00051FC0_gen();
+}
+
+/* ---- the intro (port/intro.c) ---------------------------------------------
+ * sub_0007E360 updates the task that shows the cards the game opens with --
+ * four logos, then the graffiti disclaimer -- which sub_0007E7D0 makes in the
+ * boot sequence. Its state (+0x98) goes three to a card (fading in, held,
+ * fading out), then 15, done: the task ends, and the boot goes on to the
+ * title screen. While the cards show, a task of their own (sub_0007E260)
+ * loads the title's files ahead of it. The cards' end stops that task
+ * (sub_0007E0E0, from their destructor), and the title asks for whatever is
+ * not in yet itself, and waits for it: its own files at sub_0004F8E0, its
+ * mission's in the game flow's steps (0x1F9888: sub_0004ABA0 on).
+ *
+ * With Display > Skip intro on, the task is put at its end before its first
+ * update, with the screen's fade black, as the disclaimer leaves it: the
+ * game opens at the title's loading, and no card is drawn. [INTRO] logs each
+ * card's steps, with the time and the game frame. */
+#define INTRO_STATE        0x098u  /* three to a card: in, held, out; then done */
+#define INTRO_PER_CARD     3u
+#define INTRO_DONE         15u
+#define INTRO_FADE_BLACK   0xFF000000u  /* ARGB, for the screen's fade */
+#define INTRO_FADE_SET_RA  0x0007E75Cu  /* its return address from the cards' constructor */
+extern void sub_0007E360_gen(void);
+extern void sub_00024600(void);   /* the screen's fade, to a colour at once (cdecl) */
+void sub_0007E360(void)
+{
+    static const char *const step[INTRO_PER_CARD] = { "fading in", "held", "fading out" };
+    static uint32_t said = 0xFFFFFFFFu;
+    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
+    uint32_t task = g_ecx, *t, now;
+    if (task < 0x10000u || task + INTRO_STATE + 4 > (64u << 20)) { sub_0007E360_gen(); return; }
+    t = (uint32_t *)(uintptr_t)(m + task);
+    if (intro_skip() && t[INTRO_STATE / 4] != INTRO_DONE) {
+        const uint32_t black = INTRO_FADE_BLACK;
+        t[INTRO_STATE / 4] = INTRO_DONE;
+        guest_call_cdecl(sub_00024600, INTRO_FADE_SET_RA, 1, &black);
+        fprintf(stderr, "[INTRO] t=%.2f frame %u: skipped (Display > Skip intro)\n",
+                pad_now(), s_game_frames);
+    }
+    sub_0007E360_gen();
+    now = t[INTRO_STATE / 4];
+    if (now != said && now <= INTRO_DONE) {
+        if (now == INTRO_DONE)
+            fprintf(stderr, "[INTRO] t=%.2f frame %u: done\n", pad_now(), s_game_frames);
+        else
+            fprintf(stderr, "[INTRO] t=%.2f frame %u: card %u of %u %s\n", pad_now(), s_game_frames,
+                    now / INTRO_PER_CARD + 1, INTRO_DONE / INTRO_PER_CARD, step[now % INTRO_PER_CARD]);
+    }
+    said = now;
 }
 
 /* ---- sub_0018E584: D3D's DAC gamma-ramp upload (CMiniport, runs in the

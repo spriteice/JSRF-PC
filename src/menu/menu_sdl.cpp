@@ -112,12 +112,12 @@ static void exit_game(void)
 
 /* Every field, in order: C++11 has no designated initializers. */
 static const XBOX_MENU_ITEM k_file[] = {
-    { XBOX_MENU_FILE, XBOX_ITEM_INFO,      "About", NULL, NULL,      NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL },
-    { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL,    NULL, NULL,      NULL, NULL, 0, NULL,       NULL, NULL, NULL, 0, 0, 0, NULL },
+    { XBOX_MENU_FILE, XBOX_ITEM_INFO,      "About", NULL, NULL,      NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL, 0 },
+    { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL,    NULL, NULL,      NULL, NULL, 0, NULL,       NULL, NULL, NULL, 0, 0, 0, NULL, 0 },
     { XBOX_MENU_FILE, XBOX_ITEM_ACTION,    "Restart", NULL, nv_window_restart, NULL, NULL, 0, NULL,
-      "The game restarts, losing unsaved progress.", NULL, NULL, 0, 0, 0, NULL },
+      "The game restarts, losing unsaved progress.", NULL, NULL, 0, 0, 0, NULL, 0 },
     { XBOX_MENU_FILE, XBOX_ITEM_ACTION,    "Exit",  NULL, exit_game, NULL, NULL, 0, NULL,
-      "Unsaved progress is lost.", NULL, NULL, 0, 0, 0, NULL },
+      "Unsaved progress is lost.", NULL, NULL, 0, 0, 0, NULL, 0 },
 };
 
 /* ---- opening and closing ------------------------------------------------ */

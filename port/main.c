@@ -762,6 +762,9 @@ static int host_main(void)
     /* The free camera's settings, its rows on the Controller page and F8
      * (port/freecam.c). */
     { extern void freecam_start(void); freecam_start(); }
+    /* Whether the intro is skipped, and its row on the Display page
+     * (port/intro.c). */
+    { extern void intro_start(void); intro_start(); }
     printf("Loading XBE...\n");
 
     /* Install VEH handler (first handler in chain) */

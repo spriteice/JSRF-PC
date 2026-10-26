@@ -437,6 +437,18 @@ git diff --name-status --diff-filter=MD upstream main
   the hooks, and run tests/freecam. The names are only for our hooks:
   upstream's own lines in the camera section keep their numbers.
 
+### Skip intro
+
+- **Files:** port/recomp_manual.c (a hook in `sub_0007E360`, the intro's
+  update, and the names of the fields and states it uses), port/main.c and
+  port/CMakeLists.txt (starting and building it).
+- **Why:** Display > Skip intro (`skipintro=1`) leaves out the logos and the
+  graffiti disclaimer: their task ends before its first update, and the game
+  opens at the title screen's loading. Off by default, so the intro plays as
+  on the Xbox. The hook also logs each card's steps, as `[INTRO]` lines. Our
+  own files: port/intro.c and intro.h.
+- **At a merge:** merge upstream's changes to `sub_0007E360` around the hook.
+
 ### Developer menu
 
 - **Files:** port/main.c, port/CMakeLists.txt, src/nv2a_gl/nv2a_gl.c

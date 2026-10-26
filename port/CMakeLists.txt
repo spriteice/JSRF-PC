@@ -118,6 +118,7 @@ if(ANDROID)
         main.c
         recomp_manual.c
         freecam.c
+        intro.c
         developer.c
         cpuprof.c
         xbe_check.c
@@ -131,6 +132,7 @@ else()
         main.c
         recomp_manual.c
         freecam.c
+        intro.c
         developer.c
         cpuprof.c
         xbe_check.c

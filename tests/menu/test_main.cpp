@@ -6,7 +6,8 @@
  * the bar alone with a pad on File's title, and that each kind of row reaches
  * its owner's function -- through the confirmation box when it has one. Then
  * rows that arrive once the menu is up: from one of its own rows, and from
- * another thread while a box is open over the rows it was asked from. Then
+ * another thread while a box is open over the rows it was asked from -- all
+ * above a row marked last, which arrived before any of them. Then
  * that nothing but the window (F1, Back) shuts it: B and Esc go back a level
  * at a time, to the bar and no further; a click outside the menus, in the
  * game or on the bar past its titles, shuts them all, back to the bar -- and
@@ -42,12 +43,20 @@ static const char *about_text(void) { return "JSRF-PC test"; }
 static const char *const k_scales[] = { "1x  (640 x 480)", "2x  (1280 x 960)",
                                         "3x  (1920 x 1440)", "4x  (2560 x 1920)" };
 
-/* Late rows: toggles that count how often they are drawn. */
-static int s_late_drawn;
-static int  late_state(void) { s_late_drawn++; return 0; }
+/* Late rows: toggles that count how often they are drawn. Each row drawn
+ * takes the next number, so the order they are drawn in can be told. */
+static int s_late_drawn, s_drawn_seq, s_late_at, s_last_at;
+static int  late_state(void) { s_late_drawn++; s_late_at = ++s_drawn_seq; return 0; }
 static void late_run(void)   { }
 static const XBOX_MENU_ITEM k_late = {
-    XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Late", late_state, late_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL };
+    XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Late", late_state, late_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0 };
+
+/* A row marked last, as Display's Skip intro: added before the others, and
+ * drawn below them all. */
+static int  last_state(void) { s_last_at = ++s_drawn_seq; return 0; }
+static void last_run(void)   { }
+static const XBOX_MENU_ITEM k_last = {
+    XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Skip intro", last_state, last_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 1 };
 
 /* Numbers, as the Controller menu's: a sensitivity in whole steps, and a
  * deadzone in 5% steps that starts between two (as the settings file may). */
@@ -174,32 +183,34 @@ static void click(void)
 int main(void)
 {
     /* Developer first, then Controller, then Display, then File: the order
-     * on screen is the enum's, not the order rows arrive in. */
+     * on screen is the enum's, not the order rows arrive in. Before them
+     * all, Display's last row. */
     const XBOX_MENU_ITEM developer[] = {
-        { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLE, "Log to file", log_state, log_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL },
+        { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLE, "Log to file", log_state, log_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0 },
         { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLES, "Logging", switches_state, NULL, switch_pick, k_switches, 3, NULL, NULL,
-          NULL, NULL, 0, 0, 0, NULL },
+          NULL, NULL, 0, 0, 0, NULL, 0 },
         { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLE, "Asks (Restart)", asked_state, asked_run, NULL, NULL, 0, NULL,
-          "The game restarts to apply it.", NULL, NULL, 0, 0, 0, NULL },
+          "The game restarts to apply it.", NULL, NULL, 0, 0, 0, NULL, 0 },
     };
     const XBOX_MENU_ITEM controller[] = {
         { XBOX_MENU_CONTROLLER, XBOX_ITEM_NUMBER, "Sensitivity", NULL, NULL, NULL, NULL, 0, NULL, NULL,
-          sens_value, sens_set, 1, 10, 1, "%g" },
+          sens_value, sens_set, 1, 10, 1, "%g", 0 },
         { XBOX_MENU_CONTROLLER, XBOX_ITEM_NUMBER, "Deadzone", NULL, NULL, NULL, NULL, 0, NULL, NULL,
-          dead_value, dead_set, 0, 100, 5, "%g%%" },
+          dead_value, dead_set, 0, 100, 5, "%g%%", 0 },
     };
     const XBOX_MENU_ITEM display[] = {
-        { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Fullscreen", full_state, full_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL },
-        { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Widescreen (16:9)", wide_state, wide_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL },
+        { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Fullscreen", full_state, full_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0 },
+        { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Widescreen (16:9)", wide_state, wide_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0 },
         { XBOX_MENU_DISPLAY, XBOX_ITEM_CHOICE, "Render scale", scale_state, NULL, scale_pick, k_scales, 4, NULL,
-          "The game restarts at the new scale, losing unsaved progress.", NULL, NULL, 0, 0, 0, NULL },
+          "The game restarts at the new scale, losing unsaved progress.", NULL, NULL, 0, 0, 0, NULL, 0 },
     };
     const XBOX_MENU_ITEM file[] = {
-        { XBOX_MENU_FILE, XBOX_ITEM_INFO, "About", NULL, NULL, NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL },
-        { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL },
+        { XBOX_MENU_FILE, XBOX_ITEM_INFO, "About", NULL, NULL, NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL, 0 },
+        { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0 },
         { XBOX_MENU_FILE, XBOX_ITEM_ACTION, "Exit", NULL, exit_run, NULL, NULL, 0, NULL,
-          "Unsaved progress is lost.", NULL, NULL, 0, 0, 0, NULL },
+          "Unsaved progress is lost.", NULL, NULL, 0, 0, 0, NULL, 0 },
     };
+    xbox_MenuAdd(&k_last, 1);
     xbox_MenuAdd(developer, 3);
     xbox_MenuAdd(controller, 2);
     xbox_MenuAdd(display, 3);
@@ -286,9 +297,11 @@ int main(void)
     /* Display is back, with every row: Widescreen's and the other thread's. */
     s_late_drawn = 0;
     frames(1);
-    fprintf(stderr, "late rows drawn in one frame: %d of %d\n", s_late_drawn, 1 + LATE_ROWS);
+    fprintf(stderr, "late rows drawn in one frame: %d of %d; the last row drawn #%d, the last late row #%d\n",
+            s_late_drawn, 1 + LATE_ROWS, s_last_at, s_late_at);
     CHECK(strstr(open_menu(), "Display") != NULL);
     CHECK(s_late_drawn == 1 + LATE_ROWS);
+    CHECK(s_last_at > s_late_at);
 
     /* About: Left walks the bar back to File, A opens it, A on About: a box.
      * OK brings File back. */

@@ -265,8 +265,9 @@ extern "C" void menu_build(int just_opened)
             g_last_menu = m;
             if (m == g_reopen) g_reopen = -1;
             number_cols cols = number_columns(m);
-            for (const XBOX_MENU_ITEM &it : g_items)
-                if (it.menu == m) draw_item(&it, &cols);
+            for (int pass = 0; pass < 2; pass++)       /* the rows marked last, below the rest */
+                for (const XBOX_MENU_ITEM &it : g_items)
+                    if (it.menu == m && (it.last != 0) == (pass == 1)) draw_item(&it, &cols);
             ImGui::EndMenu();
         }
         /* The pad to the title it left, as ImGui does when Left / Right run

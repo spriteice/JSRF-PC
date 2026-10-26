@@ -64,7 +64,11 @@ the bar. The game keeps running while it is open, but your input goes to the
 menu.
 
 - **File:** About (the version and system details), Restart, and Exit.
-- **Display:** Full screen, widescreen 16:9, and the render scale (1× to 4×).
+- **Display:** Full screen, widescreen 16:9, the render scale (1× to 4×), and
+  Skip intro. Skip intro leaves out the logos and the graffiti disclaimer the
+  game opens with, and starts at the title screen's loading. Off by default,
+  so the intro plays as on the Xbox. It is kept as `skipintro=` in the
+  settings file.
 - **Graphics:** The [graphics options](#graphics-options) below.
 - **Controller:** The free camera, and its inversion, sensitivity, and deadzone.
 - **Developer:** Settings for testing and bug reports.

@@ -5,8 +5,9 @@ on a controller) follows these rules, and so does anything added to it later.
 The rows are declared in `src/menu/menu.h` and drawn by `src/menu/menu.cpp`;
 each menu's rows live with the setting they change (File in
 `src/menu/menu_sdl.cpp`, Display, Graphics and Purge shaders in
-`src/nv2a_gl/nv2a_gl.c`, Controller in `port/freecam.c`, Developer in
-`port/developer.c`).
+`src/nv2a_gl/nv2a_gl.c`, Display's Skip intro in `port/intro.c`, Controller
+in `port/freecam.c`, Developer in `port/developer.c`). Skip intro is
+Display's last row, below any added later (`last` in `menu.h`).
 
 ## Wording
 

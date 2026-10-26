@@ -69,6 +69,11 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
   F8                 free camera: the right stick turns the camera around
                      the player; remembered (see Free camera below)
 
+Display > Skip intro in the in-game menu leaves out the logos and the
+graffiti disclaimer the game opens with: it starts at the title screen's
+loading. Off by default, so the intro plays as on the Xbox. It is remembered
+as skipintro= in the settings file (0 or 1).
+
 Graphics > Anti-aliasing (MSAA) in the in-game menu smooths jagged edges:
 Off (the default), 2x, 4x, or 8x, as far as the graphics card goes. It changes
 straight away, with no restart, and is remembered as msaa= in the settings

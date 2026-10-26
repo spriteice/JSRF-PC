@@ -79,12 +79,16 @@ typedef struct XBOX_MENU_ITEM {
     void          (*set)(double v);
     double          min, max, step;
     const char     *format;
+    /* Nonzero: drawn below the menu's other rows, whenever it was added --
+     * Display's Skip intro, added as the game starts, below the window's
+     * rows, added once the window is up. */
+    int             last;
 } XBOX_MENU_ITEM;
 
-/* Adds rows to the end of their menus, copied: the table can be on the
- * caller's stack. Any thread, at any time, before the window opens or after;
- * they are drawn from the next frame. Rows added in one call stay together,
- * so a module adds its rows in one call. */
+/* Adds rows to the end of their menus (above any `last` row), copied: the
+ * table can be on the caller's stack. Any thread, at any time, before the
+ * window opens or after; they are drawn from the next frame. Rows added in
+ * one call stay together, so a module adds its rows in one call. */
 void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count);
 
 /* The window's side (menu_sdl.cpp, and tests/menu): one frame of the menu,
