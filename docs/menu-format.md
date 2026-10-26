@@ -21,7 +21,8 @@ Display's last row, below any added later (`last` in `menu.h`).
   Logging and Developer > Engine switches is the environment variable as
   ticking it sets it: "RECOMP_GL_PROFILE (Restart)" sets it to 1, and
   "RECOMP_GL_TITLE_MIPS=0 (Restart)" to 0, for a switch that turns
-  something off. Developer > Experimental's rows have their usual names:
+  something off, and "RECOMP_GL_CURTAIN=skip (Restart)" to the word the
+  engine reads. Developer > Experimental's rows have their usual names:
   "Game runs ahead of the GPU (Restart)".
 - No keyboard shortcuts in a label: "Free camera", not "Free camera (F8)".
   docs/playing.md and the packages' README.txt list the keys.
@@ -110,4 +111,5 @@ Dear ImGui
   Experimental (`k_tries`), with a name of its own in `k_tries_row`.
 - A switch that works on some platforms only has a row on those alone, as
   RECOMP_CPU_PROFILE (Linux) does. A variable that takes a value, such as an
-  address, is not a switch and has no row.
+  address, is not a switch and has no row, unless one word of it turns
+  something off: its row sets that word, as RECOMP_GL_CURTAIN=skip does.

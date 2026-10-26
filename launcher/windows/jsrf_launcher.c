@@ -504,7 +504,7 @@ static const wchar_t *const k_env[][2] = {
     { L"RECOMP_VBLANK", L"1" }, { L"RECOMP_AC97_READY_NOTRAP", L"1" },
     { L"RECOMP_TRACE_BUDGET", L"0" }, { L"RECOMP_GL_READBACK", L"0" }, { L"RECOMP_FPS", L"60" },
     { L"RECOMP_ABI_RESTORE", L"1" }, { L"RECOMP_LOCK_IDLE", L"1" },
-    { L"RECOMP_GL_CURTAIN", L"skip" }, { L"RECOMP_MUTE", L"0" }, { L"RECOMP_WINDOW", L"1" },
+    { L"RECOMP_MUTE", L"0" }, { L"RECOMP_WINDOW", L"1" },
 };
 
 static int run(const wchar_t *game, int scale, int fullscreen)

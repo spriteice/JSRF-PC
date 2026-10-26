@@ -30,7 +30,7 @@ source = """
 # case: (settings file, developer.cfg, environment, lines the log must have,
 # lines it must not)
 switches = ("RECOMP_GL_PROFILE", "RECOMP_LOCK_WATCH", "RECOMP_GL_TEX_ONESAMPLER",
-            "RECOMP_GL_TITLE_MIPS")
+            "RECOMP_GL_TITLE_MIPS", "RECOMP_GL_CURTAIN")
 cases = {
     "none": (None, None, {},
              [f"{when}: {name}=-" for when in ("started", "restarting") for name in switches],
@@ -52,6 +52,12 @@ cases = {
     "engine_unticked": (None, "RECOMP_GL_TEX_ONESAMPLER=0\nRECOMP_GL_TITLE_MIPS=1\n", {},
                         ["started: RECOMP_GL_TEX_ONESAMPLER=-", "started: RECOMP_GL_TITLE_MIPS=-"],
                         ["[DEV]"]),
+    # The one switch whose value is a word: ticked (1 in developer.cfg), skip.
+    "curtain": (None, "RECOMP_GL_CURTAIN=1\n", {},
+                ["[DEV] RECOMP_GL_CURTAIN=skip from developer.cfg",
+                 "started: RECOMP_GL_CURTAIN=skip", "restarting: RECOMP_GL_CURTAIN=-"], []),
+    "curtain_unticked": (None, "RECOMP_GL_CURTAIN=0\n", {},
+                         ["started: RECOMP_GL_CURTAIN=-"], ["[DEV]"]),
     "log_off": ("game_dir=/games/jsrf\nlogging=0\n", None, {},
                 ["Log to file off", "restarting:"], ["started:"]),
     "log_on": ("logging=1\n", None, {}, ["started:", "restarting:"], ["Log to file off"]),

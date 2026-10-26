@@ -494,6 +494,24 @@ git diff --name-status --diff-filter=MD upstream main
   did. Could suit upstream.
 - **At a merge:** keep ours.
 
+### Fades to black
+
+- **Files:** launcher/linux/jsrf-unleashed, launcher/windows/jsrf_launcher.c
+  (`RECOMP_GL_CURTAIN` left out of the environment they set).
+- **Why:** upstream's launchers set `RECOMP_GL_CURTAIN=skip`, which leaves
+  out the full-screen black quad the game fades with. It was a workaround:
+  the tutorial once stayed black under that quad, with the HUD over it. Its
+  cost was that every fade cut instead, the intro's cards, the title, and
+  loading into a level among them. In testing on Linux and Windows the
+  tutorial fades in and stays clear, and every fade seen ends, so the game
+  draws its fades as on the Xbox. Developer > Engine switches >
+  RECOMP_GL_CURTAIN=skip brings the workaround back from the next start, as
+  does the variable set before the launcher starts, and `log` reports the
+  fade's alpha once a second. The Mac, iPhone, and Android launchers keep
+  upstream's line, since they weren't tested.
+- **At a merge:** keep ours, without the variable, and take upstream's
+  other changes to those lines.
+
 ### Kernel fixes
 
 - **Files:** src/kernel/kernel_bridge.c, kernel.h, kernel_hal.c,

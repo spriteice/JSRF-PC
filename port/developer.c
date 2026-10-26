@@ -12,12 +12,14 @@
  * start or at first use (RECOMP_GL_PROFILE and the rest), so each applies
  * from the next start -- File > Restart's, or the next launch -- and its row
  * says so. They are kept in developer.cfg, beside the settings file, as the
- * value each is to have, NAME=1 or NAME=0, and the ones that are ticked go
+ * value each is to have, NAME=1 or NAME=0 (1 for one whose value is a word),
+ * and the ones that are ticked go
  * into the environment at the start of the run -- unless it already has them:
  * the environment wins, as it does over the settings file. */
 #define _POSIX_C_SOURCE 200112L    /* setenv, unsetenv */
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <fcntl.h>
 #if defined(_WIN32)
 #  include <io.h>
@@ -45,36 +47,38 @@ extern void nv_window_file_set(const char *file, const char *key, int val);
  * log, then Developer > Engine switches', each of which changes what the
  * engine does, then Developer > Experimental's, each of which changes what
  * the game does. A switch is ticked to give its variable the value on: 1, or 0
- * for one that turns off something the engine does by default. Its row is
- * the variable as ticking sets it -- NAME, or NAME=0 -- but Experimental's,
+ * for one that turns off something the engine does by default, or the word
+ * the engine reads for it (RECOMP_GL_CURTAIN's skip). Its row is the variable
+ * as ticking sets it -- NAME, NAME=0, or NAME=skip -- but Experimental's,
  * which have rows of their own; and with nothing ticked the engine does what
  * it always does. The CPU profile is Linux's only for now (port/cpuprof.c).
  * A RECOMP_GL_ switch that never reads converted vertices back goes on the
  * vertex cache's list too (vc_debug_switch in nv2a_gl.c), or setting it turns
  * the cache off as well. */
-typedef struct { const char *name; int on; } DevSwitch;
+typedef struct { const char *name; const char *on; } DevSwitch;
 static const DevSwitch k_logging[] = {
-    { "RECOMP_GL_PROFILE", 1 },
+    { "RECOMP_GL_PROFILE", "1" },
 #if defined(__linux__) && !defined(__ANDROID__)
-    { "RECOMP_CPU_PROFILE", 1 },
+    { "RECOMP_CPU_PROFILE", "1" },
 #endif
-    { "RECOMP_LOCK_WATCH", 1 }, { "RECOMP_WAITLOG", 1 }, { "RECOMP_KERNEL_IO", 1 },
-    { "RECOMP_APU_STATS", 1 }, { "RECOMP_GL_UNHANDLED", 1 }, { "RECOMP_GL_VERBOSE", 1 },
-    { "RECOMP_GL_ERRORS_PER_DRAW", 1 }, { "RECOMP_USB_TRACE", 1 },
-    { "JSRF_CAM_LOG", 1 },                  /* the game's camera (port/recomp_manual.c) */
+    { "RECOMP_LOCK_WATCH", "1" }, { "RECOMP_WAITLOG", "1" }, { "RECOMP_KERNEL_IO", "1" },
+    { "RECOMP_APU_STATS", "1" }, { "RECOMP_GL_UNHANDLED", "1" }, { "RECOMP_GL_VERBOSE", "1" },
+    { "RECOMP_GL_ERRORS_PER_DRAW", "1" }, { "RECOMP_USB_TRACE", "1" },
+    { "JSRF_CAM_LOG", "1" },                /* the game's camera (port/recomp_manual.c) */
 };
 static const DevSwitch k_engine[] = {
-    { "RECOMP_GL_NOREVZ", 1 },              /* no reversed depth */
-    { "RECOMP_GL_NOPRECZ", 1 },             /* no precise fixed-function depth */
-    { "RECOMP_GL_TITLE_MIPS", 0 },          /* a texture's base level alone, not its mipmaps */
-    { "RECOMP_GL_TEX_ONESAMPLER", 1 },      /* one texture however it is sampled */
-    { "RECOMP_GL_TEXGEN", 0 },              /* no texture coordinates the T&L unit makes */
-    { "RECOMP_GL_VCACHE", 0 },              /* no vertex cache */
-    { "RECOMP_GL_IMMEDIATE", 0 },           /* no batches sent a vertex at a time (the shadows) */
-    { "RECOMP_GL_STENCILVIS", 1 },          /* the stencil buffer in place of the shadows */
+    { "RECOMP_GL_NOREVZ", "1" },            /* no reversed depth */
+    { "RECOMP_GL_NOPRECZ", "1" },           /* no precise fixed-function depth */
+    { "RECOMP_GL_TITLE_MIPS", "0" },        /* a texture's base level alone, not its mipmaps */
+    { "RECOMP_GL_TEX_ONESAMPLER", "1" },    /* one texture however it is sampled */
+    { "RECOMP_GL_TEXGEN", "0" },            /* no texture coordinates the T&L unit makes */
+    { "RECOMP_GL_VCACHE", "0" },            /* no vertex cache */
+    { "RECOMP_GL_IMMEDIATE", "0" },         /* no batches sent a vertex at a time (the shadows) */
+    { "RECOMP_GL_STENCILVIS", "1" },        /* the stencil buffer in place of the shadows */
+    { "RECOMP_GL_CURTAIN", "skip" },        /* no fades to black (the full-screen black quad) */
 };
 static const DevSwitch k_tries[] = {
-    { "RECOMP_NV2A_QUEUE", 1 },
+    { "RECOMP_NV2A_QUEUE", "1" },
 };
 #define DEV_LOGGING  ((int)(sizeof k_logging / sizeof k_logging[0]))
 #define DEV_ENGINE   ((int)(sizeof k_engine / sizeof k_engine[0]))
@@ -82,6 +86,10 @@ static const DevSwitch k_tries[] = {
 #define DEV_NAMED    (DEV_LOGGING + DEV_ENGINE)     /* the switches whose rows are their names */
 #define DEV_SWITCHES (DEV_NAMED + DEV_TRIES)
 _Static_assert(DEV_SWITCHES <= 31, "a bit of an int for each switch");
+
+/* What developer.cfg keeps for a switch ticked: 0 for one set to 0, and 1 for
+ * the rest, whose value is 1 or a word. */
+static int dev_cfg_on(const char *on) { return strcmp(on, "0") != 0; }
 
 /* Switch i: Logging's first, then Engine switches', then Experimental's, as
  * their bits are. */
@@ -154,12 +162,13 @@ static void log_flip(void)
 static void switch_flip(int i)
 {
     const DevSwitch *sw = dev_switch(i);
+    int on = dev_cfg_on(sw->on), bare = !strcmp(sw->on, "1");
     int ticked;
     s_on ^= 1 << i;
     ticked = (s_on >> i) & 1;
-    nv_window_file_set(DEV_FILE, sw->name, ticked ? sw->on : !sw->on);
-    fprintf(stderr, "[DEV] %s%s %s from the next start\n", sw->name, sw->on ? "" : "=0",
-            ticked ? "on" : "off");
+    nv_window_file_set(DEV_FILE, sw->name, ticked ? on : !on);
+    fprintf(stderr, "[DEV] %s%s%s %s from the next start\n", sw->name, bare ? "" : "=",
+            bare ? "" : sw->on, ticked ? "on" : "off");
 }
 /* A page's ticks, from its first switch's bit. A TOGGLES row's state and pick
  * take no context, so each page has its own pair. */
@@ -182,18 +191,21 @@ void developer_start(void)
     int i;
     for (i = 0; i < DEV_SWITCHES; i++) {
         const DevSwitch *sw = dev_switch(i);
+        int on = dev_cfg_on(sw->on);
         /* Ticked when developer.cfg gives it its value on (any but 0, for 1). */
-        if ((nv_window_file_get(DEV_FILE, sw->name, !sw->on) != 0) != sw->on) continue;
+        if ((nv_window_file_get(DEV_FILE, sw->name, !on) != 0) != on) continue;
         s_on |= 1 << i;
         if (getenv(sw->name)) continue;
-        set_env(sw->name, sw->on ? "1" : "0");
+        set_env(sw->name, sw->on);
         s_ours |= 1 << i;
-        fprintf(stderr, "[DEV] %s=%d from " DEV_FILE "\n", sw->name, sw->on);
+        fprintf(stderr, "[DEV] %s=%s from " DEV_FILE "\n", sw->name, sw->on);
     }
 #if defined(XBOXRECOMP_MENU)
     for (i = 0; i < DEV_NAMED; i++) {
-        snprintf(s_row_text[i], DEV_ROW_MAX, "%s%s (Restart)", dev_switch(i)->name,
-                 dev_switch(i)->on ? "" : "=0");
+        const DevSwitch *sw = dev_switch(i);
+        int bare = !strcmp(sw->on, "1");
+        snprintf(s_row_text[i], DEV_ROW_MAX, "%s%s%s (Restart)", sw->name, bare ? "" : "=",
+                 bare ? "" : sw->on);
         s_row[i] = s_row_text[i];
     }
     {

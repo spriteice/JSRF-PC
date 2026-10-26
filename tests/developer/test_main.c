@@ -13,12 +13,14 @@
 void developer_start(void);
 void developer_restart(void);
 
-/* Two of Logging's switches, and two of Engine switches': one that is set
- * to 1 and one that is set to 0. A line each, "-" when it is not set. */
+/* Two of Logging's switches, and three of Engine switches': one that is set
+ * to 1, one that is set to 0, and RECOMP_GL_CURTAIN, set to a word, skip. A
+ * line each, "-" when it is not set. */
 static void show(const char *when)
 {
     static const char *const name[] = { "RECOMP_GL_PROFILE", "RECOMP_LOCK_WATCH",
-                                        "RECOMP_GL_TEX_ONESAMPLER", "RECOMP_GL_TITLE_MIPS" };
+                                        "RECOMP_GL_TEX_ONESAMPLER", "RECOMP_GL_TITLE_MIPS",
+                                        "RECOMP_GL_CURTAIN" };
     size_t i;
     for (i = 0; i < sizeof name / sizeof name[0]; i++) {
         const char *v = getenv(name[i]);
