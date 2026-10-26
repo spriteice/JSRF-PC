@@ -47,7 +47,7 @@ F8 gives the right stick to the camera, which turns around the player, and
 forward is wherever it looks. The L trigger puts it back behind the player, as
 it does the game's camera. It also turns the graffiti camera off, like the
 option in the Jet Set Radio re-release: spraying no longer turns the camera to
-the wall.
+the wall. Talking to someone doesn't turn it to them either.
 
 Inversion, sensitivity, and the deadzone are in the in-game menu under
 Controller, and in the settings file (see the `README.txt` in the download).

@@ -115,11 +115,11 @@ Free camera
 -----------
 F8, or freecam=1 in the settings file, gives the right stick to the camera:
 it turns around the player, and forward is wherever it looks. The L trigger
-puts it back behind the player, as it does the game's camera, and spraying
-graffiti doesn't turn it to the wall. F8 is remembered. The settings file
-(see "Where things are kept") also takes these, one per line, with no spaces
-around "=". The values shown are the defaults, which a key that is left out,
-or out of range, gets:
+puts it back behind the player, as it does the game's camera. Spraying
+graffiti doesn't turn it to the wall, and talking to someone doesn't turn it
+to them. F8 is remembered. The settings file (see "Where things are kept")
+also takes these, one per line, with no spaces around "=". The values shown
+are the defaults, which a key that is left out, or out of range, gets:
 
   freecam=0          1: on
   invert_x=0         1: right turns the view left

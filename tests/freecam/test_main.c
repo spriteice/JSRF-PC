@@ -3,8 +3,8 @@
  * The free camera without the game: port/freecam.c as it is, reading its keys
  * through the engine's own settings code (taken from src/nv2a_gl/nv2a_gl.c by
  * run.py), with a camera that looks at the origin from 10 units behind it
- * (-z) and raises its eye by 2. Each case is its own run, as the settings are
- * read once; run.py writes the settings file and checks the log.
+ * (-z). Each case is its own run, as the settings are read once; run.py
+ * writes the settings file and checks the log.
  */
 #include <assert.h>
 #include <math.h>
@@ -31,7 +31,7 @@ void nv_window_hotkey(const char *name, void (*run)(void))
 static int frame(short rx, short ry, float eye[3])
 {
     freecam_pad(0, &rx, &ry);
-    return freecam_orbit(CAM, 3, tgt, seye, 2.0f, 0, eye);
+    return freecam_orbit(CAM, 3, tgt, seye, 0, eye);
 }
 
 static void near(double got, double want, const char *what)
@@ -42,10 +42,12 @@ static void near(double got, double want, const char *what)
     }
 }
 
-/* The view's heading and the eye's pitch, in degrees, back from the eye. */
+/* The view's heading and the eye's pitch, in degrees, back from the eye,
+ * which is on its orbit: as far from the target as the game's, and nothing
+ * added to its height. */
 static void angles(const float eye[3], double *heading, double *pitch)
 {
-    double vx = eye[0] - tgt[0], vy = eye[1] - 2.0 - tgt[1], vz = eye[2] - tgt[2];
+    double vx = eye[0] - tgt[0], vy = eye[1] - tgt[1], vz = eye[2] - tgt[2];
     double d = sqrt(vx * vx + vy * vy + vz * vz);
     near(d, 10.0, "the game's distance is kept");
     *heading = atan2(-vx, -vz) / deg;
@@ -62,7 +64,7 @@ static void turn(short rx, short ry, double *dh, double *dp)
     freecam_frame();
     assert(frame(0, 0, eye));
     near(eye[0], 0, "first frame: the game's eye x");
-    near(eye[1], 2, "first frame: the game's eye y, raised");
+    near(eye[1], 0, "first frame: the game's eye y, not lifted");
     near(eye[2], -10, "first frame: the game's eye z");
     assert(frame(rx, ry, eye));
     angles(eye, dh, dp);
@@ -78,7 +80,7 @@ int main(int argc, char **argv)
         /* No key: off, and the game's eye stands, its reset too. */
         assert(!freecam_on());
         assert(!frame(32767, 0, eye));
-        assert(!freecam_orbit(CAM, 3, tgt, seye, 2.0f, 1, eye));
+        assert(!freecam_orbit(CAM, 3, tgt, seye, 1, eye));
     } else if (!strcmp(c, "turn")) {
         /* Full right turns the view right by 0.6 x 5 = 3 degrees; full up
          * tilts it up (the eye goes down) by 3. */
@@ -144,7 +146,7 @@ int main(int argc, char **argv)
         rx = 32767; ry = -1;
         freecam_pad(0, &rx, &ry);
         assert(rx == 0 && ry == 0);             /* now it is freecam's */
-        assert(freecam_orbit(CAM, 3, tgt, seye, 2.0f, 0, eye));
+        assert(freecam_orbit(CAM, 3, tgt, seye, 0, eye));
         angles(eye, &h, &p);
         near(h, 3, "the stick taken from the game moves the camera");
         /* A frame without the follow camera (a cutscene): the stick goes
@@ -153,17 +155,17 @@ int main(int argc, char **argv)
         freecam_frame();
         rx = 5; freecam_pad(0, &rx, &ry);
         assert(rx == 5);
-        assert(freecam_orbit(CAM, 3, tgt, seye, 2.0f, 0, eye));
+        assert(freecam_orbit(CAM, 3, tgt, seye, 0, eye));
         near(eye[0], 0, "started again from the game's view");
         /* A second pad: the one pushed counts, and an idle one does not hide it. */
         rx = 0; ry = 0; freecam_pad(0, &rx, &ry);
         rx = 32767; ry = 0; freecam_pad(1, &rx, &ry);
-        assert(freecam_orbit(CAM, 3, tgt, seye, 2.0f, 0, eye));
+        assert(freecam_orbit(CAM, 3, tgt, seye, 0, eye));
         angles(eye, &h, &p);
         near(h, 3, "the second pad's stick");
         /* That pad unplugged: its stick stops counting. */
         freecam_pad(1, NULL, NULL);
-        assert(freecam_orbit(CAM, 3, tgt, seye, 2.0f, 0, eye));
+        assert(freecam_orbit(CAM, 3, tgt, seye, 0, eye));
         angles(eye, &h, &p);
         near(h, 3, "an unplugged pad stops turning the camera");
     } else if (!strcmp(c, "reset")) {
@@ -177,12 +179,12 @@ int main(int argc, char **argv)
         angles(eye, &h, &p);
         near(h, 30, "turned before the reset");
         freecam_pad(0, &rx, &ry);
-        assert(freecam_orbit(CAM, 3, tgt, back, 2.0f, 0, eye));
+        assert(freecam_orbit(CAM, 3, tgt, back, 0, eye));
         angles(eye, &h, &p);
         near(h, 30, "the game's eye moving is no reset");
-        assert(freecam_orbit(CAM, 3, tgt, back, 2.0f, 1, eye));
+        assert(freecam_orbit(CAM, 3, tgt, back, 1, eye));
         near(eye[0], 10, "reset: the game's eye x");
-        near(eye[1], 2, "reset: the game's eye y, raised");
+        near(eye[1], 0, "reset: the game's eye y, not lifted");
         near(eye[2], 0, "reset: the game's eye z");
         assert(frame(32767, 0, eye));
         angles(eye, &h, &p);

@@ -3943,6 +3943,30 @@ void sub_00042EE0(void)
  * the mode's update from 0x215570, and returns early while +0x1E0 is set.
  * Eye at +0x44, target at +0x5C. JSRF_CAM_LOG=1 prints every change of the
  * mode inputs and the eye position once a second. */
+
+/* What the free camera's hooks below use: the camera's fields, the fields of
+ * the character it follows, the modes, and the follow camera's wall test as
+ * sub_000A5B60 makes it. */
+#define CAM_FOLLOWS        0x024u      /* the character it follows (sub_00011BD0) */
+#define CAM_WALL_ARG       0x0BCu      /* what the wall test takes first */
+#define CAM_SMOOTH_EYE     0x1E4u      /* the smoothed eye */
+#define CAM_MODE           0x208u      /* the mode it is in */
+#define CAM_EYE            0x20Cu      /* the working eye: the smoothed one, lifted */
+#define CAM_TARGET         0x218u      /* the working target */
+#define CHR_GRAFFITI_CAM   0xE3Cu      /* the graffiti camera, asked for (sub_0008D280) */
+#define CHR_CAM_MODE       0xE58u      /* the mode it asks the camera for */
+#define CHR_CAM_BEHIND     0xE5Cu      /* the camera back behind it, asked for */
+#define CAM_MODE_FOLLOW    3u          /* follow: what a look goes back to (0x8B2CF) */
+#define CAM_MODE_LOOK      9u          /* look at whoever the player talks to */
+#define CAM_WORLD          0x0022FCE8u /* the collision world, the wall test's this */
+#define CAM_WALL_MASK      0x33B7u     /* what the wall test stops at */
+#define CAM_WALL_ANY       0xFFFFFFFFu /* its last argument, as sub_000A5B60 passes it */
+#define CAM_WALL_LINE_RET  0x000A602Au /* where sub_000A5B60's line test returns to */
+#define CAM_WALL_NEAR_RET  0x000A604Cu /* where its nearest-hit call returns to */
+#define CAM_WALL_LOCALS    0x50u       /* sub_000A5B60's locals: the test's scratch */
+#define CAM_WALL_HITS      0x40u       /* the hit record in them */
+#define CAM_WALL_POINT_1   0x2Cu       /* the point in a hit from the record's first list */
+#define CAM_WALL_POINT_2   0x50u       /* and from its second */
 extern void sub_000A5070_gen(void);
 void sub_000A5070(void)
 {
@@ -3952,28 +3976,49 @@ void sub_000A5070(void)
     const uint8_t *m = (const uint8_t *)g_xbox_mem_offset;
     const uint32_t lim = 64u << 20;
     uint32_t cam = g_ecx, sprayed = 0;
-    uint32_t *gcam = NULL;
+    uint32_t *gcam = NULL, *look = NULL;
     if (on < 0) on = getenv("JSRF_CAM_LOG") != NULL;
     /* While the free camera (port/freecam.c) is on, the camera never turns to
-     * the graffiti being sprayed: mode 13, which frames the spot and snaps
-     * back behind the player after. The spray code (sub_0008D280) asks for it
-     * with +0xE3C on the player, and the mode is chosen from that here; this
-     * update reads 0 in its place, and nothing it calls reads or writes it
-     * (the player's own code does, outside it), so it is put back after. */
+     * the graffiti being sprayed, or to whoever the player talks to. Both are
+     * modes chosen here (0xA50C3) from what the player asks for:
+     *
+     * - Graffiti is mode 13, which frames the spot and snaps back behind the
+     *   player after. The spray code (sub_0008D280) asks for it with +0xE3C,
+     *   and this update reads 0 in its place.
+     * - Talking is mode 9, the look: the talk button, or someone nearby who
+     *   asks for it, sets the mode the player asks for (+0xE58) to 9
+     *   (0x8B32A, 0x8B2A5), and switching to it (sub_000A5A00) puts the
+     *   target 33 units ahead, toward them, and the eye 66 away. This update
+     *   reads 3 in its place: the follow mode a look goes back to when it
+     *   ends (0x8B2CF). Coming to it from 9, when freecam is turned on
+     *   during a look, moves neither eye nor target (sub_000A4BD0), as the
+     *   end of a look doesn't.
+     *
+     * Nothing this update calls in those modes reads or writes either (the
+     * player's own code does, outside it, and ends a look once +0xE58 is no
+     * longer 9), so both are put back after. */
     if (freecam_on() && cam >= 0x10000u && cam + 0x240u < lim) {
-        uint32_t who = ((const uint32_t *)(m + cam))[0x24 / 4];
-        if (who >= 0x10000u && who + 0xE40u < lim) {
-            gcam = (uint32_t *)(uintptr_t)(m + who + 0xE3C);
+        uint32_t who = ((const uint32_t *)(m + cam))[CAM_FOLLOWS / 4];
+        if (who >= 0x10000u && who + 0x1000u < lim) {
+            gcam = (uint32_t *)(uintptr_t)(m + who + CHR_GRAFFITI_CAM);
             sprayed = *gcam;
             *gcam = 0;
+            look = (uint32_t *)(uintptr_t)(m + who + CHR_CAM_MODE);
+            if (*look == CAM_MODE_LOOK) *look = CAM_MODE_FOLLOW;
+            else look = NULL;
         }
     }
     { static uint32_t was;
+      static int looked;
       if (sprayed && !was)
           fprintf(stderr, "[FREECAM] t=%.2f graffiti: no graffiti camera while freecam is on\n", pad_now());
-      was = sprayed; }
+      if (look && !looked)
+          fprintf(stderr, "[FREECAM] t=%.2f talking: no look-at camera while freecam is on\n", pad_now());
+      was = sprayed;
+      looked = look != NULL; }
     sub_000A5070_gen();
     if (gcam) *gcam = sprayed;
+    if (look) *look = CAM_MODE_LOOK;
     if (cam >= 0x10000u && cam + 0x240u < lim)
         s_cam_mode_now = ((const uint32_t *)(m + cam))[0x208 / 4];
     { static int hooks = -1;
@@ -4041,8 +4086,10 @@ void sub_000A5070(void)
  * it returns, the working eye (+0x20C) is final for the frame; sub_000A28B0
  * then copies it to the camera's eye (+0x44) and takes the heading the
  * controls follow from it. freecam_orbit moves it around the working target
- * (+0x218), at the distance of the game's smoothed eye (+0x1E4) and with the
- * game's raise (+0xE4), and the game's own wall test runs again on it.
+ * (+0x218), at the distance of the game's smoothed eye (+0x1E4), and the
+ * game's own wall test runs again on it. The game's working eye is that
+ * smoothed eye raised by the camera's lift (+0xE4, added at 0xA5F56), which
+ * freecam leaves out (port/freecam.c says why).
  *
  * The L trigger (sub_00080340), and the player's set-up (sub_000836F0), ask
  * for the camera back behind the player: +0xE5C on the one it follows
@@ -4051,10 +4098,10 @@ void sub_000A5070(void)
  * again from that eye.
  *
  * That test is sub_000A5B60's: a line from the target to the eye against the
- * world (sub_00018260 on 0x22FCE8, mask 0x33B7) and, when it is blocked, the
- * point to stop at (sub_000194B0), with its scratch laid out as that
- * function's locals -- 0x50 bytes, the hit record at +0x40, the result's
- * pointer at +0 -- and the return addresses of its own calls. */
+ * world (sub_00018260) and, when it is blocked, the nearest hit
+ * (sub_000194B0), which returns 1 when that hit is from the record's second
+ * list. The scratch is laid out as that function's locals, with the result's
+ * pointer at +0, and each call returns to where that function's own does. */
 extern void sub_00018260(void);
 extern void sub_000194B0(void);
 static void freecam_walls(uint32_t cam)
@@ -4062,22 +4109,23 @@ static void freecam_walls(uint32_t cam)
     uint8_t *m = (uint8_t *)g_xbox_mem_offset;
     const uint32_t lim = 64u << 20;
     uint32_t sv_ecx = g_ecx, scr, a[6], r, res;
-    g_esp -= 0x50;
+    g_esp -= CAM_WALL_LOCALS;
     scr = g_esp;
-    a[0] = cam + 0xBC; a[1] = cam + 0x218; a[2] = cam + 0x20C; a[3] = scr + 0x40;
-    a[4] = 0x33B7; a[5] = 0xFFFFFFFFu;
-    g_ecx = 0x0022FCE8u;
-    if (guest_call_cdecl(sub_00018260, 0x000A602Au, 6, a)) {
+    a[0] = cam + CAM_WALL_ARG; a[1] = cam + CAM_TARGET; a[2] = cam + CAM_EYE;
+    a[3] = scr + CAM_WALL_HITS; a[4] = CAM_WALL_MASK; a[5] = CAM_WALL_ANY;
+    g_ecx = CAM_WORLD;
+    if (guest_call_cdecl(sub_00018260, CAM_WALL_LINE_RET, 6, a)) {
         *(uint32_t *)(m + scr) = 0;
-        a[0] = scr + 0x40; a[1] = scr;
-        g_ecx = 0x0022FCE8u;
-        r = guest_call_cdecl(sub_000194B0, 0x000A604Cu, 2, a);
+        a[0] = scr + CAM_WALL_HITS; a[1] = scr;
+        g_ecx = CAM_WORLD;
+        r = guest_call_cdecl(sub_000194B0, CAM_WALL_NEAR_RET, 2, a);
         res = *(uint32_t *)(m + scr);
-        if (res >= 0x10000u && res + 0x5Cu < lim) {
+        if (res >= 0x10000u && res + CAM_WALL_POINT_2 + 3 * sizeof(float) < lim) {
             static double next;
-            memcpy(m + cam + 0x20C, m + res + (r ? 0x50 : 0x2C), 12);
+            memcpy(m + cam + CAM_EYE, m + res + (r ? CAM_WALL_POINT_2 : CAM_WALL_POINT_1),
+                   3 * sizeof(float));
             if (pad_now() >= next) {
-                const float *e = (const float *)(m + cam + 0x20C);
+                const float *e = (const float *)(m + cam + CAM_EYE);
                 next = pad_now() + 1.0;
                 fprintf(stderr, "[FREECAM] t=%.2f wall: eye pulled in to (%.1f %.1f %.1f)\n",
                         pad_now(), e[0], e[1], e[2]);
@@ -4088,7 +4136,7 @@ static void freecam_walls(uint32_t cam)
         }
     }
     g_ecx = sv_ecx;
-    g_esp += 0x50;
+    g_esp += CAM_WALL_LOCALS;
 }
 extern void sub_000A6100_gen(void);
 void sub_000A6100(void)
@@ -4098,16 +4146,17 @@ void sub_000A6100(void)
     uint32_t cam = g_ecx, who = 0, asked = 0;
     float *cf, eye[3];
     if (cam >= 0x10000u && cam + 0x240u < lim) {
-        who = *(uint32_t *)(m + cam + 0x24);
-        if (who >= 0x10000u && who + 0xE60u < lim) asked = *(uint32_t *)(m + who + 0xE5C);
+        who = *(uint32_t *)(m + cam + CAM_FOLLOWS);
+        if (who >= 0x10000u && who + 0x1000u < lim) asked = *(uint32_t *)(m + who + CHR_CAM_BEHIND);
     }
     sub_000A6100_gen();
     if (cam < 0x10000u || cam + 0x240u >= lim) return;
     cf = (float *)(m + cam);
-    if (!freecam_orbit(cam, ((const uint32_t *)cf)[0x208 / 4], cf + 0x218 / 4, cf + 0x1E4 / 4,
-                       cf[0xE4 / 4], asked && !*(uint32_t *)(m + who + 0xE5C), eye))
+    if (!freecam_orbit(cam, ((const uint32_t *)cf)[CAM_MODE / 4], cf + CAM_TARGET / 4,
+                       cf + CAM_SMOOTH_EYE / 4, asked && !*(uint32_t *)(m + who + CHR_CAM_BEHIND),
+                       eye))
         return;
-    memcpy(cf + 0x20C / 4, eye, sizeof eye);
+    memcpy(cf + CAM_EYE / 4, eye, sizeof eye);
     freecam_walls(cam);
 }
 

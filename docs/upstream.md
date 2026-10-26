@@ -410,15 +410,18 @@ git diff --name-status --diff-filter=MD upstream main
 ### Free camera
 
 - **Files:** port/recomp_manual.c (hooks in `sub_00116E30`,
-  `sub_001C3E14`, `sub_000A5070` and `sub_000A6100`), port/main.c and
-  port/CMakeLists.txt (starting and building it), src/nv2a_gl/nv2a_gl.c
-  (`nv_window_hotkey`, keys a title binds for itself: F8, in place of
-  upstream's anti-aliasing box).
-- **Why:** the right stick turns the camera around the player, and the
-  graffiti camera stays off while it does. Our own files: port/freecam.c
-  and freecam.h.
+  `sub_001C3E14`, `sub_000A5070` and `sub_000A6100`, and the names of the
+  camera fields and addresses they use, at the top of the camera section),
+  port/main.c and port/CMakeLists.txt (starting and building it),
+  src/nv2a_gl/nv2a_gl.c (`nv_window_hotkey`, keys a title binds for itself:
+  F8, in place of upstream's anti-aliasing box).
+- **Why:** the right stick turns the camera around the player. While it
+  does, the camera doesn't turn to graffiti being sprayed or to whoever the
+  player talks to, and its eye isn't lifted, since the game lifts it for
+  where its own camera faces. Our own files: port/freecam.c and freecam.h.
 - **At a merge:** merge upstream's changes to those four functions around
-  the hooks, and run tests/freecam.
+  the hooks, and run tests/freecam. The names are only for our hooks:
+  upstream's own lines in the camera section keep their numbers.
 
 ### Developer menu
 

@@ -1,13 +1,20 @@
 /* The free camera (freecam.h): freecam=1 in the settings file, or F8.
  *
- * The follow camera keeps everything it works out for itself -- what it looks
- * at, how far it stays, how high the eye sits, where a wall stops it -- and
- * freecam only moves the eye around that target, by the right stick. Two
- * angles say where: yaw, the way the view faces, and pitch, how far the eye
- * is above (or below) the target. They start from the game's own view each
- * time freecam takes over, so taking over never jumps, and again whenever the
- * game puts its camera back behind the player (the L trigger). While it is on,
- * spraying graffiti does not turn the camera to the spot.
+ * The follow camera keeps what it works out for itself -- what it looks at,
+ * how far it stays, where a wall stops it -- and freecam only moves the eye
+ * around that target, by the right stick. Two angles say where: yaw, the way
+ * the view faces, and pitch, how far the eye is above (or below) the target.
+ * They start from the game's own view each time freecam takes over, and again
+ * whenever the game puts its camera back behind the player (the L trigger).
+ *
+ * Not kept: the follow camera's lift, up to 30 units on the eye's height,
+ * which the game raises when the ground falls away ahead of the way its own
+ * camera faces, or when the player drops below where they last stood. The
+ * view freecam steers faces elsewhere, so the lift would come and go with
+ * ground the view isn't looking at, and the eye stays on its orbit instead.
+ * Taking over while the game's camera is lifted lowers the view by the lift,
+ * once. While freecam is on, spraying graffiti does not turn the camera to
+ * the spot, and talking to someone does not turn it to them.
  *
  * The stick is used as it comes: past the deadzone the turn per frame is in
  * proportion to how far it is pushed, with nothing carried from one frame to
@@ -158,7 +165,7 @@ static void freecam_stick(double *x, double *y)
 }
 
 int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float seye[3],
-                  float raise, int reset, float eye[3])
+                  int reset, float eye[3])
 {
     const double pmax = FREECAM_PITCH_MAX_DEG * k_rad, step = FREECAM_STEP_DEG * k_rad;
     double v[3], d, x, y, cp;
@@ -186,7 +193,7 @@ int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float s
     if (s_pitch < -pmax) s_pitch = -pmax;
     cp = cos(s_pitch);
     eye[0] = (float)(tgt[0] - d * cp * sin(s_yaw));
-    eye[1] = (float)(tgt[1] + d * sin(s_pitch) + raise);
+    eye[1] = (float)(tgt[1] + d * sin(s_pitch));
     eye[2] = (float)(tgt[2] - d * cp * cos(s_yaw));
     return 1;
 }
