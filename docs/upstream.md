@@ -171,11 +171,11 @@ git diff --name-status --diff-filter=MD upstream main
 - **Files:** CMakeLists.txt, port/CMakeLists.txt (C++, and libstdc++
   linked in statically on Linux), src/nv2a_gl/CMakeLists.txt
   (`NV2A_GL_MENU`), src/nv2a_gl/nv2a_gl.c (the menu over the window, its
-  Graphics rows), src/input/xinput_device.c (the menu has the pad while it
-  is open, and a pad's Back opens it), CONTRIBUTING.md, NOTICE,
-  LICENSES/README.md, launcher/linux/package.sh and
-  launcher/windows/package.sh (Dear ImGui's licence),
-  tools/linux/install_deps.sh (a C++ compiler).
+  Graphics rows, and `nv_window_restart` for File > Restart),
+  src/input/xinput_device.c (the menu has the pad while it is open, and a
+  pad's Back opens it), CONTRIBUTING.md, NOTICE, LICENSES/README.md,
+  launcher/linux/package.sh and launcher/windows/package.sh (Dear ImGui's
+  licence), tools/linux/install_deps.sh (a C++ compiler).
 - **Why:** one menu (F1, or Back) for every setting, usable with a
   controller, in a window or under gamescope. It replaces upstream's Video
   menu bar on Windows and its anti-aliasing box on F8 (both removed from
@@ -424,17 +424,23 @@ git diff --name-status --diff-filter=MD upstream main
 
 - **Files:** port/main.c, port/CMakeLists.txt, src/nv2a_gl/nv2a_gl.c
   (`nv_window_file_get` and `_set`: a number kept in a file beside the
-  settings file, which port/developer.c uses for developer.cfg).
-- **Why:** the in-game menu's Developer menu: Log to file, and the
-  engine's logging switches, which the start puts into the environment
-  before anything reads them. Among them the CPU profile (Linux only),
-  which the start sets going: where each thread's time goes, by function.
-  Under Experiments, switches that change what the game does, for a
-  comparison: the GPU queue (below).
-  Our own files: port/developer.c and port/cpuprof.c, both built from
-  port/CMakeLists.txt.
-- **At a merge:** keep the two calls in port/main.c and the two files in
-  port/CMakeLists.txt, and run tests/developer and tests/cpuprof.
+  settings file, which port/developer.c uses for developer.cfg; and in
+  `vc_debug_switch`, six switches that leave the vertex cache on:
+  TITLE_MIPS, TEX_ONESAMPLER, TEXGEN, UNHANDLED, IMMEDIATE and STENCILVIS).
+- **Why:** the in-game menu's Developer menu: Log to file, the engine's
+  logging switches, Engine switches, which turn parts of the renderer off to
+  compare, and Experimental, switches that change what the game does, for a
+  comparison: the GPU queue (below). The start puts them into the
+  environment before anything reads them. Among the logging switches is the
+  CPU profile (Linux only), which the start sets going: where each thread's
+  time goes, by function. Upstream's `vc_debug_switch` list leaves out the
+  six above, none of which reads a draw's vertices back, so setting one
+  turned the vertex cache off. Our own files: port/developer.c and
+  port/cpuprof.c, both built from port/CMakeLists.txt. Could suit upstream
+  (the list).
+- **At a merge:** keep the two calls in port/main.c, the two files in
+  port/CMakeLists.txt and the six names in `vc_debug_switch`, and run
+  tests/developer and tests/cpuprof.
 
 ### Portable mode
 
@@ -521,7 +527,7 @@ git diff --name-status --diff-filter=MD upstream main
   of the renderer, and a frame cost the two one after the other. In
   Shibuya Terminal's crowd on the Ally X the game's thread spent 43-67% of
   its time in that spin. With `RECOMP_NV2A_QUEUE=1` (Developer >
-  Experiments) the flush is complete at the write, as xemu answers it, and
+  Experimental) the flush is complete at the write, as xemu answers it, and
   DMA_GET says how far the walk has read instead of being set to DMA_PUT
   before it, so D3D's own waits on GET and on the fences hold the game
   back, as on the console. D3D's wait for the GPU turns a NOP ahead of GET

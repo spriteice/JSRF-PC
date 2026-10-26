@@ -98,13 +98,17 @@ does.
 
 Developer > Log to file in the in-game menu (on by default) writes the game's
 output to last-run.log. Turned off, nothing more is written to it until it is
-turned on again, and what is there already stays. It changes straight away
-and is remembered as logging= in the settings file (1 or 0). Developer >
-Logging adds the engine's own diagnostic lines to the log, for bug reports.
-Each is kept in developer.cfg, beside the settings file, as NAME=1 or NAME=0,
-and applies from the next start. Developer > Purge shaders asks first, then
-restarts the game and deletes the shader cache as it starts: each shader is
-built again when the game first needs it.
+turned on again, and what is there already stays. It changes straight away and
+is remembered as logging= in the settings file (1 or 0). Developer > Logging
+adds the engine's own diagnostic lines to the log, for bug reports,
+Developer > Engine switches turns parts of the renderer off or back to how
+they were, to compare, and Developer > Experimental tries out changes to how
+the game runs. Each row stands for an environment variable, kept in
+developer.cfg beside the settings file as NAME=1 or NAME=0, and applies from
+the next start: File > Restart restarts the game, after asking.
+Developer > Purge shaders asks first, then restarts the game and deletes the
+shader cache as it starts: each shader is built again when the game first
+needs it.
 
 
 Free camera

@@ -1901,6 +1901,16 @@ static int  sdl_is_fullscreen(void) { return (SDL_GetWindowFlags(g_window) & SDL
 static int  sdl_scale_now(void)     { return (int)gl_scale() - 1; }
 static void sdl_scale_pick(int i)   { sdl_restart_at(i + 1, sdl_is_fullscreen()); }
 
+/* File > Restart (src/menu/menu_sdl.cpp): the game started again as it is,
+ * for what waits for the next start, such as Developer's switches. */
+void nv_window_restart(void);
+void nv_window_restart(void)
+{
+    if (!recomp_restart_self) return;
+    fprintf(stderr, "[WIN] restart chosen; restarting\n");
+    sdl_restart(sdl_is_fullscreen());
+}
+
 static void sdl_menu_graphics(void)
 {
     const XBOX_MENU_ITEM rows[] = {
@@ -4751,6 +4761,11 @@ static const char *vc_debug_switch(void)
         "SCALE", "READBACK", "CURTAIN", "PRESENTER", "PROFILE", "VCACHE",
         "VCACHE_MB", "VCACHE_VERIFY", "CONST_PART", "ANISO", "MIPMAP", "DEPTHCLAMP",
         "TEXHASH_FULL", "CONTIG_ALL", "HEAP_FIRST", "STICKY_ATTRS",
+        /* textures, texture coordinates (in the cache's key), a method count */
+        "TITLE_MIPS", "TEX_ONESAMPLER", "TEXGEN", "UNHANDLED",
+        /* the batches sent a vertex at a time (imm_draw), which never use the
+         * cache: left out, or the stencil buffer drawn in their place */
+        "IMMEDIATE", "STENCILVIS",
         /* reversed depth off (revz_start): shaders and depth state only */
         "NOREVZ",
         /* precise fixed-function depth off: one uniform and shaders */

@@ -16,6 +16,12 @@ each menu's rows live with the setting they change (File in
   choices, box titles and buttons.
 - Acronyms, names and axis letters keep their own capitals: SMAA, MSAA, GPU,
   USB, SDL, OpenGL, Dear ImGui, JSRF-PC, "Invert X".
+- **Developer's switches are the exception.** Each row under Developer >
+  Logging and Developer > Engine switches is the environment variable as
+  ticking it sets it: "RECOMP_GL_PROFILE (Restart)" sets it to 1, and
+  "RECOMP_GL_TITLE_MIPS=0 (Restart)" to 0, for a switch that turns
+  something off. Developer > Experimental's rows have their usual names:
+  "Game runs ahead of the GPU (Restart)".
 - No keyboard shortcuts in a label: "Free camera", not "Free camera (F8)".
   docs/playing.md and the packages' README.txt list the keys.
 - A box's message is a whole sentence, ending in a full stop. It must be as
@@ -34,9 +40,11 @@ each menu's rows live with the setting they change (File in
 - Where the game cannot restart itself (Android), OK saves the change for the
   next start, and a row that means nothing without a restart (Render scale)
   is not shown.
-- **Logging is the exception.** The switches under Developer > Logging are
-  marked (Restart) and apply from the next start, but they do not offer to
-  restart. Log to file changes at once and has no (Restart).
+- **Developer's switches are the exception.** The rows under Developer >
+  Logging, Engine switches and Experimental are marked (Restart) and apply
+  from the next start, but they do not offer to restart, so several can be
+  changed first. File > Restart then applies them. Log to file changes at
+  once and has no (Restart).
 - A row that applies at once has no (Restart) and no box, unless it loses
   progress (File > Exit asks first).
 

@@ -63,19 +63,23 @@ B or Esc goes back a step, and a click outside the menus shuts them, back to
 the bar. The game keeps running while it is open, but your input goes to the
 menu.
 
-- **File:** About (the version and system details) and Exit.
+- **File:** About (the version and system details), Restart, and Exit.
 - **Graphics:** Full screen, widescreen 16:9, the render scale (1× to 4×),
   and the [graphics options](#graphics-options) below.
 - **Controller:** The free camera, and its inversion, sensitivity, and deadzone.
 - **Developer:** Log to file, which stops or starts writing to `last-run.log`
-  at once. Logging, the engine's diagnostic logs for bug reports, kept in
-  `developer.cfg` beside the settings file and applied from the next start.
+  at once. Logging, the engine's diagnostic logs for bug reports, and Engine
+  switches, which turn parts of the renderer off or back to how they were, to
+  compare: each row is the environment variable it sets. Experimental, changes
+  to how the game runs, to try out. All are kept in `developer.cfg` beside the
+  settings file and applied from the next start.
   Purge shaders, which restarts the game and deletes the shader cache,
   `states.dat` included, as it starts.
 
-Everything is remembered. Exit, a new render scale, the shader cache, and Purge
-shaders ask first, as anything since your last save is lost: all but Exit
-restart the game. The other rows marked (Restart) apply from the next start.
+Everything is remembered. Restart, Exit, a new render scale, the shader cache,
+and Purge shaders ask first, as anything since your last save is lost: all but
+Exit restart the game. The other rows marked (Restart) apply from the next
+start, which File > Restart gives.
 
 ## Graphics options
 

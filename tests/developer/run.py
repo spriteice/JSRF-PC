@@ -29,17 +29,29 @@ source = """
 
 # case: (settings file, developer.cfg, environment, lines the log must have,
 # lines it must not)
+switches = ("RECOMP_GL_PROFILE", "RECOMP_LOCK_WATCH", "RECOMP_GL_TEX_ONESAMPLER",
+            "RECOMP_GL_TITLE_MIPS")
 cases = {
     "none": (None, None, {},
-             ["started: RECOMP_GL_PROFILE=- RECOMP_LOCK_WATCH=-",
-              "restarting: RECOMP_GL_PROFILE=- RECOMP_LOCK_WATCH=-"], ["[DEV]"]),
+             [f"{when}: {name}=-" for when in ("started", "restarting") for name in switches],
+             ["[DEV]"]),
     "switches": (None, "RECOMP_GL_PROFILE=1\nRECOMP_LOCK_WATCH=0\n", {},
                  ["[DEV] RECOMP_GL_PROFILE=1 from developer.cfg",
-                  "started: RECOMP_GL_PROFILE=1 RECOMP_LOCK_WATCH=-",
-                  "restarting: RECOMP_GL_PROFILE=- RECOMP_LOCK_WATCH=-"], []),
+                  "started: RECOMP_GL_PROFILE=1", "started: RECOMP_LOCK_WATCH=-",
+                  "restarting: RECOMP_GL_PROFILE=-", "restarting: RECOMP_LOCK_WATCH=-"], []),
     "environment": (None, "RECOMP_GL_PROFILE=1\n", {"RECOMP_GL_PROFILE": "2"},
                     ["started: RECOMP_GL_PROFILE=2", "restarting: RECOMP_GL_PROFILE=2"],
                     ["from developer.cfg"]),
+    # Engine switches: one ticked to 1, one ticked to 0 (RECOMP_GL_TITLE_MIPS=0).
+    "engine": (None, "RECOMP_GL_TEX_ONESAMPLER=1\nRECOMP_GL_TITLE_MIPS=0\n", {},
+               ["[DEV] RECOMP_GL_TEX_ONESAMPLER=1 from developer.cfg",
+                "[DEV] RECOMP_GL_TITLE_MIPS=0 from developer.cfg",
+                "started: RECOMP_GL_TEX_ONESAMPLER=1", "started: RECOMP_GL_TITLE_MIPS=0",
+                "restarting: RECOMP_GL_TEX_ONESAMPLER=-", "restarting: RECOMP_GL_TITLE_MIPS=-"], []),
+    # Unticked: off for one set to 1, and the engine's own 1 for one set to 0.
+    "engine_unticked": (None, "RECOMP_GL_TEX_ONESAMPLER=0\nRECOMP_GL_TITLE_MIPS=1\n", {},
+                        ["started: RECOMP_GL_TEX_ONESAMPLER=-", "started: RECOMP_GL_TITLE_MIPS=-"],
+                        ["[DEV]"]),
     "log_off": ("game_dir=/games/jsrf\nlogging=0\n", None, {},
                 ["Log to file off", "restarting:"], ["started:"]),
     "log_on": ("logging=1\n", None, {}, ["started:", "restarting:"], ["Log to file off"]),
@@ -52,7 +64,7 @@ cases["cpu_profile"] = (None, "RECOMP_CPU_PROFILE=1\n", {},
                          "[CPUPROF] the last "] if linux else ["started:"],
                         [] if linux else ["CPU_PROFILE", "[CPUPROF]"])
 
-# A switch in Developer > Experiments, the last of the list: from developer.cfg
+# A switch in Developer > Experimental, the last of the list: from developer.cfg
 # into the environment like the others.
 cases["experiment"] = (None, "RECOMP_NV2A_QUEUE=1\n", {},
                        ["[DEV] RECOMP_NV2A_QUEUE=1 from developer.cfg", "started:"], [])
@@ -75,8 +87,7 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
         if dev_text is not None:
             (folder / "developer.cfg").write_text(dev_text)
         env = {k: v for k, v in os.environ.items()
-               if k not in ("RECOMP_GL_PROFILE", "RECOMP_LOCK_WATCH", "RECOMP_CPU_PROFILE",
-                             "RECOMP_NV2A_QUEUE")}
+               if k not in (*switches, "RECOMP_CPU_PROFILE", "RECOMP_NV2A_QUEUE")}
         env.update(extra, JSRF_SETTINGS_FILE=str(folder / "settings.cfg"))
         log = folder / "last-run.log"
         with open(log, "w") as out:

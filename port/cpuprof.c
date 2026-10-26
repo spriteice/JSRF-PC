@@ -1,5 +1,5 @@
-/* The CPU profile (Developer > Logging > CPU profile, RECOMP_CPU_PROFILE):
- * where each thread's time goes, by function.
+/* The CPU profile (Developer > Logging > RECOMP_CPU_PROFILE): where each
+ * thread's time goes, by function.
  *
  * The GPU time profile times the renderer's own steps. In a crowd's busiest
  * seconds it finds the renderer waiting for the game half the time, and what
