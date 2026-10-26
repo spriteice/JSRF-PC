@@ -48,7 +48,10 @@ extern void nv_window_file_set(const char *file, const char *key, int val);
  * for one that turns off something the engine does by default. Its row is
  * the variable as ticking sets it -- NAME, or NAME=0 -- but Experimental's,
  * which have rows of their own; and with nothing ticked the engine does what
- * it always does. The CPU profile is Linux's only for now (port/cpuprof.c). */
+ * it always does. The CPU profile is Linux's only for now (port/cpuprof.c).
+ * A RECOMP_GL_ switch that never reads converted vertices back goes on the
+ * vertex cache's list too (vc_debug_switch in nv2a_gl.c), or setting it turns
+ * the cache off as well. */
 typedef struct { const char *name; int on; } DevSwitch;
 static const DevSwitch k_logging[] = {
     { "RECOMP_GL_PROFILE", 1 },

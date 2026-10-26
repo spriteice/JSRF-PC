@@ -95,3 +95,18 @@ OpenGL
 Dear ImGui
 -1.93.0
 ```
+
+## Developer
+
+- A new logging switch, an environment variable that only adds lines to the
+  log, also gets a row under Developer > Logging (`k_logging` in
+  `port/developer.c`).
+- A new engine switch, an environment variable that changes what the engine
+  does, to compare one way with the other, also gets a row under Developer >
+  Engine switches (`k_engine`).
+- A new experiment, an environment variable that tries out a change that may
+  become the default later, also gets a row, but under Developer >
+  Experimental (`k_tries`), with a name of its own in `k_tries_row`.
+- A switch that works on some platforms only has a row on those alone, as
+  RECOMP_CPU_PROFILE (Linux) does. A variable that takes a value, such as an
+  address, is not a switch and has no row.
