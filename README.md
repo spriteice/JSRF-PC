@@ -22,8 +22,8 @@ contains no game files.
 
 ## Features
 
-- **In-game menu:** F1, or Back on a controller, for the graphics, controller,
-  and developer settings.
+- **In-game menu:** F1, or Back on a controller, for the display, graphics,
+  controller, and developer settings.
 - **Resolution scaling:** 1× to 4×. _(JuMatt)_
 - **Widescreen:** 16:9, in gameplay only. _(JuMatt)_
 - **Free camera:** Modern right-stick camera controls and options, with the
@@ -34,12 +34,12 @@ contains no game files.
 
 ## Download
 
-The latest release is **b1.1**, based on upstream JSRF Unleashed 0.5.6.
+The latest release is **b1.1-hotfix**, based on upstream JSRF Unleashed 0.5.6.
 
 | Platform | File |
 |---|---|
-| Linux x86_64: SteamOS, Ubuntu 22.04+, and most modern distros. | [JSRF-PC-b1.1-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b1.1/JSRF-PC-b1.1-linux-x86_64.tar.gz) |
-| Windows 10 or 11, x86_64. | [JSRF-PC-b1.1-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b1.1/JSRF-PC-b1.1-windows-x86_64.zip) |
+| Linux x86_64: SteamOS, Ubuntu 22.04+, and most modern distros. | [JSRF-PC-b1.1-hotfix-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b1.1-hotfix/JSRF-PC-b1.1-hotfix-linux-x86_64.tar.gz) |
+| Windows 10 or 11, x86_64. | [JSRF-PC-b1.1-hotfix-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b1.1-hotfix/JSRF-PC-b1.1-hotfix-windows-x86_64.zip) |
 
 See the [changelog](CHANGELOG-JSRF-PC.md) for what changed in each version,
 and the [releases](https://github.com/spriteice/JSRF-PC/releases) page for
@@ -106,7 +106,6 @@ target and the most tested. Windows comes second.
   - Some elements half a pixel out of place.
   - Sound from one side between menus (intermittent).
   - Music stopping in the Graffiti picker (intermittent).
-  - Opening logos that go by too fast.
   - Black screenshots on Windows.
 
 **Found a bug?** [Open an issue](https://github.com/spriteice/JSRF-PC/issues)

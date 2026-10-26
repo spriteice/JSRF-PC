@@ -8,6 +8,9 @@ JSRF Unleashed version it is based on, for example "b1, based on upstream
 
 - **b1:** The first beta.
 - **b1.1, b1.2, and so on:** Bug fixes to b1.
+- **b1.1-hotfix:** An urgent fix to a release, named after it with
+  `-hotfix`. It has no GitHub release of its own: see
+  [GitHub releases](#github-releases).
 - **b2:** The next feature release, with b2.1 and so on for its bug fixes.
 - **1.0:** The final release.
 
@@ -19,7 +22,8 @@ A release's git tag and the version it shows are both its name.
 - **One tag per release,** on the commit the release is built from.
 - **The release checklist before the tag:** every release goes through
   docs/release-checklist.md, which includes a check of everything since the
-  last release against the project's rules.
+  last release against the project's rules. A hotfix goes out without it, on
+  the maintainer's say-so.
 
 ## The version string
 
@@ -33,7 +37,8 @@ A release's git tag and the version it shows are both its name.
   version. It never says "beta".
 - **Windows File version:** this field must be four numbers. bN.M is
   0.0.N.M and bN is 0.0.N.0: b1 is 0.0.1.0, b1.1 is 0.0.1.1, b2 is 0.0.2.0,
-  and b2.1 is 0.0.2.1. 1.0 is 1.0.0.0.
+  and b2.1 is 0.0.2.1. 1.0 is 1.0.0.0. A hotfix keeps its release's
+  numbers: b1.1-hotfix is 0.0.1.1.
 
 ## GitHub releases
 
@@ -48,6 +53,11 @@ A release's git tag and the version it shows are both its name.
   is based on upstream JSRF Unleashed 0.5.4."
 - **Known issues:** the release text lists them, so testers don't report
   them again.
+- **A hotfix** edits the release it fixes instead of making a new one. The
+  release moves to the hotfix's tag and is retitled, as in
+  `JSRF-PC beta 1.1 hotfix`. Its files are swapped for the hotfix's, and its
+  text gets a hotfix section at the top. The release's own tag stays where it
+  was.
 
 ## Changelog
 

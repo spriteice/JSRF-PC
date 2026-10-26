@@ -4,6 +4,30 @@ What changed in each JSRF-PC version, newest first. Each version names the
 upstream JSRF Unleashed version it is based on. Upstream's own changes are in
 [CHANGELOG.md](CHANGELOG.md).
 
+## b1.1-hotfix (beta) — 26 October 2026
+
+Based on upstream JSRF Unleashed 0.5.6. A hotfix to b1.1.
+
+### Added
+
+- **Skip intro:** Display > Skip intro leaves out the logos and the graffiti
+  notice at the start, and goes straight to the title screen. Off by default.
+
+### Fixed
+
+- **Opening logos:** The logos and the graffiti notice at the start went by in
+  a few seconds, and a press skipped them. They now play as on the Xbox: about
+  6 seconds a logo, and the graffiti notice stays up for at least 7 seconds.
+- **Fades to black:** The logos, the title screen, and the changes between
+  scenes cut to and from black instead of fading. They fade now, as on the
+  Xbox, and Developer > Engine switches > RECOMP_GL_CURTAIN=skip leaves the
+  fades out.
+
+### Changed
+
+- **Display menu:** Fullscreen, Widescreen (16:9), and Render scale move from
+  Graphics to a new Display menu, between File and Graphics.
+
 ## b1.1 (beta) — 26 October 2026
 
 Based on upstream JSRF Unleashed 0.5.6.

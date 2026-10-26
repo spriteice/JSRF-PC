@@ -98,4 +98,5 @@ Only on the maintainer's say-so.
 
 A published tag is never moved. The fix goes in the next bug fix release,
 and until then the published release text lists the problem as a known
-issue.
+issue. The exception is a hotfix, on the maintainer's say-so: it ships the
+fix straight away, as docs/versioning.md describes.
