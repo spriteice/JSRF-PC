@@ -110,6 +110,7 @@ Dear ImGui
   become the default later, also gets a row, but under Developer >
   Experimental (`k_tries`), with a name of its own in `k_tries_row`.
 - A switch that works on some platforms only has a row on those alone, as
-  RECOMP_CPU_PROFILE (Linux) does. A variable that takes a value, such as an
-  address, is not a switch and has no row, unless one word of it turns
-  something off: its row sets that word, as RECOMP_GL_CURTAIN=skip does.
+  RECOMP_CPU_PROFILE (Linux and Windows) does. A variable that takes a value,
+  such as an address, is not a switch and has no row, unless one word of it
+  turns something off: its row sets that word, as RECOMP_GL_CURTAIN=skip
+  does.

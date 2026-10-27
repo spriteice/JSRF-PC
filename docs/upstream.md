@@ -480,8 +480,8 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   compare (the GPU queue, below, among them), and Experimental, switches
   that change what the game does, for a comparison, shown while there is
   one. The start puts them into the environment before anything reads
-  them. Among the logging switches is the CPU profile (Linux only), which
-  the start sets going: where each thread's time goes, by function.
+  them. Among the logging switches is the CPU profile (Linux and Windows),
+  which the start sets going: where each thread's time goes, by function.
   Upstream's `vc_debug_switch` list leaves out the six above, none of which
   reads a draw's vertices back, so setting one turned the vertex cache off.
   Our own files: port/developer.c and port/cpuprof.c, both built from

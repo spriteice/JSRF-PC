@@ -51,14 +51,15 @@ extern void nv_window_file_set(const char *file, const char *key, int val);
  * the engine reads for it (RECOMP_GL_CURTAIN's skip). Its row is the variable
  * as ticking sets it -- NAME, NAME=0, or NAME=skip -- but Experimental's,
  * which have rows of their own; and with nothing ticked the engine does what
- * it always does. The CPU profile is Linux's only for now (port/cpuprof.c).
+ * it always does. The CPU profile is Linux's and Windows' only for now
+ * (port/cpuprof.c).
  * A RECOMP_GL_ switch that never reads converted vertices back goes on the
  * vertex cache's list too (vc_debug_switch in nv2a_gl.c), or setting it turns
  * the cache off as well. */
 typedef struct { const char *name; const char *on; } DevSwitch;
 static const DevSwitch k_logging[] = {
     { "RECOMP_GL_PROFILE", "1" },
-#if defined(__linux__) && !defined(__ANDROID__)
+#if (defined(__linux__) && !defined(__ANDROID__)) || defined(_WIN32)
     { "RECOMP_CPU_PROFILE", "1" },
 #endif
     { "RECOMP_LOCK_WATCH", "1" }, { "RECOMP_WAITLOG", "1" }, { "RECOMP_KERNEL_IO", "1" },

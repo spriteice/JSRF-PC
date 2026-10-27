@@ -62,13 +62,14 @@ cases = {
                 ["Log to file off", "restarting:"], ["started:"]),
     "log_on": ("logging=1\n", None, {}, ["started:", "restarting:"], ["Log to file off"]),
 }
-# The CPU profile (port/cpuprof.c), Linux's only: started from developer.cfg,
-# with its last report as the restart stops it.
+# The CPU profile (port/cpuprof.c), Linux's and Windows' only: started from
+# developer.cfg, with its last report as the restart stops it.
 linux = sys.platform.startswith("linux")
+profiled = linux or sys.platform == "win32"
 cases["cpu_profile"] = (None, "RECOMP_CPU_PROFILE=1\n", {},
                         ["[DEV] RECOMP_CPU_PROFILE=1 from developer.cfg", "[CPUPROF] on:",
-                         "[CPUPROF] the last "] if linux else ["started:"],
-                        [] if linux else ["CPU_PROFILE", "[CPUPROF]"])
+                         "[CPUPROF] the last "] if profiled else ["started:"],
+                        [] if profiled else ["CPU_PROFILE", "[CPUPROF]"])
 
 # The GPU queue, the engine's way since b1.2 and an engine switch that turns
 # it off: ticked, 0 in developer.cfg, into the environment. A developer.cfg

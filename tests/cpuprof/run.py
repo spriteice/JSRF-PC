@@ -1,11 +1,12 @@
 """Compile the CPU profile, port/cpuprof.c, into a small busy program and run it.
 
-Linux only, as the profile is. The program keeps two threads busy in two
-functions for 2.5 s with a report every second (RECOMP_CPU_PROFILE_SECS=1),
-stops the profile as developer_restart does and starts itself again with exec,
-as the game does for a new resolution. Each report must give each thread its
-own function, and the new process must live through the exec. Requires GCC on
-PATH.
+Linux only: Windows' way needs Windows to run (Wine's QueryThreadCycleTime
+does nothing), so it is tried in the game. The program keeps two threads busy
+in two functions for 2.5 s with a report every second
+(RECOMP_CPU_PROFILE_SECS=1), stops the profile as developer_restart does and
+starts itself again with exec, as the game does for a new resolution. Each
+report must give each thread its own function, and the new process must live
+through the exec. Requires GCC on PATH.
 """
 import os
 import pathlib
