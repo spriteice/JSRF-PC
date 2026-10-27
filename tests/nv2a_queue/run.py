@@ -135,8 +135,8 @@ with tempfile.TemporaryDirectory(prefix="nv2a_queue-") as directory:
         env = {k: v for k, v in os.environ.items()
                if k not in ("RECOMP_NV2A_QUEUE", "RECOMP_NV2A_KICK", "RECOMP_PB_SCAN")}
         env["RECOMP_PB_EXEC"] = "1"
-        if name in ("on", "wake", "ring"):
-            env["RECOMP_NV2A_QUEUE"] = "1"
+        if name not in ("on", "wake", "ring"):
+            env["RECOMP_NV2A_QUEUE"] = "0"       # the queue is on unless set to 0
         for case in ("WAKE", "RING", "SWM"):
             env.pop("QUEUE_TEST_" + case, None)
         env.pop("RECOMP_ACK_SLEEP_US", None)

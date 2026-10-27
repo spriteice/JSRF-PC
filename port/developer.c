@@ -76,13 +76,17 @@ static const DevSwitch k_engine[] = {
     { "RECOMP_GL_IMMEDIATE", "0" },         /* no batches sent a vertex at a time (the shadows) */
     { "RECOMP_GL_STENCILVIS", "1" },        /* the stencil buffer in place of the shadows */
     { "RECOMP_GL_CURTAIN", "skip" },        /* no fades to black (the full-screen black quad) */
+    { "RECOMP_NV2A_QUEUE", "0" },           /* the game no more than a kick ahead of the GPU thread */
 };
+/* Experimental's: none just now -- the last, the GPU queue, is the engine's
+ * way since b1.2, with its switch above. A new one goes before the end, with
+ * its row in k_tries_row, and Experimental shows again. */
 static const DevSwitch k_tries[] = {
-    { "RECOMP_NV2A_QUEUE", "1" },
+    { NULL, NULL },                         /* the end */
 };
 #define DEV_LOGGING  ((int)(sizeof k_logging / sizeof k_logging[0]))
 #define DEV_ENGINE   ((int)(sizeof k_engine / sizeof k_engine[0]))
-#define DEV_TRIES    ((int)(sizeof k_tries / sizeof k_tries[0]))
+#define DEV_TRIES    ((int)(sizeof k_tries / sizeof k_tries[0]) - 1)
 #define DEV_NAMED    (DEV_LOGGING + DEV_ENGINE)     /* the switches whose rows are their names */
 #define DEV_SWITCHES (DEV_NAMED + DEV_TRIES)
 _Static_assert(DEV_SWITCHES <= 31, "a bit of an int for each switch");
@@ -106,9 +110,9 @@ static char        s_row_text[DEV_NAMED][DEV_ROW_MAX];
 static const char *s_row[DEV_NAMED];
 /* Experimental's rows, one for each of k_tries. */
 static const char *const k_tries_row[] = {
-    "Game runs ahead of the GPU (Restart)",
+    NULL,                                   /* the end */
 };
-_Static_assert(sizeof k_tries_row / sizeof k_tries_row[0] == DEV_TRIES,
+_Static_assert(sizeof k_tries_row / sizeof k_tries_row[0] == DEV_TRIES + 1,
                "a row for each experiment");
 #endif
 
@@ -221,7 +225,8 @@ void developer_start(void)
               .state = tries_on, .pick = tries_flip, .choices = k_tries_row,
               .nchoices = DEV_TRIES },
         };
-        xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
+        /* Experimental, the last, only while it has a row. */
+        xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]) - !DEV_TRIES);
     }
 #endif
     if (nv_window_pref_num("logging", &v) > 0 && v == 0) {

@@ -476,16 +476,16 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   `vc_debug_switch`, six switches that leave the vertex cache on:
   TITLE_MIPS, TEX_ONESAMPLER, TEXGEN, UNHANDLED, IMMEDIATE, and STENCILVIS).
 - **Why:** the in-game menu's Developer menu: Log to file, the engine's
-  logging switches, Engine switches, which turn parts of the renderer off to
-  compare, and Experimental, switches that change what the game does, for a
-  comparison: the GPU queue (below). The start puts them into the
-  environment before anything reads them. Among the logging switches is the
-  CPU profile (Linux only), which the start sets going: where each thread's
-  time goes, by function. Upstream's `vc_debug_switch` list leaves out the
-  six above, none of which reads a draw's vertices back, so setting one
-  turned the vertex cache off. Our own files: port/developer.c and
-  port/cpuprof.c, both built from port/CMakeLists.txt. Could suit upstream
-  (the list).
+  logging switches, Engine switches, which turn parts of the engine off to
+  compare (the GPU queue, below, among them), and Experimental, switches
+  that change what the game does, for a comparison, shown while there is
+  one. The start puts them into the environment before anything reads
+  them. Among the logging switches is the CPU profile (Linux only), which
+  the start sets going: where each thread's time goes, by function.
+  Upstream's `vc_debug_switch` list leaves out the six above, none of which
+  reads a draw's vertices back, so setting one turned the vertex cache off.
+  Our own files: port/developer.c and port/cpuprof.c, both built from
+  port/CMakeLists.txt. Could suit upstream (the list).
 - **When picking:** keep the two calls in port/main.c, the two files in
   port/CMakeLists.txt, and the six names in `vc_debug_switch`, and run
   tests/developer and tests/cpuprof.
@@ -593,24 +593,24 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   pacing sleeps at a flip. So the game was never more than one kick ahead
   of the renderer, and a frame cost the two one after the other. In
   Shibuya Terminal's crowd on the Ally X the game's thread spent 43-67% of
-  its time in that spin. With `RECOMP_NV2A_QUEUE=1` (Developer >
-  Experimental) the flush is complete at the write, as xemu answers it, and
-  DMA_GET says how far the walk has read instead of being set to DMA_PUT
-  before it, so D3D's own waits on GET and on the fences hold the game
-  back, as on the console. D3D's wait for the GPU turns a NOP ahead of GET
-  into NOP(5), flushes, reads GET again, and sleeps until the GPU reaches
-  that NOP. So GET moves with each command the walk reaches, and is
-  published before the command is read with a full barrier between them,
-  as the flush is one on the game's side. With GET a whole walk behind, or
-  with either barrier missing (x86 lets a read overtake an earlier write),
-  the walk could read the NOP before the patch while D3D still saw GET
-  short of it, and the game slept for good. When the ring wraps, the walk
-  reads its tail to the jump however far that is: it read at most 128 KB,
-  enough while each flush waited for the walk, but the game can now be
-  most of the ring ahead, and the fence D3D slept on was in the part left
-  unread. On the Ally X in Shibuya Terminal, with the sound fix below, the
-  game's thread went from 96-97% of a core to 27-32%, and frames that
-  missed a refresh from 0.5% to 0.1%. Off by default for now.
+  its time in that spin. Now the flush is complete at the write, as xemu
+  answers it, and DMA_GET says how far the walk has read instead of being
+  set to DMA_PUT before it, so D3D's own waits on GET and on the fences hold
+  the game back, as on the console. D3D's wait for the GPU turns a NOP ahead
+  of GET into NOP(5), flushes, reads GET again, and sleeps until the GPU
+  reaches that NOP. So GET moves with each command the walk reaches, and is
+  published before the command is read with a full barrier between them, as
+  the flush is one on the game's side. With GET a whole walk behind, or with
+  either barrier missing (x86 lets a read overtake an earlier write), the
+  walk could read the NOP before the patch while D3D still saw GET short of
+  it, and the game slept for good. When the ring wraps, the walk reads its
+  tail to the jump however far that is: it read at most 128 KB, enough while
+  each flush waited for the walk, but the game can now be most of the ring
+  ahead, and the fence D3D slept on was in the part left unread. On the Ally
+  X in Shibuya Terminal, with the sound fix below, the game's thread went
+  from 96-97% of a core to 27-32%, and frames that missed a refresh from
+  0.5% to 0.1%. On since b1.2 (an experiment in b1.1); `RECOMP_NV2A_QUEUE=0`
+  (Developer > Engine switches) gives the old way, to compare.
   The generated code's recomp_types.h has to be the new one, and the
   pipeline never overwrites it: delete it and generate it again. With an
   old one the flush waits as before, and the queue's report says so.

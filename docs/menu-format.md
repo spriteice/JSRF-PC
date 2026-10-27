@@ -22,8 +22,8 @@ Display's last row, below any added later (`last` in `menu.h`).
   ticking it sets it: "RECOMP_GL_PROFILE (Restart)" sets it to 1, and
   "RECOMP_GL_TITLE_MIPS=0 (Restart)" to 0, for a switch that turns
   something off, and "RECOMP_GL_CURTAIN=skip (Restart)" to the word the
-  engine reads. Developer > Experimental's rows have their usual names:
-  "Game runs ahead of the GPU (Restart)".
+  engine reads. Developer > Experimental's rows have their usual names, as
+  "Game runs ahead of the GPU (Restart)" had in b1.1.
 - No keyboard shortcuts in a label: "Free camera", not "Free camera (F8)".
   docs/playing.md and the packages' README.txt list the keys.
 - A box's message is a whole sentence, ending in a full stop. It must be as

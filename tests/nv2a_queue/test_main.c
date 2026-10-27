@@ -7,7 +7,7 @@
  * Each NOP's parameter is its own address, so the executor's stand-in can
  * check DMA_GET against the command it is running. One of them takes 30 ms
  * -- a slow draw, or frame pacing at a flip -- and the game kicks again while
- * the walk is held there. Run once with RECOMP_NV2A_QUEUE=1 and once without;
+ * the walk is held there. Run once with RECOMP_NV2A_QUEUE=0 and once without;
  * run.py says what each must print.
  *
  * With QUEUE_TEST_WAKE=1 as well, D3D's wait for the GPU instead (JSRF's
@@ -323,7 +323,7 @@ int main(void)
            flush_busy < 5.0 ? "at once" : flush_busy >= SLOW_MS / 2 ? "after the walk" : "late");
     printf("commands run: %u; DMA_GET at the command each time: %s\n", s_ran,
            !s_get_not ? "yes" : s_get_at ? "not always" : "never");
-    if (getenv("RECOMP_NV2A_QUEUE")) nv2a_queue_report();
+    if (nv2a_queue_on()) nv2a_queue_report();
 
     g_nv2a_ack_stop = 1;
     pthread_join(gpu, NULL);

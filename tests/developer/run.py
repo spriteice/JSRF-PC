@@ -70,10 +70,13 @@ cases["cpu_profile"] = (None, "RECOMP_CPU_PROFILE=1\n", {},
                          "[CPUPROF] the last "] if linux else ["started:"],
                         [] if linux else ["CPU_PROFILE", "[CPUPROF]"])
 
-# A switch in Developer > Experimental, the last of the list: from developer.cfg
-# into the environment like the others.
-cases["experiment"] = (None, "RECOMP_NV2A_QUEUE=1\n", {},
-                       ["[DEV] RECOMP_NV2A_QUEUE=1 from developer.cfg", "started:"], [])
+# The GPU queue, the engine's way since b1.2 and an engine switch that turns
+# it off: ticked, 0 in developer.cfg, into the environment. A developer.cfg
+# from b1.1, where it was an experiment, keeps what was chosen there: ticked
+# (1) is the engine's way now, so nothing is set.
+cases["queue_off"] = (None, "RECOMP_NV2A_QUEUE=0\n", {},
+                      ["[DEV] RECOMP_NV2A_QUEUE=0 from developer.cfg", "started:"], [])
+cases["queue_from_b1_1"] = (None, "RECOMP_NV2A_QUEUE=1\n", {}, ["started:"], ["[DEV]"])
 
 # The game's camera log, the one switch in Logging that port/recomp_manual.c
 # reads: from developer.cfg into the environment like the others.

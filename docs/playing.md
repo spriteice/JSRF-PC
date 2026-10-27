@@ -74,9 +74,10 @@ menu.
 - **Developer:** Settings for testing and bug reports.
   - **Log to file:** Stops or starts writing to `last-run.log` at once.
   - **Logging:** The engine's diagnostic logs, for bug reports.
-  - **Engine switches:** Turn parts of the renderer off, or back to how they
+  - **Engine switches:** Turn parts of the engine off, or back to how they
     were, to compare.
-  - **Experimental:** Changes to how the game runs, to try out.
+  - **Experimental:** Changes to how the game runs, to try out, when there
+    are any.
   - **Purge shaders:** Restarts the game and deletes the shader cache as it
     starts.
 

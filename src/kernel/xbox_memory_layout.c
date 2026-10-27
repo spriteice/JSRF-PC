@@ -354,8 +354,8 @@ static const struct { uint32_t offset; uint32_t idle_mask; } NV2A_IDLE[] = {
  * 43-67% of its time in that spin, while the game's own work was about a
  * third of a core and the renderer's about half.
  *
- * RECOMP_NV2A_QUEUE=1 lets the title run ahead, in two parts that only work
- * together:
+ * So the title runs ahead, in two parts that only work together
+ * (RECOMP_NV2A_QUEUE=0 for the old way, to compare):
  *
  *   - The flush is complete at the write. Nothing here buffers writes, so
  *     there is never one to wait for; xemu answers the same (its NV_PFB_WBC
@@ -384,7 +384,7 @@ static const struct { uint32_t offset; uint32_t idle_mask; } NV2A_IDLE[] = {
 static int nv2a_queue_on(void)
 {
     static int on = -1;
-    if (on < 0) { const char *e = getenv("RECOMP_NV2A_QUEUE"); on = e ? atoi(e) != 0 : 0; }
+    if (on < 0) { const char *e = getenv("RECOMP_NV2A_QUEUE"); on = e ? atoi(e) != 0 : 1; }
     return on;
 }
 
