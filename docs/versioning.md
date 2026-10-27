@@ -47,6 +47,8 @@ A release's git tag and the version it shows are both its name.
   changelog.
 - **Files:** `JSRF-PC-b1-linux-x86_64.tar.gz` and
   `JSRF-PC-b1-windows-x86_64.zip`.
+- **First line:** thanks JuMatt, with a link, for the original port,
+  JSRF Unleashed.
 - **Known issues:** the release text lists them, so testers don't report
   them again.
 - **A hotfix** edits the release it fixes instead of making a new one. The

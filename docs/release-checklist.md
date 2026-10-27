@@ -46,7 +46,7 @@ Release, says which step the release has reached.
 6. **README and docs:** brought up to date, and checked against the writing
    rules.
    - **README.md:** the features, the download links and latest version, the
-     status and known issues, and the credits.
+     status and known issues, and the credits, with JuMatt's at the top.
    - **docs/:** anything the release changes, such as new keys or menu rows
      in docs/playing.md.
    - **Both packages' README.txt,** in `launcher/linux/` and
