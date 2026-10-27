@@ -349,6 +349,22 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 - **When picking:** upstream's changes to `nv2a_gl_method`'s body go into
   `gl_method`.
 
+### The graphics card's own clock
+
+- **Files:** src/nv2a_gl/nv2a_gl.c (`card_mark`, `card_report`, and a
+  `[GLPROF]` line).
+- **Why:** with `RECOMP_GL_PROFILE=1`, each frame ends with a timestamp
+  query, and the log says once a second how long after its hand-over the
+  graphics card finished each frame, and how far apart it finished them by
+  its own clock. The profile's other figures time the renderer's thread,
+  and cannot say whether the card keeps up. The answers are read once a
+  second, none waited for, as each read waits for Mesa's GL thread.
+  OpenGL's timer queries (3.3); OpenGL ES goes without. tests/gl_card
+  (ours) tests it. Could suit upstream.
+- **When picking:** keep the `card_mark` call where `present` shows the
+  frame, before the window's swap, and the `card_report` call in
+  `prof_report`.
+
 ### The driver's nudge off both paths
 
 - **Files:** src/nv2a_gl/nv2a_vsh.c and .h (`NV2A_D3D_NUDGE`,

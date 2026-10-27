@@ -572,6 +572,7 @@ void nv2a_pb_time_end(unsigned words)
     g_pb_time += prof_now() - g_pb_t0;
     g_pb_words += words;
 }
+static void card_report(void);      /* the graphics card's own clock, below */
 
 static void prof_report(void)
 {
@@ -699,6 +700,7 @@ static void prof_report(void)
                       100 * rest / dt, 100 * clock / dt); }
             prev_pb = g_pb_time; prev_words = g_pb_words;
         }
+        card_report();
         fflush(stderr);
         last = now; prev = g_prof;
     }
@@ -5258,6 +5260,97 @@ static void gl_error_check(int after_draw, uint32_t verts)
                 glCheckFramebufferStatus(GL_FRAMEBUFFER));
     said++;
 }
+#endif
+
+/* ── the graphics card's own clock ────────────────────────────────────────
+ *
+ * The profile's other figures time this thread. Whether the card keeps up
+ * they cannot say: a frame handed over in 5 ms may keep the card busy for 20.
+ * So with RECOMP_GL_PROFILE on, a frame's drawing ends with a timestamp query
+ * (glQueryCounter), which the card fills in once it has finished everything
+ * before it. It goes in as the frame is shown, after pacing, so that the
+ * window's swap (or the presenter's flush) sends it on with the frame: put
+ * after them, it would wait in the driver for the next frame's work. Once a
+ * second the answers that have come in are read, none waited for
+ * (GL_QUERY_RESULT_AVAILABLE), and the card's clock is set beside ours
+ * (GL_TIMESTAMP). Both reads wait for Mesa's GL thread, as glGetError does,
+ * so they are made once a second and not each frame, and the line says how
+ * long they took. It says how long after its hand-over the card finished each
+ * frame -- next to nothing while it keeps up -- and how far apart it finished
+ * them by its own clock. OpenGL 3.3's timer queries; OpenGL ES has them only
+ * as an extension, and goes without. */
+#if defined(NV2A_GL_HAVE_GL) && !defined(NV2A_GLES)
+#define CARD_QUERIES 128                     /* two seconds of frames at 60 fps */
+static GLuint   g_card_q[CARD_QUERIES];
+static double   g_card_sent[CARD_QUERIES];   /* our clock at each hand-over */
+static unsigned g_card_head, g_card_tail;    /* queries sent, and read */
+static unsigned g_card_untimed;              /* frames shown with every query out */
+static int      g_card_any;                  /* a frame has been read ... */
+static double   g_card_last;                 /* ... and the card finished it then */
+
+static void card_mark(void)
+{
+    static int made;
+    unsigned i = g_card_head % CARD_QUERIES;
+    if (!g_is_gl || !PROF_ON()) return;
+    if (!made) { glGenQueries(CARD_QUERIES, g_card_q); made = 1; }
+    if (g_card_head - g_card_tail == CARD_QUERIES) { g_card_untimed++; return; }
+    glQueryCounter(g_card_q[i], GL_TIMESTAMP);
+    g_card_sent[i] = prof_now();
+    g_card_head++;
+}
+
+static void card_report(void)
+{
+    double t0, off, lag, lag_sum = 0.0, lag_most = 0.0;
+    double from = g_card_last, first = 0.0, apart_most = 0.0;
+    GLint64 now;
+    int n = 0, gaps = 0, waiting;
+    char untimed[64] = "";
+    if (!g_is_gl || g_card_head == g_card_tail) return;
+    t0 = prof_now();
+    glGetInteger64v(GL_TIMESTAMP, &now);
+    off = (double)now * 1e-9 - prof_now();   /* the card's clock less ours */
+    while (g_card_tail != g_card_head) {
+        unsigned i = g_card_tail % CARD_QUERIES;
+        GLint ready = 0;
+        GLuint64 done;
+        double t;
+        glGetQueryObjectiv(g_card_q[i], GL_QUERY_RESULT_AVAILABLE, &ready);
+        if (!ready) break;                   /* the card answers them in order */
+        glGetQueryObjectui64v(g_card_q[i], GL_QUERY_RESULT, &done);
+        t = (double)done * 1e-9;
+        lag = t - off - g_card_sent[i];
+        lag_sum += lag;
+        if (lag > lag_most) lag_most = lag;
+        if (g_card_any) {
+            gaps++;
+            if (t - g_card_last > apart_most) apart_most = t - g_card_last;
+        }
+        if (!n) first = t;
+        g_card_any = 1;
+        g_card_last = t;
+        g_card_tail++;
+        n++;
+    }
+    waiting = (int)(g_card_head - g_card_tail);
+    if (g_card_untimed)
+        snprintf(untimed, sizeof untimed, "; %u frames not timed, every query out", g_card_untimed);
+    g_card_untimed = 0;
+    if (n)
+        fprintf(stderr, "[GLPROF]   the card, by its own clock: %d frames finished %.1f ms after "
+                "hand-over on average, %.1f at worst; %.1f ms apart on average, %.1f at the "
+                "most; %d still out%s (reading them %.2f ms)\n",
+                n, 1e3 * lag_sum / n, 1e3 * lag_most,
+                gaps ? 1e3 * (g_card_last - (gaps == n ? from : first)) / gaps : 0.0,
+                1e3 * apart_most, waiting, untimed, 1e3 * (prof_now() - t0));
+    else
+        fprintf(stderr, "[GLPROF]   the card, by its own clock: no frame finished since the "
+                "last report; %d still out%s\n", waiting, untimed);
+}
+#else
+static void card_mark(void) {}
+static void card_report(void) {}
 #endif
 
 static void do_draw_body(void);
@@ -10088,6 +10181,7 @@ static void present(int is_frame)
         /* With SMAA, what is shown is the copy of it with its edges smoothed. */
         if (g_smaa_now && G->target_smaa) prt = G->target_smaa(prt);
         g_shown_rt = prt;
+        card_mark();
 #if defined(NV2A_GL_USE_CGL)
         /* OpenGL on a Mac: read the finished frame and hand it to the window.
          *
