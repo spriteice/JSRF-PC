@@ -14,10 +14,9 @@ Release, says which step the release has reached.
 
 1. **Backlog closed:** every item in the release's backlog is done, or moved
    to a later one with the maintainer's OK.
-2. **Upstream decided:** if upstream has released since the last merge, the
-   maintainer decides whether to merge it now, as docs/upstream.md says, or
-   leave it for the next release. A merge is the largest change a release
-   takes, so it comes before the review and the tests.
+2. **Upstream decided:** the maintainer says whether this release picks
+   any commits from `upstream`, and which, as docs/upstream.md says. They
+   are picked before the review and the tests, so both cover them.
 3. **Main ready:** the latest `origin/main`, with no unpushed commits from
    elsewhere and a clean tree. Experiments and developer switches are off by
    default, and nothing left from debugging is still on.
@@ -30,7 +29,8 @@ Release, says which step the release has reached.
    the project's rules. It looks for game files, generated code, or logs in
    the repo, session links in commit messages, band-aid fixes, address
    lists, sleeps, docs that break the writing rules, and upstream files
-   changed with no entry in docs/upstream.md. It also searches the code in
+   changed with no entry in docs/upstream.md (a picked upstream commit
+   needs none). It also searches the code in
    `port/` for the game function overrides and hooks added since the last
    release, in our own files too (which have no entry in docs/upstream.md),
    and flags any that look alike (the same kind of instruction, or the same

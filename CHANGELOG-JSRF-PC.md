@@ -1,8 +1,8 @@
 # JSRF-PC changelog
 
-What changed in each JSRF-PC version, newest first. Each version names the
-upstream JSRF Unleashed version it is based on. Upstream's own changes are in
-[CHANGELOG.md](CHANGELOG.md).
+What changed in each JSRF-PC version, newest first. Upstream JSRF Unleashed's
+own changes are in
+[its changelog](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/blob/main/CHANGELOG.md).
 
 ## b1.1-hotfix (beta) — 26 October 2026
 

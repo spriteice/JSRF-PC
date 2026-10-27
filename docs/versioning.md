@@ -1,8 +1,6 @@
 # Versioning
 
-JSRF-PC releases are betas until 1.0. Every release says which upstream
-JSRF Unleashed version it is based on, for example "b1, based on upstream
-0.5.4".
+JSRF-PC releases are betas until 1.0.
 
 ## Release names
 
@@ -49,8 +47,6 @@ A release's git tag and the version it shows are both its name.
   changelog.
 - **Files:** `JSRF-PC-b1-linux-x86_64.tar.gz` and
   `JSRF-PC-b1-windows-x86_64.zip`.
-- **First line:** the upstream version it is based on: "JSRF-PC b1 (beta)
-  is based on upstream JSRF Unleashed 0.5.4."
 - **Known issues:** the release text lists them, so testers don't report
   them again.
 - **A hotfix** edits the release it fixes instead of making a new one. The
@@ -63,7 +59,6 @@ A release's git tag and the version it shows are both its name.
 
 - **Our changelog is `CHANGELOG-JSRF-PC.md`,** newest entry first.
   `CHANGELOG.md` is upstream's and is left as it is.
-- **An entry** starts `## b1 (beta) — <date>`, then "Based on upstream JSRF
-  Unleashed 0.5.4."
+- **An entry** starts `## b1 (beta) — <date>`.
 - **It lists only what changed since the previous JSRF-PC version.** That
-  includes upstream changes merged since then, each credited to its author.
+  includes upstream changes picked since then, each credited to its author.

@@ -28,7 +28,7 @@ about the difference.
 ### Before you start
 
 - **Source:** `main`. `upstream` only tracks JuMatt's repository, and
-  docs/upstream.md says how it is merged.
+  docs/upstream.md says how its changes are taken.
 - **Tags:** fetch this repository's tags (`git fetch --tags origin`). The
   version comes from them, and without them it is `dev`.
 - **Game files:** my own USA (NTSC-U) disc, the standalone one. Other

@@ -2,97 +2,114 @@
 
 JSRF-PC is a fork of
 [JSRF Unleashed](https://github.com/JuMatt/JetSetRadioFuture-Unleashed), by
-JuMatt. It takes every upstream release, and differs from upstream only
-where that suits its targets: Linux first, then Windows. This file says how
-upstream is merged, how JSRF-PC may differ from it, and lists every
-difference.
+JuMatt. It keeps upstream's releases on a branch of their own, and takes
+the changes it chooses from them, one commit at a time, fitted to its own
+code. Its targets are Linux first, then Windows. This file says how
+upstream's changes are taken, how JSRF-PC may differ from upstream, and
+lists every difference.
 
 ## Branches
 
 - **`upstream`:** upstream's history, never edited. It moves only forward,
-  to an upstream release, when a merge is asked for.
-- **`main`:** JSRF-PC. Upstream reaches it only through `upstream`, by a
-  merge.
+  to an upstream release, when the maintainer asks.
+- **`main`:** JSRF-PC. Upstream's changes reach it only as commits picked
+  from `upstream`, never by a merge. The last release merged into it was
+  0.5.6 (`4d31983`).
 
-## Merging upstream
+## Taking upstream changes
 
-- **Whole releases.** A release is a version upstream has tagged, as
-  `v0.5.4`, with its "Changelog: 0.5.4" commit. When a merge is asked for,
-  `main` takes the newest one whole: every commit up to it, including any
-  we then leave out (below). With no release since the last merge, there
-  is nothing to merge: say so.
-- **Only by a merge.** Upstream commits are never cherry-picked, squashed,
-  or copied by hand into `main`. Git would then not know which upstream
-  version `main` is based on, and every later merge would meet the skipped
-  commits again.
-- **A fix needed before upstream's next release,** only when the
-  maintainer asks for it: merge `upstream` up to the commit that has it,
-  with everything before it, never the fix alone.
+Two separate steps, each only when the maintainer asks: moving `upstream`
+to a new release, and picking commits from it into `main`.
 
-### Steps
+### Moving `upstream` to a release
 
-1. **Start from the latest `origin/main` and `origin/upstream`,** each
-   brought up as a fast-forward. If `main` is ahead of `origin/main`, those
-   are unpushed commits: say so, and ask before building on them.
+Only `upstream` changes: nothing is built, tested, or checked against
+`main`.
 
-   ```sh
-   git fetch origin main upstream
-   git checkout main && git merge --ff-only origin/main && git status -sb
-   git checkout upstream && git merge --ff-only origin/upstream
-   ```
-
-2. **Move `upstream`** to the release's "Changelog: 0.5.5" commit, as a
+1. **Bring `upstream` up to `origin/upstream`** as a fast-forward.
+2. **Move it** to the release's "Changelog: 0.5.5" commit, as a
    fast-forward. Upstream tags the release (`v0.5.5`) a commit or two
    before it, so check that the tag is in its history. If it can't
    fast-forward, upstream has rewritten its history: stop and ask.
 
    ```sh
+   git fetch origin upstream
+   git checkout upstream && git merge --ff-only origin/upstream
    git fetch https://github.com/JuMatt/JetSetRadioFuture-Unleashed.git main tag v0.5.5
    git log --oneline -3 FETCH_HEAD     # the "Changelog: 0.5.5" commit
-   git checkout upstream && git merge --ff-only <that commit>
+   git merge --ff-only <that commit>
    ```
 
-3. **Merge it into `main`** with a merge commit named "Merge upstream
-   0.5.5": `git checkout main && git merge --no-ff upstream`.
-4. **Resolve each conflict** by taking upstream's change, except where an
-   entry below says what we keep in that file. Where upstream now does
-   what an entry does, take upstream's version and remove the entry.
-5. **Check every entry** below against what upstream changed in its files,
-   correct any the merge made wrong, and update the upstream version the
-   list was checked against.
-6. **Leave out what doesn't suit our targets,** each in its own commit
-   after the merge (below).
-7. **Build and test** as docs/build-and-test-reference.md says. The test
-   checklist covers what upstream changed, as well as the usual regression
+3. **Push `upstream`** when the maintainer says: `git push origin upstream`.
+
+### Picking commits into `main`
+
+- **Chosen commits.** The maintainer says when, and which of `upstream`'s
+  commits `main` takes. The others stay on `upstream`, and can still be
+  taken later.
+- **Picked one at a time.** Each chosen commit is cherry-picked with `-x`,
+  which keeps its author and message and adds the upstream commit it came
+  from.
+- **Our code comes first.** Where a picked commit meets our code, ours
+  stays and upstream's change is fitted around it, as each entry's "When
+  picking" says. Any part of the commit that our code already does is left
+  out. Where upstream's version could replace one of our entries, the
+  maintainer decides.
+- **A commit that needs an earlier one** is picked with it, or fitted
+  without it: the proposal says which.
+
+Steps:
+
+1. **Start from the latest `origin/main`,** brought up as a fast-forward.
+   If `main` is ahead of `origin/main`, those are unpushed commits: say so,
+   and ask before building on them.
+
+   ```sh
+   git fetch origin main upstream
+   git checkout main && git merge --ff-only origin/main && git status -sb
+   ```
+
+2. **List the commits not picked yet** for the maintainer, oldest first:
+   what each one changes, the entries below that it meets, and whether it
+   picks cleanly. The commands list `upstream`'s commits since 0.5.6, those
+   already picked, and the files a commit would conflict in, if any. None
+   of them changes a branch:
+
+   ```sh
+   git log --reverse --oneline 4d31983..origin/upstream
+   git log --oneline --grep='cherry picked from commit' 4d31983..main
+   git merge-tree --write-tree --merge-base=<commit>^ main <commit>
+   ```
+
+3. **Pick each chosen commit,** oldest first, without committing yet:
+   `git cherry-pick -n -x <commit>`. Resolve each conflict with our code
+   first (above).
+4. **Check every entry** below that the pick meets: correct any it made
+   wrong, and say in the entry what of the pick was left out for it.
+5. **Build and test** as docs/build-and-test-reference.md says. The test
+   checklist covers the picked changes, as well as the usual regression
    spots.
-8. **The merge commit's message** lists what is new from upstream, what of
-   ours upstream took, each conflict and how it was resolved, and the
-   entries added, changed, or removed. The full diff against `main` goes
-   with it as a file.
+6. **Propose it,** with the full diff as a file. Its message is upstream's,
+   with the line `-x` adds. Where something was fitted or left out, a note
+   below it says what, and which entries changed.
+7. **Commit it once approved,** with upstream's author, then pick the
+   next. With a note, the whole message goes in a file, given with `-F`
+   in place of `--no-edit`:
 
-The next release's changelog entry names the upstream version and credits
-its changes (docs/versioning.md).
+   ```sh
+   git commit --no-edit --author="$(git log -1 --format='%an <%ae>' <commit>)"
+   ```
 
-### Leaving an upstream change out
-
-An upstream change that doesn't suit our targets is merged with the rest,
-then left out in a commit of its own, so git records that it was seen and
-refused, and later merges don't bring it back:
-
-- **A revert** of the upstream commit, or of the part of it that doesn't
-  suit (`git revert`). Its message names the upstream commit and says why.
-- **A change of our own instead,** only where a revert would lose
-  something we need. It goes where the code belongs, as any change does: a
-  game function override only when that function's own logic is the cause
-  (below).
-- **Either way, it gets an entry** below.
+The next release's changelog credits each picked change to its author
+(docs/versioning.md).
 
 ## Changing upstream files
 
 An upstream file is one the `upstream` branch has, wherever it is:
 port/main.c and port/recomp_manual.c are upstream files, port/freecam.c is
 ours. JSRF-PC changes them where that serves its targets. Each change is
-checked again at every merge, so it is kept small and visible:
+checked again whenever a picked commit meets it, so it is kept small and
+visible:
 
 - **The right place first.** Code goes where it belongs in the code's
   structure, even when that is an upstream file: a kernel fix goes in the
@@ -111,19 +128,20 @@ checked again at every merge, so it is kept small and visible:
 - **Listed in the same commit.** A commit that edits or removes an
   upstream file, a `port/` override in recomp_manual.c included, adds or
   updates its entry below. Its proposal says which upstream files it
-  touches and how that affects later merges. Adding a file of our own
-  needs no entry.
+  touches and how that affects later picks. Adding a file of our own, or
+  picking a commit from upstream, needs no entry.
 - **Could suit upstream:** an entry says so when upstream could take the
   change too. Offering it upstream is the maintainer's call.
 
 ## Where we differ from upstream
 
-Checked against upstream 0.5.6 (`4d31983`). Every file this lists, the
-upstream files `main` changes (M) or removes (D), is named in an entry
-below:
+Checked against upstream 0.5.6 (`4d31983`), the last release merged into
+`main`. Every upstream file `main` has changed (M) or removed (D) since
+then is named in an entry below, unless only a picked commit changed it:
 
 ```sh
-git diff --name-status --diff-filter=MD upstream main
+git diff --name-status --diff-filter=MD 4d31983 main
+git log --oneline --grep='cherry picked from commit' 4d31983..main
 ```
 
 ### The name JSRF-PC
@@ -135,9 +153,9 @@ git diff --name-status --diff-filter=MD upstream main
   resources.rc, engine.manifest, and launcher.manifest in launcher/windows/.
 - **Why:** the program, its packages, window, messages, and folders are
   named JSRF-PC (jsrf-pc). The Linux launcher keeps its upstream file name
-  in the repository, so upstream's changes to it still merge, and is
+  in the repository, so upstream's changes to it still apply, and is
   packaged as jsrf-pc.
-- **At a merge:** keep our names, and give anything upstream adds that
+- **When picking:** keep our names, and give anything upstream adds that
   shows a name ours.
 
 ### Version from our tags
@@ -146,7 +164,7 @@ git diff --name-status --diff-filter=MD upstream main
 - **Why:** the version comes from our tags (b1, b1.1, 1.0), never
   upstream's v-tags, and a beta's Windows file version is 0.0.N.M
   (docs/versioning.md).
-- **At a merge:** keep ours.
+- **When picking:** keep ours.
 
 ### README and the packages' README.txt
 
@@ -154,7 +172,7 @@ git diff --name-status --diff-filter=MD upstream main
   launcher/windows/README.txt.
 - **Why:** they are our own: Linux and Windows only, our downloads, the
   in-game menu, the keys, and portable mode.
-- **At a merge:** keep ours. Read upstream's changes for anything players
+- **When picking:** keep ours. Read upstream's changes for anything players
   or builders need, and write it into ours (build steps go in
   docs/building-on-linux.md).
 
@@ -164,7 +182,7 @@ git diff --name-status --diff-filter=MD upstream main
 - **Why:** game files in upper or lower case, Media/, UDATA/, TDATA/,
   portable/, partition images, logs, and dumps can't be committed, nor
   .venv/ or BRINGUP.md.
-- **At a merge:** keep ours, and add upstream's new lines.
+- **When picking:** keep ours, and add upstream's new lines.
 
 ### In-game menu
 
@@ -182,7 +200,7 @@ git diff --name-status --diff-filter=MD upstream main
   nv2a_gl.c), whose settings it has; F8 is the free camera's. It is built
   only for the SDL window: Android, the Mac, and the iPhone keep their own
   menus. Our own files: src/menu/, third_party/imgui/.
-- **At a merge:** check upstream's changes to the SDL window, keys and pad
+- **When picking:** check upstream's changes to the SDL window, keys and pad
   input against the menu, give a setting upstream adds to its Video menu or
   keys a Display or Graphics row, and run tests/menu.
 
@@ -200,7 +218,7 @@ git diff --name-status --diff-filter=MD upstream main
   `RECOMP_GL_ANISO` still wins over the setting. MSAA, which upstream took
   from this fork in 0.5.5, and SMAA, which took the place of our FXAA, are
   upstream's, with rows in the in-game menu.
-- **At a merge:** the `Nv2aGfx` tables are filled in by position, and our
+- **When picking:** the `Nv2aGfx` tables are filled in by position, and our
   members come last: a member upstream adds goes before `aniso_max`, in the
   same order in the struct and in nv2a_gfx_gl.c's table. Metal's table
   leaves ours out (NULL). Our default stays `ANISO_NONE`, off, whatever
@@ -216,7 +234,7 @@ git diff --name-status --diff-filter=MD upstream main
   while the game draws, even after a driver update or a translator change.
   Old drivers' binary files are removed, and Developer > Purge shaders
   deletes the cache.
-- **At a merge:** a change upstream makes to `Nv2aVshFixed` or
+- **When picking:** a change upstream makes to `Nv2aVshFixed` or
   `Nv2aPshState` changes what the cache keeps: raise `SC_LAYOUT` in
   nv2a_gl.c, and note it in CHANGELOG-JSRF-PC.md. Run tests/shader_cache
   and tests/gl_backend.
@@ -240,7 +258,7 @@ git diff --name-status --diff-filter=MD upstream main
 
   Could suit upstream. The game's mip levels and a texture per sampling,
   which this entry also had before 0.5.5, are upstream's now.
-- **At a merge:** `NV2A_U_POLYOFF` is the last uniform: keep it after
+- **When picking:** `NV2A_U_POLYOFF` is the last uniform: keep it after
   upstream's, in the same place in nv2a_uniforms.c's table. None of this
   changes `Nv2aVshFixed` or `Nv2aPshState`, so `SC_LAYOUT` stays. Run
   tests/gl_backend (test_polyoffset.c, test_msaa.c) and tests/shader_cache.
@@ -253,7 +271,7 @@ git diff --name-status --diff-filter=MD upstream main
   uniforms, textures, state, probes, glDraw, and after. The other draws
   read no more clocks than before, so the profile's other figures stay
   comparable. Could suit upstream.
-- **At a merge:** keep the seven `PROF_STEP` lines at the ends of their
+- **When picking:** keep the seven `PROF_STEP` lines at the ends of their
   steps in `do_draw_body` when upstream moves code around them.
 
 ### The always-on probes' clock
@@ -264,7 +282,7 @@ git diff --name-status --diff-filter=MD upstream main
   and `[TIMELINE]`) read a clock taken once a pass, in `present`, where
   upstream's read one each in every draw. They print as before. Could
   suit upstream.
-- **At a merge:** an upstream probe of the same kind that reads the clock
+- **When picking:** an upstream probe of the same kind that reads the clock
   in `do_draw_body` can use `g_probe_now` too.
 
 ### Reversed and precise depth
@@ -288,7 +306,7 @@ git diff --name-status --diff-filter=MD upstream main
   `RECOMP_GL_NOREVZ` and `RECOMP_GL_NOPRECZ` turn them off. With reversed
   depth off, and on OpenGL ES and Metal, the shaders are as they were
   without it. Could suit upstream.
-- **At a merge:** keep `NV2A_U_FFREVZ` the last of the vertex uniforms,
+- **When picking:** keep `NV2A_U_FFREVZ` the last of the vertex uniforms,
   after upstream's, in the same place in nv2a_uniforms.c's table. A
   glDepthFunc, glClearDepth, or glPolygonOffset upstream adds turns round
   with `depth_dir` and `g_revz`, and a new depth in an epilogue needs its
@@ -308,7 +326,7 @@ git diff --name-status --diff-filter=MD upstream main
   and the draw count. `RECOMP_GL_ERRORS_PER_DRAW=1` asks after every draw,
   as upstream does, to name the draw; it reads nothing back, so it leaves
   the vertex cache on. Could suit upstream.
-- **At a merge:** an upstream error check in `do_draw_body` goes through
+- **When picking:** an upstream error check in `do_draw_body` goes through
   `gl_error_check` too.
 
 ### The walk by kind of method
@@ -328,7 +346,7 @@ git diff --name-status --diff-filter=MD upstream main
   now, against 18 before. Upstream's `nv2a_gl_method` is `gl_method`
   here, behind a wrapper that only counts with the profile on. Could suit
   upstream.
-- **At a merge:** upstream's changes to `nv2a_gl_method`'s body go into
+- **When picking:** upstream's changes to `nv2a_gl_method`'s body go into
   `gl_method`.
 
 ### The driver's nudge off both paths
@@ -349,7 +367,7 @@ git diff --name-status --diff-filter=MD upstream main
   resolution: kept on both, as xemu does, it moves the title's 2D too, and
   a letterbox bar drawn from the corner leaves a pixel and a half bare at
   3x. Could suit upstream.
-- **At a merge:** upstream changes to the `vpRect` block or the `ffVpOff`
+- **When picking:** upstream changes to the `vpRect` block or the `ffVpOff`
   upload in `do_draw_body` go into those two functions. `Nv2aVshFixed` is
   unchanged, so `SC_LAYOUT` stays. Run tests/gl_backend (test_nudge.c) and
   tests/shader_cache.
@@ -366,7 +384,7 @@ git diff --name-status --diff-filter=MD upstream main
   the rest leave at once. In the sandbox an index word took 11 to 20 ns in
   `imm_method`, and takes about 2 ns with it. `pb_kind`'s vertex attributes
   are the same two ranges and use it too. Could suit upstream.
-- **At a merge:** a per-vertex method upstream adds to `imm_method` must
+- **When picking:** a per-vertex method upstream adds to `imm_method` must
   lie in `attr_method`'s ranges. Run tests/attr_method, which fails if one
   doesn't.
 
@@ -385,7 +403,7 @@ git diff --name-status --diff-filter=MD upstream main
   no alpha bits (R5G6B5, X1R5G5B5, X8R8G8B8, Y8) now reads alpha 1, as
   `decode_texel` gives it from memory, by a texture swizzle. Metal leaves
   `texture_opaque` NULL and keeps the bug. Could suit upstream.
-- **At a merge:** keep `texture_opaque` after our other `Nv2aGfx` members,
+- **When picking:** keep `texture_opaque` after our other `Nv2aGfx` members,
   and the call right after the stage's texture is bound: the swizzle
   belongs to the texture, so it is set on every draw that samples a target.
   Run tests/gl_backend (test_opaque.c).
@@ -400,7 +418,7 @@ git diff --name-status --diff-filter=MD upstream main
   on the console: about 6 seconds a logo, and at least 7 for the
   disclaimer. The pacing's wait gives up the guest lock, so the game's
   other threads run on through it. Could suit upstream.
-- **At a merge:** keep ours, with no exception for the boot in
+- **When picking:** keep ours, with no exception for the boot in
   `frame_pace`.
 
 ### Full screen remembered
@@ -409,7 +427,7 @@ git diff --name-status --diff-filter=MD upstream main
 - **Why:** full screen is kept in the settings file, as widescreen and the
   scale are, so the game starts the way it was left. Upstream starts in a
   window unless the launcher is given `--fullscreen`. Could suit upstream.
-- **At a merge:** keep ours.
+- **When picking:** keep ours.
 
 ### Restart
 
@@ -419,7 +437,7 @@ git diff --name-status --diff-filter=MD upstream main
   run only the standard handles. Upstream's passes on every open file, and
   on Linux the new run kept the last run's guest memory until the game
   closed. Could suit upstream.
-- **At a merge:** keep ours, and run tests/restart.
+- **When picking:** keep ours, and run tests/restart.
 
 ### Free camera
 
@@ -433,7 +451,7 @@ git diff --name-status --diff-filter=MD upstream main
   does, the camera doesn't turn to graffiti being sprayed or to whoever the
   player talks to, and its eye isn't lifted, since the game lifts it for
   where its own camera faces. Our own files: port/freecam.c and freecam.h.
-- **At a merge:** merge upstream's changes to those four functions around
+- **When picking:** fit upstream's changes to those four functions around
   the hooks, and run tests/freecam. The names are only for our hooks:
   upstream's own lines in the camera section keep their numbers.
 
@@ -447,7 +465,8 @@ git diff --name-status --diff-filter=MD upstream main
   opens at the title screen's loading. Off by default, so the intro plays as
   on the Xbox. The hook also logs each card's steps, as `[INTRO]` lines. Our
   own files: port/intro.c and intro.h.
-- **At a merge:** merge upstream's changes to `sub_0007E360` around the hook.
+- **When picking:** fit upstream's changes to `sub_0007E360` around the
+  hook.
 
 ### Developer menu
 
@@ -467,7 +486,7 @@ git diff --name-status --diff-filter=MD upstream main
   turned the vertex cache off. Our own files: port/developer.c and
   port/cpuprof.c, both built from port/CMakeLists.txt. Could suit upstream
   (the list).
-- **At a merge:** keep the two calls in port/main.c, the two files in
+- **When picking:** keep the two calls in port/main.c, the two files in
   port/CMakeLists.txt, and the six names in `vc_debug_switch`, and run
   tests/developer and tests/cpuprof.
 
@@ -482,7 +501,7 @@ git diff --name-status --diff-filter=MD upstream main
 - **Why:** a folder named `portable` beside the launcher keeps the
   settings, saves, logs, and cache, so the whole game can move, as to an SD
   card (docs/portable-mode.md).
-- **At a merge:** keep ours, give a path rule upstream adds or changes the
+- **When picking:** keep ours, give a path rule upstream adds or changes the
   name for its 0 or 1, and run tests/user_dir.
 
 ### The Linux launcher's help
@@ -492,7 +511,7 @@ git diff --name-status --diff-filter=MD upstream main
   isn't a comment. Upstream's prints a fixed range of lines (4 to 18), so a
   header that changes length cuts the help short or prints code, as ours
   did. Could suit upstream.
-- **At a merge:** keep ours.
+- **When picking:** keep ours.
 
 ### Fades to black
 
@@ -509,7 +528,7 @@ git diff --name-status --diff-filter=MD upstream main
   does the variable set before the launcher starts, and `log` reports the
   fade's alpha once a second. The Mac, iPhone, and Android launchers keep
   upstream's line, since they weren't tested.
-- **At a merge:** keep ours, without the variable, and take upstream's
+- **When picking:** keep ours, without the variable, and take upstream's
   other changes to those lines.
 
 ### Kernel fixes
@@ -555,8 +574,9 @@ git diff --name-status --diff-filter=MD upstream main
     GPU thread; once in 13,228 wake-ups in a run with the queue (below).
     tests/nv2a_queue (ours) tests it: the old code loses a wake-up within a
     few thousand, this none in fourteen million.
-- **At a merge:** keep each fix. Where upstream fixes the same thing, take
-  upstream's and drop ours from this entry.
+- **When picking:** keep each fix. Where a picked commit fixes the same
+  thing, the maintainer chooses which fix stays; if it is upstream's, drop
+  ours from this entry.
 
 ### The game running ahead of the GPU thread
 
@@ -597,8 +617,8 @@ git diff --name-status --diff-filter=MD upstream main
   tests/nv2a_queue (ours) tests it, D3D's wait for the GPU included: twenty
   thousand waits against the real walk without a wake-up lost, and a wrap
   with 499 KB of tail, all of it walked. Could suit upstream.
-- **At a merge:** keep ours. If upstream changes how the GPU thread sets
-  DMA_GET or the device window's bounds, merge around it, and run
+- **When picking:** keep ours. If upstream changes how the GPU thread sets
+  DMA_GET or the device window's bounds, fit ours around it, and run
   tests/nv2a_queue.
 
 ### The sound chip a frame at a time
@@ -619,7 +639,7 @@ git diff --name-status --diff-filter=MD upstream main
   the ring and 2.9 on the wall clock before. In Shibuya Terminal on the
   Ally X, frames that missed a refresh went from 1.6-1.7% to 0.5%. Could
   suit upstream.
-- **At a merge:** keep ours. If upstream changes the frame thread's
+- **When picking:** keep ours. If upstream changes the frame thread's
   pacing, make it pace single frames as here and run tests/apu_pacing.
 
 ### Diagnostics only in Debug builds
@@ -629,7 +649,7 @@ git diff --name-status --diff-filter=MD upstream main
   call site of the generated code, whether used or not. Release builds
   leave them out (the options `JSRF_ABI_CHECK` and `JSRF_ICALL_FEEDBACK`,
   on in Debug builds): 36.2 MB of code instead of 46.0 MB.
-- **At a merge:** keep ours.
+- **When picking:** keep ours.
 
 ### Code for upstream's older generated code, left out
 
@@ -642,8 +662,8 @@ git diff --name-status --diff-filter=MD upstream main
   (docs/building-on-linux.md), which needs none of it. Upstream keeps it
   for its downloads, which it still builds from older generated code. The
   merge of upstream 0.5.4 (`ce20630`) says what was kept out.
-- **At a merge:** leave upstream's changes to this code out, and say so in
-  the merge commit. When upstream removes it too, remove this entry.
+- **When picking:** leave upstream's changes to this code out, and say so
+  in the commit. When upstream removes it too, remove this entry.
 
 ### Unused renderers and test code, removed
 
@@ -658,7 +678,7 @@ git diff --name-status --diff-filter=MD upstream main
 - **Why:** not recorded. They were already gone from the fork's first
   commit (`a7fcd0e`), and the merge of upstream 0.5.0 (`ae7f1ad`) kept them
   out. None of them runs in JSRF, which draws through src/nv2a_gl.
-- **At a merge:** an upstream change to a removed file is a modify/delete
+- **When picking:** an upstream change to a removed file is a modify/delete
   conflict: keep the file removed.
 - **To decide:** restoring them would end these conflicts, at the cost of
   building code that never runs, and of libepoxy on Linux.
@@ -671,7 +691,7 @@ git diff --name-status --diff-filter=MD upstream main
   credited spriteice's fork, or declared a function twice, the merges kept
   our text. The test lacks upstream's allowance for ordinal 150, which both
   route the same way, and finds its function by a longer pattern.
-- **At a merge:** take upstream's text, and remove this entry.
+- **When picking:** keep ours.
 
 ### Our own files
 
@@ -683,5 +703,5 @@ git diff --name-status --diff-filter=MD upstream main
   docs in docs/.
 - **Why:** they have no counterpart upstream, so they never conflict, and
   adding one needs no entry. They use upstream's code.
-- **At a merge:** build them and run their tests. If upstream adds a file
+- **When picking:** build them and run their tests. If upstream adds a file
   at one of these paths, stop and ask.
