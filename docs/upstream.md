@@ -454,6 +454,32 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 - **When picking:** keep the Linux branch in `frame_pace`'s wait, and
   upstream's own for the other systems.
 
+### Textures made faster
+
+- **Files:** src/nv2a_gl/nv2a_gl.c (`tex_dxt_direct` and its use in
+  `upload_texture_inner`; `decode_level`'s loops, `put_rgba`,
+  `decode_rows` and `decode_texels`, with `decode_texel` always inlined;
+  the texture cache's `held`; `DXT` on `vc_debug_switch`'s list; and the
+  DXT counts at the end of the `[HITCH]` line and of the textures-made
+  line), nv2a_gfx_gl.c and nv2a_backend.h (`tex_new_dxt`, a member added
+  to `Nv2aGfx`).
+- **Why:** entering a level makes 50 to 110 textures in one frame. On the
+  Ally X those frames took 50 to 217 ms, 75 to 87% of it making textures,
+  and 61 to 75% of that was decoding them. DXT1, 3 and 5 were decoded too,
+  so that no texture would depend on the driver taking S3TC. They now go to
+  the device as they are where it takes them (every desktop driver does).
+  They're decoded as before where it doesn't, and where the texels are
+  read: a bump source's bias, the transparency census and the texture
+  dump. Every other format is decoded with a loop of its own, two to seven
+  times as fast here and texel for texel the same. `RECOMP_GL_DXT=0`
+  decodes DXT as before. Metal leaves `tex_new_dxt` NULL and decodes.
+  tests/tex_decode and tests/gl_backend's test_dxt.c (ours) test it. Could
+  suit upstream.
+- **When picking:** keep `tex_new_dxt` last among our `Nv2aGfx` members, in
+  the struct and in nv2a_gfx_gl.c's table. Fit a change upstream makes to
+  `decode_level` or `decode_texel` into the loops, then run tests/tex_decode
+  and tests/gl_backend.
+
 ### Full screen remembered
 
 - **Files:** src/nv2a_gl/nv2a_gl.c.
