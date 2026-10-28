@@ -91,12 +91,30 @@ Only on the maintainer's say-so.
 ## Close out
 
 12. **Archive and move on:** the release's folder in `release-prep/` keeps
-    its release text, packages, SHA256SUMS.txt, and link. The backlog is
+    its release text, packages, SHA256SUMS.txt, link, and a source backup:
+    a copy of the repository to keep safe outside GitHub. The backlog is
     marked shipped, and the roadmap points at the next release.
+    - **The backup** is made from a fresh `git clone --mirror` of the
+      repository once the release is published, so it matches GitHub. It
+      holds only what the repository holds: no game files, generated code,
+      or logs.
+    - **`JSRF-PC-b1.1-source.tar.gz`:** the release's files at its tag,
+      with no history (`git archive --prefix=JSRF-PC-b1.1/ b1.1`). To build
+      it, pass the version with `-DJSRF_VERSION=b1.1`, as
+      docs/versioning.md says.
+    - **`JSRF-PC-b1.1-repo.bundle`:** the whole repository: `main`,
+      `upstream`, every tag, and all their history
+      (`git bundle create JSRF-PC-b1.1-repo.bundle HEAD --branches --tags`).
+      `git clone JSRF-PC-b1.1-repo.bundle` gives it back, ready to push to
+      a new home.
+    - **Checked before it's kept:** the bundle clones and passes
+      `git fsck`, and the snapshot matches the tag's files. Both files go
+      in SHA256SUMS.txt, and neither is uploaded to the GitHub release.
 
 ## If a release is broken
 
 A published tag is never moved. The fix goes in the next bug fix release,
 and until then the published release text lists the problem as a known
 issue. The exception is a hotfix, on the maintainer's say-so: it ships the
-fix straight away, as docs/versioning.md describes.
+fix straight away, as docs/versioning.md describes, and still gets step
+12's source backup.
