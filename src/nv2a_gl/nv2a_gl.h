@@ -34,6 +34,10 @@ int  nv2a_gl_enabled(void);
 /* Every decoded pushbuffer method, in order. Safe to call before init. */
 void nv2a_gl_method(uint32_t method, uint32_t param);
 
+/* A run of n words (at least one) to an index method, ARRAY_ELEMENT16 or 32,
+ * written non-incrementing: the same as n calls of nv2a_gl_method. */
+void nv2a_gl_indices(uint32_t method, const uint32_t *p, uint32_t n);
+
 /* End-of-run summary: what was drawn, what was refused, and why. */
 void nv2a_gl_report(void);
 

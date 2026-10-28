@@ -42,9 +42,14 @@ static uint32_t s_tot_words, s_tot_unknown, s_tot_jumps, s_tot_segments;
 /* Executing is opt-in separately from surveying: a survey is read-only, while
  * the executor writes to guest memory. */
 extern void nv2a_pb_exec_method(uint32_t subch, uint32_t method, uint32_t param);
+extern void nv2a_pb_exec_indices(uint32_t subch, uint32_t method, const uint32_t *p, uint32_t n);
 extern void nv2a_pb_exec_report(void);
 static int s_exec_enabled = -1;
 static int s_scan_enabled = -1;
+
+/* The index methods, two 16-bit indices a word or one 32-bit index. */
+#define NV097_ARRAY_ELEMENT16 0x1800u
+#define NV097_ARRAY_ELEMENT32 0x1808u
 
 /* DMA_GET, when the walk keeps it (RECOMP_NV2A_QUEUE, xbox_memory_layout.c):
  * set to each command's address as the walk reaches it, the way the GPU's
@@ -277,6 +282,23 @@ uint32_t nv2a_pb_scan(uint32_t start_va, uint32_t end_va)
             uint32_t method =  w & 0x1FFCu;
             int noninc = (w & 0xE0000000u) == 0x40000000u;
 
+            /* A run of index words goes to the executor whole: more than half
+             * the words the title sends are indices, and word by word each
+             * one took three calls to land in a list. Not under the survey,
+             * which counts word by word. */
+            if (noninc && s_exec_enabled && !s_scan_enabled
+                && (method == NV097_ARRAY_ELEMENT16 || method == NV097_ARRAY_ELEMENT32)) {
+                /* The words the loop below would take: those that start
+                 * before end_va, which the header may have passed by up to
+                 * three bytes. */
+                uint32_t n = (end_va - va + 3) / 4;
+                if (n > count) n = count;
+                if (n)
+                    nv2a_pb_exec_indices(subch, method, (const uint32_t *)(mem + va), n);
+                va += n * 4;
+                words += n;
+                continue;
+            }
             for (uint32_t i = 0; i < count && va < end_va; i++) {
                 uint32_t m = noninc ? method : method + i * 4;
                 /* The inventory is only ever printed under RECOMP_PB_SCAN, so

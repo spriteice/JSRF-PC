@@ -78,6 +78,13 @@ void nv2a_pb_exec_method(uint32_t subch, uint32_t method, uint32_t param)
     }
 }
 
+/* A run of index words, handed over whole (none here: the stream is NOPs). */
+void nv2a_pb_exec_indices(uint32_t subch, uint32_t method, const uint32_t *p, uint32_t n)
+{
+    while (n--)
+        nv2a_pb_exec_method(subch, method, *p++);
+}
+
 /* MEMW32 and MEM32, as recomp_types.h routes them. */
 static void memw32(uint32_t a, uint32_t v)
 {

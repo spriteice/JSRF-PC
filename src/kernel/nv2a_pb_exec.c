@@ -1798,6 +1798,23 @@ void nv2a_pb_exec_method(uint32_t subch, uint32_t method, uint32_t param)
     }
 }
 
+/* A run of index words, ARRAY_ELEMENT16 or 32 written non-incrementing,
+ * handed over whole by the walk (nv2a_pb_scan): n words at p, n at least 1.
+ * The same as n calls of nv2a_pb_exec_method, which acts on the index
+ * methods itself only for the software rasteriser: with GL rendering the
+ * run goes to the renderer in one call (nv2a_gl_indices). */
+void nv2a_pb_exec_indices(uint32_t subch, uint32_t method, const uint32_t *p, uint32_t n)
+{
+    static int keep_soft = -1;      /* RECOMP_PB_SOFT, as nv2a_pb_exec_method reads it */
+    if (keep_soft < 0) keep_soft = getenv("RECOMP_PB_SOFT") ? 1 : 0;
+    if (subch == 0 && nv2a_gl_enabled() && !keep_soft) {
+        nv2a_gl_indices(method, p, n);
+        return;
+    }
+    while (n--)
+        nv2a_pb_exec_method(subch, method, *p++);
+}
+
 /* Find where the title actually wrote its quad.
  *
  * The GPU is pointed at a buffer that stays zero, which says the data went

@@ -11072,6 +11072,7 @@ static int pb_kind(uint32_t m)
 }
 
 static void gl_method(uint32_t method, uint32_t param);
+static void gl_run(uint32_t method, const uint32_t *p, uint32_t n);
 
 #define PB_CLOCK_READS 1000     /* the clock reads pb_clock_cost averages */
 static double pb_clock_cost(void)
@@ -11086,18 +11087,20 @@ static double pb_clock_cost(void)
     return cost;
 }
 
-static void pb_kind_method(uint32_t method, uint32_t param)
+/* One method, or a run of index words (gl_run), which is counted by its
+ * words and timed as one call. */
+static void pb_kind_method(uint32_t method, const uint32_t *p, uint32_t n)
 {
     static unsigned skip[PB_KINDS];
     int k = pb_kind(method);
     double cost, nested, t0;
-    g_prof.pbk_words[k]++;
-    if (++skip[k] < PB_KIND_EVERY) { gl_method(method, param); return; }
+    g_prof.pbk_words[k] += n;
+    if (++skip[k] < PB_KIND_EVERY) { gl_run(method, p, n); return; }
     skip[k] = 0;
     cost = pb_clock_cost();
     nested = g_prof.whole_draw + g_prof.present + g_prof.pace;
     t0 = prof_now();
-    gl_method(method, param);
+    gl_run(method, p, n);
     g_prof.pbk_t[k] += PB_KIND_EVERY * (prof_now() - t0 - cost
                        - (g_prof.whole_draw + g_prof.present + g_prof.pace - nested));
     g_prof.pbk_clock += 2 * cost;
@@ -11105,8 +11108,51 @@ static void pb_kind_method(uint32_t method, uint32_t param)
 
 void nv2a_gl_method(uint32_t method, uint32_t param)
 {
-    if (PROF_ON()) pb_kind_method(method, param);
+    if (PROF_ON()) pb_kind_method(method, &param, 1);
     else           gl_method(method, param);
+}
+
+void nv2a_gl_indices(uint32_t method, const uint32_t *p, uint32_t n)
+{
+    if (PROF_ON()) pb_kind_method(method, p, n);
+    else           gl_run(method, p, n);
+}
+
+/*
+ * A run of index words in one call.
+ *
+ * In 99th Street the walk reads about 13 million words a second, and 55% of
+ * them are indices: ARRAY_ELEMENT16 or 32, one method written
+ * non-incrementing with up to 2047 words. Each word went through three calls
+ * and every check gl_method makes ahead of its switch, to land in S.idx.
+ *
+ * The first word still goes through gl_method, which starts the batch, or
+ * draws what it holds if a constant or an array moved since. The rest are
+ * appended here as gl_method would append them, dropped the same way once
+ * S.idx is full. Nothing gl_method checks can change between two words of
+ * one run: only another method moves a constant or an array, and the
+ * per-method logs (methval_note, methtrace_note) skip the index methods.
+ */
+static void gl_run(uint32_t method, const uint32_t *p, uint32_t n)
+{
+    uint32_t room, i;
+    gl_method(method, p[0]);
+    if (n < 2 || !nv2a_gl_enabled() || g_failed) return;
+    p++;
+    n--;
+    if (method == M_ARRAY_ELEMENT16) {
+        room = (MAX_INDICES - S.idx_count) / 2;     /* two indices a word */
+        if (n > room) n = room;
+        for (i = 0; i < n; i++) {
+            S.idx[S.idx_count++] = p[i] & 0xFFFF;
+            S.idx[S.idx_count++] = p[i] >> 16;
+        }
+    } else if (method == M_ARRAY_ELEMENT32) {
+        room = MAX_INDICES - S.idx_count;
+        if (n > room) n = room;
+        memcpy(&S.idx[S.idx_count], p, n * sizeof *p);
+        S.idx_count += n;
+    }
 }
 
 static void gl_method(uint32_t method, uint32_t param)

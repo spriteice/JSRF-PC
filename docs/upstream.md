@@ -404,6 +404,29 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   lie in `attr_method`'s ranges. Run tests/attr_method, which fails if one
   doesn't.
 
+### Index words a run at a time
+
+- **Files:** src/kernel/nv2a_pb_scan.c (the walk hands a run of index words
+  to `nv2a_pb_exec_indices`, and the index methods' names),
+  src/kernel/nv2a_pb_exec.c (`nv2a_pb_exec_indices`), src/nv2a_gl/nv2a_gl.c
+  and .h (`nv2a_gl_indices` and `gl_run`, and `pb_kind_method` takes a run).
+- **Why:** more than half the words the title sends are indices, about 7
+  million a second on 99th Street: ARRAY_ELEMENT16 or 32, one method written
+  non-incrementing, up to 2047 words at a time. Each went through the walk,
+  the executor and `gl_method` on its own to land in a list. Now the walk
+  hands the executor a run whole, and the renderer puts its first word
+  through `gl_method`, which starts the batch or draws what it holds first,
+  and appends the rest in one go, dropping those past a full list as
+  before. In the sandbox the renderer's part went from about 14 ns a word to
+  under 2. Under `RECOMP_PB_SCAN` or `RECOMP_PB_SOFT`, and on a subchannel
+  other than 0, the words go one at a time as before. With
+  `RECOMP_GL_PROFILE=1` a run is counted by its words and timed as one call.
+  tests/index_runs (ours) tests the walk and the renderer against the same
+  words one at a time. Could suit upstream.
+- **When picking:** keep ours. If upstream gives the index methods anything
+  to do outside their cases in `gl_method`'s switch, or changes those cases,
+  `gl_run` must do the same for every word of a run. Run tests/index_runs.
+
 ### Targets sampled without alpha
 
 - **Files:** src/nv2a_gl/nv2a_gl.c (`fmt_opaque`, and its call where each
