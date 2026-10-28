@@ -57,7 +57,7 @@ extern void nv_window_file_set(const char *file, const char *key, int val);
  * Performance's and Experimental's, which have rows of their own, in plain
  * words; and with nothing ticked the engine does what it always does. The CPU
  * profile is Linux's and Windows' only for now (port/cpuprof.c), and Use P
- * cores Linux's (port/pcores.c).
+ * cores (port/pcores.c) and display pacing (nv2a_display_clock.c) Linux's.
  * A RECOMP_GL_ switch that never reads converted vertices back goes on the
  * vertex cache's list too (vc_debug_switch in nv2a_gl.c), or setting it turns
  * the cache off as well. */
@@ -90,6 +90,9 @@ static const DevSwitch k_perf[] = {
     { "RECOMP_P_CORES", "1" },              /* the game's thread and the renderer's on the P cores */
 #endif
     { "RECOMP_NV2A_QUEUE", "0" },           /* the game no more than a kick ahead of the GPU thread */
+#if defined(__linux__) && !defined(__ANDROID__)
+    { "RECOMP_PACE_DISPLAY", "0" },         /* frames paced by the game's clock, not the display's */
+#endif
 };
 /* Experimental's: none just now -- the last, the GPU queue, is the engine's
  * way since b1.2, with its switch under Performance. A new one goes before the
@@ -130,6 +133,9 @@ static const char *const k_perf_row[] = {
     "Use P cores (Restart)",
 #endif
     "Turn off the GPU queue (Restart)",
+#if defined(__linux__) && !defined(__ANDROID__)
+    "Turn off display pacing (Restart)",
+#endif
 };
 _Static_assert(sizeof k_perf_row / sizeof k_perf_row[0] == DEV_PERF, "a row for each of Performance's");
 /* Experimental's rows, one for each of k_tries. */

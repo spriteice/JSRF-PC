@@ -53,6 +53,11 @@ if(APPLE)
     set_source_files_properties(../nv2a_metal/nv2a_metal.m
                                 PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # The display's refreshes as the kernel counts them, for frame pacing
+    # with an SDL window (and nothing without one).
+    list(APPEND NV2A_GL_SOURCES nv2a_display_clock.c)
+endif()
 
 add_library(xbox_nv2a_gl STATIC ${NV2A_GL_SOURCES})
 

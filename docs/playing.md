@@ -82,6 +82,8 @@ menu.
     leaves the clocks, the power limit and the power profile as they are,
     and the log says what it found. Turn off the GPU queue has the game wait
     for the graphics after each batch of work, as before b1.2, to compare.
+    Turn off display pacing (Linux) has the game time its frames by its own
+    clock, as before b1.2, not by the display's refreshes, to compare.
   - **Experimental:** Changes to how the game runs, to try out, when there
     are any.
   - **Purge shaders:** Restarts the game and deletes the shader cache as it

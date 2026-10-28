@@ -477,6 +477,32 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 - **When picking:** keep the Linux branch in `frame_pace`'s wait, and
   upstream's own for the other systems.
 
+### Frame pacing in step with the display on Linux
+
+- **Files:** src/nv2a_gl/nv2a_gl.c (`gl_init` starts it, `frame_pace`
+  paces by it and sends the frame to the card before waiting, and
+  `nv2a_gl_report` reports it), src/nv2a_gl/CMakeLists.txt (builds it on
+  Linux). The rest is in src/nv2a_gl/nv2a_display_clock.c and .h (ours).
+- **Why:** on Linux the game paced on its own 60 Hz clock, which never
+  quite keeps time with the display's. At 120 Hz the moment each frame was
+  handed over drifted through the refresh, and where it passed the point at
+  which the compositor takes a frame, frames stayed one refresh, then
+  three. The kernel knows when the display refreshes (the X server under
+  KWin and gamescope does not), so `frame_pace` now paces at a whole number
+  of its refreshes and hands each frame over 15% into one, as the presenter
+  does on Windows half a refresh in. It sends the frame's commands to the
+  card before it waits, so the card draws the frame meanwhile. With VRR on,
+  or where no whole number of refreshes is the game's frame (144 Hz), the
+  game's clock paces, as before. `RECOMP_PACE_DISPLAY=0` (Developer >
+  Performance > Turn off display pacing) turns it off, and
+  `RECOMP_PACE_PHASE` sets the point in the refresh. A line every 10 s says
+  where in the refresh the frames were handed over. tests/display_clock
+  (ours) tests it. Could suit upstream.
+- **When picking:** keep the point `frame_pace` eases towards as `at`
+  (half a refresh for the presenter), the call to `nv2a_dclock_lock` when
+  `pres_lock` gives nothing, and the flush before the wait. Run
+  tests/display_clock.
+
 ### Textures made faster
 
 - **Files:** src/nv2a_gl/nv2a_gl.c (`tex_dxt_direct` and its use in
@@ -560,11 +586,12 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 - **Why:** the in-game menu's Developer menu: Log to file, the engine's
   logging switches, Engine switches, which turn parts of the engine off to
   compare, Performance, what the engine does for speed (Use P cores first,
-  and the GPU queue's switch, both below), and Experimental, switches that
-  change what the game does, for a comparison, shown while there is one.
-  The start puts them into the environment before anything reads them.
-  Among the logging switches is the CPU profile (Linux and Windows), which
-  the start sets going: where each thread's time goes, by function.
+  then the switches that turn off the GPU queue and display pacing, each
+  with its own entry), and Experimental, switches that change what the
+  game does, for a comparison, shown while there is one. The start puts
+  them into the environment before anything reads them. Among the logging
+  switches is the CPU profile (Linux and Windows), which the start sets
+  going: where each thread's time goes, by function.
   Upstream's `vc_debug_switch` list leaves out the six above, none of which
   reads a draw's vertices back, so setting one turned the vertex cache off.
   Our own files: port/developer.c and port/cpuprof.c, both built from

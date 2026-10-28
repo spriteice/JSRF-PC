@@ -86,6 +86,14 @@ cases["p_cores"] = (None, "RECOMP_P_CORES=1\n", {},
                     else ["started:"],
                     [] if linux else ["P_CORES", "[PCORES]"])
 
+# Display pacing (nv2a_display_clock.c), Linux's only and on by default: a
+# switch under Performance that turns it off, ticked, 0 in developer.cfg
+# (tests/display_clock tests the rest).
+cases["pace_display_off"] = (None, "RECOMP_PACE_DISPLAY=0\n", {},
+                             ["[DEV] RECOMP_PACE_DISPLAY=0 from developer.cfg", "started:"] if linux
+                             else ["started:"],
+                             [] if linux else ["PACE_DISPLAY"])
+
 # The game's camera log, the one switch in Logging that port/recomp_manual.c
 # reads: from developer.cfg into the environment like the others.
 cases["camera_log"] = (None, "JSRF_CAM_LOG=1\n", {},
@@ -113,7 +121,7 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
             (folder / "developer.cfg").write_text(dev_text)
         env = {k: v for k, v in os.environ.items()
                if k not in (*switches, "RECOMP_CPU_PROFILE", "RECOMP_NV2A_QUEUE", "RECOMP_P_CORES",
-                            "JSRF_CAM_LOG")}
+                            "RECOMP_PACE_DISPLAY", "JSRF_CAM_LOG")}
         env.update(extra, JSRF_SETTINGS_FILE=str(folder / "settings.cfg"))
         log = folder / "last-run.log"
         with open(log, "w") as out:
@@ -144,8 +152,10 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
     if run.returncode != 0 or list(pages) != ["Logging", "Engine switches", "Performance"]:
         raise SystemExit(f"menu: exit {run.returncode}, pages {list(pages)}\n{run.stderr}")
     perf = ["Use P cores (Restart)"] if linux else []
-    if pages["Performance"] != [*perf, "Turn off the GPU queue (Restart)"]:
+    pace = ["Turn off display pacing (Restart)"] if linux else []
+    if pages["Performance"] != [*perf, "Turn off the GPU queue (Restart)", *pace]:
         raise SystemExit(f"menu: Performance's rows are {pages['Performance']}")
-    if any("RECOMP_NV2A_QUEUE" in row or "RECOMP_P_CORES" in row for row in pages["Engine switches"]):
+    if any(name in row for row in pages["Engine switches"]
+           for name in ("RECOMP_NV2A_QUEUE", "RECOMP_P_CORES", "RECOMP_PACE_DISPLAY")):
         raise SystemExit(f"menu: Engine switches' rows are {pages['Engine switches']}")
 print("developer: all", len(cases), "cases and the menu's pages pass")

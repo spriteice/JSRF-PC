@@ -32,6 +32,7 @@
 #include "nv2a_psh.h"
 #include "nv2a_backend.h"
 #include "nv2a_shader_cache.h"
+#include "nv2a_display_clock.h"
 
 /*
  * Two ways to get a 3.3 core context.
@@ -1381,6 +1382,7 @@ static int gl_init(uint32_t w, uint32_t h)
 
 #if !defined(NV2A_GLES)
 static void pres_start(void);        /* the presenter, below */
+static volatile int g_presenter;     /* ... and whether it runs */
 #endif
 static int  sdl_cfg_get(const char *key, int def); /* the settings file, below */
 #if defined(XBOXRECOMP_MENU)
@@ -1464,6 +1466,14 @@ static int gl_init(uint32_t w, uint32_t h)
 #if !defined(NV2A_GLES)
     /* Or, on Windows, a presenter thread swaps in step with the display. */
     pres_start();
+#endif
+#if defined(NV2A_DISPLAY_CLOCK)
+    /* Or, on Linux, frame_pace hands frames over in step with the display's
+     * refreshes as the kernel counts them (nv2a_display_clock.c). */
+    if (g_presenter != 1) {
+        SDL_DisplayMode mode;
+        nv2a_dclock_open(SDL_GetWindowDisplayMode(g_window, &mode) == 0 ? mode.refresh_rate : 0);
+    }
 #endif
     if (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP)
         SDL_ShowCursor(SDL_DISABLE);
@@ -10079,6 +10089,9 @@ static void frame_pace(void)
         static double period = -1.0;
         static double deadline;
         double now;
+#if defined(NV2A_DISPLAY_CLOCK)
+        int by_display = 0;
+#endif
         if (period < 0.0) {
             const char *v = getenv("RECOMP_FPS");
             double fps = v ? atof(v) : 60.0;
@@ -10120,13 +10133,23 @@ static void frame_pace(void)
                  * refresh before the one that will show it -- as far as can
                  * be from either, so that each is shown exactly once. Eased
                  * towards, a fifth of the way each frame. */
-                double ref = 0.0, refresh = 0.0, lp = pres_lock(period, &ref, &refresh);
+                double ref = 0.0, refresh = 0.0, at = 0.5, lp = pres_lock(period, &ref, &refresh);
+#if defined(NV2A_DISPLAY_CLOCK)
+                /* Or, on Linux, the display's refreshes as the kernel
+                 * counts them, each frame handed over early in one
+                 * (nv2a_display_clock.c). */
+                if (lp <= 0.0 && (lp = nv2a_dclock_lock(period, now, &ref, &refresh, &at)) > 0.0)
+                    by_display = 1;
+#endif
                 if (lp > 0.0) {
                     deadline += lp;
                     if (ref > 0.0 && now - ref < 0.25) {
-                        double ph = fmod(deadline - ref, refresh);
+                        /* How far past the point in the refresh it aims at,
+                         * from half a refresh before it to half after. */
+                        double ph = fmod(deadline - ref - at * refresh, refresh);
                         if (ph < 0.0) ph += refresh;
-                        deadline -= (ph - 0.5 * refresh) * 0.2;
+                        if (ph >= 0.5 * refresh) ph -= refresh;
+                        deadline -= ph * 0.2;
                     }
                 } else {
                     deadline += period;
@@ -10148,6 +10171,13 @@ static void frame_pace(void)
                  * whose moment has passed. */
                 deadline = now + period;
             } else if (now < deadline) {
+#if defined(NV2A_DISPLAY_CLOCK)
+                /* In step with the display, the frame is to be finished
+                 * early in the refresh it is handed over in: its commands go
+                 * to the card now, to be drawn while this waits, and not
+                 * only with the swap after it. */
+                if (by_display && g_is_gl) glFlush();
+#endif
                 int held = xbox_guest_lock_drop ? xbox_guest_lock_drop() : 0;
 #if defined(PACE_ABSOLUTE)
                 double spin = deadline - pace_margin();
@@ -10205,6 +10235,9 @@ static void frame_pace(void)
                 if (held && xbox_guest_lock_retake) xbox_guest_lock_retake(held);
             }
             { double t = mono_now();
+#if defined(NV2A_DISPLAY_CLOCK)
+              nv2a_dclock_handed_over(t);
+#endif
               if (g_pace_st.last > 0.0) {
                   double ms = (t - g_pace_st.last) * 1000.0;
                   g_pace_st.iv[ms < 14.0 ? 0 : ms < 19.5 ? 1 : ms < 30.0 ? 2 : ms < 45.0 ? 3 : 4]++;
@@ -12041,6 +12074,9 @@ void nv2a_gl_report(void)
 #endif
         fputc('\n', stderr);
     }
+#if defined(NV2A_DISPLAY_CLOCK)
+    if (g_pace_st.frames) nv2a_dclock_report();
+#endif
     if (g_ht.compiles)
         fprintf(stderr, "  [HITCH] %llu frames half again the period or longer; %llu programs "
                 "built in %.0f ms in all (%.1f ms each, worst %.1f)\n",
