@@ -437,6 +437,23 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 - **When picking:** keep ours, with no exception for the boot in
   `frame_pace`.
 
+### The pacing spin on Linux
+
+- **Files:** src/nv2a_gl/nv2a_gl.c (`pace_margin`, `pace_margin_learn`,
+  `pace_sleep_until`, their use in `frame_pace`, and the end of the
+  `[PACE]` line).
+- **Why:** `frame_pace` spins on the clock for the last 1.2 ms of every
+  frame's wait. On the Ally X that spin was 14 to 37% of the GPU thread's
+  samples, about 7% of a core, and Linux's sleeps seldom needed it. On
+  Linux each sleep now goes to an absolute time, and the spin starts at
+  0.3 ms. It widens at once when a sleep ends close to it, 1.2 ms at most,
+  and narrows back by 2 us a frame. `RECOMP_PACE_SPIN_US` fixes it. The
+  `[PACE]` line says how long the spin is and how far a sleep ran over.
+  Windows and macOS are unchanged. tests/pace_spin (ours) tests it. Could
+  suit upstream.
+- **When picking:** keep the Linux branch in `frame_pace`'s wait, and
+  upstream's own for the other systems.
+
 ### Full screen remembered
 
 - **Files:** src/nv2a_gl/nv2a_gl.c.

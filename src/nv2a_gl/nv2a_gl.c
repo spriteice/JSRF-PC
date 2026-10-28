@@ -9899,8 +9899,8 @@ static void fliplog(const char *why)
 /* How the pacing went, for the report: frames that reached the flip after
  * their moment, and the time from one released frame to the next. */
 static struct {
-    uint64_t frames, late, restarts, iv[5], overslept;
-    double   late_max, last, overslept_max;
+    uint64_t frames, late, restarts, iv[5], overslept, widened;
+    double   late_max, last, overslept_max, ran_over_max, margin_max;
 } g_pace_st;
 
 /* Sleep for ts -- on Windows, for about as long as that.
@@ -9931,6 +9931,64 @@ static void pace_sleep(const struct timespec *ts)
 }
 #else
 #define pace_sleep(ts) nanosleep((ts), NULL)
+#endif
+
+/* How much of the wait before a frame is spun rather than slept: the part a
+ * sleep cannot be trusted to deliver.
+ *
+ * It was 1.2 ms everywhere, and on the Ally X that spin -- the clock, read in
+ * a loop (linux-vdso.so.1) -- was 14 to 37% of the GPU thread's samples, about
+ * 7% of a core, every frame. Linux's sleeps barely needed it: in nine Desktop
+ * Mode runs they let one frame in 130,000 go late, by 0.5 ms, and under
+ * gamescope a few a run, by up to 3 ms. So on Linux each sleep goes to an
+ * absolute time, which the slices before it cannot push later, and the spin
+ * starts at 0.3 ms. A sleep that ends within a quarter of the spin's start
+ * widens it at once, to what that sleep overran by and 0.2 ms more (1.2 ms at
+ * most); it narrows back by 2 us a frame. RECOMP_PACE_SPIN_US fixes it
+ * instead (1200: as before). Windows and macOS keep 1.2 ms. */
+#if defined(__linux__)
+#include <errno.h>
+#define PACE_ABSOLUTE 1
+static double g_pace_margin = -1.0, g_pace_margin_min;
+static int    g_pace_margin_fixed;
+
+static double pace_margin(void)
+{
+    if (g_pace_margin < 0.0) {
+        const char *v = getenv("RECOMP_PACE_SPIN_US");
+        g_pace_margin_fixed = v != NULL;
+        g_pace_margin_min = v ? atof(v) * 1e-6 : 0.0003;
+        if (g_pace_margin_min < 0.0) g_pace_margin_min = 0.0;
+        if (g_pace_margin_min > 0.005) g_pace_margin_min = 0.005;
+        g_pace_margin = g_pace_margin_min;
+        g_pace_st.margin_max = g_pace_margin;
+    }
+    return g_pace_margin;
+}
+
+/* The last sleep before the spin ended `over` past the spin's start. */
+static void pace_margin_learn(double over)
+{
+    if (over > g_pace_st.ran_over_max) g_pace_st.ran_over_max = over;
+    if (g_pace_margin_fixed) return;
+    if (over > g_pace_margin * 0.75) {
+        g_pace_margin = over + 0.0002 < 0.0012 ? over + 0.0002 : 0.0012;
+        g_pace_st.widened++;
+        if (g_pace_margin > g_pace_st.margin_max) g_pace_st.margin_max = g_pace_margin;
+    } else if (g_pace_margin > g_pace_margin_min) {
+        g_pace_margin -= 0.000002;
+        if (g_pace_margin < g_pace_margin_min) g_pace_margin = g_pace_margin_min;
+    }
+}
+
+static void pace_sleep_until(double until)
+{
+    struct timespec ts;
+    ts.tv_sec = (time_t)until;
+    ts.tv_nsec = (long)((until - (double)ts.tv_sec) * 1e9);
+    if (ts.tv_nsec >= 1000000000L) { ts.tv_sec++; ts.tv_nsec -= 1000000000L; }
+    while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, NULL) == EINTR) { }
+}
 #endif
 
 static void frame_pace(void)
@@ -9967,6 +10025,7 @@ static void frame_pace(void)
              * The last millisecond is spun rather than slept, because that is
              * the part the sleep cannot deliver accurately, and a millisecond
              * of one core is a cheaper way to hold 60 fps than missing it.
+             * (On Linux, less of it: see pace_margin.)
              */
             now = mono_now();
             if (deadline == 0.0 || deadline < now - 1.0) deadline = now;
@@ -10007,7 +10066,12 @@ static void frame_pace(void)
                 deadline = now + period;
             } else if (now < deadline) {
                 int held = xbox_guest_lock_drop ? xbox_guest_lock_drop() : 0;
+#if defined(PACE_ABSOLUTE)
+                double spin = deadline - pace_margin();
+                int slept = 0;
+#else
                 double spin = deadline - 0.0012;
+#endif
                 /* Answer the display interrupt while waiting: this thread is
                  * the one that completes its acknowledgement, and the title's
                  * handler holds the guest lock until it does -- see
@@ -10020,6 +10084,16 @@ static void frame_pace(void)
                     service = (v ? atoi(v) : 1) && xbox_nv2a_vblank_service;
                 }
                 while (now < spin) {
+#if defined(PACE_ABSOLUTE)
+                    /* To an absolute time, the guest lock given up as below. */
+                    double until = spin;
+                    if (service && until - now > 0.001) until = now + 0.001;
+                    pace_sleep_until(until);
+                    slept = 1;
+                    now = mono_now();
+                    if (!service) break;
+                    xbox_nv2a_vblank_service();
+#else
                     struct timespec ts;
                     double wait = spin - now;
                     if (service && wait > 0.001) wait = 0.001;
@@ -10033,7 +10107,11 @@ static void frame_pace(void)
                     if (!service) break;
                     xbox_nv2a_vblank_service();
                     now = mono_now();
+#endif
                 }
+#if defined(PACE_ABSOLUTE)
+                if (slept) pace_margin_learn(now - spin);
+#endif
                 while ((now = mono_now()) < deadline) { if (service) xbox_nv2a_vblank_service(); }
                 /* A sleep that overran the deadline lets the frame go late;
                  * counted from half a millisecond. */
@@ -11811,13 +11889,21 @@ void nv2a_gl_report(void)
         fprintf(stderr, "  [PACE] %llu frames paced at the flip: %llu reached it late "
                 "(worst %.1f ms), %llu let go late by the wait (worst %.1f ms), %llu restarts; "
                 "flip to flip: under 14 ms %llu, "
-                "a 60th of a second %llu, 19-30 ms %llu, 30-45 ms %llu, longer %llu (%llu)\n",
+                "a 60th of a second %llu, 19-30 ms %llu, 30-45 ms %llu, longer %llu (%llu)",
                 (unsigned long long)g_pace_st.frames, (unsigned long long)g_pace_st.late,
                 g_pace_st.late_max, (unsigned long long)g_pace_st.overslept,
                 1000.0 * g_pace_st.overslept_max, (unsigned long long)g_pace_st.restarts,
                 (unsigned long long)g_pace_st.iv[0], (unsigned long long)g_pace_st.iv[1],
                 (unsigned long long)g_pace_st.iv[2], (unsigned long long)g_pace_st.iv[3],
                 (unsigned long long)g_pace_st.iv[4], (unsigned long long)n);
+#if defined(PACE_ABSOLUTE)
+        if (g_pace_margin >= 0.0)
+            fprintf(stderr, "; spinning the last %.2f ms (at most %.2f, widened %llu times; "
+                    "a sleep ran up to %.2f ms past the spin's start)",
+                    1000.0 * g_pace_margin, 1000.0 * g_pace_st.margin_max,
+                    (unsigned long long)g_pace_st.widened, 1000.0 * g_pace_st.ran_over_max);
+#endif
+        fputc('\n', stderr);
     }
     if (g_ht.compiles)
         fprintf(stderr, "  [HITCH] %llu frames half again the period or longer; %llu programs "
