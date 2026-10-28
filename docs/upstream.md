@@ -278,12 +278,31 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 
 - **Files:** src/nv2a_gl/nv2a_gl.c (`g_probe_now`).
 - **Why:** the probes that print every few seconds with no switch
-  (`[SURFACE]`, `[MOVERPOS]`, `[SINTAB]`, `[PIPE]`, the mover-box budget,
-  and `[TIMELINE]`) read a clock taken once a pass, in `present`, where
-  upstream's read one each in every draw. They print as before. Could
-  suit upstream.
+  (`[SURFACE]`, `[MOVERPOS]`, `[SINTAB]`, `[PIPE]` and the mover-box
+  budget, and `[TIMELINE]` when its switch is on, below) read a clock
+  taken once a pass, in `present`, where upstream's read one each in every
+  draw. They print as before. Could suit upstream.
 - **When picking:** an upstream probe of the same kind that reads the clock
   in `do_draw_body` can use `g_probe_now` too.
+
+### The timeline probe off by default
+
+- **Files:** src/nv2a_gl/nv2a_gl.c (the `[TIMELINE]` probe in
+  `do_draw_body`, and `TIMELINE` on `vc_debug_switch`'s list).
+- **Why:** upstream's probe printed one frame every 5 s with no switch: each
+  surface the frame drew into, each skinned batch and each small quad, up to
+  200 lines, from the GPU thread, then flushed the log. In the b1.2 review's
+  runs on the Ally X it was nearly half of every log's lines, and slow
+  frames of 27 to 38 ms often came right after it, though not always: in a
+  run with it switched back on, none of its 47 frames was followed by one.
+  It asks one question, whether the characters are drawn after the frame's
+  composite, so it is now off unless `RECOMP_GL_TIMELINE=1` (Developer >
+  Logging) asks for it, and prints as before when it does. It reads nothing
+  back, so it is on `vc_debug_switch`'s list and leaves the vertex cache on.
+  tests/timeline (ours) tests it. Could suit upstream.
+- **When picking:** if upstream changes the probe, keep `tl_on` in its
+  arming test, and `TIMELINE` on `vc_debug_switch`'s list. Run
+  tests/timeline and tests/developer.
 
 ### Reversed and precise depth
 

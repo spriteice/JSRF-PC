@@ -4879,7 +4879,9 @@ static const char *vc_debug_switch(void)
         "ERRORS_PER_DRAW",
         /* the frame dumps: taken at the flip, from the picture */
         "DUMP_FB", "DUMP_AFTER", "DUMP_EVERY", "DUMP_3D", "DUMP_TRIS",
-        "DUMP_CHARS", "DUMP_DEPTH", NULL
+        "DUMP_CHARS", "DUMP_DEPTH",
+        /* the timeline probe: a draw's number, slot and vertex count */
+        "TIMELINE", NULL
     };
     static char name[64];
     char **e;
@@ -7934,15 +7936,20 @@ static void do_draw_body(void)
        *
        * One frame every five seconds, printed as it happens: every surface
        * the frame switches to, every skinned batch, and every small quad
-       * (six vertices or fewer), which is what a composite looks like. */
+       * (six vertices or fewer), which is what a composite looks like.
+       * Off unless RECOMP_GL_TIMELINE=1: up to 200 lines from this thread
+       * every 5 s were nearly half of every log. */
       { static double last_tl; static uint32_t tl_frame = 0xFFFFFFFFu;
         static uint32_t tl_surf; static int tl_events;
         static uint32_t tl_seen = 0xFFFFFFFFu; static int tl_arm;
+        static int tl_on = -1;
         double now_tl = g_probe_now;
+        if (tl_on < 0) { const char *v = getenv("RECOMP_GL_TIMELINE");
+                         tl_on = v ? atoi(v) : 0; }
         /* Arming in the middle of a frame shows only its tail, which is
          * exactly the part that cannot answer the question. Wait for the
          * frame to turn over, then record that whole frame. */
-        if (tl_frame == 0xFFFFFFFFu && !tl_arm && now_tl - last_tl > 5.0)
+        if (tl_on && tl_frame == 0xFFFFFFFFu && !tl_arm && now_tl - last_tl > 5.0)
             tl_arm = 1;
         if (tl_arm && S.frames != tl_seen) {
             tl_arm = 0; last_tl = now_tl; tl_frame = S.frames;

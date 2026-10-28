@@ -105,6 +105,11 @@ cases["pace_display_off"] = (None, "RECOMP_PACE_DISPLAY=0\n", {},
 cases["camera_log"] = (None, "JSRF_CAM_LOG=1\n", {},
                        ["[DEV] JSRF_CAM_LOG=1 from developer.cfg", "started:"], [])
 
+# The renderer's timeline probe, off unless its switch in Logging asks for it
+# (tests/timeline tests the probe).
+cases["timeline"] = (None, "RECOMP_GL_TIMELINE=1\n", {},
+                     ["[DEV] RECOMP_GL_TIMELINE=1 from developer.cfg", "started:"], [])
+
 with tempfile.TemporaryDirectory(prefix="developer-") as directory:
     work = pathlib.Path(directory)
     exe = str(work / "test.exe")
@@ -183,4 +188,6 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
     if any(name in row for row in pages["Engine switches"]
            for name in ("RECOMP_NV2A_QUEUE", "RECOMP_P_CORES", "RECOMP_PACE_DISPLAY")):
         raise SystemExit(f"menu: Engine switches' rows are {pages['Engine switches']}")
+    if "RECOMP_GL_TIMELINE (Restart)" not in pages["Logging"]:
+        raise SystemExit(f"menu: Logging's rows are {pages['Logging']}")
 print("developer: all", len(cases), "cases and the menu's pages pass")
