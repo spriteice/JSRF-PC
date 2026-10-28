@@ -2211,6 +2211,56 @@ void sub_001910E0(void)
     }
 }
 
+/* ---- sub_00191440: D3D's wait for the GPU to reach a point -----------------
+ *
+ * (time, flag), stdcall. D3D numbers the work it hands the GPU, and fences in
+ * the push buffer write those numbers to one word. This returns once the word
+ * has reached `time`. Short of it, D3D puts in a fence for `time` if there is
+ * none yet (sub_00191390), finds where that fence is (sub_00191150), and asks
+ * how much of the push buffer the GPU still has to read to get there
+ * (sub_001910E0): 32 KB or more, it sleeps until the GPU raises NOP(5) there;
+ * less, it spins on the word, as the console's GPU reads that much in
+ * microseconds.
+ *
+ * Here the GPU is a thread paced to the frame rate, and the game queues a
+ * frame or more ahead of it, so the spin lasted until that thread came back
+ * from frame pacing's sleep: 55 to 71% of the game thread's time in the
+ * garage and the menus on the Ally X. So this takes the game's steps up to
+ * the spin, the same calls in the same order, and where it would spin it
+ * sleeps with the guest lock given up, until the GPU thread writes the
+ * number (nv2a_pb_wait_fence, in xboxrecomp's nv2a_pb_exec.c). The game's
+ * own code then runs: it finds the word there and returns, or, where the
+ * thread can't sleep, spins as before. RECOMP_FENCE_WAIT=0 spins always. */
+#define D3D_DEVICE         0x0019DCE0u /* the pointer to D3D's device */
+#define D3D_NEWEST         0x030u      /* the newest number handed out */
+#define D3D_FENCE_WORD     0x034u      /* the address of the word the fences write */
+#define D3D_WAIT_FAR       0x8000u     /* from this far on, D3D sleeps on NOP(5) */
+#define D3D_FENCE_FOR_RET  0x0019146Fu /* where sub_00191390 returns to */
+#define D3D_FIND_RET       0x00191478u /* where sub_00191150 returns to */
+#define D3D_HOW_FAR_RET    0x00191489u /* where sub_001910E0 returns to */
+extern void sub_00191440_gen(void);
+extern void sub_00191390(void);
+extern void sub_00191150(void);
+extern int nv2a_pb_wait_fence(uint32_t va, uint32_t top, uint32_t time);
+void sub_00191440(void)
+{
+    uint32_t time = GARG(1), dev = MEM32(D3D_DEVICE);
+    uint32_t top = MEM32(dev + D3D_NEWEST);
+    if (top - time < top - MEM32(MEM32(dev + D3D_FENCE_WORD))) {
+        uint32_t sv_eax = g_eax, sv_ecx = g_ecx, sv_edx = g_edx, none = 0, at;
+        if (time == top)
+            guest_call_cdecl(sub_00191390, D3D_FENCE_FOR_RET, 1, &none);
+        g_eax = time;
+        at = guest_call_cdecl(sub_00191150, D3D_FIND_RET, 0, NULL);
+        g_ecx = dev;
+        g_edx = at;
+        if (at && guest_call_cdecl(sub_001910E0, D3D_HOW_FAR_RET, 0, NULL) < D3D_WAIT_FAR)
+            nv2a_pb_wait_fence(MEM32(dev + D3D_FENCE_WORD), MEM32(dev + D3D_NEWEST), time);
+        g_eax = sv_eax; g_ecx = sv_ecx; g_edx = sv_edx;
+    }
+    sub_00191440_gen();
+}
+
 /* ---- sub_00013A80: one pass of the game's main loop (test only log) ------
  * JSRF_FRAME_LOG=1: once a second, how many passes ran, how many of them
  * presented (+0x74 set = no Present this pass) and how many waited a vblank

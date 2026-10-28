@@ -680,6 +680,31 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   DMA_GET or the device window's bounds, fit ours around it, and run
   tests/nv2a_queue.
 
+### The game's wait for the GPU, asleep
+
+- **Files:** port/recomp_manual.c (`sub_00191440`, an override, and its
+  names), src/kernel/nv2a_pb_exec.c (`nv2a_pb_wait_fence` and
+  `fence_written`, the call after a fence is written, and a line in
+  `nv2a_pb_exec_report`).
+- **Why:** D3D waits for room in the push buffer by spinning on its fence
+  word when the GPU is less than 32 KB from the fence it needs
+  (`sub_00191440`). With the game ahead of the GPU thread (above), that spin
+  lasted until the GPU thread came back from frame pacing's sleep: 55 to 71%
+  of the game thread's time in the garage and the menus on the Ally X. The
+  override makes the game's own calls up to the spin, in the game's order,
+  and then sleeps with the guest lock given up until the GPU thread writes
+  the fence. The game's code runs after it, finds the fence there and
+  returns. No wake-up is lost: the GPU thread looks for a waiter after each
+  fence it writes, and the waiter reads the fence after it arms, with a full
+  barrier on each side. Where a thread can't sleep (at raised IRQL, before
+  the first fence, or while another thread waits) it spins as before.
+  `RECOMP_FENCE_WAIT=0` spins always, to compare. The report every 10 s
+  says how many waits slept and for how long. tests/fence_wait (ours)
+  tests both halves. Could suit upstream.
+- **When picking:** keep ours. If upstream changes the executor's fence
+  write, keep `fence_written` right after it. If it overrides
+  `sub_00191440` too, stop and ask. Run tests/fence_wait.
+
 ### The sound chip a frame at a time
 
 - **Files:** src/apu/apu_core.c (`throttle`, `ring_ahead`).

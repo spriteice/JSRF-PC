@@ -1444,6 +1444,103 @@ static uint32_t dma_object_base(uint32_t handle, int *ok)
     return (frame & 0xFFFFF000u) | ((flags >> 20) & 0xFFFu);
 }
 
+/*
+ * A guest thread waiting for a fence, asleep until the walk writes it.
+ *
+ * D3D numbers the work it hands the GPU, and its fences write those numbers
+ * back to one word. It waits for room in the push buffer by spinning on that
+ * word until it holds the number it needs (JSRF's sub_00191440, in
+ * port/recomp_manual.c), as the console's GPU gets there in microseconds.
+ * Here the GPU is this walk, on a thread paced to the frame rate, and the
+ * title queues a frame or more ahead of it: the spin lasted until the walk
+ * came back from frame pacing's sleep. On the Ally X it was 55 to 71% of
+ * the game thread's time in the garage and the menus.
+ *
+ * nv2a_pb_wait_fence gives up the guest lock and sleeps instead, and the
+ * walk wakes it when it writes a number that ends the wait. No wake-up is
+ * lost: the waiter arms, then reads the word; the walk writes the word, then
+ * looks for a waiter; with a full barrier on each side, one of them sees the
+ * other, and the event keeps a wake-up that comes before the waiter sleeps.
+ * One waiter at a time. Anyone else spins as before (it returns 0): a second
+ * thread, a thread at raised IRQL, every thread until the walk has written a
+ * fence, and everyone with RECOMP_FENCE_WAIT=0.
+ */
+static struct {
+    int busy, armed;
+    uint32_t top, time;
+    HANDLE wake;
+    unsigned long slept, spun;      /* for the report: waits asleep and spun, */
+    unsigned long long us, longest_us;  /* and the time asleep */
+} s_fw;
+static int s_fences_written;
+
+/* The walk wrote `value` to a fence. */
+static void fence_written(uint32_t value)
+{
+    uint32_t top;
+    if (!__atomic_load_n(&s_fences_written, __ATOMIC_RELAXED))
+        __atomic_store_n(&s_fences_written, 1, __ATOMIC_RELEASE);
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);   /* the write, then the look */
+    if (!__atomic_load_n(&s_fw.armed, __ATOMIC_SEQ_CST))
+        return;
+    top = __atomic_load_n(&s_fw.top, __ATOMIC_RELAXED);
+    if (top - value <= top - __atomic_load_n(&s_fw.time, __ATOMIC_RELAXED)
+        && __atomic_exchange_n(&s_fw.armed, 0, __ATOMIC_SEQ_CST))
+        SetEvent(s_fw.wake);
+}
+
+/* Until the word at guest address `va` has reached `time`, as D3D compares
+ * them: top - word <= top - time, where `top` is the newest number handed
+ * out. 1 once it has, 0 if this thread spins instead. */
+int nv2a_pb_wait_fence(uint32_t va, uint32_t top, uint32_t time)
+{
+    extern KIRQL xbox_KeCurrentIrql(void);
+    extern int xbox_guest_lock_drop(void);
+    extern void xbox_guest_lock_retake(int held);
+    static int on = -1;
+    volatile uint32_t *word = (volatile uint32_t *)((uint8_t *)xbox_GetMemoryOffset() + va);
+    LARGE_INTEGER t0, t1, hz;
+    unsigned long long us;
+    int held;
+
+    if (on < 0) { const char *e = getenv("RECOMP_FENCE_WAIT"); on = e ? atoi(e) != 0 : 1; }
+    if (!on || !__atomic_load_n(&s_fences_written, __ATOMIC_ACQUIRE)
+        || xbox_KeCurrentIrql() >= DISPATCH_LEVEL
+        || __atomic_exchange_n(&s_fw.busy, 1, __ATOMIC_ACQUIRE)) {
+        if (on) __atomic_fetch_add(&s_fw.spun, 1, __ATOMIC_RELAXED);
+        return 0;
+    }
+    if (!s_fw.wake) s_fw.wake = CreateEventW(NULL, FALSE, FALSE, NULL);
+    if (!s_fw.wake) {
+        __atomic_store_n(&s_fw.busy, 0, __ATOMIC_RELEASE);
+        return 0;
+    }
+    __atomic_store_n(&s_fw.top, top, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_fw.time, time, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_fw.armed, 1, __ATOMIC_SEQ_CST);
+    if (top - __atomic_load_n(word, __ATOMIC_SEQ_CST) > top - time) {
+        QueryPerformanceCounter(&t0);
+        held = xbox_guest_lock_drop();
+        do {
+            WaitForSingleObject(s_fw.wake, INFINITE);
+            __atomic_store_n(&s_fw.armed, 1, __ATOMIC_SEQ_CST);
+        } while (top - __atomic_load_n(word, __ATOMIC_SEQ_CST) > top - time);
+        __atomic_store_n(&s_fw.armed, 0, __ATOMIC_SEQ_CST);
+        xbox_guest_lock_retake(held);
+        QueryPerformanceCounter(&t1);
+        QueryPerformanceFrequency(&hz);
+        us = (unsigned long long)(t1.QuadPart - t0.QuadPart) * 1000000ull
+           / (unsigned long long)hz.QuadPart;
+        __atomic_fetch_add(&s_fw.slept, 1, __ATOMIC_RELAXED);
+        __atomic_fetch_add(&s_fw.us, us, __ATOMIC_RELAXED);
+        if (us > __atomic_load_n(&s_fw.longest_us, __ATOMIC_RELAXED))
+            __atomic_store_n(&s_fw.longest_us, us, __ATOMIC_RELAXED);
+    }
+    __atomic_store_n(&s_fw.armed, 0, __ATOMIC_SEQ_CST);
+    __atomic_store_n(&s_fw.busy, 0, __ATOMIC_RELEASE);
+    return 1;
+}
+
 /* NV097_NO_OPERATION with a parameter: on the console, a software method --
  * the GPU stops and raises a PGRAPH interrupt, and D3D's handler acts on the
  * parameter (sub_00193F70 in JSRF: 5 sets the push-buffer "busy block"
@@ -1481,8 +1578,10 @@ void nv2a_pb_exec_method(uint32_t subch, uint32_t method, uint32_t param)
                     fprintf(stderr, "  [SEM] semaphore DMA handle 0x%08X -> physical base 0x%08X%s\n",
                             s_sem_handle, s_sem_base, ok ? "" : " (RAMHT lookup failed, assuming 0)"); fflush(stderr); }
                 va = dma_resolve(s_sem_base + s_sem_offset);
-                if (va >= 0x1000u && va + 4 <= 0xFFFFFFFCu)
+                if (va >= 0x1000u && va + 4 <= 0xFFFFFFFCu) {
                     *(volatile uint32_t *)((uint8_t *)xbox_GetMemoryOffset() + va) = param;
+                    fence_written(param);
+                }
             }
         }
     }
@@ -1870,6 +1969,15 @@ void nv2a_pb_exec_report(void)
             xbox_nv2a_swm_stats(&raised, &dropped);
             fprintf(stderr, "%s; delivered %lu, dropped %lu\n", line, raised, dropped);
         }
+    }
+    {
+        unsigned long slept = __atomic_exchange_n(&s_fw.slept, 0, __ATOMIC_RELAXED);
+        unsigned long spun = __atomic_exchange_n(&s_fw.spun, 0, __ATOMIC_RELAXED);
+        unsigned long long us = __atomic_exchange_n(&s_fw.us, 0, __ATOMIC_RELAXED);
+        unsigned long long most = __atomic_exchange_n(&s_fw.longest_us, 0, __ATOMIC_RELAXED);
+        if (slept || spun)
+            fprintf(stderr, "  [NV2A] waits for a fence: %lu asleep, %.0f ms in all, the longest "
+                    "%.1f ms; %lu spun\n", slept, us / 1000.0, most / 1000.0, spun);
     }
 
     peek_addresses();
