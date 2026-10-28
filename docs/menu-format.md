@@ -107,11 +107,12 @@ Dear ImGui
 - A new engine switch, an environment variable that changes what the engine
   does, to compare one way with the other, also gets a row under Developer >
   Engine switches (`k_engine`).
-- A new performance switch, an environment variable that changes what the
-  engine does for speed, also gets a row under Developer > Performance
-  (`k_perf`), with a plain name in `k_perf_row` that says what ticking it
-  does: "Turn off the GPU queue (Restart)" for one that turns off what the
-  engine does by default.
+- A new performance switch, an environment variable that turns off
+  something the engine does by default for speed, also gets a row under
+  Developer > Performance (`k_perf`), with a plain name in `k_perf_row`
+  for what the engine does, ticked while it does it: "GPU queue (Restart)"
+  is ticked by default, and unticking it sets RECOMP_NV2A_QUEUE=0.
+  tests/developer checks that every one is ticked by default.
 - Use P cores is Performance's first row, and stays the first: a new one
   goes below it. tests/developer checks.
 - Performance comes after Engine switches, so it is above Purge shaders

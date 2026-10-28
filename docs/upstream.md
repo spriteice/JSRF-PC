@@ -494,7 +494,7 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   card before it waits, so the card draws the frame meanwhile. With VRR on,
   or where no whole number of refreshes is the game's frame (144 Hz), the
   game's clock paces, as before. `RECOMP_PACE_DISPLAY=0` (Developer >
-  Performance > Turn off display pacing) turns it off, and
+  Performance > Display pacing, unticked) turns it off, and
   `RECOMP_PACE_PHASE` sets the point in the refresh. A line every 10 s says
   where in the refresh the frames were handed over. tests/display_clock
   (ours) tests it. Could suit upstream.
@@ -585,8 +585,8 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   TITLE_MIPS, TEX_ONESAMPLER, TEXGEN, UNHANDLED, IMMEDIATE, and STENCILVIS).
 - **Why:** the in-game menu's Developer menu: Log to file, the engine's
   logging switches, Engine switches, which turn parts of the engine off to
-  compare, Performance, what the engine does for speed (Use P cores first,
-  then the switches that turn off the GPU queue and display pacing, each
+  compare, Performance, what the engine does for speed, each ticked while
+  it's on (Use P cores first, then the GPU queue and display pacing, each
   with its own entry), and Experimental, switches that change what the
   game does, for a comparison, shown while there is one. The start puts
   them into the environment before anything reads them. Among the logging
@@ -720,7 +720,7 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   X in Shibuya Terminal, with the sound fix below, the game's thread went
   from 96-97% of a core to 27-32%, and frames that missed a refresh from
   0.5% to 0.1%. On since b1.2 (an experiment in b1.1); `RECOMP_NV2A_QUEUE=0`
-  (Developer > Performance > Turn off the GPU queue) gives the old way, to
+  (Developer > Performance > GPU queue, unticked) gives the old way, to
   compare.
   The generated code's recomp_types.h has to be the new one, and the
   pipeline never overwrites it: delete it and generate it again. With an
@@ -763,18 +763,18 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   starts), src/nv2a_gl/nv2a_gl.c (a call at the end of `ensure_ready`),
   src/platform/win32_compat.c (`thread_unpin`, at the start of each thread
   it starts), port/CMakeLists.txt (port/pcores.c).
-- **Why:** Developer > Performance > Use P cores (`RECOMP_P_CORES`, Linux,
-  off by default). The game thread and the GPU thread each sleep for part
-  of every frame, and the system may wake them on a compact core, where the
-  same work takes longer: the Ally X has three P cores (Zen 5, up to 5.0
-  GHz) and five compact Zen 5c (up to 3.3 GHz). Our own port/pcores.c tells
-  the kinds apart by each core's highest clock, and the two calls keep
-  those two threads on the P cores, the renderer's once its GL context is
-  made, so that the driver's own threads run anywhere. The clocks, the
-  power limit and the power profile are left as the player set them. A
-  thread starts on its starter's cores, so win32_compat.c puts each thread
-  the game starts (CreateThread, timers, the thread pool) back on all of
-  them. The CPU profile says how much of each thread's time was on the P
+- **Why:** Developer > Performance > Use P cores (Linux, on by default;
+  `RECOMP_P_CORES=0` turns it off). The game thread and the GPU thread each
+  sleep for part of every frame, and the system may wake them on a compact
+  core, where the same work takes longer: the Ally X has three P cores (Zen
+  5, up to 5.0 GHz) and five compact Zen 5c (up to 3.3 GHz). Our own
+  port/pcores.c tells the kinds apart by each core's highest clock, and the
+  two calls keep those two threads on the P cores, the renderer's once its
+  GL context is made, so that the driver's own threads run anywhere. The
+  clocks, the power limit and the power profile are left as the player set
+  them. A thread starts on its starter's cores, so win32_compat.c puts each
+  thread the game starts (CreateThread, timers, the thread pool) back on all
+  of them. The CPU profile says how much of each thread's time was on the P
   cores. In three runs on the Ally X, frames late at the flip went from 30
   to 14, and none took 30 ms or more, where each run without it had one or
   two. tests/pcores (ours) tests it. Could suit upstream.

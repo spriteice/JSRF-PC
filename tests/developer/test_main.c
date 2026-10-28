@@ -8,7 +8,8 @@
  * what it put in and gives the log back.
  *
  * Built with the in-game menu too, where xbox_MenuAdd is stood in for: each
- * page of switches is a line in the log, its label then its rows in order.
+ * page of switches is a line in the log, its label then its rows in order,
+ * and a line after it with its ticks, a bit for each row.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,7 +29,7 @@ void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count)
         fprintf(stderr, "[MENU] %s:", items[i].label);
         for (k = 0; k < items[i].nchoices; k++)
             fprintf(stderr, "%s%s", k ? " | " : " ", items[i].choices[k]);
-        fprintf(stderr, "\n");
+        fprintf(stderr, "\n[TICKS] %s: %d\n", items[i].label, items[i].state());
     }
 }
 #endif

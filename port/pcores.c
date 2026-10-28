@@ -1,8 +1,8 @@
-/* The game on the P cores (Developer > Performance > Use P cores,
- * RECOMP_P_CORES): on a processor with two kinds of core, the game's two
- * busiest threads -- the game thread and the renderer's -- run on the P cores
- * only, for as long as the game runs, without the game spending a cycle on
- * it.
+/* The game on the P cores (Developer > Performance > Use P cores, on by
+ * default; RECOMP_P_CORES=0 turns it off): on a processor with two kinds of
+ * core, the game's two busiest threads -- the game thread and the renderer's
+ * -- run on the P cores only, for as long as the game runs, without the game
+ * spending a cycle on it.
  *
  * The Ally X's Ryzen Z2 Extreme has three P cores (full-size Zen 5, up to
  * 5.0 GHz) and five compact Zen 5c, up to 3.3 GHz. Each of the two threads
@@ -16,8 +16,9 @@
  * compact. A thread the game starts runs anywhere, as before (pcores_unpin, at
  * the start of each), though one started by a thread on the P cores would
  * otherwise inherit them. Off, nothing is set up. Linux only for now;
- * elsewhere the switch says so. The CPU profile (port/cpuprof.c) says how much
- * of each thread's time was on the P cores, whether this is on or not.
+ * elsewhere the switch, set by hand to anything but 0, says so. The CPU
+ * profile (port/cpuprof.c) says how much of each thread's time was on the P
+ * cores, whether this is on or not.
  */
 #if defined(__linux__) && !defined(__ANDROID__)
 #define _GNU_SOURCE        /* sched_setaffinity, CPU_AND */
@@ -175,7 +176,7 @@ void pcores_start(void)
     const char *v = getenv("RECOMP_P_CORES");
     char cpus[256];
     int kinds;
-    if (!v || !*v || !strcmp(v, "0")) return;
+    if (v && (!*v || !strcmp(v, "0"))) return;     /* on unless it is 0 or empty */
     kinds = pcores_kinds(cpus, sizeof cpus);
     if (kinds == 1)
         fprintf(stderr, "[PCORES] RECOMP_P_CORES: one kind of core here, up to %.1f GHz; nothing changed\n",

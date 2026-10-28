@@ -8,7 +8,7 @@ processor of the test's making (PCORES_CPU_DIR, in place of
   taken offline, and none listed;
 - cores: the game thread on the P cores this may run on, a thread it starts
   back on all of them, and the stop; started on some CPUs only; one kind of
-  core; and the switch off, 0, or another word.
+  core; and the switch not set (on, by default), 0, empty, or another word.
 
 Requires GCC on PATH.
 """
@@ -136,10 +136,10 @@ with tempfile.TemporaryDirectory(prefix="pcores-") as directory:
                                    f"[TEST] held: {everything}", f"[TEST] child unpinned: {everything}"],
           ["the game's thread"])
     count += 4
-    # The switch off, 0, or a word: anything but "" and 0 is on, as for the
-    # other switches.
+    # The switch not set, 0, empty, or a word: on but for 0 and "", as it is
+    # by default.
     processor(cpu_dir, two_kinds)
-    for name, switch, on in (("off", None, False), ("zero", "0", False), ("empty", "", False), ("word", "yes", True)):
+    for name, switch, on in (("unset", None, True), ("zero", "0", False), ("empty", "", False), ("word", "yes", True)):
         text = run(name, ["cores"], switch)
         if on:
             check(name, text, [f"[TEST] held: {cpu_list(p)}"])

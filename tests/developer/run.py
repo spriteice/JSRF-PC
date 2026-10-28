@@ -79,12 +79,18 @@ cases["queue_off"] = (None, "RECOMP_NV2A_QUEUE=0\n", {},
                       ["[DEV] RECOMP_NV2A_QUEUE=0 from developer.cfg", "started:"], [])
 cases["queue_from_b1_1"] = (None, "RECOMP_NV2A_QUEUE=1\n", {}, ["started:"], ["[DEV]"])
 
-# Use P cores (port/pcores.c), Linux's only: started from developer.cfg
-# (tests/pcores tests the rest).
-cases["p_cores"] = (None, "RECOMP_P_CORES=1\n", {},
-                    ["[DEV] RECOMP_P_CORES=1 from developer.cfg", "[PCORES] RECOMP_P_CORES"] if linux
-                    else ["started:"],
-                    [] if linux else ["P_CORES", "[PCORES]"])
+# Use P cores (port/pcores.c), Linux's only and on by default: with nothing
+# in developer.cfg, or the 1 that b1.2's test builds kept when it was off by
+# default, it starts; unticked, 0 in developer.cfg, it doesn't (tests/pcores
+# tests the rest).
+cases["p_cores"] = (None, None, {}, ["[PCORES] RECOMP_P_CORES"] if linux else ["started:"],
+                    ["[DEV]"] if linux else ["P_CORES", "[PCORES]"])
+cases["p_cores_kept_1"] = (None, "RECOMP_P_CORES=1\n", {},
+                           ["[PCORES] RECOMP_P_CORES"] if linux else ["started:"],
+                           ["[DEV]"] if linux else ["P_CORES", "[PCORES]"])
+cases["p_cores_off"] = (None, "RECOMP_P_CORES=0\n", {},
+                        ["[DEV] RECOMP_P_CORES=0 from developer.cfg", "started:"] if linux else ["started:"],
+                        ["[PCORES]"] if linux else ["P_CORES", "[PCORES]"])
 
 # Display pacing (nv2a_display_clock.c), Linux's only and on by default: a
 # switch under Performance that turns it off, ticked, 0 in developer.cfg
@@ -140,21 +146,40 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
 
     # The menu's pages, in the order they are shown: Logging, Engine switches,
     # then Performance, whose first row is Use P cores and stays so, and no
-    # Experimental while it has no row.
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("RECOMP_", "JSRF_"))}
-    env.update(JSRF_SETTINGS_FILE=str(work / "menu.cfg"))
-    run = subprocess.run([menu_exe], env=env, capture_output=True, text=True, timeout=10)
-    pages = {}
-    for line in run.stderr.splitlines():
-        if line.startswith("[MENU] "):
-            label, _, rows = line[len("[MENU] "):].partition(": ")
-            pages[label] = rows.split(" | ")
-    if run.returncode != 0 or list(pages) != ["Logging", "Engine switches", "Performance"]:
-        raise SystemExit(f"menu: exit {run.returncode}, pages {list(pages)}\n{run.stderr}")
+    # Experimental while it has no row. Performance's rows are what the engine
+    # does by default, all ticked with nothing in developer.cfg; the GPU
+    # queue's 0 there unticks its row alone.
+    def menu(dev_text):
+        folder = work / f"menu-{len(dev_text)}"
+        folder.mkdir()
+        if dev_text:
+            (folder / "developer.cfg").write_text(dev_text)
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("RECOMP_", "JSRF_"))}
+        env.update(JSRF_SETTINGS_FILE=str(folder / "menu.cfg"))
+        run = subprocess.run([menu_exe], env=env, capture_output=True, text=True, timeout=10)
+        pages, ticks = {}, {}
+        for line in run.stderr.splitlines():
+            if line.startswith("[MENU] "):
+                label, _, rows = line[len("[MENU] "):].partition(": ")
+                pages[label] = rows.split(" | ")
+            elif line.startswith("[TICKS] "):
+                label, _, bits = line[len("[TICKS] "):].partition(": ")
+                ticks[label] = int(bits)
+        if run.returncode != 0 or list(pages) != ["Logging", "Engine switches", "Performance"]:
+            raise SystemExit(f"menu: exit {run.returncode}, pages {list(pages)}\n{run.stderr}")
+        return pages, ticks
+    pages, ticks = menu("")
     perf = ["Use P cores (Restart)"] if linux else []
-    pace = ["Turn off display pacing (Restart)"] if linux else []
-    if pages["Performance"] != [*perf, "Turn off the GPU queue (Restart)", *pace]:
+    pace = ["Display pacing (Restart)"] if linux else []
+    if pages["Performance"] != [*perf, "GPU queue (Restart)", *pace]:
         raise SystemExit(f"menu: Performance's rows are {pages['Performance']}")
+    every = (1 << len(pages["Performance"])) - 1
+    if ticks["Performance"] != every or ticks["Engine switches"] or ticks["Logging"]:
+        raise SystemExit(f"menu: with nothing changed, the ticks are {ticks}")
+    queue = 1 << len(perf)
+    pages, ticks = menu("RECOMP_NV2A_QUEUE=0\n")
+    if ticks["Performance"] != every & ~queue:
+        raise SystemExit(f"menu: with the GPU queue off, Performance's ticks are {ticks['Performance']}")
     if any(name in row for row in pages["Engine switches"]
            for name in ("RECOMP_NV2A_QUEUE", "RECOMP_P_CORES", "RECOMP_PACE_DISPLAY")):
         raise SystemExit(f"menu: Engine switches' rows are {pages['Engine switches']}")

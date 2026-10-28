@@ -55,8 +55,11 @@ extern void nv_window_file_set(const char *file, const char *key, int val);
  * default, or the word the engine reads for it (RECOMP_GL_CURTAIN's skip). Its
  * row is the variable as ticking sets it -- NAME, NAME=0, or NAME=skip -- but
  * Performance's and Experimental's, which have rows of their own, in plain
- * words; and with nothing ticked the engine does what it always does. The CPU
- * profile is Linux's and Windows' only for now (port/cpuprof.c), and Use P
+ * words; and with nothing ticked the engine does what it always does.
+ * Performance's rows are the other way round: each is something the engine
+ * does by default, ticked while it does, so with nothing changed all are
+ * ticked, and unticking one sets its switch, which gives the variable 0. The
+ * CPU profile is Linux's and Windows' only for now (port/cpuprof.c), and Use P
  * cores (port/pcores.c) and display pacing (nv2a_display_clock.c) Linux's.
  * A RECOMP_GL_ switch that never reads converted vertices back goes on the
  * vertex cache's list too (vc_debug_switch in nv2a_gl.c), or setting it turns
@@ -83,11 +86,12 @@ static const DevSwitch k_engine[] = {
     { "RECOMP_GL_STENCILVIS", "1" },        /* the stencil buffer in place of the shadows */
     { "RECOMP_GL_CURTAIN", "skip" },        /* no fades to black (the full-screen black quad) */
 };
-/* Performance's, each with its row in k_perf_row. Use P cores is the first,
- * and stays the first: a new one goes after it. */
+/* Performance's, each with its row in k_perf_row: something the engine does
+ * by default, which the switch turns off. Use P cores is the first, and stays
+ * the first: a new one goes after it. */
 static const DevSwitch k_perf[] = {
 #if defined(__linux__) && !defined(__ANDROID__)
-    { "RECOMP_P_CORES", "1" },              /* the game's thread and the renderer's on the P cores */
+    { "RECOMP_P_CORES", "0" },              /* the game's thread and the renderer's on any core */
 #endif
     { "RECOMP_NV2A_QUEUE", "0" },           /* the game no more than a kick ahead of the GPU thread */
 #if defined(__linux__) && !defined(__ANDROID__)
@@ -127,14 +131,15 @@ static const DevSwitch *dev_switch(int i)
 #define DEV_ROW_MAX 64          /* a row: the name, =0 and " (Restart)" */
 static char        s_row_text[DEV_NAMED][DEV_ROW_MAX];
 static const char *s_row[DEV_NAMED];
-/* Performance's rows, one for each of k_perf, in its order. */
+/* Performance's rows, one for each of k_perf, in its order: what the engine
+ * does, ticked while it does it. */
 static const char *const k_perf_row[] = {
 #if defined(__linux__) && !defined(__ANDROID__)
     "Use P cores (Restart)",
 #endif
-    "Turn off the GPU queue (Restart)",
+    "GPU queue (Restart)",
 #if defined(__linux__) && !defined(__ANDROID__)
-    "Turn off display pacing (Restart)",
+    "Display pacing (Restart)",
 #endif
 };
 _Static_assert(sizeof k_perf_row / sizeof k_perf_row[0] == DEV_PERF, "a row for each of Performance's");
@@ -211,7 +216,8 @@ static int  logging_on(void)    { return page_on(0, DEV_LOGGING); }
 static void logging_flip(int i) { switch_flip(i); }
 static int  engine_on(void)     { return page_on(DEV_LOGGING, DEV_ENGINE); }
 static void engine_flip(int i)  { switch_flip(DEV_LOGGING + i); }
-static int  perf_on(void)       { return page_on(DEV_NAMED, DEV_PERF); }
+/* Performance's rows are ticked while their switches are not. */
+static int  perf_on(void)       { return ~page_on(DEV_NAMED, DEV_PERF) & ((1 << DEV_PERF) - 1); }
 static void perf_flip(int i)    { switch_flip(DEV_NAMED + i); }
 static int  tries_on(void)      { return page_on(DEV_NAMED + DEV_PERF, DEV_TRIES); }
 static void tries_flip(int i)   { switch_flip(DEV_NAMED + DEV_PERF + i); }

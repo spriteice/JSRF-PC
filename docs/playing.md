@@ -76,14 +76,15 @@ menu.
   - **Logging:** The engine's diagnostic logs, for bug reports.
   - **Engine switches:** Turn parts of the engine off, or back to how they
     were, to compare.
-  - **Performance:** What the engine does for speed. Use P cores (Linux,
-    off by default) runs the game's two busiest threads on the processor's
-    P cores, its fast ones, where it has two kinds (as the Ally X does). It
-    leaves the clocks, the power limit and the power profile as they are,
-    and the log says what it found. Turn off the GPU queue has the game wait
-    for the graphics after each batch of work, as before b1.2, to compare.
-    Turn off display pacing (Linux) has the game time its frames by its own
-    clock, as before b1.2, not by the display's refreshes, to compare.
+  - **Performance:** What the engine does for speed, each on by default
+    and ticked; untick one to compare. Use P cores (Linux) runs the game's
+    two busiest threads on the processor's P cores, its fast ones, where it
+    has two kinds (as the Ally X does). It leaves the clocks, the power
+    limit and the power profile as they are, and the log says what it
+    found. GPU queue lets the game run ahead of the graphics; unticked, the
+    game waits for them after each batch of work, as before b1.2. Display
+    pacing (Linux) times the game's frames by the display's refreshes;
+    unticked, by the game's own clock, as before b1.2.
   - **Experimental:** Changes to how the game runs, to try out, when there
     are any.
   - **Purge shaders:** Restarts the game and deletes the shader cache as it
