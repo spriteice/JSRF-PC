@@ -529,6 +529,25 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   `decode_level` or `decode_texel` into the loops, then run tests/tex_decode
   and tests/gl_backend.
 
+### A wider content hash
+
+- **Files:** src/nv2a_gl/nv2a_gl.c (`vc_hash` hands 256 bytes and more to
+  `nv2a_hash_wide`). The rest is in src/nv2a_gl/nv2a_hash.h (ours).
+- **Why:** `vc_hash` hashes every byte of what each kept draw's vertices
+  are made from, and of the textures the once-a-frame check compares: in
+  99th Street on the Ally X over 300 MB a second, 7% of the GPU thread's
+  time. Its loop is xxHash64's, two 64-bit multiplies for every 8 bytes.
+  On x86-64, 256 bytes and more now go to a wider hash after XXH3's
+  approach: eight lanes of 32-by-32-bit multiplies, with SSE2, or with AVX2
+  where the processor has it (on Linux and Windows, built with GCC or
+  Clang). From 1 KB up it is about 1.7 times as fast with SSE2 and 2 to 3
+  times with AVX2. Under 256 bytes, and on other processors, `vc_hash` is
+  as it was. The hashes only live in memory, so nothing saved changes, and
+  the texture check keeps its 1 MB a frame. tests/vc_hash (ours) tests it.
+  Could suit upstream.
+- **When picking:** keep the hand-over at the top of `vc_hash`, before its
+  own loop. Run tests/vc_hash.
+
 ### Full screen remembered
 
 - **Files:** src/nv2a_gl/nv2a_gl.c.

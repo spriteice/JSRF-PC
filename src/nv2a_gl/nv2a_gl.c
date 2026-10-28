@@ -33,6 +33,7 @@
 #include "nv2a_backend.h"
 #include "nv2a_shader_cache.h"
 #include "nv2a_display_clock.h"
+#include "nv2a_hash.h"
 
 /*
  * Two ways to get a 3.3 core context.
@@ -4808,7 +4809,8 @@ static struct {
 static uint64_t vc_rotl(uint64_t x, int r) { return (x << r) | (x >> (64 - r)); }
 
 /* A 64-bit hash of n bytes, four lanes wide (xxHash64's round): a few GB/s,
- * which is what makes checking the source of every kept draw affordable. */
+ * which is what makes checking the source of every kept draw affordable.
+ * From NV2A_HASH_MIN bytes on x86-64, the wider one in nv2a_hash.h. */
 static uint64_t vc_hash(const void *data, size_t n, uint64_t seed)
 {
     const uint64_t P1 = 0x9E3779B185EBCA87ull, P2 = 0xC2B2AE3D27D4EB4Full,
@@ -4816,6 +4818,9 @@ static uint64_t vc_hash(const void *data, size_t n, uint64_t seed)
     const uint8_t *p = (const uint8_t *)data;
     uint64_t a = seed + P1 + P2, b = seed + P2, c = seed, d = seed - P1, h, w;
     size_t len = n;
+#if defined(NV2A_HASH_WIDE)
+    if (n >= NV2A_HASH_MIN) return nv2a_hash_wide(data, n, seed);
+#endif
     while (n >= 32) {
         uint64_t w0, w1, w2, w3;
         memcpy(&w0, p, 8); memcpy(&w1, p + 8, 8);
