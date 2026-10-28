@@ -559,11 +559,12 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   TITLE_MIPS, TEX_ONESAMPLER, TEXGEN, UNHANDLED, IMMEDIATE, and STENCILVIS).
 - **Why:** the in-game menu's Developer menu: Log to file, the engine's
   logging switches, Engine switches, which turn parts of the engine off to
-  compare (the GPU queue, below, among them), and Experimental, switches
-  that change what the game does, for a comparison, shown while there is
-  one. The start puts them into the environment before anything reads
-  them. Among the logging switches is the CPU profile (Linux and Windows),
-  which the start sets going: where each thread's time goes, by function.
+  compare, Performance, what the engine does for speed (Use P cores first,
+  and the GPU queue's switch, both below), and Experimental, switches that
+  change what the game does, for a comparison, shown while there is one.
+  The start puts them into the environment before anything reads them.
+  Among the logging switches is the CPU profile (Linux and Windows), which
+  the start sets going: where each thread's time goes, by function.
   Upstream's `vc_debug_switch` list leaves out the six above, none of which
   reads a draw's vertices back, so setting one turned the vertex cache off.
   Our own files: port/developer.c and port/cpuprof.c, both built from
@@ -692,7 +693,8 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   X in Shibuya Terminal, with the sound fix below, the game's thread went
   from 96-97% of a core to 27-32%, and frames that missed a refresh from
   0.5% to 0.1%. On since b1.2 (an experiment in b1.1); `RECOMP_NV2A_QUEUE=0`
-  (Developer > Engine switches) gives the old way, to compare.
+  (Developer > Performance > Turn off the GPU queue) gives the old way, to
+  compare.
   The generated code's recomp_types.h has to be the new one, and the
   pipeline never overwrites it: delete it and generate it again. With an
   old one the flush waits as before, and the queue's report says so.
@@ -727,6 +729,32 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 - **When picking:** keep ours. If upstream changes the executor's fence
   write, keep `fence_written` right after it. If it overrides
   `sub_00191440` too, stop and ask. Run tests/fence_wait.
+
+### The game on the P cores
+
+- **Files:** port/main.c (a call in `host_main`, just before the game
+  starts), src/nv2a_gl/nv2a_gl.c (a call at the end of `ensure_ready`),
+  src/platform/win32_compat.c (`thread_unpin`, at the start of each thread
+  it starts), port/CMakeLists.txt (port/pcores.c).
+- **Why:** Developer > Performance > Use P cores (`RECOMP_P_CORES`, Linux,
+  off by default). The game thread and the GPU thread each sleep for part
+  of every frame, and the system may wake them on a compact core, where the
+  same work takes longer: the Ally X has three P cores (Zen 5, up to 5.0
+  GHz) and five compact Zen 5c (up to 3.3 GHz). Our own port/pcores.c tells
+  the kinds apart by each core's highest clock, and the two calls keep
+  those two threads on the P cores, the renderer's once its GL context is
+  made, so that the driver's own threads run anywhere. The clocks, the
+  power limit and the power profile are left as the player set them. A
+  thread starts on its starter's cores, so win32_compat.c puts each thread
+  the game starts (CreateThread, timers, the thread pool) back on all of
+  them. The CPU profile says how much of each thread's time was on the P
+  cores. In three runs on the Ally X, frames late at the flip went from 30
+  to 14, and none took 30 ms or more, where each run without it had one or
+  two. tests/pcores (ours) tests it. Could suit upstream.
+- **When picking:** keep the two calls, `thread_unpin` and its three
+  callers, and the file in port/CMakeLists.txt. If upstream starts threads
+  another way, unpin them there too. Run tests/pcores, tests/developer and
+  tests/cpuprof.
 
 ### The sound chip a frame at a time
 

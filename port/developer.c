@@ -1,7 +1,8 @@
 /* The Developer menu (menu.h), the last on the bar: Log to file, Logging,
  * the engine's own diagnostic switches, Engine switches, which change what
- * the engine does, to compare one way with the other, and Experimental, which
- * changes what the game does, for a comparison.
+ * the engine does, to compare one way with the other, Performance, the same
+ * for what the engine does for speed, and Experimental, which changes what
+ * the game does, for a comparison.
  *
  * Log to file is logging= in the settings file, on when it is not there. Off,
  * the game's output -- what the launchers keep as last-run.log -- goes to the
@@ -34,6 +35,8 @@
 
 void cpuprof_start(void);
 void cpuprof_stop(void);
+void pcores_start(void);
+void pcores_stop(void);
 
 #if defined(NV2A_GL_USE_SDL)
 /* nv2a_gl.c: the settings file, and a file of ours beside it. */
@@ -45,14 +48,16 @@ extern void nv_window_file_set(const char *file, const char *key, int val);
 
 /* The switches: Developer > Logging's, each of which only adds lines to the
  * log, then Developer > Engine switches', each of which changes what the
- * engine does, then Developer > Experimental's, each of which changes what
- * the game does. A switch is ticked to give its variable the value on: 1, or 0
- * for one that turns off something the engine does by default, or the word
- * the engine reads for it (RECOMP_GL_CURTAIN's skip). Its row is the variable
- * as ticking sets it -- NAME, NAME=0, or NAME=skip -- but Experimental's,
- * which have rows of their own; and with nothing ticked the engine does what
- * it always does. The CPU profile is Linux's and Windows' only for now
- * (port/cpuprof.c).
+ * engine does, then Developer > Performance's, each of which changes what the
+ * engine does for speed, then Developer > Experimental's, each of which
+ * changes what the game does. A switch is ticked to give its variable the
+ * value on: 1, or 0 for one that turns off something the engine does by
+ * default, or the word the engine reads for it (RECOMP_GL_CURTAIN's skip). Its
+ * row is the variable as ticking sets it -- NAME, NAME=0, or NAME=skip -- but
+ * Performance's and Experimental's, which have rows of their own, in plain
+ * words; and with nothing ticked the engine does what it always does. The CPU
+ * profile is Linux's and Windows' only for now (port/cpuprof.c), and Use P
+ * cores Linux's (port/pcores.c).
  * A RECOMP_GL_ switch that never reads converted vertices back goes on the
  * vertex cache's list too (vc_debug_switch in nv2a_gl.c), or setting it turns
  * the cache off as well. */
@@ -77,38 +82,56 @@ static const DevSwitch k_engine[] = {
     { "RECOMP_GL_IMMEDIATE", "0" },         /* no batches sent a vertex at a time (the shadows) */
     { "RECOMP_GL_STENCILVIS", "1" },        /* the stencil buffer in place of the shadows */
     { "RECOMP_GL_CURTAIN", "skip" },        /* no fades to black (the full-screen black quad) */
+};
+/* Performance's, each with its row in k_perf_row. Use P cores is the first,
+ * and stays the first: a new one goes after it. */
+static const DevSwitch k_perf[] = {
+#if defined(__linux__) && !defined(__ANDROID__)
+    { "RECOMP_P_CORES", "1" },              /* the game's thread and the renderer's on the P cores */
+#endif
     { "RECOMP_NV2A_QUEUE", "0" },           /* the game no more than a kick ahead of the GPU thread */
 };
 /* Experimental's: none just now -- the last, the GPU queue, is the engine's
- * way since b1.2, with its switch above. A new one goes before the end, with
- * its row in k_tries_row, and Experimental shows again. */
+ * way since b1.2, with its switch under Performance. A new one goes before the
+ * end, with its row in k_tries_row, and Experimental shows again. */
 static const DevSwitch k_tries[] = {
     { NULL, NULL },                         /* the end */
 };
 #define DEV_LOGGING  ((int)(sizeof k_logging / sizeof k_logging[0]))
 #define DEV_ENGINE   ((int)(sizeof k_engine / sizeof k_engine[0]))
+#define DEV_PERF     ((int)(sizeof k_perf / sizeof k_perf[0]))
 #define DEV_TRIES    ((int)(sizeof k_tries / sizeof k_tries[0]) - 1)
 #define DEV_NAMED    (DEV_LOGGING + DEV_ENGINE)     /* the switches whose rows are their names */
-#define DEV_SWITCHES (DEV_NAMED + DEV_TRIES)
+#define DEV_SWITCHES (DEV_NAMED + DEV_PERF + DEV_TRIES)
 _Static_assert(DEV_SWITCHES <= 31, "a bit of an int for each switch");
 
 /* What developer.cfg keeps for a switch ticked: 0 for one set to 0, and 1 for
  * the rest, whose value is 1 or a word. */
 static int dev_cfg_on(const char *on) { return strcmp(on, "0") != 0; }
 
-/* Switch i: Logging's first, then Engine switches', then Experimental's, as
- * their bits are. */
+/* Switch i: Logging's first, then Engine switches', Performance's and
+ * Experimental's, as their bits are. */
 static const DevSwitch *dev_switch(int i)
 {
     if (i < DEV_LOGGING) return &k_logging[i];
     i -= DEV_LOGGING;
-    return i < DEV_ENGINE ? &k_engine[i] : &k_tries[i - DEV_ENGINE];
+    if (i < DEV_ENGINE) return &k_engine[i];
+    i -= DEV_ENGINE;
+    return i < DEV_PERF ? &k_perf[i] : &k_tries[i - DEV_PERF];
 }
 
 #if defined(XBOXRECOMP_MENU)
 #define DEV_ROW_MAX 64          /* a row: the name, =0 and " (Restart)" */
 static char        s_row_text[DEV_NAMED][DEV_ROW_MAX];
 static const char *s_row[DEV_NAMED];
+/* Performance's rows, one for each of k_perf, in its order. */
+static const char *const k_perf_row[] = {
+#if defined(__linux__) && !defined(__ANDROID__)
+    "Use P cores (Restart)",
+#endif
+    "Turn off the GPU queue (Restart)",
+};
+_Static_assert(sizeof k_perf_row / sizeof k_perf_row[0] == DEV_PERF, "a row for each of Performance's");
 /* Experimental's rows, one for each of k_tries. */
 static const char *const k_tries_row[] = {
     NULL,                                   /* the end */
@@ -182,8 +205,10 @@ static int  logging_on(void)    { return page_on(0, DEV_LOGGING); }
 static void logging_flip(int i) { switch_flip(i); }
 static int  engine_on(void)     { return page_on(DEV_LOGGING, DEV_ENGINE); }
 static void engine_flip(int i)  { switch_flip(DEV_LOGGING + i); }
-static int  tries_on(void)      { return page_on(DEV_NAMED, DEV_TRIES); }
-static void tries_flip(int i)   { switch_flip(DEV_NAMED + i); }
+static int  perf_on(void)       { return page_on(DEV_NAMED, DEV_PERF); }
+static void perf_flip(int i)    { switch_flip(DEV_NAMED + i); }
+static int  tries_on(void)      { return page_on(DEV_NAMED + DEV_PERF, DEV_TRIES); }
+static void tries_flip(int i)   { switch_flip(DEV_NAMED + DEV_PERF + i); }
 #endif
 #endif
 
@@ -222,6 +247,8 @@ void developer_start(void)
             { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_TOGGLES, .label = "Engine switches",
               .state = engine_on, .pick = engine_flip, .choices = s_row + DEV_LOGGING,
               .nchoices = DEV_ENGINE },
+            { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_TOGGLES, .label = "Performance",
+              .state = perf_on, .pick = perf_flip, .choices = k_perf_row, .nchoices = DEV_PERF },
             { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_TOGGLES, .label = "Experimental",
               .state = tries_on, .pick = tries_flip, .choices = k_tries_row,
               .nchoices = DEV_TRIES },
@@ -236,9 +263,10 @@ void developer_start(void)
         log_output(0);
     }
 #endif
-    /* The CPU profile is the one switch no engine code reads: it starts here,
-     * before the game does (port/cpuprof.c). */
+    /* The CPU profile and Use P cores are the switches no engine code reads:
+     * they start here, before the game does (port/cpuprof.c, port/pcores.c). */
     cpuprof_start();
+    pcores_start();
 }
 
 /* Before the game starts itself again: what this run put in the environment
@@ -248,6 +276,7 @@ void developer_restart(void);
 void developer_restart(void)
 {
     cpuprof_stop();
+    pcores_stop();
 #if defined(NV2A_GL_USE_SDL)
     int i;
     for (i = 0; i < DEV_SWITCHES; i++)

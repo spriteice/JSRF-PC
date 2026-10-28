@@ -711,11 +711,20 @@ BOOL ReleaseMutex(HANDLE h)
 /* Threads                                                               */
 /* ===================================================================== */
 
+/* A thread started here runs on every CPU the process has, though the thread
+ * that started it may be kept on some (port/pcores.c). */
+static void thread_unpin(void)
+{
+    extern void pcores_unpin(void) __attribute__((weak));
+    if (pcores_unpin) pcores_unpin();
+}
+
 static void *thread_trampoline(void *arg)
 {
     w32_object *o = (w32_object *)arg;
     t_self_obj = o;
     t_tid      = o->tid;
+    thread_unpin();
 
     /* CREATE_SUSPENDED gate */
     pthread_mutex_lock(&o->lock);
@@ -1261,6 +1270,7 @@ static void *timer_thread(void *arg)
 {
     w32_object *o = (w32_object *)arg;
     int once = (o->timer_period == 0);
+    thread_unpin();
 
     /* initial due time */
     if (o->timer_due) Sleep(o->timer_due);
@@ -1336,6 +1346,7 @@ struct w32_tp_args { PTP_SIMPLE_CALLBACK cb; PVOID ctx; };
 static void *w32_tp_trampoline(void *arg)
 {
     struct w32_tp_args *a = (struct w32_tp_args *)arg;
+    thread_unpin();
     a->cb(NULL, a->ctx);
     free(a);
     return NULL;

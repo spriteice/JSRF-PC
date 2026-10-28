@@ -76,14 +76,20 @@ menu.
   - **Logging:** The engine's diagnostic logs, for bug reports.
   - **Engine switches:** Turn parts of the engine off, or back to how they
     were, to compare.
+  - **Performance:** What the engine does for speed. Use P cores (Linux,
+    off by default) runs the game's two busiest threads on the processor's
+    P cores, its fast ones, where it has two kinds (as the Ally X does). It
+    leaves the clocks, the power limit and the power profile as they are,
+    and the log says what it found. Turn off the GPU queue has the game wait
+    for the graphics after each batch of work, as before b1.2, to compare.
   - **Experimental:** Changes to how the game runs, to try out, when there
     are any.
   - **Purge shaders:** Restarts the game and deletes the shader cache as it
     starts.
 
   Logging's and Engine switches' rows are named by the environment variable
-  each one sets. Those two and Experimental are kept in `developer.cfg` beside
-  the settings file, and apply from the next start.
+  each one sets. Those two, Performance and Experimental are kept in
+  `developer.cfg` beside the settings file, and apply from the next start.
 
 Everything is remembered. Restart, Exit, a new render scale, the shader cache,
 and Purge shaders ask first, as anything since your last save is lost: all but

@@ -22,8 +22,9 @@ Display's last row, below any added later (`last` in `menu.h`).
   ticking it sets it: "RECOMP_GL_PROFILE (Restart)" sets it to 1, and
   "RECOMP_GL_TITLE_MIPS=0 (Restart)" to 0, for a switch that turns
   something off, and "RECOMP_GL_CURTAIN=skip (Restart)" to the word the
-  engine reads. Developer > Experimental's rows have their usual names, as
-  "Game runs ahead of the GPU (Restart)" had in b1.1.
+  engine reads. Developer > Performance's and Developer > Experimental's
+  rows have plain names, as "Use P cores (Restart)" and "Game runs ahead of
+  the GPU (Restart)" (b1.1's experiment).
 - No keyboard shortcuts in a label: "Free camera", not "Free camera (F8)".
   docs/playing.md and the packages' README.txt list the keys.
 - A box's message is a whole sentence, ending in a full stop. It must be as
@@ -43,10 +44,10 @@ Display's last row, below any added later (`last` in `menu.h`).
   next start, and a row that means nothing without a restart (Render scale)
   is not shown.
 - **Developer's switches are the exception.** The rows under Developer >
-  Logging, Engine switches, and Experimental are marked (Restart) and apply
-  from the next start, but they do not offer to restart, so several can be
-  changed first. File > Restart then applies them. Log to file changes at
-  once and has no (Restart).
+  Logging, Engine switches, Performance, and Experimental are marked
+  (Restart) and apply from the next start, but they do not offer to
+  restart, so several can be changed first. File > Restart then applies
+  them. Log to file changes at once and has no (Restart).
 - A row that applies at once has no (Restart) and no box, unless it loses
   progress (File > Exit asks first).
 
@@ -106,11 +107,20 @@ Dear ImGui
 - A new engine switch, an environment variable that changes what the engine
   does, to compare one way with the other, also gets a row under Developer >
   Engine switches (`k_engine`).
+- A new performance switch, an environment variable that changes what the
+  engine does for speed, also gets a row under Developer > Performance
+  (`k_perf`), with a plain name in `k_perf_row` that says what ticking it
+  does: "Turn off the GPU queue (Restart)" for one that turns off what the
+  engine does by default.
+- Use P cores is Performance's first row, and stays the first: a new one
+  goes below it. tests/developer checks.
+- Performance comes after Engine switches, so it is above Purge shaders
+  (added later, by nv2a_gl.c).
 - A new experiment, an environment variable that tries out a change that may
   become the default later, also gets a row, but under Developer >
   Experimental (`k_tries`), with a name of its own in `k_tries_row`.
 - A switch that works on some platforms only has a row on those alone, as
-  RECOMP_CPU_PROFILE (Linux and Windows) does. A variable that takes a value,
-  such as an address, is not a switch and has no row, unless one word of it
-  turns something off: its row sets that word, as RECOMP_GL_CURTAIN=skip
-  does.
+  RECOMP_CPU_PROFILE (Linux and Windows) and Use P cores (Linux) do. A
+  variable that takes a value, such as an address, is not a switch and has
+  no row, unless one word of it turns something off: its row sets that
+  word, as RECOMP_GL_CURTAIN=skip does.

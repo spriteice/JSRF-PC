@@ -121,6 +121,7 @@ if(ANDROID)
         intro.c
         developer.c
         cpuprof.c
+        pcores.c
         xbe_check.c
         android/jsrf_android.c
         ios/xiso.c
@@ -135,6 +136,7 @@ else()
         intro.c
         developer.c
         cpuprof.c
+        pcores.c
         xbe_check.c
         ios/xiso.c
         ${JSRF_GEN_SOURCES}

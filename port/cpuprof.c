@@ -31,12 +31,15 @@
  * so the game's functions come out as sub_<Xbox address>; outside the
  * executable, under the library. Every CPUPROF_WINDOW_S seconds, and at exit,
  * each thread's share of a core and its busiest functions go to the log.
+ * On a processor with two kinds of core (port/pcores.c), a line after them
+ * says how much of each thread's time was on the P cores: Linux's
+ * handler notes the CPU each sample ran on, too.
  *
  * Linux and Windows only for now; elsewhere the switch says so. Off, nothing
  * is set up. RECOMP_CPU_PROFILE_SECS=<n> sets another window (the tests use 1).
  */
 #if defined(__linux__) && !defined(__ANDROID__) && (defined(__x86_64__) || defined(__aarch64__))
-#define _GNU_SOURCE        /* dl_iterate_phdr, dladdr, REG_RIP */
+#define _GNU_SOURCE        /* dl_iterate_phdr, dladdr, REG_RIP, sched_getcpu */
 #include <dirent.h>
 #include <dlfcn.h>
 #include <elf.h>
@@ -44,6 +47,7 @@
 #include <fcntl.h>
 #include <link.h>
 #include <pthread.h>
+#include <sched.h>
 #include <signal.h>
 #include <stdatomic.h>
 #include <stdint.h>
@@ -73,6 +77,8 @@
 
 void cpuprof_start(void);
 void cpuprof_stop(void);
+int  pcores_kinds(char *cpus, size_t n);
+int  pcores_is_p(int cpu);
 
 #if defined(CPUPROF_LINUX) || defined(CPUPROF_WINDOWS)
 
@@ -107,6 +113,7 @@ typedef struct {
     unsigned long long *fn;                /* for each symbol */
     unsigned long long lib[CPUPROF_LIBS];  /* and each library outside the executable */
     unsigned long long unknown;
+    unsigned long long p;                  /* the weight of those on a P core */
 } Thread;
 
 /* Every thread's CPU time, in seconds, at the start of the window, sampled
@@ -167,14 +174,16 @@ static Thread *thread_slot(Tid tid)
     return t->fn ? &s_thr[s_nthr++] : NULL;
 }
 
-/* A sample of thread tid at pc, filed under its thread and function. */
-static void file_sample(Tid tid, uintptr_t pc, unsigned long long weight)
+/* A sample of thread tid at pc, on CPU cpu (-1 where it isn't known), filed
+ * under its thread and function. */
+static void file_sample(Tid tid, uintptr_t pc, unsigned long long weight, int cpu)
 {
     Thread *t = thread_slot(tid);
     long k;
     if (!t) { s_lost++; return; }
     t->samples++;
     t->weight += weight;
+    if (pcores_is_p(cpu) == 1) t->p += weight;
     if ((k = find_symbol(pc)) >= 0) t->fn[k] += weight;
     else if ((k = find_library(pc)) >= 0) t->lib[k] += weight;
     else t->unknown += weight;
@@ -196,9 +205,12 @@ static void top_insert(Top *top, int *n, unsigned long long count, const char *n
 static void report(void)
 {
     double now = clock_now(), secs = now - s_window_start;
-    char line[2048];
-    int i;
+    char line[2048], cores[1024], cpus[256];
+    int i, nc = -1, shown = 0;
     s_window_start = now;
+    if (pcores_kinds(cpus, sizeof cpus) == 2)
+        nc = snprintf(cores, sizeof cores, "[CPUPROF]   on the P cores (CPUs %s), "
+                                           "share of each thread's samples:", cpus);
     if (secs <= 0.0) return;
     fprintf(stderr, "[CPUPROF] the last %.1f s, by thread (share of a core) and function "
                     "(share of the thread's samples)%s\n", secs,
@@ -240,13 +252,19 @@ static void report(void)
                             top[k].name, 100.0 * (double)top[k].count / (double)t->weight);
         /* One write for the line, so another thread's output can't split it. */
         fprintf(stderr, "%s\n", line);
+        if (nc > 0 && (size_t)nc < sizeof cores && t->weight)
+            nc += snprintf(cores + nc, sizeof cores - (size_t)nc, "%s thread %d %.0f%%",
+                           shown++ ? "," : "", (int)t->tid,
+                           100.0 * (double)t->p / (double)t->weight);
         memset(t->fn, 0, (s_nsym ? s_nsym : 1) * sizeof *t->fn);
         memset(t->lib, 0, sizeof t->lib);
         t->unknown = 0;
+        t->p = 0;
         t->weight = 0;
         t->samples = 0;
         i++;
     }
+    if (shown) fprintf(stderr, "%s\n", cores);
     snapshot();
 }
 
@@ -259,6 +277,7 @@ typedef struct {
     _Atomic unsigned long seq;   /* its number + 1 once written */
     uintptr_t pc;
     pid_t tid;
+    int cpu;
 } Sample;
 
 static Sample s_ring[CPUPROF_RING];
@@ -282,6 +301,9 @@ static void on_sample(int sig, siginfo_t *si, void *ctx)
     s->pc = (uintptr_t)uc->uc_mcontext.pc;
 #endif
     s->tid = t_tid;
+    /* glibc reads it from the thread's rseq area, or asks the vDSO: no lock,
+     * nothing a signal could interrupt halfway. */
+    s->cpu = sched_getcpu();
     atomic_store_explicit(&s->seq, n + 1, memory_order_release);
     errno = saved;
 }
@@ -379,7 +401,7 @@ static void drain(void)
             s_lost++;                 /* still being written, or written over */
             continue;
         }
-        file_sample(s->tid, s->pc, 1);
+        file_sample(s->tid, s->pc, 1, s->cpu);
     }
 }
 
@@ -720,7 +742,7 @@ static void sample_threads(void)
         ctx.ContextFlags = CONTEXT_CONTROL;
         read = GetThreadContext(w->h, &ctx);
         ResumeThread(w->h);
-        if (read) file_sample(w->tid, CONTEXT_PC(ctx), used);
+        if (read) file_sample(w->tid, CONTEXT_PC(ctx), used, -1);
     }
 }
 

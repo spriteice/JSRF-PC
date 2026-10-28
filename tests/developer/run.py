@@ -71,13 +71,20 @@ cases["cpu_profile"] = (None, "RECOMP_CPU_PROFILE=1\n", {},
                          "[CPUPROF] the last "] if profiled else ["started:"],
                         [] if profiled else ["CPU_PROFILE", "[CPUPROF]"])
 
-# The GPU queue, the engine's way since b1.2 and an engine switch that turns
-# it off: ticked, 0 in developer.cfg, into the environment. A developer.cfg
+# The GPU queue, the engine's way since b1.2 and a switch under Performance
+# that turns it off: ticked, 0 in developer.cfg, into the environment. A developer.cfg
 # from b1.1, where it was an experiment, keeps what was chosen there: ticked
 # (1) is the engine's way now, so nothing is set.
 cases["queue_off"] = (None, "RECOMP_NV2A_QUEUE=0\n", {},
                       ["[DEV] RECOMP_NV2A_QUEUE=0 from developer.cfg", "started:"], [])
 cases["queue_from_b1_1"] = (None, "RECOMP_NV2A_QUEUE=1\n", {}, ["started:"], ["[DEV]"])
+
+# Use P cores (port/pcores.c), Linux's only: started from developer.cfg
+# (tests/pcores tests the rest).
+cases["p_cores"] = (None, "RECOMP_P_CORES=1\n", {},
+                    ["[DEV] RECOMP_P_CORES=1 from developer.cfg", "[PCORES] RECOMP_P_CORES"] if linux
+                    else ["started:"],
+                    [] if linux else ["P_CORES", "[PCORES]"])
 
 # The game's camera log, the one switch in Logging that port/recomp_manual.c
 # reads: from developer.cfg into the environment like the others.
@@ -87,13 +94,16 @@ cases["camera_log"] = (None, "JSRF_CAM_LOG=1\n", {},
 with tempfile.TemporaryDirectory(prefix="developer-") as directory:
     work = pathlib.Path(directory)
     exe = str(work / "test.exe")
+    menu_exe = str(work / "menu.exe")
     # -Wno-unused-function: the settings code has helpers only the rest of
     # nv2a_gl.c calls.
     command = ["gcc", "-std=c11", "-Wall", "-Wextra", "-Wno-unused-function", "-DNV2A_GL_USE_SDL=1",
-               "-x", "c", "-", "port/developer.c", "-x", "none", "port/cpuprof.c", "-o", exe]
+               "-x", "c", "-", "port/developer.c", "-x", "none", "port/cpuprof.c", "port/pcores.c"]
     if linux:
         command.insert(1, "-pthread")
-    subprocess.run(command, cwd=root, input=source, text=True, check=True)
+    subprocess.run([*command, "-o", exe], cwd=root, input=source, text=True, check=True)
+    subprocess.run([*command, "-DXBOXRECOMP_MENU=1", "-Isrc/menu", "-o", menu_exe],
+                   cwd=root, input=source, text=True, check=True)
     for name, (settings_text, dev_text, extra, want, unwanted) in cases.items():
         folder = work / name
         folder.mkdir()
@@ -102,7 +112,8 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
         if dev_text is not None:
             (folder / "developer.cfg").write_text(dev_text)
         env = {k: v for k, v in os.environ.items()
-               if k not in (*switches, "RECOMP_CPU_PROFILE", "RECOMP_NV2A_QUEUE", "JSRF_CAM_LOG")}
+               if k not in (*switches, "RECOMP_CPU_PROFILE", "RECOMP_NV2A_QUEUE", "RECOMP_P_CORES",
+                            "JSRF_CAM_LOG")}
         env.update(extra, JSRF_SETTINGS_FILE=str(folder / "settings.cfg"))
         log = folder / "last-run.log"
         with open(log, "w") as out:
@@ -118,4 +129,23 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
                 raise SystemExit(f"{name}: '{line}' in the log:\n{text}")
         if settings_text is not None and (folder / "settings.cfg").read_text() != settings_text:
             raise SystemExit(f"{name}: the settings file changed:\n" + (folder / "settings.cfg").read_text())
-print("developer: all", len(cases), "cases pass")
+
+    # The menu's pages, in the order they are shown: Logging, Engine switches,
+    # then Performance, whose first row is Use P cores and stays so, and no
+    # Experimental while it has no row.
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("RECOMP_", "JSRF_"))}
+    env.update(JSRF_SETTINGS_FILE=str(work / "menu.cfg"))
+    run = subprocess.run([menu_exe], env=env, capture_output=True, text=True, timeout=10)
+    pages = {}
+    for line in run.stderr.splitlines():
+        if line.startswith("[MENU] "):
+            label, _, rows = line[len("[MENU] "):].partition(": ")
+            pages[label] = rows.split(" | ")
+    if run.returncode != 0 or list(pages) != ["Logging", "Engine switches", "Performance"]:
+        raise SystemExit(f"menu: exit {run.returncode}, pages {list(pages)}\n{run.stderr}")
+    perf = ["Use P cores (Restart)"] if linux else []
+    if pages["Performance"] != [*perf, "Turn off the GPU queue (Restart)"]:
+        raise SystemExit(f"menu: Performance's rows are {pages['Performance']}")
+    if any("RECOMP_NV2A_QUEUE" in row or "RECOMP_P_CORES" in row for row in pages["Engine switches"]):
+        raise SystemExit(f"menu: Engine switches' rows are {pages['Engine switches']}")
+print("developer: all", len(cases), "cases and the menu's pages pass")

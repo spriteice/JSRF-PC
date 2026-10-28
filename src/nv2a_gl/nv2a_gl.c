@@ -10680,6 +10680,11 @@ static void ensure_ready(void)
     if (!gfx_init(S.clip_w, S.clip_h)) { g_failed = 1; return; }
     g_ready = 1;
     surface_bind(S.color_offset, S.clip_w, S.clip_h);
+    /* This thread on the P cores, with Developer > Performance > Use P cores
+     * (port/pcores.c): once the context is made, so the driver's own
+     * threads, which it starts, run anywhere. */
+    { extern void pcores_thread(const char *who) __attribute__((weak));
+      if (pcores_thread) pcores_thread("the renderer"); }
 }
 
 /*

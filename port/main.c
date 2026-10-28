@@ -1054,6 +1054,9 @@ static int host_main(void)
     }
 #endif
 
+    /* The game runs on this thread from here: on the P cores, with
+     * Developer > Performance > Use P cores (port/pcores.c). */
+    { extern void pcores_thread(const char *who); pcores_thread("the game"); }
     { extern void xbox_guest_lock_acquire(void); xbox_guest_lock_acquire(); }
     xbe_entry_point();
 
