@@ -22,6 +22,7 @@
 #include "apu_state.h"
 #include <string.h>
 #include "fpconv.h"
+#include "apu_channels.h"
 
 /* #define DEBUG_MCPX */
 
@@ -1533,6 +1534,7 @@ static void voice_process(MCPXAPUState *d,
     }
 
     /* Mix into bins */
+    float gain[8];
     for (int b = 0; b < 8; b++) {
         float g = ea_value;
         float hr;
@@ -1542,10 +1544,14 @@ static void voice_process(MCPXAPUState *d,
             hr = (float)(1 << d->vp.submix_headroom[bin[b]]);
         }
         g *= attenuate(vol[b]) / hr;
+        gain[b] = g;
         for (int i = 0; i < NUM_SAMPLES_PER_FRAME; i++) {
             mixbins[bin[b]][i] += g * samples[i][b % channels];
         }
     }
+    /* RECOMP_APU_CHANNELS: what this voice sends to each side (apu_channels.c). */
+    if (g_apu_ch_capture)
+        apu_ch_voice(v, channels, samples, bin, gain, lpf);
 
     /* VP monitor mix */
     if (d->monitor.point == MCPX_APU_DEBUG_MON_VP) {
@@ -1615,18 +1621,23 @@ void mcpx_apu_vp_frame(MCPXAPUState *d,
         }
     }
 
-    /* VP monitor output */
+    /* VP monitor output (RECOMP_APU_MIX=xemu, mcpx_apu_vp_init).
+     *
+     * Written, not added as in xemu: nothing here clears the frame between
+     * one pass of the eight sub-frames and the next (the fold in apu_dsp.c
+     * writes over it), so adding piled each frame onto the one before. The
+     * mixbins are left as they are, for RECOMP_APU_BINS and
+     * RECOMP_APU_CHANNELS to report; nothing else reads them after this. */
     if (d->monitor.point == MCPX_APU_DEBUG_MON_VP) {
         int16_t isamp[NUM_SAMPLES_PER_FRAME * 2];
         src_float_to_short_array((float *)d->vp.sample_buf, isamp,
                                  NUM_SAMPLES_PER_FRAME * 2);
         int off = (d->ep_frame_div % 8) * NUM_SAMPLES_PER_FRAME;
         for (int i = 0; i < NUM_SAMPLES_PER_FRAME; i++) {
-            d->monitor.frame_buf[off + i][0] += isamp[2 * i];
-            d->monitor.frame_buf[off + i][1] += isamp[2 * i + 1];
+            d->monitor.frame_buf[off + i][0] = isamp[2 * i];
+            d->monitor.frame_buf[off + i][1] = isamp[2 * i + 1];
         }
         memset(d->vp.sample_buf, 0, sizeof(d->vp.sample_buf));
-        memset(mixbins, 0, sizeof(float) * NUM_MIXBINS * NUM_SAMPLES_PER_FRAME);
     }
 }
 
@@ -1637,7 +1648,20 @@ void mcpx_apu_vp_frame(MCPXAPUState *d,
 void mcpx_apu_vp_init(MCPXAPUState *d)
 {
     /* Single-threaded - no worker dispatch needed */
-    (void)d;
+
+    /* RECOMP_APU_MIX=xemu: the sound as xemu plays it with Use DSP off, as
+     * it comes set. Each voice's own left and right at the loudest of its
+     * eight volumes, and the 3D voices through the HRTF filter, whichever
+     * mixbins the title sends them to -- in place of the mixbins folded to
+     * stereo (apu_dsp.c). A sound that loses a side with the fold and keeps
+     * it with this lost it in the routing or the fold. */
+    const char *mix = getenv("RECOMP_APU_MIX");
+    if (mix && !strcmp(mix, "xemu")) {
+        d->monitor.point = MCPX_APU_DEBUG_MON_VP;
+        g_config.audio.hrtf = true;
+        fprintf(stderr, "[APU] RECOMP_APU_MIX=xemu: each voice's own left and "
+                        "right, the 3D voices through HRTF, as xemu plays them\n");
+    }
 }
 
 void mcpx_apu_vp_finalize(MCPXAPUState *d)

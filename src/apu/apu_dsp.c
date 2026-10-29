@@ -24,6 +24,7 @@
 
 #include "apu_state.h"
 #include "fpconv.h"
+#include "apu_channels.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -293,6 +294,9 @@ void mcpx_apu_dsp_frame(MCPXAPUState *d,
             d->monitor.frame_buf[off + i][1] = (int16_t)(right * 32767.0f);
         }
     }
+    /* RECOMP_APU_CHANNELS: the two sides, as the device gets them, from the
+     * fold above or from the voices themselves (RECOMP_APU_MIX=xemu). */
+    apu_ch_frame(&d->monitor.frame_buf[off], mixbins);
 
     /* RECOMP_APU_WAV=<path>: the encode processor's output, as raw 16-bit
      * stereo at 48 kHz.

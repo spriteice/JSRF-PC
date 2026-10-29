@@ -882,6 +882,41 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 - **When picking:** keep ours. If upstream changes the frame thread's
   pacing, make it pace single frames as here and run tests/apu_pacing.
 
+### The two sides of the sound, logged
+
+- **Files:** src/apu/apu_dsp.c (an `apu_ch_frame` call after the fold to
+  stereo), src/apu/apu_vp.c (each bin's gain kept in `gain`, and an
+  `apu_ch_voice` call after the mix into bins), src/apu/CMakeLists.txt
+  (apu_channels.c).
+- **Why:** Developer > Logging > RECOMP_APU_CHANNELS. The sound sometimes
+  drops to one side, and nothing in the log said what either side carried.
+  With the switch on, the log says when one side goes quiet while the other
+  plays, and which voices and mixbins were playing then, with a summary
+  every 10 s. Off, it costs a test of one flag per frame and per voice. Our
+  own files: src/apu/apu_channels.c and .h, and tests/apu_channels. Could
+  suit upstream.
+- **When picking:** keep the call in `mcpx_apu_dsp_frame` after the loop
+  that writes `frame_buf`, and the one in `voice_process` after the mix into
+  bins, and run tests/apu_channels.
+
+### The sound as xemu plays it
+
+- **Files:** src/apu/apu_vp.c (`mcpx_apu_vp_init` reads the switch; the VP
+  monitor output at the end of `mcpx_apu_vp_frame` writes `frame_buf`
+  instead of adding to it, and leaves the mixbins), src/apu/apu_dsp.c (the
+  `apu_ch_frame` call after the fold, whichever way the sound was made).
+- **Why:** Developer > Engine switches > RECOMP_APU_MIX=xemu. Our sound
+  follows the title's routing into the mixbins and folds them to stereo
+  with a formula of our own, since the GP and EP that do that on the console
+  are stubbed. xemu, with Use DSP off as it comes set, plays each voice's
+  own left and right at the loudest of its eight volumes instead, and the
+  3D voices through HRTF. With the switch the sound is made that way here
+  too, to tell a side lost in the routing or the fold from one lost before
+  or after it. The VP monitor added each sub-frame to what was there, which
+  xemu clears after each frame and we don't, so it piled up. Our own
+  files: tests/apu_mix. Could suit upstream.
+- **When picking:** keep ours, and run tests/apu_mix.
+
 ### Diagnostics only in Debug builds
 
 - **Files:** port/CMakeLists.txt.

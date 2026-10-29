@@ -71,7 +71,8 @@ static const DevSwitch k_logging[] = {
     { "RECOMP_CPU_PROFILE", "1" },
 #endif
     { "RECOMP_LOCK_WATCH", "1" }, { "RECOMP_WAITLOG", "1" }, { "RECOMP_KERNEL_IO", "1" },
-    { "RECOMP_APU_STATS", "1" }, { "RECOMP_GL_UNHANDLED", "1" }, { "RECOMP_GL_VERBOSE", "1" },
+    { "RECOMP_APU_STATS", "1" }, { "RECOMP_APU_CHANNELS", "1" },
+    { "RECOMP_GL_UNHANDLED", "1" }, { "RECOMP_GL_VERBOSE", "1" },
     { "RECOMP_GL_ERRORS_PER_DRAW", "1" }, { "RECOMP_USB_TRACE", "1" },
     { "RECOMP_GL_TIMELINE", "1" },          /* a frame's surfaces and skinned draws, every 5 s */
     { "JSRF_CAM_LOG", "1" },                /* the game's camera (port/recomp_manual.c) */
@@ -86,6 +87,7 @@ static const DevSwitch k_engine[] = {
     { "RECOMP_GL_IMMEDIATE", "0" },         /* no batches sent a vertex at a time (the shadows) */
     { "RECOMP_GL_STENCILVIS", "1" },        /* the stencil buffer in place of the shadows */
     { "RECOMP_GL_CURTAIN", "skip" },        /* no fades to black (the full-screen black quad) */
+    { "RECOMP_APU_MIX", "xemu" },           /* each voice's own sides, not the mixbins folded */
 };
 /* Performance's, each with its row in k_perf_row: something the engine does
  * by default, which the switch turns off. Use P cores is the first, and stays
