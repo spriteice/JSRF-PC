@@ -305,8 +305,16 @@ extern uint32_t  xbox_ContiguousBlockSerial(uint32_t va);
 #define PRIM_QUAD_STRIP     9
 #define PRIM_POLYGON        10
 
-#define MAX_INDICES   16384
-#define MAX_INLINE    16384
+/* A batch's indices, and its inline vertex data in words.
+ *
+ * Both were 16384, and what came after was dropped without a word: the
+ * hardware has no such limit, so a batch of more than 16384 indices -- 5461
+ * triangles -- lost its tail, and an inline batch more than 16384 words --
+ * 2048 vertices of eight words -- lost the vertices after that. Room for a
+ * million of either now; batch_size_note says how often a batch went past
+ * the old limits (and, should one ever reach these, that it was cut). */
+#define MAX_INDICES   (1u << 20)
+#define MAX_INLINE    (1u << 22)
 #define NUM_ATTRS     16
 #define NUM_STAGES    4
 
@@ -5258,6 +5266,37 @@ static void vc_report(const char *when)
             g_vc_st.converted / 1000, g_vc_st.hashed >> 10, g_vc_st.uploaded >> 10);
 }
 
+/* How big batches get, against the 16384 indices and 16384 inline words
+ * that used to be the limit (see MAX_INDICES): every batch that would have
+ * been cut then is counted, the first few described; and a batch that fills
+ * even today's room says so. */
+static void batch_size_note(int inl, uint32_t n)
+{
+    static unsigned long over_idx, over_inl, said, full;
+    static uint32_t big_idx, big_inl;
+    if (inl) {
+        if (S.inline_count >= MAX_INLINE && full++ < 4)
+            fprintf(stderr, "  [GL] draw %u: an inline batch filled %u words and was cut\n", S.draws, MAX_INLINE);
+        if (S.inline_count <= 16384) return;
+        over_inl++;
+        if (S.inline_count > big_inl) big_inl = S.inline_count;
+    } else {
+        if (n >= MAX_INDICES && full++ < 4)
+            fprintf(stderr, "  [GL] draw %u: a batch filled %u indices and was cut\n", S.draws, MAX_INDICES);
+        if (n <= 16384) return;
+        over_idx++;
+        if (n > big_idx) big_idx = n;
+    }
+    if (said < 12 || (over_idx + over_inl) % 1000 == 0) {
+        said++;
+        fprintf(stderr, "  [GL] big batch: draw %u flip %u prim %u %s %u %s -- past the old 16384 "
+                        "(%lu index batches so far, largest %u; %lu inline, largest %u words)\n",
+                S.draws, S.flips, S.prim, S.xf_mode == NV2A_XF_MODE_FIXED ? "ff" : "vp",
+                inl ? S.inline_count : n, inl ? "inline words" : "indices",
+                over_idx, big_idx, over_inl, big_inl);
+    }
+}
+
 /*
  * RECOMP_GL_POINTLOG=<s>: the point lists the title draws -- which are not
  * drawn (see do_draw_body) -- a line each for the first few, with the point
@@ -5578,6 +5617,7 @@ static void do_draw_body(void)
          * indices, and NV097_DRAW_ARRAYS appends the ranges it names. */
         n = S.idx_count;
     }
+    batch_size_note(inl, n);
     if (n < 1) return;
 
     /* The attributes this draw fetched from arrays keep its last vertex's
