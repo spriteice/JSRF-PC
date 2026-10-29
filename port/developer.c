@@ -100,6 +100,8 @@ static const DevSwitch k_perf[] = {
 #if defined(__linux__) && !defined(__ANDROID__)
     { "RECOMP_PACE_DISPLAY", "0" },         /* frames paced by the game's clock, not the display's */
 #endif
+    { "RECOMP_FENCE_WAIT", "0" },           /* the game spins while it waits for the GPU thread */
+    { "RECOMP_GL_DXT", "0" },               /* DXT textures decoded, not handed over as they are */
 };
 /* Experimental's: none just now -- the last, the GPU queue, is the engine's
  * way since b1.2, with its switch under Performance. A new one goes before the
@@ -144,6 +146,8 @@ static const char *const k_perf_row[] = {
 #if defined(__linux__) && !defined(__ANDROID__)
     "Display pacing (Restart)",
 #endif
+    "Sleep while waiting for the GPU (Restart)",
+    "Compressed textures direct (Restart)",
 };
 _Static_assert(sizeof k_perf_row / sizeof k_perf_row[0] == DEV_PERF, "a row for each of Performance's");
 /* Experimental's rows, one for each of k_tries. */

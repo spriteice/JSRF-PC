@@ -100,6 +100,15 @@ cases["pace_display_off"] = (None, "RECOMP_PACE_DISPLAY=0\n", {},
                              else ["started:"],
                              [] if linux else ["PACE_DISPLAY"])
 
+# D3D's wait for the GPU asleep (nv2a_pb_exec.c) and DXT textures handed
+# over as they are (nv2a_gl.c), both on by default: switches under
+# Performance that turn them off, ticked, 0 in developer.cfg
+# (tests/fence_wait and tests/tex_decode test the rest).
+cases["fence_wait_off"] = (None, "RECOMP_FENCE_WAIT=0\n", {},
+                           ["[DEV] RECOMP_FENCE_WAIT=0 from developer.cfg", "started:"], [])
+cases["dxt_off"] = (None, "RECOMP_GL_DXT=0\n", {},
+                    ["[DEV] RECOMP_GL_DXT=0 from developer.cfg", "started:"], [])
+
 # The game's camera log, the one switch in Logging that port/recomp_manual.c
 # reads: from developer.cfg into the environment like the others.
 cases["camera_log"] = (None, "JSRF_CAM_LOG=1\n", {},
@@ -132,7 +141,8 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
             (folder / "developer.cfg").write_text(dev_text)
         env = {k: v for k, v in os.environ.items()
                if k not in (*switches, "RECOMP_CPU_PROFILE", "RECOMP_NV2A_QUEUE", "RECOMP_P_CORES",
-                            "RECOMP_PACE_DISPLAY", "JSRF_CAM_LOG")}
+                            "RECOMP_PACE_DISPLAY", "RECOMP_FENCE_WAIT", "RECOMP_GL_DXT",
+                            "JSRF_CAM_LOG")}
         env.update(extra, JSRF_SETTINGS_FILE=str(folder / "settings.cfg"))
         log = folder / "last-run.log"
         with open(log, "w") as out:
@@ -176,7 +186,9 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
     pages, ticks = menu("")
     perf = ["Use P cores (Restart)"] if linux else []
     pace = ["Display pacing (Restart)"] if linux else []
-    if pages["Performance"] != [*perf, "GPU queue (Restart)", *pace]:
+    if pages["Performance"] != [*perf, "GPU queue (Restart)", *pace,
+                                "Sleep while waiting for the GPU (Restart)",
+                                "Compressed textures direct (Restart)"]:
         raise SystemExit(f"menu: Performance's rows are {pages['Performance']}")
     every = (1 << len(pages["Performance"])) - 1
     if ticks["Performance"] != every or ticks["Engine switches"] or ticks["Logging"]:
@@ -186,7 +198,8 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
     if ticks["Performance"] != every & ~queue:
         raise SystemExit(f"menu: with the GPU queue off, Performance's ticks are {ticks['Performance']}")
     if any(name in row for row in pages["Engine switches"]
-           for name in ("RECOMP_NV2A_QUEUE", "RECOMP_P_CORES", "RECOMP_PACE_DISPLAY")):
+           for name in ("RECOMP_NV2A_QUEUE", "RECOMP_P_CORES", "RECOMP_PACE_DISPLAY",
+                        "RECOMP_FENCE_WAIT", "RECOMP_GL_DXT")):
         raise SystemExit(f"menu: Engine switches' rows are {pages['Engine switches']}")
     if "RECOMP_GL_TIMELINE (Restart)" not in pages["Logging"]:
         raise SystemExit(f"menu: Logging's rows are {pages['Logging']}")

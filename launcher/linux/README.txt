@@ -110,11 +110,12 @@ adds the engine's own diagnostic lines to the log, for bug reports,
 Developer > Engine switches turns parts of the engine off or back to how they
 were, to compare, Developer > Performance has what the engine does for speed,
 each on by default and ticked, to untick and compare: Use P cores (the game on
-the processor's fast cores), GPU queue and Display pacing, and Developer >
-Experimental, when there is anything in it, tries out changes to how the game
-runs. Each row stands for an environment variable, kept in developer.cfg
-beside the settings file as NAME=1 or NAME=0, and applies from the next start:
-File > Restart restarts the game, after asking.
+the processor's fast cores), GPU queue, Display pacing, Sleep while waiting for
+the GPU, and Compressed textures direct, and Developer > Experimental, when
+there is anything in it, tries out changes to how the game runs. Each row
+stands for an environment variable, kept in developer.cfg beside the settings
+file as NAME=1 or NAME=0, and applies from the next start: File > Restart
+restarts the game, after asking.
 Developer > Purge shaders asks first, then restarts the game and deletes the
 shader cache as it starts: each shader is built again when the game first
 needs it.

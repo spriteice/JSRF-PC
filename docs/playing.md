@@ -84,7 +84,11 @@ menu.
     found. GPU queue lets the game run ahead of the graphics; unticked, the
     game waits for them after each batch of work, as before b1.2. Display
     pacing (Linux) times the game's frames by the display's refreshes;
-    unticked, by the game's own clock, as before b1.2.
+    unticked, by the game's own clock, as before b1.2. Sleep while waiting
+    for the GPU lets the game sleep while it waits for the graphics;
+    unticked, it spins, as before b1.2. Compressed textures direct hands
+    the game's compressed textures to the graphics driver as they are;
+    unticked, they are decoded first, as before b1.2.
   - **Experimental:** Changes to how the game runs, to try out, when there
     are any.
   - **Purge shaders:** Restarts the game and deletes the shader cache as it

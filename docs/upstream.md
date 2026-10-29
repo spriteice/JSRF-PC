@@ -553,7 +553,8 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   read: a bump source's bias, the transparency census and the texture
   dump. Every other format is decoded with a loop of its own, two to seven
   times as fast here and texel for texel the same. `RECOMP_GL_DXT=0`
-  decodes DXT as before. Metal leaves `tex_new_dxt` NULL and decodes.
+  (Developer > Performance > Compressed textures direct, unticked) decodes
+  DXT as before. Metal leaves `tex_new_dxt` NULL and decodes.
   tests/tex_decode and tests/gl_backend's test_dxt.c (ours) test it. Could
   suit upstream.
 - **When picking:** keep `tex_new_dxt` last among our `Nv2aGfx` members, in
@@ -664,8 +665,9 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 - **Why:** the in-game menu's Developer menu: Log to file, the engine's
   logging switches, Engine switches, which turn parts of the engine off to
   compare, Performance, what the engine does for speed, each ticked while
-  it's on (Use P cores first, then the GPU queue and display pacing, each
-  with its own entry), and Experimental, switches that change what the
+  it's on (Use P cores first, then the GPU queue, display pacing, the
+  game's wait for the GPU asleep, and DXT textures as they are, each with
+  its own entry), and Experimental, switches that change what the
   game does, for a comparison, shown while there is one. The start puts
   them into the environment before anything reads them. Among the logging
   switches is the CPU profile (Linux and Windows), which the start sets
@@ -828,7 +830,8 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   fence it writes, and the waiter reads the fence after it arms, with a full
   barrier on each side. Where a thread can't sleep (at raised IRQL, before
   the first fence, or while another thread waits) it spins as before.
-  `RECOMP_FENCE_WAIT=0` spins always, to compare. The report every 10 s
+  `RECOMP_FENCE_WAIT=0` (Developer > Performance > Sleep while waiting
+  for the GPU, unticked) spins always, to compare. The report every 10 s
   says how many waits slept and for how long. tests/fence_wait (ours)
   tests both halves. Could suit upstream.
 - **When picking:** keep ours. If upstream changes the executor's fence
