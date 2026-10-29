@@ -4,6 +4,60 @@ What changed in each JSRF-PC version, newest first. Upstream JSRF Unleashed's
 own changes are in
 [its changelog](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/blob/main/CHANGELOG.md).
 
+## b1.2 (beta) — 29 October 2026
+
+### Added
+
+- **Performance menu:** Developer > Performance has what the engine does for
+  speed, each on and ticked by default, to untick and compare: GPU queue, Sleep
+  while waiting for the GPU, Compressed textures direct, and on Linux, Use P
+  cores and Display pacing.
+- **Use P cores:** On a processor with two kinds of cores, as the ROG Xbox Ally
+  X has, the game's two busiest threads run on the fast ones. It leaves the
+  clocks and the power profile as they are. _(Linux)_
+- **Sound logging:** Developer > Logging > RECOMP_APU_CHANNELS logs when one
+  side of the sound goes quiet, with what each voice was playing at the time,
+  to help find the bug where sound comes from one side only.
+- **xemu's sound:** Developer > Engine switches > RECOMP_APU_MIX=xemu plays the
+  sound as xemu does, to compare when testing. The game's own sound stays the
+  default.
+
+### Fixed
+
+- **Uneven frame pacing:** The game's frames drifted against the display's
+  refreshes, so sometimes one showed twice and the next not at all, which felt
+  choppy and sluggish in Game Mode. Frames are now timed by the display's
+  refreshes. _(Linux)_
+- **Stutter entering a level:** Entering a level held one frame for up to a
+  fifth of a second while its textures were made. Textures are now made several
+  times faster, and entering a level takes under 30 ms.
+- **Slowdown during certain effects:** The spray can's effect and the sewer's
+  splashing water made new shaders as they faded, which slowed the game down.
+  They make none now.
+- **Busy menus:** In the menus and The Garage, the game spun while it waited
+  for the graphics, using up to two thirds of a CPU core. It now sleeps while
+  it waits, and the menus respond better.
+- **Missing scenery on Kibogaoka Hill and in the Fortified Residential Zone:**
+  Rails, rafters, walkways, and stacked houses weren't drawn. _(JuMatt,
+  upstream 0.5.7)_
+
+### Changed
+
+- **GPU queue on:** The game prepares its next frames while the last ones are
+  drawn, as b1.1's experiment did, now by default. It moves from Developer >
+  Experimental to Developer > Performance > GPU queue. If you turned the
+  experiment off again in b1.1, the queue stays off: tick GPU queue to turn it
+  on.
+- **CPU profile:** Developer > Logging's RECOMP_CPU_PROFILE now works on
+  Windows too.
+- **GPU profile:** Developer > Logging's RECOMP_GL_PROFILE also logs the
+  graphics card's own time for each frame.
+- **Timeline log:** A diagnostic log that was always on is now off, which
+  nearly halves a run's log. Developer > Logging > RECOMP_GL_TIMELINE turns it
+  on.
+- **Shader cache:** The shaders changed, so the first start after updating
+  shows "Building shaders" for longer than usual, once. The cache is kept.
+
 ## b1.1-hotfix (beta) — 26 October 2026
 
 Based on upstream JSRF Unleashed 0.5.6. A hotfix to b1.1.

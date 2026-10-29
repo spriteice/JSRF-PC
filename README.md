@@ -7,7 +7,7 @@
 JSRF-PC is a fork of upstream
 [JSRF Unleashed](https://github.com/JuMatt/JetSetRadioFuture-Unleashed) by
 [JuMatt](https://github.com/JuMatt). This fork aims to add various features and
-bug fixes, whilst focusing on Linux and Windows compatibility.
+bug fixes, whilst focusing on Linux and Windows compatibility and performance.
 
 > ⚠️ **Written by AI:** All of JSRF-PC's additions to the upstream code are
 > written by AI, taking care to test features, fix bugs, and follow the
@@ -30,16 +30,18 @@ contains no game files.
   graffiti camera turned off. Reset with the left trigger.
 - **Anti-aliasing:** SMAA _(JuMatt)_ and MSAA, alone or together.
 - **Anisotropic filtering:** Sharper textures at an angle.
+- **Performance:** Smooth frame pacing and optimised engine/renderer on both
+  Linux and Windows.
 - **Portable mode:** Everything in one folder that can be moved.
 
 ## Download
 
-The latest release is **b1.1-hotfix**, based on upstream JSRF Unleashed 0.5.6.
+The latest release is **b1.2**.
 
 | Platform | File |
 |---|---|
-| Linux x86_64: SteamOS, Ubuntu 22.04+, and most modern distros. | [JSRF-PC-b1.1-hotfix-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b1.1-hotfix/JSRF-PC-b1.1-hotfix-linux-x86_64.tar.gz) |
-| Windows 10 or 11, x86_64. | [JSRF-PC-b1.1-hotfix-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b1.1-hotfix/JSRF-PC-b1.1-hotfix-windows-x86_64.zip) |
+| Linux x86_64: SteamOS, Ubuntu 22.04+, and most modern distros. | [JSRF-PC-b1.2-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b1.2/JSRF-PC-b1.2-linux-x86_64.tar.gz) |
+| Windows 10 or 11, x86_64. | [JSRF-PC-b1.2-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b1.2/JSRF-PC-b1.2-windows-x86_64.zip) |
 
 See the [changelog](CHANGELOG-JSRF-PC.md) for what changed in each version,
 and the [releases](https://github.com/spriteice/JSRF-PC/releases) page for
@@ -107,6 +109,8 @@ target and the most tested. Windows comes second.
   - Sound from one side between menus (intermittent).
   - Music stopping in the Graffiti picker (intermittent).
   - Black screenshots on Windows.
+  - Graffiti menu icons on some AMD graphics on Windows.
+  - The free camera is enabled when watching other skaters.
 
 **Found a bug?** [Open an issue](https://github.com/spriteice/JSRF-PC/issues)
 and attach the `last-run.log` from that run.
