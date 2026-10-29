@@ -51,10 +51,13 @@ int main(void)
     pace_sleep_until(t);
     m = mono_now();
     check(m >= t, "a sleep to 2 ms ahead ends at that time or after", 1000.0 * (m - t));
+    /* "At once" is within 2 ms: a busy machine can hold the test up for a
+     * while (0.66 ms once, just after a build), and a sleep that went wrong
+     * takes far longer: a relative one to this time would sleep for hours. */
     t = mono_now() - 0.001;
     pace_sleep_until(t);
     m = mono_now();
-    check(m - t < 0.0011 + 0.0005, "a sleep to a time already past returns at once",
+    check(m - t < 0.001 + 0.002, "a sleep to a time already past returns at once",
           1000.0 * (m - t - 0.001));
 
     printf(fails ? "pace_spin: %d case(s) FAIL\n" : "pace_spin: all cases pass\n", fails);
