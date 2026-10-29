@@ -218,6 +218,7 @@ typedef enum {
     NV2A_U_BUMPSCALE0 = NV2A_U_BUMPMAT0 + 4,  /* ..3 */
     NV2A_U_BUMPOFF0  = NV2A_U_BUMPSCALE0 + 4, /* ..3 */
     NV2A_U_POLYOFF   = NV2A_U_BUMPOFF0 + 4,   /* the depth bias, where the shader writes depth */
+    NV2A_U_PSHC,                              /* the combiner constants (nv2a_psh_consts.h) */
     NV2A_U_COUNT
 } Nv2aUniformId;
 

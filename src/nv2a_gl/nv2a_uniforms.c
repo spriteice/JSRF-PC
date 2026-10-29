@@ -14,6 +14,7 @@
  */
 
 #include "nv2a_backend.h"
+#include "nv2a_psh_consts.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -74,6 +75,7 @@ const Nv2aUniformDesc nv2a_uniform_desc[NV2A_U_COUNT] = {
     F("bumpOffset0", FLOAT, 1), F("bumpOffset1", FLOAT, 1),
     F("bumpOffset2", FLOAT, 1), F("bumpOffset3", FLOAT, 1),
     F("polyOffset", VEC2, 1),
+    F("pshC", VEC4, NV2A_PSH_NCONSTS),
 };
 
 #undef V

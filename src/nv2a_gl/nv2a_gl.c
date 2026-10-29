@@ -34,6 +34,7 @@
 #include "nv2a_shader_cache.h"
 #include "nv2a_display_clock.h"
 #include "nv2a_hash.h"
+#include "nv2a_psh_consts.h"
 
 /*
  * Two ways to get a 3.3 core context.
@@ -1071,6 +1072,8 @@ static struct {
     float    vp_scale[4], vp_off[4];
     float    wide_shift;
     uint32_t fbo_w, fbo_h;      /* the surface size vpSurface and vpRect hold */
+    uint32_t psh_c[NV2A_PSH_NCONSTS];   /* the combiner constants, as words */
+    int      psh_ok;                    /* ... and whether the program has them */
 } g_last;
 static uint32_t g_frame_chars;       /* big skinned batches this frame */
 static uint32_t g_frame_chars_prev;  /* ... and in the frame just finished */
@@ -2872,18 +2875,37 @@ static int sticky_attrs(void)
 
 /* The combiner state's half of the program key, hashed again only when it
  * changed: comparing it costs a few nanoseconds, hashing it a byte at a time
- * a few hundred. */
+ * a few hundred. It leaves out what the shader reads as uniforms
+ * (nv2a_psh_key), so a fade through a constant keeps its program. */
 static uint32_t psh_hash(void)
 {
     static Nv2aPshState last;
     static uint32_t h;
     static int valid;
-    if (!valid || memcmp(&last, &S.psh, sizeof last)) {
-        memcpy(&last, &S.psh, sizeof last);
-        h = fnv(&S.psh, sizeof S.psh);
+    Nv2aPshState key;
+    nv2a_psh_key(&key, &S.psh);
+    if (!valid || memcmp(&last, &key, sizeof last)) {
+        memcpy(&last, &key, sizeof last);
+        h = fnv(&key, sizeof key);
         valid = 1;
     }
     return h;
+}
+
+/* The combiner constants (nv2a_psh_consts.h), sent to the program when they
+ * changed since it last had them: a fade changes one a frame, and most draws
+ * none. */
+static void psh_consts_send(int slot)
+{
+    uint32_t w[NV2A_PSH_NCONSTS];
+    float v[NV2A_PSH_NCONSTS * 4];
+    if (!uses(slot, NV2A_U_PSHC)) return;
+    nv2a_psh_const_words(w, &S.psh);
+    if (g_last.psh_ok && !memcmp(w, g_last.psh_c, sizeof w)) return;
+    nv2a_psh_const_values(v, w);
+    G->uniform_f(NV2A_U_PSHC, v, NV2A_PSH_NCONSTS);
+    memcpy(g_last.psh_c, w, sizeof w);
+    g_last.psh_ok = 1;
 }
 
 /* Which inputs a fixed-function batch actually has.
@@ -2992,7 +3014,9 @@ static void ff_describe(Nv2aVshFixed *f)
  * are laid out, and changes with Nv2aVshFixed and Nv2aPshState: a state of
  * another layout is dropped at start-up, and its program with it, which is
  * built again when the game next asks for it. Raising it is a change to note
- * in CHANGELOG-JSRF-PC.md.
+ * in CHANGELOG-JSRF-PC.md. The combiner state is kept as its key
+ * (nv2a_psh_key), without the constants; one kept with them makes the same
+ * program, since the shader no longer reads them from its source.
  */
 enum { SC_FIXED, SC_PROGRAM };
 #define SC_LAYOUT 2
@@ -3000,9 +3024,11 @@ enum { SC_FIXED, SC_PROGRAM };
 static void sc_state_note(uint32_t kind, const void *head, uint32_t hlen)
 {
     unsigned char st[NV2A_VSH_MAX_INSNS * 16 + sizeof(Nv2aPshState)];
+    Nv2aPshState key;
     if (!nv2a_sc_is_open() || hlen > NV2A_VSH_MAX_INSNS * 16) return;
+    nv2a_psh_key(&key, &S.psh);
     memcpy(st, head, hlen);
-    memcpy(st + hlen, &S.psh, sizeof S.psh);
+    memcpy(st + hlen, &key, sizeof key);
     nv2a_sc_state_add(SC_LAYOUT, kind, st, hlen + (uint32_t)sizeof S.psh);
 }
 
@@ -6086,6 +6112,7 @@ static void do_draw_body(void)
         g_last.tex_enable = -1;
         g_last.alpha_func = -1;
         g_last.vp_scale[0] = 1e30f;
+        g_last.psh_ok = 0;
     }
     /* The viewport the shader's epilogue divides by. The title programs it
      * into the hardware registers and, separately, into the constants its own
@@ -6639,6 +6666,7 @@ static void do_draw_body(void)
                     ((S.fog_color >> 8) & 0xFF) / 255.0f,
                     ((S.fog_color >> 16) & 0xFF) / 255.0f,  /* B */
                     ((S.fog_color >> 24) & 0xFF) / 255.0f);
+    psh_consts_send(slot);
     /* The W-buffer variant writes its own depth, which GL's polygon offset
      * never reaches, so that shader adds the offset itself (nv2a_psh.c): the
      * bias goes over in depth units, one step of a 24-bit buffer each. */

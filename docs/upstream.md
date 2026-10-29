@@ -567,6 +567,33 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 - **When picking:** keep the hand-over at the top of `vc_hash`, before its
   own loop. Run tests/vc_hash.
 
+### Combiner constants as uniforms
+
+- **Files:** src/nv2a_gl/nv2a_psh.c (`reg_name` names `pshC[]`, the
+  constants' literals are gone, and the GLSL declares `pshC`), nv2a_gl.c
+  (`psh_hash` and `sc_state_note` take `nv2a_psh_key`, `psh_consts_send`
+  and its call after the fog colour in `do_draw_body`, and `psh_c` and
+  `psh_ok` in `g_last`), nv2a_uniforms.c and nv2a_backend.h (`pshC`, a
+  uniform added after `polyOffset`), nv2a_psh.h (a comment). The rest is in
+  src/nv2a_gl/nv2a_psh_consts.h (ours).
+- **Why:** each combiner stage's C0 and C1 and the final combiner's pair
+  were written into the fragment shader as literals, and the program key
+  hashed all of `Nv2aPshState`, so each new value was a new program. The
+  game fades the spray can's effects and the sewer's splashes through them,
+  and each shade was a program built on the GPU thread, about 8 ms each, up
+  to 3 a frame: 22% of the frames late in a 10 s report on the Ally X, and
+  413 programs more in the shader cache after one short run. The shader now
+  reads them from one uniform array, sent when they change, and the key and
+  the shader cache's states leave them out, with the alpha reference, which
+  was a uniform already. The states the cache kept before make the same
+  programs, so `SC_LAYOUT` stays. tests/psh_consts and tests/gl_backend's
+  test_psh_consts.c (ours) test it. Could suit upstream.
+- **When picking:** keep `pshC` last in the uniform table and the enum. An
+  upstream change that reads another field of `Nv2aPshState` as a uniform
+  can leave it out of the key in `nv2a_psh_key`; one that writes a field
+  into the shader's source must keep it in. Run tests/psh_consts and
+  tests/gl_backend.
+
 ### Full screen remembered
 
 - **Files:** src/nv2a_gl/nv2a_gl.c.

@@ -25,6 +25,7 @@
 #include "nv2a_psh.h"
 #include "nv2a_vsh.h"   /* the varying struct both Metal stages share */
 #include "nv2a_backend.h"   /* the uniform table both dialects name */
+#include "nv2a_psh_consts.h"   /* where each constant sits in pshC[] */
 
 #include <stdarg.h>
 #include <stdlib.h>
@@ -55,7 +56,8 @@ static void sb(SB *s, const char *fmt, ...)
 /* NV097_SET_COMBINER_CONTROL bits 12 and 16: whether each stage has its own
  * C0 / C1 or every stage reads stage 0's (xemu: PS_COMBINERCOUNT_UNIQUE_C0/
  * _C1). The final combiner -- stage 8 here -- has a pair of its own,
- * NV097_SET_SPECULAR_FOG_FACTOR. Set by psh_emit for the shader being built. */
+ * NV097_SET_SPECULAR_FOG_FACTOR. Set by psh_emit for the shader being built.
+ * All of them are read from the uniform pshC[] (nv2a_psh_consts.h). */
 static int s_c0_each = 1, s_c1_each = 1;
 #define PSH_FINAL_STAGE 8
 
@@ -65,11 +67,13 @@ static const char *reg_name(unsigned reg, int stage)
     switch (reg) {
     case NV2A_PSH_REG_ZERO:     return "vec4(0.0)";
     case NV2A_PSH_REG_C0:
-        if (stage >= PSH_FINAL_STAGE) return "c0_f";
-        snprintf(buf, sizeof buf, "c0_%d", s_c0_each ? stage : 0); return buf;
+        snprintf(buf, sizeof buf, "pshC[%d]", stage >= PSH_FINAL_STAGE ? NV2A_PSH_FINAL_C0
+                                              : NV2A_PSH_C0(s_c0_each ? stage : 0));
+        return buf;
     case NV2A_PSH_REG_C1:
-        if (stage >= PSH_FINAL_STAGE) return "c1_f";
-        snprintf(buf, sizeof buf, "c1_%d", s_c1_each ? stage : 0); return buf;
+        snprintf(buf, sizeof buf, "pshC[%d]", stage >= PSH_FINAL_STAGE ? NV2A_PSH_FINAL_C1
+                                              : NV2A_PSH_C1(s_c1_each ? stage : 0));
+        return buf;
     case NV2A_PSH_REG_FOG:      return "r_fog";
     case NV2A_PSH_REG_V0:       return "r_v0";
     case NV2A_PSH_REG_V1:       return "r_v1";
@@ -279,8 +283,9 @@ static int psh_emit(const Nv2aPshState *ps, char *buf, int bufsize, int msl)
            "uniform vec4 fogColor;\n"
            "uniform int  alphaFunc;\n"
            "uniform float alphaRef;\n"
+           "uniform vec4 pshC[%d];\n"
            "out vec4 frag;\n",
-           stages, stages == 1 ? "" : "s");
+           stages, stages == 1 ? "" : "s", NV2A_PSH_NCONSTS);
 
         for (i = 0; i < 4; i++)
             if (ps->tex_bound[i])
@@ -308,34 +313,10 @@ static int psh_emit(const Nv2aPshState *ps, char *buf, int bufsize, int msl)
                  "%sfloat nv2a_sb(float c) { return (c * 255.0 - 128.0) / 127.0; }\n",
                  msl ? "static inline " : "", msl ? "static inline " : ""); }
 
-    /* Constants are per stage on this hardware; a title that shares them
-     * across stages simply writes the same value to each. */
-    /* Metal has address spaces: a variable at program scope must be declared
-     * `constant`, and `const` alone is rejected outright. GLSL has no such
-     * keyword. Same declaration, one word apart. */
-    { const char *cq = msl ? "constant" : "const";
-    for (i = 0; i < stages; i++) {
-        sb(&s, "%s vec4 c0_%d = vec4(%.6f, %.6f, %.6f, %.6f);\n", cq, i,
-           ((ps->c0[i] >> 16) & 0xFF) / 255.0, ((ps->c0[i] >> 8) & 0xFF) / 255.0,
-           (ps->c0[i] & 0xFF) / 255.0, ((ps->c0[i] >> 24) & 0xFF) / 255.0);
-        sb(&s, "%s vec4 c1_%d = vec4(%.6f, %.6f, %.6f, %.6f);\n", cq, i,
-           ((ps->c1[i] >> 16) & 0xFF) / 255.0, ((ps->c1[i] >> 8) & 0xFF) / 255.0,
-           (ps->c1[i] & 0xFF) / 255.0, ((ps->c1[i] >> 24) & 0xFF) / 255.0);
-    }
-    /* The final combiner reads C0/C1 too: its own pair, from
-     * NV097_SET_SPECULAR_FOG_FACTOR (xemu's c0_8 / c1_8). It used to borrow
-     * the last stage's. */
-    if (old_ocw())
-        sb(&s, "#define c0_f c0_%d\n#define c1_f c1_%d\n", stages - 1, stages - 1);
-    else {
-        sb(&s, "%s vec4 c0_f = vec4(%.6f, %.6f, %.6f, %.6f);\n", cq,
-           ((ps->final_c0 >> 16) & 0xFF) / 255.0, ((ps->final_c0 >> 8) & 0xFF) / 255.0,
-           (ps->final_c0 & 0xFF) / 255.0, ((ps->final_c0 >> 24) & 0xFF) / 255.0);
-        sb(&s, "%s vec4 c1_f = vec4(%.6f, %.6f, %.6f, %.6f);\n", cq,
-           ((ps->final_c1 >> 16) & 0xFF) / 255.0, ((ps->final_c1 >> 8) & 0xFF) / 255.0,
-           (ps->final_c1 & 0xFF) / 255.0, ((ps->final_c1 >> 24) & 0xFF) / 255.0);
-    }
-    }
+    /* The constants are uniforms, pshC[], as the alpha test's reference
+     * is: titles fade colours through them, and a literal here made every
+     * shade a program of its own (nv2a_psh_consts.h). The Metal struct and
+     * its #defines come from the uniform table. */
 
     if (msl) {
         /* Textures and samplers are arguments in Metal, and only the bound
