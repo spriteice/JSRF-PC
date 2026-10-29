@@ -166,6 +166,13 @@ except inside the packaged build.
   doesn't.
 - **Where:** Desktop Mode, Game Mode, or both on the Ally X, and the Windows
   PC.
+- **Order:** one platform at a time, starting with the work's target
+  platform. That is Linux (the Ally X) unless the work is for Windows, such
+  as a Windows bug. Its steps come first, and testing stays on it, through
+  any fixes and new builds, until every step there passes. Only then does
+  testing move to the other platform, on the same build, as each build
+  carries both packages. After any fix, the steps already passed that it
+  could affect are run again on the new build.
 - **Regression spots:** title screen, menus, starting a new game, tutorial,
   skating, graffiti.
 - **Release builds:** also a fresh start, with the settings, cache, and log
