@@ -16,6 +16,9 @@
 #define BATCH        35580u   /* indices: in the Fortified Residential Zone */
 #define RUN_MAX      2047u    /* a method header's count: 11 bits */
 #define RANGE_MAX    256u     /* DRAW_ARRAYS: an 8-bit count, plus one */
+#define COUNT_SHIFT  24       /* DRAW_ARRAYS: count - 1 in the top 8 bits */
+#define PAIR         2u       /* ARRAY_ELEMENT16: two indices a word, */
+#define PAIR_SHIFT   16       /* the second in the top half */
 #define INLINE_WORDS 8u       /* a vertex of the inline batch */
 
 static uint32_t s_words[BATCH * INLINE_WORDS];
@@ -52,9 +55,9 @@ int main(void)
     g_on = 1;
     g_prof_on = 0;
 
-    for (k = 0; k < BATCH / 2; k++) s_words[k] = 2 * k | (2 * k + 1) << 16;   /* two a word */
-    indices(M_ARRAY_ELEMENT16, BATCH / 2, 0, "16-bit, one at a time");
-    indices(M_ARRAY_ELEMENT16, BATCH / 2, 1, "16-bit, in runs");
+    for (k = 0; k < BATCH / PAIR; k++) s_words[k] = PAIR * k | (PAIR * k + 1) << PAIR_SHIFT;
+    indices(M_ARRAY_ELEMENT16, BATCH / PAIR, 0, "16-bit, one at a time");
+    indices(M_ARRAY_ELEMENT16, BATCH / PAIR, 1, "16-bit, in runs");
     for (k = 0; k < BATCH; k++) s_words[k] = k;
     indices(M_ARRAY_ELEMENT32, BATCH, 0, "32-bit, one at a time");
     indices(M_ARRAY_ELEMENT32, BATCH, 1, "32-bit, in runs");
@@ -62,7 +65,7 @@ int main(void)
     nv2a_gl_method(M_SET_BEGIN_END, PRIM_TRIANGLES);
     for (k = 0; k < BATCH; k += n) {
         n = BATCH - k < RANGE_MAX ? BATCH - k : RANGE_MAX;
-        nv2a_gl_method(M_DRAW_ARRAYS, k | (n - 1) << 24);   /* first, count - 1 */
+        nv2a_gl_method(M_DRAW_ARRAYS, k | (n - 1) << COUNT_SHIFT);
     }
     kept("DRAW_ARRAYS ranges", S.idx, S.idx_count, BATCH);
     nv2a_gl_method(M_SET_BEGIN_END, 0);

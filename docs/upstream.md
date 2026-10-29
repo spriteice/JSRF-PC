@@ -446,6 +446,19 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   to do outside their cases in `gl_method`'s switch, or changes those cases,
   `gl_run` must do the same for every word of a run. Run tests/index_runs.
 
+### The big-batch log's numbers named
+
+- **Files:** src/nv2a_gl/nv2a_gl.c (`batch_size_note`, from upstream's
+  9d21bd8, picked as 871a332).
+- **Why:** upstream's log of batches past the old limit wrote that limit,
+  16384, and how often it prints as bare numbers. They are named now:
+  `OLD_BATCH_MAX`, `BIG_BATCH_SAID`, `BIG_BATCH_EVERY` and
+  `CUT_BATCH_SAID`. The log says the same as before, word for word.
+  Could suit upstream.
+- **When picking:** if upstream changes `batch_size_note`, keep the names
+  in place of the numbers. Upstream's 8f5723a adds code after the
+  function and edits the line after its call, so it doesn't meet them.
+
 ### Targets sampled without alpha
 
 - **Files:** src/nv2a_gl/nv2a_gl.c (`fmt_opaque`, and its call where each

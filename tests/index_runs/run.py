@@ -11,9 +11,9 @@ the engine are left out and their names left unresolved: anything that
 reached one would crash, and the test would fail. A run through
 nv2a_gl_indices must leave every byte of its state as the same words through
 nv2a_gl_method do. Its batch limits (MAX_INDICES, MAX_INLINE) are put back
-to the 16384 they were before upstream's 9d21bd8, here only: a list then
-fills in a few runs, and the state is small enough to copy whole for every
-run (at the real limits it is over 20 MB).
+to the renderer's OLD_BATCH_MAX, the 16384 they were before upstream's
+9d21bd8, here only: a list then fills in a few runs, and the state is small
+enough to copy whole for every run (at the real limits it is over 20 MB).
 
 Linux, with the EGL and GL headers (libegl-dev, libgl-dev); requires GCC on
 PATH.
@@ -31,7 +31,6 @@ if not sys.platform.startswith("linux"):
 
 root = pathlib.Path(__file__).resolve().parents[2]
 here = root / "tests/index_runs"
-OLD_LIMIT = 16384    # both batch limits before 9d21bd8
 
 with tempfile.TemporaryDirectory(prefix="index-runs-") as directory:
     tmp = pathlib.Path(directory)
@@ -58,8 +57,12 @@ with tempfile.TemporaryDirectory(prefix="index-runs-") as directory:
                          f"{len(logs['whole'])} whole")
     print("index_runs walk: the same", len(logs["scan"]), "lines of log both ways")
 
-    source, limits = re.subn(r"^#define (MAX_INDICES|MAX_INLINE)\b.*$", r"#define \1 %d" % OLD_LIMIT,
-                             (root / "src/nv2a_gl/nv2a_gl.c").read_text(encoding="utf-8"), flags=re.M)
+    source = (root / "src/nv2a_gl/nv2a_gl.c").read_text(encoding="utf-8")
+    old = re.search(r"^#define OLD_BATCH_MAX\s+(\d+)u?\b", source, flags=re.M)
+    if not old:
+        raise SystemExit("index_runs: nv2a_gl.c no longer defines OLD_BATCH_MAX")
+    source, limits = re.subn(r"^#define (MAX_INDICES|MAX_INLINE)\b.*$", r"#define \g<1> " + old.group(1),
+                             source, flags=re.M)
     if limits != 2:
         raise SystemExit("index_runs: nv2a_gl.c no longer defines MAX_INDICES and MAX_INLINE")
     (tmp / "nv2a_gl.c").write_text(source, encoding="utf-8")

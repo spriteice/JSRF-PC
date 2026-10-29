@@ -5266,6 +5266,11 @@ static void vc_report(const char *when)
             g_vc_st.converted / 1000, g_vc_st.hashed >> 10, g_vc_st.uploaded >> 10);
 }
 
+#define OLD_BATCH_MAX   16384u  /* MAX_INDICES and MAX_INLINE, up to 9d21bd8 */
+#define BIG_BATCH_SAID  12      /* big batches described one by one, */
+#define BIG_BATCH_EVERY 1000    /* then one in this many */
+#define CUT_BATCH_SAID  4       /* batches cut, said at most */
+
 /* How big batches get, against the 16384 indices and 16384 inline words
  * that used to be the limit (see MAX_INDICES): every batch that would have
  * been cut then is counted, the first few described; and a batch that fills
@@ -5275,24 +5280,24 @@ static void batch_size_note(int inl, uint32_t n)
     static unsigned long over_idx, over_inl, said, full;
     static uint32_t big_idx, big_inl;
     if (inl) {
-        if (S.inline_count >= MAX_INLINE && full++ < 4)
+        if (S.inline_count >= MAX_INLINE && full++ < CUT_BATCH_SAID)
             fprintf(stderr, "  [GL] draw %u: an inline batch filled %u words and was cut\n", S.draws, MAX_INLINE);
-        if (S.inline_count <= 16384) return;
+        if (S.inline_count <= OLD_BATCH_MAX) return;
         over_inl++;
         if (S.inline_count > big_inl) big_inl = S.inline_count;
     } else {
-        if (n >= MAX_INDICES && full++ < 4)
+        if (n >= MAX_INDICES && full++ < CUT_BATCH_SAID)
             fprintf(stderr, "  [GL] draw %u: a batch filled %u indices and was cut\n", S.draws, MAX_INDICES);
-        if (n <= 16384) return;
+        if (n <= OLD_BATCH_MAX) return;
         over_idx++;
         if (n > big_idx) big_idx = n;
     }
-    if (said < 12 || (over_idx + over_inl) % 1000 == 0) {
+    if (said < BIG_BATCH_SAID || (over_idx + over_inl) % BIG_BATCH_EVERY == 0) {
         said++;
-        fprintf(stderr, "  [GL] big batch: draw %u flip %u prim %u %s %u %s -- past the old 16384 "
+        fprintf(stderr, "  [GL] big batch: draw %u flip %u prim %u %s %u %s -- past the old %u "
                         "(%lu index batches so far, largest %u; %lu inline, largest %u words)\n",
                 S.draws, S.flips, S.prim, S.xf_mode == NV2A_XF_MODE_FIXED ? "ff" : "vp",
-                inl ? S.inline_count : n, inl ? "inline words" : "indices",
+                inl ? S.inline_count : n, inl ? "inline words" : "indices", OLD_BATCH_MAX,
                 over_idx, big_idx, over_inl, big_inl);
     }
 }
