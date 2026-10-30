@@ -87,8 +87,7 @@ Steps:
 4. **Check every entry** below that the pick meets: correct any it made
    wrong, and say in the entry what of the pick was left out for it.
 5. **Build and test** as docs/build-and-test-reference.md says. The test
-   checklist covers the picked changes, as well as the usual regression
-   spots.
+   checklist covers the areas the picked changes touch.
 6. **Propose it,** with the full diff as a file. Its message is upstream's,
    with the line `-x` adds. Where something was fitted or left out, a note
    below it says what, and which entries changed.

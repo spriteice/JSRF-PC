@@ -162,9 +162,9 @@ except inside the packaged build.
   generated code (functions translated, 0 failed), and the toolchains.
 - **Checks done here:** the compatibility checks, the tests, and anything
   run in the sandbox. Everything else is unverified.
-- **What to test:** numbered steps, each saying exactly what to do and on
-  which device, what I should see if it works, and what I'd see if it
-  doesn't.
+- **What to test:** numbered steps for the areas the change's code touches,
+  and nothing else, each saying exactly what to do and on which device,
+  what I should see if it works, and what I'd see if it doesn't.
 - **Where:** Desktop Mode, Game Mode, or both on the Ally X, and the Windows
   PC.
 - **Order:** one platform at a time, starting with the work's target
@@ -174,8 +174,6 @@ except inside the packaged build.
   testing move to the other platform, on the same build, as each build
   carries both packages. After any fix, the steps already passed that it
   could affect are run again on the new build.
-- **Regression spots:** title screen, menus, starting a new game, tutorial,
-  skating, graffiti.
 - **Release builds:** also a fresh start, with the settings, cache, and log
   folders renamed first and put back after (not deleted: a disc image's
   saves are in them). And an upgrade, starting the new build over the

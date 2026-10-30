@@ -67,8 +67,8 @@ Release, says which step the release has reached.
    version reads as the release's name everywhere docs/versioning.md lists,
    with its Windows File version, and SHA256SUMS.txt covers both packages.
 8. **Test those packages:** the test checklist on the Ally X, in Desktop
-   Mode and Game Mode, and on the Windows PC. It covers the release's
-   changes, the regression spots, a fresh start, and an upgrade over the
+   Mode and Game Mode, and on the Windows PC. It covers the areas the
+   release's changes touch, a fresh start, and an upgrade over the
    previous release. If anything fails, it is fixed, the fix gets its own
    rules check, and the release is built again (step 7). Nothing is tagged
    yet, so no tag ever has to move.
