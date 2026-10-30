@@ -8,6 +8,14 @@
  * the device would get. The argument is the mixbin the right channel goes
  * to: 1 (front right), or 10 (the reverb send, which the fold to stereo
  * leaves out). run.py runs each with the fold and with RECOMP_APU_MIX=xemu.
+ *
+ * With "lock" in place of the mixbin, the right channel starts in 10, and on
+ * the twentieth frame another thread does what the title does to change a
+ * voice: locks it with VOICE_LOCK, moves the right channel to 1 with
+ * SET_VOICE_CFG_VBIN, and unlocks it. The voice is locked before the frame
+ * starts and changed only once the frame has begun; the frame must wait
+ * for the unlock (the thread finds it waiting, not finished) and mix the
+ * channel into 1.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,6 +27,8 @@ int g_apu_window_only = 1;
 struct McpxApuDebug g_dbg;
 int g_dbg_voice_monitor = -1;
 
+void mcpx_apu_vp_write(void *opaque, hwaddr addr, uint64_t val, unsigned int size);
+
 #define VOICES 0x100000u            /* the voice array */
 #define SGE    0x200000u            /* the page table the voice's buffer goes through */
 #define DATA   0x300000u            /* the buffer */
@@ -29,9 +39,35 @@ static void put(uint32_t addr, uint32_t value)
     memcpy(g_apu_ram_ptr + addr, &value, 4);
 }
 
+/* The title's side of the "lock" case, and what the two threads share */
+static struct {
+    MCPXAPUState *d;
+    QemuCond cond;                  /* with d->lock */
+    int locked, frame_started, in_frame, waited;
+} t;
+
+static void *title_thread(void *arg)
+{
+    (void)arg;
+    mcpx_apu_vp_write(t.d, NV1BA0_PIO_SET_CURRENT_VOICE, 68, 4);
+    mcpx_apu_vp_write(t.d, NV1BA0_PIO_VOICE_LOCK, 1, 4);
+    qemu_mutex_lock(&t.d->lock);
+    t.locked = 1;
+    qemu_cond_signal(&t.cond);
+    /* d->lock is free again only while the frame waits, or once it is done */
+    while (!t.frame_started)
+        qemu_cond_wait(&t.cond, &t.d->lock);
+    t.waited = t.in_frame;
+    qemu_mutex_unlock(&t.d->lock);
+    mcpx_apu_vp_write(t.d, NV1BA0_PIO_SET_VOICE_CFG_VBIN, 0 | 1 << 5, 4);
+    mcpx_apu_vp_write(t.d, NV1BA0_PIO_VOICE_LOCK, 0, 4);
+    return NULL;
+}
+
 int main(int argc, char **argv)
 {
-    unsigned right_bin = argc > 1 ? (unsigned)atoi(argv[1]) : 1;
+    int lock = argc > 1 && !strcmp(argv[1], "lock");
+    unsigned right_bin = lock ? 10 : argc > 1 ? (unsigned)atoi(argv[1]) : 1;
     MCPXAPUState *d = calloc(1, sizeof *d);
     float mixbins[NUM_MIXBINS][NUM_SAMPLES_PER_FRAME];
     uint32_t voice = VOICES + 68 * NV_PAVS_SIZE;
@@ -66,6 +102,29 @@ int main(int argc, char **argv)
     mcpx_apu_dsp_init(d);
     for (i = 0; i < 20; i++) {
         memset(mixbins, 0, sizeof mixbins);
+        if (lock && i == 19) {
+            QemuThread thread;
+            qemu_mutex_init(&d->lock);
+            qemu_cond_init(&d->cond);
+            qemu_cond_init(&t.cond);
+            t.d = d;
+            qemu_mutex_lock(&d->lock);
+            qemu_thread_create(&thread, "title", title_thread, NULL,
+                               QEMU_THREAD_JOINABLE);
+            while (!t.locked)
+                qemu_cond_wait(&t.cond, &d->lock);
+            t.frame_started = t.in_frame = 1;
+            qemu_cond_signal(&t.cond);
+            mcpx_apu_vp_frame(d, mixbins);       /* as the frame thread, under d->lock */
+            t.in_frame = 0;
+            qemu_mutex_unlock(&d->lock);
+            qemu_thread_join(&thread);
+            printf("lock: the frame %s, right channel in bin 1 %.4f, bin 10 %.4f\n",
+                   t.waited ? "waited for the unlock" : "did not wait",
+                   mixbins[1][NUM_SAMPLES_PER_FRAME - 1],
+                   mixbins[10][NUM_SAMPLES_PER_FRAME - 1]);
+            return 0;
+        }
         mcpx_apu_vp_frame(d, mixbins);
         mcpx_apu_dsp_frame(d, mixbins);
         d->ep_frame_div++;

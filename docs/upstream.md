@@ -931,6 +931,23 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   files: tests/apu_mix. Could suit upstream.
 - **When picking:** keep ours, and run tests/apu_mix.
 
+### Voices mixed once the title has unlocked them
+
+- **Files:** src/apu/apu_vp.c (`mcpx_apu_vp_frame`, and a
+  `[APU] voice locks` line with RECOMP_APU_STATS).
+- **Why:** the title brackets a batch of changes to a voice with
+  VOICE_LOCK, and makes them from its own thread while the APU's frame
+  thread mixes. Every active voice was mixed as the lists were walked,
+  locked or not, so a voice could be mixed half-changed, and what the frame
+  wrote back to it (its play position and envelope) could overwrite what
+  the title had just set. xemu waits until none of the voices it is about
+  to mix is locked (`voice_work_dispatch`), and now this does too: the walk
+  reports the idle voices as before and gathers the active ones, then the
+  frame waits and mixes them. It gives up the frame if the APU is being
+  paused. tests/apu_mix (ours) tests it. Could suit upstream.
+- **When picking:** keep the walk, the wait and the mix as separate steps
+  in `mcpx_apu_vp_frame`, and run tests/apu_mix.
+
 ### Diagnostics only in Debug builds
 
 - **Files:** port/CMakeLists.txt.

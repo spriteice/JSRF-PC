@@ -1580,6 +1580,11 @@ static void voice_process(MCPXAPUState *d,
 void mcpx_apu_vp_frame(MCPXAPUState *d,
                         float mixbins[NUM_MIXBINS][NUM_SAMPLES_PER_FRAME])
 {
+    /* The active voices of the three lists, mixed once none is locked */
+    struct { uint16_t v; int list; } queue[3 * MCPX_HW_MAX_VOICES];
+    int queue_len = 0;
+    int64_t wait_start = 0, wait_us = 0;
+
     memset(d->vp.sample_buf, 0, sizeof(d->vp.sample_buf));
 
     for (int list = 0; list < 3; list++) {
@@ -1614,10 +1619,65 @@ void mcpx_apu_vp_frame(MCPXAPUState *d,
                     == NV_PAPU_FECTL_FEMETHMODE_FREE_RUNNING)
                     fe_method(d, SE2FE_IDLE_VOICE, v);
             } else {
-                /* Process voice directly (single-threaded) */
-                voice_process(d, mixbins, d->vp.sample_buf, v, list);
+                queue[queue_len].v = v;
+                queue[queue_len].list = list;
+                queue_len++;
             }
             d->regs[current] = d->regs[next];
+        }
+    }
+
+    /* Mix a voice only once the title has finished changing it, as xemu
+     * does (voice_work_dispatch).
+     *
+     * The title brackets a batch of changes to a voice with VOICE_LOCK, and
+     * makes them from its own thread while this one runs. A voice mixed in
+     * between plays half-changed, and what the frame writes back to it (the
+     * play position, the envelope) can overwrite what the title has just
+     * set. So the idle voices are reported first, as before, and the frame
+     * waits until none of the active ones is locked, letting go of d->lock
+     * meanwhile. voice_lock and mcpx_apu_wait_for_idle each signal d->cond
+     * under d->lock, so the wait misses neither an unlock nor a pause, and
+     * the frame is given up if the APU is being paused. */
+    for (;;) {
+        int i;
+        for (i = 0; i < queue_len; i++)
+            if (is_voice_locked(d, queue[i].v)) break;
+        if (i == queue_len) break;
+        if (d->pause_requested) {
+            queue_len = 0;
+            break;
+        }
+        if (!wait_start) wait_start = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
+        qemu_cond_wait(&d->cond, &d->lock);
+    }
+    if (wait_start) wait_us = qemu_clock_get_us(QEMU_CLOCK_REALTIME) - wait_start;
+
+    for (int i = 0; i < queue_len; i++)
+        voice_process(d, mixbins, d->vp.sample_buf, queue[i].v, queue[i].list);
+
+    /* RECOMP_APU_STATS: how many frames waited for a voice the title had
+     * locked, and for how long. */
+    {
+        static int stats = -1;
+        static int64_t last_ms, total_us, longest_us;
+        static int waits;
+        if (stats < 0) stats = getenv("RECOMP_APU_STATS") ? 1 : 0;
+        if (stats) {
+            int64_t now = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+            if (wait_start) {
+                waits++;
+                total_us += wait_us;
+                if (wait_us > longest_us) longest_us = wait_us;
+            }
+            if (!last_ms) last_ms = now;
+            if (now - last_ms >= 1000) {
+                fprintf(stderr, "[APU] voice locks: %d frames waited, %.1f ms "
+                        "in all (longest %.1f ms)\n", waits, total_us / 1000.0,
+                        longest_us / 1000.0);
+                fflush(stderr);
+                last_ms = now; waits = 0; total_us = longest_us = 0;
+            }
         }
     }
 

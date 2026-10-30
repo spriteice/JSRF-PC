@@ -7,7 +7,9 @@ right mixbin or into the reverb send. With the fold to stereo (the default),
 the device gets the mixbins: a channel sent to a bin the fold leaves out is
 lost. With RECOMP_APU_MIX=xemu it gets the voice's own left and right, as
 xemu plays them with Use DSP off, wherever they are sent, and the same on
-every frame. Requires GCC on PATH, including MinGW on Windows.
+every frame. Then "lock": a frame must wait while another thread has the
+voice locked, and mix it as that thread left it. Requires GCC on PATH,
+including MinGW on Windows.
 """
 import os
 import pathlib
@@ -42,6 +44,12 @@ with tempfile.TemporaryDirectory(prefix="apu_mix-") as directory:
         print(f"{mix}, right channel into bin {right_bin}: "
               f"{'ok' if ok else 'FAILED'} ({run.stdout.strip() or run.returncode})")
         failed += not ok
+    run = subprocess.run([exe, "lock"], env=env, capture_output=True, text=True,
+                         timeout=60)
+    ok = (run.returncode == 0 and "the frame waited for the unlock" in run.stdout
+          and "bin 1 -0.2500, bin 10 0.0000" in run.stdout)
+    print(f"lock: {'ok' if ok else 'FAILED'} ({run.stdout.strip() or run.returncode})")
+    failed += not ok
 if failed:
     raise SystemExit(f"apu_mix: {failed} case(s) failed")
 print("apu_mix: all cases pass")
