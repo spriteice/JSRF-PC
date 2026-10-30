@@ -785,25 +785,44 @@ static void vblank_intr_tick(volatile uint32_t *regs)
 {
     volatile uint32_t *pcrtc = (volatile uint32_t *)((char *)regs + 0x600100);
     volatile uint32_t *pmc   = (volatile uint32_t *)((char *)regs + 0x000100);
-    uint32_t v = *pcrtc;
+    uint32_t v = *pcrtc, m;
 
     if (v & NV2A_VBLANK_PENDING_TAG)
         return;                       /* raised, not yet acknowledged */
 
-    /* Acknowledged (or never raised): complete it. A software method's
-     * PGRAPH bit is left to the title (below). */
-    if (v)
-        *pcrtc = 0;
+    /* Acknowledged (or never raised): complete it, but never the next one.
+     * The timer thread raises it as this runs, PCRTC_INTR_0 first and then
+     * PMC_INTR_0 (kernel_vblank_tick in kernel_bridge.c). So each register
+     * is changed only if it still holds what was read, and PMC_INTR_0 only
+     * if PCRTC_INTR_0, read after it, says no vblank is pending. Stored
+     * whole, and PMC_INTR_0 cleared without that look, as this did, a vblank
+     * raised in between was wiped: the title's DPC found nothing pending, and
+     * the vblank was lost. What is held off is done on a later pass. */
+    if (v && !__atomic_compare_exchange_n(pcrtc, &v, 0u, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
+        return;
     /* Everything but a software method's PGRAPH bit, while they are
      * delivered: the timer thread raises it as this runs, and the title's
      * handler clears it once it has looked (kernel_pgraph_tick in
      * kernel_bridge.c). Clearing the register whole unless one was in
      * flight, as this did, wiped a bit raised between the question and the
-     * store, and D3D slept for good on the NOP(5) it was waiting for. One
-     * atomic operation, as the timer thread sets bits here too. */
-    if (__atomic_load_n(pmc, __ATOMIC_SEQ_CST)) {
+     * store, and D3D slept for good on the NOP(5) it was waiting for. */
+    m = __atomic_load_n(pmc, __ATOMIC_SEQ_CST);
+    if (m) {
         extern int xbox_nv2a_swm_on(void);
-        __atomic_fetch_and(pmc, xbox_nv2a_swm_on() ? NV2A_PMC_INTR_PGRAPH : 0u, __ATOMIC_SEQ_CST);
+        uint32_t want = m & (xbox_nv2a_swm_on() ? NV2A_PMC_INTR_PGRAPH : 0u);
+        if (want == m)
+            return;
+        if (__atomic_load_n(pcrtc, __ATOMIC_SEQ_CST) & NV2A_VBLANK_PENDING_TAG) {
+            static unsigned long kept;
+            unsigned long n = __atomic_add_fetch(&kept, 1ul, __ATOMIC_RELAXED);
+            if (n <= 8 || (n & (n - 1)) == 0) {
+                fprintf(stderr, "  [NV2A] a vblank raised as the last was completed, "
+                        "kept (%lu so far)\n", n);
+                fflush(stderr);
+            }
+            return;
+        }
+        (void)__atomic_compare_exchange_n(pmc, &m, want, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
     }
 }
 

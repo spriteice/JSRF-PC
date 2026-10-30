@@ -725,7 +725,8 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 - **Files:** src/kernel/kernel_bridge.c, kernel.h, kernel_hal.c,
   kernel_thunks.c, kernel_rtl.c, xbox_memory_layout.c and .h, and
   port/recomp_manual.c.
-- **Why:** seven fixes, each of which could suit upstream:
+- **Why:** eight fixes. The first seven could suit upstream; the last is
+  one upstream made too, in 0.5.9:
   - **NtProtectVirtualMemory and KeSetDisableBoostThread** (ordinals 204
     and 144) are bridged (kernel_bridge.c). JSRF calls both, and upstream
     leaves them to the fallback, which never writes the old protection.
@@ -763,6 +764,17 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
     GPU thread; once in 13,228 wake-ups in a run with the queue (below).
     tests/nv2a_queue (ours) tests it: the old code loses a wake-up within a
     few thousand, this none in fourteen million.
+  - **A vblank raised while the last is completed is kept**
+    (xbox_memory_layout.c). The GPU thread completes an acknowledged vblank
+    while the timer thread raises the next. It read PCRTC_INTR_0 once, then
+    stored it whole and cleared PMC_INTR_0, and wiped a vblank raised in
+    between: the title's DPC found nothing, and that vblank was lost. Now
+    each register is cleared only if it still holds what was read, and
+    PMC_INTR_0 only if a second look at PCRTC_INTR_0 finds no vblank
+    pending. The log says when one was kept. Most often in frame pacing's
+    last spin: a test lost 0.4 to 0.9% of the vblanks raised in it, and
+    none with the fix. Upstream fixed the same in 0.5.9 (e67a46d).
+    tests/vblank_ack (ours) tests it.
 - **When picking:** keep each fix. Where a picked commit fixes the same
   thing, the maintainer chooses which fix stays; if it is upstream's, drop
   ours from this entry.
