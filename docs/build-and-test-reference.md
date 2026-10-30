@@ -86,8 +86,9 @@ libepoxy 1.5.10 (cross-built with the same toolchain), then CMake with
 - Tool tests: `python3 -m pytest -q tools`, with pytest, pefile, and numpy
   installed beside capstone.
 - Engine tests: `python3 tests/<name>/run.py`, for each folder in `tests/`
-  that has a run.py. gl_backend, gl_aa and gl_card need EGL and OpenGL
-  headers.
+  that has a run.py. gl_backend, gl_aa, gl_card, index_runs, psh_consts
+  and big_batch need EGL and OpenGL headers. The last three also need GCC,
+  and run only on Linux.
 - Report what passed, and what didn't run and why.
 
 ## Compatibility checks
