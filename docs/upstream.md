@@ -967,6 +967,25 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 - **When picking:** keep the condition `S.since_present || g_flip_drawn`,
   and run tests/flip_load.
 
+### Function starts that read the flags, refused
+
+- **Files:** tools/disasm/engine.py (`reads_flags_on_entry`, the check
+  `probes_as_callback_body` made inline for `require_entry_frame`),
+  tools/disasm/functions.py (`_pass_imm_ref_targets`),
+  tools/disasm/test_imm_ref_boundaries.py.
+- **Why:** the function finder takes an immediate that lands in code
+  nobody has claimed as the address of a function. JSRF's disk code passes
+  the I/O control code 0x74004 to the kernel, which is also an address
+  inside the result banner's update, a method the finder only found later.
+  It split the update there, between a `cmp` and its `jne`, and the
+  generated code lost the compare: the banner's last step always ended as
+  if A had been pressed, so "You Win" and "Cleared" ended a second in. No
+  function begins by reading the flags, since no caller hands it any, so
+  such a target is now refused, as table entries already were. In JSRF
+  only that function's generated code changes. Could suit upstream.
+- **When picking:** keep the check in `_pass_imm_ref_targets`, and run
+  `python3 -m pytest tools/disasm`.
+
 ### Diagnostics only in Debug builds
 
 - **Files:** port/CMakeLists.txt.

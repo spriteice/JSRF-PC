@@ -676,6 +676,34 @@ class DisasmEngine:
                     return None, None
         return None, None
 
+    def reads_flags_on_entry(self, addr: int, upper: int) -> bool:
+        """Does code entered at addr read arithmetic flags before producing
+        them? No caller hands a function its flags, so such an address is a
+        suffix of some other body (the jcc after its cmp), never an entry.
+        String operations may read the ABI's DF. A writer defines only its
+        own flags: inc and dec leave CF.
+        """
+        section = self.image.get_section_at_va(addr)
+        if section is None:
+            return False
+        data = self.image.get_section_data(section)
+        upper = min(upper, section.virtual_addr + len(data))
+        raw = data[addr - section.virtual_addr:upper - section.virtual_addr]
+        pending = {"AF", "CF", "OF", "PF", "SF", "ZF"}
+        flag = lambda kind, name: getattr(x86_const, f"X86_EFLAGS_{kind}_{name}")
+        for insn in self._cs.disasm(raw, addr):
+            if (X86_REG_EFLAGS in insn.regs_read
+                    and (not insn.eflags or any(
+                        insn.eflags & flag("TEST", f) for f in pending))):
+                return True
+            if X86_REG_EFLAGS in insn.regs_write:
+                pending = {f for f in pending if insn.eflags and not any(
+                    insn.eflags & flag(kind, f)
+                    for kind in ("MODIFY", "SET", "RESET", "UNDEFINED"))}
+            if not pending or insn.mnemonic in ("call", "jmp", "ret", "retn"):
+                break
+        return False
+
     def probes_as_callback_body(self, addr: int, upper: int,
                                 lower: Optional[int] = None,
                                 tail_targets=(), *, require_entry_frame=False,
@@ -710,24 +738,9 @@ class DisasmEngine:
         lower = addr if lower is None else max(lower, section.virtual_addr)
         upper = min(upper, section.virtual_addr + len(data))
         raw = data[lower - section.virtual_addr:upper - section.virtual_addr]
-        if require_entry_frame:
-            # A weak table word may name a suffix after its owner's cmp.
-            # Reject an entry prefix that reads arithmetic flags before
-            # producing them. String operations may read the ABI's DF. A
-            # writer defines only its own flags: inc and dec leave CF.
-            pending = {"AF", "CF", "OF", "PF", "SF", "ZF"}
-            flag = lambda kind, name: getattr(x86_const, f"X86_EFLAGS_{kind}_{name}")
-            for insn in self._cs.disasm(raw[addr - lower:], addr):
-                if (X86_REG_EFLAGS in insn.regs_read
-                        and (not insn.eflags or any(
-                            insn.eflags & flag("TEST", f) for f in pending))):
-                    return False
-                if X86_REG_EFLAGS in insn.regs_write:
-                    pending = {f for f in pending if insn.eflags and not any(
-                        insn.eflags & flag(kind, f)
-                        for kind in ("MODIFY", "SET", "RESET", "UNDEFINED"))}
-                if not pending or insn.mnemonic in ("call", "jmp", "ret", "retn"):
-                    break
+        # A weak table word may name a suffix after its owner's cmp.
+        if require_entry_frame and self.reads_flags_on_entry(addr, upper):
+            return False
         decoder = Disassembler()
         entries = {addr}
         tables = {}

@@ -31,6 +31,20 @@ def test_instruction_boundary_remains_a_candidate():
     det._pass_imm_ref_targets([sec])
     assert target in det._candidates
 
+def test_immediate_naming_the_jump_after_a_cmp_is_not_a_function():
+    # cmp eax,1; then jne +1; inc eax; ret. The constant names the jne, which
+    # would branch on flags no caller hands it (JSRF: an IOCTL code, 0x74004,
+    # cut the result banner's update before the jne its cmp feeds).
+    det, sec, target = detector(bytes.fromhex('83f801750140c3'), 13)
+    det._pass_imm_ref_targets([sec])
+    assert target not in det._candidates
+
+def test_entry_that_sets_flags_before_branching_remains_a_candidate():
+    # test eax,eax; jne +1; inc eax; ret
+    det, sec, target = detector(bytes.fromhex('85c0750140c3'), 10)
+    det._pass_imm_ref_targets([sec])
+    assert target in det._candidates
+
 def test_constant_return_stub_can_realign_an_overlapping_sweep():
     det, sec, target = detector(bytes.fromhex('b9b878563412c3'), 11)
     assert det.engine.instruction_covering(target) is not None

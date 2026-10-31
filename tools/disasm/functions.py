@@ -1044,6 +1044,13 @@ class FunctionDetector:
             upper = section.virtual_addr + section.virtual_size
             if i < len(starts):
                 upper = min(upper, starts[i])
+            # No function begins by reading flags: no caller hands it any. A
+            # target that does is the jcc after another body's cmp, and a
+            # split there loses the compare (JSRF: the IOCTL code 0x74004
+            # named the jne after the result banner's test for A, so the
+            # banner always ended at once).
+            if self.engine.reads_flags_on_entry(target, upper):
+                continue
             if not (self.engine.probes_as_callback_body(target, upper)
                     or self.engine.probes_as_vcall_thunk(target)
                     or (self.engine.get_instruction(target) is not None
