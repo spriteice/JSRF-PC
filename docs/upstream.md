@@ -999,6 +999,34 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 - **When picking:** keep the check in `_pass_imm_ref_targets`, and run
   `python3 -m pytest tools/disasm`.
 
+### The sound library's stream errors, logged
+
+- **Files:** port/recomp_manual.c (`sub_0013A6B0` and `sub_0013D250`,
+  hooks on the two recoveries CRI's ADXT watchdog runs, and the names of
+  the fields they read; `sub_0013B0A0` and `sub_0013B0E0`, hooks on CRI's
+  lock and unlock; a call each in the hooks in `sub_00116E30` and
+  `sub_0006F730`), src/kernel/kernel_bridge.c
+  (`xbox_guest_lock_on_handover`, and its call in `xbox_guest_lock_acquire`
+  when the lock changes hands), port/CMakeLists.txt (port/adx_err.c).
+- **Why:** Developer > Logging > JSRF_ADX_ERR_LOG. A player's game stopped
+  on its "disc can't be read" path on Rokkaku-dai Heights (issue #1): the
+  game's check of its streams, on the main thread, read an error code that
+  the watchdog sets only while it recovers a stream, and on the console
+  the main thread can't run then. With the switch on, the log has a line
+  for each of the watchdog's recoveries: the stream and its file, how long
+  it took, and each thread that took the guest lock meanwhile, with its
+  priority. When the game raises the error, it says whether a recovery was
+  running. Recoveries are rare, so the same is counted over every hold of
+  CRI's lock, which keeps every other thread out on the console: every
+  10 s, the holds, who held them, and each thread that took the guest lock
+  during one. Off, each hook tests one flag. Our own files: port/adx_err.c
+  and .h, and tests/adx_err.
+- **When picking:** keep the calls before and after the two recoveries' and
+  the lock and unlock's generated bodies, before the sound manager's update
+  and in the error's hook. If upstream changes `xbox_guest_lock_acquire`,
+  keep the call where the lock changes hands (`g_slice_owner`). Run
+  tests/adx_err and tests/developer.
+
 ### Diagnostics only in Debug builds
 
 - **Files:** port/CMakeLists.txt.

@@ -76,6 +76,7 @@ static const DevSwitch k_logging[] = {
     { "RECOMP_GL_ERRORS_PER_DRAW", "1" }, { "RECOMP_USB_TRACE", "1" },
     { "RECOMP_GL_TIMELINE", "1" },          /* a frame's surfaces and skinned draws, every 5 s */
     { "JSRF_CAM_LOG", "1" },                /* the game's camera (port/recomp_manual.c) */
+    { "JSRF_ADX_ERR_LOG", "1" },            /* the sound library's stream errors (port/adx_err.c) */
 };
 static const DevSwitch k_engine[] = {
     { "RECOMP_GL_NOREVZ", "1" },            /* no reversed depth */

@@ -114,6 +114,11 @@ cases["dxt_off"] = (None, "RECOMP_GL_DXT=0\n", {},
 cases["camera_log"] = (None, "JSRF_CAM_LOG=1\n", {},
                        ["[DEV] JSRF_CAM_LOG=1 from developer.cfg", "started:"], [])
 
+# The sound library's stream errors (port/adx_err.c), read by its hooks in
+# port/recomp_manual.c like the camera log.
+cases["adx_err_log"] = (None, "JSRF_ADX_ERR_LOG=1\n", {},
+                        ["[DEV] JSRF_ADX_ERR_LOG=1 from developer.cfg", "started:"], [])
+
 # The renderer's timeline probe, off unless its switch in Logging asks for it
 # (tests/timeline tests the probe).
 cases["timeline"] = (None, "RECOMP_GL_TIMELINE=1\n", {},
@@ -142,7 +147,7 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
         env = {k: v for k, v in os.environ.items()
                if k not in (*switches, "RECOMP_CPU_PROFILE", "RECOMP_NV2A_QUEUE", "RECOMP_P_CORES",
                             "RECOMP_PACE_DISPLAY", "RECOMP_FENCE_WAIT", "RECOMP_GL_DXT",
-                            "JSRF_CAM_LOG")}
+                            "JSRF_CAM_LOG", "JSRF_ADX_ERR_LOG")}
         env.update(extra, JSRF_SETTINGS_FILE=str(folder / "settings.cfg"))
         log = folder / "last-run.log"
         with open(log, "w") as out:
@@ -201,6 +206,7 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
            for name in ("RECOMP_NV2A_QUEUE", "RECOMP_P_CORES", "RECOMP_PACE_DISPLAY",
                         "RECOMP_FENCE_WAIT", "RECOMP_GL_DXT")):
         raise SystemExit(f"menu: Engine switches' rows are {pages['Engine switches']}")
-    if "RECOMP_GL_TIMELINE (Restart)" not in pages["Logging"]:
+    if any(row not in pages["Logging"]
+           for row in ("RECOMP_GL_TIMELINE (Restart)", "JSRF_ADX_ERR_LOG (Restart)")):
         raise SystemExit(f"menu: Logging's rows are {pages['Logging']}")
 print("developer: all", len(cases), "cases and the menu's pages pass")

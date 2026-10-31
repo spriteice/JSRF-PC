@@ -120,6 +120,7 @@ if(ANDROID)
         freecam.c
         intro.c
         developer.c
+        adx_err.c
         cpuprof.c
         pcores.c
         xbe_check.c
@@ -135,6 +136,7 @@ else()
         freecam.c
         intro.c
         developer.c
+        adx_err.c
         cpuprof.c
         pcores.c
         xbe_check.c

@@ -425,11 +425,13 @@ void sub_00143240(void)
 }
 
 /* ---- sub_0006F730: raise the "disc error" screen; eax = ADXT error code */
+#include "adx_err.h"
 extern void sub_0006F730_gen(void);
 void sub_0006F730(void)
 {
     fprintf(stderr, "[ADXTRAP] sub_0006F730: ADXT error code %d (eax=%08X), raised from %08X (255AD: save writer, 664C3: sub_000257B0 state, 116EA8: ADX handle status)\n",
             (int)(int16_t)g_eax, g_eax, MEM32(g_esp));
+    if (adx_err_on()) adx_err_raised(jsrf_now(), (int)(int16_t)g_eax);
     fflush(stderr);
     sub_0006F730_gen();
 }
@@ -615,6 +617,72 @@ void sub_0013D300(void)
           }
       } }
     sub_0013D300_gen();
+}
+
+/* ---- the watchdog's recoveries (port/adx_err.c) ---------------------------
+ * The watchdog above writes a handle's error code, runs the recovery the
+ * handle was given -- ADXT_Stop (sub_0013A6B0) or a restart from the top
+ * (sub_0013D250) -- and writes 0 back. So a recovery that finds the code set
+ * is the watchdog's: the game's own stops and restarts find it 0.
+ * JSRF_ADX_ERR_LOG=1 logs each of the watchdog's, and which threads took the
+ * guest lock while it ran. */
+#define ADX_GUEST_LOW    0x10000u      /* below it, no object: a null, or a small number */
+#define ADX_GUEST_RAM    (64u << 20)   /* the guest's memory, as the hooks above bound it */
+#define ADXT_ERR_CODE    0x60u         /* int16: -1 no input, -2 decoding stuck */
+#define ADXT_STREAM      0x08u         /* the handle's file stream (ADXSTM) */
+#define ADXSTM_CVFS      0x08u         /* the stream's cvFs handle */
+#define CVFS_DEVICE      0x04u         /* the cvFs handle's device handle, the [CVFS] lines' h= */
+#define CVFS_DEV_SECTORS 0x14u         /* the device handle's file size, in sectors */
+#define ADXCRS_DEPTH     0x0025EFECu   /* how deep CRI's lock is held (sub_0013C460 counts it) */
+static uint32_t adx_word(uint32_t va)
+{
+    return va >= ADX_GUEST_LOW && va + 4 <= ADX_GUEST_RAM ? MEM32(va) : 0;
+}
+static void adx_recovery(int restart, void (*gen)(void))
+{
+    uint32_t h = GARG(1);
+    int code = 0;
+    if (adx_err_on() && h >= ADX_GUEST_LOW && h + ADXT_ERR_CODE + 2 <= ADX_GUEST_RAM)
+        code = *(int16_t *)((uint8_t *)g_xbox_mem_offset + h + ADXT_ERR_CODE);
+    if (code) {
+        uint32_t dev = adx_word(adx_word(adx_word(h + ADXT_STREAM) + ADXSTM_CVFS) + CVFS_DEVICE);
+        adx_err_recovery_begin(jsrf_now(), h, code, restart, MEM32(g_esp), dev,
+                               adx_word(dev + CVFS_DEV_SECTORS), (int)adx_word(ADXCRS_DEPTH));
+    }
+    gen();
+    if (code) adx_err_recovery_end(h);
+}
+extern void sub_0013A6B0_gen(void);
+void sub_0013A6B0(void)
+{
+    adx_recovery(0, sub_0013A6B0_gen);
+}
+extern void sub_0013D250_gen(void);
+void sub_0013D250(void)
+{
+    adx_recovery(1, sub_0013D250_gen);
+}
+/* CRI's lock and unlock, at the layer under sub_0013C460 that raises its
+ * holder to time-critical and resumes the spinner (sub_0013B180), and puts
+ * both back. CRI's thread setup installs them as its lock functions
+ * (0x13B377), so they're reached through a pointer. JSRF_ADX_ERR_LOG=1
+ * counts the takes of the guest lock by other threads while it's held. */
+#define ADXM_LOCK_DEPTH  0x0025EFA0u   /* how deep this layer is held (sub_0013B0A0 counts it) */
+extern void sub_0013B0A0_gen(void);
+void sub_0013B0A0(void)
+{
+    int on = adx_err_on();
+    if (on) adx_err_crs_lock(jsrf_now(), (int)adx_word(ADXM_LOCK_DEPTH));
+    sub_0013B0A0_gen();
+    if (on) adx_err_crs_lock_end();
+}
+extern void sub_0013B0E0_gen(void);
+void sub_0013B0E0(void)
+{
+    int on = adx_err_on();
+    if (on) adx_err_crs_unlock((int)adx_word(ADXM_LOCK_DEPTH));
+    sub_0013B0E0_gen();
+    if (on) adx_err_crs_unlock_end(jsrf_now(), (int)adx_word(ADXM_LOCK_DEPTH));
 }
 
 /* ---- sub_00011070: scene-graph walk -- validate node pointers first, so
@@ -2055,6 +2123,7 @@ void sub_00116E30(void)
     int k;
     s_game_frames++;
     freecam_frame();
+    if (adx_err_on()) adx_err_sound_update();
     sub_00116E30_gen();
     if (!voice_log_on() || o < 0x10000u || o + 0x200u >= (64u << 20)) return;
     s_sndmgr = o;

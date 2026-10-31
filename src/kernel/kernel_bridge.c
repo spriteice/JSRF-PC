@@ -6374,6 +6374,15 @@ static unsigned long g_slice_held_raised;
 static unsigned long g_edge_vblank_checks;
 /* Every take of the lock, by any thread: a hand-over waits for it to move. */
 static unsigned long g_lock_acquires;
+/* Told of each take by a thread other than the last to hold it, on that
+ * thread, with the lock held: its id and guest priority. For a diagnostic
+ * that asks who ran while one thread was inside something (port/adx_err.c). */
+static void (*g_lock_handover_fn)(unsigned long tid, int prio);
+void xbox_guest_lock_on_handover(void (*fn)(unsigned long tid, int prio));
+void xbox_guest_lock_on_handover(void (*fn)(unsigned long tid, int prio))
+{
+    g_lock_handover_fn = fn;
+}
 
 /* Per-thread queueing statistics, kept in a small fixed table so that
  * reporting them needs no allocation and no lock of its own. */
@@ -6499,6 +6508,8 @@ void xbox_guest_lock_acquire(void)
     if (g_slice_owner != g_lock_owner) {
         g_slice_owner = g_lock_owner;
         g_slice_since = t_guest_since;
+        if (g_lock_handover_fn)
+            g_lock_handover_fn(g_lock_owner, xbox_thread_guest_priority(GetCurrentThread()));
     }
 #ifdef __APPLE__
     g_lock_owner_pt = pthread_self();
