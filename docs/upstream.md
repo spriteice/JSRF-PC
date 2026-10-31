@@ -1006,6 +1006,26 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 - **When picking:** keep the call just before the doorbell is cleared, and
   run tests/apu_gpfx and tests/apu_mix.
 
+### The effects' state, read back
+
+- **Files:** port/main.c (an `apu_gpfx_window` call just after the APU
+  starts), src/kernel/xbox_memory_layout.c and .h (`xbox_McpxPlainAt`, the
+  plain memory behind an address in the MCPX aperture).
+- **Why:** before DirectSound works out a room's reverb settings, it reads
+  the reverb's state back from the GP's memory, through the APU's window at
+  0xFE830000: its flags, and its delay lines' lengths, which it limits the
+  room's delays to. The lifted code reads that window as plain memory,
+  which nothing filled, so it read zeros: the flags lost the bits the
+  console keeps, and the limits never applied. Now the effects' copy is kept
+  in that window as well, with each effect marked started, as its code does
+  the first time it runs, so DirectSound reads what the console's GP would
+  hold. Where the APU's registers are trapped (RECOMP_AC97_READY), the
+  window isn't plain memory and nothing is kept there. Our own files:
+  src/apu/apu_gpfx.c and .h, and tests/apu_gpfx. Could suit upstream once
+  the effects use it.
+- **When picking:** keep the call after `mcpx_apu_init_standalone`, and run
+  tests/apu_gpfx.
+
 ### Frames spent loading, shown
 
 - **Files:** src/nv2a_gl/nv2a_gl.c (the `M_FLIP_STALL` case, and

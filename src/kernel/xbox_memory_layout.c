@@ -83,6 +83,7 @@ static void *g_nv2a_memory = NULL;
 /* MCPX southbridge register span: APU 0xFE800000 through NIC 0xFEF00000. */
 #define XBOX_MCPX_BASE 0xFE800000u
 #define XBOX_MCPX_SIZE (8u * 1024u * 1024u)
+#define XBOX_APU_REGS_SIZE 0x00080000u  /* the APU's own 512K at its start */
 static void *g_mcpx_memory = NULL;
 
 /* Flash ROM. The console's 256 KB flash is mirrored through the top of the
@@ -2550,6 +2551,17 @@ void *xbox_GetMemoryBase(void)
 ptrdiff_t xbox_GetMemoryOffset(void)
 {
     return g_memory_offset;
+}
+
+void *xbox_McpxPlainAt(uint32_t va, uint32_t bytes)
+{
+    uint64_t off = (uint64_t)va - XBOX_MCPX_BASE;
+
+    if (!g_mcpx_memory || va < XBOX_MCPX_BASE || off + bytes > XBOX_MCPX_SIZE)
+        return NULL;
+    if (g_apu_mmio_trapped && off < XBOX_APU_REGS_SIZE)
+        return NULL;
+    return (char *)g_mcpx_memory + off;
 }
 
 /* ── Dynamic heap allocator ────────────────────────────────

@@ -9,9 +9,12 @@ An image laid out as JSRF's is told from another, a new image clears the
 last one's changes, and a command that reaches past the window or the GP's
 memory changes nothing. An effect is found where the table says, as
 DirectSound rewrites it for the download, and one the table doesn't place
-in the effects' memory is left with no state. With RECOMP_APU_STATS=1 the
-log says what loaded and which words changed. Unset, nothing is printed.
-Requires GCC on PATH, including MinGW on Windows.
+in the effects' memory is left with no state. Each effect is started, as
+its code starts itself the first time it runs. Given a window, the copy is
+kept there too, as the CPU would read the GP's memory back. With
+RECOMP_APU_STATS=1 the log says what loaded and which words changed.
+Unset, nothing is printed. Requires GCC on PATH, including MinGW on
+Windows.
 """
 import os
 import pathlib
@@ -28,15 +31,22 @@ cases = {
                  "[APU] effects: effect 0's settings, words 4 to 135 sent, 67 changed:",
                  "[APU] effects:   4=500004 70=500046 71=500047 72=500048",
                  "[APU] effects:   133=500085 134=500086 135=500087\n"],
-                ["not laid out", "outside every effect", "not followed", " 5=", " 69="]),
+                ["not laid out", "outside every effect", "not followed", " 5=", " 69=",
+                 "kept at"]),
     "other": (["[APU] effects: an image loaded, 3 effects in 64 words of code and 80 of state,"
                " 3 of them found in the GP's memory; not laid out as JSRF's",
                "[APU] effects: effect 2's settings, words 0 to 9 sent, 10 changed:"],
-              ["not followed"]),
+              ["not followed", "kept at"]),
     "reload": ([LOADED + "laid out as JSRF's",
                 "[APU] effects: effect 1's settings, words 0 to 92 sent, 93 changed:",
                 LOADED + "laid out as JSRF's"],
-               ["not followed"]),
+               ["not followed", "kept at"]),
+    "window": ([LOADED + "laid out as JSRF's",
+                "[APU] effects: kept at 0xFE830000 too, where DirectSound reads the GP's"
+                " memory back",
+                "[APU] effects: effect 0's settings, words 4 to 135 sent, 67 changed:",
+                "[APU] effects: effect 1's settings, words 0 to 0 sent, 1 changed:"],
+               ["not followed", "outside every effect"]),
     "bad": ([LOADED + "laid out as JSRF's",
              "[APU] effects: command 2 not followed: 512 words from 0x918 in scratch"
              " to X:0xF80 are not all there",
@@ -46,7 +56,7 @@ cases = {
              " state, 0 of them found in the GP's memory; not laid out as JSRF's",
              "[APU] effects: an image loaded, 20 effects in 64 words of code and 827 of"
              " state, 16 of them found in the GP's memory; not laid out as JSRF's"],
-            ["changed"]),
+            ["changed", "kept at"]),
 }
 
 failed = 0

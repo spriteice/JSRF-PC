@@ -27,8 +27,12 @@
 #define X_WINDOW   0xFE830000u /* where the CPU sees the GP's X memory */
 #define X_STATE    0x80u       /* where the effects' state starts in it */
 #define X_WORDS    0x1000u
+#define FLAGS      4u          /* an effect's word that holds its flags */
+#define STARTED    1u          /* the flag its code sets the first time it runs */
+#define UNTOUCHED  0xEEu       /* the made-up window's bytes before anything is shown */
 
 static uint8_t s_ram[WINDOW];
+static uint8_t s_window[X_WORDS * 4];  /* where the CPU would see the GP's X memory */
 static unsigned s_fx_words[MAX_FX], s_fx_at[MAX_FX], s_count, s_state_words;
 static uint32_t s_expect[MAX_STATE];  /* the state as the GP's kernel would leave it */
 static int s_failed;
@@ -87,6 +91,15 @@ static void ring(uint32_t command)
     put(DOORBELL, 0);
 }
 
+/* The GP's next frame: every effect that hasn't started starts. */
+static void frame(void)
+{
+    unsigned e;
+    for (e = 0; e < s_count; e++)
+        if (s_fx_words[e] > FLAGS)
+            s_expect[s_fx_at[e] + FLAGS] |= STARTED;
+}
+
 /* The image downloaded: command 3 with the whole state. */
 static void load(void)
 {
@@ -94,6 +107,7 @@ static void load(void)
     ring(3);
     for (i = 0; i < s_state_words; i++)
         s_expect[i] = get(state(i)) & DSP_WORD;
+    frame();
 }
 
 /* Words first to last of effect e changed in scratch, as DirectSound's
@@ -116,6 +130,7 @@ static void send(unsigned e, unsigned first, unsigned last)
     ring(2);
     for (i = s_fx_at[e] + first; i <= s_fx_at[e] + last; i++)
         s_expect[i] = get(state(i)) & DSP_WORD;
+    frame();
 }
 
 /* Every effect as the GP's kernel would have left it. */
@@ -133,6 +148,31 @@ static int as_expected(void)
     return 1;
 }
 
+/* The made-up window as the copy should leave it: from X_STATE up, every
+ * word of the GP's memory as expected, with nothing past the last effect;
+ * below it, untouched. */
+static int window_as_expected(void)
+{
+    unsigned x;
+    for (x = 0; x < X_WORDS; x++) {
+        uint32_t v;
+        memcpy(&v, s_window + 4 * x, 4);
+        if (x < X_STATE ? v != 0x01010101u * UNTOUCHED
+            : v != (x - X_STATE < s_state_words ? s_expect[x - X_STATE] : 0))
+            return 0;
+    }
+    return 1;
+}
+
+static int window_untouched(void)
+{
+    unsigned i;
+    for (i = 0; i < sizeof s_window; i++)
+        if (s_window[i] != UNTOUCHED)
+            return 0;
+    return 1;
+}
+
 int main(int argc, char **argv)
 {
     const char *c = argc > 1 ? argv[1] : "";
@@ -142,7 +182,9 @@ int main(int argc, char **argv)
         check("nothing before an image", !apu_gpfx_effect(0, NULL));
         load();
         check("laid out as JSRF's", apu_gpfx_studied());
-        check("every effect as loaded", as_expected());
+        check("every effect as loaded, and started", as_expected()
+              && (apu_gpfx_effect(0, NULL)[FLAGS] & STARTED)
+              && (apu_gpfx_effect(19, NULL)[FLAGS] & STARTED));
         check("no effect past the last", !apu_gpfx_effect(20, NULL));
         write_words(0, 4, 4);
         write_words(0, 70, 135);
@@ -165,6 +207,24 @@ int main(int argc, char **argv)
         make_image(20, 554, 93);
         load();
         check("as loaded again", as_expected());
+    } else if (!strcmp(c, "window")) {  /* the copy where the CPU reads it back */
+        memset(s_window, UNTOUCHED, sizeof s_window);
+        apu_gpfx_window(s_window);
+        make_image(20, 554, 93);
+        check("nothing shown before an image", window_untouched());
+        load();
+        check("shown as loaded, every effect started", window_as_expected());
+        write_words(0, 4, 4);
+        write_words(0, 70, 135);
+        check("words written but not sent not shown", window_as_expected());
+        send(0, 4, 135);
+        check("the words sent shown, and the reverb started again",
+              window_as_expected() && s_expect[FLAGS] == (0x500000u | FLAGS | STARTED));
+        apu_gpfx_window(NULL);
+        memset(s_window, UNTOUCHED, sizeof s_window);
+        write_words(1, 0, 0);
+        send(1, 0, 0);
+        check("not shown once let go", window_untouched() && as_expected());
     } else if (!strcmp(c, "bad")) {     /* commands that can't be followed */
         make_image(20, 554, 93);
         load();

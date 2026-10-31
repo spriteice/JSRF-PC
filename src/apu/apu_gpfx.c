@@ -22,14 +22,21 @@
  * effect's settings sends the second alone, with the words DirectSound wrote.
  * Then the kernel clears the doorbell, which the port does in its place
  * (apu_dsp.c), just after calling this. So this keeps what the GP's memory
- * holds from GPFX_X_STATE up as the commands leave it, though not what the
- * effects themselves would write there as they run.
+ * holds from GPFX_X_STATE up as the commands leave it. Of what the effects
+ * themselves write there as they run, it keeps one thing: each effect, the
+ * first time it runs, sets GPFX_STARTED in its flags.
+ *
+ * Before DirectSound works out a room's reverb settings, it reads the
+ * reverb's state back through the window where the CPU sees the GP's memory
+ * (APU_GPFX_X_WINDOW), for the flags and its delay lines' lengths. That
+ * window is plain memory here, so this keeps the copy there too
+ * (apu_gpfx_window), and DirectSound reads what the GP would hold.
  *
  * The image's effect table, after its state, says where each effect's state
  * is. In the file that is a byte offset, but DirectSound rewrites the table
  * in scratch before it rings for the download, and then it is where the CPU
  * sees that state in the GP's memory, through the APU's registers
- * (GPFX_X_WINDOW). JSRF tells DirectSound that effect GPFX_REVERB is its
+ * (APU_GPFX_X_WINDOW). JSRF tells DirectSound that effect GPFX_REVERB is its
  * reverb and GPFX_XTALK its crosstalk, and apu_gpfx_studied says whether the
  * image is laid out as the one this was written from.
  *
@@ -62,6 +69,7 @@ enum {                            /* the block's words */
 #define GPFX_X_WORDS     0x1000u
 #define GPFX_X_STATE     0x80u    /* where the effects' state is loaded */
 #define GPFX_WORD        0xFFFFFFu
+typedef char gpfx_window_holds_x[APU_GPFX_X_BYTES == 4 * GPFX_X_WORDS ? 1 : -1];
 
 /* The image's effect table: the number of effects and a word not used here,
  * then GPFX_ENTRY_WORDS for each effect, as DirectSound leaves them when it
@@ -71,10 +79,12 @@ enum {                            /* the block's words */
 #define GPFX_ENTRY_STATE 2u       /* an entry's word: its state, where the CPU sees it */
 #define GPFX_ENTRY_BYTES 3u       /* and the state's length in bytes */
 #define GPFX_MAX_EFFECTS 32u
-/* Where the CPU sees the GP's X memory, four bytes to each of its words: the
- * APU's registers at 0xFE800000 (APU_MMIO_BASE, apu_mmio_hook.c), and the
- * GP's X memory 0x30000 in. */
-#define GPFX_X_WINDOW    0xFE830000u
+
+/* An effect's word that holds its flags, and the flag its code sets the
+ * first time it runs, when it starts itself. Every effect in JSRF's image
+ * begins so, and the GP runs them all each frame. */
+#define GPFX_FLAGS       4u
+#define GPFX_STARTED     1u
 
 /* The image studied, JSRF's: its effects, and the length of the state of
  * the two it names. */
@@ -93,6 +103,8 @@ static unsigned s_effects;              /* effects in the image */
 static unsigned s_found;                /* and those whose state was found */
 static int s_studied;
 static int s_log = -1;
+static uint8_t *s_window;               /* where the CPU sees the GP's X memory, or NULL */
+static int s_window_said;
 
 /* The dword at byte offset `at` in the window, if all of it is there. */
 static int ram_dword(const uint8_t *ram, uint32_t size, uint64_t at, uint32_t *v)
@@ -128,9 +140,9 @@ static void load_image(const uint8_t *ram, uint32_t size, uint32_t scratch,
         if (!ram_dword(ram, size, entry + 4 * GPFX_ENTRY_STATE, &at)
             || !ram_dword(ram, size, entry + 4 * GPFX_ENTRY_BYTES, &bytes))
             break;
-        if (at < GPFX_X_WINDOW || (at - GPFX_X_WINDOW) % 4 || bytes % 4)
+        if (at < APU_GPFX_X_WINDOW || (at - APU_GPFX_X_WINDOW) % 4 || bytes % 4)
             continue;
-        x = (at - GPFX_X_WINDOW) / 4;
+        x = (at - APU_GPFX_X_WINDOW) / 4;
         if (x < GPFX_X_STATE || x + bytes / 4 > GPFX_X_WORDS)
             continue;
         s_fx[e].x = (uint32_t)x;
@@ -160,6 +172,27 @@ static int load_state(const uint8_t *ram, uint32_t size, uint32_t scratch,
         s_x[x + i] = v & GPFX_WORD;
     }
     return 1;
+}
+
+/* The GP's next frame, as far as the copy follows it: each effect that
+ * hasn't started starts, as a new image's do, or one whose flags a change
+ * cleared. */
+static void start_effects(void)
+{
+    unsigned e;
+
+    for (e = 0; e < s_effects; e++)
+        if (s_fx[e].words > GPFX_FLAGS)
+            s_x[s_fx[e].x + GPFX_FLAGS] |= GPFX_STARTED;
+}
+
+/* The copy, where the CPU reads the GP's memory back. A word of the GP's is
+ * a little-endian dword there, with its top byte clear. */
+static void show_copy(void)
+{
+    if (s_window)
+        memcpy(s_window + 4 * GPFX_X_STATE, s_x + GPFX_X_STATE,
+               4 * (GPFX_X_WORDS - GPFX_X_STATE));
 }
 
 static void log_image(const uint32_t blk[GPFX_BLOCK_WORDS])
@@ -237,8 +270,21 @@ void apu_gpfx_command(const uint8_t *ram, uint32_t ram_size, uint32_t doorbell)
     } else if (s_log) {
         log_change(GPFX_X_STATE + blk[GPFX_DEST], blk[GPFX_LENGTH]);
     }
+    start_effects();
+    show_copy();
+    if (s_log && s_window && !s_window_said) {
+        s_window_said = 1;
+        fprintf(stderr, "[APU] effects: kept at 0x%08X too, where DirectSound reads"
+                " the GP's memory back\n", APU_GPFX_X_WINDOW);
+    }
     if (s_log)
         fflush(stderr);
+}
+
+void apu_gpfx_window(uint8_t *x_window)
+{
+    s_window = x_window;
+    s_window_said = 0;
 }
 
 const uint32_t *apu_gpfx_effect(unsigned e, unsigned *words)

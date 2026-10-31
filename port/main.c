@@ -66,6 +66,7 @@
 #include "xbe_check.h"
 #include "ios/xiso.h"
 #include "apu.h"
+#include "apu_gpfx.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -951,6 +952,10 @@ static int host_main(void)
          * write-back land in the title's heap -- the scene graph corrupted
          * the moment the title music started. */
         g_apu_state = mcpx_apu_init_standalone((uint8_t *)(g_xbox_mem_offset + 0x80000000u));
+        /* DirectSound reads the effects' state back through the APU's
+         * window onto the GP's memory: keep the effects' copy there too
+         * (apu_gpfx.c), where that window is plain memory. */
+        apu_gpfx_window((uint8_t *)xbox_McpxPlainAt(APU_GPFX_X_WINDOW, APU_GPFX_X_BYTES));
         /* Route the APU register window (main regs + voice processor) to
          * the emulation; the lifted code's memory macros call these for
          * any access in [RECOMP_MMIO_LO, RECOMP_MMIO_HI). Without it the

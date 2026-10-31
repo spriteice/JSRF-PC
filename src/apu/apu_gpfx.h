@@ -14,3 +14,15 @@ const uint32_t *apu_gpfx_effect(unsigned e, unsigned *words);
 
 /* Whether the image loaded is laid out as the one studied: JSRF's. */
 int apu_gpfx_studied(void);
+
+/* Where the CPU sees the GP's X memory, four bytes to each of its words:
+ * the APU's registers at 0xFE800000, and the GP's X memory 0x30000 in.
+ * DirectSound reads the effects' state back from here. */
+#define APU_GPFX_X_WINDOW 0xFE830000u
+#define APU_GPFX_X_BYTES  0x4000u
+
+/* Keep the copy where the CPU reads the GP's memory too, so that what
+ * DirectSound reads back is what the GP would hold: `x_window` is the host
+ * memory behind APU_GPFX_X_WINDOW, APU_GPFX_X_BYTES of it, or NULL to keep
+ * the copy to itself. */
+void apu_gpfx_window(uint8_t *x_window);
