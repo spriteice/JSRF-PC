@@ -778,6 +778,7 @@ static uint32_t g_surf_clock;
 static int      g_dump_burst_left, g_dump_burst_every = 1;
 static int      g_present_slot = -1;  /* set at FLIP_STALL, see present() */
 static uint32_t g_last_flip_draws;    /* S.draws at the last FLIP_STALL */
+static int      g_flip_drawn;         /* a display buffer drawn since then */
 static int      g_cur_surf = -1;
 /* nv2a_gl_trace_frames(): per-pass log for the next few frames. */
 static uint32_t g_pass_trace_until;
@@ -12049,12 +12050,35 @@ static void gl_method(uint32_t method, uint32_t param)
                   if (best < 0 || g_surf[k].last_draw > g_surf[best].last_draw) best = k;
               }
           g_present_slot = best >= 0 ? best : m;
+          g_flip_drawn = best >= 0;
           g_last_flip_draws = S.draws; }
-        if (S.since_present) { fliplog("flip_stall"); present(1); }
+        /* A display buffer drawn since the last flip is a frame to show,
+         * even with nothing drawn after the last pass ended. On a frame it
+         * spends loading, JSRF still copies its off-screen frame into the
+         * display buffer, then clears the off-screen surface -- which ends
+         * a pass -- and flips with no scene. The console shows what was
+         * copied, the cleared surface: the brief black between shots. Held
+         * here instead, each load froze the last picture for a second or
+         * more. One line per run of them, when it ends. */
+        if (S.since_present || g_flip_drawn) {
+            static unsigned load_run;
+            static uint32_t load_surf, load_clear;
+            if (!S.since_present) {
+                load_run++;
+                load_surf = g_surf[g_present_slot].offset;
+                load_clear = S.clear_color;
+            } else if (load_run) {
+                fprintf(stderr, "  [GL] %u frame(s) in a row drew no scene after their "
+                        "pass ended (a load): shown, surface %08X, last clear %08X\n",
+                        load_run, load_surf, load_clear);
+                load_run = 0;
+            }
+            fliplog("flip_stall"); present(1);
+        }
         else {
-            /* Nothing drawn since the last frame -- a black frame, a fade,
-             * a frame spent loading -- but the title still flipped, and on
-             * the console that flip waits for the display like any other.
+            /* Nothing drawn since the last frame, not even a copy into a
+             * display buffer, but the title still flipped, and on the
+             * console that flip waits for the display like any other.
              *
              * Unpaced, these ran at 500 to 1,500 a second. The DJ K scene
              * has seven of them in bursts, one each time it loads a line of
@@ -12062,7 +12086,9 @@ static void gl_method(uint32_t method, uint32_t param)
              * plays in real time, so each burst put the picture up to ten
              * seconds ahead of the voice -- the subtitles showed the next
              * line while he was still saying this one, and his mouth moved
-             * to the wrong words. Paced, the two stay together. */
+             * to the wrong words. Paced, the two stay together. (Those
+             * frames copy into a display buffer, so they are shown above
+             * now, and present() paces them the same way.) */
             static int pace_nodraw = -1;   /* RECOMP_PACE_NODRAW=0: the old way, for A/B */
             if (pace_nodraw < 0) {
                 const char *v = getenv("RECOMP_PACE_NODRAW");

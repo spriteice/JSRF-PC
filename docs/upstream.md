@@ -948,6 +948,25 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 - **When picking:** keep the walk, the wait and the mix as separate steps
   in `mcpx_apu_vp_frame`, and run tests/apu_mix.
 
+### Frames spent loading, shown
+
+- **Files:** src/nv2a_gl/nv2a_gl.c (the `M_FLIP_STALL` case, and
+  `g_flip_drawn`).
+- **Why:** the window was given a frame at a flip only if something had
+  been drawn since the last pass ended. On a frame it spends loading, JSRF
+  copies its off-screen frame into the display buffer, clears the
+  off-screen surface, which ends a pass, and flips with no scene. So each
+  load held the last picture for a second or more, where the console shows
+  the cleared surface: the brief black between shots. Now a flip shows a
+  frame when a display buffer was drawn since the last flip (the case's own
+  `best`), and a `[GL] ... drew no scene after their pass ended` line for
+  each run of them says how many there were and what was shown. A flip with
+  nothing drawn at all is held and paced as before. tests/flip_load (ours)
+  tests it. Could suit upstream: any title that copies into its display
+  buffer on a loading frame would freeze the same way.
+- **When picking:** keep the condition `S.since_present || g_flip_drawn`,
+  and run tests/flip_load.
+
 ### Diagnostics only in Debug builds
 
 - **Files:** port/CMakeLists.txt.
