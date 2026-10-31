@@ -644,13 +644,24 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   game's own test), so a scene shown through another skater's camera stays
   the game's. A camera the game doesn't post-update (`sub_000A28B0`), as
   while paused, keeps the free camera's view. `freecam_walls` keeps the
-  corners of the view's near plane clear of walls, as well as the line to
-  the eye, sized from the camera device's projection: the eye comes in at
-  once and goes back out by degrees (`freecam_wall`), so a wall going by
-  doesn't make the view jump. Our own files: port/freecam.c and
-  freecam.h.
+  start of the view clear of walls, as well as the line to the eye:
+  `freecam_clear` tests the eye's line and lines across the view's near
+  plane, sized from the camera device's projection. When a surface cuts
+  across it, the eye moves across, away from it, or else comes in until
+  lines from the target to the near plane's corners are clear; when neither
+  clears them (a gap narrower than the view), the eye's line alone stands,
+  as in the game. Something that only hides a corner of the picture, such as
+  a pole between the player and the eye, doesn't move the eye, and the eye
+  never comes nearer the player than where the view starts in front of them.
+  The eye comes in, or moves across, at once, waits a third of a second,
+  then goes back out, or back across, by degrees (`freecam_wall`,
+  `freecam_across`), so a wall going by, walls coming and going in a tight
+  space, or the end of a wall, don't make the view jump or shake.
+  freecam_walls supplies the game's own line test. Our own files:
+  port/freecam.c and freecam.h.
 - **When picking:** fit upstream's changes to those four functions, and to
-  the counter on `sub_000A28B0`, around the hooks, and run tests/freecam.
+  the counter on `sub_000A28B0`, around the hooks, and run tests/freecam,
+  which also tests the wall logic against made-up walls and floors.
   The names are only for our hooks: upstream's own lines in the camera
   section keep their numbers.
 

@@ -4338,17 +4338,23 @@ void sub_000A5070(void)
  * ends past them; each call returns to where that function's own does.
  *
  * The game tests one line, from the target to the eye, and puts its eye on
- * the nearest hit. But the view starts at the near plane, ahead of the eye,
- * as wide as the projection's angle: both are the camera device's, which the
- * title sets once, at start (DEV_NEAR, DEV_TAN_HALF; the angle spans 640 of
- * the frame's 480 lines, and widescreen widens it as wide_proj does). The
- * camera's own angle (+0x74) is not that one: it reads 0 in play, and only
- * a scene's camera sets it. So a surface that runs along the view -- a
- * half pipe's curve, a bump in the ground -- can cut into it while the line
- * stays clear, or meet it where the eye sits on the surface. freecam tests
- * five lines, the same way: the eye's, and one parallel to it through each
- * corner of the view where it starts. The eye comes in to where all five are
- * clear, so the whole start of the view is on the open side. */
+ * the nearest hit: once its smoothed eye's move since the last frame crosses
+ * a surface, and then each frame until the line is clear (+0xE0, 0xA5F88).
+ * freecam's eye goes where the stick puts it, and it tests every frame. But
+ * the view starts at the near plane, ahead of the eye, as wide as the
+ * projection's angle: both are the camera device's, which the title sets
+ * once, at start (DEV_NEAR, DEV_TAN_HALF; the angle spans 640 of the frame's
+ * 480 lines, and widescreen widens it as wide_proj does). The camera's own
+ * angle (+0x74) is not that one: it reads 0 in play, and only a scene's
+ * camera sets it. So a surface that runs along the view -- a half pipe's
+ * curve, a bump in the ground -- can cut into it while the line stays clear,
+ * or meet it where the eye sits on the surface, as it does wherever the
+ * eye's line meets a wall. freecam_clear (port/freecam.c) tests the eye's
+ * line and lines across the view where it starts, and when a surface cuts
+ * across it, moves the eye across, away from it, or else brings it in to
+ * where lines from the target to the view's corners are clear. It keeps the
+ * eye from coming nearer the player than where the view starts in front of
+ * them. This supplies the line test, the game's own. */
 extern void sub_00018260(void);
 extern void sub_000194B0(void);
 /* How much of the line from a to b is open, 0 to 1: up to the nearest hit. */
@@ -4387,15 +4393,27 @@ static double freecam_wall_line(uint32_t cam, uint32_t scr, const double a[3], c
     along /= len2;
     return along < 0 ? 0 : along > 1 ? 1 : along;
 }
+/* freecam_clear's line test: the scratch on the guest stack, for this camera. */
+struct freecam_line_at { uint32_t cam, scr; };
+static double freecam_line(void *ctx, const double a[3], const double b[3])
+{
+    const struct freecam_line_at *at = (const struct freecam_line_at *)ctx;
+    return freecam_wall_line(at->cam, at->scr, a, b);
+}
 static void freecam_walls(uint32_t cam)
 {
+    static const char *const by_text[] = {           /* freecam.h's FREECAM_WALL_ */
+        "with nothing in the way", "by the eye's line", "by a corner of the view",
+        "by the eye's line (the corners have no room)", "for a corner of the view",
+        "as near as it goes (the eye's line meets a wall by the player)" };
     uint8_t *m = (uint8_t *)g_xbox_mem_offset;
     float *cf = (float *)(m + cam);
     const float *tgt = cf + CAM_TARGET / 4;
     float *eye = cf + CAM_EYE / 4;
-    uint32_t sv_ecx = g_ecx, scr;
-    double u[3], d, f[3], rt[3], up[3], rl, half, ahead, hw, hh, open = 1.0, eased, a[3], b[3];
-    int i, k, by = -1;
+    uint32_t sv_ecx = g_ecx;
+    struct freecam_line_at at;
+    double u[3], need[3], push[3], d, half, ahead, hw, hh, open, eased;
+    int k, by;
     /* The camera device, as the widescreen re-set checks it: not set yet,
      * the view's size is not known, and only the eye's line is tested. */
     if (s_cam_dev < 0x10000u || s_cam_dev + DEV_TAN_HALF + sizeof(float) >= (64u << 20)
@@ -4408,16 +4426,6 @@ static void freecam_walls(uint32_t cam)
     for (k = 0; k < 3; k++) u[k] = eye[k] - tgt[k];
     d = sqrt(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]);
     if (!(d > 0)) return;
-    /* The view faces from the eye to the target; left-handed, y up: right
-     * of it (as auto_step), and up, square to both. freecam keeps the pitch
-     * short of straight up or down, so right is never nothing. */
-    for (k = 0; k < 3; k++) f[k] = -u[k] / d;
-    rl = sqrt(f[2] * f[2] + f[0] * f[0]);
-    if (!(rl > 0)) return;
-    rt[0] = f[2] / rl; rt[1] = 0; rt[2] = -f[0] / rl;
-    up[0] = f[1] * rt[2] - f[2] * rt[1];
-    up[1] = f[2] * rt[0] - f[0] * rt[2];
-    up[2] = f[0] * rt[1] - f[1] * rt[0];
     hw = ahead * half / (wide_proj() ? nv2a_wide_squeeze() : 1.0f);
     hh = ahead * half * VIEW_TALL;
     { static double said_w = -1, said_h = -1;
@@ -4428,31 +4436,33 @@ static void freecam_walls(uint32_t cam)
       } }
     if (!(hw >= 0 && hw < HUGE_VAL && hh >= 0 && hh < HUGE_VAL)) hw = hh = 0;
     g_esp -= CAM_WALL_LOCALS + CAM_WALL_ENDS;
-    scr = g_esp;
-    for (i = 0; i < 5; i++) {
-        /* 0 the eye's line, then the corners: right and up, each either side */
-        double sx = i == 0 ? 0 : (i & 1) ? hw : -hw, sy = i == 0 ? 0 : (i & 2) ? hh : -hh, o;
-        for (k = 0; k < 3; k++) {
-            a[k] = tgt[k] + sx * rt[k] + sy * up[k];
-            b[k] = eye[k] + sx * rt[k] + sy * up[k];
-        }
-        o = freecam_wall_line(cam, scr, a, b);
-        if (o < open) { open = o; by = i; }
+    at.cam = cam;
+    at.scr = g_esp;
+    /* How far out it can be, and how far across there; then where it goes
+     * this frame -- in at once, back out by degrees after a moment
+     * (port/freecam.c) -- and, when that is short of it, its view there
+     * tested too, with how far across it moves there; then how far across
+     * this frame, the same way. */
+    open = freecam_clear(tgt, eye, 1.0, ahead, hw, hh, freecam_line, &at, need, &by);
+    eased = freecam_wall(open);
+    if (eased < open) {
+        double there = freecam_clear(tgt, eye, eased, ahead, hw, hh, freecam_line, &at, need, &by);
+        if (there < eased) eased = freecam_wall(there);
     }
+    freecam_across(tgt, eye, eased, need, ahead, hw, hh, freecam_line, &at, push);
     g_ecx = sv_ecx;
     g_esp += CAM_WALL_LOCALS + CAM_WALL_ENDS;
-    /* In at once, back out by degrees (port/freecam.c). Any share of the
-     * distance up to open is clear: every line is clear up to it. */
-    eased = freecam_wall(open);
-    if (!(eased < 1)) return;
-    for (k = 0; k < 3; k++) eye[k] = (float)(tgt[k] + u[k] * eased);
+    if (!(eased < 1) && push[0] == 0 && push[1] == 0 && push[2] == 0) return;
+    for (k = 0; k < 3; k++) eye[k] = (float)(tgt[k] + u[k] * eased + push[k]);
     {
         static double next;
         if (pad_now() >= next) {
             next = pad_now() + 1.0;
-            fprintf(stderr, "[FREECAM] t=%.2f wall: eye pulled in to %.0f%% of %.1f, %s, at (%.1f %.1f %.1f)\n",
+            fprintf(stderr, "[FREECAM] t=%.2f wall: eye pulled in to %.0f%% of %.1f and %.1f across, %s, at (%.1f %.1f %.1f)\n",
                     pad_now(), eased * 100, d,
-                    eased < open ? "easing back out" : by ? "by a corner of the view" : "by the eye's line",
+                    sqrt(push[0] * push[0] + push[1] * push[1] + push[2] * push[2]),
+                    (eased < open || push[0] != need[0] || push[1] != need[1] || push[2] != need[2])
+                        && by == FREECAM_WALL_CLEAR ? "waiting or easing back out" : by_text[by],
                     eye[0], eye[1], eye[2]);
         }
     }

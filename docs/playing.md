@@ -65,8 +65,16 @@ coming back quickly.
 The free camera only steers the camera of the skater you control. When the
 game moves a skater by itself, as when a scene follows Beat or another
 skater heads off, the game's own camera shows it. Pausing keeps the view
-where you left it. Near a wall, the view comes in towards the player to keep
-out of it, and eases back out once the wall is past.
+where you left it. Near a wall, the view keeps the wall out of it: it shifts a
+little to the side, or up, away from a wall or the ground at its edge, and
+comes in towards the player only when that isn't enough. Once a wall has been
+out of the way for a moment, the view eases back out, and back across, so
+walls that come and go, as in a tight space, don't shake it, and the end of a
+wall you skate past doesn't jerk it. Something that only hides a corner of the
+picture, such as a pole between you and the camera, doesn't move it. The view
+never comes closer to the player than just in front of them: right up against
+a wall with the camera turned into it, you see through that wall rather than
+the view turning over.
 
 ## In-game menu
 
