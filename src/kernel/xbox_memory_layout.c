@@ -1490,6 +1490,7 @@ static void ram_probe_handler(int s)
 }
 #endif
 
+static CRITICAL_SECTION g_heap_lock;   /* the heap allocator's; see there */
 
 BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
 {
@@ -2300,6 +2301,7 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
     }
 
     /* Initialize the dynamic heap. */
+    InitializeCriticalSection(&g_heap_lock);
     fprintf(stderr, "  Heap: %u MB at Xbox VA 0x%08X-0x%08X\n",
             (unsigned)((XBOX_HEAP_TOP - XBOX_HEAP_BASE) / (1024 * 1024)),
             XBOX_HEAP_BASE, XBOX_HEAP_TOP);
@@ -2570,6 +2572,28 @@ static int g_heap_alloc_count = 0;
 static struct { uint32_t addr; uint32_t size; uint8_t free; }
     g_heap_blocks[XBOX_HEAP_MAX_BLOCKS];
 static int g_heap_block_count = 0;
+
+/* One thread at a time in the block table and the bump pointer.
+ *
+ * The guest lock covered this for most callers, as the kernel calls that
+ * allocate run under it, but not for all. A new worker allocates its TIB
+ * before it takes the guest lock (bridge_thread_main in kernel_bridge.c),
+ * while the thread that spawned it, holding the lock, allocates the next
+ * worker's stack; the timer thread and the USB controller's thread
+ * allocate their TIBs with no lock at all. Two allocations at once read the
+ * same bump pointer and return the same address.
+ *
+ * JSRF hung on a loading screen that way. A worker's 4,500-byte TIB and the
+ * next worker's 512 KB stack both came back at 0x0126D000, and the bump
+ * pointer kept only the TIB's end, so the stack after that was laid over the
+ * second worker's and zeroed. That wiped the start routine off the second
+ * worker's stack before its startup code read it: it called address 0 and
+ * ended, and it was the worker that serves the game's file reads.
+ *
+ * A lock of its own rather than the guest lock, so it holds for any caller.
+ * Nothing that takes another lock is called with it held. Initialised in
+ * xbox_MemoryLayoutInit, before anything can allocate. */
+static CRITICAL_SECTION g_heap_lock;
 
 /* RECOMP_HEAP_CHECK=1: verify the block table after every operation --
  * address order, no overlap, nothing past the bump pointer. */
@@ -2995,7 +3019,7 @@ uint32_t xbox_ContiguousAllocatedBytes(void)
 
 uint32_t g_heap_next_for_check(void);
 
-uint32_t xbox_HeapAlloc(uint32_t size, uint32_t alignment)
+static uint32_t heap_alloc(uint32_t size, uint32_t alignment)
 {
     uint32_t result;
 
@@ -3189,6 +3213,16 @@ uint32_t xbox_HeapAlloc(uint32_t size, uint32_t alignment)
     return result;
 }
 
+uint32_t xbox_HeapAlloc(uint32_t size, uint32_t alignment)
+{
+    uint32_t va;
+
+    EnterCriticalSection(&g_heap_lock);
+    va = heap_alloc(size, alignment);
+    LeaveCriticalSection(&g_heap_lock);
+    return va;
+}
+
 /* How big is the block at this guest address?
  *
  * MmQueryAllocationSize and ExQueryPoolBlockSize both ask this, and both used
@@ -3204,18 +3238,23 @@ uint32_t xbox_HeapAlloc(uint32_t size, uint32_t alignment)
  */
 uint32_t xbox_HeapBlockSize(uint32_t xbox_va)
 {
+    uint32_t n = 0;
     int i;
 
     if (!xbox_va)
         return 0;
+    EnterCriticalSection(&g_heap_lock);
     for (i = 0; i < g_heap_block_count; i++) {
         if (g_heap_blocks[i].free)
             continue;
         if (xbox_va >= g_heap_blocks[i].addr &&
-            xbox_va <  g_heap_blocks[i].addr + g_heap_blocks[i].size)
-            return g_heap_blocks[i].size - (xbox_va - g_heap_blocks[i].addr);
+            xbox_va <  g_heap_blocks[i].addr + g_heap_blocks[i].size) {
+            n = g_heap_blocks[i].size - (xbox_va - g_heap_blocks[i].addr);
+            break;
+        }
     }
-    return 0;
+    LeaveCriticalSection(&g_heap_lock);
+    return n;
 }
 
 /* Where an address stands with the heap, as an index into heap_where_text. */
@@ -3253,18 +3292,26 @@ static int heap_where(uint32_t xbox_va)
 
 const char *xbox_HeapDescribe(uint32_t xbox_va)
 {
-    return heap_where_text[heap_where(xbox_va)];
+    int w;
+
+    EnterCriticalSection(&g_heap_lock);
+    w = heap_where(xbox_va);
+    LeaveCriticalSection(&g_heap_lock);
+    return heap_where_text[w];
 }
 
 int xbox_HeapIsFreeSpace(uint32_t xbox_va)
 {
-    int w = heap_where(xbox_va);
+    int w;
 
+    EnterCriticalSection(&g_heap_lock);
+    w = heap_where(xbox_va);
+    LeaveCriticalSection(&g_heap_lock);
     return w != HEAP_LIVE_START && w != HEAP_LIVE_INSIDE &&
            w != HEAP_RESERVED && w != HEAP_OUTSIDE;
 }
 
-void xbox_HeapFree(uint32_t xbox_va)
+static void heap_free(uint32_t xbox_va)
 {
     static int frees = 0, matched = 0;
 
@@ -3317,6 +3364,13 @@ void xbox_HeapFree(uint32_t xbox_va)
         }
         return;
     }
+}
+
+void xbox_HeapFree(uint32_t xbox_va)
+{
+    EnterCriticalSection(&g_heap_lock);
+    heap_free(xbox_va);
+    LeaveCriticalSection(&g_heap_lock);
 }
 
 HANDLE xbox_GetMappingHandle(void)

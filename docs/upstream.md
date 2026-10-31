@@ -738,7 +738,7 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 - **Files:** src/kernel/kernel_bridge.c, kernel.h, kernel_hal.c,
   kernel_thunks.c, kernel_rtl.c, xbox_memory_layout.c and .h, and
   port/recomp_manual.c.
-- **Why:** eight fixes. The first seven could suit upstream; the last is
+- **Why:** nine fixes. All but the last could suit upstream; the last is
   one upstream made too, in 0.5.9:
   - **NtProtectVirtualMemory and KeSetDisableBoostThread** (ordinals 204
     and 144) are bridged (kernel_bridge.c). JSRF calls both, and upstream
@@ -777,6 +777,20 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
     GPU thread; once in 13,228 wake-ups in a run with the queue (below).
     tests/nv2a_queue (ours) tests it: the old code loses a wake-up within a
     few thousand, this none in fourteen million.
+  - **The guest heap has a lock of its own** (xbox_memory_layout.c). Three
+    threads allocate outside the guest lock: a new worker allocates its TIB
+    in `bridge_thread_main` before it takes the guest lock, and the timer
+    thread and the USB controller's thread allocate theirs with no lock at
+    all. Two allocations at once read the same bump pointer and could get
+    the same address. JSRF hung on its loading screen that way after Restart
+    on the Ally X, when one worker's stack was laid over another's, and
+    later crashed at start-up after Restart, when the timer thread's TIB and
+    the main thread's 1 MB allocation overlapped and every later block
+    landed inside the 1 MB one. xbox_HeapAlloc, xbox_HeapFree and the
+    lookups that walk the block table now take a lock of their own, set up
+    in xbox_MemoryLayoutInit. tests/heap_lock (ours) tests it: four threads
+    allocating at once broke the block table without the lock, and with it
+    80,000 rounds hold.
   - **A vblank raised while the last is completed is kept**
     (xbox_memory_layout.c). The GPU thread completes an acknowledged vblank
     while the timer thread raises the next. It read PCRTC_INTR_0 once, then
