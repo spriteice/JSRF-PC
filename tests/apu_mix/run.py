@@ -1,7 +1,7 @@
 """Compile the voice processor and the fold to stereo, and play one voice
 through them both ways.
 
-Takes src/apu/apu_vp.c, apu_dsp.c and apu_channels.c as they are, and plays
+Takes src/apu/apu_vp.c, apu_dsp.c, apu_channels.c and apu_gpfx.c, and plays
 one stereo voice into them (test_main.c), its right channel into the front
 right mixbin or into the reverb send. With the fold to stereo (the default),
 the device gets the mixbins: a channel sent to a bin the fold leaves out is
@@ -30,7 +30,8 @@ with tempfile.TemporaryDirectory(prefix="apu_mix-") as directory:
     exe = str(pathlib.Path(directory) / "test.exe")
     command = ["gcc", "-std=gnu11", "-Isrc/apu", "-Isrc", "-Isrc/nv2a",
                "src/apu/apu_vp.c", "src/apu/apu_dsp.c",
-               "src/apu/apu_channels.c", "tests/apu_mix/test_main.c", "-o", exe]
+               "src/apu/apu_channels.c", "src/apu/apu_gpfx.c",
+               "tests/apu_mix/test_main.c", "-o", exe]
     if sys.platform != "win32":
         command += ["src/platform/win32_compat.c", "-lm", "-lpthread"]
     subprocess.run(command, cwd=root, check=True)

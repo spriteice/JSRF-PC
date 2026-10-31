@@ -986,6 +986,26 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 - **When picking:** keep the walk, the wait and the mix as separate steps
   in `mcpx_apu_vp_frame`, and run tests/apu_mix.
 
+### The effects' settings, followed
+
+- **Files:** src/apu/apu_dsp.c (an `apu_gpfx_command` call in
+  `dsp_ack_frame`, before the doorbell is cleared), src/apu/CMakeLists.txt
+  (apu_gpfx.c).
+- **Why:** the GP, the audio DSP that runs the title's effects, is a stub,
+  so JSRF's reverb and crosstalk don't run, and the settings DirectSound
+  gives them went nowhere. DirectSound sends each one to the GP through the
+  doorbell the port already answers. Now, before answering, the port copies
+  what the GP's kernel would copy into the GP's memory: every effect's state
+  when the effects image loads, and the words DirectSound sends when it
+  changes an effect's settings. Nothing uses the copy yet, so the sound is
+  the same. It is the first step towards our own versions of the effects.
+  With RECOMP_APU_STATS, the log says when an image loads, whether it is laid
+  out as JSRF's, and which settings words each change made. Our own files:
+  src/apu/apu_gpfx.c and .h, and tests/apu_gpfx. Could suit upstream once
+  the effects use it.
+- **When picking:** keep the call just before the doorbell is cleared, and
+  run tests/apu_gpfx and tests/apu_mix.
+
 ### Frames spent loading, shown
 
 - **Files:** src/nv2a_gl/nv2a_gl.c (the `M_FLIP_STALL` case, and

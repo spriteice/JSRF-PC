@@ -25,6 +25,7 @@
 #include "apu_state.h"
 #include "fpconv.h"
 #include "apu_channels.h"
+#include "apu_gpfx.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -55,6 +56,8 @@
  * RECOMP_WATCHDOG_SECS and the spin shows up as ebx plus the poll offset.
  */
 #define APU_DSP_ACK_MAX 8
+/* The contiguous window d->ram_ptr points at (XBOX_CONTIG_SIZE, kernel.h). */
+#define APU_DSP_WINDOW_SIZE 0x04000000u
 static uint32_t s_dsp_ack[APU_DSP_ACK_MAX];
 static int s_dsp_ack_count = -1;
 
@@ -96,6 +99,8 @@ static void dsp_ack_frame(MCPXAPUState *d)
             if (shown[i]++ < 3)
                 fprintf(stderr, "[APU] DSP doorbell 0x%08X: command 0x%08X"
                                 " acknowledged\n", s_dsp_ack[i], *slot);
+            /* What the GP would copy in before clearing it (apu_gpfx.c). */
+            apu_gpfx_command(d->ram_ptr, APU_DSP_WINDOW_SIZE, s_dsp_ack[i]);
             *slot = 0;
         }
     }
