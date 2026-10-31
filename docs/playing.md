@@ -39,20 +39,34 @@ These work in a window or full screen, and each one is remembered.
   HUD and text keep their shape, and the title screen stays 4:3.
 - **F9:** Resolution, 1× to 4× the Xbox's 640×480 (2× by default). The game
   restarts to apply it, so save first.
-- **F8:** The free camera.
+- **F8, or R3 on a controller:** The free camera.
 
 ## Free camera
 
-F8 gives the right stick to the camera, which turns around the player, and
-forward is wherever it looks. The L trigger puts it back behind the player, as
-it does the game's camera. It also turns the graffiti camera off, like the
-option in the Jet Set Radio re-release: spraying no longer turns the camera to
-the wall. Talking to someone doesn't turn it to them either.
+F8, or R3 (a click of the right stick), gives the right stick to the camera,
+which turns around the player, and forward is wherever it looks. The L
+trigger puts it back behind the player, as it does the game's camera. It
+also turns the graffiti camera off, like the option in the Jet Set Radio
+re-release: spraying no longer turns the camera to the wall. Talking to
+someone doesn't turn it to them either.
 
 Inversion, sensitivity, and the deadzone are in the in-game menu under
 Controller, and in the settings file (see the `README.txt` in the download).
-With no keyboard, as in Steam's Game Mode, turn the free camera on from that
-menu.
+With no keyboard, as in Steam's Game Mode, R3 does what F8 does: the game
+itself never uses R3.
+
+**Auto centre**, under Controller, eases the view back behind the player
+once the right stick has been left alone for a while, as the game's camera
+trails them; a push of the stick takes over again at once. It is off by
+default, and has four levels: Mild waits two seconds and comes back slowly,
+Medium a second and a half, High a second, and Aggressive half a second,
+coming back quickly.
+
+The free camera only steers the camera of the skater you control. When the
+game moves a skater by itself, as when a scene follows Beat or another
+skater heads off, the game's own camera shows it. Pausing keeps the view
+where you left it. Near a wall, the view comes in towards the player to keep
+out of it, and eases back out once the wall is past.
 
 ## In-game menu
 
@@ -70,7 +84,8 @@ menu.
   so the intro plays as on the Xbox. It is kept as `skipintro=` in the
   settings file.
 - **Graphics:** The [graphics options](#graphics-options) below.
-- **Controller:** The free camera, and its inversion, sensitivity, and deadzone.
+- **Controller:** The free camera, Auto centre, and the free camera's
+  inversion, sensitivity, and deadzone.
 - **Developer:** Settings for testing and bug reports.
   - **Log to file:** Stops or starts writing to `last-run.log` at once.
   - **Logging:** The engine's diagnostic logs, for bug reports.

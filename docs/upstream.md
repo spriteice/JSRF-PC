@@ -629,17 +629,30 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 
 - **Files:** port/recomp_manual.c (hooks in `sub_00116E30`,
   `sub_001C3E14`, `sub_000A5070`, and `sub_000A6100`, and the names of the
-  camera fields and addresses they use, at the top of the camera section),
+  camera fields and addresses they use, at the top of the camera section;
+  one call, `freecam_ran`, in upstream's camera counter on `sub_000A28B0`),
   port/main.c and port/CMakeLists.txt (starting and building it),
   src/nv2a_gl/nv2a_gl.c (`nv_window_hotkey`, keys a title binds for itself:
-  F8, in place of upstream's anti-aliasing box).
+  F8, in place of upstream's anti-aliasing box; `nv_window_pad_hotkey`, a
+  pad's buttons the same way, R3, run from `sdl_pump` on
+  `SDL_CONTROLLERBUTTONDOWN` while the menu is shut).
 - **Why:** the right stick turns the camera around the player. While it
   does, the camera doesn't turn to graffiti being sprayed or to whoever the
   player talks to, and its eye isn't lifted, since the game lifts it for
-  where its own camera faces. Our own files: port/freecam.c and freecam.h.
-- **When picking:** fit upstream's changes to those four functions around
-  the hooks, and run tests/freecam. The names are only for our hooks:
-  upstream's own lines in the camera section keep their numbers.
+  where its own camera faces. It steers only a camera whose skater a pad
+  moves (`cam_pad_steered`: the player manager's pad and control, the
+  game's own test), so a scene shown through another skater's camera stays
+  the game's. A camera the game doesn't post-update (`sub_000A28B0`), as
+  while paused, keeps the free camera's view. `freecam_walls` keeps the
+  corners of the view's near plane clear of walls, as well as the line to
+  the eye, sized from the camera device's projection: the eye comes in at
+  once and goes back out by degrees (`freecam_wall`), so a wall going by
+  doesn't make the view jump. Our own files: port/freecam.c and
+  freecam.h.
+- **When picking:** fit upstream's changes to those four functions, and to
+  the counter on `sub_000A28B0`, around the hooks, and run tests/freecam.
+  The names are only for our hooks: upstream's own lines in the camera
+  section keep their numbers.
 
 ### Skip intro
 

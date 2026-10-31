@@ -1734,8 +1734,12 @@ static void sdl_key(SDL_Scancode sc, int down)
 /* A key the game binds for itself (port/freecam.c's F8), by SDL's name for
  * it, at start, before the window opens. It runs on the window's thread, as
  * F9 to F11 do, after them, and the game does not see the key. */
-#define NV_WINDOW_HOTKEYS 8     /* places for such keys */
-static struct { SDL_Scancode key; void (*run)(void); } g_sdl_hotkey[NV_WINDOW_HOTKEYS];
+#define NV_WINDOW_HOTKEYS 8     /* places for such keys and buttons */
+static struct {
+    SDL_Scancode key;                   /* or SDL_SCANCODE_UNKNOWN for a pad's button */
+    SDL_GameControllerButton button;    /* or SDL_CONTROLLER_BUTTON_INVALID for a key */
+    void (*run)(void);
+} g_sdl_hotkey[NV_WINDOW_HOTKEYS];
 static int g_sdl_hotkeys;
 
 void nv_window_hotkey(const char *name, void (*run)(void));
@@ -1748,6 +1752,27 @@ void nv_window_hotkey(const char *name, void (*run)(void))
         return;
     }
     g_sdl_hotkey[g_sdl_hotkeys].key = k;
+    g_sdl_hotkey[g_sdl_hotkeys].button = SDL_CONTROLLER_BUTTON_INVALID;
+    g_sdl_hotkey[g_sdl_hotkeys].run = run;
+    g_sdl_hotkeys++;
+}
+
+/* A pad's button the game binds for itself (port/freecam.c's R3), by SDL's
+ * name for it ("rightstick"), as nv_window_hotkey binds a key. It runs on the
+ * window's thread too, from the pad's SDL event, as a pad's Back opens the
+ * menu; not while the menu is open, when the pad is the menu's. The game
+ * still sees the button. */
+void nv_window_pad_hotkey(const char *name, void (*run)(void));
+void nv_window_pad_hotkey(const char *name, void (*run)(void))
+{
+    SDL_GameControllerButton b = SDL_GameControllerGetButtonFromString(name);
+    if (b == SDL_CONTROLLER_BUTTON_INVALID || g_sdl_hotkeys == NV_WINDOW_HOTKEYS) {
+        fprintf(stderr, "  [GL] pad button %s not bound: %s\n", name,
+                b == SDL_CONTROLLER_BUTTON_INVALID ? "SDL has no button by that name" : "no place left");
+        return;
+    }
+    g_sdl_hotkey[g_sdl_hotkeys].key = SDL_SCANCODE_UNKNOWN;
+    g_sdl_hotkey[g_sdl_hotkeys].button = b;
     g_sdl_hotkey[g_sdl_hotkeys].run = run;
     g_sdl_hotkeys++;
 }
@@ -1757,11 +1782,22 @@ static int sdl_hotkey(SDL_Scancode k)
 {
     int i;
     for (i = 0; i < g_sdl_hotkeys; i++)
-        if (g_sdl_hotkey[i].key == k) {
+        if (g_sdl_hotkey[i].button == SDL_CONTROLLER_BUTTON_INVALID && g_sdl_hotkey[i].key == k) {
             g_sdl_hotkey[i].run();
             return 1;
         }
     return 0;
+}
+
+/* A pad's button the game bound, while the menu is shut: runs it. */
+int nv_window_menu_open(void);
+static void sdl_pad_hotkey(Uint8 b)
+{
+    int i;
+    if (nv_window_menu_open() > 0) return;
+    for (i = 0; i < g_sdl_hotkeys; i++)
+        if (g_sdl_hotkey[i].button != SDL_CONTROLLER_BUTTON_INVALID && g_sdl_hotkey[i].button == b)
+            g_sdl_hotkey[i].run();
 }
 
 #if defined(__ANDROID__)
@@ -2514,6 +2550,9 @@ static void sdl_pump(void)
             break;
         case SDL_KEYUP:
             sdl_key(ev.key.keysym.scancode, 0);
+            break;
+        case SDL_CONTROLLERBUTTONDOWN:
+            sdl_pad_hotkey(ev.cbutton.button);
             break;
         case SDL_WINDOWEVENT:
             /* Losing focus with a key held never delivers its key-up. */

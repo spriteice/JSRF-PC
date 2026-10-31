@@ -17,20 +17,27 @@ static const float tgt[3] = { 0, 0, 0 }, seye[3] = { 0, 0, -10 };
 static const double deg = 3.14159265358979323846 / 180.0;
 #define CAM 0x00401000u
 
-/* The window's key hook (nv2a_gl.c): the key freecam binds, and what sdl_pump
- * runs for it. */
-static const char *s_key;
-static void (*s_key_run)(void);
+/* The window's key hooks (nv2a_gl.c): the key and the pad's button freecam
+ * binds, and what sdl_pump runs for each. */
+static const char *s_key, *s_button;
+static void (*s_key_run)(void), (*s_button_run)(void);
 void nv_window_hotkey(const char *name, void (*run)(void))
 {
     s_key = name;
     s_key_run = run;
 }
+void nv_window_pad_hotkey(const char *name, void (*run)(void))
+{
+    s_button = name;
+    s_button_run = run;
+}
 
-/* One frame: a pad read, then the camera. Returns 1 if freecam placed the eye. */
+/* One frame: a pad read, then the camera's update and its follow camera.
+ * Returns 1 if freecam placed the eye. */
 static int frame(short rx, short ry, float eye[3])
 {
     freecam_pad(0, &rx, &ry);
+    freecam_ran(CAM);
     return freecam_orbit(CAM, 3, tgt, seye, 0, eye);
 }
 
@@ -55,12 +62,13 @@ static void angles(const float eye[3], double *heading, double *pitch)
 }
 
 /* From the game's view, one frame with the stick at (rx, ry): how far it
- * turned. Two frame ticks without the follow camera start freecam again from
- * the game's view, as after a cutscene. */
+ * turned. A frame where the camera runs without its follow camera (the game
+ * has it, as in a cutscene) starts freecam again from the game's view. */
 static void turn(short rx, short ry, double *dh, double *dp)
 {
     float eye[3];
     freecam_frame();
+    freecam_ran(CAM);
     freecam_frame();
     assert(frame(0, 0, eye));
     near(eye[0], 0, "first frame: the game's eye x");
@@ -152,6 +160,7 @@ int main(int argc, char **argv)
         /* A frame without the follow camera (a cutscene): the stick goes
          * back, and the next follow frame starts from the game's view. */
         freecam_frame();
+        freecam_ran(CAM);
         freecam_frame();
         rx = 5; freecam_pad(0, &rx, &ry);
         assert(rx == 5);
@@ -202,6 +211,93 @@ int main(int argc, char **argv)
         s_key_run();
         assert(!frame(0, 0, eye) && !freecam_on());
         assert(nv_window_pref_num("freecam", &v) == 1 && v == 0);
+    } else if (!strcmp(c, "r3")) {
+        /* R3 is bound, with no setting: it turns freecam on and keeps that,
+         * as F8 does, and off. */
+        double v = -1;
+        assert(s_button && !strcmp(s_button, "rightstick") && s_button_run);
+        assert(!freecam_on());
+        s_button_run();
+        assert(freecam_on() && frame(0, 0, eye));
+        assert(nv_window_pref_num("freecam", &v) == 1 && v == 1);
+        s_button_run();
+        assert(!freecam_on());
+        assert(nv_window_pref_num("freecam", &v) == 1 && v == 0);
+    } else if (!strcmp(c, "held")) {
+        /* The view turned, then frames where the camera does not run at all
+         * (the game paused): the view stays, and the stick is the game's
+         * meanwhile. A frame where it runs in a mode of its own starts it
+         * again from the game's view. */
+        short rx = 32767, ry = 0;
+        int i;
+        for (i = 0; i < 10; i++) { freecam_frame(); assert(frame(32767, 0, eye)); }
+        angles(eye, &h, &p);
+        near(h, 30, "turned before the pause");
+        for (i = 0; i < 100; i++) freecam_frame();
+        freecam_pad(0, &rx, &ry);
+        assert(rx == 32767);
+        freecam_frame();
+        assert(frame(0, 0, eye));
+        angles(eye, &h, &p);
+        near(h, 30, "after the pause, the view is where it was");
+        freecam_frame();
+        freecam_ran(CAM);
+        freecam_frame();
+        assert(frame(0, 0, eye));
+        near(eye[0], 0, "after a scene, the game's view again");
+    } else if (!strncmp(c, "centre_", 7)) {
+        /* centre_<wait>_<ease> (0 0: off). Turned 30 degrees, then the stick
+         * let go. Off, the view stays; on, it stays for <wait> frames (the
+         * first of them the turn's last) and then eases back, 1/<ease> of
+         * what is left a frame, so that pushing the stick again waits once
+         * more before easing. */
+        int i, wait = 0;
+        double ease = 0, k, eased;
+        assert(sscanf(c + 7, "%d_%lf", &wait, &ease) == 2);
+        k = ease ? 1 - 1 / ease : 1;
+        if (!wait) wait = 60;                   /* off: the same frames */
+        for (i = 0; i < 10; i++) assert(frame(32767, 0, eye));
+        for (i = 0; i < wait - 1; i++) assert(frame(0, 0, eye));
+        angles(eye, &h, &p);
+        near(h, 30, "let go: not yet");
+        assert(frame(0, 0, eye));
+        angles(eye, &h, &p);
+        near(h, 30 * k, "the first frame of easing back");
+        for (i = 0; i < 300; i++) assert(frame(0, 0, eye));
+        angles(eye, &h, &p);
+        eased = 30 * pow(k, 301);
+        near(h, eased, "eased back behind the player");
+        for (i = 0; i < 10; i++) assert(frame(32767, 0, eye));
+        for (i = 0; i < wait - 1; i++) assert(frame(0, 0, eye));
+        angles(eye, &h, &p);
+        near(h, eased + 30, "a push waits again");
+    } else if (!strcmp(c, "wall")) {
+        /* After the wall test: in at once, back out 1/10 of what is left a
+         * frame, never past what is clear, and all the way out again when
+         * freecam starts again. */
+        static const double opens[] = { 1, 0.9, 0.2, 1, 0.5, 0.6, 1, 0.05, 1, 1 };
+        double w = 1;
+        int i;
+        assert(frame(0, 0, eye));
+        near(freecam_wall(1), 1, "clear: the whole distance");
+        near(freecam_wall(0.4), 0.4, "a wall: in at once");
+        near(freecam_wall(1), 0.46, "clear again: a tenth of the way back out");
+        near(freecam_wall(1), 0.514, "and a tenth of what is left");
+        near(freecam_wall(0.3), 0.3, "another wall: in at once");
+        near(freecam_wall(0.35), 0.305, "clear a little further: out by degrees");
+        for (i = 0; i < 11; i++) w = freecam_wall(1);
+        near(w, 1 - 0.695 * pow(0.9, 11), "two thirds of the way out in 11 frames");
+        for (i = 0; i < 100; i++) {
+            double open = opens[i % (sizeof opens / sizeof opens[0])];
+            w = freecam_wall(open);
+            if (w > open) {
+                fprintf(stderr, "FAIL frame %d: the eye at %.5f, past the clear %.5f\n", i, w, open);
+                return 1;
+            }
+        }
+        assert(freecam_wall(0.1) == 0.1);
+        assert(freecam_orbit(CAM, 3, tgt, seye, 1, eye));
+        near(freecam_wall(1), 1, "freecam started again: the whole distance");
     } else {
         fprintf(stderr, "no case %s\n", c);
         return 2;

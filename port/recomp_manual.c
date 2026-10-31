@@ -4067,6 +4067,62 @@ void sub_00042EE0(void)
 #define CAM_WALL_HITS      0x40u       /* the hit record in them */
 #define CAM_WALL_POINT_1   0x2Cu       /* the point in a hit from the record's first list */
 #define CAM_WALL_POINT_2   0x50u       /* and from its second */
+#define CAM_WALL_ENDS      0x18u       /* a line's two ends, kept past those locals */
+#define DEV_CLASS          0x001E0F00u /* the graphics device the camera is set on (s_cam_dev) */
+#define DEV_NEAR           0x40u       /* its near plane: where the view starts, ahead of the eye */
+#define DEV_TAN_HALF       0x54u       /* tan of half its view's width (SetCamera, sub_00153FE0) */
+#define VIEW_TALL          0.75        /* the frame's height over the width that angle spans */
+#define CHR_DRIVER         0x024u      /* the player manager that built it (sub_00011BD0) */
+#define DRV_CLASS          0x001CD570u /* the player manager's class (sub_000A6980) */
+#define DRV_PAD            0x8ACu      /* its pad's port, or DRV_NO_PAD (sub_000A8370) */
+#define DRV_CONTROL        0x8B4u      /* what moves its skater (sub_000A76E0) */
+#define DRV_NO_PAD         0xFFFFFFFFu
+#define DRV_PAD_PLAYS      0u          /* the pad moves it */
+#define DRV_PAD_RECORDED   2u          /* the pad moves it, and the run is recorded */
+#define DRV_PLAYBACK       1u          /* a recorded run moves it */
+
+/* Whether the camera follows a skater the pad moves, which the free camera
+ * steers. Every skater with a pad builds a camera that follows it
+ * (sub_00084200), and a scene that follows another skater around (Beat round
+ * Dogenzaka Hill, Combo showing his line) is shown through that skater's own.
+ * What moves a skater is its player manager's control state: the manager
+ * reads the pad in states 0 and 2 only (sub_000A76E0, its table at 0xA8298);
+ * 1 plays back a recorded run and 3 to 13 are scripted, and none of those
+ * sees the L trigger either. The game's own test for the player's skater is
+ * the same (sub_0004EBC0). say: log each camera's answer when it changes. */
+static int cam_pad_steered(const uint8_t *m, uint32_t cam, int say)
+{
+    static struct { uint32_t cam, ctl, pad; int ok; } said[4];
+    static int next_slot;
+    const uint32_t lim = 64u << 20;
+    uint32_t who = *(const uint32_t *)(m + cam + CAM_FOLLOWS), drv = 0, ctl = 0, pad = DRV_NO_PAD;
+    int ok = 0, i;
+    if (who >= 0x10000u && who + 0x1000u < lim)
+        drv = *(const uint32_t *)(m + who + CHR_DRIVER);
+    if (drv >= 0x10000u && drv + 0x1000u < lim && *(const uint32_t *)(m + drv) == DRV_CLASS) {
+        pad = *(const uint32_t *)(m + drv + DRV_PAD);
+        ctl = *(const uint32_t *)(m + drv + DRV_CONTROL);
+        ok = pad != DRV_NO_PAD && (ctl == DRV_PAD_PLAYS || ctl == DRV_PAD_RECORDED);
+    } else
+        drv = 0;
+    if (!say) return ok;
+    for (i = 0; i < 4 && said[i].cam != cam; i++) {}
+    if (i < 4 && said[i].ok == ok && said[i].ctl == ctl && said[i].pad == pad) return ok;
+    if (i == 4) { i = next_slot; next_slot = (next_slot + 1) % 4; }
+    said[i].cam = cam; said[i].ok = ok; said[i].ctl = ctl; said[i].pad = pad;
+    if (ok)
+        fprintf(stderr, "[FREECAM] t=%.2f camera %08X: its skater is moved by the pad (port %d, control %u); the free camera's\n",
+                pad_now(), cam, (int)pad, ctl);
+    else if (!drv)
+        fprintf(stderr, "[FREECAM] t=%.2f camera %08X: it follows %08X, which no player manager moves; the game's camera\n",
+                pad_now(), cam, who);
+    else
+        fprintf(stderr, "[FREECAM] t=%.2f camera %08X: its skater is moved by %s, not a pad (control %u, pad %d); the game's camera\n",
+                pad_now(), cam, pad == DRV_NO_PAD && (ctl == DRV_PAD_PLAYS || ctl == DRV_PAD_RECORDED)
+                ? "nothing" : ctl == DRV_PLAYBACK ? "a recording" : "a script", ctl, (int)pad);
+    return ok;
+}
+
 extern void sub_000A5070_gen(void);
 void sub_000A5070(void)
 {
@@ -4096,8 +4152,9 @@ void sub_000A5070(void)
      *
      * Nothing this update calls in those modes reads or writes either (the
      * player's own code does, outside it, and ends a look once +0xE58 is no
-     * longer 9), so both are put back after. */
-    if (freecam_on() && cam >= 0x10000u && cam + 0x240u < lim) {
+     * longer 9), so both are put back after. Only on the camera freecam
+     * steers: a scene's look at someone stays the game's. */
+    if (freecam_on() && cam >= 0x10000u && cam + 0x240u < lim && cam_pad_steered(m, cam, 0)) {
         uint32_t who = ((const uint32_t *)(m + cam))[CAM_FOLLOWS / 4];
         if (who >= 0x10000u && who + 0x1000u < lim) {
             gcam = (uint32_t *)(uintptr_t)(m + who + CHR_GRAFFITI_CAM);
@@ -4189,7 +4246,15 @@ void sub_000A5070(void)
  * (+0x218), at the distance of the game's smoothed eye (+0x1E4), and the
  * game's own wall test runs again on it. The game's working eye is that
  * smoothed eye raised by the camera's lift (+0xE4, added at 0xA5F56), which
- * freecam leaves out (port/freecam.c says why).
+ * freecam leaves out (port/freecam.c says why). Only the camera of a skater
+ * the pad moves is freecam's (cam_pad_steered): a scene shown through
+ * another skater's camera stays the game's.
+ *
+ * sub_000A28B0 is the camera's post-update, which the task manager's second
+ * walk runs (sub_00011D00) and its pause walks do not, though the update
+ * walk may still run the camera's update. freecam_ran hears of each, so a
+ * camera that was not post-updated keeps the free camera's view, and one
+ * post-updated in a mode of the game's own starts it again.
  *
  * The L trigger (sub_00080340), and the player's set-up (sub_000836F0), ask
  * for the camera back behind the player: +0xE5C on the one it follows
@@ -4197,46 +4262,131 @@ void sub_000A5070(void)
  * behind -- and clears the request; when it was cleared here, freecam starts
  * again from that eye.
  *
- * That test is sub_000A5B60's: a line from the target to the eye against the
- * world (sub_00018260) and, when it is blocked, the nearest hit
- * (sub_000194B0), which returns 1 when that hit is from the record's second
- * list. The scratch is laid out as that function's locals, with the result's
- * pointer at +0, and each call returns to where that function's own does. */
+ * The wall test is sub_000A5B60's: a line against the world (sub_00018260)
+ * and, when it is blocked, the nearest hit (sub_000194B0), which returns 1
+ * when that hit is from the record's second list. The scratch is laid out as
+ * that function's locals, with the result's pointer at +0, and the line's
+ * ends past them; each call returns to where that function's own does.
+ *
+ * The game tests one line, from the target to the eye, and puts its eye on
+ * the nearest hit. But the view starts at the near plane, ahead of the eye,
+ * as wide as the projection's angle: both are the camera device's, which the
+ * title sets once, at start (DEV_NEAR, DEV_TAN_HALF; the angle spans 640 of
+ * the frame's 480 lines, and widescreen widens it as wide_proj does). The
+ * camera's own angle (+0x74) is not that one: it reads 0 in play, and only
+ * a scene's camera sets it. So a surface that runs along the view -- a
+ * half pipe's curve, a bump in the ground -- can cut into it while the line
+ * stays clear, or meet it where the eye sits on the surface. freecam tests
+ * five lines, the same way: the eye's, and one parallel to it through each
+ * corner of the view where it starts. The eye comes in to where all five are
+ * clear, so the whole start of the view is on the open side. */
 extern void sub_00018260(void);
 extern void sub_000194B0(void);
-static void freecam_walls(uint32_t cam)
+/* How much of the line from a to b is open, 0 to 1: up to the nearest hit. */
+static double freecam_wall_line(uint32_t cam, uint32_t scr, const double a[3], const double b[3])
 {
     uint8_t *m = (uint8_t *)g_xbox_mem_offset;
     const uint32_t lim = 64u << 20;
-    uint32_t sv_ecx = g_ecx, scr, a[6], r, res;
-    g_esp -= CAM_WALL_LOCALS;
-    scr = g_esp;
-    a[0] = cam + CAM_WALL_ARG; a[1] = cam + CAM_TARGET; a[2] = cam + CAM_EYE;
-    a[3] = scr + CAM_WALL_HITS; a[4] = CAM_WALL_MASK; a[5] = CAM_WALL_ANY;
+    float *ends = (float *)(m + scr + CAM_WALL_LOCALS);
+    uint32_t args[6], r, res;
+    double len2 = 0, along = 0;
+    int k;
+    for (k = 0; k < 3; k++) { ends[k] = (float)a[k]; ends[3 + k] = (float)b[k]; }
+    args[0] = cam + CAM_WALL_ARG; args[1] = scr + CAM_WALL_LOCALS;
+    args[2] = scr + CAM_WALL_LOCALS + 3 * sizeof(float);
+    args[3] = scr + CAM_WALL_HITS; args[4] = CAM_WALL_MASK; args[5] = CAM_WALL_ANY;
     g_ecx = CAM_WORLD;
-    if (guest_call_cdecl(sub_00018260, CAM_WALL_LINE_RET, 6, a)) {
-        *(uint32_t *)(m + scr) = 0;
-        a[0] = scr + CAM_WALL_HITS; a[1] = scr;
-        g_ecx = CAM_WORLD;
-        r = guest_call_cdecl(sub_000194B0, CAM_WALL_NEAR_RET, 2, a);
-        res = *(uint32_t *)(m + scr);
-        if (res >= 0x10000u && res + CAM_WALL_POINT_2 + 3 * sizeof(float) < lim) {
-            static double next;
-            memcpy(m + cam + CAM_EYE, m + res + (r ? CAM_WALL_POINT_2 : CAM_WALL_POINT_1),
-                   3 * sizeof(float));
-            if (pad_now() >= next) {
-                const float *e = (const float *)(m + cam + CAM_EYE);
-                next = pad_now() + 1.0;
-                fprintf(stderr, "[FREECAM] t=%.2f wall: eye pulled in to (%.1f %.1f %.1f)\n",
-                        pad_now(), e[0], e[1], e[2]);
-            }
-        } else if (res) {
-            static int once;
-            if (!once++) fprintf(stderr, "[FREECAM] wall test gave %08X; no wall test\n", res);
+    if (!guest_call_cdecl(sub_00018260, CAM_WALL_LINE_RET, 6, args)) return 1.0;
+    *(uint32_t *)(m + scr) = 0;
+    args[0] = scr + CAM_WALL_HITS; args[1] = scr;
+    g_ecx = CAM_WORLD;
+    r = guest_call_cdecl(sub_000194B0, CAM_WALL_NEAR_RET, 2, args);
+    res = *(uint32_t *)(m + scr);
+    if (res < 0x10000u || res + CAM_WALL_POINT_2 + 3 * sizeof(float) >= lim) {
+        static int once;
+        if (res && !once++) fprintf(stderr, "[FREECAM] wall test gave %08X; no wall test\n", res);
+        return 1.0;
+    }
+    {
+        const float *hit = (const float *)(m + res + (r ? CAM_WALL_POINT_2 : CAM_WALL_POINT_1));
+        for (k = 0; k < 3; k++) {
+            len2 += (b[k] - a[k]) * (b[k] - a[k]);
+            along += (hit[k] - a[k]) * (b[k] - a[k]);
         }
     }
+    if (!(len2 > 0)) return 1.0;
+    along /= len2;
+    return along < 0 ? 0 : along > 1 ? 1 : along;
+}
+static void freecam_walls(uint32_t cam)
+{
+    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
+    float *cf = (float *)(m + cam);
+    const float *tgt = cf + CAM_TARGET / 4;
+    float *eye = cf + CAM_EYE / 4;
+    uint32_t sv_ecx = g_ecx, scr;
+    double u[3], d, f[3], rt[3], up[3], rl, half, ahead, hw, hh, open = 1.0, eased, a[3], b[3];
+    int i, k, by = -1;
+    /* The camera device, as the widescreen re-set checks it: not set yet,
+     * the view's size is not known, and only the eye's line is tested. */
+    if (s_cam_dev < 0x10000u || s_cam_dev + DEV_TAN_HALF + sizeof(float) >= (64u << 20)
+     || *(const uint32_t *)(m + s_cam_dev) != DEV_CLASS)
+        half = ahead = 0;
+    else {
+        half = *(const float *)(m + s_cam_dev + DEV_TAN_HALF);
+        ahead = *(const float *)(m + s_cam_dev + DEV_NEAR);
+    }
+    for (k = 0; k < 3; k++) u[k] = eye[k] - tgt[k];
+    d = sqrt(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]);
+    if (!(d > 0)) return;
+    /* The view faces from the eye to the target; left-handed, y up: right
+     * of it (as auto_step), and up, square to both. freecam keeps the pitch
+     * short of straight up or down, so right is never nothing. */
+    for (k = 0; k < 3; k++) f[k] = -u[k] / d;
+    rl = sqrt(f[2] * f[2] + f[0] * f[0]);
+    if (!(rl > 0)) return;
+    rt[0] = f[2] / rl; rt[1] = 0; rt[2] = -f[0] / rl;
+    up[0] = f[1] * rt[2] - f[2] * rt[1];
+    up[1] = f[2] * rt[0] - f[0] * rt[2];
+    up[2] = f[0] * rt[1] - f[1] * rt[0];
+    hw = ahead * half / (wide_proj() ? nv2a_wide_squeeze() : 1.0f);
+    hh = ahead * half * VIEW_TALL;
+    { static double said_w = -1, said_h = -1;
+      if (hw != said_w || hh != said_h) {
+          said_w = hw; said_h = hh;
+          fprintf(stderr, "[FREECAM] t=%.2f view: %.0f degrees across (4:3), starting %.2f ahead of the eye, %.2f by %.2f either side\n",
+                  pad_now(), 2 * atan(half) * 180 / 3.14159265358979323846, ahead, hw, hh);
+      } }
+    if (!(hw >= 0 && hw < HUGE_VAL && hh >= 0 && hh < HUGE_VAL)) hw = hh = 0;
+    g_esp -= CAM_WALL_LOCALS + CAM_WALL_ENDS;
+    scr = g_esp;
+    for (i = 0; i < 5; i++) {
+        /* 0 the eye's line, then the corners: right and up, each either side */
+        double sx = i == 0 ? 0 : (i & 1) ? hw : -hw, sy = i == 0 ? 0 : (i & 2) ? hh : -hh, o;
+        for (k = 0; k < 3; k++) {
+            a[k] = tgt[k] + sx * rt[k] + sy * up[k];
+            b[k] = eye[k] + sx * rt[k] + sy * up[k];
+        }
+        o = freecam_wall_line(cam, scr, a, b);
+        if (o < open) { open = o; by = i; }
+    }
     g_ecx = sv_ecx;
-    g_esp += CAM_WALL_LOCALS;
+    g_esp += CAM_WALL_LOCALS + CAM_WALL_ENDS;
+    /* In at once, back out by degrees (port/freecam.c). Any share of the
+     * distance up to open is clear: every line is clear up to it. */
+    eased = freecam_wall(open);
+    if (!(eased < 1)) return;
+    for (k = 0; k < 3; k++) eye[k] = (float)(tgt[k] + u[k] * eased);
+    {
+        static double next;
+        if (pad_now() >= next) {
+            next = pad_now() + 1.0;
+            fprintf(stderr, "[FREECAM] t=%.2f wall: eye pulled in to %.0f%% of %.1f, %s, at (%.1f %.1f %.1f)\n",
+                    pad_now(), eased * 100, d,
+                    eased < open ? "easing back out" : by ? "by a corner of the view" : "by the eye's line",
+                    eye[0], eye[1], eye[2]);
+        }
+    }
 }
 extern void sub_000A6100_gen(void);
 void sub_000A6100(void)
@@ -4250,7 +4400,7 @@ void sub_000A6100(void)
         if (who >= 0x10000u && who + 0x1000u < lim) asked = *(uint32_t *)(m + who + CHR_CAM_BEHIND);
     }
     sub_000A6100_gen();
-    if (cam < 0x10000u || cam + 0x240u >= lim) return;
+    if (cam < 0x10000u || cam + 0x240u >= lim || !cam_pad_steered(m, cam, 1)) return;
     cf = (float *)(m + cam);
     if (!freecam_orbit(cam, ((const uint32_t *)cf)[CAM_MODE / 4], cf + CAM_TARGET / 4,
                        cf + CAM_SMOOTH_EYE / 4, asked && !*(uint32_t *)(m + who + CHR_CAM_BEHIND),
@@ -4265,7 +4415,7 @@ void sub_000A6100(void)
 static unsigned long jsrf_camcnt[18];
 static const uint32_t jsrf_camva[18] = { 0x000A28B0u, 0x000A2960u, 0x000A3A70u, 0x000A3BD0u, 0x000A3D10u, 0x000A59B0u, 0x000A58B0u, 0x000A58C0u, 0x000A58E0u, 0x000A3E50u, 0x000A4100u, 0x000A5A00u, 0x000A5A70u, 0x000A5AC0u, 0x000A5AF0u, 0x000A4890u, 0x000A4D80u, 0x000A4C30u };
 extern void sub_000A28B0_gen(void);
-void sub_000A28B0(void) { jsrf_camcnt[0]++; sub_000A28B0_gen(); }
+void sub_000A28B0(void) { jsrf_camcnt[0]++; freecam_ran(g_ecx); sub_000A28B0_gen(); }
 extern void sub_000A2960_gen(void);
 void sub_000A2960(void) { jsrf_camcnt[1]++; sub_000A2960_gen(); }
 extern void sub_000A3A70_gen(void);

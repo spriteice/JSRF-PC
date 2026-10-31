@@ -67,7 +67,8 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
                      640x480 (2x by default), up to 2560x1920; remembered.
                      The game restarts to apply it, so save first.
   F8                 free camera: the right stick turns the camera around
-                     the player; remembered (see Free camera below)
+                     the player; remembered (see Free camera below). R3 on
+                     a controller does the same
 
 Display > Skip intro in the in-game menu leaves out the logos and the
 graffiti disclaimer the game opens with: it starts at the title screen's
@@ -121,13 +122,16 @@ needs it.
 
 Free camera
 -----------
-F8, or freecam=1 in the settings file, gives the right stick to the camera:
-it turns around the player, and forward is wherever it looks. The L trigger
-puts it back behind the player, as it does the game's camera. Spraying
-graffiti doesn't turn it to the wall, and talking to someone doesn't turn it
-to them. F8 is remembered. The settings file (see "Where things are kept")
-also takes these, one per line, with no spaces around "=". The values shown
-are the defaults, which a key that is left out, or out of range, gets:
+F8, R3 on a controller, or freecam=1 in the settings file, gives the right
+stick to the camera: it turns around the player, and forward is wherever it
+looks. The L trigger puts it back behind the player, as it does the game's
+camera. Spraying graffiti doesn't turn it to the wall, and talking to
+someone doesn't turn it to them. It steers only the camera of the skater you
+control: when the game moves a skater by itself, as when a scene follows
+another skater, the game's own camera shows it. Pausing keeps the view. F8
+and R3 are remembered. The settings file (see "Where things are kept") also
+takes these, one per line, with no spaces around "=". The values shown are
+the defaults, which a key that is left out, or out of range, gets:
 
   freecam=0          1: on
   invert_x=0         1: right turns the view left
@@ -136,6 +140,10 @@ are the defaults, which a key that is left out, or out of range, gets:
   sensitivity_y=5    up-down speed, 1 to 10
   deadzone=0.05      how far the stick moves before the camera does, 0 to 1
                      (0.05 is 5%)
+  autocentre=0       auto centre: once the right stick is let go, the view
+                     eases back behind the player. 0 off, 1 mild (after 2
+                     seconds, slowly), 2 medium, 3 high (after a second),
+                     4 aggressive (after half a second, quickly)
 
 The in-game menu's Controller menu has all of these too, and keeps them here
 as F8 does.

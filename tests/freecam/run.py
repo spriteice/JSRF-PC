@@ -48,7 +48,18 @@ cases = {
     "steer": ("freecam=1\n", ["steering the camera", "idle: the follow camera is not running"]),
     "reset": ("freecam=1\n", ["from heading -90, pitch 0, as the game put it back behind the player"]),
     "toggle": ("game_dir=/games/jsrf\nfreecam=0\nsensitivity_x=7\n",
-               ["[FREECAM] on (F8 or the menu)", "[FREECAM] off (F8 or the menu)"]),
+               ["[FREECAM] on (F8, R3 or the menu)", "[FREECAM] off (F8, R3 or the menu)",
+                "auto centre Off"]),
+    "r3": ("freecam=0\n", ["[FREECAM] on (F8, R3 or the menu)", "[FREECAM] off (F8, R3 or the menu)"]),
+    "held": ("freecam=1\n", ["held: its camera did not run; keeping the view", "steering the camera"]),
+    # auto centre: centre_<wait>_<ease>, the level's frames and share (port/freecam.c, k_centre)
+    "centre_0_0": ("freecam=1\n", ["auto centre Off"]),
+    "centre_120_90": ("freecam=1\nautocentre=1\n", ["auto centre Mild"]),
+    "centre_90_60": ("freecam=1\nautocentre=2\n", ["auto centre Medium"]),
+    "centre_60_30": ("freecam=1\nautocentre=3\n", ["auto centre High"]),
+    "centre_30_12": ("freecam=1\nautocentre=4\n", ["auto centre Aggressive"]),
+    "centre_0_0_bad": ("freecam=1\nautocentre=5\n", ["autocentre=5 is outside 0 to 4; using 0", "auto centre Off"]),
+    "wall": ("freecam=1\n", ["as the game put it back behind the player"]),
 }
 
 with tempfile.TemporaryDirectory(prefix="freecam-") as directory:
