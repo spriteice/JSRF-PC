@@ -107,6 +107,10 @@ Dear ImGui
 - A new engine switch, an environment variable that changes what the engine
   does, to compare one way with the other, also gets a row under Developer >
   Engine switches (`k_engine`).
+- Logging's and Engine switches' rows are in alphabetical order by the
+  variable's name, word by word: an underscore comes before any letter, so
+  RECOMP_GL_TEX_ONESAMPLER is above RECOMP_GL_TEXGEN. A new switch goes
+  where it falls in that order. tests/developer checks.
 - A new performance switch, an environment variable that turns off
   something the engine does by default for speed, also gets a row under
   Developer > Performance (`k_perf`), with a plain name in `k_perf_row`

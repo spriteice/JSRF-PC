@@ -209,4 +209,21 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
     if any(row not in pages["Logging"]
            for row in ("RECOMP_GL_TIMELINE (Restart)", "JSRF_ADX_ERR_LOG (Restart)")):
         raise SystemExit(f"menu: Logging's rows are {pages['Logging']}")
+    # Logging's and Engine switches' rows are in alphabetical order by name,
+    # word by word: an underscore comes before any letter, as a space would,
+    # so RECOMP_GL_TEX_ONESAMPLER is above RECOMP_GL_TEXGEN.
+    def by_name(row):
+        return row.partition(" ")[0].partition("=")[0].replace("_", " ")
+    for page in ("Logging", "Engine switches"):
+        if pages[page] != sorted(pages[page], key=by_name):
+            raise SystemExit(f"menu: the rows of {page} aren't in alphabetical order: {pages[page]}")
+    # And each switch ticked in developer.cfg ticks its own row, wherever the
+    # order puts it.
+    ticked = {"Logging": ["JSRF_ADX_ERR_LOG (Restart)", "RECOMP_LOCK_WATCH (Restart)"],
+              "Engine switches": ["RECOMP_GL_TITLE_MIPS=0 (Restart)"]}
+    pages, ticks = menu("JSRF_ADX_ERR_LOG=1\nRECOMP_LOCK_WATCH=1\nRECOMP_GL_TITLE_MIPS=0\n")
+    for page, rows in ticked.items():
+        want = sum(1 << pages[page].index(row) for row in rows)
+        if ticks[page] != want:
+            raise SystemExit(f"menu: {page}'s ticks are {ticks[page]}, not {want} for {rows}")
 print("developer: all", len(cases), "cases and the menu's pages pass")

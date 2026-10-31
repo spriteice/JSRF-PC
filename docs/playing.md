@@ -110,8 +110,9 @@ menu.
     starts.
 
   Logging's and Engine switches' rows are named by the environment variable
-  each one sets. Those two, Performance and Experimental are kept in
-  `developer.cfg` beside the settings file, and apply from the next start.
+  each one sets, in alphabetical order. Those two, Performance and
+  Experimental are kept in `developer.cfg` beside the settings file, and
+  apply from the next start.
 
 Everything is remembered. Restart, Exit, a new render scale, the shader cache,
 and Purge shaders ask first, as anything since your last save is lost: all but

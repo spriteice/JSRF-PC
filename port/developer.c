@@ -63,32 +63,43 @@ extern void nv_window_file_set(const char *file, const char *key, int val);
  * cores (port/pcores.c) and display pacing (nv2a_display_clock.c) Linux's.
  * A RECOMP_GL_ switch that never reads converted vertices back goes on the
  * vertex cache's list too (vc_debug_switch in nv2a_gl.c), or setting it turns
- * the cache off as well. */
+ * the cache off as well.
+ *
+ * Logging's and Engine switches' are in alphabetical order by name, as their
+ * rows are shown, word by word: a name's underscore comes before any letter,
+ * so RECOMP_GL_TEX_ONESAMPLER is above RECOMP_GL_TEXGEN. A new one goes where
+ * it falls, and tests/developer checks. Each switch is kept in developer.cfg
+ * by its name, so the order is the menu's alone. */
 typedef struct { const char *name; const char *on; } DevSwitch;
 static const DevSwitch k_logging[] = {
-    { "RECOMP_GL_PROFILE", "1" },
+    { "JSRF_ADX_ERR_LOG", "1" },            /* the sound library's stream errors (port/adx_err.c) */
+    { "JSRF_CAM_LOG", "1" },                /* the game's camera (port/recomp_manual.c) */
+    { "RECOMP_APU_CHANNELS", "1" },
+    { "RECOMP_APU_STATS", "1" },
 #if (defined(__linux__) && !defined(__ANDROID__)) || defined(_WIN32)
     { "RECOMP_CPU_PROFILE", "1" },
 #endif
-    { "RECOMP_LOCK_WATCH", "1" }, { "RECOMP_WAITLOG", "1" }, { "RECOMP_KERNEL_IO", "1" },
-    { "RECOMP_APU_STATS", "1" }, { "RECOMP_APU_CHANNELS", "1" },
-    { "RECOMP_GL_UNHANDLED", "1" }, { "RECOMP_GL_VERBOSE", "1" },
-    { "RECOMP_GL_ERRORS_PER_DRAW", "1" }, { "RECOMP_USB_TRACE", "1" },
+    { "RECOMP_GL_ERRORS_PER_DRAW", "1" },
+    { "RECOMP_GL_PROFILE", "1" },
     { "RECOMP_GL_TIMELINE", "1" },          /* a frame's surfaces and skinned draws, every 5 s */
-    { "JSRF_CAM_LOG", "1" },                /* the game's camera (port/recomp_manual.c) */
-    { "JSRF_ADX_ERR_LOG", "1" },            /* the sound library's stream errors (port/adx_err.c) */
+    { "RECOMP_GL_UNHANDLED", "1" },
+    { "RECOMP_GL_VERBOSE", "1" },
+    { "RECOMP_KERNEL_IO", "1" },
+    { "RECOMP_LOCK_WATCH", "1" },
+    { "RECOMP_USB_TRACE", "1" },
+    { "RECOMP_WAITLOG", "1" },
 };
 static const DevSwitch k_engine[] = {
-    { "RECOMP_GL_NOREVZ", "1" },            /* no reversed depth */
+    { "RECOMP_APU_MIX", "xemu" },           /* each voice's own sides, not the mixbins folded */
+    { "RECOMP_GL_CURTAIN", "skip" },        /* no fades to black (the full-screen black quad) */
+    { "RECOMP_GL_IMMEDIATE", "0" },         /* no batches sent a vertex at a time (the shadows) */
     { "RECOMP_GL_NOPRECZ", "1" },           /* no precise fixed-function depth */
-    { "RECOMP_GL_TITLE_MIPS", "0" },        /* a texture's base level alone, not its mipmaps */
+    { "RECOMP_GL_NOREVZ", "1" },            /* no reversed depth */
+    { "RECOMP_GL_STENCILVIS", "1" },        /* the stencil buffer in place of the shadows */
     { "RECOMP_GL_TEX_ONESAMPLER", "1" },    /* one texture however it is sampled */
     { "RECOMP_GL_TEXGEN", "0" },            /* no texture coordinates the T&L unit makes */
+    { "RECOMP_GL_TITLE_MIPS", "0" },        /* a texture's base level alone, not its mipmaps */
     { "RECOMP_GL_VCACHE", "0" },            /* no vertex cache */
-    { "RECOMP_GL_IMMEDIATE", "0" },         /* no batches sent a vertex at a time (the shadows) */
-    { "RECOMP_GL_STENCILVIS", "1" },        /* the stencil buffer in place of the shadows */
-    { "RECOMP_GL_CURTAIN", "skip" },        /* no fades to black (the full-screen black quad) */
-    { "RECOMP_APU_MIX", "xemu" },           /* each voice's own sides, not the mixbins folded */
 };
 /* Performance's, each with its row in k_perf_row: something the engine does
  * by default, which the switch turns off. Use P cores is the first, and stays
