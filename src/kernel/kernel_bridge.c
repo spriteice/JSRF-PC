@@ -4674,14 +4674,28 @@ static void bridge_NtReleaseMutant(void)
  * parked itself believed it had stopped and carried straight on. Wreckless
  * does that on a worker, and the "suspended" thread spun through 289 million
  * kernel calls while the title thought it was idle.
+ *
+ * The guest lock is given up only when the thread suspends itself, because
+ * only then does the call block the caller. Suspending another thread lets
+ * no other thread run on the console, and CRI's unlock relies on that: it
+ * suspends its spinner while its holder is still at time-critical, and
+ * giving the lock up there let the game's main thread run inside CRI's lock
+ * (issue #1; kernel_call_blocks says more). Whether it is the calling thread
+ * is asked of the thread, not read off the handle: CRI's idle worker
+ * suspends itself through its own handle, not -2, and a thread that parked
+ * holding the lock would stop every guest thread with it.
  */
 static void bridge_NtSuspendThread(void)
 {
     uint32_t count_va = STACK_ARG(1);
     uint32_t handle = STACK_ARG(0);
     HANDLE h = bridge_resolve_handle(handle);
-    NTSTATUS st = xbox_NtSuspendThread(
+    int self = xbox_thread_is_current(h);
+    NTSTATUS st;
+    if (self) xbox_guest_lock_release();
+    st = xbox_NtSuspendThread(
         h, count_va ? (PULONG)XBOX_TO_NATIVE(count_va) : NULL);
+    if (self) xbox_guest_lock_acquire();
 
     /* Say so when this fails, because the title will not.
      *
@@ -4739,12 +4753,33 @@ static void bridge_NtSuspendThread(void)
     g_eax = (uint32_t)st;
 }
 
-/* ── NtResumeThread (ordinal 224, 2 args) */
+/* ── NtResumeThread (ordinal 224, 2 args)
+ *
+ * Keeps the guest lock, unless the thread it lets go has a higher guest
+ * priority than the caller. On the console a resume switches to the resumed
+ * thread only then; at the same or a lower priority the caller carries on
+ * until it next waits or its time slice ends. CRI's lock resumes its spinner
+ * from a holder it has just raised to time-critical, and giving the lock up
+ * there let the game's main thread run inside CRI's lock (issue #1;
+ * kernel_call_blocks says more). Its synchronous run (0x0013B110) is the
+ * other kind: it raises the idle worker to time-critical, resumes it and
+ * waits for it to finish, and there the worker gets the lock.
+ *
+ * Handed over only when this resume let the thread go (its count was 1), and
+ * not at raised IRQL or inside an interrupt, DPC or callback
+ * (guest_lock_hand_over_to_resumed). */
+static void guest_lock_hand_over_to_resumed(void);
 static void bridge_NtResumeThread(void)
 {
-    g_eax = (uint32_t)xbox_NtResumeThread(
-        bridge_resolve_handle(STACK_ARG(0)),
-        (PULONG)XBOX_TO_NATIVE(STACK_ARG(1)));
+    uint32_t count_va = STACK_ARG(1);
+    HANDLE h = bridge_resolve_handle(STACK_ARG(0));
+    int above = xbox_thread_guest_priority(h)
+              > xbox_thread_guest_priority(GetCurrentThread());
+    ULONG prev = 0;
+    NTSTATUS st = xbox_NtResumeThread(h, &prev);
+    if (st >= 0 && count_va) BRIDGE_MEM32(count_va) = (uint32_t)prev;
+    g_eax = (uint32_t)st;
+    if (st >= 0 && prev == 1 && above) guest_lock_hand_over_to_resumed();
 }
 
 /* ── ObfDereferenceObject (ordinal 250, fastcall: object in ecx)
@@ -6369,6 +6404,10 @@ static long long     g_slice_since;
 static unsigned long g_slice_handoffs;
 static unsigned long g_slice_handoff_timeouts;
 static unsigned long g_slice_held_raised;
+/* And resumes that handed the lock to a thread above the caller's priority
+ * (bridge_NtResumeThread), with the ones nobody took. */
+static unsigned long g_resume_handoffs;
+static unsigned long g_resume_handoff_timeouts;
 /* And looks for an acknowledged display interrupt at a back edge inside an
  * interrupt or DPC (xbox_GuestCpuPreempt). */
 static unsigned long g_edge_vblank_checks;
@@ -6607,10 +6646,15 @@ void xbox_guest_lock_stats(void)
                     "nobody within RECOMP_HANDOFF_US), %lu slice ends put off at "
                     "raised IRQL or in an interrupt or DPC\n",
             g_slice_handoffs, g_slice_handoff_timeouts, g_slice_held_raised);
+    fprintf(stderr, "        %lu resumes of a thread above the caller's priority handed "
+                    "it the lock (%lu taken over by nobody within RECOMP_HANDOFF_US)\n",
+            g_resume_handoffs, g_resume_handoff_timeouts);
     fprintf(stderr, "        %lu looks for an acknowledged display interrupt at a back edge "
                     "in an interrupt or DPC\n", g_edge_vblank_checks);
     g_slice_handoffs = 0;
     g_slice_handoff_timeouts = 0;
+    g_resume_handoffs = 0;
+    g_resume_handoff_timeouts = 0;
     g_slice_held_raised = 0;
     g_edge_vblank_checks = 0;
     fflush(stderr);
@@ -6645,6 +6689,90 @@ static int kernel_raise_interrupt_here(uint32_t vector)
     g_esp = s_esp; g_seh_ebp = s_seh;
     g_spin_isrs++;
     return r;
+}
+
+/* Hand the guest lock over, rather than merely offering it: give it up, stand
+ * back until another guest thread has taken it, and take it back.
+ *
+ * Used where the console would switch threads: at the end of a time slice
+ * while someone is queueing (xbox_guest_lock_yield_now), and after a resume
+ * lets go a thread above the caller's priority
+ * (guest_lock_hand_over_to_resumed). That one waits even when nobody is
+ * queueing yet, because the resumed thread may not have got there: on
+ * Windows it has still to be scheduled, and on Linux it has only just left
+ * its park. Each caller counts its hand-overs, and the ones nobody took, for
+ * the [LOCK] report.
+ *
+ * The guest lock is not FIFO: releasing it wakes a waiter, but waking is
+ * not instant and this thread is already running, so it wins the race for
+ * the lock it just dropped almost every time. SwitchToThread does not
+ * help, because the waiters are blocked on the lock rather than merely
+ * runnable. The result is that one thread keeps the lock and the others
+ * get whatever is left.
+ *
+ * Measured on the title screen: the title's ADX server thread, which has
+ * to refill the music ring 38 times a second, ran between 4 and 20 times
+ * a second, and the music played as correct fragments in the wrong order
+ * because the voice read the ring faster than the thread could fill it.
+ *
+ * So when anyone is queueing, stand back until one of them has the lock
+ * instead of re-entering.
+ *
+ * Until a take is seen, not for a fixed time. It was a fixed time, 60 us
+ * by RECOMP_HANDOFF_US, but the shortest sleep this shim promises leaves
+ * the CPU is Sleep(1), so every hand-over cost a millisecond or more (up
+ * to 15.6 on Windows at the default timer resolution), and for much of
+ * it no guest thread ran at all: in a 5,014 ms sample of the lock, 330
+ * hand-overs left it without a holder for 234 ms. Watching the take
+ * count ends the wait as soon as the woken thread is in.
+ * RECOMP_HANDOFF_US is now the longest it waits (1000), because a queued
+ * thread that cannot run -- one suspended inside its wait -- must not
+ * hold up the rest; 0 still restores the old behaviour.
+ */
+static void guest_lock_hand_over(int even_if_none_queued,
+                                 unsigned long *handoffs, unsigned long *timeouts)
+{
+    unsigned long taken = __atomic_load_n(&g_lock_acquires, __ATOMIC_RELAXED);
+    xbox_guest_lock_release();
+    { static long handoff = -1;
+      if (handoff < 0) { const char *e = getenv("RECOMP_HANDOFF_US");
+                         handoff = e ? atol(e) : 1000; if (handoff < 0) handoff = 0;
+                         if (handoff > 1000000) handoff = 1000000; }
+      if (handoff && (even_if_none_queued
+                      || __atomic_load_n(&g_xbox_guest_cpu_preempt,
+                                         __ATOMIC_RELAXED) > 0)) {
+          LARGE_INTEGER freq, t0, t;
+          long long limit;
+          __atomic_add_fetch(handoffs, 1, __ATOMIC_RELAXED);
+          QueryPerformanceFrequency(&freq);
+          QueryPerformanceCounter(&t0);
+          limit = (long long)freq.QuadPart * handoff / 1000000;
+          do {
+              SwitchToThread();
+              QueryPerformanceCounter(&t);
+          } while (__atomic_load_n(&g_lock_acquires, __ATOMIC_ACQUIRE) == taken
+                   && (long long)(t.QuadPart - t0.QuadPart) < limit);
+          if (__atomic_load_n(&g_lock_acquires, __ATOMIC_RELAXED) == taken)
+              __atomic_add_fetch(timeouts, 1, __ATOMIC_RELAXED);
+      } else {
+          SwitchToThread();
+      } }
+    xbox_guest_lock_acquire();
+    g_slice_since = t_guest_since;   /* offered: a new slice, taken over or not */
+}
+
+/* After a resume that let go a thread above the caller's priority
+ * (bridge_NtResumeThread): the console switches to that thread at once, so
+ * the lock goes to it. Not at DISPATCH_LEVEL or above, and not inside an
+ * interrupt, DPC or synchronize routine, where the console switches no
+ * threads, as at the end of a time slice; there the resumed thread waits for
+ * the caller to come out. */
+static void guest_lock_hand_over_to_resumed(void)
+{
+    extern unsigned char xbox_KeCurrentIrql(void);
+    if (!t_guest_holds || t_in_callback || xbox_KeCurrentIrql() >= DISPATCH_LEVEL)
+        return;
+    guest_lock_hand_over(1, &g_resume_handoffs, &g_resume_handoff_timeouts);
 }
 
 /* Called from the function-entry trace hook: hand the CPU over after a
@@ -6721,61 +6849,7 @@ void xbox_guest_lock_yield_now(void)
               return;
           }
       } }
-    unsigned long taken = __atomic_load_n(&g_lock_acquires, __ATOMIC_RELAXED);
-    xbox_guest_lock_release();
-    /*
-     * Hand the lock over, rather than merely offering it.
-     *
-     * The guest lock is not FIFO: releasing it wakes a waiter, but waking is
-     * not instant and this thread is already running, so it wins the race for
-     * the lock it just dropped almost every time. SwitchToThread does not
-     * help, because the waiters are blocked on the lock rather than merely
-     * runnable. The result is that one thread keeps the lock and the others
-     * get whatever is left.
-     *
-     * Measured on the title screen: the title's ADX server thread, which has
-     * to refill the music ring 38 times a second, ran between 4 and 20 times
-     * a second, and the music played as correct fragments in the wrong order
-     * because the voice read the ring faster than the thread could fill it.
-     *
-     * So when anyone is queueing, stand back until one of them has the lock
-     * instead of re-entering.
-     *
-     * Until a take is seen, not for a fixed time. It was a fixed time, 60 us
-     * by RECOMP_HANDOFF_US, but the shortest sleep this shim promises leaves
-     * the CPU is Sleep(1), so every hand-over cost a millisecond or more (up
-     * to 15.6 on Windows at the default timer resolution), and for much of
-     * it no guest thread ran at all: in a 5,014 ms sample of the lock, 330
-     * hand-overs left it without a holder for 234 ms. Watching the take
-     * count ends the wait as soon as the woken thread is in.
-     * RECOMP_HANDOFF_US is now the longest it waits (1000), because a queued
-     * thread that cannot run -- one suspended inside its wait -- must not
-     * hold up the rest; 0 still restores the old behaviour.
-     */
-    { static long handoff = -1;
-      if (handoff < 0) { const char *e = getenv("RECOMP_HANDOFF_US");
-                         handoff = e ? atol(e) : 1000; if (handoff < 0) handoff = 0;
-                         if (handoff > 1000000) handoff = 1000000; }
-      if (handoff && __atomic_load_n(&g_xbox_guest_cpu_preempt,
-                                     __ATOMIC_RELAXED) > 0) {
-          LARGE_INTEGER freq, t0, t;
-          long long limit;
-          __atomic_add_fetch(&g_slice_handoffs, 1, __ATOMIC_RELAXED);
-          QueryPerformanceFrequency(&freq);
-          QueryPerformanceCounter(&t0);
-          limit = (long long)freq.QuadPart * handoff / 1000000;
-          do {
-              SwitchToThread();
-              QueryPerformanceCounter(&t);
-          } while (__atomic_load_n(&g_lock_acquires, __ATOMIC_ACQUIRE) == taken
-                   && (long long)(t.QuadPart - t0.QuadPart) < limit);
-          if (__atomic_load_n(&g_lock_acquires, __ATOMIC_RELAXED) == taken)
-              __atomic_add_fetch(&g_slice_handoff_timeouts, 1, __ATOMIC_RELAXED);
-      } else {
-          SwitchToThread();
-      } }
-    xbox_guest_lock_acquire();
-    g_slice_since = t_guest_since;   /* offered: a new slice, taken over or not */
+    guest_lock_hand_over(0, &g_slice_handoffs, &g_slice_handoff_timeouts);
 }
 /* The same offer at a loop back edge, in code lifted with --back-edge-yield,
  * while some guest thread queues for the lock.
@@ -7112,7 +7186,20 @@ void xbox_waitlog_report(void)
 }
 
 /* Kernel calls that can block: the lock is dropped across them so another
- * guest thread can make the progress this one is waiting for. */
+ * guest thread can make the progress this one is waiting for.
+ *
+ * NtSuspendThread (231) and NtResumeThread (224) are not here: whether they
+ * give the lock up depends on the thread they name, so their bridges decide
+ * (bridge_NtSuspendThread, bridge_NtResumeThread). Here they gave it up every
+ * time, to whichever guest thread was queued, and on the console neither lets
+ * a lower-priority thread run. CRI's lock relies on that: it raises its
+ * holder to time-critical and resumes a spinner, and its unlock suspends it,
+ * so on the console nothing below the holder runs while it is held. Dropping
+ * the lock at both calls let the game's main thread in during about one hold
+ * in ninety on Linux and one in twenty-five on Windows, and into the ADX
+ * watchdog's recovery of a stream while the stream's error code was set,
+ * where its check of that code stops the game on its "disc can't be read"
+ * path (issue #1). */
 static int kernel_call_blocks(ULONG ordinal)
 {
     switch (ordinal) {
@@ -7122,7 +7209,6 @@ static int kernel_call_blocks(ULONG ordinal)
     case 233:  /* NtWaitForSingleObject */
     case 234:  /* NtWaitForSingleObjectEx */
     case 235:  /* NtWaitForMultipleObjectsEx */
-    case 231:  /* NtSuspendThread */
     case 277:  /* RtlEnterCriticalSection */
     case 219:  /* NtReadFile */
     case 236:  /* NtWriteFile */
@@ -7130,7 +7216,6 @@ static int kernel_call_blocks(ULONG ordinal)
     case 202:  /* NtOpenFile */
     case 255:  /* PsCreateSystemThreadEx (spawns; the child takes the lock) */
     case 258:  /* PsTerminateSystemThread */
-    case 224:  /* NtResumeThread (let the resumed thread run) */
         return 1;
     default:
         return 0;
@@ -7324,7 +7409,11 @@ static int kthread_all_stuck_ms(void)
         const KThreadState *k = &g_kthreads[i];
         long long age;
         if (k->left_ms) continue;                 /* not inside a call */
-        if (!kernel_call_blocks(k->ordinal)) continue;
+        /* NtSuspendThread (231) and NtResumeThread (224) count as waits here,
+         * as they did before their bridges took over the lock decision: a
+         * thread parked in its own suspend is waiting like any other. */
+        if (!kernel_call_blocks(k->ordinal) && k->ordinal != 231 && k->ordinal != 224)
+            continue;
         if (k->ordinal == 277) continue;          /* lock churn is the spin */
         age = now - k->entered_ms;
         if (age > best) { second = best; best = age; }

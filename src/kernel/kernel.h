@@ -717,6 +717,8 @@ LONG     __stdcall xbox_KeSetBasePriorityThread(PVOID Thread, LONG Increment);
 LONG     __stdcall xbox_KeQueryBasePriorityThread(PVOID Thread);
 /* The Win32 priority the title gave a thread (on Windows kept, not applied). */
 int      xbox_thread_guest_priority(HANDLE Thread);
+/* Whether Thread is the calling thread, however the handle was come by. */
+int      xbox_thread_is_current(HANDLE Thread);
 NTSTATUS __stdcall xbox_KeAlertThread(PVOID Thread, KPROCESSOR_MODE AlertMode);
 NTSTATUS __stdcall xbox_NtYieldExecution(void);
 NTSTATUS __stdcall xbox_NtDuplicateObject(HANDLE SourceHandle, PHANDLE TargetHandle, ULONG Options);

@@ -302,6 +302,26 @@ static void guest_priority_set(HANDLE h, int prio) { SetThreadPriority(h, prio);
 /* The priority the title gave a thread (the guest lock asks it). */
 int xbox_thread_guest_priority(HANDLE h) { return guest_priority_get(h); }
 
+/* Whether h is the calling thread: by the pseudo-handle, the handle the thread
+ * was created with, or a duplicate. A suspend of the calling thread blocks it
+ * and any other suspend does not, so this decides whether NtSuspendThread
+ * gives the guest lock up (kernel_bridge.c). CRI's idle worker suspends itself
+ * through its own handle, not the pseudo-handle, so the handle's value cannot
+ * decide it.
+ *
+ * Windows: by thread id, as guest_priority_get does. Elsewhere every handle to
+ * a thread is that thread's one object in win32_compat.c (DuplicateHandle hands
+ * back the same one), and GetCurrentThread returns it. */
+int xbox_thread_is_current(HANDLE h)
+{
+    if (!h) return 0;
+#if defined(_WIN32)
+    return GetThreadId(h) == GetCurrentThreadId();
+#else
+    return h == GetCurrentThread();
+#endif
+}
+
 LONG __stdcall xbox_KeSetBasePriorityThread(PVOID Thread, LONG Increment)
 {
     HANDLE hThread = (HANDLE)Thread;

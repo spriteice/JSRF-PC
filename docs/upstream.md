@@ -1027,6 +1027,33 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   keep the call where the lock changes hands (`g_slice_owner`). Run
   tests/adx_err and tests/developer.
 
+### Suspend and resume keep the guest lock, as on the console
+
+- **Files:** src/kernel/kernel_bridge.c (`kernel_call_blocks` no longer
+  lists NtResumeThread and NtSuspendThread; `bridge_NtSuspendThread` gives
+  the lock up only when a thread suspends itself; `bridge_NtResumeThread`
+  hands it over only to a thread above the caller's priority, through
+  `guest_lock_hand_over_to_resumed`; the time slice's hand-over is a
+  function of its own, `guest_lock_hand_over`, used by both; the [LOCK]
+  report counts the resumes' hand-overs, and the stall report still counts
+  the two calls as waits), src/kernel/kernel_thread.c and kernel.h
+  (`xbox_thread_is_current`).
+- **Why:** issue #1. On the console, suspending another thread lets no
+  other thread run, and resuming one switches to it only if it has a higher
+  priority. CRI's lock relies on that: it raises its holder to
+  time-critical, then resumes a spinner, and the unlock suspends it. Giving
+  the guest lock up around both calls let the game's main thread run
+  inside CRI's lock in about one hold in 90 on the Ally X and one in 25 on
+  Windows, and into the ADX watchdog's recovery of a stream, where its
+  check of the stream's error code can stop the game on its "disc can't be
+  read" path. A thread that suspends itself still gives the lock up, and
+  whether it is the calling thread is asked of the thread, since CRI's idle
+  worker suspends itself through its own handle. Could suit upstream:
+  nothing in it is specific to JSRF. Our own file: tests/guest_suspend.
+- **When picking:** keep 224 and 231 off `kernel_call_blocks`, and the
+  decisions in the two bridges. If upstream changes the time slice's
+  hand-over, keep it in `guest_lock_hand_over`. Run tests/guest_suspend.
+
 ### Diagnostics only in Debug builds
 
 - **Files:** port/CMakeLists.txt.
