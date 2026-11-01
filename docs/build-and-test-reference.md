@@ -168,12 +168,18 @@ One folder per build, named `<date>-<commit>-<topic>` (as in
   renamed with the version, as releases are (docs/versioning.md).
 - `SHA256SUMS.txt` for both.
 - `TESTING.md`: the test checklist below.
+- `<folder>.html`: the test list, made from TESTING.md (Test list, below).
 - `REPORT.md`: the change report below, when the build carries a change.
 - The full diff against the commit it was built from, when the tree has
   uncommitted changes.
 
 Never include game files, generated code, or logs in what you send me,
 except inside the packaged build.
+
+My Claude folder, on the Windows PC, has `Testing\` for test lists, with
+their results in `Testing\Results\`, and `Source\` for source backups
+(docs/release-checklist.md, step 12). The shared folder's
+test-lists/README.md has its path.
 
 ## Test checklist (TESTING.md)
 
@@ -204,10 +210,32 @@ except inside the packaged build.
   saves are in them). The upgrade is the new build started over the
   previous release's settings and saves, which must carry over unchanged.
   docs/release-checklist.md has the rest of a release's steps.
-- **What to send back:** the full last-run.log from each run, and
-  screenshots of anything visual. The package's README.txt says where the
-  log is kept ("Where things are kept", and `portable/logs/` in portable
-  mode).
+- **What to send back:** the test list's results, the full last-run.log
+  from each run, and screenshots of anything visual. The package's
+  README.txt says where the log is kept ("Where things are kept", and
+  `portable/logs/` in portable mode).
+
+## Test list
+
+I mark TESTING.md's steps in a page made from it, on the Windows PC, for
+every device's testing, and you read my answers from my Claude folder.
+
+- **Made** with `make_test_list.py` in the shared folder's `test-lists/`,
+  from TESTING.md as it is delivered: one page that works offline in any
+  browser. Each `- [ ]` step gets Pass, Fail, Skip and a notes box, and an
+  empty label line in a step, such as `Browser:`, gets a box to fill.
+- **Delivered:** `<folder>.html` is copied from the build's folder to
+  `Testing\`, where I open it. If TESTING.md changes, the list is made
+  and copied again under the same name: my answers carry over by step, and
+  the page says the list changed.
+- **Read back** from `Testing\Results\<folder>.results.json`, which the
+  page's Save results writes, with test-lists' `read_results.py`. It
+  checks that the results are for that list and that version of its text.
+  If the file can't reach `Testing\Results\`, I paste the same text into
+  the chat (More > Copy results).
+- **My results count as my message** (project rules, Workflow 5): a step I
+  marked Fail, Skip, or nothing hasn't passed, and one I marked Pass still
+  has its log read in full. Record them in TESTING.md's notes, as before.
 
 ## Change report (REPORT.md)
 

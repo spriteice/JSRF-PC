@@ -134,6 +134,11 @@ Only on the maintainer's say-so.
     - **Checked before it's kept:** the bundle clones and passes
       `git fsck`, and the snapshot matches the tag's files. Both files go
       in SHA256SUMS.txt, and neither is uploaded to the GitHub release.
+    - **Kept twice:** in the release's folder, and in `Source\<version>\`
+      in the maintainer's Claude folder (docs/build-and-test-reference.md,
+      Delivery package) with a SHA256SUMS.txt of its own, so a copy is on
+      the maintainer's own disk. Any other source backup goes in `Source\`
+      too.
 
 ## If a release is broken
 
