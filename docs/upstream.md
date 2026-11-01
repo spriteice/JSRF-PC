@@ -1035,12 +1035,15 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   go to stereo. Here the GP is stubbed, and the fold adds the 3D bins (6 to
   9) at a gain of our own. With the switch, our own effects run on the
   mixbins first, made to sound good and cost little rather than to copy the
-  console's. So far that is a limiter for the 3D bins, at full scale: at
-  busy moments they go well above it, and folded as they were, they pushed
-  the output's limiter into turning the music and voices down with them.
-  The 3D bins come out one frame late. Off by default, and off, the sound
-  is exactly as before. Our own files: src/apu/apu_gpfx.c and .h, and
-  tests/apu_gpfx. Could suit upstream once the reverb is in.
+  console's. First a reverb, run from the room the game sets, as the sewers
+  have, from the reverb send (bin 10) into the 3D bins: built as the
+  console's is, at 24 kHz, with smoothing each way and glides when the room
+  changes (src/apu/apu_reverb.h). Then a limiter for the 3D bins, at full
+  scale: at busy moments they go well above it, and folded as they were,
+  they pushed the output's limiter into turning the music and voices down
+  with them. The 3D bins come out one frame late. Off by default, and off,
+  the sound is exactly as before. Our own files: src/apu/apu_gpfx.c and .h,
+  src/apu/apu_reverb.h, and tests/apu_gpfx. Could suit upstream.
 - **When picking:** keep the call just before the fold's loop, and run
   tests/apu_gpfx and tests/apu_mix.
 

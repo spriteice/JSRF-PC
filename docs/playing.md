@@ -115,9 +115,10 @@ menu.
   - **Experimental:** Changes to how the game runs, to try out. Xbox audio
     effects adds our own versions of the console's sound effects, as far as
     they are done: so far, the 3D sounds placed to your left or right as the
-    game sets them, the characters' voices kept on them as they move, and a
-    limiter of their own for the 3D sounds, so a busy moment no longer turns
-    the music and voices down. Off by default.
+    game sets them, the characters' voices kept on them as they move, the
+    reverb the game sets for a place, as in the sewers, and a limiter of
+    their own for the 3D sounds, so a busy moment no longer turns the music
+    and voices down. Off by default.
   - **Purge shaders:** Restarts the game and deletes the shader cache as it
     starts.
 

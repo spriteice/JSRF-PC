@@ -42,29 +42,35 @@
  *
  * Developer > Experimental > Xbox audio effects (RECOMP_APU_GPFX) runs our
  * own effects, made to sound good and cost little rather than to copy the
- * console's. So far: the voice processor places the 3D voices from their
- * HRTF settings, the far ear turned down and late, and sends each ear to
- * its own side (apu_vp.c, apu_hrtf.h); then the 3D bins go through a
- * limiter of their own before the port's fold takes the mixbins to stereo
- * (apu_gpfx_frame, below).
+ * console's. The voice processor places the 3D voices from their HRTF
+ * settings, the far ear turned down and late, and sends each ear to its own
+ * side (apu_vp.c, apu_hrtf.h). Then, before the port's fold takes the
+ * mixbins to stereo (apu_gpfx_frame, below), our own reverb runs on the
+ * reverb send from the room the game sets, built as the image's is, and
+ * adds into the 3D bins (apu_reverb.h), and the 3D bins go through a
+ * limiter of their own.
  *
  * Developer > Logging > RECOMP_APU_STATS: a line when an image loads, and
  * one when DirectSound changes an effect's settings, with the words it
- * changed. With the effects on, a line when the limiter and the placing
- * start, and one a second on each: how hard the limiter works, and how
+ * changed. With the effects on, a line when the limiter, the reverb and the
+ * placing start, or why the reverb doesn't, one when the reverb's room
+ * changes, and one a second on each: how hard the limiter works; how long
+ * the reverb took, and how loud its send and what it added were; and how
  * many 3D voices were placed, how far apart their ears were, how long it
- * took, and how often and how far the game moved them; and for each 3D
- * voice placed for 0.3 s or more, a line when it stops: how often the game
- * moved it while it moved the others, how often it moved most of them at
- * once, as when the camera turns, and this one with them, and where it
- * started and ended. Every line starts "[APU] effects:".
+ * took, and how often and how far the game moved them. For each 3D voice
+ * placed for 0.3 s or more, a line when it stops: how often the game moved
+ * it while it moved the others, how often it moved most of them at once,
+ * as when the camera turns, and this one with them, and where it started
+ * and ended. Every line starts "[APU] effects:".
  */
 #include "apu_gpfx.h"
+#include "apu_reverb.h"
 
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 /* DirectSound's command block, at byte offsets in the GP's scratch memory. */
 #define GPFX_BLOCK       0x800u   /* the block's six words */
@@ -118,6 +124,7 @@ static struct { uint32_t x, words; } s_fx[GPFX_MAX_EFFECTS];
 static unsigned s_effects;              /* effects in the image */
 static unsigned s_found;                /* and those whose state was found */
 static int s_studied;
+static int s_loaded;                    /* an image has loaded */
 static int s_log = -1;
 static uint8_t *s_window;               /* where the CPU sees the GP's X memory, or NULL */
 static int s_window_said;
@@ -146,6 +153,7 @@ static void load_image(const uint8_t *ram, uint32_t size, uint32_t scratch,
     s_effects = 0;
     s_found = 0;
     s_studied = 0;
+    s_loaded = 1;
     if (!ram_dword(ram, size, table, &count) || count > GPFX_MAX_EFFECTS)
         return;
     for (e = 0; e < count; e++) {
@@ -395,6 +403,21 @@ static struct {
     float peak, least;
 } s_second = { 0, 0, 0.0f, 1.0f };       /* for the log, a second at a time */
 
+/* The reverb (apu_reverb.h): on the reverb send, into the 3D bins. */
+#define GPFX_SEND           10u      /* the reverb send */
+#define GPFX_KB             1024u
+#define GPFX_NS_PER_S       1000000000LL
+typedef char gpfx_reverb_frames[APU_RV_FRAME == GPFX_FRAME && APU_RV_OUTS == GPFX_FX_BINS
+                                 ? 1 : -1];
+enum { GPFX_RV_RUNS, GPFX_RV_OTHER, GPFX_RV_TOO_BIG, GPFX_RV_TOO_SHORT };
+static ApuRv s_rv;
+static int s_rv_why = -1;                /* why the reverb last didn't run, as the log said */
+static struct {
+    unsigned frames;
+    float send, added;
+    int64_t ns;
+} s_rv_second;                           /* for the log, a second at a time */
+
 static int switch_on(void)
 {
     if (s_on < 0) {
@@ -504,6 +527,139 @@ void apu_gpfx_voice(unsigned voice, const int *bins, const ApuGpfxPlaced *placed
     }
 }
 
+/* The time, for the reverb's cost. */
+static int64_t now_ns(void)
+{
+    struct timespec t;
+    if (!timespec_get(&t, TIME_UTC))
+        return 0;
+    return (int64_t)t.tv_sec * GPFX_NS_PER_S + t.tv_nsec;
+}
+
+/* A level for the log, from its gain. */
+static void level(char *out, size_t size, float gain)
+{
+    if (gain > 0.0f)
+        snprintf(out, size, "at %.1f dB", (double)(GPFX_DB * log10f(gain)));
+    else
+        snprintf(out, size, "off");
+}
+
+static float rv_ms(uint32_t samples)
+{
+    return (float)samples * APU_RV_MS / APU_RV_RATE;
+}
+
+/* The reverb's room, as its settings have it, for the log: when each part
+ * starts, and at what level. */
+static void log_room(int gliding)
+{
+    const ApuRv *rv = &s_rv;
+    float refl = 0.0f, late = APU_RV_GAIN_SCALE * fabsf(rv->target[APU_RV_P_LATE]);
+    float loops = APU_RV_GAIN_SCALE * APU_RV_LOOP_SHARE * fabsf(rv->target[APU_RV_P_LOOP]);
+    uint32_t refl_at = UINT32_MAX, late_at = UINT32_MAX;
+    char a[32], b[32], c[32];
+    unsigned k;
+
+    for (k = 0; k < APU_RV_OUTS; k++) {
+        float g = APU_RV_GAIN_SCALE * fabsf(rv->target[APU_RV_P_REFL + k]);
+        if (g > refl)
+            refl = g;
+    }
+    for (k = APU_RV_T_REFL; k < APU_RV_T_INJECT; k++)
+        if (rv->tap[k].want < refl_at)
+            refl_at = rv->tap[k].want;
+    for (k = APU_RV_T_INJECT; k < APU_RV_T_BUILD; k++)
+        if (rv->tap[k].want < late_at)
+            late_at = rv->tap[k].want;
+    if (refl > 0.0f || late > 0.0f || loops > 0.0f) {
+        level(a, sizeof a, refl);
+        level(b, sizeof b, late);
+        level(c, sizeof c, loops);
+        fprintf(stderr, "[APU] effects: the reverb's room: reflections from %.1f ms %s, late"
+                " reverb from %.1f ms %s, and long loops of %.0f ms %s", (double)rv_ms(refl_at),
+                a, (double)rv_ms(late_at), b, (double)rv_ms(rv->tap[APU_RV_T_LOOP].want), c);
+    } else {
+        fprintf(stderr, "[APU] effects: the reverb's room: dry, with nothing added");
+    }
+    if (gliding)
+        fprintf(stderr, ", gliding there over %.2f s",
+                (double)(APU_RV_GLIDE_FRAMES * GPFX_FRAME) / GPFX_RATE);
+    fprintf(stderr, "\n");
+}
+
+/* Why the reverb doesn't run, said once each time it changes. */
+static void rv_not(int why, uint32_t need)
+{
+    s_rv.ready = 0;
+    if (!log_on() || why == s_rv_why)
+        return;
+    s_rv_why = why;
+    if (why == GPFX_RV_OTHER)
+        fprintf(stderr, "[APU] effects: the reverb not run: the effects image isn't laid out"
+                " as JSRF's\n");
+    else if (why == GPFX_RV_TOO_BIG)
+        fprintf(stderr, "[APU] effects: the reverb not run: its delay lines would need %u KB,"
+                " more than the %u KB kept for them\n",
+                (unsigned)((uint64_t)need * sizeof(float) / GPFX_KB),
+                (unsigned)(APU_RV_POOL * sizeof(float) / GPFX_KB));
+    else
+        fprintf(stderr, "[APU] effects: the reverb not run: a delay line in the image is"
+                " shorter than a block\n");
+    fflush(stderr);
+}
+
+/* Our own reverb on the frame: from the reverb send into the 3D bins, in
+ * the room the game set, once an image laid out as JSRF's has loaded. */
+static void reverb(float *mixbins, unsigned samples)
+{
+    unsigned words, i;
+    const uint32_t *w = apu_gpfx_effect(GPFX_REVERB, &words);
+    const float *send = mixbins + (size_t)GPFX_SEND * samples;
+    int64_t t0 = 0;
+    float added;
+
+    if (!s_loaded)
+        return;
+    if (!s_studied || !w || words < APU_RV_WORDS) {
+        rv_not(GPFX_RV_OTHER, 0);
+        return;
+    }
+    if (!s_rv.ready || !apu_rv_same_lines(&s_rv, w)) {
+        uint32_t need = apu_rv_needs(w);
+        if (!apu_rv_start(&s_rv, w)) {
+            rv_not(need ? GPFX_RV_TOO_BIG : GPFX_RV_TOO_SHORT, need);
+            return;
+        }
+        s_rv_why = GPFX_RV_RUNS;
+        if (log_on()) {
+            fprintf(stderr, "[APU] effects: the reverb run on the reverb send (bin %u) into"
+                    " the 3D bins (%u to %u), from the room the game sets, at %.0f kHz with %u"
+                    " KB of delay lines (RECOMP_APU_GPFX)\n", GPFX_SEND, GPFX_FX_FIRST,
+                    GPFX_FX_FIRST + GPFX_FX_BINS - 1, (double)(APU_RV_RATE / APU_RV_MS),
+                    (unsigned)((uint64_t)s_rv.need * sizeof(float) / GPFX_KB));
+            log_room(0);
+            fflush(stderr);
+        }
+    } else if (apu_rv_room(&s_rv, w) && log_on()) {
+        log_room(1);
+        fflush(stderr);
+    }
+    if (log_on()) {
+        t0 = now_ns();
+        for (i = 0; i < samples; i++)
+            if (fabsf(send[i]) > s_rv_second.send)
+                s_rv_second.send = fabsf(send[i]);
+    }
+    added = apu_rv_frame(&s_rv, send, mixbins + (size_t)GPFX_FX_FIRST * samples, samples);
+    if (log_on()) {
+        s_rv_second.ns += now_ns() - t0;
+        s_rv_second.frames++;
+        if (added > s_rv_second.added)
+            s_rv_second.added = added;
+    }
+}
+
 static unsigned voices(uint64_t set)
 {
     unsigned n = 0;
@@ -551,6 +707,12 @@ static void log_second(void)
         }
     }
     memset(&s_place, 0, sizeof s_place);
+    if (s_rv_second.frames && (s_rv_second.send > 0.0f || s_rv_second.added > 0.0f))
+        fprintf(stderr, "[APU] effects: the reverb took %.2f ms of the second; its send peaked"
+                " at %.2f, and it added up to %.2f to the 3D bins\n",
+                (double)s_rv_second.ns / GPFX_NS_PER_MS, (double)s_rv_second.send,
+                (double)s_rv_second.added);
+    memset(&s_rv_second, 0, sizeof s_rv_second);
     if (s_second.peak > 0.0f) {
         if (s_second.turned_down)
             fprintf(stderr, "[APU] effects: the 3D bins peaked at %.2f of full scale, and"
@@ -583,6 +745,8 @@ int apu_gpfx_frame(float *mixbins, unsigned bins, unsigned samples)
                 GPFX_FX_FIRST, GPFX_FX_FIRST + GPFX_FX_BINS - 1);
         fflush(stderr);
     }
+    if (bins > GPFX_SEND)
+        reverb(mixbins, samples);
 
     for (b = 0; b < GPFX_FX_BINS; b++) {
         const float *bin = mixbins + (size_t)(GPFX_FX_FIRST + b) * samples;

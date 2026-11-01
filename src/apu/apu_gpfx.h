@@ -30,10 +30,12 @@ void apu_gpfx_window(uint8_t *x_window);
 
 /* Developer > Experimental > Xbox audio effects (RECOMP_APU_GPFX): our own
  * effects on one frame of the mixbins, before the fold to stereo. `mixbins`
- * is `bins` of them, each of `samples` floats one after another. So far the
- * 3D bins (6 to 9) go through a limiter of their own, and come out one frame
- * late. Returns 1 if it ran; 0, with the mixbins as they were, if the switch
- * is off or the frame isn't the mixbins' size. */
+ * is `bins` of them, each of `samples` floats one after another. Once an
+ * image laid out as JSRF's has loaded, our own reverb runs on the reverb
+ * send (bin 10) in the room the game set, and adds into the 3D bins (6 to
+ * 9) (apu_reverb.h). Then the 3D bins go through a limiter of their own,
+ * and come out one frame late. Returns 1 if it ran; 0, with the mixbins as
+ * they were, if the switch is off or the frame isn't the mixbins' size. */
 int apu_gpfx_frame(float *mixbins, unsigned bins, unsigned samples);
 
 /* Whether Developer > Experimental > Xbox audio effects is on. With it, the

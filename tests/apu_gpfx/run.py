@@ -23,8 +23,17 @@ and where, how often the game moved them, and a line for each voice placed
 for 0.3 s when it stops, or starts again, not for a shorter one. That line
 counts the other voices' moves while it played, and the frames in which
 the game moved most of them at once, at least two, as when the camera
-turns, and those in which it moved this one too. Requires GCC on PATH,
-including MinGW on Windows.
+turns, and those in which it moved this one too. And with an image laid
+out as JSRF's, with a made-up reverb in it, the reverb runs on the reverb
+send into the 3D bins, in the room sent: an impulse comes out as the
+room's reflections and no sooner, in four outputs each their own, each in
+its own bin, and dies away to nothing at all; the long loops alone come
+out one in the front pair and the other in the back; a dry room adds
+nothing; nothing comes out mirrored about 12 kHz, on the way down or up; going from room to room
+bends the sound no more than a room does, and going to a dry room fades
+out, to nothing once the glide is over. From another image, or with lines
+that don't fit, it doesn't run, and the log says why, once. Unset, nothing
+runs. Requires GCC on PATH, including MinGW on Windows.
 """
 import os
 import pathlib
@@ -35,6 +44,18 @@ root = pathlib.Path(__file__).resolve().parents[2]
 
 LOADED = ("[APU] effects: an image loaded, 20 effects in 64 words of code and 827 of state,"
           " 20 of them found in the GP's memory; ")
+LIMITER = ("[APU] effects: the 3D bins (6 to 9) through a limiter of their own, at full scale,"
+           " before the fold (RECOMP_APU_GPFX)")
+REVERB = ("[APU] effects: the reverb run on the reverb send (bin 10) into the 3D bins (6 to 9),"
+          " from the room the game sets, at 24 kHz with 128 KB of delay lines (RECOMP_APU_GPFX)")
+WET = ("[APU] effects: the reverb's room: reflections from 9.2 ms at -8.3 dB, late reverb from"
+       " 16.7 ms at -5.8 dB, and long loops of 292 ms at -17.9 dB")
+WET2 = ("[APU] effects: the reverb's room: reflections from 10.8 ms at -11.8 dB, late reverb"
+        " from 21.7 ms at -2.3 dB, and long loops of 250 ms at -23.9 dB")
+DRY = "[APU] effects: the reverb's room: dry, with nothing added"
+GLIDING = ", gliding there over 0.22 s\n"
+TOOK = "[APU] effects: the reverb took "   # then its cost, which varies
+OTHER = "[APU] effects: the reverb not run: the effects image isn't laid out as JSRF's\n"
 # case: (lines the log must have, in order, and lines it must not)
 cases = {
     "studied": ([LOADED + "laid out as JSRF's",
@@ -63,7 +84,7 @@ cases = {
                " down for 50% of the second, by up to 8.6 dB\n",
                "[APU] effects: the 3D bins peaked at 0.50 of full scale, and weren't"
                " turned down\n"],
-              ["image loaded"]),
+              ["image loaded", "reverb"]),
     "placed": (["[APU] effects: the 3D voices placed from their HRTF settings, the far ear"
                 " turned down and late, the sound itself as it is: the left ear into bins 6"
                 " and 8, the right into 7 and 9 (RECOMP_APU_GPFX)",
@@ -93,7 +114,7 @@ cases = {
                 "[APU] effects: the game moved the 3D voices 71 times in the second, one voice"
                 " up to 48 times; an ear's level by up to 0.5 dB at once, and the delay by up"
                 " to 0.010 ms\n"],
-               ["3D voice 2 was placed", "image loaded"]),
+               ["3D voice 2 was placed", "image loaded", "reverb"]),
     "bad": ([LOADED + "laid out as JSRF's",
              "[APU] effects: command 2 not followed: 512 words from 0x918 in scratch"
              " to X:0xF80 are not all there",
@@ -104,7 +125,43 @@ cases = {
              "[APU] effects: an image loaded, 20 effects in 64 words of code and 827 of"
              " state, 16 of them found in the GP's memory; not laid out as JSRF's"],
             ["changed", "kept at"]),
+    "reverb": ([LOADED + "laid out as JSRF's", LIMITER, REVERB, WET + "\n", TOOK,
+                " ms of the second; its send peaked at 1.00, and it added up to 0.05 to the"
+                " 3D bins\n",
+                "[APU] effects: the 3D bins peaked at 0.05 of full scale, and weren't turned"
+                " down\n", TOOK, " ms of the second; its send peaked at 0.00"],
+               ["not run", "gliding"]),
+    "reverb_dry": ([REVERB, DRY + "\n", TOOK,
+                    " ms of the second; its send peaked at 0.50, and it added up to 0.00 to the"
+                    " 3D bins\n"],
+                   ["not run", "gliding", "the 3D bins peaked"]),
+    "reverb_room": ([REVERB, WET + "\n", TOOK, " ms of the second; its send peaked at 0.50,"
+                     " and it added up to 0.37 to the 3D bins\n",
+                     WET2 + GLIDING, TOOK, " ms of the second; its send peaked at 0.50, and it"
+                     " added up to 0.32 to the 3D bins\n", DRY + GLIDING],
+                    ["not run"]),
+    "reverb_smooth": ([REVERB, WET + "\n"], ["not run", "gliding"]),
+    "reverb_reload": ([REVERB, WET + "\n", LOADED + "laid out as JSRF's", DRY + GLIDING,
+                       LOADED + "laid out as JSRF's",
+                       "[APU] effects: the reverb run on the reverb send (bin 10) into the 3D"
+                       " bins (6 to 9), from the room the game sets, at 24 kHz with 136 KB of"
+                       " delay lines (RECOMP_APU_GPFX)", WET + "\n"],
+                      ["not run"]),
+    "reverb_loops": ([REVERB, "[APU] effects: the reverb's room: reflections from 9.2 ms off,"
+                      " late reverb from 16.7 ms off, and long loops of 292 ms at -11.8 dB\n"],
+                     ["not run", "gliding"]),
+    "reverb_other": (["not laid out as JSRF's", OTHER, LOADED + "laid out as JSRF's", REVERB,
+                      WET + "\n"],
+                     ["delay lines would need", "shorter than a block"]),
+    "reverb_lines": (["[APU] effects: the reverb not run: its delay lines would need 577 KB,"
+                      " more than the 384 KB kept for them\n",
+                      "[APU] effects: the reverb not run: a delay line in the image is shorter"
+                      " than a block\n"],
+                     ["the reverb run on", "the reverb took", "isn't laid out"]),
 }
+# case: lines the log must have only once
+once = {"reverb_other": [OTHER, REVERB], "reverb_lines": ["would need", "shorter than"],
+        "reverb_room": [REVERB]}
 
 failed = 0
 with tempfile.TemporaryDirectory(prefix="apu_gpfx-") as directory:
@@ -128,6 +185,7 @@ with tempfile.TemporaryDirectory(prefix="apu_gpfx-") as directory:
             else:
                 at = found + len(line)
         problems += [f"unexpected: {line}" for line in must_not if line in log]
+        problems += [f"not once: {line}" for line in once.get(case, []) if log.count(line) != 1]
         print(f"{case}: {'ok' if not problems else 'FAILED'}")
         for problem in problems:
             print(f"  {problem}")
@@ -137,7 +195,10 @@ with tempfile.TemporaryDirectory(prefix="apu_gpfx-") as directory:
              "limit_quiet": ("limit", {"RECOMP_APU_GPFX": "1"},
                              "loud ones under full scale, one gain for the four, gliding ok"),
              "limit_off": ("limit_off", {"RECOMP_APU_STATS": "1"},
-                           "nothing run with the switch off ok")}
+                           "nothing run with the switch off ok"),
+             "reverb_quiet": ("reverb", {"RECOMP_APU_GPFX": "1"},
+                              "and all gone, to nothing at all, by 20 s ok"),
+             "reverb_off": ("reverb_off", {}, "no reverb with the switch off ok")}
     for name, (case, switches, line) in quiet.items():
         run = subprocess.run([exe, case], env=dict(env, **switches), capture_output=True,
                              text=True, timeout=60)

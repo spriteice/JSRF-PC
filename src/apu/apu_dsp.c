@@ -245,8 +245,9 @@ void mcpx_apu_dsp_frame(MCPXAPUState *d,
 
     if (d->monitor.point != MCPX_APU_DEBUG_MON_VP) {
         /* Developer > Experimental > Xbox audio effects (RECOMP_APU_GPFX):
-         * our own effects on the mixbins first (apu_gpfx.c). So far the 3D
-         * bins go through a limiter of their own, so a pile-up of sound
+         * our own effects on the mixbins first (apu_gpfx.c): the reverb the
+         * game sets for a place, from the reverb send into the 3D bins, then
+         * a limiter of their own for the 3D bins, so a pile-up of sound
          * effects is turned down by itself, before the limiter below would
          * turn the music down with it. */
         apu_gpfx_frame(&mixbins[0][0], NUM_MIXBINS, NUM_SAMPLES_PER_FRAME);
