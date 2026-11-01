@@ -7,7 +7,7 @@ building, testing, and the change report.
 
 ## Before every commit
 
-Do all five, then wait for my approval.
+Do all six, then wait for my approval.
 
 1. Run `git status` and `git diff --cached --stat`, and confirm that nothing
    on the project rules' "never in the repo" list is staged. If .gitignore
@@ -20,6 +20,11 @@ Do all five, then wait for my approval.
    right place.
 5. For any added or edited document (README, docs/, changelog, release
    notes): the whole document rendered as Markdown, not only its diff.
+6. CI passes for the commit: every job in `.github/workflows/ci.yml`, run
+   here in the build image (docs/build-and-test-reference.md, "CI"), but
+   the Windows tests, which run only on GitHub. GitHub runs every job
+   again on the push, and a failure there is fixed in the next commit,
+   before anything else is pushed.
 
 ## Where code goes
 
