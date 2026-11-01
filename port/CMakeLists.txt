@@ -119,6 +119,7 @@ if(ANDROID)
         recomp_manual.c
         freecam.c
         intro.c
+        audio.c
         developer.c
         adx_err.c
         voice_follow.c
@@ -136,6 +137,7 @@ else()
         recomp_manual.c
         freecam.c
         intro.c
+        audio.c
         developer.c
         adx_err.c
         voice_follow.c

@@ -60,7 +60,7 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
 
   F1                  the in-game menu (also Back on a controller, which is
                       then the menu's alone): File, Display, Graphics,
-                      Controller, and Developer
+                      Audio, Controller, and Developer
   F11 or Alt+Return   full screen; remembered
   F10                 widescreen 16:9 (a wider view, not a stretch; the HUD
                       keeps its shape, the title screen stays 4:3); remembered
@@ -103,6 +103,15 @@ you play. It is remembered as shaders= in the settings file (1 or 0).
 Changing it in the menu restarts the game, after asking, as a new resolution
 does.
 
+Audio > Audio effects in the in-game menu (on by default) adds our own
+versions of the console's sound effects: the 3D sounds placed to your left or
+right as the game sets them, the characters' voices kept on them as they
+move, the reverb the game sets for a place, as in the sewers, and a limiter
+of their own for the 3D sounds, so a busy moment no longer turns the music
+and voices down. Turned off, the sound is as before them. It is remembered as
+audioeffects= in the settings file (1 or 0). Changing it in the menu restarts
+the game, after asking.
+
 Developer > Log to file in the in-game menu (on by default) writes the game's
 output to last-run.log. Turned off, nothing more is written to it until it is
 turned on again, and what is there already stays. It changes straight away and
@@ -112,16 +121,11 @@ Developer > Engine switches turns parts of the engine off or back to how they
 were, to compare, Developer > Performance has what the engine does for speed,
 each on by default and ticked, to untick and compare: Use P cores (the game on
 the processor's fast cores), GPU queue, Display pacing, Sleep while waiting for
-the GPU, and Compressed textures direct, and Developer > Experimental tries
-out changes to how the game runs: Xbox audio effects adds our own versions of
-the console's sound effects, as far as they are done (so far, the 3D sounds
-placed to your left or right as the game sets them, the characters' voices
-kept on them as they move, the reverb the game sets for a place, as in the
-sewers, and a limiter of their own for the 3D sounds, so a busy moment no
-longer turns the music and voices down), off by default. Each row stands for
-an environment variable, kept in developer.cfg beside the settings file as
-NAME=1 or NAME=0, and applies from the next start: File > Restart restarts the
-game, after asking.
+the GPU, and Compressed textures direct, and Developer > Experimental, when
+there is anything in it, tries out changes to how the game runs. Each row
+stands for an environment variable, kept in developer.cfg beside the settings
+file as NAME=1 or NAME=0, and applies from the next start: File > Restart
+restarts the game, after asking.
 Developer > Purge shaders asks first, then restarts the game and deletes the
 shader cache as it starts: each shader is built again when the game first
 needs it.

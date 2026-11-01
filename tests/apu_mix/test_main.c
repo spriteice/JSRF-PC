@@ -21,11 +21,11 @@
  * on the left: the right ear's taps a quarter the size of the left's, and
  * the delay on the left, the louder ear. Its four volumes are full into the
  * HRTF submixes, the crosstalk bins, listed as DirectSound lists them:
- * front left, back left, front right, back right. With Developer >
- * Experimental > Xbox audio effects (RECOMP_APU_GPFX), the voice is placed
- * from its setting, and each ear goes to its own side, so the right side
- * is down by three quarters of a quarter's 12 dB, 9 dB, and the left is as
- * loud as with no setting; without, both sides are the same.
+ * front left, back left, front right, back right. With Audio > Audio
+ * effects (RECOMP_APU_GPFX), the voice is placed from its setting, and
+ * each ear goes to its own side, so the right side is down by three
+ * quarters of a quarter's 12 dB, 9 dB, and the left is as loud as with no
+ * setting; without, both sides are the same.
  */
 #include <stdio.h>
 #include <stdlib.h>

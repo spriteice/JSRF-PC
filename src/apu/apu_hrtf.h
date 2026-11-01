@@ -1,5 +1,5 @@
-/* The 3D voices placed from their HRTF settings (Developer > Experimental >
- * Xbox audio effects, RECOMP_APU_GPFX).
+/* The 3D voices placed from their HRTF settings (Audio > Audio effects,
+ * RECOMP_APU_GPFX).
  *
  * DirectSound places a 3D voice by giving the voice processor an HRTF
  * setting for it: a filter of HRTF_NUM_TAPS taps for each ear, in signed

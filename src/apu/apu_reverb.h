@@ -1,6 +1,6 @@
-/* Our own reverb, run from the room the game sets (Developer >
- * Experimental > Xbox audio effects, RECOMP_APU_GPFX). apu_gpfx.c includes
- * this, once, and runs it on each frame of the mixbins.
+/* Our own reverb, run from the room the game sets (Audio > Audio effects,
+ * RECOMP_APU_GPFX). apu_gpfx.c includes this, once, and runs it on each
+ * frame of the mixbins.
  *
  * On the console the GP runs the effects image's reverb on the reverb send,
  * bin 10, and adds its four outputs into the 3D bins, 6 to 9: front left,

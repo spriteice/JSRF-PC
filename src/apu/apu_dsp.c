@@ -244,12 +244,12 @@ void mcpx_apu_dsp_frame(MCPXAPUState *d,
     if (fold < 0) { const char *v = getenv("RECOMP_APU_FOLD"); fold = v ? atoi(v) : 1; }
 
     if (d->monitor.point != MCPX_APU_DEBUG_MON_VP) {
-        /* Developer > Experimental > Xbox audio effects (RECOMP_APU_GPFX):
-         * our own effects on the mixbins first (apu_gpfx.c): the reverb the
-         * game sets for a place, from the reverb send into the 3D bins, then
-         * a limiter of their own for the 3D bins, so a pile-up of sound
-         * effects is turned down by itself, before the limiter below would
-         * turn the music down with it. */
+        /* Audio > Audio effects (RECOMP_APU_GPFX): our own effects on the
+         * mixbins first (apu_gpfx.c): the reverb the game sets for a place,
+         * from the reverb send into the 3D bins, then a limiter of their own
+         * for the 3D bins, so a pile-up of sound effects is turned down by
+         * itself, before the limiter below would turn the music down with
+         * it. */
         apu_gpfx_frame(&mixbins[0][0], NUM_MIXBINS, NUM_SAMPLES_PER_FRAME);
         for (int i = 0; i < NUM_SAMPLES_PER_FRAME; i++) {
             /* Clamp to [-1, 1] range */

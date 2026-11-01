@@ -7,9 +7,9 @@
  * sub_00118710 says whether it still plays, and sub_00118BD0 moves it to
  * the character (sub_00080340). Every other line stays where it began, so a
  * skater at full speed leaves it behind, and with the free camera at an
- * angle it comes from one side. With Developer > Experimental > Xbox audio
- * effects (RECOMP_APU_GPFX) on, every line played at its speaker is moved
- * the same way, once a game frame, until it ends. Off, nothing changes.
+ * angle it comes from one side. With Audio > Audio effects
+ * (RECOMP_APU_GPFX) on, every line played at its speaker is moved the same
+ * way, once a game frame, until it ends. Off, nothing changes.
  * The hooks in port/recomp_manual.c make the game's calls. */
 #ifndef JSRF_VOICE_FOLLOW_H
 #define JSRF_VOICE_FOLLOW_H

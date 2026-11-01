@@ -40,14 +40,15 @@
  * reverb and GPFX_XTALK its crosstalk, and apu_gpfx_studied says whether the
  * image is laid out as the one this was written from.
  *
- * Developer > Experimental > Xbox audio effects (RECOMP_APU_GPFX) runs our
- * own effects, made to sound good and cost little rather than to copy the
- * console's. The voice processor places the 3D voices from their HRTF
- * settings, the far ear turned down and late, and sends each ear to its own
- * side (apu_vp.c, apu_hrtf.h). Then, before the port's fold takes the
- * mixbins to stereo (apu_gpfx_frame, below), our own reverb runs on the
- * reverb send from the room the game sets, built as the image's is, and
- * adds into the 3D bins (apu_reverb.h), and the 3D bins go through a
+ * Audio > Audio effects (audioeffects= in the settings file, on by default,
+ * passed here by port/audio.c; RECOMP_APU_GPFX in the environment wins over
+ * it) runs our own effects, made to sound good and cost little rather than
+ * to copy the console's. The voice processor places the 3D voices from
+ * their HRTF settings, the far ear turned down and late, and sends each ear
+ * to its own side (apu_vp.c, apu_hrtf.h). Then, before the port's fold
+ * takes the mixbins to stereo (apu_gpfx_frame, below), our own reverb runs
+ * on the reverb send from the room the game sets, built as the image's is,
+ * and adds into the 3D bins (apu_reverb.h), and the 3D bins go through a
  * limiter of their own.
  *
  * Developer > Logging > RECOMP_APU_STATS: a line when an image loads, and
@@ -363,7 +364,8 @@ int apu_gpfx_studied(void)
 #define GPFX_LIFE_MS        300u     /* a 3D voice placed this long gets a line when it stops */
 #define GPFX_FRAMES_PER_S   (GPFX_RATE / GPFX_FRAME)
 
-static int s_on = -1;                    /* RECOMP_APU_GPFX */
+static int s_on = -1;                    /* RECOMP_APU_GPFX, or what was chosen */
+static int s_chosen;                     /* audioeffects= (apu_gpfx_choose) */
 static int s_said;                       /* the line when the limiter starts */
 static int s_place_said;                 /* and the placing */
 static struct {
@@ -422,9 +424,14 @@ static int switch_on(void)
 {
     if (s_on < 0) {
         const char *v = getenv("RECOMP_APU_GPFX");
-        s_on = v && atoi(v) ? 1 : 0;
+        s_on = v ? atoi(v) != 0 : s_chosen;
     }
     return s_on;
+}
+
+void apu_gpfx_choose(int on)
+{
+    s_chosen = on != 0;
 }
 
 int apu_gpfx_on(void)

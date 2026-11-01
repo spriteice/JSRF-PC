@@ -33,7 +33,10 @@ nothing; nothing comes out mirrored about 12 kHz, on the way down or up; going f
 bends the sound no more than a room does, and going to a dry room fades
 out, to nothing once the glide is over. From another image, or with lines
 that don't fit, it doesn't run, and the log says why, once. Unset, nothing
-runs. Requires GCC on PATH, including MinGW on Windows.
+runs. Passed the settings file's audioeffects=1 (apu_gpfx_choose), the
+effects run with RECOMP_APU_GPFX unset, and not with it 0; passed 0, they
+don't with it unset, and do with it 1. Requires GCC on PATH, including MinGW
+on Windows.
 """
 import os
 import pathlib
@@ -198,7 +201,14 @@ with tempfile.TemporaryDirectory(prefix="apu_gpfx-") as directory:
                            "nothing run with the switch off ok"),
              "reverb_quiet": ("reverb", {"RECOMP_APU_GPFX": "1"},
                               "and all gone, to nothing at all, by 20 s ok"),
-             "reverb_off": ("reverb_off", {}, "no reverb with the switch off ok")}
+             "reverb_off": ("reverb_off", {}, "no reverb with the switch off ok"),
+             "chosen": ("chosen", {}, "run as the setting or the environment has it ok"),
+             "chosen_env": ("chosen_env", {"RECOMP_APU_GPFX": "0"},
+                            "nothing run, as the setting or the environment has it ok"),
+             "chosen_off": ("chosen_off", {},
+                            "nothing run, as the setting or the environment has it ok"),
+             "chosen_off_env": ("chosen_off_env", {"RECOMP_APU_GPFX": "1"},
+                                "run as the setting or the environment has it ok")}
     for name, (case, switches, line) in quiet.items():
         run = subprocess.run([exe, case], env=dict(env, **switches), capture_output=True,
                              text=True, timeout=60)

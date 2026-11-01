@@ -766,6 +766,9 @@ static int host_main(void)
     /* Whether the intro is skipped, and its row on the Display page
      * (port/intro.c). */
     { extern void intro_start(void); intro_start(); }
+    /* Whether the audio effects run, before the APU starts, and their row on
+     * the Audio page (port/audio.c). */
+    { extern void audio_start(void); audio_start(); }
     printf("Loading XBE...\n");
 
     /* Install VEH handler (first handler in chain) */

@@ -12,7 +12,9 @@
  * need no image: they run made-up mixbins through apu_gpfx_frame and check
  * the 3D bins' limiter, with RECOMP_APU_GPFX set and without. "placed"
  * tells the module about made-up 3D voices as the voice processor's placing
- * would, for run.py to read the log's lines on them.
+ * would, for run.py to read the log's lines on them. The "chosen" cases
+ * pass in the settings file's audioeffects= as port/audio.c does, with
+ * RECOMP_APU_GPFX unset or winning over it.
  */
 #include <math.h>
 #include <stdio.h>
@@ -860,6 +862,22 @@ int main(int argc, char **argv)
             rv_frame(mix, in);
         silent &= rv_silent(mix);
         check("nothing added with lines that don't fit", silent);
+    } else if (!strncmp(c, "chosen", 6)) {
+        /* audioeffects=1 passed in ("chosen", "chosen_env") or 0
+         * ("chosen_off", "chosen_off_env"), and run.py's environment: nothing
+         * for the first of each, and RECOMP_APU_GPFX=0 or 1, which wins, for
+         * the second. */
+        static float in[BINS][FRAME], out[BINS][FRAME];
+        int set = strncmp(c, "chosen_off", 10) != 0;
+        int want = strstr(c, "_env") ? !set : set, ran;
+
+        apu_gpfx_choose(set);
+        tone(in, 0, QUIET);
+        memcpy(out, in, sizeof out);
+        ran = apu_gpfx_frame(&out[0][0], BINS, FRAME);
+        check(want ? "run as the setting or the environment has it"
+                   : "nothing run, as the setting or the environment has it",
+              apu_gpfx_on() == want && ran == want && (want || !memcmp(in, out, sizeof in)));
     } else if (!strcmp(c, "reverb_off")) {   /* nothing, with the switch unset */
         static float mix[BINS][FRAME], in[FRAME];
         unsigned n;

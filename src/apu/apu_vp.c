@@ -93,8 +93,8 @@ static void set_notify_status(MCPXAPUState *d, uint32_t v, int notifier,
  * Filter helpers
  * ============================================================ */
 
-/* Developer > Experimental > Xbox audio effects (RECOMP_APU_GPFX): the 3D
- * voices' ears, as apu_hrtf.h places them. */
+/* Audio > Audio effects (RECOMP_APU_GPFX): the 3D voices' ears, as
+ * apu_hrtf.h places them. */
 static ApuHrtfEars s_ears[MCPX_HW_MAX_3D_VOICES];
 
 static void voice_reset_filters(MCPXAPUState *d, uint16_t v)
@@ -1444,10 +1444,9 @@ static void voice_process(MCPXAPUState *d,
 
     /* HRTF processing for 3D voices.
      *
-     * Developer > Experimental > Xbox audio effects (RECOMP_APU_GPFX) places
-     * them from their settings instead, with no filter (apu_hrtf.h), into
-     * ears[] for the HRTF submixes, and leaves samples[] dry for the voice's
-     * other bins. */
+     * Audio > Audio effects (RECOMP_APU_GPFX) places them from their
+     * settings instead, with no filter (apu_hrtf.h), into ears[] for the
+     * HRTF submixes, and leaves samples[] dry for the voice's other bins. */
     float ears[NUM_SAMPLES_PER_FRAME][2];
     int placed = 0;
     if (v < MCPX_HW_MAX_3D_VOICES && (g_config.audio.hrtf || apu_gpfx_on())) {

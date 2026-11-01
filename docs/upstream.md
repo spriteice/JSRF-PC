@@ -1026,23 +1026,39 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 - **When picking:** keep the call after `mcpx_apu_init_standalone`, and run
   tests/apu_gpfx.
 
+### The Audio menu
+
+- **Files:** port/main.c (an `audio_start` call, beside the other starts and
+  before the APU starts), port/CMakeLists.txt (port/audio.c).
+- **Why:** the in-game menu's Audio menu, after Graphics, with one row:
+  Audio effects (Restart), kept as audioeffects= in the settings file, and
+  on by default. The start reads it and passes it to the effects
+  (`apu_gpfx_choose`) before the APU starts; RECOMP_APU_GPFX in the
+  environment wins over it. Changing it asks first, then restarts the game,
+  as Graphics > Shader cache does. While they were tried out, the effects
+  were Developer > Experimental > Xbox audio effects, off by default. Our own
+  files: port/audio.c and .h, src/menu/menu.h and menu.cpp, and tests/audio.
+  Could suit upstream with the effects.
+- **When picking:** keep the call before the APU starts, and run
+  tests/audio and tests/apu_gpfx.
+
 ### The effects on the mixbins
 
 - **Files:** src/apu/apu_dsp.c (an `apu_gpfx_frame` call just before the
   fold to stereo).
-- **Why:** Developer > Experimental > Xbox audio effects (RECOMP_APU_GPFX).
+- **Why:** Audio > Audio effects, on by default (The Audio menu, above).
   On the console the GP runs the title's effects on the mixbins before they
   go to stereo. Here the GP is stubbed, and the fold adds the 3D bins (6 to
-  9) at a gain of our own. With the switch, our own effects run on the
-  mixbins first, made to sound good and cost little rather than to copy the
+  9) at a gain of our own. With the effects on, ours run on the mixbins
+  first, made to sound good and cost little rather than to copy the
   console's. First a reverb, run from the room the game sets, as the sewers
   have, from the reverb send (bin 10) into the 3D bins: built as the
   console's is, at 24 kHz, with smoothing each way and glides when the room
   changes (src/apu/apu_reverb.h). Then a limiter for the 3D bins, at full
   scale: at busy moments they go well above it, and folded as they were,
   they pushed the output's limiter into turning the music and voices down
-  with them. The 3D bins come out one frame late. Off by default, and off,
-  the sound is exactly as before. Our own files: src/apu/apu_gpfx.c and .h,
+  with them. The 3D bins come out one frame late. Off, the sound is exactly
+  as before. Our own files: src/apu/apu_gpfx.c and .h,
   src/apu/apu_reverb.h, and tests/apu_gpfx. Could suit upstream.
 - **When picking:** keep the call just before the fold's loop, and run
   tests/apu_gpfx and tests/apu_mix.
@@ -1052,13 +1068,13 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 - **Files:** src/apu/apu_vp.c (`voice_process`: the HRTF block, and the
   mix into the HRTF submixes; `s_ears`, cleared in `voice_reset_filters`
   and `mcpx_apu_vp_reset`).
-- **Why:** Developer > Experimental > Xbox audio effects (RECOMP_APU_GPFX).
+- **Why:** Audio > Audio effects, on by default (The Audio menu, above).
   DirectSound places a 3D voice with an HRTF setting: a filter of 31 taps
   for each ear, and the far ear's delay. The port had xemu's filter but ran
   it only with RECOMP_APU_MIX=xemu, so 3D sounds came out in the middle. The
   filter itself dulls the sound, being short and in 8 bits, and xemu's
   setter scales each ear's taps to the same size, which takes away most of
-  the difference in level between the ears. With the switch, there's no
+  the difference in level between the ears. With the effects on, there's no
   filter: a 3D voice with an HRTF setting keeps its sound as it is, its
   louder ear at full level and the other turned down by three quarters of
   as much as the setting has it quieter, in dB, and late by the setting's
@@ -1082,13 +1098,13 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 - **Files:** port/recomp_manual.c (`sub_00119540`, a hook on the game's
   call that plays a sound, and `sub_001185B0`, one on the end of the sound
   manager's update), port/CMakeLists.txt (port/voice_follow.c).
-- **Why:** Developer > Experimental > Xbox audio effects (RECOMP_APU_GPFX).
+- **Why:** Audio > Audio effects, on by default (The Audio menu, above).
   With the 3D voices placed, a character's voice line came from where the
   character was when it began: the game plays it at the character's
   position, which the sound manager copies once, and moves only the one
   looped voice a character keeps, each frame. A skater at full speed left
   their lines behind, and with the free camera at an angle they came from
-  one side. With the switch, each line played from a character's voice
+  one side. With the effects on, each line played from a character's voice
   bank, at that character, is moved to them once a frame until it ends, by
   the same two calls the game makes for its looped one. Off, nothing
   changes. Our own files: port/voice_follow.c and .h, and tests/voice_follow.

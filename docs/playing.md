@@ -92,6 +92,14 @@ menu.
   so the intro plays as on the Xbox. It is kept as `skipintro=` in the
   settings file.
 - **Graphics:** The [graphics options](#graphics-options) below.
+- **Audio:** Audio effects, our own versions of the console's sound effects:
+  the 3D sounds placed to your left or right as the game sets them, the
+  characters' voices kept on them as they move, the reverb the game sets for
+  a place, as in the sewers, and a limiter of their own for the 3D sounds,
+  so a busy moment no longer turns the music and voices down. On by default;
+  off, the sound is as before them. It is kept as `audioeffects=` in the
+  settings file, and changing it restarts the game. [The audio
+  effects](technical/audio-effects.md) says how they work.
 - **Controller:** The free camera, Auto centre, and the free camera's
   inversion, sensitivity, and deadzone.
 - **Developer:** Settings for testing and bug reports.
@@ -112,13 +120,8 @@ menu.
     unticked, it spins, as before b1.2. Compressed textures direct hands
     the game's compressed textures to the graphics driver as they are;
     unticked, they are decoded first, as before b1.2.
-  - **Experimental:** Changes to how the game runs, to try out. Xbox audio
-    effects adds our own versions of the console's sound effects, as far as
-    they are done: so far, the 3D sounds placed to your left or right as the
-    game sets them, the characters' voices kept on them as they move, the
-    reverb the game sets for a place, as in the sewers, and a limiter of
-    their own for the 3D sounds, so a busy moment no longer turns the music
-    and voices down. Off by default.
+  - **Experimental:** Changes to how the game runs, to try out, when there
+    are any.
   - **Purge shaders:** Restarts the game and deletes the shader cache as it
     starts.
 
@@ -128,9 +131,9 @@ menu.
   apply from the next start.
 
 Everything is remembered. Restart, Exit, a new render scale, the shader cache,
-and Purge shaders ask first, as anything since your last save is lost: all but
-Exit restart the game. The other rows marked (Restart) apply from the next
-start, which File > Restart gives.
+Audio effects, and Purge shaders ask first, as anything since your last save
+is lost: all but Exit restart the game. The other rows marked (Restart) apply
+from the next start, which File > Restart gives.
 
 ## Graphics options
 

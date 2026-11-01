@@ -124,10 +124,11 @@ cases["adx_err_log"] = (None, "JSRF_ADX_ERR_LOG=1\n", {},
 cases["timeline"] = (None, "RECOMP_GL_TIMELINE=1\n", {},
                      ["[DEV] RECOMP_GL_TIMELINE=1 from developer.cfg", "started:"], [])
 
-# Xbox audio effects, Experimental's (src/apu/apu_gpfx.c): off unless ticked,
-# 1 in developer.cfg (tests/apu_gpfx tests the effects).
-cases["audio_effects"] = (None, "RECOMP_APU_GPFX=1\n", {},
-                          ["[DEV] RECOMP_APU_GPFX=1 from developer.cfg", "started:"], [])
+# The audio effects were Experimental's, until they became Audio > Audio
+# effects, kept as audioeffects= in the settings file (port/audio.c,
+# tests/audio). A developer.cfg from then keeps RECOMP_APU_GPFX=1, which
+# no longer goes into the environment.
+cases["audio_effects_moved"] = (None, "RECOMP_APU_GPFX=1\n", {}, ["started:"], ["[DEV]"])
 
 with tempfile.TemporaryDirectory(prefix="developer-") as directory:
     work = pathlib.Path(directory)
@@ -170,10 +171,10 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
             raise SystemExit(f"{name}: the settings file changed:\n" + (folder / "settings.cfg").read_text())
 
     # The menu's pages, in the order they are shown: Logging, Engine switches,
-    # then Performance, whose first row is Use P cores and stays so, then
-    # Experimental. Performance's rows are what the engine does by default,
-    # all ticked with nothing in developer.cfg; the GPU queue's 0 there
-    # unticks its row alone. Experimental's are off until ticked.
+    # then Performance, whose first row is Use P cores and stays so.
+    # Experimental, with no experiment just now, isn't shown. Performance's
+    # rows are what the engine does by default, all ticked with nothing in
+    # developer.cfg; the GPU queue's 0 there unticks its row alone.
     def menu(dev_text):
         folder = work / f"menu-{len(dev_text)}"
         folder.mkdir()
@@ -190,8 +191,7 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
             elif line.startswith("[TICKS] "):
                 label, _, bits = line[len("[TICKS] "):].partition(": ")
                 ticks[label] = int(bits)
-        if run.returncode != 0 or list(pages) != ["Logging", "Engine switches", "Performance",
-                                                  "Experimental"]:
+        if run.returncode != 0 or list(pages) != ["Logging", "Engine switches", "Performance"]:
             raise SystemExit(f"menu: exit {run.returncode}, pages {list(pages)}\n{run.stderr}")
         return pages, ticks
     pages, ticks = menu("")
@@ -202,14 +202,8 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
                                 "Compressed textures direct (Restart)"]:
         raise SystemExit(f"menu: Performance's rows are {pages['Performance']}")
     every = (1 << len(pages["Performance"])) - 1
-    if (ticks["Performance"] != every or ticks["Engine switches"] or ticks["Logging"]
-            or ticks["Experimental"]):
+    if ticks["Performance"] != every or ticks["Engine switches"] or ticks["Logging"]:
         raise SystemExit(f"menu: with nothing changed, the ticks are {ticks}")
-    if pages["Experimental"] != ["Xbox audio effects (Restart)"]:
-        raise SystemExit(f"menu: Experimental's rows are {pages['Experimental']}")
-    pages, ticks = menu("RECOMP_APU_GPFX=1\n")
-    if ticks["Experimental"] != 1:
-        raise SystemExit(f"menu: with the audio effects on, Experimental's ticks are {ticks['Experimental']}")
     queue = 1 << len(perf)
     pages, ticks = menu("RECOMP_NV2A_QUEUE=0\n")
     if ticks["Performance"] != every & ~queue:
