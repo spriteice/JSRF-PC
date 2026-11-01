@@ -7,7 +7,7 @@ JSRF-PC releases are betas until 1.0.
 - **b1:** The first beta.
 - **b1.1, b1.2, and so on:** Bug fixes to b1.
 - **b1.1-hotfix:** An urgent fix to a release, named after it with
-  `-hotfix`. It has no GitHub release of its own: see
+  `-hotfix`. It is a release of its own, on its own tag: see
   [GitHub releases](#github-releases).
 - **b2:** The next feature release, with b2.1 and so on for its bug fixes.
 - **1.0:** The final release.
@@ -51,11 +51,15 @@ A release's git tag and the version it shows are both its name.
   JSRF Unleashed.
 - **Known issues:** the release text lists them, so testers don't report
   them again.
-- **A hotfix** edits the release it fixes instead of making a new one. The
-  release moves to the hotfix's tag and is retitled, as in
-  `JSRF-PC beta 1.1 hotfix`. Its files are swapped for the hotfix's, and its
-  text gets a hotfix section at the top. The release's own tag stays where it
-  was.
+- **A hotfix** is a new release, on the hotfix's own tag, titled as in
+  `JSRF-PC beta 1.1 hotfix`, with files named for it, as in
+  `JSRF-PC-b1.1-hotfix-linux-x86_64.tar.gz`. The release it fixes stays as
+  it is. (b1.1-hotfix itself, made before this rule, is an edit of b1.1's
+  release.)
+- **A published release's files are never swapped.** Launchers that list our
+  releases, such as Quiver Launcher, check each download against the file
+  first published, and refuse one that differs. A release that has to be
+  made again uses its saved files, byte for byte, never rebuilt ones.
 
 ## Changelog
 
