@@ -40,12 +40,20 @@
  * reverb and GPFX_XTALK its crosstalk, and apu_gpfx_studied says whether the
  * image is laid out as the one this was written from.
  *
+ * Developer > Experimental > Xbox audio effects (RECOMP_APU_GPFX) runs our
+ * own effects on the mixbins, before the port's fold takes them to stereo
+ * (apu_gpfx_frame, below). They aim to sound good and cost little, not to
+ * copy the console's. So far that's a limiter of their own for the 3D bins.
+ *
  * Developer > Logging > RECOMP_APU_STATS: a line when an image loads, and
  * one when DirectSound changes an effect's settings, with the words it
- * changed. Every line starts "[APU] effects:".
+ * changed. With the effects on, a line when they start, and one a second
+ * on how hard the 3D bins' limiter works. Every line starts
+ * "[APU] effects:".
  */
 #include "apu_gpfx.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -239,12 +247,18 @@ static void log_change(uint32_t x0, uint32_t n)
                 outside);
 }
 
+static int log_on(void)
+{
+    if (s_log < 0)
+        s_log = getenv("RECOMP_APU_STATS") ? 1 : 0;
+    return s_log;
+}
+
 void apu_gpfx_command(const uint8_t *ram, uint32_t ram_size, uint32_t doorbell)
 {
     uint32_t blk[GPFX_BLOCK_WORDS], scratch, cmd, i;
 
-    if (s_log < 0)
-        s_log = getenv("RECOMP_APU_STATS") ? 1 : 0;
+    log_on();
     if (!ram || doorbell < GPFX_DOORBELL
         || (uint64_t)doorbell - GPFX_DOORBELL + GPFX_IMAGE > ram_size)
         return;
@@ -302,4 +316,117 @@ const uint32_t *apu_gpfx_effect(unsigned e, unsigned *words)
 int apu_gpfx_studied(void)
 {
     return s_studied;
+}
+
+/* The 3D bins' limiter. JSRF plays its sound effects as 3D voices into the
+ * crosstalk bins, GPFX_FX_BINS of them from GPFX_FX_FIRST, and at busy
+ * moments they add up to well above full scale: 2.7 in one player's
+ * session. The console's 24-bit bins stop at full scale. Folded to stereo as
+ * they are, they push the output into its limiter (apu_dsp.c), and that
+ * turns the music and voices down with them. So they go through a limiter of
+ * their own first, at full scale. It looks one frame ahead: the bins come out
+ * a frame late, and the gain has come down by the time a loud frame comes
+ * out, so nothing is cut off. The gain glides within each frame and comes
+ * back over GPFX_FX_RELEASE_MS, as the output's does. It's one gain for the
+ * four bins, so a sound doesn't move between the speakers. */
+#define GPFX_FX_FIRST       6u
+#define GPFX_FX_BINS        4u
+#define GPFX_FX_CEILING     1.0f     /* full scale */
+#define GPFX_FX_RELEASE_MS  150.0f
+#define GPFX_RATE           48000u   /* the mixbins' samples a second */
+#define GPFX_FRAME          32u      /* the samples in a frame of them */
+#define GPFX_MS             1000.0f
+#define GPFX_LIMITED        0.999f   /* a gain under this is turned down, for the log */
+#define GPFX_DB             20.0f    /* dB from a gain: GPFX_DB * log10 */
+#define GPFX_PERCENT        100u
+
+static int s_on = -1;                    /* RECOMP_APU_GPFX */
+static int s_said;                       /* the line when the effects start */
+static float s_late[GPFX_FX_BINS][GPFX_FRAME];  /* last frame's 3D bins, still to come out */
+static float s_late_peak;                /* and their peak */
+static float s_gain = 1.0f;              /* the limiter's gain, as the last frame ended */
+static struct {
+    unsigned frames, turned_down;
+    float peak, least;
+} s_second = { 0, 0, 0.0f, 1.0f };       /* for the log, a second at a time */
+
+/* The log's line on the second gone, if the 3D bins had any sound in it. */
+static void log_second(void)
+{
+    if (s_second.peak > 0.0f) {
+        if (s_second.turned_down)
+            fprintf(stderr, "[APU] effects: the 3D bins peaked at %.2f of full scale, and"
+                    " were turned down for %u%% of the second, by up to %.1f dB\n",
+                    (double)s_second.peak,
+                    GPFX_PERCENT * s_second.turned_down / s_second.frames,
+                    (double)(-GPFX_DB * log10f(s_second.least)));
+        else
+            fprintf(stderr, "[APU] effects: the 3D bins peaked at %.2f of full scale, and"
+                    " weren't turned down\n", (double)s_second.peak);
+        fflush(stderr);
+    }
+    s_second.frames = s_second.turned_down = 0;
+    s_second.peak = 0.0f;
+    s_second.least = 1.0f;
+}
+
+int apu_gpfx_frame(float *mixbins, unsigned bins, unsigned samples)
+{
+    float now[GPFX_FX_BINS][GPFX_FRAME], peak = 0.0f, back, end;
+    unsigned b, i;
+
+    if (s_on < 0) {
+        const char *v = getenv("RECOMP_APU_GPFX");
+        s_on = v && atoi(v) ? 1 : 0;
+    }
+    if (!s_on || !mixbins || bins < GPFX_FX_FIRST + GPFX_FX_BINS || samples != GPFX_FRAME)
+        return 0;
+    if (!s_said && log_on()) {
+        s_said = 1;
+        fprintf(stderr, "[APU] effects: the 3D bins (%u to %u) through a limiter of their"
+                " own, at full scale, before the fold (RECOMP_APU_GPFX)\n",
+                GPFX_FX_FIRST, GPFX_FX_FIRST + GPFX_FX_BINS - 1);
+        fflush(stderr);
+    }
+
+    for (b = 0; b < GPFX_FX_BINS; b++) {
+        const float *bin = mixbins + (size_t)(GPFX_FX_FIRST + b) * samples;
+        for (i = 0; i < samples; i++) {
+            float a = fabsf(bin[i]);
+            now[b][i] = bin[i];
+            if (a > peak)
+                peak = a;
+        }
+    }
+
+    /* The gain at the end of the frame coming out: back up toward unity,
+     * but no higher than keeps that frame and the next under the ceiling.
+     * It starts where the last one ended, which kept this frame under. */
+    back = 1.0f - expf(-(float)samples * GPFX_MS / (GPFX_RATE * GPFX_FX_RELEASE_MS));
+    end = s_gain + (1.0f - s_gain) * back;
+    if (s_late_peak * end > GPFX_FX_CEILING)
+        end = GPFX_FX_CEILING / s_late_peak;
+    if (peak * end > GPFX_FX_CEILING)
+        end = GPFX_FX_CEILING / peak;
+    for (b = 0; b < GPFX_FX_BINS; b++) {
+        float *bin = mixbins + (size_t)(GPFX_FX_FIRST + b) * samples;
+        for (i = 0; i < samples; i++)
+            bin[i] = s_late[b][i] * (s_gain + (end - s_gain) * (float)(i + 1) / (float)samples);
+    }
+    memcpy(s_late, now, sizeof s_late);
+
+    if (log_on()) {
+        float least = s_gain < end ? s_gain : end;
+        if (s_late_peak > s_second.peak)
+            s_second.peak = s_late_peak;
+        if (least < GPFX_LIMITED)
+            s_second.turned_down++;
+        if (least < s_second.least)
+            s_second.least = least;
+        if (++s_second.frames >= GPFX_RATE / GPFX_FRAME)
+            log_second();
+    }
+    s_late_peak = peak;
+    s_gain = end;
+    return 1;
 }

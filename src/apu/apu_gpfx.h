@@ -1,4 +1,5 @@
-/* The GP's effects settings, followed (apu_gpfx.c). */
+/* The GP's effects settings, followed, and our own effects on the mixbins
+ * (apu_gpfx.c). */
 #pragma once
 
 #include <stdint.h>
@@ -26,3 +27,11 @@ int apu_gpfx_studied(void);
  * memory behind APU_GPFX_X_WINDOW, APU_GPFX_X_BYTES of it, or NULL to keep
  * the copy to itself. */
 void apu_gpfx_window(uint8_t *x_window);
+
+/* Developer > Experimental > Xbox audio effects (RECOMP_APU_GPFX): our own
+ * effects on one frame of the mixbins, before the fold to stereo. `mixbins`
+ * is `bins` of them, each of `samples` floats one after another. So far the
+ * 3D bins (6 to 9) go through a limiter of their own, and come out one frame
+ * late. Returns 1 if it ran; 0, with the mixbins as they were, if the switch
+ * is off or the frame isn't the mixbins' size. */
+int apu_gpfx_frame(float *mixbins, unsigned bins, unsigned samples);

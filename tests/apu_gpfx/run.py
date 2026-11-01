@@ -13,8 +13,12 @@ in the effects' memory is left with no state. Each effect is started, as
 its code starts itself the first time it runs. Given a window, the copy is
 kept there too, as the CPU would read the GP's memory back. With
 RECOMP_APU_STATS=1 the log says what loaded and which words changed.
-Unset, nothing is printed. Requires GCC on PATH, including MinGW on
-Windows.
+Unset, nothing is printed. With RECOMP_APU_GPFX=1, the 3D bins of made-up
+mixbins go through their limiter: a frame late and as they were while
+quiet, and while loud under full scale, with one gain for the four that
+glides, and comes back over 150 ms. The other bins are left alone, and so
+is a frame of another size. Unset, nothing runs. Requires GCC on PATH,
+including MinGW on Windows.
 """
 import os
 import pathlib
@@ -47,6 +51,13 @@ cases = {
                 "[APU] effects: effect 0's settings, words 4 to 135 sent, 67 changed:",
                 "[APU] effects: effect 1's settings, words 0 to 0 sent, 1 changed:"],
                ["not followed", "outside every effect"]),
+    "limit": (["[APU] effects: the 3D bins (6 to 9) through a limiter of their own, at"
+               " full scale, before the fold (RECOMP_APU_GPFX)",
+               "[APU] effects: the 3D bins peaked at 2.70 of full scale, and were turned"
+               " down for 50% of the second, by up to 8.6 dB\n",
+               "[APU] effects: the 3D bins peaked at 0.50 of full scale, and weren't"
+               " turned down\n"],
+              ["image loaded"]),
     "bad": ([LOADED + "laid out as JSRF's",
              "[APU] effects: command 2 not followed: 512 words from 0x918 in scratch"
              " to X:0xF80 are not all there",
@@ -64,10 +75,12 @@ with tempfile.TemporaryDirectory(prefix="apu_gpfx-") as directory:
     exe = str(pathlib.Path(directory) / "test.exe")
     subprocess.run(["gcc", "-std=c11", "-Wall", "-Wextra", "-Isrc/apu",
                     "src/apu/apu_gpfx.c", "tests/apu_gpfx/test_main.c",
-                    "-o", exe], cwd=root, check=True)
-    env = {k: v for k, v in os.environ.items() if k != "RECOMP_APU_STATS"}
+                    "-o", exe, "-lm"], cwd=root, check=True)
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("RECOMP_APU_STATS", "RECOMP_APU_GPFX")}
     for case, (must, must_not) in cases.items():
-        run = subprocess.run([exe, case], env=dict(env, RECOMP_APU_STATS="1"),
+        run = subprocess.run([exe, case],
+                             env=dict(env, RECOMP_APU_STATS="1", RECOMP_APU_GPFX="1"),
                              capture_output=True, text=True, timeout=60)
         log, at = run.stderr, 0
         problems = [] if run.returncode == 0 else [f"exit {run.returncode}"]
@@ -83,11 +96,19 @@ with tempfile.TemporaryDirectory(prefix="apu_gpfx-") as directory:
         for problem in problems:
             print(f"  {problem}")
         failed += bool(problems)
-    run = subprocess.run([exe, "studied"], env=env, capture_output=True,
-                         text=True, timeout=60)
-    off = run.returncode == 0 and not run.stderr and "FAILED" not in run.stdout
-    print(f"off: {'ok' if off else 'FAILED'}")
-    failed += not off
+    # name: (case, switches, a check line it must print)
+    quiet = {"off": ("studied", {}, "every effect as loaded, and started ok"),
+             "limit_quiet": ("limit", {"RECOMP_APU_GPFX": "1"},
+                             "loud ones under full scale, one gain for the four, gliding ok"),
+             "limit_off": ("limit_off", {"RECOMP_APU_STATS": "1"},
+                           "nothing run with the switch off ok")}
+    for name, (case, switches, line) in quiet.items():
+        run = subprocess.run([exe, case], env=dict(env, **switches), capture_output=True,
+                             text=True, timeout=60)
+        ok = (run.returncode == 0 and not run.stderr and "FAILED" not in run.stdout
+              and line in run.stdout)
+        print(f"{name}: {'ok' if ok else 'FAILED'}")
+        failed += not ok
 if failed:
     raise SystemExit(f"apu_gpfx: {failed} case(s) failed")
 print("apu_gpfx: all cases pass")

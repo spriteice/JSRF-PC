@@ -8,8 +8,11 @@
  * as the port's doorbell answer does, and checks what the GP's memory holds
  * after against what the GP's kernel would have copied. It prints a "check"
  * line for each check, and the module's own log lines with RECOMP_APU_STATS
- * set, which run.py reads. The argument picks the case.
+ * set, which run.py reads. The argument picks the case. The "limit" cases
+ * need no image: they run made-up mixbins through apu_gpfx_frame and check
+ * the 3D bins' limiter, with RECOMP_APU_GPFX set and without.
  */
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include "apu_gpfx.h"
@@ -30,6 +33,24 @@
 #define FLAGS      4u          /* an effect's word that holds its flags */
 #define STARTED    1u          /* the flag its code sets the first time it runs */
 #define UNTOUCHED  0xEEu       /* the made-up window's bytes before anything is shown */
+
+/* The mixbins, for the limiter. */
+#define BINS       32u
+#define FRAME      32u        /* samples in a frame */
+#define FX_FIRST   6u         /* the 3D bins: FX_BINS of them from here */
+#define FX_BINS    4u
+#define SECOND     1500u      /* frames in a second, at 48 kHz */
+#define QUIET      0.5f       /* the 3D bins' peak, quiet and loud */
+#define LOUD       2.7f
+#define UNDER      0.9f       /* the other 3D bins' peak, from the last one's */
+#define CEILING    1.0f       /* the limiter's: full scale */
+#define ROUNDING   1e-6f
+#define HEARD      0.01f      /* a sample big enough to tell the gain from */
+#define AT_150MS   225u       /* frames in the release's 150 ms */
+#define BACK_LO    0.70f      /* where the gain is 150 ms after a loud moment: 0.77 */
+#define BACK_HI    0.85f
+#define BACK_BY    0.999f     /* and a second after, near enough to unity */
+#define STEP       (1.0f / FRAME)   /* the most the gain may change in a sample */
 
 static uint8_t s_ram[WINDOW];
 static uint8_t s_window[X_WORDS * 4];  /* where the CPU would see the GP's X memory */
@@ -173,6 +194,67 @@ static int window_untouched(void)
     return 1;
 }
 
+/* Frame n of made-up mixbins: each bin a tone of its own, the last 3D bin
+ * peaking at `level`, the other three a little under, and the rest at
+ * QUIET, each frame's first sample at the peak. */
+static void tone(float bins[BINS][FRAME], unsigned n, float level)
+{
+    unsigned b, i;
+
+    for (b = 0; b < BINS; b++) {
+        float peak = b == FX_FIRST + FX_BINS - 1 ? level
+                   : b >= FX_FIRST && b < FX_FIRST + FX_BINS ? UNDER * level : QUIET;
+        for (i = 0; i < FRAME; i++)
+            bins[b][i] = i ? peak * sinf(0.05f * (float)((b + 1) * (n * FRAME + i)))
+                           : peak;
+    }
+}
+
+/* Whether every bin but the 3D bins is as it went in. */
+static int others_untouched(float in[BINS][FRAME], float out[BINS][FRAME])
+{
+    unsigned b;
+
+    for (b = 0; b < BINS; b++)
+        if ((b < FX_FIRST || b >= FX_FIRST + FX_BINS)
+            && memcmp(in[b], out[b], sizeof in[b]))
+            return 0;
+    return 1;
+}
+
+/* What the limiter did to frame `late` of the 3D bins, now in `out`: one
+ * gain for the four bins at each sample, gliding from the last frame's, at
+ * most STEP a sample, and the bins under the ceiling. *gain is the last gain
+ * seen, and *since the samples since, both carried from frame to frame. */
+static int limited(float late[BINS][FRAME], float out[BINS][FRAME], float *gain,
+                   unsigned *since)
+{
+    unsigned b, i;
+
+    for (i = 0; i < FRAME; i++) {
+        float g = -1.0f;
+        for (b = FX_FIRST; b < FX_FIRST + FX_BINS; b++) {
+            if (fabsf(out[b][i]) > CEILING + ROUNDING)
+                return 0;
+            if (fabsf(late[b][i]) < HEARD)
+                continue;
+            if (g < 0.0f)
+                g = out[b][i] / late[b][i];
+            else if (fabsf(out[b][i] / late[b][i] - g) > ROUNDING)
+                return 0;
+        }
+        if (g < 0.0f) {
+            ++*since;
+            continue;
+        }
+        if (fabsf(g - *gain) > STEP * (float)*since + ROUNDING)
+            return 0;
+        *gain = g;
+        *since = 1;
+    }
+    return 1;
+}
+
 int main(int argc, char **argv)
 {
     const char *c = argc > 1 ? argv[1] : "";
@@ -258,6 +340,58 @@ int main(int argc, char **argv)
               && !apu_gpfx_effect(2, NULL) && !apu_gpfx_effect(3, NULL)
               && !apu_gpfx_effect(4, NULL) && !apu_gpfx_effect(5, NULL)
               && apu_gpfx_effect(6, NULL));
+    } else if (!strcmp(c, "limit")) {   /* the 3D bins' limiter, quiet, loud, quiet */
+        static float in[BINS][FRAME], late[BINS][FRAME], out[BINS][FRAME];
+        float gain = 1.0f, loudest = 0.0f, at_150ms = 0.0f;
+        int quiet = 1, loud = 1, others = 1, ran = 1;
+        unsigned n, b, i, since = 1;
+
+        tone(in, 0, QUIET);
+        memcpy(out, in, sizeof out);
+        check("not run on a frame of another size",
+              !apu_gpfx_frame(&out[0][0], BINS, FRAME / 2) && !memcmp(in, out, sizeof in));
+        check("not run with too few bins",
+              !apu_gpfx_frame(&out[0][0], FX_FIRST + FX_BINS - 1, FRAME)
+              && !memcmp(in, out, sizeof in));
+        memset(late, 0, sizeof late);
+        for (n = 0; n < 4 * SECOND; n++) {
+            float level = n >= SECOND / 2 && n < SECOND ? LOUD : QUIET;
+            tone(in, n, level);
+            memcpy(out, in, sizeof out);
+            ran &= apu_gpfx_frame(&out[0][0], BINS, FRAME);
+            others &= others_untouched(in, out);
+            if (n < SECOND / 2)         /* a frame late, and as it was */
+                for (b = FX_FIRST; b < FX_FIRST + FX_BINS; b++)
+                    quiet &= !memcmp(out[b], late[b], sizeof out[b]);
+            else
+                loud &= limited(late, out, &gain, &since);
+            for (b = FX_FIRST; b < FX_FIRST + FX_BINS; b++)
+                for (i = 0; i < FRAME; i++)
+                    if (fabsf(out[b][i]) > loudest)
+                        loudest = fabsf(out[b][i]);
+            if (n == SECOND + AT_150MS)
+                at_150ms = gain;
+            memcpy(late, in, sizeof late);
+        }
+        check("run on every frame", ran);
+        check("the other bins untouched", others);
+        check("quiet 3D bins a frame late, and as they were", quiet);
+        check("loud ones under full scale, one gain for the four, gliding", loud);
+        check("and at full scale at their loudest", loudest > CEILING - 2 * ROUNDING * LOUD);
+        check("back to 0.77 150 ms later", at_150ms > BACK_LO && at_150ms < BACK_HI);
+        check("and to unity in a second", gain > BACK_BY);
+    } else if (!strcmp(c, "limit_off")) {   /* nothing, with the switch unset */
+        static float in[BINS][FRAME], out[BINS][FRAME];
+        int ran = 0, same = 1;
+        unsigned n;
+
+        for (n = 0; n < SECOND; n++) {
+            tone(in, n, LOUD);
+            memcpy(out, in, sizeof out);
+            ran |= apu_gpfx_frame(&out[0][0], BINS, FRAME);
+            same &= !memcmp(in, out, sizeof in);
+        }
+        check("nothing run with the switch off", !ran && same);
     } else {
         printf("apu_gpfx: no case %s\n", c);
         return 1;

@@ -115,10 +115,10 @@ static const DevSwitch k_perf[] = {
     { "RECOMP_FENCE_WAIT", "0" },           /* the game spins while it waits for the GPU thread */
     { "RECOMP_GL_DXT", "0" },               /* DXT textures decoded, not handed over as they are */
 };
-/* Experimental's: none just now -- the last, the GPU queue, is the engine's
- * way since b1.2, with its switch under Performance. A new one goes before the
- * end, with its row in k_tries_row, and Experimental shows again. */
+/* Experimental's, each with its row in k_tries_row. A new one goes before
+ * the end. With none, Experimental is not shown. */
 static const DevSwitch k_tries[] = {
+    { "RECOMP_APU_GPFX", "1" },             /* our own audio effects (src/apu/apu_gpfx.c) */
     { NULL, NULL },                         /* the end */
 };
 #define DEV_LOGGING  ((int)(sizeof k_logging / sizeof k_logging[0]))
@@ -164,6 +164,7 @@ static const char *const k_perf_row[] = {
 _Static_assert(sizeof k_perf_row / sizeof k_perf_row[0] == DEV_PERF, "a row for each of Performance's");
 /* Experimental's rows, one for each of k_tries. */
 static const char *const k_tries_row[] = {
+    "Xbox audio effects (Restart)",
     NULL,                                   /* the end */
 };
 _Static_assert(sizeof k_tries_row / sizeof k_tries_row[0] == DEV_TRIES + 1,

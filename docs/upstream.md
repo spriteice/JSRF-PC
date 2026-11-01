@@ -1026,6 +1026,24 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 - **When picking:** keep the call after `mcpx_apu_init_standalone`, and run
   tests/apu_gpfx.
 
+### The effects on the mixbins
+
+- **Files:** src/apu/apu_dsp.c (an `apu_gpfx_frame` call just before the
+  fold to stereo).
+- **Why:** Developer > Experimental > Xbox audio effects (RECOMP_APU_GPFX).
+  On the console the GP runs the title's effects on the mixbins before they
+  go to stereo. Here the GP is stubbed, and the fold adds the 3D bins (6 to
+  9) at a gain of our own. With the switch, our own effects run on the
+  mixbins first, made to sound good and cost little rather than to copy the
+  console's. So far that is a limiter for the 3D bins, at full scale: at
+  busy moments they go well above it, and folded as they were, they pushed
+  the output's limiter into turning the music and voices down with them.
+  The 3D bins come out one frame late. Off by default, and off, the sound
+  is exactly as before. Our own files: src/apu/apu_gpfx.c and .h, and
+  tests/apu_gpfx. Could suit upstream once the reverb is in.
+- **When picking:** keep the call just before the fold's loop, and run
+  tests/apu_gpfx and tests/apu_mix.
+
 ### Frames spent loading, shown
 
 - **Files:** src/nv2a_gl/nv2a_gl.c (the `M_FLIP_STALL` case, and

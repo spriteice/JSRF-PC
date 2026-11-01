@@ -110,11 +110,13 @@ adds the engine's own diagnostic lines to the log, for bug reports,
 Developer > Engine switches turns parts of the engine off or back to how they
 were, to compare, Developer > Performance has GPU queue, Sleep while waiting
 for the GPU, and Compressed textures direct, each on by default and ticked, to
-untick and compare, and Developer > Experimental, when there is anything in
-it, tries out changes to how the game runs. Each row stands for an environment
-variable, kept in developer.cfg beside the settings file as NAME=1 or NAME=0,
-and applies from the next start: File > Restart restarts the game, after
-asking.
+untick and compare, and Developer > Experimental tries out changes to how the
+game runs: Xbox audio effects adds our own versions of the console's sound
+effects, as far as they are done (so far, a limiter of their own for the 3D
+sounds, so a busy moment no longer turns the music and voices down), off by
+default. Each row stands for an environment variable, kept in developer.cfg
+beside the settings file as NAME=1 or NAME=0, and applies from the next start:
+File > Restart restarts the game, after asking.
 Developer > Purge shaders asks first, then restarts the game and deletes the
 shader cache as it starts: each shader is built again when the game first
 needs it.

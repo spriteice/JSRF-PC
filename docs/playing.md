@@ -112,8 +112,10 @@ menu.
     unticked, it spins, as before b1.2. Compressed textures direct hands
     the game's compressed textures to the graphics driver as they are;
     unticked, they are decoded first, as before b1.2.
-  - **Experimental:** Changes to how the game runs, to try out, when there
-    are any.
+  - **Experimental:** Changes to how the game runs, to try out. Xbox audio
+    effects adds our own versions of the console's sound effects, as far as
+    they are done: so far, a limiter of their own for the 3D sounds, so a
+    busy moment no longer turns the music and voices down. Off by default.
   - **Purge shaders:** Restarts the game and deletes the shader cache as it
     starts.
 
