@@ -84,8 +84,28 @@ a fresh Ubuntu 24.04; the dependency script also knows Debian, Arch, and Fedora.
 
 A package made this way uses your system's SDL2, so it is for the machine that
 built it. To make one that runs on other machines too, such as a Steam Deck or
-another SteamOS handheld, follow the release recipe at the top of
-[`launcher/linux/package.sh`](../launcher/linux/package.sh).
+another SteamOS handheld, build it as the release is built, in a container
+(Docker here) with your generated code in `port/recomp/gen` and SDL's source
+in a work folder:
+
+```sh
+mkdir -p ~/jsrf-work
+curl -L -o ~/jsrf-work/SDL2-2.30.12.tar.gz \
+    https://github.com/libsdl-org/SDL/releases/download/release-2.30.12/SDL2-2.30.12.tar.gz
+docker run --name jsrf-image \
+    -v "$PWD":/src ubuntu:22.04@sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11 \
+    /src/launcher/image.sh linux
+docker commit jsrf-image jsrf-image && docker rm jsrf-image
+docker run --rm --network none -v "$PWD":/src -v ~/jsrf-work:/work jsrf-image \
+    /src/launcher/linux/build.sh /work
+```
+
+The package is `~/jsrf-work/out/JSRF-PC-linux-x86_64.tar.gz`.
+[`launcher/image.sh`](../launcher/image.sh) makes the build image, with each
+package at a fixed version, and
+[`launcher/linux/build.sh`](../launcher/linux/build.sh) builds SDL, the
+engine and the package. The work folder must be mounted at `/work`, as here,
+for the bundled SDL to match the release's byte for byte.
 
 ## Windows
 

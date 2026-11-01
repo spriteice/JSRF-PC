@@ -51,25 +51,23 @@ sandbox and is never committed.
 ### 2. Linux package
 
 docs/building-on-linux.md's own build links the system's SDL2, so its
-package only runs on the machine that built it. Test builds follow the
-release recipe at the top of launcher/linux/package.sh instead:
+package only runs on the machine that built it. Test builds are made as the
+release is, the way docs/building-on-linux.md's "A package for other
+machines" says:
 
-- Ubuntu 22.04 (glibc 2.35), for example in a container, with clang and
-  Ninja.
-- SDL 2.30 built from source as the recipe says: shared, every backend
-  loaded at run time, tests off.
-- The engine with the recipe's CMake flags, and `CMAKE_PREFIX_PATH` pointing
-  at that SDL.
-- `launcher/linux/package.sh` on the engine and that SDL's
-  `libSDL2-2.0.so.0`, with `SDL_LICENSE` set to SDL's licence file.
+- The build image: `ubuntu:22.04` by digest, set up by
+  `launcher/image.sh linux`.
+- `launcher/linux/build.sh /work`, with no network: SDL 2.30.12 from source
+  (`launcher/linux/sdl.sh`), the engine with the release flags, then
+  `launcher/linux/package.sh`.
 
 The build image is pinned. The recipe names the image, every package
 installed in it with its version, and every option given to SDL's CMake,
 and nothing else is installed. If something must be, add it to the recipe
 first, and tell me. A package in the image can change what SDL builds with
 no error: installing libibus-1.0-dev turned on IBus in the bundled SDL, and
-`-DSDL_IBUS=OFF` keeps it off. Until package.sh's recipe names all of
-these, list them in TESTING.md (Built from).
+`-DSDL_IBUS=OFF` keeps it off. sdl.sh stops if SDL's configuration isn't the
+one recorded in `launcher/linux/sdl-config.h`.
 
 ### 3. Windows package
 

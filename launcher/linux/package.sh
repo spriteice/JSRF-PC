@@ -5,21 +5,12 @@
 #
 #   launcher/linux/package.sh <jsrf_recomp> <libSDL2-2.0.so.0> [out dir]
 #
-# How the release build is made (Ubuntu 22.04, so glibc 2.35, and the result
-# runs on glibc 2.34 or later), from the repository at the release tag:
-#
-#   CC=clang CXX=clang++ cmake -S port -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-#       -DNV2A_GL_CONTEXT=sdl -DOpenGL_GL_PREFERENCE=LEGACY \
-#       -DCMAKE_EXE_LINKER_FLAGS=-Wl,--as-needed
-#   cmake --build build
-#
-# --as-needed and the legacy libGL leave the engine needing only libc, libm,
-# libGL.so.1 and SDL2. The SDL2 shipped beside it is SDL 2.30 built from
-# source with every backend loaded at run time (SDL_X11_SHARED,
-# SDL_WAYLAND_SHARED, SDL_PULSEAUDIO_SHARED, SDL_PIPEWIRE_SHARED,
-# SDL_ALSA_SHARED, SDL_KMSDRM_SHARED, SDL_LIBSAMPLERATE_SHARED; tests off), so
-# it needs nothing but libc and libm either -- a distribution's own SDL2 links
-# its backends directly and would not load on a system missing one of them.
+# The release build, from the repository at the release tag, is
+# launcher/linux/build.sh, in the build image launcher/image.sh makes (Ubuntu
+# 22.04, so glibc 2.35, and the result runs on glibc 2.34 or later): the
+# bundled SDL (launcher/linux/sdl.sh), the engine with the release flags,
+# then this. The engine needs only libc, libm, libGL.so.1 and SDL2, and the
+# SDL beside it nothing but libc and libm.
 #
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
