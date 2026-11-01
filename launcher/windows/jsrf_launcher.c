@@ -3,8 +3,8 @@
  *
  * Finds your copy of Jet Set Radio Future (the folder with default.xbe and
  * Media in it, or a disc image, which it unpacks once), remembers it, and
- * starts the engine (engine\jsrf_recomp.exe) with the settings it needs --
- * what launcher/linux/jsrf-unleashed does on Linux and the app does on a Mac.
+ * starts the engine (engine\jsrf_recomp.exe) with your settings -- what
+ * launcher/linux/jsrf-unleashed does on Linux and the app does on a Mac.
  *
  *   JSRF-PC.exe                    play (asks where the game is, the first time)
  *   JSRF-PC.exe <folder or .iso>   use that, and remember it (dropping a
@@ -499,14 +499,6 @@ static int copy_saves(const wchar_t *game)
 
 /* ---- the run ---------------------------------------------------------------- */
 
-static const wchar_t *const k_env[][2] = {
-    { L"RECOMP_USB", L"1" }, { L"RECOMP_GL", L"1" }, { L"RECOMP_PB_EXEC", L"1" },
-    { L"RECOMP_VBLANK", L"1" }, { L"RECOMP_AC97_READY_NOTRAP", L"1" },
-    { L"RECOMP_TRACE_BUDGET", L"0" }, { L"RECOMP_GL_READBACK", L"0" }, { L"RECOMP_FPS", L"60" },
-    { L"RECOMP_ABI_RESTORE", L"1" }, { L"RECOMP_LOCK_IDLE", L"1" },
-    { L"RECOMP_MUTE", L"0" }, { L"RECOMP_WINDOW", L"1" },
-};
-
 static int run(const wchar_t *game, int scale, int fullscreen)
 {
     wchar_t engine[MAX_PATH * 2], cmd[MAX_PATH * 6], sc[8], msg[2048];
@@ -515,7 +507,6 @@ static int run(const wchar_t *game, int scale, int fullscreen)
     PROCESS_INFORMATION pi;
     HANDLE out;
     DWORD code = 0;
-    size_t i;
 
     join(engine, MAX_PATH * 2, g_here, L"engine\\jsrf_recomp.exe");
     if (!is_file(engine))
@@ -524,8 +515,8 @@ static int run(const wchar_t *game, int scale, int fullscreen)
     SHCreateDirectoryExW(NULL, g_save, NULL);
     rotate_logs(g_log, g_logs);
 
-    for (i = 0; i < sizeof k_env / sizeof k_env[0]; i++)
-        SetEnvironmentVariableW(k_env[i][0], k_env[i][1]);
+    /* The paths and the player's settings, and no switch: what the game
+     * needs is the engine's own default. */
     _snwprintf(sc, 8, L"%d", scale);
     SetEnvironmentVariableW(L"RECOMP_GL_SCALE", sc);
     if (fullscreen) SetEnvironmentVariableW(L"RECOMP_FULLSCREEN", L"1");

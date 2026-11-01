@@ -29,9 +29,8 @@
 #define XBOX_OHCI1_BASE   0xFED08000u
 #define XBOX_OHCI_SIZE    0x00001000u   /* 4 KB, the length XAPI registers */
 
-/* Bring the models up. Safe to call more than once; does nothing unless
- * RECOMP_USB is set, so a title that was working without a controller keeps
- * behaving exactly as it did. */
+/* Bring the models up. Safe to call more than once; does nothing with
+ * RECOMP_USB=0, which leaves the title with no controller and no pad. */
 void xbox_OhciInit(void);
 
 /* 1 if the address is inside a controller this model owns. */

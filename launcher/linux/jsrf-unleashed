@@ -3,7 +3,7 @@
 # JSRF-PC -- the Linux launcher.
 #
 # Finds your copy of Jet Set Radio Future (the folder with default.xbe in it),
-# remembers it, and starts the game with the settings it needs.
+# remembers it, and starts the game with your settings.
 #
 #   ./jsrf-pc                  play (asks where the game is, the first time)
 #   ./jsrf-pc /path/to/game    use that folder (or a disc image -- see below), and remember it
@@ -253,9 +253,8 @@ if [ -f "$LOG" ]; then
     ls -1t "$LOGS"/run-*.log 2>/dev/null | tail -n +6 | while IFS= read -r old; do rm -f "$old"; done
 fi
 
-export RECOMP_USB=1 RECOMP_GL=1 RECOMP_PB_EXEC=1 RECOMP_VBLANK=1 RECOMP_AC97_READY_NOTRAP=1 \
-       RECOMP_TRACE_BUDGET=0 RECOMP_GL_READBACK=0 RECOMP_FPS=60 RECOMP_ABI_RESTORE=1 \
-       RECOMP_LOCK_IDLE=1 RECOMP_MUTE=0 RECOMP_WINDOW=1
+# The paths and the player's settings, and no switch: what the game needs
+# is the engine's own default (tests/launcher_env checks).
 export RECOMP_GL_SCALE="$SCALE"
 [ "$FULLSCREEN" = 1 ] && export RECOMP_FULLSCREEN=1
 export JSRF_GAME_DIR="$GAME" JSRF_SAVE_DIR="$SAVE" JSRF_SETTINGS_FILE="$CFG"

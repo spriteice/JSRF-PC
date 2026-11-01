@@ -809,13 +809,13 @@ uint64_t xbox_ReadTimeStampCounter(void)
  *
  * The count is g_vblank_count (kernel_bridge.c), bumped once per tick by the
  * timer thread. Two regimes follow from it:
- *  - tick-driven (RECOMP_VBLANK=1, once the first vblank is counted): the pin
- *    is the count's parity and holds still between vblanks, however often
- *    it is read;
- *  - no tick (before the first vblank, or the whole run with RECOMP_VBLANK
- *    off): the count is 0, so the pin toggles on every read instead. A
- *    reader waiting for either field still sees it; nothing is implied
- *    about vblank delivery.
+ *  - tick-driven (once the first vblank is counted): the pin is the
+ *    count's parity and holds still between vblanks, however often it is
+ *    read;
+ *  - no tick (before the first vblank, or the whole run with
+ *    RECOMP_VBLANK=0): the count is 0, so the pin toggles on every read
+ *    instead. A reader waiting for either field still sees it; nothing is
+ *    implied about vblank delivery.
  *
  * Every other port reads 0 and is logged on first use, once per port.
  * ========================================================================= */

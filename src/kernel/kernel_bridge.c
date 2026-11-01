@@ -2426,8 +2426,11 @@ static void kernel_vblank_tick(void)
     static long long next_ms;
     long long now;
 
-    if (enabled < 0)
-        enabled = getenv("RECOMP_VBLANK") != NULL;
+    /* On unless RECOMP_VBLANK=0. */
+    if (enabled < 0) {
+        const char *e = getenv("RECOMP_VBLANK");
+        enabled = e ? atoi(e) != 0 : 1;
+    }
     if (!enabled)
         return;
 
@@ -6446,17 +6449,21 @@ static unsigned lock_slot(void)
     return (unsigned)t_lock_slot;
 }
 static int g_guest_lock_enabled = -1;
-/* RECOMP_LOCK_IDLE=1: idle-priority threads take the guest lock like any
- * other. JSRF needs it: CRI's ADXM idle thread (start 0x0013B2A0, created at
- * THREAD_PRIORITY_IDLE by ADXM_SetupThrd) does real file and decode work, and
- * outside the lock it ran concurrently with the threads CRI assumes it cannot
- * preempt. The one thread the exemption was made for, the `while (!exit)
- * counter++` spinner at 0x0013B180, now runs natively and marks itself idle
- * explicitly (recomp_manual.c), so it no longer depends on this. */
+/* Idle-priority threads take the guest lock like any other, unless
+ * RECOMP_LOCK_IDLE=0. JSRF needs it: CRI's ADXM idle thread (start
+ * 0x0013B2A0, created at THREAD_PRIORITY_IDLE by ADXM_SetupThrd) does real
+ * file and decode work, and outside the lock it ran concurrently with the
+ * threads CRI assumes it cannot preempt. The one thread the exemption was
+ * made for, the `while (!exit) counter++` spinner at 0x0013B180, now runs
+ * natively and marks itself idle explicitly (recomp_manual.c), so it no
+ * longer depends on this. */
 int xbox_guest_lock_idle_takes_lock(void)
 {
     static int v = -1;
-    if (v < 0) v = getenv("RECOMP_LOCK_IDLE") ? 1 : 0;
+    if (v < 0) {
+        const char *e = getenv("RECOMP_LOCK_IDLE");
+        v = e ? atoi(e) != 0 : 1;
+    }
     return v;
 }
 static RECOMP_TLS int t_guest_holds;
@@ -6487,7 +6494,7 @@ void xbox_guest_lock_acquire(void)
      * line below says when that has happened, because a fix that silently
      * changes nothing is indistinguishable from a fix that was not needed. */
     /*
-     * RECOMP_LOCK_IDLE=1 makes idle-priority threads take the lock too.
+     * Idle-priority threads take the lock too, unless RECOMP_LOCK_IDLE=0.
      *
      * The exemption exists because this title parks a worker in a bare
      * `while (!exit) counter++`, and a loop with no calls in it never reaches

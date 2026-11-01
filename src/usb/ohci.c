@@ -906,11 +906,11 @@ void xbox_OhciInit(void)
         return;
     done = 1;
 
-    /* Opt-in. Without a descriptor list walker behind it a driver that finds
-     * a port has nothing to enumerate, so this must not change how a title
-     * behaves until the rest of it exists. */
-    if (!getenv("RECOMP_USB"))
-        return;
+    /* On unless RECOMP_USB=0: the pad is reached through these controllers,
+     * and without them the title finds none. */
+    { const char *e = getenv("RECOMP_USB");
+      if (e && atoi(e) == 0)
+          return; }
 
     s_enabled = 1;
     s_trace   = getenv("RECOMP_USB_TRACE") != NULL;

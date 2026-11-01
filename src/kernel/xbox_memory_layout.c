@@ -660,7 +660,8 @@ static void fence_mirrors_tick(void)
                     /* Off by default whenever the executor is running: it
                      * writes the real semaphores. On for a run without it,
                      * where nothing else would ever complete a fence. */
-                    on = e ? atoi(e) : (getenv("RECOMP_PB_EXEC") ? 0 : 1); }
+                    const char *x = getenv("RECOMP_PB_EXEC");
+                    on = e ? atoi(e) : (x && atoi(x) == 0); }
       if (!on) return; }
     for (int i = 0; i < g_fence_mirror_count; i++) {
         uint32_t dev, get_ptr;
@@ -2121,9 +2122,10 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
         );
         /* The pushbuffer survey rides on the same poll, so either
          * variable arms it. */
-        s_nv2a_trace = getenv("RECOMP_NV2A_TRACE") != NULL
-                    || getenv("RECOMP_PB_SCAN") != NULL
-                    || getenv("RECOMP_PB_EXEC") != NULL;
+        { const char *x = getenv("RECOMP_PB_EXEC");   /* on unless =0 */
+          s_nv2a_trace = getenv("RECOMP_NV2A_TRACE") != NULL
+                      || getenv("RECOMP_PB_SCAN") != NULL
+                      || (x ? atoi(x) != 0 : 1); }
         if (g_nv2a_memory) {
             fprintf(stderr, "  NV2A register aperture: %u MB at Xbox VA "
                     "0x%08X (zeroed, no register semantics)\n",
@@ -2186,18 +2188,18 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
              * nothing clears it, and the poll reads it on the first pass. */
             #define MCPX_AC97_CODEC_STATUS 0x00400130u   /* 0xFEC00130 */
             #define MCPX_AC97_CODEC_READY  0x00000100u
-            /* Opt-in, and not because it is wrong.
+            /* On unless RECOMP_AC97_READY_NOTRAP=0. JSRF needs the codec
+             * reported ready, and every release has run with it.
              *
-             * Reporting the codec is the correct answer -- DSERR_NODRIVER is
-             * not what hardware returns -- but it is only correct as far as it
-             * goes. DirectSound then hands the audio DSP a command block in
-             * RAM and spins until the DSP clears it, and there is no DSP here,
-             * so the title trades a late crash for an early hang: 44 assets
-             * loaded and then a fault, versus one asset and a stall in audio
-             * init. Until the DSP handshake is answered, the honest default is
-             * the failure that gets further, with the correct behaviour one
-             * variable away. */
-            if (getenv("RECOMP_AC97_READY_NOTRAP")) {
+             * The toolkit left it off, though it is the correct answer --
+             * DSERR_NODRIVER is not what hardware returns -- because it is
+             * only correct as far as it goes. DirectSound then hands the audio
+             * DSP a command block in RAM and spins until the DSP clears it, so
+             * a title that waits there trades a late crash for an early hang:
+             * 44 assets loaded and then a fault, versus one asset and a stall
+             * in audio init. RECOMP_APU_DSP_ACK answers that wait. */
+            const char *notrap = getenv("RECOMP_AC97_READY_NOTRAP");
+            if (notrap ? atoi(notrap) != 0 : 1) {
                 /* Codec-ready bit only, no MMIO trapping: for hosts without a
                  * fault-based MMIO decoder (POSIX / ARM64). The DSP doorbell
                  * is answered by RECOMP_APU_DSP_ACK instead. */

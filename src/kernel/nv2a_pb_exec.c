@@ -18,7 +18,7 @@
  * Everything this does not handle is counted and ranked by
  * nv2a_pb_exec_report(), so what remains is a list rather than a guess.
  *
- * Enabled with RECOMP_PB_EXEC. RECOMP_RASTER_TEST draws one known triangle
+ * On unless RECOMP_PB_EXEC=0. RECOMP_RASTER_TEST draws one known triangle
  * after every clear, which separates "the pixel path is broken" from "the title
  * has not given us any vertices". RECOMP_FB_DUMP=<prefix> writes the surface to
  * <prefix>NNN.bmp, so the result can be looked at without a display.
@@ -1589,7 +1589,7 @@ void nv2a_pb_exec_method(uint32_t subch, uint32_t method, uint32_t param)
      * including the ones this executor has no use for (vertex programs,
      * viewport, depth). Deliberately before the subchannel check: it needs the
      * stream as the title wrote it, not the subset that can be rasterised in
-     * software. Returns immediately unless RECOMP_GL is set. */
+     * software. Returns immediately with RECOMP_GL=0. */
     if (nv2a_gl_enabled() && subch == 0) {
         nv2a_gl_method(method, param);
         /*

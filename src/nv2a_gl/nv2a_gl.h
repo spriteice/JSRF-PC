@@ -15,9 +15,8 @@
  * software path stays available as a reference when this one draws something
  * wrong.
  *
- * Enabled by RECOMP_GL=1. Without it every entry point returns immediately
- * and nothing is initialised, so a build with this linked in behaves exactly
- * as it did before.
+ * On unless RECOMP_GL=0. With it every entry point returns immediately and
+ * nothing is initialised, so the software path draws alone.
  */
 #ifndef NV2A_GL_H
 #define NV2A_GL_H

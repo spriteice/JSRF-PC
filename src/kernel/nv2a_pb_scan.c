@@ -213,8 +213,10 @@ uint32_t nv2a_pb_scan(uint32_t start_va, uint32_t end_va)
     /* Both read once. This runs on every pushbuffer segment the title submits
      * -- thousands a second -- and getenv walks the environment doing a string
      * compare per entry every time it is called. */
-    if (s_exec_enabled < 0)
-        s_exec_enabled = getenv("RECOMP_PB_EXEC") != NULL;
+    if (s_exec_enabled < 0) {
+        const char *e = getenv("RECOMP_PB_EXEC");   /* on unless =0 */
+        s_exec_enabled = e ? atoi(e) != 0 : 1;
+    }
     if (s_scan_enabled < 0)
         s_scan_enabled = getenv("RECOMP_PB_SCAN") != NULL;
     if (!(s_scan_enabled || s_exec_enabled) || end_va <= start_va)

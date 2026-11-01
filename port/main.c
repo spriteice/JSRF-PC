@@ -979,7 +979,7 @@ static int host_main(void)
      * to intercept. Without a controller answering, the title's own driver
      * finds no host controller and never asks for a report, which is exactly
      * what a run showed: the guest read the pad zero times in seventy
-     * seconds. RECOMP_USB=1 turns it on. */
+     * seconds. On unless RECOMP_USB=0. */
     xbox_OhciInit();
 
     /* Step 7: Call the recompiled entry point */
@@ -998,10 +998,11 @@ static int host_main(void)
      * guest already runs on real host threads for its own PsCreateSystemThread
      * calls, so being on one more is not a new situation for it.
      *
-     * Without RECOMP_WINDOW nothing changes: the guest runs on the main
-     * thread exactly as before, and there is no window to service.
+     * With RECOMP_WINDOW=0 there is no window: the guest runs on the main
+     * thread, and there is no window to service.
      */
-    if (getenv("RECOMP_WINDOW")) {
+    const char *want_window = getenv("RECOMP_WINDOW");
+    if (want_window ? atoi(want_window) != 0 : 1) {
         extern int   nv_window_prepare(int w, int h, const char *title);
         extern void  nv_window_pump(void);
         extern int   nv_window_should_close(void);
@@ -1079,7 +1080,7 @@ static int host_main(void)
 }
 
 /* The guest, on a thread of its own, so that the main thread can own the
- * window. Only used when RECOMP_WINDOW asks for one. */
+ * window. Only used with a window (unless RECOMP_WINDOW=0). */
 static void *guest_thread_main(void *arg)
 {
     (void)arg;

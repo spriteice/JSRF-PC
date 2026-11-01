@@ -1129,7 +1129,10 @@ static int          g_aniso_now = ANISO_NONE;   /* and in use */
 
 int nv2a_gl_enabled(void)
 {
-    if (g_on < 0) g_on = getenv("RECOMP_GL") ? 1 : 0;
+    if (g_on < 0) {
+        const char *e = getenv("RECOMP_GL");   /* on unless =0 */
+        g_on = e ? atoi(e) != 0 : 1;
+    }
     return g_on;
 }
 
@@ -4713,8 +4716,11 @@ int nv2a_widescreen(void)
         const char *v = getenv("RECOMP_WIDESCREEN");
         extern int nv_window_pref_widescreen(void) __attribute__((weak));
         if (v && *v) g_wide = atoi(v) != 0;
-        else g_wide = (getenv("RECOMP_WINDOW") && nv_window_pref_widescreen)
-                    ? (nv_window_pref_widescreen() != 0) : 0;
+        else {
+            const char *w = getenv("RECOMP_WINDOW");
+            g_wide = ((w ? atoi(w) != 0 : 1) && nv_window_pref_widescreen)
+                   ? (nv_window_pref_widescreen() != 0) : 0;
+        }
         /* RECOMP_WIDE_ASPECT=<width/height>, e.g. 2.17: widen to that shape
          * instead of 16:9 (the iPhone sets its screen's itself). */
         if ((v = getenv("RECOMP_WIDE_ASPECT")) != NULL && atof(v) > 0.0)
@@ -10551,9 +10557,9 @@ static void present(int is_frame)
      * it is worth paying only when something will look at it: with it on, this
      * title managed 133k draws in two minutes, and with it off, 295k.
      *
-     * RECOMP_GL_READBACK=n copies every nth frame (0 = never). A capture is
-     * scheduled separately and forces a copy for that frame alone, so arming
-     * one no longer costs the whole run its speed.
+     * RECOMP_GL_READBACK=n copies every nth frame (0 = never, the default).
+     * A capture is scheduled separately and forces a copy for that frame
+     * alone, so arming one no longer costs the whole run its speed.
      */
     {
         static int every = -1, dump_shots;
@@ -10566,7 +10572,7 @@ static void present(int is_frame)
             const char *a = getenv("RECOMP_GL_DUMP_AFTER");
             const char *e = getenv("RECOMP_GL_DUMP_EVERY");
             const char *t = getenv("RECOMP_GL_DUMP_3D");
-            every = v ? atoi(v) : 1;
+            every = v ? atoi(v) : 0;
             if (every < 0) every = 0;
             pfx = getenv("RECOMP_GL_DUMP_FB");
             dump_after = a ? (uint32_t)strtoul(a, 0, 0) : 0;
@@ -12571,8 +12577,9 @@ static int gfx_init(uint32_t w, uint32_t h)
      * environment can ask. */
     extern void *nv_window_metal_layer(void) __attribute__((weak));
     extern void  nv_window_use_gl(void) __attribute__((weak));
-    if (getenv("RECOMP_WINDOW") && nv_window_is_open())
-        g_windowed = 1;
+    { const char *w = getenv("RECOMP_WINDOW");
+      if ((w ? atoi(w) != 0 : 1) && nv_window_is_open())
+          g_windowed = 1; }
     metal_window = nv_window_metal_layer && nv_window_metal_layer() != NULL;
 #endif
     want_metal = (v && *v) ? !strcmp(v, "metal") : metal_window;
