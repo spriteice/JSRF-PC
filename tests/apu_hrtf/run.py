@@ -13,7 +13,8 @@ starting again must start where its new setting places it. Then the time it
 takes for 32 voices, shown. Built with the address and undefined behaviour
 sanitizers where GCC has them, to catch a read outside the history, and
 again without them for the timing. Requires GCC on PATH, including MinGW on
-Windows.
+Windows, and POSIX threads there (winpthreads), whose clock_gettime the
+timing reads.
 CC, when set, is the compiler instead of gcc.
 """
 import os
@@ -34,7 +35,7 @@ with tempfile.TemporaryDirectory(prefix="apu_hrtf-") as directory:
         subprocess.run(cc + ["-std=gnu11", "-O2", "-Wall", "-Wextra",
                         "-Wno-unused-variable", "-Wno-cast-function-type", *flags,
                         "-Isrc/apu", "-Isrc", "-Isrc/nv2a", "tests/apu_hrtf/test_main.c",
-                        "-o", exe, "-lm"], cwd=root, check=True)
+                        "-o", exe, "-lm", "-pthread"], cwd=root, check=True)
         return exe
 
     checked = build("checked.exe", [] if sys.platform == "win32"
