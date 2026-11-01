@@ -71,11 +71,18 @@ one recorded in `launcher/linux/sdl-config.h`.
 
 ### 3. Windows package
 
-Cross-compiled on Linux, as the top of launcher/windows/package.sh records:
-llvm-mingw 20241217 (UCRT), SDL2 2.30.0 (the MinGW development package) and
-libepoxy 1.5.10 (cross-built with the same toolchain), then CMake with
-`launcher/windows/llvm-mingw.cmake`, then `launcher/windows/package.sh`.
-Those versions are pinned, like the Linux image.
+Cross-compiled on Linux, as the release is, the way
+docs/building-on-linux.md's "Windows" says:
+
+- The build image: `ubuntu:22.04` by digest, set up by
+  `launcher/image.sh windows`.
+- `launcher/windows/build.sh /work <version>`: llvm-mingw 20241217 (UCRT),
+  SDL2 2.30.0 (the MinGW development package) and libepoxy 1.5.10, built
+  with meson 1.12.1 (`launcher/windows/deps.sh`), then the engine with
+  `launcher/windows/llvm-mingw.cmake`, then `launcher/windows/package.sh`.
+
+Those versions are pinned, like the Linux image, and each download is
+checked by its SHA-256.
 
 ### The version
 
@@ -100,7 +107,11 @@ Those versions are pinned, like the Linux image.
 
 ## Compatibility checks
 
-Run these on every build you deliver.
+Run these on every build you deliver. Both build.sh scripts end by running
+`launcher/check_package.py` on the package they made, and it checks any
+other package too (`python3 launcher/check_package.py <package>`). Report
+its output. If a check fails, fix it before delivering, except glibc
+(below).
 
 ### Linux: glibc
 
@@ -108,24 +119,16 @@ The Ally X has glibc 2.43, so a binary that needs anything newer won't
 start. The published floor is glibc 2.34 (the package's README.txt). Stay
 within it so other distributions keep working.
 
-package.sh prints the libraries the engine needs and its newest glibc
-symbol. In the extracted package, check the bundled SDL2 too, and that
-libstdc++ is linked in rather than needed:
-
-```sh
-objdump -T bin/jsrf_recomp | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1
-objdump -T lib/libSDL2-2.0.so.0 | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1
-objdump -T bin/jsrf_recomp | grep -c 'GLIBCXX\|CXXABI'    # must be 0
-```
-
-If binutils is missing, install it or use `readelf -V`, and say which you
-used.
+check_package.py checks that the engine and the bundled SDL2 need glibc
+2.34 at most, and nothing else from the system but libc, libm, libGL.so.1
+and SDL2 (the engine) or libc and libm (SDL2). It also checks that the
+engine doesn't need libstdc++: the menu's C++ runtime is linked in.
 
 Also report:
 
 - `ldd bin/jsrf_recomp` with `LD_LIBRARY_PATH=lib`, in the build image,
   noting any library that is neither bundled nor expected on SteamOS.
-- The build image's glibc (`ldd --version`).
+- The build image's glibc (`ldd --version`, which build.sh prints).
 
 If the newest version is above 2.34, name the symbol responsible
 (`objdump -T <binary> | grep GLIBC_<version>`) and tell me before
@@ -133,18 +136,20 @@ delivering. If it is above 2.43, do not deliver; fix it first.
 
 ### Windows: DLLs
 
-package.sh prints the DLLs the launcher and the engine import. Each must be
-bundled in `engine/` (SDL2, libepoxy-0, libwinpthread-1) or be part of
-Windows. Report the list.
+check_package.py checks that each program and DLL imports only the DLLs
+bundled beside it (SDL2, libepoxy-0 and libwinpthread-1 in `engine/`) or
+ones that are part of Windows 10 and 11. package.sh prints the DLLs the
+launcher and the engine import. Report the list.
 
 ### Linux and Windows: package contents
 
-List what is in each package (`tar tzf` and `unzip -l`) and report it. It
-holds only the launcher, the engine and its bundled libraries, README.txt,
-VERSION, and `licences/` with a licence for each of them, plus the icon on
-Linux. No game files, logs, source, or anything left over from debugging.
-Text files have the platform's line endings once: LF on Linux, CRLF on
-Windows, never `\r\r\n`.
+check_package.py checks that each package holds exactly the files it lists:
+the launcher, the engine and its bundled libraries, README.txt, VERSION, and
+`licences/` with a licence for each of them, plus the icon on Linux. So no
+game files, logs, source, or anything left over from debugging. A file added
+to a package goes on that list in the same commit. It also checks that text
+files have the platform's line endings once: LF on Linux, CRLF on Windows,
+never `\r\r\n`.
 
 ### Linux and Windows: against the last tested package
 

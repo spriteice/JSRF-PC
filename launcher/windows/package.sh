@@ -10,15 +10,11 @@
 # the toolchain. Licence texts are taken from LICENCES_DIR when it is set
 # (SDL2-COPYING.txt, libepoxy-COPYING.txt, winpthreads-COPYING.txt).
 #
-# How the release is built (from a Linux box; nothing here needs Windows):
-#   llvm-mingw 20241217 (LLVM 19.1.6, UCRT), SDL2 2.30.0 (the MinGW
-#   development package), libepoxy 1.5.10 (meson, cross-built with the same
-#   toolchain), both installed into one prefix, then
-#     cmake -S port -B build-win -G Ninja \
-#           -DCMAKE_TOOLCHAIN_FILE="$PWD/launcher/windows/llvm-mingw.cmake" \
-#           -DLLVM_MINGW=<llvm-mingw dir> -DWIN_DEPS=<that prefix> \
-#           -DCMAKE_BUILD_TYPE=Release -DJSRF_VERSION=<version>
-#     ninja -C build-win jsrf_recomp
+# The release is built by launcher/windows/build.sh, which makes the
+# toolchain and the libraries with deps.sh, builds the engine, then runs this;
+# nothing here needs Windows. Every text file in the package ends its lines
+# with CR LF once, whatever its source used (SDL's COPYING.txt is already
+# CR LF); launcher/check_package.py checks.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
@@ -55,14 +51,16 @@ install -m 644 "$dlls/SDL2.dll" "$dlls/libepoxy-0.dll" "$dir/engine/"
 install -m 644 "$tc/x86_64-w64-mingw32/bin/libwinpthread-1.dll" "$dir/engine/"
 "$tc/bin/llvm-strip" --strip-debug "$dir/engine/libepoxy-0.dll" "$dir/engine/libwinpthread-1.dll"
 
-printf '%s\n' "$version" > "$dir/VERSION"
-sed 's/$/\r/' "$here/README.txt" > "$dir/README.txt"
-for f in LICENSE NOTICE; do sed 's/$/\r/' "$repo/$f" > "$dir/licences/$f.txt"; done
-sed 's/$/\r/' "$repo/LICENSES/LGPL-2.1.txt" > "$dir/licences/LGPL-2.1.txt"
-sed 's/$/\r/' "$repo/LICENSES/imgui-MIT.txt" > "$dir/licences/imgui-MIT.txt"
+# Text files: each line ends with one CR LF, whether it had LF or CR LF.
+crlf() { sed 's/\r*$/\r/' "$1" > "$2"; }
+printf '%s\r\n' "$version" > "$dir/VERSION"
+crlf "$here/README.txt" "$dir/README.txt"
+for f in LICENSE NOTICE; do crlf "$repo/$f" "$dir/licences/$f.txt"; done
+crlf "$repo/LICENSES/LGPL-2.1.txt" "$dir/licences/LGPL-2.1.txt"
+crlf "$repo/LICENSES/imgui-MIT.txt" "$dir/licences/imgui-MIT.txt"
 if [ -n "${LICENCES_DIR:-}" ]; then
     for f in SDL2-COPYING.txt libepoxy-COPYING.txt winpthreads-COPYING.txt; do
-        [ -f "$LICENCES_DIR/$f" ] && sed 's/$/\r/' "$LICENCES_DIR/$f" > "$dir/licences/$f"
+        [ -f "$LICENCES_DIR/$f" ] && crlf "$LICENCES_DIR/$f" "$dir/licences/$f"
     done
 fi
 

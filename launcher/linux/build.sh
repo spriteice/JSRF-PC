@@ -13,7 +13,7 @@
 #
 # The engine needs only libc, libm, libGL.so.1 and SDL2: --as-needed and the
 # legacy libGL leave out the rest, and the menu's C++ runtime is linked in
-# (port/CMakeLists.txt).
+# (port/CMakeLists.txt). Last, launcher/check_package.py checks the package.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
@@ -32,3 +32,4 @@ SDL_LICENSE="$work/out/SDL2-LICENSE.txt" "$here/package.sh" \
     "$work/build/jsrf_recomp" "$work/sdl/lib/libSDL2-2.0.so.0" "$work/out"
 rm "$work/out/SDL2-LICENSE.txt"
 echo "build image: $(ldd --version | sed -n 1p)"
+python3 "$repo/launcher/check_package.py" "$work/out/JSRF-PC-linux-x86_64.tar.gz"

@@ -109,11 +109,29 @@ for the bundled SDL to match the release's byte for byte.
 
 ## Windows
 
-The Windows build is cross-compiled on Linux with
-[llvm-mingw](https://github.com/mstorsjo/llvm-mingw) and the toolchain file
-[`launcher/windows/llvm-mingw.cmake`](../launcher/windows/llvm-mingw.cmake).
-[`launcher/windows/package.sh`](../launcher/windows/package.sh) packages it,
-and the top of that file records the rest (SDL2, libepoxy).
+The Windows build is cross-compiled on Linux, in a container like the Linux
+package's, with your generated code in `port/recomp/gen`:
+
+```sh
+mkdir -p ~/jsrf-work-win
+docker run --name jsrf-image-win \
+    -v "$PWD":/src ubuntu:22.04@sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11 \
+    /src/launcher/image.sh windows
+docker commit jsrf-image-win jsrf-image-win && docker rm jsrf-image-win
+docker run --rm -v "$PWD":/src -v ~/jsrf-work-win:/work jsrf-image-win \
+    /src/launcher/windows/build.sh /work <version>
+```
+
+The package is `~/jsrf-work-win/out/JSRF-PC-windows-x86_64.zip`.
+[`launcher/windows/deps.sh`](../launcher/windows/deps.sh) fetches and builds
+what it needs: [llvm-mingw](https://github.com/mstorsjo/llvm-mingw), SDL2's
+MinGW development package and libepoxy, each at a fixed version.
+[`launcher/windows/build.sh`](../launcher/windows/build.sh) then builds the
+engine with the toolchain file
+[`launcher/windows/llvm-mingw.cmake`](../launcher/windows/llvm-mingw.cmake),
+and [`launcher/windows/package.sh`](../launcher/windows/package.sh) packages
+it. Unlike the Linux build, it doesn't take its version from git:
+`<version>` above is the version, such as `b1.3`.
 
 ## The version
 

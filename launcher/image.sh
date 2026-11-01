@@ -7,7 +7,7 @@
 #
 # (Ubuntu 22.04, so glibc 2.35, and the Linux package runs on 2.34 or later):
 #
-#   launcher/image.sh linux [tests]
+#   launcher/image.sh linux|windows [tests]
 #
 # It installs the packages below from Ubuntu's snapshot archive as it was at
 # SNAPSHOT, each at the version named, so the image is the same whenever and
@@ -16,6 +16,8 @@
 #
 #   linux   the Linux package: clang, CMake and Ninja, and the headers SDL and
 #           the engine build against
+#   windows the Windows package's host: CMake, Ninja, and Python for meson;
+#           the toolchain and the libraries come from launcher/windows/deps.sh
 #   tests   what the tests need on top, in CI only: GCC, Mesa's EGL for the
 #           renderer's tests, Python's venv for the tools, and llvm-symbolizer
 #           for the thread sanitizer's reports
@@ -41,6 +43,10 @@ linux=(
     libudev-dev=249.11-0ubuntu3.23 libdbus-1-dev=1.12.20-2ubuntu4.1
     libssl-dev=3.0.2-0ubuntu1.30 libepoxy-dev=1.5.10-1
 )
+windows=(
+    cmake=3.22.1-1ubuntu1.22.04.2 ninja-build=1.10.1-1 python3=3.10.6-1~22.04.1
+    python3-venv=3.10.6-1~22.04.1 xz-utils=5.2.5-2ubuntu1.2
+)
 tests=(
     gcc=4:11.2.0-1ubuntu1 g++=4:11.2.0-1ubuntu1
     libegl-mesa0=23.2.1-1ubuntu3.1~22.04.4 libgl1-mesa-dri=23.2.1-1ubuntu3.1~22.04.4
@@ -52,11 +58,12 @@ want=()
 for group in "$@"; do
     case "$group" in
         linux) want+=("${linux[@]}") ;;
+        windows) want+=("${windows[@]}") ;;
         tests) want+=("${tests[@]}") ;;
-        *) echo "usage: launcher/image.sh linux [tests]" >&2; exit 2 ;;
+        *) echo "usage: launcher/image.sh linux|windows [tests]" >&2; exit 2 ;;
     esac
 done
-[ "${#want[@]}" -gt 0 ] || { echo "usage: launcher/image.sh linux [tests]" >&2; exit 2; }
+[ "${#want[@]}" -gt 0 ] || { echo "usage: launcher/image.sh linux|windows [tests]" >&2; exit 2; }
 
 export DEBIAN_FRONTEND=noninteractive
 # The snapshot archive is HTTPS only, and the base image has no CA
@@ -71,5 +78,6 @@ printf 'deb %s %s main universe\n' "$archive" jammy "$archive" jammy-updates \
 apt-get update
 apt-get install -y --no-install-recommends ca-certificates=20260816ubuntu0.22.04.1 "${want[@]}"
 rm -rf /var/lib/apt/lists/*
-git config --global --add safe.directory '*'
+# The repository is mounted, owned by someone else: let git read it.
+if command -v git > /dev/null; then git config --global --add safe.directory '*'; fi
 echo "image.sh: $* from the snapshot of $SNAPSHOT; glibc $(ldd --version | sed -n '1s/.* //p')"
