@@ -2407,6 +2407,37 @@ void sub_00030490(void) { mission_hook(".bin"); sub_00030490_gen(); }
 extern void sub_00030690_gen(void);
 void sub_00030690(void) { mission_hook(".dat"); sub_00030690_gen(); }
 
+/* ---- the game's resource loads, checked (resource_load.c) -----------------
+ * sub_00032C70, the character loader's step, releases a character's .dat and
+ * can keep the pointer, which a character unload then releases again: after
+ * the step, it is forgotten once its buffer is released. sub_0004AC80 and
+ * sub_0004ACB0, the flow's steps that ask for its stage, are logged. */
+#include "resource_load.h"
+extern int xbox_HeapIsFreeSpace(uint32_t xbox_va);   /* released, or never handed out */
+extern void sub_00032C70_gen(void);
+extern void sub_0004AC80_gen(void);
+extern void sub_0004ACB0_gen(void);
+void sub_00032C70(void)
+{
+    uint32_t mgr = g_ecx;
+    sub_00032C70_gen();
+    resource_load_char_step((uint8_t *)g_xbox_mem_offset, mgr, xbox_HeapIsFreeSpace, pad_now());
+}
+void sub_0004AC80(void)
+{
+    const uint8_t *m = (const uint8_t *)g_xbox_mem_offset;
+    uint32_t flow = g_ecx, state = resource_load_flow_state(m, flow);
+    sub_0004AC80_gen();
+    resource_load_stage_step(m, flow, state, pad_now());
+}
+void sub_0004ACB0(void)
+{
+    const uint8_t *m = (const uint8_t *)g_xbox_mem_offset;
+    uint32_t flow = g_ecx, state = resource_load_flow_state(m, flow);
+    sub_0004ACB0_gen();
+    resource_load_stage_step(m, flow, state, pad_now());
+}
+
 /* JSRF_TRACE_AT="t:frames[:shots,every][;t:frames[:shots,every]...]" (test
  * only): at each time t, log every render pass for that many frames and
  * capture a burst of frames -- up to eight of them, in time order, so one

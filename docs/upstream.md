@@ -1117,6 +1117,30 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   update's own code, and the destructor's character read before its own
   code, and run tests/voice_follow.
 
+### Character files released once
+
+- **Files:** port/recomp_manual.c (`sub_00032C70`, a hook on the end of the
+  character loader's step; `sub_0004AC80` and `sub_0004ACB0`, hooks on the
+  end of the flow's steps that ask for its stage), port/CMakeLists.txt
+  (port/resource_load.c).
+- **Why:** leaving the garage for Rokkaku-dai Heights hung on loading,
+  about once in 12 times. The game's character loader releases a
+  character's .dat buffer and keeps the pointer when the character's voice
+  bank is loaded already, and both character unloads release it again. Our
+  heap often gives a released address to the next file, so the second
+  release could free a file in use. Here it was mission 0425's: StgObj12.bin
+  was then read over it, and the game asked for a stage that isn't on the
+  disc and waited for it. After each step of the loader, the pointer is
+  forgotten once its buffer has been released, as the loader's other
+  releases of it do, with a `[LOAD]` line. Each stage a mission asks for is
+  logged too, with what its file said as it loaded, so a file written over
+  shows where. Our own files: port/resource_load.c and .h, and
+  tests/resource_load. Could suit upstream: the bug is the game's, and any
+  heap that reuses addresses can meet it.
+- **When picking:** keep the character hook's check after its `_gen` call,
+  and the stage hooks reading the flow's state before theirs. Run
+  tests/resource_load.
+
 ### Frames spent loading, shown
 
 - **Files:** src/nv2a_gl/nv2a_gl.c (the `M_FLIP_STALL` case, and

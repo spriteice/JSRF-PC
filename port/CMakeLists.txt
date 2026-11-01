@@ -123,6 +123,7 @@ if(ANDROID)
         developer.c
         adx_err.c
         voice_follow.c
+        resource_load.c
         cpuprof.c
         pcores.c
         xbe_check.c
@@ -141,6 +142,7 @@ else()
         developer.c
         adx_err.c
         voice_follow.c
+        resource_load.c
         cpuprof.c
         pcores.c
         xbe_check.c
