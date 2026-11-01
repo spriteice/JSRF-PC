@@ -75,7 +75,7 @@ typedef long LONG;
 #define XBOX_CONTIG_BASE 0x80000000u
 #define XBOX_KERNEL_DATA_BASE 0u
 #define KDATA_TICK_COUNT 0u
-#define InterlockedCompareExchange(p, x, c) (*(p))
+#define InterlockedCompareExchange(p, x, c) __sync_val_compare_and_swap((p), (c), (x))
 #define Sleep(ms) sched_yield()
 static void *g_nv2a_memory;
 static uintptr_t g_memory_offset;

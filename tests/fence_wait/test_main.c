@@ -58,9 +58,12 @@ static double thread_cpu_s(void)
 static volatile uint32_t *word(void) { return (volatile uint32_t *)(g_guest + WORD); }
 
 /* The GPU thread: writes each number the game hands out, in order, then
- * calls fence_written, as nv2a_pb_exec_method does. */
-static volatile uint32_t g_handed, g_stop;
-static volatile int g_pause_us = -1;            /* -1: random, 0 to 200 us */
+ * calls fence_written, as nv2a_pb_exec_method does. g_stop and g_pause_us
+ * are read and written atomically, and it draws its own random numbers,
+ * apart from the game thread's (g_seed). */
+static volatile uint32_t g_handed;
+static uint32_t g_stop;
+static int g_pause_us = -1;                     /* -1: random, 0 to 200 us */
 static double g_written_at[64];                 /* by number / 2, mod 64 */
 static unsigned g_seed = 1;
 
@@ -71,15 +74,17 @@ static void pause_us(int us)
 
 static void *gpu(void *arg)
 {
+    unsigned seed = 1;
+    int us;
     (void)arg;
-    while (!g_stop) {
+    while (!__atomic_load_n(&g_stop, __ATOMIC_ACQUIRE)) {
         uint32_t w = *word(), h = __atomic_load_n(&g_handed, __ATOMIC_ACQUIRE);
         if (w == h) { sched_yield(); continue; }
-        if (g_pause_us < 0) {
-            g_seed = g_seed * 1103515245u + 12345u;
-            if ((g_seed >> 16) % 3) pause_us((int)((g_seed >> 8) % 200));
+        if ((us = __atomic_load_n(&g_pause_us, __ATOMIC_ACQUIRE)) < 0) {
+            seed = seed * 1103515245u + 12345u;
+            if ((seed >> 16) % 3) pause_us((int)((seed >> 8) % 200));
         } else {
-            pause_us(g_pause_us);
+            pause_us(us);
         }
         g_written_at[((w + 2) >> 1) & 63] = now_s();
         *(volatile uint32_t *)((uint8_t *)xbox_GetMemoryOffset() + WORD) = w + 2;
@@ -93,7 +98,7 @@ static volatile unsigned long g_other_ran;
 static void *other(void *arg)
 {
     (void)arg;
-    while (!g_stop) {
+    while (!__atomic_load_n(&g_stop, __ATOMIC_ACQUIRE)) {
         pthread_mutex_lock(&g_guest_lock);
         g_other_ran++;
         pthread_mutex_unlock(&g_guest_lock);
@@ -135,7 +140,7 @@ int main(int argc, char **argv)
     }
     if (off) {
         if (declined != i) fail("RECOMP_FENCE_WAIT=0, and it waited");
-        g_stop = 1;
+        __atomic_store_n(&g_stop, 1, __ATOMIC_RELEASE);
         pthread_join(g, NULL);
         printf("RECOMP_FENCE_WAIT=0: declines every time\n");
         printf("fence_wait off: all cases pass\n");
@@ -147,7 +152,7 @@ int main(int argc, char **argv)
     /* Frame pacing: 5 ms before each fence. */
     while (*word() != top) sched_yield();
     s_fw.slept = 0; s_fw.us = 0; s_fw.longest_us = 0;
-    g_pause_us = 5000;
+    __atomic_store_n(&g_pause_us, 5000, __ATOMIC_RELEASE);
     pthread_create(&o, NULL, other, NULL);
     cpu = thread_cpu_s();
     for (i = 0; i < 200; i++) {
@@ -160,7 +165,7 @@ int main(int argc, char **argv)
     }
     qsort(late, 200, sizeof *late, by_value);
     cpu = thread_cpu_s() - cpu;
-    g_stop = 1;
+    __atomic_store_n(&g_stop, 1, __ATOMIC_RELEASE);
     pthread_join(g, NULL);
     /* The other guest thread may be waiting for the guest lock, which this
      * thread holds: given up, it sees g_stop. */

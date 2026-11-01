@@ -29,7 +29,8 @@ static double now(void)
     return (double)ts.tv_sec + ts.tv_nsec / 1e9;
 }
 
-static volatile unsigned long sink;
+/* A sink for each, so that the two spins share nothing. */
+static volatile unsigned long sink_worker, sink_main;
 
 /* Each looks at the clock once in a million turns, so that the samples land
  * in the function and not in the clock's own code. */
@@ -37,14 +38,14 @@ __attribute__((noinline)) static void spin_in_worker(double secs)
 {
     double end = now() + secs;
     unsigned long i;
-    do for (i = 0; i < 1000000; i++) sink++; while (now() < end);
+    do for (i = 0; i < 1000000; i++) sink_worker++; while (now() < end);
 }
 
 __attribute__((noinline)) static void spin_in_main(double secs)
 {
     double end = now() + secs;
     unsigned long i;
-    do for (i = 0; i < 1000000; i++) sink += 2; while (now() < end);
+    do for (i = 0; i < 1000000; i++) sink_main += 2; while (now() < end);
 }
 
 static int s_cpu[2] = { -1, -1 };     /* the worker's CPU and main's, or -1 */

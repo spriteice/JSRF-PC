@@ -52,14 +52,19 @@
 
 static uint8_t *s_guest;                 /* guest address 0 */
 static uint8_t *s_regs;                  /* the NV2A's 16 MB in it */
-static volatile int s_walking, s_walks;
+/* The stand-in executor's counters, which the GPU thread writes and the test
+ * reads: each read and written atomically. */
+static int s_walking, s_walks;
 static unsigned s_ran, s_get_at, s_get_not;
-static volatile uint32_t s_woke_at;      /* GET when the walk ran a NOP(5) */
+static uint32_t s_woke_at;               /* GET when the walk ran a NOP(5) */
+#define LOAD(v) __atomic_load_n(&(v), __ATOMIC_ACQUIRE)
+#define STORE(v, x) __atomic_store_n(&(v), (x), __ATOMIC_RELEASE)
+#define BUMP(v) __atomic_fetch_add(&(v), 1, __ATOMIC_ACQ_REL)
 static uint32_t s_slow = SLOW;           /* the command that takes SLOW_MS */
 
 ptrdiff_t xbox_GetMemoryOffset(void) { return (ptrdiff_t)(uintptr_t)s_guest; }
 void nv2a_pb_time_begin(void) { }
-void nv2a_pb_time_end(unsigned methods) { (void)methods; s_walks++; }
+void nv2a_pb_time_end(unsigned methods) { (void)methods; BUMP(s_walks); }
 void nv2a_pb_exec_report(void) { }
 
 void nv2a_pb_exec_method(uint32_t subch, uint32_t method, uint32_t param)
@@ -67,14 +72,14 @@ void nv2a_pb_exec_method(uint32_t subch, uint32_t method, uint32_t param)
     uint32_t get = *(volatile uint32_t *)(s_regs + NV2A_USER_DMA_GET);
     (void)subch;
     if (method != 0x100u) return;
-    if (param == 5u) s_woke_at = get;
-    s_ran++;
-    if (get == param) s_get_at++; else s_get_not++;
+    if (param == 5u) STORE(s_woke_at, get);
+    BUMP(s_ran);
+    if (get == param) BUMP(s_get_at); else BUMP(s_get_not);
     if (param == s_slow) {
         struct timespec ts = { 0, SLOW_MS * 1000000L };
-        s_walking = 1;
+        STORE(s_walking, 1);
         nanosleep(&ts, NULL);
-        s_walking = 0;
+        STORE(s_walking, 0);
     }
 }
 
@@ -132,10 +137,10 @@ static double kickoff(uint32_t put)
     return waited;
 }
 
-static int wait_for(volatile int *v, int want)
+static int wait_for(int *v, int want)
 {
     double t0 = now_ms();
-    while (*v < want)
+    while (__atomic_load_n(v, __ATOMIC_ACQUIRE) < want)
         if (now_ms() - t0 > 2000.0) return 0;
     return 1;
 }
@@ -227,15 +232,17 @@ static void ring_test(void)
     s_slow = RING_SLOW;
     kickoff(RING_PUT1);
     if (!wait_get(RING_PUT1)) { printf("GET never reached the first PUT\n"); return; }
-    s_ran = s_get_at = s_get_not = 0;
+    STORE(s_ran, 0);
+    STORE(s_get_at, 0);
+    STORE(s_get_not, 0);
     kickoff(RING_PUT2);
     if (!wait_for(&s_walking, 1)) { printf("the walk never reached the slow command\n"); return; }
     kickoff(RING_PUT3);
     if (!wait_get(RING_PUT3)) { printf("GET never reached the PUT past the jump\n"); return; }
     want = (RING_JUMP - RING_PUT1) / 8u + (RING_PUT3 - RING_START) / 8u;
     printf("a wrap with %u KB of tail: commands run: %u of %u; DMA_GET at the command each time: %s\n",
-           (RING_JUMP - RING_PUT2) / 1024u, s_ran, want,
-           !s_get_not ? "yes" : s_get_at ? "not always" : "never");
+           (RING_JUMP - RING_PUT2) / 1024u, LOAD(s_ran), want,
+           !LOAD(s_get_not) ? "yes" : LOAD(s_get_at) ? "not always" : "never");
 }
 
 /* D3D's wait for the GPU, as sub_00191440 does it after the fence it waits
@@ -272,7 +279,7 @@ static void wake_test(void)
         if (get <= fence) {
             double t0 = now_ms();
             slept++;
-            while (s_woke_at != slot)
+            while (LOAD(s_woke_at) != slot)
                 if (now_ms() - t0 > 500.0) { lost++; break; }
         } else {
             memw32(XBOX_CONTIG_BASE + slot, 0x00040100u);
@@ -311,7 +318,7 @@ int main(void)
         if (getenv("QUEUE_TEST_WAKE")) wake_test();
         else if (getenv("QUEUE_TEST_RING")) ring_test();
         else swm_test();
-        g_nv2a_ack_stop = 1;
+        __atomic_store_n(&g_nv2a_ack_stop, 1, __ATOMIC_RELEASE);
         pthread_join(gpu, NULL);
         return 0;
     }
@@ -328,11 +335,11 @@ int main(void)
     printf("flush with the GPU thread idle: %s\n", flush_idle < 5.0 ? "at once" : "late");
     printf("flush while the GPU thread walks: %s\n",
            flush_busy < 5.0 ? "at once" : flush_busy >= SLOW_MS / 2 ? "after the walk" : "late");
-    printf("commands run: %u; DMA_GET at the command each time: %s\n", s_ran,
-           !s_get_not ? "yes" : s_get_at ? "not always" : "never");
+    printf("commands run: %u; DMA_GET at the command each time: %s\n", LOAD(s_ran),
+           !LOAD(s_get_not) ? "yes" : LOAD(s_get_at) ? "not always" : "never");
     if (nv2a_queue_on()) nv2a_queue_report();
 
-    g_nv2a_ack_stop = 1;
+    __atomic_store_n(&g_nv2a_ack_stop, 1, __ATOMIC_RELEASE);
     pthread_join(gpu, NULL);
     return 0;
 }

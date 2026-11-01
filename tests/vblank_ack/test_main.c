@@ -46,7 +46,7 @@ static int spin(int limit)
 #define RACE_VBLANKS 200000ul
 static int s_dpc_queued;
 static unsigned long s_handled;
-static volatile int s_race_stop;
+static int s_race_stop;          /* read and written atomically */
 
 static int kernel_raise_interrupt(uint32_t vector)
 {
@@ -80,7 +80,7 @@ static double now_s(void)
 static void *pace_spin(void *p)
 {
     (void)p;
-    while (!s_race_stop) {
+    while (!__atomic_load_n(&s_race_stop, __ATOMIC_ACQUIRE)) {
         (void)now_s();
         xbox_nv2a_vblank_service();
     }
@@ -92,7 +92,7 @@ static void *ack_thread(void *p)
 {
     struct timespec ts = { 0, 200000L };
     (void)p;
-    while (!s_race_stop) {
+    while (!__atomic_load_n(&s_race_stop, __ATOMIC_ACQUIRE)) {
         vblank_intr_tick((volatile uint32_t *)g_nv2a_memory);
         nanosleep(&ts, NULL);
     }
@@ -124,7 +124,7 @@ static unsigned long race(void)
         until = now_s() + (double)((seed >> 8) % 20000u) * 1e-9;
         while (now_s() < until) { }
     }
-    s_race_stop = 1;
+    __atomic_store_n(&s_race_stop, 1, __ATOMIC_RELEASE);
     pthread_join(pace, NULL);
     pthread_join(ack, NULL);
     return s_handled;
