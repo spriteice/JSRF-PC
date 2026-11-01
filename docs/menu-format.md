@@ -41,9 +41,6 @@ each menu's rows live with the setting they change (File in
   game restarts at the new scale, losing unsaved progress."
 - OK saves the change and restarts the game (`sdl_restart` in nv2a_gl.c).
   Cancel and B change nothing; the pad starts on Cancel.
-- Where the game cannot restart itself (Android), OK saves the change for the
-  next start, and a row that means nothing without a restart (Render scale)
-  is not shown.
 - **Developer's switches are the exception.** The rows under Developer >
   Logging, Engine switches, Performance, and Experimental are marked
   (Restart) and apply from the next start, but they do not offer to

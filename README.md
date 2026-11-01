@@ -4,11 +4,11 @@
 
 # JSRF-PC
 
-JSRF-PC is a fork of upstream
+JSRF-PC is built on
 [JSRF Unleashed](https://github.com/JuMatt/JetSetRadioFuture-Unleashed) by
-[JuMatt](https://github.com/JuMatt). This fork aims to add various features and
-bug fixes, whilst focusing on Linux and Windows compatibility and performance.
-macOS, iOS, and Android are not supported on this repo.
+[JuMatt](https://github.com/JuMatt). It aims to add various features and bug
+fixes for Linux and Windows, the only platforms it supports, focusing on
+compatibility and performance.
 
 > ⚠️ **Written by AI:** All of JSRF-PC's additions to the upstream code are
 > written by AI, taking care to test features, fix bugs, and follow the
@@ -156,7 +156,7 @@ xemu is LGPL-2.1-or-later. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 - [JuMatt](https://github.com/JuMatt): the original port,
   [JSRF Unleashed](https://github.com/JuMatt/JetSetRadioFuture-Unleashed),
-  which this fork builds on, with the original widescreen and resolution
+  which JSRF-PC is built on, with the original widescreen and resolution
   scaling.
 - [xboxrecomp](https://github.com/sp00nznet/xboxrecomp): the static
   recompilation toolkit this is a port on top of. Its documentation is kept at

@@ -246,6 +246,3 @@ All with made-up data, and no game files:
 
 - The image's other effects don't run, its crosstalk among them: with the
   effects on, the placing and the fold do that work.
-- macOS, iOS and Android aren't built. The effects are plain C. Android, the
-  Mac and the iPhone don't have the in-game menu, so the row isn't there,
-  and the effects are on.

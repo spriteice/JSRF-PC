@@ -239,4 +239,4 @@ SET_MASK(v, mask, val)// Set masked field
 - **No shader execution** — NV2A vertex/pixel programs are not emulated.
 - **No texture fetch** — Texture state is tracked but not sampled.
 
-For actual rendering, see `src/nv2a_gl`, which renders the push buffer with OpenGL or Metal.
+For actual rendering, see `src/nv2a_gl`, which renders the push buffer with OpenGL.

@@ -194,10 +194,10 @@ and the folder picker keep their own small files and settings in your user
 profile as they do for any program.
 
 
-On a Mac or Linux, through Wine or CrossOver
---------------------------------------------
-On Linux, the native build is the better choice. The Windows one should
-run under Wine too: in CrossOver, make a Windows 10 64-bit bottle and use
+On Linux, through Wine or CrossOver
+-----------------------------------
+The native Linux build is the better choice. The Windows one should run
+under Wine too: in CrossOver, make a Windows 10 64-bit bottle and use
 "Run Command..." on JSRF-PC.exe.
 
 
