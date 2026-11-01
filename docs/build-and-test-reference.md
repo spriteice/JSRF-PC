@@ -27,8 +27,8 @@ about the difference.
 
 ### Before you start
 
-- **Source:** `main`. `upstream` only tracks JuMatt's repository, and
-  docs/upstream.md says how its changes are taken.
+- **Source:** `main`. `upstream` is JuMatt's history up to 0.5.9, kept as a
+  record and never merged (docs/upstream.md).
 - **Tags:** fetch this repository's tags (`git fetch --tags origin`). The
   version comes from them, and without them it is `dev`.
 - **Game files:** my own USA (NTSC-U) disc, the standalone one. Other
@@ -63,12 +63,21 @@ release recipe at the top of launcher/linux/package.sh instead:
 - `launcher/linux/package.sh` on the engine and that SDL's
   `libSDL2-2.0.so.0`, with `SDL_LICENSE` set to SDL's licence file.
 
+The build image is pinned. The recipe names the image, every package
+installed in it with its version, and every option given to SDL's CMake,
+and nothing else is installed. If something must be, add it to the recipe
+first, and tell me. A package in the image can change what SDL builds with
+no error: installing libibus-1.0-dev turned on IBus in the bundled SDL, and
+`-DSDL_IBUS=OFF` keeps it off. Until package.sh's recipe names all of
+these, list them in TESTING.md (Built from).
+
 ### 3. Windows package
 
 Cross-compiled on Linux, as the top of launcher/windows/package.sh records:
 llvm-mingw 20241217 (UCRT), SDL2 2.30.0 (the MinGW development package) and
 libepoxy 1.5.10 (cross-built with the same toolchain), then CMake with
 `launcher/windows/llvm-mingw.cmake`, then `launcher/windows/package.sh`.
+Those versions are pinned, like the Linux image.
 
 ### The version
 
@@ -136,6 +145,18 @@ List what is in each package (`tar tzf` and `unzip -l`) and report it. It
 holds only the launcher, the engine and its bundled libraries, README.txt,
 VERSION, and `licences/` with a licence for each of them, plus the icon on
 Linux. No game files, logs, source, or anything left over from debugging.
+Text files have the platform's line endings once: LF on Linux, CRLF on
+Windows, never `\r\r\n`.
+
+### Linux and Windows: against the last tested package
+
+Compare each package with the last one I tested: the files it holds, and
+each file's size and SHA-256. Every difference comes from the change or the
+version, or is explained in TESTING.md before delivery. A library built here
+differs in its build ID and build folder each time, so for those compare
+what it exports and needs (`objdump -T` and `objdump -p`) and its size. A
+bundled library that changed when its source and recipe didn't means the
+build image changed: find why before delivering.
 
 ## Delivery package
 
@@ -159,9 +180,11 @@ except inside the packaged build.
 - **What it is:** the change in one or two lines, the version string, and
   the packages with their SHA-256.
 - **Built from:** the commit, whether the tree had uncommitted changes, the
-  generated code (functions translated, 0 failed), and the toolchains.
-- **Checks done here:** the compatibility checks, the tests, and anything
-  run in the sandbox. Everything else is unverified.
+  generated code (functions translated, 0 failed), the toolchains, and the
+  build image with its packages.
+- **Checks done here:** the compatibility checks, the comparison with the
+  last tested package, the tests, and anything run in the sandbox.
+  Everything else is unverified.
 - **What to test:** numbered steps for the areas the change's code touches,
   and nothing else, each saying exactly what to do and on which device,
   what I should see if it works, and what I'd see if it doesn't.
@@ -174,9 +197,11 @@ except inside the packaged build.
   testing move to the other platform, on the same build, as each build
   carries both packages. After any fix, the steps already passed that it
   could affect are run again on the new build.
-- **Release builds:** also a fresh start, with the settings, cache, and log
+- **Release builds:** also a fresh install and an upgrade, on both
+  platforms: the Ally X and the Windows PC. The fresh install is the
+  package extracted to a new folder, with the settings, cache, and log
   folders renamed first and put back after (not deleted: a disc image's
-  saves are in them). And an upgrade, starting the new build over the
+  saves are in them). The upgrade is the new build started over the
   previous release's settings and saves, which must carry over unchanged.
   docs/release-checklist.md has the rest of a release's steps.
 - **What to send back:** the full last-run.log from each run, and
@@ -186,15 +211,22 @@ except inside the packaged build.
 
 ## Change report (REPORT.md)
 
-- **Root cause,** with your confidence and the evidence.
+- **Root cause,** what went wrong and the model behind it, with your
+  confidence and the evidence.
+- **Diagnosis:** a link to the written diagnosis, and when I agreed it.
+- **History:** earlier fixes in the same code, and which of them this
+  replaces or removes.
 - **Files touched,** with lines added and removed.
-- **Upstream files:** those of them upstream has, and their entry in
-  docs/upstream.md.
-- **Why it is the minimal root-cause fix,** and which existing helpers it
-  reuses.
+- **Why it fixes the root,** whether the same model can cause other bugs,
+  and which existing helpers it reuses.
+- **Regression test:** the test, and that it fails without the fix. Or why
+  there isn't one, and what catches the bug again instead.
+- **Overrides:** for each game function override or hook added or changed,
+  why it isn't fixed at the source.
+- **Docs** updated in the change.
 - **New functions,** each with why no existing one does the job.
-- **Platform impact:** Linux, Windows, macOS, iOS, and Android, saying which
-  were built or verified and which were not.
+- **Platform impact:** Linux and Windows, saying which were built or
+  verified and which were not.
 - **Gamescope (Game Mode) risk,** if any.
 - **What to test:** the checklist.
 - **Unverified:** everything not proven here.

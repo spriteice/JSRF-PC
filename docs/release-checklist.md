@@ -10,32 +10,52 @@ and `release-prep/`: each release's backlog, the release notes template with
 the writing rules, and the files of past releases. Each backlog's last row,
 Release, says which step the release has reached.
 
+## The gate
+
+No release ships with an open critical bug, hotfixes included. A bug is
+critical when, on Linux or Windows, it stops the game starting, freezes,
+hangs, or crashes it, loses saves or settings, or stops a player
+progressing, however rarely it happens.
+
+- A critical bug is fixed and tested before the release build (step 7).
+  One found in testing (step 8) stops the release until it's fixed.
+- The gate has no waiver. The maintainer can decide that a bug isn't
+  critical, with the reason written in known-bugs.md, but not ship one that
+  is.
+- The one exception is a hotfix that fixes a critical bug. It can ship
+  while other critical bugs from the release it replaces are still open,
+  if it adds none and lists them as known issues.
+
 ## Freeze the scope
 
 1. **Backlog closed:** every item in the release's backlog is done, or moved
    to a later one with the maintainer's OK.
-2. **Upstream decided:** the maintainer says whether this release picks
-   any commits from `upstream`, and which, as docs/upstream.md says. They
-   are picked before the review and the tests, so both cover them.
+2. **Switches retired:** every switch that turns a fix back to its old
+   behaviour, from a release already out, is removed (docs/project-rules.md,
+   Where code goes 5), before the review and the tests, so both cover it.
 3. **Main ready:** the latest `origin/main`, with no unpushed commits from
    elsewhere and a clean tree. Experiments and developer switches are off by
    default, and nothing left from debugging is still on.
-4. **Known bugs current:** known-bugs.md marks what this release fixed and
-   adds anything new. It becomes the release text's known issues.
+4. **Known bugs current:** known-bugs.md marks what this release fixed,
+   adds anything new, and says whether each open bug is critical (The
+   gate). Its open bugs become the release text's known issues. If one is
+   critical, the release stops here until it's fixed.
 
 ## Review
 
 5. **Rules review:** everything since the last release is checked against
    the project's rules. It looks for game files, generated code, or logs in
    the repo, session links in commit messages, band-aid fixes, address
-   lists, sleeps, docs that break the writing rules, and upstream files
-   changed with no entry in docs/upstream.md (a picked upstream commit
-   needs none). It also searches the code in
-   `port/` for the game function overrides and hooks added since the last
-   release, in our own files too (which have no entry in docs/upstream.md),
-   and flags any that look alike (the same kind of instruction, or the same
-   symptom): those usually mean one recompiler or runtime bug, to fix there
-   instead.
+   lists, sleeps, and docs that break the writing rules. It flags code that
+   makes up in one layer for a bug in another, and any mechanism that had a
+   second fix with no review of it (docs/project-rules.md, Where code goes 2
+   and 7). It also searches the code in `port/` for the game function
+   overrides and hooks added since the last release, and flags any that
+   look alike (the same kind of instruction, or the same symptom): those
+   usually mean one recompiler or runtime bug, to fix there instead.
+   Every fixed bug has its regression test, or says why not; every
+   override's comment says why it isn't fixed at the source; and the docs
+   changed with their code (docs/project-rules.md, How it's written).
 
    Code findings are fixed now, each in its own commit, and doc findings in
    step 6. The review comes before the docs, as its fixes can change what
@@ -43,8 +63,9 @@ Release, says which step the release has reached.
 
 ## Docs
 
-6. **README and docs:** brought up to date, and checked against the writing
-   rules.
+6. **README and docs:** checked against the release and the writing rules.
+   Each change updated its own docs when it was made, so this catches what
+   was missed, and adds what only the release brings.
    - **README.md:** the features, the download links and latest version, the
      status and known issues, and the credits, with JuMatt's at the top.
    - **docs/:** anything the release changes, such as new keys or menu rows
@@ -59,26 +80,29 @@ Release, says which step the release has reached.
 
 ## Build and test
 
-7. **Release build:** from the release commit, as
-   docs/build-and-test-reference.md says, with the release's version given
+7. **Release build:** from the release commit, in the pinned build image,
+   as docs/build-and-test-reference.md says, with the release's version given
    to both builds (`-DJSRF_VERSION=b1.1`, and the Windows package.sh's
    version argument). The generated code is made fresh (0 failed), every
-   test passes, and both packages pass every compatibility check. The
+   test passes, and both packages pass every check, including the
+   comparison with the last tested package. The
    version reads as the release's name everywhere docs/versioning.md lists,
    with its Windows File version, and SHA256SUMS.txt covers both packages.
 8. **Test those packages:** the test checklist on the Ally X, in Desktop
    Mode and Game Mode, and on the Windows PC. It covers the areas the
-   release's changes touch, a fresh start, and an upgrade over the
-   previous release. If anything fails, it is fixed, the fix gets its own
-   rules check, and the release is built again (step 7). Nothing is tagged
-   yet, so no tag ever has to move.
+   release's changes touch and, on both devices, a fresh install and an
+   upgrade over the previous release. If anything fails, it is fixed, the
+   fix gets its own rules check, and the release is built again (step 7).
+   A critical bug found here stops the release (The gate). Nothing is
+   tagged yet, so no tag ever has to move.
 
 ## Publish
 
 Only on the maintainer's say-so.
 
 9. **Go-ahead:** the maintainer approves publishing, with every step of the
-   test checklist passed on its device.
+   test checklist passed on its device and no open critical bug (The
+   gate).
 10. **Push and publish together:** push `main`, then publish the GitHub
     release straight away, as docs/versioning.md describes it, with the
     packages tested in step 8. Publishing creates the tag on the release
@@ -116,5 +140,5 @@ Only on the maintainer's say-so.
 A published tag is never moved. The fix goes in the next bug fix release,
 and until then the published release text lists the problem as a known
 issue. The exception is a hotfix, on the maintainer's say-so: it ships the
-fix straight away, as docs/versioning.md describes, and still gets step
-12's source backup.
+fix straight away, as docs/versioning.md describes. It still passes the
+gate, and gets step 12's source backup.

@@ -249,5 +249,3 @@ All with made-up data, and no game files:
 - macOS, iOS and Android aren't built. The effects are plain C. Android, the
   Mac and the iPhone don't have the in-game menu, so the row isn't there,
   and the effects are on.
-
-docs/upstream.md has an entry for each upstream file the effects change.
