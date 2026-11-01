@@ -1682,6 +1682,44 @@ void sub_00067E90(void)
     }
 }
 
+/* ---- the characters' voice lines kept on them (voice_follow.c) -----------
+ *
+ * sub_00119540(bank, sound, where) plays a sound and returns its handle; the
+ * sound manager's update ends in sub_001185B0, which hands the frame's
+ * settings to the sound engine. Before it, voice_follow.c moves each voice
+ * line it keeps as the character update moves its own looped one
+ * (sub_00080340): sub_00118710(handle), whether it still plays, then
+ * sub_00118BD0(handle, where), both cdecl. */
+#define VOICE_PLAYING_RET  0x0008039Du /* where sub_00080340's sub_00118710 returns to */
+#define VOICE_MOVE_RET     0x000803B7u /* and its sub_00118BD0 */
+#include "voice_follow.h"
+extern size_t xbox_GetMappedSize(void);   /* the heap runs to its end */
+extern void sub_00119540_gen(void);
+extern void sub_001185B0_gen(void);
+extern void sub_00118710(void);
+extern void sub_00118BD0(void);
+static int voice_playing(uint32_t handle)
+{
+    return guest_call_cdecl(sub_00118710, VOICE_PLAYING_RET, 1, &handle) != 0;
+}
+static void voice_move(uint32_t handle, uint32_t where)
+{
+    uint32_t a[2] = { handle, where };
+    guest_call_cdecl(sub_00118BD0, VOICE_MOVE_RET, 2, a);
+}
+void sub_00119540(void)
+{
+    uint32_t bank = GARG(1), where = GARG(3);
+    sub_00119540_gen();
+    voice_follow_played((const uint8_t *)g_xbox_mem_offset, (uint32_t)xbox_GetMappedSize(), g_eax,
+                        bank, where, g_esp);
+}
+void sub_001185B0(void)
+{
+    voice_follow_frame((const uint8_t *)g_xbox_mem_offset, voice_playing, voice_move);
+    sub_001185B0_gen();
+}
+
 /* ---- list menus and the keyboard -----------------------------------------
  *
  * The game's list menus move their cursor on either input: a new d-pad

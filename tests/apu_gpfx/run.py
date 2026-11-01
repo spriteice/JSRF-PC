@@ -17,7 +17,13 @@ Unset, nothing is printed. With RECOMP_APU_GPFX=1, the 3D bins of made-up
 mixbins go through their limiter: a frame late and as they were while
 quiet, and while loud under full scale, with one gain for the four that
 glides, and comes back over 150 ms. The other bins are left alone, and so
-is a frame of another size. Unset, nothing runs. Requires GCC on PATH,
+is a frame of another size. Unset, nothing runs. And told about made-up 3D
+voices as the placing would, the log has its lines: how many were placed
+and where, how often the game moved them, and a line for each voice placed
+for 0.3 s when it stops, or starts again, not for a shorter one. That line
+counts the other voices' moves while it played, and the frames in which
+the game moved most of them at once, at least two, as when the camera
+turns, and those in which it moved this one too. Requires GCC on PATH,
 including MinGW on Windows.
 """
 import os
@@ -58,6 +64,36 @@ cases = {
                "[APU] effects: the 3D bins peaked at 0.50 of full scale, and weren't"
                " turned down\n"],
               ["image loaded"]),
+    "placed": (["[APU] effects: the 3D voices placed from their HRTF settings, the far ear"
+                " turned down and late, the sound itself as it is: the left ear into bins 6"
+                " and 8, the right into 7 and 9 (RECOMP_APU_GPFX)",
+                "[APU] effects: placed 4 of the 4 3D voices that played, at most 4 at once,"
+                " in 4.80 ms of the second. The far ear was 5.1 dB down on average and 6.0 at"
+                " most, and up to 0.10 ms late; the game had the delay on the quieter ear 93%"
+                " of the time, and 93% where the far ear was at least 3 dB down\n",
+                "[APU] effects: the game moved the 3D voices 93 times in the second, one voice"
+                " up to 59 times; an ear's level by up to 0.5 dB at once, and the delay by up"
+                " to 0.010 ms\n",
+                "[APU] effects: 3D voice 1 was placed for 1.0 s, and the game moved it 0 times"
+                " while it moved the other 3D voices 93 times, and in 0 of the 29 frames it"
+                " moved most of them at once; it started with its right ear 6.0 dB down and"
+                " ended with its right ear 6.0 dB down\n",
+                "[APU] effects: 3D voice 3 was placed for 1.4 s, and the game moved it 41 times"
+                " while it moved the other 3D voices 88 times, and in 41 of the 41 frames it"
+                " moved most of them at once; it started with its right ear 6.0 dB down and"
+                " ended with its right ear 6.0 dB down\n",
+                "[APU] effects: 3D voice 0 was placed for 1.8 s, and the game moved it 107"
+                " times while it moved the other 3D voices 57 times, and in 52 of the 52 frames"
+                " it moved most of them at once; it started with its left ear 3.0 dB down and"
+                " ended with its right ear 3.0 dB down\n",
+                "[APU] effects: placed 2 of the 2 3D voices that played, at most 2 at once,"
+                " in 2.70 ms of the second. The far ear was 4.7 dB down on average and 6.0 at"
+                " most, and up to 0.10 ms late; the game had the delay on the quieter ear 100%"
+                " of the time, and 100% where the far ear was at least 3 dB down\n",
+                "[APU] effects: the game moved the 3D voices 71 times in the second, one voice"
+                " up to 48 times; an ear's level by up to 0.5 dB at once, and the delay by up"
+                " to 0.010 ms\n"],
+               ["3D voice 2 was placed", "image loaded"]),
     "bad": ([LOADED + "laid out as JSRF's",
              "[APU] effects: command 2 not followed: 512 words from 0x918 in scratch"
              " to X:0xF80 are not all there",

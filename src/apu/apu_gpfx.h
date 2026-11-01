@@ -1,5 +1,5 @@
 /* The GP's effects settings, followed, and our own effects on the mixbins
- * (apu_gpfx.c). */
+ * and the 3D voices (apu_gpfx.c, apu_hrtf.h). */
 #pragma once
 
 #include <stdint.h>
@@ -35,3 +35,34 @@ void apu_gpfx_window(uint8_t *x_window);
  * late. Returns 1 if it ran; 0, with the mixbins as they were, if the switch
  * is off or the frame isn't the mixbins' size. */
 int apu_gpfx_frame(float *mixbins, unsigned bins, unsigned samples);
+
+/* Whether Developer > Experimental > Xbox audio effects is on. With it, the
+ * voice processor places its 3D voices from their HRTF settings
+ * (apu_hrtf.h). */
+int apu_gpfx_on(void);
+
+/* For the log: whether apu_gpfx_voice wants the placing timed, which is
+ * with the switch on and Developer > Logging > RECOMP_APU_STATS. */
+int apu_gpfx_timed(void);
+
+/* What placing a 3D voice's frame came to, as its HRTF setting has it: how
+ * far its far ear is turned down, in dB, and how late it is, in samples,
+ * which ear that is (side: -1 the left, 1 the right, 0 neither), and
+ * whether the setting had the delay on the louder ear, so that it went to
+ * the other. Then whether the setting changed since the voice's last frame,
+ * and by how much: the most either ear's level moved, in dB, and the delay,
+ * in samples. first: the voice's first frame since it started. */
+typedef struct {
+    float far_db, late;
+    int side, moved;
+    int changed;
+    float change_db, change_late;
+    int first;
+} ApuGpfxPlaced;
+
+/* For the log: 3D voice `voice` played a frame with the switch on, placed
+ * as `placed` says, which took `ns` nanoseconds, or with no HRTF setting
+ * if `placed` is NULL. `bins` are the voice's, the first four its HRTF
+ * submixes. */
+void apu_gpfx_voice(unsigned voice, const int *bins, const ApuGpfxPlaced *placed,
+                    int64_t ns);

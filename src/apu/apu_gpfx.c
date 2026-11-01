@@ -41,15 +41,23 @@
  * image is laid out as the one this was written from.
  *
  * Developer > Experimental > Xbox audio effects (RECOMP_APU_GPFX) runs our
- * own effects on the mixbins, before the port's fold takes them to stereo
- * (apu_gpfx_frame, below). They aim to sound good and cost little, not to
- * copy the console's. So far that's a limiter of their own for the 3D bins.
+ * own effects, made to sound good and cost little rather than to copy the
+ * console's. So far: the voice processor places the 3D voices from their
+ * HRTF settings, the far ear turned down and late, and sends each ear to
+ * its own side (apu_vp.c, apu_hrtf.h); then the 3D bins go through a
+ * limiter of their own before the port's fold takes the mixbins to stereo
+ * (apu_gpfx_frame, below).
  *
  * Developer > Logging > RECOMP_APU_STATS: a line when an image loads, and
  * one when DirectSound changes an effect's settings, with the words it
- * changed. With the effects on, a line when they start, and one a second
- * on how hard the 3D bins' limiter works. Every line starts
- * "[APU] effects:".
+ * changed. With the effects on, a line when the limiter and the placing
+ * start, and one a second on each: how hard the limiter works, and how
+ * many 3D voices were placed, how far apart their ears were, how long it
+ * took, and how often and how far the game moved them; and for each 3D
+ * voice placed for 0.3 s or more, a line when it stops: how often the game
+ * moved it while it moved the others, how often it moved most of them at
+ * once, as when the camera turns, and this one with them, and where it
+ * started and ended. Every line starts "[APU] effects:".
  */
 #include "apu_gpfx.h"
 
@@ -340,8 +348,45 @@ int apu_gpfx_studied(void)
 #define GPFX_DB             20.0f    /* dB from a gain: GPFX_DB * log10 */
 #define GPFX_PERCENT        100u
 
+#define GPFX_3D_VOICES      64u      /* the voice processor's 3D voices */
+#define GPFX_NS_PER_MS      1e6
+#define GPFX_SAMPLES_PER_MS (GPFX_RATE / GPFX_MS)
+#define GPFX_CLEAR_DB       3.0f     /* a far ear this far down is clearly the far one */
+#define GPFX_LIFE_MS        300u     /* a 3D voice placed this long gets a line when it stops */
+#define GPFX_FRAMES_PER_S   (GPFX_RATE / GPFX_FRAME)
+
 static int s_on = -1;                    /* RECOMP_APU_GPFX */
-static int s_said;                       /* the line when the effects start */
+static int s_said;                       /* the line when the limiter starts */
+static int s_place_said;                 /* and the placing */
+static struct {
+    uint64_t played, placed;             /* the 3D voices that played, and were placed */
+    unsigned now, most;                  /* placed this frame, and at most in a frame */
+    unsigned frames, delayed, moved;     /* their frames, those late, those moved */
+    unsigned clear, clear_moved;         /* those late with a clear far ear, and moved */
+    double far_db;                       /* the far ear's dB down, added up over them */
+    float far_most, late_most;
+    unsigned changes, changes_one[GPFX_3D_VOICES];  /* settings changed, in all and each voice's */
+    float change_db, change_late;        /* the most a setting changed by */
+    int64_t ns;
+} s_place;                               /* for the log, a second at a time */
+/* Each 3D voice's life, for the log: the frames it was placed, the times the
+ * game moved it, all the 3D voices' moves when it started, the frame it was
+ * last placed, and where it started and is now. Then the frames in which
+ * the game moved most of the 3D voices at once, as when the camera turns,
+ * and those of them in which it moved this one, and whether it moved this
+ * one this frame. */
+typedef struct {
+    unsigned frames, changes;
+    uint64_t others, last;
+    float first_db, now_db;
+    int first_side, now_side;
+    unsigned together, with;
+    int changed_now;
+} GpfxLife;
+static GpfxLife s_life[GPFX_3D_VOICES];
+static uint64_t s_frame_count;           /* frames, while the log runs */
+static uint64_t s_changes_all;           /* the 3D voices' settings changed, to the last frame */
+static unsigned s_frame_placed, s_frame_changed;  /* this frame's */
 static float s_late[GPFX_FX_BINS][GPFX_FRAME];  /* last frame's 3D bins, still to come out */
 static float s_late_peak;                /* and their peak */
 static float s_gain = 1.0f;              /* the limiter's gain, as the last frame ended */
@@ -350,9 +395,162 @@ static struct {
     float peak, least;
 } s_second = { 0, 0, 0.0f, 1.0f };       /* for the log, a second at a time */
 
-/* The log's line on the second gone, if the 3D bins had any sound in it. */
+static int switch_on(void)
+{
+    if (s_on < 0) {
+        const char *v = getenv("RECOMP_APU_GPFX");
+        s_on = v && atoi(v) ? 1 : 0;
+    }
+    return s_on;
+}
+
+int apu_gpfx_on(void)
+{
+    return switch_on();
+}
+
+int apu_gpfx_timed(void)
+{
+    return switch_on() && log_on();
+}
+
+/* Where a 3D voice is, for its life's line. */
+static void where(char *out, size_t size, int side, float far_db)
+{
+    if (side)
+        snprintf(out, size, "with its %s ear %.1f dB down", side < 0 ? "left" : "right",
+                 (double)far_db);
+    else
+        snprintf(out, size, "with both ears level");
+}
+
+/* 3D voice v's life ended: its line, if it was placed long enough. */
+static void life_end(unsigned v)
+{
+    GpfxLife *l = &s_life[v];
+    if (l->frames >= GPFX_LIFE_MS * GPFX_FRAMES_PER_S / GPFX_MS) {
+        char from[64], to[64];
+        where(from, sizeof from, l->first_side, l->first_db);
+        where(to, sizeof to, l->now_side, l->now_db);
+        fprintf(stderr, "[APU] effects: 3D voice %u was placed for %.1f s, and the game moved"
+                " it %u times while it moved the other 3D voices %u times, and in %u of the"
+                " %u frames it moved most of them at once; it started %s and ended %s\n",
+                v, (double)l->frames / GPFX_FRAMES_PER_S, l->changes,
+                (unsigned)(s_changes_all - l->others - l->changes), l->with, l->together,
+                from, to);
+    }
+    l->frames = 0;
+}
+
+void apu_gpfx_voice(unsigned voice, const int *bins, const ApuGpfxPlaced *placed,
+                    int64_t ns)
+{
+    if (!apu_gpfx_timed() || voice >= GPFX_3D_VOICES)
+        return;
+    s_place.played |= 1ull << voice;
+    if (!placed)
+        return;
+    s_place.placed |= 1ull << voice;
+    if (++s_place.now > s_place.most)
+        s_place.most = s_place.now;
+    s_place.frames++;
+    s_place.far_db += placed->far_db;
+    if (placed->far_db > s_place.far_most)
+        s_place.far_most = placed->far_db;
+    if (placed->late > 0.0f)
+        s_place.delayed++;
+    if (placed->late > s_place.late_most)
+        s_place.late_most = placed->late;
+    s_place.moved += placed->moved != 0;
+    if (placed->late > 0.0f && placed->far_db >= GPFX_CLEAR_DB) {
+        s_place.clear++;
+        s_place.clear_moved += placed->moved != 0;
+    }
+    {
+        GpfxLife *l = &s_life[voice];
+        if (placed->first && l->frames)  /* started again, with no gap */
+            life_end(voice);
+        if (!l->frames) {
+            l->changes = l->together = l->with = 0;
+            l->others = s_changes_all;
+            l->first_db = placed->far_db;
+            l->first_side = placed->side;
+        }
+        l->frames++;
+        l->last = s_frame_count;
+        l->now_db = placed->far_db;
+        l->now_side = placed->side;
+        l->changes += placed->changed != 0;
+        l->changed_now = placed->changed != 0;
+        s_frame_placed++;
+        s_frame_changed += placed->changed != 0;
+    }
+    if (placed->changed) {
+        s_place.changes++;
+        s_place.changes_one[voice]++;
+        if (placed->change_db > s_place.change_db)
+            s_place.change_db = placed->change_db;
+        if (placed->change_late > s_place.change_late)
+            s_place.change_late = placed->change_late;
+    }
+    s_place.ns += ns;
+    if (!s_place_said && bins) {
+        s_place_said = 1;
+        fprintf(stderr, "[APU] effects: the 3D voices placed from their HRTF settings, the"
+                " far ear turned down and late, the sound itself as it is: the left ear"
+                " into bins %d and %d, the right into %d and %d (RECOMP_APU_GPFX)\n",
+                bins[0], bins[1], bins[2], bins[3]);
+        fflush(stderr);
+    }
+}
+
+static unsigned voices(uint64_t set)
+{
+    unsigned n = 0;
+    for (; set; set &= set - 1)
+        n++;
+    return n;
+}
+
+/* The log's lines on the second gone: the placing, if any 3D voice played,
+ * and the 3D bins' limiter, if they had any sound in it. */
 static void log_second(void)
 {
+    if (s_place.played) {
+        if (s_place.placed) {
+            fprintf(stderr, "[APU] effects: placed %u of the %u 3D voices that played, at"
+                    " most %u at once, in %.2f ms of the second. The far ear was %.1f dB"
+                    " down on average and %.1f at most, and up to %.2f ms late",
+                    voices(s_place.placed), voices(s_place.played), s_place.most,
+                    (double)s_place.ns / GPFX_NS_PER_MS,
+                    s_place.far_db / s_place.frames, (double)s_place.far_most,
+                    (double)s_place.late_most / GPFX_SAMPLES_PER_MS);
+            if (s_place.delayed)
+                fprintf(stderr, "; the game had the delay on the quieter ear %u%% of the"
+                        " time", GPFX_PERCENT * (s_place.delayed - s_place.moved)
+                        / s_place.delayed);
+            if (s_place.clear)
+                fprintf(stderr, ", and %u%% where the far ear was at least %.0f dB down",
+                        GPFX_PERCENT * (s_place.clear - s_place.clear_moved) / s_place.clear,
+                        (double)GPFX_CLEAR_DB);
+            fprintf(stderr, "\n");
+            if (s_place.changes) {
+                unsigned most = 0;
+                for (unsigned v = 0; v < GPFX_3D_VOICES; v++)
+                    if (s_place.changes_one[v] > most)
+                        most = s_place.changes_one[v];
+                fprintf(stderr, "[APU] effects: the game moved the 3D voices %u times in the"
+                        " second, one voice up to %u times; an ear's level by up to %.1f dB"
+                        " at once, and the delay by up to %.3f ms\n", s_place.changes, most,
+                        (double)s_place.change_db,
+                        (double)s_place.change_late / GPFX_SAMPLES_PER_MS);
+            }
+        } else {
+            fprintf(stderr, "[APU] effects: %u 3D voices played, none with HRTF settings,"
+                    " so none was placed\n", voices(s_place.played));
+        }
+    }
+    memset(&s_place, 0, sizeof s_place);
     if (s_second.peak > 0.0f) {
         if (s_second.turned_down)
             fprintf(stderr, "[APU] effects: the 3D bins peaked at %.2f of full scale, and"
@@ -363,8 +561,8 @@ static void log_second(void)
         else
             fprintf(stderr, "[APU] effects: the 3D bins peaked at %.2f of full scale, and"
                     " weren't turned down\n", (double)s_second.peak);
-        fflush(stderr);
     }
+    fflush(stderr);
     s_second.frames = s_second.turned_down = 0;
     s_second.peak = 0.0f;
     s_second.least = 1.0f;
@@ -375,11 +573,8 @@ int apu_gpfx_frame(float *mixbins, unsigned bins, unsigned samples)
     float now[GPFX_FX_BINS][GPFX_FRAME], peak = 0.0f, back, end;
     unsigned b, i;
 
-    if (s_on < 0) {
-        const char *v = getenv("RECOMP_APU_GPFX");
-        s_on = v && atoi(v) ? 1 : 0;
-    }
-    if (!s_on || !mixbins || bins < GPFX_FX_FIRST + GPFX_FX_BINS || samples != GPFX_FRAME)
+    if (!switch_on() || !mixbins || bins < GPFX_FX_FIRST + GPFX_FX_BINS
+        || samples != GPFX_FRAME)
         return 0;
     if (!s_said && log_on()) {
         s_said = 1;
@@ -423,6 +618,22 @@ int apu_gpfx_frame(float *mixbins, unsigned bins, unsigned samples)
             s_second.turned_down++;
         if (least < s_second.least)
             s_second.least = least;
+        /* Most of the 3D voices moved at once, at least two: what the camera
+         * turning does, where one thing moving moves one. */
+        int together = s_frame_changed >= 2 && 2 * s_frame_changed >= s_frame_placed;
+        s_place.now = 0;
+        for (unsigned v = 0; v < GPFX_3D_VOICES; v++) {
+            GpfxLife *l = &s_life[v];
+            if (l->frames && l->last != s_frame_count) {
+                life_end(v);             /* not placed this frame: stopped */
+            } else if (l->frames && together) {
+                l->together++;
+                l->with += l->changed_now;
+            }
+        }
+        s_changes_all += s_frame_changed;
+        s_frame_placed = s_frame_changed = 0;
+        s_frame_count++;
         if (++s_second.frames >= GPFX_RATE / GPFX_FRAME)
             log_second();
     }

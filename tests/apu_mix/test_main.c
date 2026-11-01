@@ -16,6 +16,16 @@
  * starts and changed only once the frame has begun; the frame must wait
  * for the unlock (the thread finds it waiting, not finished) and mix the
  * channel into 1.
+ *
+ * With "hrtf", voice 5 is a mono 3D voice with an HRTF setting for a sound
+ * on the left: the right ear's taps a quarter the size of the left's, and
+ * the delay on the left, the louder ear. Its four volumes are full into the
+ * HRTF submixes, the crosstalk bins, listed as DirectSound lists them:
+ * front left, back left, front right, back right. With Developer >
+ * Experimental > Xbox audio effects (RECOMP_APU_GPFX), the voice is placed
+ * from its setting, and each ear goes to its own side, so the right side
+ * has a quarter of the left's, and the left is as loud as with no setting;
+ * without, both sides are the same.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -64,6 +74,58 @@ static void *title_thread(void *arg)
     return NULL;
 }
 
+/* The "hrtf" case: voice 5, mono, placed by its HRTF setting. */
+#define HRTF_VOICE   5u
+#define HRTF_ENTRY   3u
+#define UNHEARD_BIN  20u            /* a bin the fold leaves out, for the voice's other four */
+#define EAR_FULL     124            /* an HRIR tap, a signed byte of 128ths */
+#define EAR_QUARTER  31
+#define EAR_LATE     (4 << 9)       /* the delay, in samples to 9 bits: 4, on the left */
+
+static int hrtf_case(MCPXAPUState *d)
+{
+    uint32_t voice = VOICES + HRTF_VOICE * NV_PAVS_SIZE;
+    float mixbins[NUM_MIXBINS][NUM_SAMPLES_PER_FRAME];
+    const int16_t sample = 16384;
+    int i, last;
+
+    for (i = 0; i < 2 * FRAMES; i++)
+        memcpy(g_apu_ram_ptr + DATA + 2 * i, &sample, 2);
+    d->regs[NV_PAPU_TVL2D] = 0xFFFF;
+    d->regs[NV_PAPU_TVL3D] = HRTF_VOICE;
+    put(voice + NV_PAVS_VOICE_CFG_VBIN, UNHEARD_BIN << 21 | UNHEARD_BIN << 26);
+    put(voice + NV_PAVS_VOICE_CFG_FMT, 0x5201E000 | UNHEARD_BIN | UNHEARD_BIN << 5);
+    put(voice + NV_PAVS_VOICE_PAR_STATE, NV_PAVS_VOICE_PAR_STATE_ACTIVE_VOICE);
+    put(voice + NV_PAVS_VOICE_PAR_NEXT, 2 * FRAMES - 1);
+    put(voice + NV_PAVS_VOICE_TAR_VOLA, 0x000F000F);            /* the HRTF submixes full */
+    put(voice + NV_PAVS_VOICE_TAR_VOLB, 0x000F000F);
+    put(voice + NV_PAVS_VOICE_TAR_VOLC, 0xFFFFFFFF);            /* the other four off */
+    put(voice + NV_PAVS_VOICE_TAR_PITCH_LINK, 0x0000FFFF);
+
+    mcpx_apu_vp_init(d);
+    mcpx_apu_dsp_init(d);
+    mcpx_apu_vp_write(d, NV1BA0_PIO_SET_HRTF_SUBMIXES, 6 | 8 << 8 | 7 << 16 | 9 << 24, 4);
+    mcpx_apu_vp_write(d, NV1BA0_PIO_SET_HRTF_HEADROOM, 0, 4);
+    mcpx_apu_vp_write(d, NV1BA0_PIO_SET_CURRENT_HRTF_ENTRY, HRTF_ENTRY, 4);
+    mcpx_apu_vp_write(d, NV1BA0_PIO_SET_HRIR,                     /* left, then right */
+                      (uint32_t)EAR_FULL | (uint32_t)EAR_QUARTER << 8, 4);
+    for (i = 1; i < 15; i++)
+        mcpx_apu_vp_write(d, NV1BA0_PIO_SET_HRIR + 4 * (uint32_t)i, 0, 4);
+    mcpx_apu_vp_write(d, NV1BA0_PIO_SET_HRIR_X, (uint32_t)EAR_LATE << 16, 4);
+    mcpx_apu_vp_write(d, NV1BA0_PIO_SET_CURRENT_VOICE, HRTF_VOICE, 4);
+    mcpx_apu_vp_write(d, NV1BA0_PIO_SET_VOICE_TAR_HRTF, HRTF_ENTRY, 4);
+    for (i = 0; i < 20; i++) {
+        memset(mixbins, 0, sizeof mixbins);
+        mcpx_apu_vp_frame(d, mixbins);
+        mcpx_apu_dsp_frame(d, mixbins);
+        d->ep_frame_div++;
+    }
+    last = (int)((d->ep_frame_div - 1) % 8) * NUM_SAMPLES_PER_FRAME + NUM_SAMPLES_PER_FRAME - 1;
+    printf("hrtf: left %d, right %d\n", d->monitor.frame_buf[last][0],
+           d->monitor.frame_buf[last][1]);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     int lock = argc > 1 && !strcmp(argv[1], "lock");
@@ -84,6 +146,8 @@ int main(int argc, char **argv)
 
     d->regs[NV_PAPU_VPVADDR] = VOICES;
     d->regs[NV_PAPU_VPSGEADDR] = SGE;
+    if (argc > 1 && !strcmp(argv[1], "hrtf"))
+        return hrtf_case(d);
     d->regs[NV_PAPU_TVL2D] = 68;
     d->regs[NV_PAPU_TVL3D] = 0xFFFF;
     d->regs[NV_PAPU_TVLMP] = 0xFFFF;

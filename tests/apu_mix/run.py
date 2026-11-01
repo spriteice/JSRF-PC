@@ -8,8 +8,13 @@ the device gets the mixbins: a channel sent to a bin the fold leaves out is
 lost. With RECOMP_APU_MIX=xemu it gets the voice's own left and right, as
 xemu plays them with Use DSP off, wherever they are sent, and the same on
 every frame. Then "lock": a frame must wait while another thread has the
-voice locked, and mix it as that thread left it. Requires GCC on PATH,
-including MinGW on Windows.
+voice locked, and mix it as that thread left it. Then "hrtf": a mono 3D
+voice whose HRTF setting places it on the left, the right ear's taps a
+quarter the size of the left's, with its submixes in DirectSound's order.
+With RECOMP_APU_GPFX=1 it's placed from that setting, so the right side has
+a quarter of the left's, and the left is as loud as with no setting;
+without, both sides have it alike. Requires GCC on PATH, including MinGW on
+Windows.
 """
 import os
 import pathlib
@@ -51,6 +56,14 @@ with tempfile.TemporaryDirectory(prefix="apu_mix-") as directory:
           and "bin 1 -0.2500, bin 10 0.0000" in run.stdout)
     print(f"lock: {'ok' if ok else 'FAILED'} ({run.stdout.strip() or run.returncode})")
     failed += not ok
+    for switch, want in (({"RECOMP_APU_GPFX": "1"}, "hrtf: left 9788, right 2447"),
+                         ({}, "hrtf: left 9788, right 9788")):
+        run = subprocess.run([exe, "hrtf"], env=dict(env, **switch), capture_output=True,
+                             text=True, timeout=60)
+        ok = run.returncode == 0 and want in run.stdout
+        print(f"hrtf, {'switch on' if switch else 'switch off'}: {'ok' if ok else 'FAILED'}"
+              f" ({run.stdout.strip() or run.returncode})")
+        failed += not ok
 if failed:
     raise SystemExit(f"apu_mix: {failed} case(s) failed")
 print("apu_mix: all cases pass")

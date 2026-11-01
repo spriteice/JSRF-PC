@@ -1044,6 +1044,54 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 - **When picking:** keep the call just before the fold's loop, and run
   tests/apu_gpfx and tests/apu_mix.
 
+### The 3D voices placed, with the effects on
+
+- **Files:** src/apu/apu_vp.c (`voice_process`: the HRTF block, and the
+  mix into the HRTF submixes; `s_ears`, cleared in `voice_reset_filters`
+  and `mcpx_apu_vp_reset`).
+- **Why:** Developer > Experimental > Xbox audio effects (RECOMP_APU_GPFX).
+  DirectSound places a 3D voice with an HRTF setting: a filter of 31 taps
+  for each ear, and the far ear's delay. The port had xemu's filter but ran
+  it only with RECOMP_APU_MIX=xemu, so 3D sounds came out in the middle. The
+  filter itself dulls the sound, being short and in 8 bits, and xemu's
+  setter scales each ear's taps to the same size, which takes away most of
+  the difference in level between the ears. With the switch, there's no
+  filter: a 3D voice with an HRTF setting keeps its sound as it is, its
+  louder ear at full level and the other turned down by as much as the
+  setting has it quieter, and late by the setting's delay
+  (src/apu/apu_hrtf.h), into `ears`. Both glide to each new setting through
+  two smoothing stages of 15 ms, where xemu's filter takes about 2 ms, so a
+  sound moves on smoothly between the game's settings rather than in steps.
+  The HRTF submixes take the ears two at a time, the left's then the
+  right's: DirectSound lists them front left, back left, front right, back
+  right, and xemu's mix sends the left ear to all four. The voice's other
+  bins keep the dry sound. Off, and with RECOMP_APU_MIX=xemu, it is as
+  before. Our own files: src/apu/apu_hrtf.h and tests/apu_hrtf; the "hrtf"
+  case in tests/apu_mix. Could suit upstream.
+- **When picking:** keep the HRTF block's two branches, the `b >> 1` in
+  the mix, and the reset of `s_ears`, and run tests/apu_hrtf and
+  tests/apu_mix.
+
+### The characters' voice lines kept on them, with the effects on
+
+- **Files:** port/recomp_manual.c (`sub_00119540`, a hook on the game's
+  call that plays a sound, and `sub_001185B0`, one on the end of the sound
+  manager's update), port/CMakeLists.txt (port/voice_follow.c).
+- **Why:** Developer > Experimental > Xbox audio effects (RECOMP_APU_GPFX).
+  With the 3D voices placed, a character's voice line came from where the
+  character was when it began: the game plays it at the character's
+  position, which the sound manager copies once, and moves only the one
+  looped voice a character keeps, each frame. A skater at full speed left
+  their lines behind, and with the free camera at an angle they came from
+  one side. With the switch, each line played from a character's voice
+  bank, at that character, is moved to them once a frame until it ends, by
+  the same two calls the game makes for its looped one. Off, nothing
+  changes. Our own files: port/voice_follow.c and .h, and tests/voice_follow.
+  Could suit upstream with the placing.
+- **When picking:** keep both hooks calling their `_gen` function, the play
+  hook reading its arguments before the call, and the move before the
+  update's own code, and run tests/voice_follow.
+
 ### Frames spent loading, shown
 
 - **Files:** src/nv2a_gl/nv2a_gl.c (the `M_FLIP_STALL` case, and

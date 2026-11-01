@@ -10,7 +10,9 @@
  * line for each check, and the module's own log lines with RECOMP_APU_STATS
  * set, which run.py reads. The argument picks the case. The "limit" cases
  * need no image: they run made-up mixbins through apu_gpfx_frame and check
- * the 3D bins' limiter, with RECOMP_APU_GPFX set and without.
+ * the 3D bins' limiter, with RECOMP_APU_GPFX set and without. "placed"
+ * tells the module about made-up 3D voices as the voice processor's placing
+ * would, for run.py to read the log's lines on them.
  */
 #include <math.h>
 #include <stdio.h>
@@ -42,6 +44,14 @@
 #define SECOND     1500u      /* frames in a second, at 48 kHz */
 #define QUIET      0.5f       /* the 3D bins' peak, quiet and loud */
 #define LOUD       2.7f
+#define SHORT      300u       /* "placed": frames, a fifth of a second */
+#define MOVES      25u        /* frames between a voice's moves: 60 a second */
+#define TURNS      50u        /* frames between the camera's turns, which move most of them */
+#define FAR_DB     3.0f
+#define LATE       4.8f       /* samples: 0.1 ms */
+#define STEP_DB    0.5f
+#define STEP_LATE  0.48f
+#define VOICE_NS   1000
 #define UNDER      0.9f       /* the other 3D bins' peak, from the last one's */
 #define CEILING    1.0f       /* the limiter's: full scale */
 #define ROUNDING   1e-6f
@@ -380,6 +390,38 @@ int main(int argc, char **argv)
         check("and at full scale at their loudest", loudest > CEILING - 2 * ROUNDING * LOUD);
         check("back to 0.77 150 ms later", at_150ms > BACK_LO && at_150ms < BACK_HI);
         check("and to unity in a second", gain > BACK_BY);
+    } else if (!strcmp(c, "placed")) {  /* the placing's log, over two seconds */
+        /* Voice 0 on the left 3 dB down, then on the right, moved every
+         * MOVES frames, until a little before the end; voice 1 never moved,
+         * for a second; voice 2 too short for a line of its own, its delay
+         * moved; voice 3 starting again with no gap. Every TURNS frames
+         * while voice 0 plays, the camera turns: voices 0, 2 and 3 move,
+         * but not voice 1, nor voice 3 on its first frame. */
+        static float mix[BINS][FRAME];
+        static const int bins[8] = { 6, 8, 7, 9, 20, 20, 20, 20 };
+        unsigned n, v;
+
+        for (n = 0; n < 2 * SECOND; n++) {
+            int turn = n && n % TURNS == 0 && n < 2 * SECOND - SHORT;
+            for (v = 0; v < 4; v++) {
+                ApuGpfxPlaced p = { 0 };
+                if ((v == 0 && n >= 2 * SECOND - SHORT) || (v == 1 && n >= SECOND)
+                    || (v == 2 && n >= SHORT))
+                    continue;
+                p.far_db = v == 0 ? FAR_DB : 2.0f * FAR_DB;
+                p.side = v == 0 && n < SECOND ? -1 : 1;
+                p.late = LATE;
+                p.moved = v == 2;
+                p.first = !n || (v == 3 && n == SECOND + 2 * SHORT);
+                p.changed = (v == 0 && n && n % MOVES == 0)
+                            || ((v == 2 || v == 3) && turn && !p.first);
+                p.change_db = p.changed ? STEP_DB : 0.0f;
+                p.change_late = p.changed ? STEP_LATE : 0.0f;
+                apu_gpfx_voice(v, bins, &p, VOICE_NS);
+            }
+            memset(mix, 0, sizeof mix);
+            apu_gpfx_frame(&mix[0][0], BINS, FRAME);
+        }
     } else if (!strcmp(c, "limit_off")) {   /* nothing, with the switch unset */
         static float in[BINS][FRAME], out[BINS][FRAME];
         int ran = 0, same = 1;

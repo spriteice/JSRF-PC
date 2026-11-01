@@ -23,6 +23,8 @@
 #include <string.h>
 #include "fpconv.h"
 #include "apu_channels.h"
+#include "apu_gpfx.h"
+#include "apu_hrtf.h"
 
 /* #define DEBUG_MCPX */
 
@@ -91,11 +93,18 @@ static void set_notify_status(MCPXAPUState *d, uint32_t v, int notifier,
  * Filter helpers
  * ============================================================ */
 
+/* Developer > Experimental > Xbox audio effects (RECOMP_APU_GPFX): the 3D
+ * voices' ears, as apu_hrtf.h places them. */
+static ApuHrtfEars s_ears[MCPX_HW_MAX_3D_VOICES];
+
 static void voice_reset_filters(MCPXAPUState *d, uint16_t v)
 {
     assert(v < MCPX_HW_MAX_VOICES);
     memset(&d->vp.filters[v].svf, 0, sizeof(d->vp.filters[v].svf));
     hrtf_filter_clear_history(&d->vp.filters[v].hrtf);
+    /* A 3D voice starting again starts where its setting places it. */
+    if (v < MCPX_HW_MAX_3D_VOICES)
+        s_ears[v].started = 0;
     if (d->vp.filters[v].resampler) {
         src_reset(d->vp.filters[v].resampler);
     }
@@ -1433,13 +1442,32 @@ static void voice_process(MCPXAPUState *d,
         }
     }
 
-    /* HRTF processing for 3D voices */
-    if (v < MCPX_HW_MAX_3D_VOICES && g_config.audio.hrtf) {
+    /* HRTF processing for 3D voices.
+     *
+     * Developer > Experimental > Xbox audio effects (RECOMP_APU_GPFX) places
+     * them from their settings instead, with no filter (apu_hrtf.h), into
+     * ears[] for the HRTF submixes, and leaves samples[] dry for the voice's
+     * other bins. */
+    float ears[NUM_SAMPLES_PER_FRAME][2];
+    int placed = 0;
+    if (v < MCPX_HW_MAX_3D_VOICES && (g_config.audio.hrtf || apu_gpfx_on())) {
         uint16_t hrtf_handle =
             (uint16_t)voice_get_mask(d, v, NV_PAVS_VOICE_CFG_HRTF_TARGET,
                                      NV_PAVS_VOICE_CFG_HRTF_TARGET_HANDLE);
-        if (hrtf_handle != HRTF_NULL_HANDLE) {
+        if (hrtf_handle != HRTF_NULL_HANDLE && g_config.audio.hrtf) {
             hrtf_filter_process(&d->vp.filters[v].hrtf, samples, samples);
+        } else if (!g_config.audio.hrtf) {
+            int64_t t0 = apu_gpfx_timed() ? qemu_clock_get_ns(QEMU_CLOCK_REALTIME) : 0;
+            ApuGpfxPlaced where;
+            placed = hrtf_handle < HRTF_ENTRY_COUNT;
+            if (placed) {
+                memcpy(ears, samples, sizeof ears);
+                apu_hrtf_place(&d->vp.filters[v].hrtf, &s_ears[v],
+                               d->vp.hrtf.entries[hrtf_handle].hrir,
+                               d->vp.hrtf.entries[hrtf_handle].itd, ears, &where);
+            }
+            apu_gpfx_voice(v, bin, placed ? &where : NULL,
+                           t0 && placed ? qemu_clock_get_ns(QEMU_CLOCK_REALTIME) - t0 : 0);
         }
     }
 
@@ -1545,6 +1573,14 @@ static void voice_process(MCPXAPUState *d,
         }
         g *= attenuate(vol[b]) / hr;
         gain[b] = g;
+        if (placed && b < 4) {
+            /* The HRTF submixes take the ears two at a time, the left's
+             * then the right's: DirectSound lists them front left, back
+             * left, front right, back right. */
+            for (int i = 0; i < NUM_SAMPLES_PER_FRAME; i++)
+                mixbins[bin[b]][i] += g * ears[i][b >> 1];
+            continue;
+        }
         for (int i = 0; i < NUM_SAMPLES_PER_FRAME; i++) {
             mixbins[bin[b]][i] += g * samples[i][b % channels];
         }
@@ -1740,4 +1776,5 @@ void mcpx_apu_vp_reset(MCPXAPUState *d)
     for (int v = 0; v < MCPX_HW_MAX_VOICES; v++) {
         hrtf_filter_init(&d->vp.filters[v].hrtf);
     }
+    memset(s_ears, 0, sizeof(s_ears));
 }
