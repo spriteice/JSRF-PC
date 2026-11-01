@@ -114,6 +114,7 @@ target and the most tested. Windows comes second.
   - Some elements half a pixel out of place.
   - Black screenshots on Windows.
   - Graffiti menu icons on some AMD graphics on Windows.
+  - A freeze at the first start after installing or updating, on Windows.
   - A rare hang entering Rokkaku-dai Heights from The Garage.
 
 **Found a bug?** [Open an issue](https://github.com/spriteice/JSRF-PC/issues)
