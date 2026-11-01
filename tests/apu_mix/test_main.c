@@ -24,8 +24,8 @@
  * front left, back left, front right, back right. With Developer >
  * Experimental > Xbox audio effects (RECOMP_APU_GPFX), the voice is placed
  * from its setting, and each ear goes to its own side, so the right side
- * has a quarter of the left's, and the left is as loud as with no setting;
- * without, both sides are the same.
+ * is down by three quarters of a quarter's 12 dB, 9 dB, and the left is as
+ * loud as with no setting; without, both sides are the same.
  */
 #include <stdio.h>
 #include <stdlib.h>

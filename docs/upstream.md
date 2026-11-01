@@ -1060,11 +1060,13 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   setter scales each ear's taps to the same size, which takes away most of
   the difference in level between the ears. With the switch, there's no
   filter: a 3D voice with an HRTF setting keeps its sound as it is, its
-  louder ear at full level and the other turned down by as much as the
-  setting has it quieter, and late by the setting's delay
-  (src/apu/apu_hrtf.h), into `ears`. Both glide to each new setting through
-  two smoothing stages of 15 ms, where xemu's filter takes about 2 ms, so a
-  sound moves on smoothly between the game's settings rather than in steps.
+  louder ear at full level and the other turned down by three quarters of
+  as much as the setting has it quieter, in dB, and late by the setting's
+  delay (src/apu/apu_hrtf.h), into `ears`. Both glide to each new setting
+  through two smoothing stages of 25 ms, where xemu's filter takes about
+  2 ms, so a sound moves on smoothly between the game's settings rather than
+  in steps. The three quarters and the 25 ms are for speakers, where the
+  setting's whole difference, and a faster glide, sounded jarring.
   The HRTF submixes take the ears two at a time, the left's then the
   right's: DirectSound lists them front left, back left, front right, back
   right, and xemu's mix sends the left ear to all four. The voice's other

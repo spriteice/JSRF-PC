@@ -13,7 +13,9 @@
  * - Each ear's level: the size of its taps as the game set them, the root
  *   of the sum of their squares. The louder ear stays at full level, so a
  *   sound in front is as loud as with no setting, and the other is turned
- *   down by as much as the setting has it quieter.
+ *   down by APU_HRTF_DEPTH of as much as the setting has it quieter, in dB:
+ *   three quarters, so that a sound to one side, and each of the game's
+ *   steps as it moves, is a little gentler, above all on speakers.
  * - The delay, on the quieter ear, blended between two samples where it
  *   falls between them. The setting's sign says which ear it's on; where
  *   that is the louder one, it goes to the other, and the log says how
@@ -21,11 +23,13 @@
  *
  * Both glide to each new setting through two smoothing stages, each taking
  * APU_HRTF_GLIDE_MS, a frame at a time, and within the frame in a straight
- * line. The game moves a sound in steps, a setting at a time, and xemu's
- * filter glides to each in about 2 ms, so a turn comes out as many small
- * jumps. Two slower stages carry a sound on between the steps, with no
- * jump or corner, and the delay changes gently, so it hardly bends the
- * sound's pitch. A voice's first frame starts where its setting places it.
+ * line. The game moves a sound in steps, a setting at a time, 20 to 30 a
+ * second for most moving sounds, and xemu's filter glides to each in about
+ * 2 ms, so a turn comes out as many small jumps. Two slower stages carry a
+ * sound on between the steps, with no jump or corner, half-way to each
+ * setting in about the time the game takes to send the next, and the delay
+ * changes gently, so it hardly bends the sound's pitch. A voice's first
+ * frame starts where its setting places it.
  * The delay's history is kept in the voice's HrtfFilter as
  * hrtf_filter_process keeps it, so hrtf_filter_clear_history works on it
  * as it is.
@@ -48,7 +52,10 @@ typedef char apu_hrtf_history_fits[APU_HRTF_BACK <= HRTF_BUFLEN ? 1 : -1];
 #define APU_HRTF_DB          20.0f   /* dB from a level: APU_HRTF_DB * log10 */
 /* Each of the glide's two stages: the time it takes to go all but 1/e of
  * the way, so half-way takes about 1.7 times this, all but a tenth 3.9. */
-#define APU_HRTF_GLIDE_MS    15.0f
+#define APU_HRTF_GLIDE_MS    25.0f
+/* How much of the setting's difference in level between the ears is kept,
+ * in dB: the far ear is turned down by this much of what the setting has. */
+#define APU_HRTF_DEPTH       0.75f
 #define APU_HRTF_RATE        48000.0f   /* samples a second */
 #define APU_HRTF_MS          1000.0f
 
@@ -74,15 +81,18 @@ static inline float apu_hrtf_frame_step(void)
 
 /* A frame of the glide from `now` to `to`, its first stage in *first, by
  * `step`: where it ends the frame. Each stage lands on `to` once it's
- * within `arrived`, the first stage first, so that the second comes all
- * the way. */
+ * within `arrived`, or once its step is too small to move it at all, as it
+ * gets near a level of 1 with a slow glide; the first stage first, so that
+ * the second comes all the way. */
 static inline float apu_hrtf_glide(float *first, float now, float to, float step,
                                    float arrived)
 {
-    *first = fabsf(to - *first) <= arrived ? to : *first + step * (to - *first);
-    if (*first == to && fabsf(to - now) <= arrived)
+    float next = *first + step * (to - *first);
+    *first = fabsf(to - *first) <= arrived || next == *first ? to : next;
+    next = now + step * (*first - now);
+    if (*first == to && (fabsf(to - now) <= arrived || next == now))
         return to;
-    return now + step * (*first - now);
+    return next;
 }
 
 /* A level in dB, for the log, no lower than APU_HRTF_ARRIVED's. */
@@ -92,7 +102,8 @@ static inline float apu_hrtf_db(float level)
 }
 
 /* Where the setting `hrir` and `itd` places a voice: each ear's level, from
- * 0 to 1, into level[], and the delay, in samples, into *late, the left ear
+ * 0 to 1, with APU_HRTF_DEPTH of the setting's difference between them,
+ * into level[], and the delay, in samples, into *late, the left ear
  * late if it's positive, as hrtf_filter_process takes it. Also, for the
  * log, into *placed. */
 static inline void apu_hrtf_target(const float hrir[2][HRTF_NUM_TAPS], float itd,
@@ -107,7 +118,7 @@ static inline void apu_hrtf_target(const float hrir[2][HRTF_NUM_TAPS], float itd
     }
     louder = fmaxf(size[0], size[1]);
     for (int ch = 0; ch < 2; ch++)
-        level[ch] = louder > 0.0f ? sqrtf(size[ch] / louder) : 1.0f;
+        level[ch] = louder > 0.0f ? powf(sqrtf(size[ch] / louder), APU_HRTF_DEPTH) : 1.0f;
     delay = fminf(fabsf(itd), (float)HRTF_MAX_DELAY_SAMPLES);
     *late = size[0] < size[1] ? delay : size[1] < size[0] ? -delay
           : fmaxf(-delay, fminf(itd, delay));

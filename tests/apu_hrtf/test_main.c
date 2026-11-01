@@ -27,11 +27,13 @@
 #define COST_VOICES 32
 #define LONG        300              /* frames: long enough for the history to wrap often */
 #define MS          1000.0
-#define GLIDE_MS    15.0             /* each of the glide's two stages */
+#define GLIDE_MS    25.0             /* each of the glide's two stages */
 #define HALF_WAY    1.678            /* two stages go half-way in this many of a stage's time */
 #define BEND_CLOSE  1e-3f
 #define MOVING      400              /* frames for the delay to arrive */
-#define QUARTER_DB  12.0412f
+#define DEPTH       0.75f            /* of the setting's difference between the ears, in dB */
+#define HALF_DB     4.5154f          /* a half's 6.02 dB, at DEPTH */
+#define QUARTER_DB  9.0309f          /* and a quarter's 12.04 */
 #define ITD_ARRIVED 1e-3             /* where the first stage lands on the delay */
 
 static int s_failed;
@@ -73,6 +75,12 @@ static void place(Voice *v, float h[2][TAPS], float itd, float io[FRAME][2])
     apu_hrtf_place(&v->f, &v->e, (const float (*)[TAPS])h, itd, io, &v->placed);
 }
 
+/* An ear's level, for a setting with its taps `size` times the louder ear's. */
+static float played(float size)
+{
+    return powf(size, DEPTH);
+}
+
 static float noise(void)
 {
     return (float)rand() / (float)RAND_MAX - 0.5f;
@@ -94,17 +102,19 @@ int main(int argc, char **argv)
     srand(1);
     if (!strcmp(c, "levels")) {           /* each ear's level, from its taps' size */
         static const struct {
-            float left, right, want[2], db;
+            float left, right, size[2], db;
             int side;
             const char *what;
         } k[] = {
-            { 1.0f, 0.5f,  { 1.0f, 0.5f }, 6.0206f, 1, "the right half the size, half as loud" },
-            { 0.25f, 1.0f, { 0.25f, 1.0f }, 12.0412f, -1, "the left a quarter, a quarter" },
+            { 1.0f, 0.5f,  { 1.0f, 0.5f }, HALF_DB, 1,
+              "the right half the size, three quarters of its dB down" },
+            { 0.25f, 1.0f, { 0.25f, 1.0f }, QUARTER_DB, -1, "the left a quarter, the same" },
             { 0.7f, 0.7f,  { 1.0f, 1.0f }, 0.0f, 0, "the same size, both as they are" },
             { 0.0f, 0.0f,  { 1.0f, 1.0f }, 0.0f, 0, "no taps, both as they are" },
             { 1.0f, 0.0f,  { 1.0f, 0.0f }, 120.0f, 1, "no taps on the right, the right silent" },
         };
         for (unsigned j = 0; j < sizeof k / sizeof k[0]; j++) {
+            const float want[2] = { played(k[j].size[0]), played(k[j].size[1]) };
             int ok = 1;
             start(&voices[0]);
             taps(h, k[j].left, k[j].right);
@@ -115,8 +125,8 @@ int main(int argc, char **argv)
                 place(&voices[0], h, 0.0f, io);
                 for (int i = 0; i < FRAME; i++)
                     for (int e = 0; e < 2; e++)
-                        ok &= k[j].want[e] == 1.0f ? io[i][e] == x[i][e]
-                            : fabsf(io[i][e] - k[j].want[e] * x[i][e]) <= EXACT;
+                        ok &= want[e] == 1.0f ? io[i][e] == x[i][e]
+                            : fabsf(io[i][e] - want[e] * x[i][e]) <= EXACT;
             }
             check(k[j].what, ok && fabsf(voices[0].placed.far_db - k[j].db) < DB_CLOSE
                   && voices[0].placed.side == k[j].side && !voices[0].placed.moved);
@@ -143,8 +153,7 @@ int main(int argc, char **argv)
             float want[16 * FRAME][2] = {{0}}, level[2] = { k[j].left, k[j].right };
             int ok = 1;
             for (int e = 0; e < 2; e++) {
-                float louder = fmaxf(k[j].left, k[j].right);
-                level[e] /= louder;
+                level[e] = played(level[e] / fmaxf(k[j].left, k[j].right));
                 for (unsigned p = 0; p < sizeof at / sizeof at[0]; p++) {
                     int di = (int)k[j].late[e];
                     float fr = k[j].late[e] - (float)di;
@@ -174,7 +183,7 @@ int main(int argc, char **argv)
         float most = 0.0f;
         int exact = 1;
         start(&voices[0]);
-        taps(h, 0.5f, 1.0f);                 /* the left half as loud, 7.5 late */
+        taps(h, 0.5f, 1.0f);                 /* the left half the size, 7.5 late */
         for (int t = 0; t < LONG * FRAME; t++)
             in[t] = noise();
         for (int n = 0; n < LONG; n++) {
@@ -185,7 +194,7 @@ int main(int argc, char **argv)
         }
         for (int t = 0; t < LONG * FRAME; t++) {
             float a = t >= 7 ? in[t - 7] : 0.0f, b = t >= 8 ? in[t - 8] : 0.0f;
-            most = fmaxf(most, fabsf(out[t][0] - 0.5f * (a * 0.5f + b * 0.5f)));
+            most = fmaxf(most, fabsf(out[t][0] - played(0.5f) * (a * 0.5f + b * 0.5f)));
             exact &= out[t][1] == in[t];
         }
         check("the late ear is the sound before it, all the way through", most <= EXACT);
@@ -194,25 +203,28 @@ int main(int argc, char **argv)
         /* The glide as it should be: two stages, each all but 1/e of the way
          * in GLIDE_MS, a frame at a time. */
         const double a = 1.0 - exp(-FRAME * MS / (RATE * GLIDE_MS));
-        const float from[2] = { 1.0f, 0.5f }, to[2] = { 0.25f, 1.0f };
-        double first[2] = { 1.0, 0.5 }, sum[2] = { 1.0, 0.5 };
-        float last[2] = { 1.0f, 0.5f }, end[2] = { 1.0f, 0.5f }, slope[2] = { 0.0f, 0.0f };
+        const float from_size[2] = { 1.0f, 0.5f }, to_size[2] = { 0.25f, 1.0f };
+        const float from[2] = { played(from_size[0]), played(from_size[1]) };
+        const float to[2] = { played(to_size[0]), played(to_size[1]) };
+        double first[2] = { from[0], from[1] }, sum[2] = { from[0], from[1] };
+        float last[2] = { from[0], from[1] }, end[2] = { from[0], from[1] };
+        float slope[2] = { 0.0f, 0.0f };
         float most_step = 0.0f, most_frame = 0.0f, most_bend = 0.0f, ends = 0.0f;
         int arrived = 0, stayed = 1, half = 0, changes = 0, counted = 0;
         start(&voices[0]);
-        taps(h, from[0], from[1]);
+        taps(h, from_size[0], from_size[1]);
         for (int n = 0; n < 4; n++) {
             for (int i = 0; i < FRAME; i++)
                 io[i][0] = io[i][1] = 1.0f;     /* a steady sound: what comes out is the level */
             place(&voices[0], h, 0.0f, io);
             changes += voices[0].placed.changed;
         }
-        taps(h, to[0], to[1]);
+        taps(h, to_size[0], to_size[1]);
         for (int n = 1; n <= SECOND; n++) {
             for (int i = 0; i < FRAME; i++)
                 io[i][0] = io[i][1] = 1.0f;
             place(&voices[0], h, 0.0f, io);
-            if (n == 1)                          /* the left from 1 to a quarter: 12 dB */
+            if (n == 1)                          /* the left from 1 to a quarter */
                 counted = voices[0].placed.changed
                        && fabsf(voices[0].placed.change_db - QUARTER_DB) < DB_CLOSE;
             else
@@ -255,7 +267,7 @@ int main(int argc, char **argv)
         double first = 5.0, sum = 5.0;
         float ends = 0.0f, heard = 0.0f, prev = 5.0f;
         start(&voices[0]);
-        taps(h, 1.0f, 0.5f);                 /* the right half as loud, 5 then 20 late */
+        taps(h, 1.0f, 0.5f);                 /* the right half the size, 5 then 20 late */
         for (int n = 0; n < SETTLE + MOVING; n++) {
             float itd = n < SETTLE ? -5.0f : -20.0f;
             for (int i = 0; i < FRAME; i++)
@@ -270,7 +282,7 @@ int main(int argc, char **argv)
             /* The ramp, late by d, is what the ramp was d before. */
             for (int i = 0; i < FRAME; i++) {
                 float t = (float)(n * FRAME + i - SETTLE * FRAME);
-                float d = t - io[i][1] / (0.5f * RAMP);
+                float d = t - io[i][1] / (played(0.5f) * RAMP);
                 float here = prev + ((float)sum - prev) * (float)(i + 1) / FRAME;
                 heard = fmaxf(heard, fabsf(d - here));
             }
@@ -296,7 +308,7 @@ int main(int argc, char **argv)
         place(&voices[0], h, 4.0f, io);
         ok &= voices[0].placed.first;
         for (int i = 0; i < FRAME; i++)
-            ok &= io[i][1] == 1.0f && io[i][0] == (i < 4 ? 0.0f : 0.5f);
+            ok &= io[i][1] == 1.0f && io[i][0] == (i < 4 ? 0.0f : played(0.5f));
         place(&voices[0], h, 4.0f, io);
         ok &= !voices[0].placed.first;
         check("its first frame where its new setting places it, the late ear after nothing",

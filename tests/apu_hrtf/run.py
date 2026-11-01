@@ -1,11 +1,12 @@
 """Compile the placing of the 3D voices from their HRTF settings
 (src/apu/apu_hrtf.h) and play voices through it.
 
-Each ear's level must follow the size of its taps, with the louder ear
+Each ear's level must follow the size of its taps, the far ear turned down
+by three quarters of the setting's difference in dB, with the louder ear
 exactly the sound as it is; the delay must be on the quieter ear, whole or
 between two samples, and no later than the most there is, all through a long
 sound; levels and delays must glide to a new setting through two stages of
-15 ms, half-way in about 25 ms, landing where the two stages put them at
+25 ms, half-way in about 42 ms, landing where the two stages put them at
 each frame's end, in a straight line within the frame and with no corner,
 then arrive and stay, each change counted once for the log; and a voice
 starting again must start where its new setting places it. Then the time it
