@@ -35,4 +35,9 @@ void voice_follow_played(const uint8_t *mem, uint32_t ram, uint32_t handle, uint
 void voice_follow_frame(const uint8_t *mem, voice_follow_playing_fn playing,
                         voice_follow_move_fn move);
 
+/* The game is destroying the character at guest address `chr` (its
+ * destructor, sub_0007E830), and frees its memory next: its lines are let
+ * go now, so that nothing reads the character once it's freed. */
+void voice_follow_gone(uint32_t chr);
+
 #endif

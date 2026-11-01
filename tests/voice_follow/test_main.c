@@ -36,6 +36,7 @@ static unsigned s_played_at[KEPT + 2];   /* the frame each character's line was 
 static unsigned s_moves[KEPT + 2];   /* moves asked for, by character */
 static unsigned s_asked;       /* playing asked */
 static uint32_t s_wrong;       /* a move to a handle or place not played */
+static uint32_t s_second;      /* a second line's handle, at the first character */
 
 static void check(const char *what, int ok)
 {
@@ -69,7 +70,8 @@ static int playing(uint32_t h)
 static void move(uint32_t h, uint32_t at)
 {
     unsigned n = (at - where(0)) / CHR_STRIDE;
-    if (at < where(0) || (at - where(0)) % CHR_STRIDE || n >= KEPT + 2 || h != handle(n))
+    if (at < where(0) || (at - where(0)) % CHR_STRIDE || n >= KEPT + 2
+        || (h != handle(n) && !(n == 0 && s_second && h == s_second)))
         s_wrong = at;
     else
         s_moves[n]++;
@@ -122,15 +124,21 @@ int main(int argc, char **argv)
         run(FRAMES);
         check("none kept: another bank, nothing played, no place, out of memory, on the stack",
               !s_moves[0] && !s_asked && !s_wrong);
-    } else if (!strcmp(c, "gone")) {     /* its speaker gone while it plays */
+    } else if (!strcmp(c, "gone")) {     /* its speaker destroyed while it plays */
         play(0);
+        play(1);                       /* another speaker's line, still playing after */
+        s_second = handle(0) + 1;      /* and a second line of the first's */
+        voice_follow_played(s_ram, RAM, s_second, BANK, where(0), ESP);
         run(FRAMES / 3);
         putf(where(0), 0.0f);          /* back where it began */
         run(1);
-        put(chr(0) + VOICE_BANK, 0);
+        voice_follow_gone(chr(0));     /* its memory left as it was, as freed memory is */
         run(FRAMES / 3);
-        check("moved until its speaker went", s_moves[0] == FRAMES / 3 + 1);
-        check("then let go, not asked again", s_asked == FRAMES / 3 + 1);
+        check("both its lines moved until it was destroyed", s_moves[0] == 2 * (FRAMES / 3 + 1));
+        check("then let go, not asked again",
+              s_asked == 2 * (FRAMES / 3 + 1) + 2 * (FRAMES / 3) + 1);
+        check("the other speaker's line still moved", s_moves[1] == 2 * (FRAMES / 3) + 1);
+        check("only where it was played, by its handle", !s_wrong);
     } else if (!strcmp(c, "late")) {     /* not playing yet on its first frame */
         s_starts_at = 1;
         play(0);

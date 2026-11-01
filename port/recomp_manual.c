@@ -1689,13 +1689,16 @@ void sub_00067E90(void)
  * settings to the sound engine. Before it, voice_follow.c moves each voice
  * line it keeps as the character update moves its own looped one
  * (sub_00080340): sub_00118710(handle), whether it still plays, then
- * sub_00118BD0(handle, where), both cdecl. */
+ * sub_00118BD0(handle, where), both cdecl. sub_0007E830 is the characters'
+ * destructor (thiscall), which their deleting destructor, sub_00080320,
+ * runs before it frees one: voice_follow.c lets that character's lines go. */
 #define VOICE_PLAYING_RET  0x0008039Du /* where sub_00080340's sub_00118710 returns to */
 #define VOICE_MOVE_RET     0x000803B7u /* and its sub_00118BD0 */
 #include "voice_follow.h"
 extern size_t xbox_GetMappedSize(void);   /* the heap runs to its end */
 extern void sub_00119540_gen(void);
 extern void sub_001185B0_gen(void);
+extern void sub_0007E830_gen(void);
 extern void sub_00118710(void);
 extern void sub_00118BD0(void);
 static int voice_playing(uint32_t handle)
@@ -1718,6 +1721,12 @@ void sub_001185B0(void)
 {
     voice_follow_frame((const uint8_t *)g_xbox_mem_offset, voice_playing, voice_move);
     sub_001185B0_gen();
+}
+void sub_0007E830(void)
+{
+    uint32_t chr = g_ecx;
+    sub_0007E830_gen();
+    voice_follow_gone(chr);
 }
 
 /* ---- list menus and the keyboard -----------------------------------------

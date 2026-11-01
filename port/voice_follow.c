@@ -4,9 +4,10 @@
  * character's +0xC74, at the character's own position, +0xCA4: what the
  * character's voice calls pass (sub_000A1C50 and the others beside it). The
  * position must not be on the caller's stack, which is gone once it
- * returns. A line is let go when it no longer plays, or when the character
- * no longer has that bank, as when it is gone. A line not playing yet on
- * its first frame is given one more.
+ * returns. A line is let go when it no longer plays, or when the game
+ * destroys its character (voice_follow_gone), before it frees the memory:
+ * a freed character can't be read, as its pages may be given back. A line
+ * not playing yet on its first frame is given one more.
  *
  * Developer > Logging > RECOMP_APU_STATS, with the effects on: a line when
  * the first voice line is kept, and one when each is let go: how long it
@@ -27,7 +28,7 @@
 #define VF_FRAMES_PER_S   60.0       /* the game's frames, each one sound manager update */
 
 typedef struct {
-    uint32_t handle, where, bank;
+    uint32_t handle, where;
     float from[3];                   /* where the speaker was when it began */
     float farthest;                  /* the farthest the speaker went from there */
     unsigned frames;                 /* the frames it was kept */
@@ -80,7 +81,6 @@ void voice_follow_played(const uint8_t *mem, uint32_t ram, uint32_t handle, uint
     l = &s_kept[i];
     l->handle = handle;
     l->where = where;
-    l->bank = bank;
     rdvec(mem, where, l->from);
     l->farthest = 0.0f;
     l->frames = 0;
@@ -92,6 +92,21 @@ void voice_follow_played(const uint8_t *mem, uint32_t ram, uint32_t handle, uint
     }
 }
 
+/* Lets go of the line kept in s_kept[i], the last one kept taking its place. */
+static void let_go(unsigned i, int gone)
+{
+    VfLine *l = &s_kept[i];
+
+    if (apu_gpfx_timed()) {
+        fprintf(stderr, "[APU] effects: a voice line kept on its speaker for %.1f s,"
+                " who went up to %.0f from where it began%s\n",
+                (double)l->frames / VF_FRAMES_PER_S, (double)l->farthest,
+                gone ? "; its speaker gone" : "");
+        fflush(stderr);
+    }
+    *l = s_kept[--s_n];
+}
+
 void voice_follow_frame(const uint8_t *mem, voice_follow_playing_fn playing,
                         voice_follow_move_fn move)
 {
@@ -99,17 +114,9 @@ void voice_follow_frame(const uint8_t *mem, voice_follow_playing_fn playing,
 
     while (i < s_n) {
         VfLine *l = &s_kept[i];
-        int gone = voice_bank(mem, l->where) != l->bank;
-        int on = !gone && playing(l->handle);
-        if (gone || (!on && l->frames)) {
-            if (apu_gpfx_timed()) {
-                fprintf(stderr, "[APU] effects: a voice line kept on its speaker for %.1f s,"
-                        " who went up to %.0f from where it began%s\n",
-                        (double)l->frames / VF_FRAMES_PER_S, (double)l->farthest,
-                        gone ? "; its speaker gone" : "");
-                fflush(stderr);
-            }
-            *l = s_kept[--s_n];
+        int on = playing(l->handle);
+        if (!on && l->frames) {
+            let_go(i, 0);
             continue;
         }
         if (on) {
@@ -126,4 +133,15 @@ void voice_follow_frame(const uint8_t *mem, voice_follow_playing_fn playing,
         l->frames++;
         i++;
     }
+}
+
+void voice_follow_gone(uint32_t chr)
+{
+    unsigned i = 0;
+
+    while (i < s_n)
+        if (s_kept[i].where == chr + VF_CHR_POS)
+            let_go(i, 1);
+        else
+            i++;
 }

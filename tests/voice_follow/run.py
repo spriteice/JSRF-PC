@@ -5,8 +5,9 @@ Takes port/voice_follow.c as it is, with src/apu/apu_gpfx.c for its switch,
 and plays it made-up sounds at made-up characters, one case to a run
 (test_main.c). A line played from a character's voice bank, at where that
 character is, is moved to it each frame while it plays, by its own handle,
-and let go once it ends, or once its speaker is gone. One not playing yet
-on its first frame is given one more. A sound of another bank, one that
+and let go once it ends, or once the game destroys its speaker, whose
+memory is left as it was, as freed memory is. One not playing yet on its
+first frame is given one more. A sound of another bank, one that
 played nothing, one with no place or a place outside memory, and one placed
 on the caller's stack are not kept, and the same line played again is kept
 once. With more lines than are kept, the newest takes the place of the one
@@ -31,7 +32,8 @@ cases = {
                 LINE + "1.5 s, who went up to 0 from where it began\n"],
                ["gone"]),
     "not_voice": ([], ["kept"]),
-    "gone": ([KEPT, LINE + "0.5 s, who went up to 60 from where it began; its speaker gone\n"],
+    "gone": ([KEPT, LINE + "0.5 s, who went up to 60 from where it began; its speaker gone\n",
+              LINE + "0.5 s, who went up to 60 from where it began; its speaker gone\n"],
              []),
     "late": ([KEPT, LINE + "1.5 s, who went up to 182 from where it began\n",
               LINE + "0.0 s, who went up to 0 from where it began\n"],

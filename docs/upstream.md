@@ -1096,8 +1096,9 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
 ### The characters' voice lines kept on them, with the effects on
 
 - **Files:** port/recomp_manual.c (`sub_00119540`, a hook on the game's
-  call that plays a sound, and `sub_001185B0`, one on the end of the sound
-  manager's update), port/CMakeLists.txt (port/voice_follow.c).
+  call that plays a sound, `sub_001185B0`, one on the end of the sound
+  manager's update, and `sub_0007E830`, one on the characters'
+  destructor), port/CMakeLists.txt (port/voice_follow.c).
 - **Why:** Audio > Audio effects, on by default (The Audio menu, above).
   With the 3D voices placed, a character's voice line came from where the
   character was when it began: the game plays it at the character's
@@ -1106,12 +1107,15 @@ git log --oneline --grep='cherry picked from commit' 4d31983..main
   their lines behind, and with the free camera at an angle they came from
   one side. With the effects on, each line played from a character's voice
   bank, at that character, is moved to them once a frame until it ends, by
-  the same two calls the game makes for its looped one. Off, nothing
-  changes. Our own files: port/voice_follow.c and .h, and tests/voice_follow.
-  Could suit upstream with the placing.
-- **When picking:** keep both hooks calling their `_gen` function, the play
-  hook reading its arguments before the call, and the move before the
-  update's own code, and run tests/voice_follow.
+  the same two calls the game makes for its looped one. A line is let go
+  when the game destroys its character, before the character's memory is
+  freed: read after that, it crashed the game, as the memory can be given
+  back. Off, nothing changes. Our own files: port/voice_follow.c and .h,
+  and tests/voice_follow. Could suit upstream with the placing.
+- **When picking:** keep the three hooks calling their `_gen` function, the
+  play hook reading its arguments before the call, the move before the
+  update's own code, and the destructor's character read before its own
+  code, and run tests/voice_follow.
 
 ### Frames spent loading, shown
 

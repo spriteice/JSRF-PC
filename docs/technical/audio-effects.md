@@ -128,9 +128,13 @@ when it began: a skater at full speed left their lines behind.
 port/voice_follow.c keeps each line played from a character's voice bank at
 that character, and moves it to them once a frame with the same two calls
 the game makes for its looped voice. It lets a line go when it stops, or
-when the character no longer has that bank. The hooks are in
-port/recomp_manual.c, on the game's call that plays a sound (sub_00119540)
-and on the call that ends the sound manager's update (sub_001185B0).
+when the game destroys the character, before it frees the character's
+memory. Reading a character after it's freed crashed the game, as at the
+end of the police fight that opens Pharaoh Park: the game can give the
+memory back, and then it can't be read. The hooks are in
+port/recomp_manual.c, on the game's call that plays a sound (sub_00119540),
+on the call that ends the sound manager's update (sub_001185B0), and on the
+characters' destructor (sub_0007E830).
 
 ### The reverb
 
