@@ -7,9 +7,12 @@ own loop is unchanged under 256 bytes, that every changed bit and every
 64 bytes moved change the hash, and that nothing is read past either end.
 
 x86-64 Linux; requires GCC on PATH.
+CC, when set, is the compiler instead of gcc.
 """
+import os
 import pathlib
 import platform
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -19,6 +22,7 @@ if not sys.platform.startswith("linux") or platform.machine() not in ("x86_64", 
     sys.exit(0)
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 gl = (root / "src/nv2a_gl/nv2a_gl.c").read_text(encoding="utf-8")
 
 # vc_hash as it is, and its own loop alone: the same text without the hand-over.
@@ -39,7 +43,7 @@ source = ("""
 
 with tempfile.TemporaryDirectory(prefix="vc_hash-") as directory:
     exe = str(pathlib.Path(directory) / "test")
-    command = ["gcc", "-std=gnu11", "-O2", "-Wall", "-Wextra", "-Werror", "-I", str(root / "src/nv2a_gl"),
+    command = cc + ["-std=gnu11", "-O2", "-Wall", "-Wextra", "-Werror", "-I", str(root / "src/nv2a_gl"),
                "-x", "c", "-", "-o", exe]
     subprocess.run(command, cwd=root, input=source, text=True, check=True)
     run = subprocess.run([exe], capture_output=True, text=True, timeout=300)

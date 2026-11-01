@@ -6,14 +6,17 @@ src/kernel/xbox_memory_layout.c, and xbox_GuestCpuPreempt and
 kernel_vblank_tick from src/kernel/kernel_bridge.c, verbatim, with the
 registers and bits the bridge raises a vblank with. Requires GCC on PATH,
 including MinGW on Windows, and POSIX threads (winpthreads there).
+CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 layout = (root / "src/kernel/xbox_memory_layout.c").read_text(encoding="utf-8")
 header = (root / "src/kernel/xbox_memory_layout.h").read_text(encoding="utf-8")
 bridge = (root / "src/kernel/kernel_bridge.c").read_text(encoding="utf-8")
@@ -67,7 +70,7 @@ void xbox_guest_lock_yield_now(void) { s_offers++; }
 
 with tempfile.TemporaryDirectory(prefix="vblank_ack-") as directory:
     exe = str(pathlib.Path(directory) / "test.exe")
-    command = ["gcc", "-std=c11", "-Wall", "-Wextra", "-pthread", "-x", "c", "-", "-o", exe]
+    command = cc + ["-std=c11", "-Wall", "-Wextra", "-pthread", "-x", "c", "-", "-o", exe]
     subprocess.run(command, cwd=root, input=source, text=True, check=True)
     run = subprocess.run([exe], capture_output=True, text=True, timeout=60,
                          env=dict(os.environ, RECOMP_VBLANK="1"))

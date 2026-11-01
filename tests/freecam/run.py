@@ -6,13 +6,16 @@ nv_window_pref_num between them); test_main.c stands in for the window's key
 hook. Each case gets its own settings file, passed as JSRF_SETTINGS_FILE, and
 its own run, since the settings are read once.
 Requires GCC on PATH, including MinGW on Windows.
+CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
+import shlex
 import subprocess
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 gl = (root / "src/nv2a_gl/nv2a_gl.c").read_text(encoding="utf-8")
 settings = gl[gl.index("static void sdl_cfg_path(char *buf, size_t n)"):
               gl.index("/* nv2a_widescreen() asks this when RECOMP_WIDESCREEN is not set. */")]
@@ -80,7 +83,7 @@ cases = {
 with tempfile.TemporaryDirectory(prefix="freecam-") as directory:
     work = pathlib.Path(directory)
     exe = str(work / "test.exe")
-    command = ["gcc", "-std=c11", "-DNV2A_GL_USE_SDL=1", "-Iport", "-x", "c", "-",
+    command = cc + ["-std=c11", "-DNV2A_GL_USE_SDL=1", "-Iport", "-x", "c", "-",
                "port/freecam.c", "-o", exe, "-lm"]
     subprocess.run(command, cwd=root, input=source, text=True, check=True)
     for name, (text, logs) in cases.items():

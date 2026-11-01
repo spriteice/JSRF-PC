@@ -3,13 +3,17 @@
 The APU core also contains the hardware emulation and host output backend.
 Take its mixer declarations and implementation verbatim; only the APU wakeup
 target is stubbed (NULL). Requires GCC on PATH, including MinGW on Windows.
+CC, when set, is the compiler instead of gcc.
 """
+import os
 import pathlib
+import shlex
 import subprocess
 import sys
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 core = (root / "src/apu/apu_core.c").read_text(encoding="utf-8")
 declarations = core[core.index("static void mixer_init(void);"):
                     core.index("struct McpxApuDebug g_dbg;")]
@@ -30,7 +34,7 @@ static void qemu_cond_signal(int *p) { (void)p; }
 source += (root / "tests/audio_mixer/test_main.c").read_text(encoding="utf-8")
 with tempfile.TemporaryDirectory(prefix="audio-mixer-") as directory:
     exe = str(pathlib.Path(directory) / "test.exe")
-    command = ["gcc", "-std=c11", "-Isrc", "-x", "c", "-",
+    command = cc + ["-std=c11", "-Isrc", "-x", "c", "-",
                "src/audio/dsound_device.c", "-o", exe]
     if sys.platform != "win32":
         command += ["src/platform/win32_compat.c", "-lm", "-lpthread"]

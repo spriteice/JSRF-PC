@@ -9,9 +9,11 @@ and every block must still hold what its thread wrote when it is freed. With
 RECOMP_HEAP_CHECK=1, the block table is checked after every operation too.
 Then the same without the lock, which must lose. POSIX only (the threads and
 the lock are pthreads'); requires GCC on PATH.
+CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -21,6 +23,7 @@ if os.name == "nt":
     sys.exit(0)
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 layout = (root / "src/kernel/xbox_memory_layout.c").read_text(encoding="utf-8")
 
 
@@ -73,7 +76,7 @@ with tempfile.TemporaryDirectory(prefix="heap_lock-") as directory:
     results = {}
     for locked in (True, False):
         exe = str(pathlib.Path(directory) / ("locked" if locked else "unlocked"))
-        command = ["gcc", "-std=gnu11", "-O2", "-Wall", "-Wextra", "-Wno-unused-function",
+        command = cc + ["-std=gnu11", "-O2", "-Wall", "-Wextra", "-Wno-unused-function",
                    "-x", "c", "-", "-o", exe, "-pthread"]
         subprocess.run(command, cwd=root, input=source(locked), text=True, check=True)
         try:

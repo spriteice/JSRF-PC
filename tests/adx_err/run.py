@@ -15,14 +15,17 @@ update's thread and entries into a held lock. Unset, nothing is printed and
 the runtime is given nothing.
 Requires GCC on PATH. Linux only: the thread ids are faked through the Win32
 shim's GetCurrentThreadId, which Windows takes from <windows.h>.
+CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
+import shlex
 import subprocess
 import sys
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 if not sys.platform.startswith("linux"):
     print("adx_err: skipped (Linux only)")
     raise SystemExit(0)
@@ -104,7 +107,7 @@ cases = {
 failed = 0
 with tempfile.TemporaryDirectory(prefix="adx_err-") as directory:
     exe = str(pathlib.Path(directory) / "test")
-    subprocess.run(["gcc", "-std=c11", "-Wall", "-Wextra", "-Iport",
+    subprocess.run(cc + ["-std=c11", "-Wall", "-Wextra", "-Iport",
                     "port/adx_err.c", "tests/adx_err/test_main.c", "-o", exe],
                    cwd=root, check=True)
     env = {k: v for k, v in os.environ.items() if k != "JSRF_ADX_ERR_LOG"}

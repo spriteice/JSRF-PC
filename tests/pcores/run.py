@@ -11,9 +11,11 @@ processor of the test's making (PCORES_CPU_DIR, in place of
   core; and the switch not set (on, by default), 0, empty, or another word.
 
 Requires GCC on PATH.
+CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
+import shlex
 import shutil
 import subprocess
 import sys
@@ -24,6 +26,7 @@ if not sys.platform.startswith("linux"):
     raise SystemExit(0)
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 
 
 def processor(cpu_dir, khz):
@@ -63,7 +66,7 @@ with tempfile.TemporaryDirectory(prefix="pcores-") as directory:
     work = pathlib.Path(directory)
     cpu_dir = work / "cpu"
     exe = str(work / "test")
-    subprocess.run(["gcc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", "-pthread",
+    subprocess.run(cc + ["-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", "-pthread",
                     f'-DPCORES_CPU_DIR="{cpu_dir}"', "tests/pcores/test_main.c", "port/pcores.c", "-o", exe],
                    cwd=root, check=True)
     base = {k: v for k, v in os.environ.items() if k != "RECOMP_P_CORES"}

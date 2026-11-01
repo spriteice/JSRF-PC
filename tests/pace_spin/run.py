@@ -4,14 +4,17 @@ without the game.
 Takes pace_margin, pace_margin_learn and pace_sleep_until from
 src/nv2a_gl/nv2a_gl.c, verbatim, with the pacing report's counters. Linux
 only, as they are. Requires GCC on PATH.
+CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
+import shlex
 import subprocess
 import sys
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 gl = (root / "src/nv2a_gl/nv2a_gl.c").read_text(encoding="utf-8")
 
 if not sys.platform.startswith("linux"):
@@ -38,7 +41,7 @@ static double mono_now(void)
 
 with tempfile.TemporaryDirectory(prefix="pace_spin-") as directory:
     exe = str(pathlib.Path(directory) / "test.exe")
-    command = ["gcc", "-std=c11", "-Wall", "-Wextra", "-x", "c", "-", "-o", exe]
+    command = cc + ["-std=c11", "-Wall", "-Wextra", "-x", "c", "-", "-o", exe]
     subprocess.run(command, cwd=root, input=source, text=True, check=True)
     for fixed in (None, "1200"):
         env = dict(os.environ)

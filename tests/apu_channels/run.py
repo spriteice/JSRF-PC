@@ -7,13 +7,16 @@ more below the other for 0.2 s gets a line, and the voices and mixbins of the
 tenth of a second after it, once in 10 s; a tenth on its own is only counted
 in the summary; nothing playing is never one-sided. Unset, nothing is printed.
 Requires GCC on PATH, including MinGW on Windows.
+CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
+import shlex
 import subprocess
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 
 SUMMARY = "[AUDIO-CH] the last 10 s: peaks left -6 dBFS, right -6 dBFS; "
 # case: (lines the log must have, in order, and lines it must not)
@@ -52,7 +55,7 @@ cases = {
 failed = 0
 with tempfile.TemporaryDirectory(prefix="apu_channels-") as directory:
     exe = str(pathlib.Path(directory) / "test.exe")
-    subprocess.run(["gcc", "-std=c11", "-Wall", "-Wextra", "-Isrc/apu",
+    subprocess.run(cc + ["-std=c11", "-Wall", "-Wextra", "-Isrc/apu",
                     "src/apu/apu_channels.c", "tests/apu_channels/test_main.c",
                     "-o", exe, "-lm"], cwd=root, check=True)
     env = {k: v for k, v in os.environ.items() if k != "RECOMP_APU_CHANNELS"}

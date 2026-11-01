@@ -17,10 +17,12 @@ enough to copy whole for every run (at the real limits it is over 20 MB).
 
 Linux, with the EGL and GL headers (libegl-dev, libgl-dev); requires GCC on
 PATH.
+CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -30,12 +32,13 @@ if not sys.platform.startswith("linux"):
     sys.exit(0)
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 here = root / "tests/index_runs"
 
 with tempfile.TemporaryDirectory(prefix="index-runs-") as directory:
     tmp = pathlib.Path(directory)
     walk = str(tmp / "walk")
-    subprocess.run(["gcc", "-O2", "-std=c11", "-Wall", "-Wextra", "-Werror", str(here / "test_walk.c"),
+    subprocess.run(cc + ["-O2", "-std=c11", "-Wall", "-Wextra", "-Werror", str(here / "test_walk.c"),
                     str(root / "src/kernel/nv2a_pb_scan.c"), "-o", walk], check=True)
     logs = {}
     for name in ("scan", "whole"):
@@ -67,7 +70,7 @@ with tempfile.TemporaryDirectory(prefix="index-runs-") as directory:
         raise SystemExit("index_runs: nv2a_gl.c no longer defines MAX_INDICES and MAX_INLINE")
     (tmp / "nv2a_gl.c").write_text(source, encoding="utf-8")
     gl = str(tmp / "gl")
-    subprocess.run(["gcc", "-O2", "-std=gnu11", "-w", "-no-pie", "-I", str(tmp), "-I", str(root / "src/nv2a_gl"),
+    subprocess.run(cc + ["-O2", "-std=gnu11", "-w", "-no-pie", "-I", str(tmp), "-I", str(root / "src/nv2a_gl"),
                     "-I", str(root / "src/d3d"), str(here / "test_gl.c"), "-o", gl,
                     "-Wl,--unresolved-symbols=ignore-all", "-lm"], check=True)
     run = subprocess.run([gl], capture_output=True, text=True, timeout=120)

@@ -15,14 +15,17 @@ With RECOMP_APU_GPFX=1 it's placed from that setting, so the right side is
 down by three quarters of a quarter's 12 dB, 9 dB, and the left is as loud
 as with no setting; without, both sides have it alike. Requires GCC on
 PATH, including MinGW on Windows.
+CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
+import shlex
 import subprocess
 import sys
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 full = "left 16383, right -8191"
 cases = {
     ("fold", 1): full,
@@ -33,7 +36,7 @@ cases = {
 failed = 0
 with tempfile.TemporaryDirectory(prefix="apu_mix-") as directory:
     exe = str(pathlib.Path(directory) / "test.exe")
-    command = ["gcc", "-std=gnu11", "-Isrc/apu", "-Isrc", "-Isrc/nv2a",
+    command = cc + ["-std=gnu11", "-Isrc/apu", "-Isrc", "-Isrc/nv2a",
                "src/apu/apu_vp.c", "src/apu/apu_dsp.c",
                "src/apu/apu_channels.c", "src/apu/apu_gpfx.c",
                "tests/apu_mix/test_main.c", "-o", exe]

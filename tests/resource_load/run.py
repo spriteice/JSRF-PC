@@ -9,12 +9,16 @@ asked for its stage is logged with what it asked for, and said to have had
 its file written over when the file's first word no longer matches the copy
 made as it loaded; one still waiting to ask is not logged.
 Requires GCC on PATH, including MinGW on Windows.
+CC, when set, is the compiler instead of gcc.
 """
+import os
 import pathlib
+import shlex
 import subprocess
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 
 FORGOT = ("[LOAD] t=229.5 the character loader released its file buffer 00008000 and kept it:"
           " forgotten, so a character unload can't release it again\n")
@@ -34,7 +38,7 @@ cases = {
 failed = 0
 with tempfile.TemporaryDirectory(prefix="resource_load-") as directory:
     exe = str(pathlib.Path(directory) / "test.exe")
-    subprocess.run(["gcc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-Iport",
+    subprocess.run(cc + ["-std=c11", "-Wall", "-Wextra", "-Werror", "-Iport",
                     "port/resource_load.c", "tests/resource_load/test_main.c", "-o", exe],
                    cwd=root, check=True)
     for case, log in cases.items():

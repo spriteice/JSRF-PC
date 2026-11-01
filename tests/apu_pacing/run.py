@@ -9,10 +9,12 @@ with XAudio2). The voice processor must make its frames at 48 kHz, close
 together: DirectSound waits for the next one each time it restarts a sound.
 With the ring, the device must never run dry. POSIX only (the fake sink is
 pthreads'); requires GCC on PATH.
+CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -22,6 +24,7 @@ if os.name == "nt":
     sys.exit(0)
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 core = (root / "src/apu/apu_core.c").read_text(encoding="utf-8")
 sdl = (root / "src/apu/apu_sdl.c").read_text(encoding="utf-8")
 regs = (root / "src/apu/apu_regs.h").read_text(encoding="utf-8")
@@ -84,7 +87,7 @@ int64_t g_apu_throttle_lost_us;
 
 with tempfile.TemporaryDirectory(prefix="apu_pacing-") as directory:
     exe = str(pathlib.Path(directory) / "test")
-    command = ["gcc", "-O2", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread", "-x", "c", "-",
+    command = cc + ["-O2", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread", "-x", "c", "-",
                "-o", exe]
     subprocess.run(command, cwd=root, input=source, text=True, check=True)
     for name, ring_ms in (("ring", None), ("wall clock", "0")):

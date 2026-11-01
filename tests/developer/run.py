@@ -5,14 +5,17 @@ src/nv2a_gl/nv2a_gl.c verbatim, as tests/freecam does. Each case gets its own
 folder with a settings file, passed as JSRF_SETTINGS_FILE, and developer.cfg
 beside it, and its own run, with its output going to a log file as the
 launchers' does. Requires GCC on PATH, including MinGW on Windows.
+CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
+import shlex
 import subprocess
 import sys
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 gl = (root / "src/nv2a_gl/nv2a_gl.c").read_text(encoding="utf-8")
 settings = gl[gl.index("static void sdl_cfg_path(char *buf, size_t n)"):
               gl.index("/* nv2a_widescreen() asks this when RECOMP_WIDESCREEN is not set. */")]
@@ -136,7 +139,7 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
     menu_exe = str(work / "menu.exe")
     # -Wno-unused-function: the settings code has helpers only the rest of
     # nv2a_gl.c calls.
-    command = ["gcc", "-std=c11", "-Wall", "-Wextra", "-Wno-unused-function", "-DNV2A_GL_USE_SDL=1",
+    command = cc + ["-std=c11", "-Wall", "-Wextra", "-Wno-unused-function", "-DNV2A_GL_USE_SDL=1",
                "-x", "c", "-", "port/developer.c", "-x", "none", "port/cpuprof.c", "port/pcores.c"]
     if linux:
         command.insert(1, "-pthread")

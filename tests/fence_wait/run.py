@@ -7,10 +7,12 @@ once as it ships and once with RECOMP_FENCE_WAIT=0. Then port/recomp_manual.c's
 sub_00191440 and guest_call_cdecl, verbatim, against stand-ins for the game
 functions it calls (test_wrapper.c). POSIX only (win32_compat.c is the Linux
 and macOS side); requires GCC on PATH.
+CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -20,6 +22,7 @@ if os.name == "nt":
     sys.exit(0)
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 pb_exec = (root / "src/kernel/nv2a_pb_exec.c").read_text(encoding="utf-8")
 manual = (root / "port/recomp_manual.c").read_text(encoding="utf-8")
 here = root / "tests/fence_wait"
@@ -87,12 +90,12 @@ with tempfile.TemporaryDirectory(prefix="fence_wait-") as directory:
     wait_exe = str(pathlib.Path(directory) / "wait")
     wrapper_exe = str(pathlib.Path(directory) / "wrapper")
     compat = str(pathlib.Path(directory) / "compat.o")
-    subprocess.run(["gcc", "-O2", "-std=gnu11", "-pthread", "-I", "src", "-I", "src/platform", "-c",
+    subprocess.run(cc + ["-O2", "-std=gnu11", "-pthread", "-I", "src", "-I", "src/platform", "-c",
                     "src/platform/win32_compat.c", "-o", compat], cwd=root, check=True)
-    subprocess.run(["gcc", "-O2", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-pthread",
+    subprocess.run(cc + ["-O2", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-pthread",
                     "-I", "src", "-I", "src/platform", "-x", "c", "-", "-x", "none", compat,
                     "-lm", "-o", wait_exe], cwd=root, input=wait_source, text=True, check=True)
-    subprocess.run(["gcc", "-O2", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-x", "c", "-",
+    subprocess.run(cc + ["-O2", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-x", "c", "-",
                     "-o", wrapper_exe], cwd=root, input=wrapper_source, text=True, check=True)
     runs = [("on", [wait_exe], "fence_wait: all cases pass"),
             ("off", [wait_exe, "off"], "fence_wait off: all cases pass"),

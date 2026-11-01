@@ -9,9 +9,11 @@ second to a compositor that shows the newest finished one at each refresh;
 each case says how many refreshes the frames stayed on screen.
 
 Linux, with the kernel's headers (linux-libc-dev); requires GCC on PATH.
+CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -21,6 +23,7 @@ if not sys.platform.startswith("linux"):
     sys.exit(0)
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 gl = (root / "src/nv2a_gl/nv2a_gl.c").read_text(encoding="utf-8")
 
 # The block of frame_pace that sets the next deadline, from the presenter's
@@ -34,7 +37,7 @@ source = source.replace("/* FRAME_PACE_LOCK */\n", lock)
 
 with tempfile.TemporaryDirectory(prefix="display-clock-") as directory:
     exe = str(pathlib.Path(directory) / "test")
-    subprocess.run(["gcc", "-O2", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-DNV2A_GL_USE_SDL=1",
+    subprocess.run(cc + ["-O2", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-DNV2A_GL_USE_SDL=1",
                     "-I", str(root / "src/nv2a_gl"), "-x", "c", "-", "-o", exe, "-lm"],
                    cwd=root, input=source, text=True, check=True)
     env = {k: v for k, v in os.environ.items() if not k.startswith("RECOMP_PACE")}

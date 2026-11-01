@@ -8,10 +8,12 @@ src/kernel/kernel_thread.c, all verbatim, and builds them with
 src/platform/win32_compat.c's threads, against a guest lock that is a plain
 mutex and a hand-over that is recorded rather than made (test_main.c). POSIX
 only (win32_compat.c is the Linux and macOS side); requires GCC on PATH.
+CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -21,6 +23,7 @@ if os.name == "nt":
     sys.exit(0)
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 bridge = (root / "src/kernel/kernel_bridge.c").read_text(encoding="utf-8")
 thread = (root / "src/kernel/kernel_thread.c").read_text(encoding="utf-8")
 here = root / "tests/guest_suspend"
@@ -108,10 +111,10 @@ static void guest_lock_hand_over(int even_if_none_queued,
 with tempfile.TemporaryDirectory(prefix="guest_suspend-") as directory:
     exe = str(pathlib.Path(directory) / "guest_suspend")
     compat = str(pathlib.Path(directory) / "compat.o")
-    subprocess.run(["gcc", "-O2", "-std=gnu11", "-pthread", "-I", "src", "-I", "src/platform", "-c",
+    subprocess.run(cc + ["-O2", "-std=gnu11", "-pthread", "-I", "src", "-I", "src/platform", "-c",
                     "src/platform/win32_compat.c", "-o", compat], cwd=root, check=True)
     # -Wno-comment: kernel.h has a "/*" inside a comment, which is upstream's.
-    subprocess.run(["gcc", "-O2", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-Wno-comment",
+    subprocess.run(cc + ["-O2", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-Wno-comment",
                     "-pthread", "-I", "src", "-I", "src/platform",
                     "-x", "c", "-", "-x", "none", compat, "-lm", "-o", exe],
                    cwd=root, input=source, text=True, check=True)

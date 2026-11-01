@@ -11,8 +11,11 @@ were missing on Kibogaoka Hill and in the Fortified Residential Zone.
 
 Linux, with the EGL and GL headers (libegl-dev, libgl-dev); requires GCC on
 PATH.
+CC, when set, is the compiler instead of gcc.
 """
+import os
 import pathlib
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -22,11 +25,12 @@ if not sys.platform.startswith("linux"):
     sys.exit(0)
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 here = root / "tests/big_batch"
 
 with tempfile.TemporaryDirectory(prefix="big-batch-") as directory:
     exe = str(pathlib.Path(directory) / "test")
-    subprocess.run(["gcc", "-O2", "-std=gnu11", "-w", "-no-pie", "-I", str(root / "src/nv2a_gl"),
+    subprocess.run(cc + ["-O2", "-std=gnu11", "-w", "-no-pie", "-I", str(root / "src/nv2a_gl"),
                     "-I", str(root / "src/d3d"), str(here / "test_main.c"), "-o", exe,
                     "-Wl,--unresolved-symbols=ignore-all", "-lm"], check=True)
     run = subprocess.run([exe], capture_output=True, text=True, timeout=120)

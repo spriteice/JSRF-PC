@@ -17,10 +17,12 @@ itself: software methods raised the way src/kernel/kernel_bridge.c raises them
 port/recomp_manual.c's sub_00194210 (verbatim), while the GPU thread above
 completes the interrupt registers (vblank_intr_tick, verbatim): none may be
 lost. POSIX only (the wait is pthreads'); requires GCC on PATH.
+CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -30,6 +32,7 @@ if os.name == "nt":
     sys.exit(0)
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 layout = (root / "src/kernel/xbox_memory_layout.c").read_text(encoding="utf-8")
 mmio = (root / "src/kernel/kernel_mmio.c").read_text(encoding="utf-8")
 types = (root / "templates/runtime/recomp_types.h").read_text(encoding="utf-8")
@@ -128,7 +131,7 @@ want = {
 
 with tempfile.TemporaryDirectory(prefix="nv2a_queue-") as directory:
     exe = str(pathlib.Path(directory) / "test")
-    command = ["gcc", "-O2", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread", "-x", "c", "-",
+    command = cc + ["-O2", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread", "-x", "c", "-",
                "src/kernel/nv2a_pb_scan.c", "-o", exe]
     subprocess.run(command, cwd=root, input=source, text=True, check=True)
     for name, lines in want.items():

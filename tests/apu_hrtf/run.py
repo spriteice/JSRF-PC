@@ -14,20 +14,24 @@ takes for 32 voices, shown. Built with the address and undefined behaviour
 sanitizers where GCC has them, to catch a read outside the history, and
 again without them for the timing. Requires GCC on PATH, including MinGW on
 Windows.
+CC, when set, is the compiler instead of gcc.
 """
+import os
 import pathlib
+import shlex
 import subprocess
 import sys
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 cases = ["levels", "delay", "long", "glide", "moving", "start"]
 failed = 0
 with tempfile.TemporaryDirectory(prefix="apu_hrtf-") as directory:
     def build(name, flags):
         exe = str(pathlib.Path(directory) / name)
         # apu_state.h brings the APU's shims, which leave these two unused
-        subprocess.run(["gcc", "-std=gnu11", "-O2", "-Wall", "-Wextra",
+        subprocess.run(cc + ["-std=gnu11", "-O2", "-Wall", "-Wextra",
                         "-Wno-unused-variable", "-Wno-cast-function-type", *flags,
                         "-Isrc/apu", "-Isrc", "-Isrc/nv2a", "tests/apu_hrtf/test_main.c",
                         "-o", exe, "-lm"], cwd=root, check=True)

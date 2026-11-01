@@ -15,13 +15,16 @@ kept longest. With RECOMP_APU_STATS=1 the log says the lines are kept, and
 for each one let go how long it was kept and how far its speaker went.
 Unset, nothing is printed. With RECOMP_APU_GPFX unset, nothing is kept.
 Requires GCC on PATH, including MinGW on Windows.
+CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
+import shlex
 import subprocess
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 
 KEPT = ("[APU] effects: the characters' voice lines kept on them as they move, as the game"
         " keeps its looped one (RECOMP_APU_GPFX)\n")
@@ -46,7 +49,7 @@ cases = {
 failed = 0
 with tempfile.TemporaryDirectory(prefix="voice_follow-") as directory:
     exe = str(pathlib.Path(directory) / "test.exe")
-    subprocess.run(["gcc", "-std=c11", "-Wall", "-Wextra", "-Iport", "-Isrc/apu",
+    subprocess.run(cc + ["-std=c11", "-Wall", "-Wextra", "-Iport", "-Isrc/apu",
                     "port/voice_follow.c", "src/apu/apu_gpfx.c",
                     "tests/voice_follow/test_main.c", "-o", exe, "-lm"], cwd=root, check=True)
     env = {k: v for k, v in os.environ.items()

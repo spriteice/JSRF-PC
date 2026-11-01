@@ -4,13 +4,17 @@ Takes decode_texel, decode_level and the loops it uses from
 src/nv2a_gl/nv2a_gl.c, verbatim, and compares every format they decode,
 swizzled and linear, against one texel at a time as they were decoded
 before. Requires GCC on PATH.
+CC, when set, is the compiler instead of gcc.
 """
+import os
 import pathlib
+import shlex
 import subprocess
 import sys
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 gl = (root / "src/nv2a_gl/nv2a_gl.c").read_text(encoding="utf-8")
 
 texel = gl[gl.index("static int fmt_is_dxt(uint32_t f)"):gl.index("/* A format with no alpha bits")]
@@ -25,7 +29,7 @@ source = ("""
 
 with tempfile.TemporaryDirectory(prefix="tex_decode-") as directory:
     exe = str(pathlib.Path(directory) / "test.exe")
-    command = ["gcc", "-std=gnu11", "-O2", "-Wall", "-Wextra", "-I", str(root / "src/d3d"),
+    command = cc + ["-std=gnu11", "-O2", "-Wall", "-Wextra", "-I", str(root / "src/d3d"),
                "-x", "c", "-", "-o", exe]
     subprocess.run(command, cwd=root, input=source, text=True, check=True)
     run = subprocess.run([exe], capture_output=True, text=True, timeout=120)

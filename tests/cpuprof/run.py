@@ -13,10 +13,12 @@ The profile is built with a processor of the test's making, in place of
 may run on is a P core and the rest are compact. The worker runs on that
 first CPU and the main thread on the last, and each report's line on the P
 cores must say so.
+CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -26,6 +28,7 @@ if not sys.platform.startswith("linux"):
     raise SystemExit(0)
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 allowed = sorted(os.sched_getaffinity(0))
 if len(allowed) < 2:
     raise SystemExit(f"cpuprof: two CPUs needed for two busy threads, this may use {allowed}")
@@ -37,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix="cpuprof-") as directory:
         (work / f"cpu/cpu{cpu}/cpufreq").mkdir(parents=True)
         (work / f"cpu/cpu{cpu}/cpufreq/cpuinfo_max_freq").write_text(
             "5000000\n" if cpu == p_cpu else "3300000\n")
-    subprocess.run(["gcc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", "-pthread",
+    subprocess.run(cc + ["-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", "-pthread",
                     f'-DPCORES_CPU_DIR="{work / "cpu"}"',
                     "tests/cpuprof/test_main.c", "port/cpuprof.c", "port/pcores.c", "-o", exe],
                    cwd=root, check=True)

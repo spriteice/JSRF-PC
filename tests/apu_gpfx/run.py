@@ -37,13 +37,16 @@ runs. Passed the settings file's audioeffects=1 (apu_gpfx_choose), the
 effects run with RECOMP_APU_GPFX unset, and not with it 0; passed 0, they
 don't with it unset, and do with it 1. Requires GCC on PATH, including MinGW
 on Windows.
+CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
+import shlex
 import subprocess
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 
 LOADED = ("[APU] effects: an image loaded, 20 effects in 64 words of code and 827 of state,"
           " 20 of them found in the GP's memory; ")
@@ -169,7 +172,7 @@ once = {"reverb_other": [OTHER, REVERB], "reverb_lines": ["would need", "shorter
 failed = 0
 with tempfile.TemporaryDirectory(prefix="apu_gpfx-") as directory:
     exe = str(pathlib.Path(directory) / "test.exe")
-    subprocess.run(["gcc", "-std=c11", "-Wall", "-Wextra", "-Isrc/apu",
+    subprocess.run(cc + ["-std=c11", "-Wall", "-Wextra", "-Isrc/apu",
                     "src/apu/apu_gpfx.c", "tests/apu_gpfx/test_main.c",
                     "-o", exe, "-lm"], cwd=root, check=True)
     env = {k: v for k, v in os.environ.items()

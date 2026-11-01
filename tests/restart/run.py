@@ -7,14 +7,17 @@ across, and that standard output -- the launchers' log -- did. Off Windows it
 runs twice more: with descriptors marked one at a time, as where close_range
 is missing, and with a restart that fails, which must leave the files open.
 Requires GCC on PATH, including MinGW on Windows.
+CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
+import shlex
 import subprocess
 import sys
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 main = (root / "port/main.c").read_text(encoding="utf-8")
 restart = main[main.index("/* A restart hands the new run"):
                main.index("static const char *game_dir(void)")]
@@ -52,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix="restart-") as directory:
     work = pathlib.Path(directory)
     for name, (flags, case, want) in variants.items():
         exe = str(work / (name + ".exe"))
-        command = ["gcc", "-std=c11", "-Wall", "-Wextra", *flags, "-x", "c", "-", "-o", exe]
+        command = cc + ["-std=c11", "-Wall", "-Wextra", *flags, "-x", "c", "-", "-o", exe]
         subprocess.run(command, cwd=root, input=source, text=True, check=True)
         env = dict(os.environ, RESTART_TEST_DIR=directory)
         env.pop("RESTART_TEST_RUN", None)

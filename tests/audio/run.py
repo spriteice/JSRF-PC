@@ -9,13 +9,16 @@ since the setting is read once: on with no audioeffects= or with 1, off
 with 0, and RECOMP_APU_GPFX in the environment winning over it. The row
 keeps its change in the settings file and asks for a restart. Requires GCC
 on PATH, including MinGW on Windows.
+CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
+import shlex
 import subprocess
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
+cc = shlex.split(os.environ.get("CC", "gcc"))
 gl = (root / "src/nv2a_gl/nv2a_gl.c").read_text(encoding="utf-8")
 settings = gl[gl.index("static void sdl_cfg_path(char *buf, size_t n)"):
               gl.index("/* nv2a_widescreen() asks this when RECOMP_WIDESCREEN is not set. */")]
@@ -53,7 +56,7 @@ cases = {
 with tempfile.TemporaryDirectory(prefix="audio-") as directory:
     work = pathlib.Path(directory)
     exe = str(work / "test.exe")
-    command = ["gcc", "-std=c11", "-Wall", "-Wextra", "-Wno-unused-function",
+    command = cc + ["-std=c11", "-Wall", "-Wextra", "-Wno-unused-function",
                "-DNV2A_GL_USE_SDL=1", "-DXBOXRECOMP_MENU=1", "-Iport", "-Isrc/menu", "-Isrc/apu",
                "-x", "c", "-", "port/audio.c", "-o", exe]
     subprocess.run(command, cwd=root, input=source, text=True, check=True)
