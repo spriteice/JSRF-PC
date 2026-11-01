@@ -10,6 +10,7 @@
  * words whole: the two logs must be the same, and only the second may have
  * had runs.
  */
+#define _GNU_SOURCE   /* MAP_ANONYMOUS and MAP_NORESERVE under -std=c11 */
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
