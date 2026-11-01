@@ -24,11 +24,15 @@ contains no game files.
 ## Features
 
 - **In-game menu:** F1, or Back on a controller, for the display, graphics,
-  controller, and developer settings.
+  audio, controller, and developer settings.
 - **Resolution scaling:** 1× to 4×. _(JuMatt)_
 - **Widescreen:** 16:9, in gameplay only. _(JuMatt)_
 - **Free camera:** Modern right-stick camera controls and options, with the
-  graffiti camera turned off. Reset with the left trigger.
+  graffiti camera turned off. Turn it on and off with R3, reset it with the left
+  trigger, with optional auto centring.
+- **Audio effects:** A targeted, discrete sound engine that mimics the original
+  hardware's audio effects with minimal performance overhead: 3D audio and
+  reverb.
 - **Anti-aliasing:** SMAA _(JuMatt)_ and MSAA, alone or together.
 - **Anisotropic filtering:** Sharper textures at an angle.
 - **Performance:** Smooth frame pacing and optimised engine/renderer on both
@@ -37,12 +41,12 @@ contains no game files.
 
 ## Download
 
-The latest release is **b1.2**.
+The latest release is **b1.3**.
 
 | Platform | File |
 |---|---|
-| Linux x86_64: SteamOS, Ubuntu 22.04+, and most modern distros. | [JSRF-PC-b1.2-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b1.2/JSRF-PC-b1.2-linux-x86_64.tar.gz) |
-| Windows 10 or 11, x86_64. | [JSRF-PC-b1.2-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b1.2/JSRF-PC-b1.2-windows-x86_64.zip) |
+| Linux x86_64: SteamOS, Ubuntu 22.04+, and most modern distros. | [JSRF-PC-b1.3-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b1.3/JSRF-PC-b1.3-linux-x86_64.tar.gz) |
+| Windows 10 or 11, x86_64. | [JSRF-PC-b1.3-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b1.3/JSRF-PC-b1.3-windows-x86_64.zip) |
 
 See the [changelog](CHANGELOG-JSRF-PC.md) for what changed in each version,
 and the [releases](https://github.com/spriteice/JSRF-PC/releases) page for
@@ -102,16 +106,15 @@ target and the most tested. Windows comes second.
   most.
 - **Partly works:** Widescreen 16:9. The game view mostly works, but some menus
   and effects are still 4:3 or stretched.
-- **Little tested:** The later areas, so expect bugs.
 - **Known issues:** Each is described in the
   [latest release's notes](https://github.com/spriteice/JSRF-PC/releases/latest).
   - The jet boost effect in widescreen.
+  - Some menus in widescreen.
+  - Occasional crashes from bugs not yet found.
   - Some elements half a pixel out of place.
-  - Sound from one side between menus (intermittent).
-  - Music stopping in the Graffiti picker (intermittent).
   - Black screenshots on Windows.
   - Graffiti menu icons on some AMD graphics on Windows.
-  - The free camera is enabled when watching other skaters.
+  - A rare hang entering Rokkaku-dai Heights from The Garage.
 
 **Found a bug?** [Open an issue](https://github.com/spriteice/JSRF-PC/issues)
 and attach the `last-run.log` from that run.

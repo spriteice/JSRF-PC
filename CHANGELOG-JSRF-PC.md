@@ -4,6 +4,55 @@ What changed in each JSRF-PC version, newest first. Upstream JSRF Unleashed's
 own changes are in
 [its changelog](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/blob/main/CHANGELOG.md).
 
+## b1.3 (beta) — 1 November 2026
+
+### Added
+
+- **Audio effects:** A new Audio menu, with Audio effects: our own versions of
+  the Xbox's sound effects, 3D sound and reverb. Sounds come from where they are
+  around you, and places such as the sewers echo. They may cause crashes: if the
+  game crashes, compare its behaviour with Audio effects off. Thanks to
+  AdriM1985 for pointing out that they were missing.
+- **R3 for the free camera:** Clicking the right stick turns the free camera
+  on and off.
+- **Auto centre:** Controller > Auto centre eases the free camera back behind
+  the player once the right stick is let go: Mild, Medium, High, or
+  Aggressive. Off by default.
+- **Sound stream logging:** Developer > Logging > JSRF_ADX_ERR_LOG logs when
+  one of the game's sound streams runs dry and how it recovers, to help find
+  "disc can't be read" errors.
+
+### Fixed
+
+- **"Disc can't be read" on Rokkaku-dai Heights:** The game could stop with
+  its disc error while a looping sound started over. Its threads now wait
+  their turn around the sound library's lock, as on the Xbox. Thanks to
+  AdriM1985 for the report.
+- **Scenes and results cut short:** "Cleared" scenes, as after copying Combo's
+  line, ended early, and Beat's "You Win" screen after his race was cut short.
+  Both play in full now. Thanks to AdriM1985 for the report.
+- **Freezes between shots:** Where the Xbox cuts to black for a moment between a
+  scene's shots, as in Professor K's introduction, the picture froze instead,
+  which looked like a hang. It cuts to black now, the same as the original
+  hardware. Thanks to AdriM1985 for the report.
+- **Hang or crash after Restart:** After File > Restart, the game could hang
+  on its loading screen or crash as it started, as two of its threads could
+  be given the same memory.
+- **Occasional late frames:** Now and then the game missed the signal for a
+  new frame, and that frame was shown late. It no longer misses it.
+- **Clicks and stuck sounds:** A sound could be mixed while the game was
+  changing it, which could cause clicks, and sounds that stuck or went
+  missing. The mix now waits for the game's change to finish, as xemu does.
+- **Free camera refinement:** It no longer takes over scenes that follow another
+  skater, and pausing keeps the view where you left it. Near walls, half pipes,
+  and bumps, the view no longer cuts into them, snaps onto the player, or turns
+  over, and it comes back out smoothly.
+
+### Changed
+
+- **Developer menus in order:** Developer > Logging and Engine switches list
+  their rows in alphabetical order. What you ticked stays ticked.
+
 ## b1.2 (beta) — 29 October 2026
 
 ### Added
