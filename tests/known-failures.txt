@@ -1,0 +1,12 @@
+# Engine tests that fail today in a known way, for tests/run_all.py. Each line
+# is one known bug, still open, in the maintainer's known-bugs.md:
+#
+#   test | the line its known failure prints | the bug, and what removes it
+#
+# In the line, * stands for any text. The failure is reported on the run but
+# doesn't fail it; any other failure of the same test does. A bug's lines
+# come out with the change that fixes it.
+
+vblank_ack | vblank_ack: vblanks raised as the GPU side completed the last were lost | known bug 19, a vblank lost in about 1 run in 7: the display's interrupt registers are plain memory written by two threads at once. Removed by the b1.3 hotfix's write-1-to-clear registers (its backlog row 11, broader-fixes/REVIEW.md change 5).
+apu_pacing | apu_pacing *: frames too far apart (*) | known bug 22, the APU's frames late after the machine stalls: about 1 run in 6 in CI's containers (10 of 60), each after a gap of 44 to 90 ms between frames. Cause not found yet.
+apu_pacing | apu_pacing *: * frames a second, not 1500 | known bug 22 (above).

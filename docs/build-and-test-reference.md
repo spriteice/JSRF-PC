@@ -98,12 +98,46 @@ checked by its SHA-256.
 ### 4. Tests
 
 - Tool tests: `python3 -m pytest -q tools`, with pytest, pefile, and numpy
-  installed beside capstone.
-- Engine tests: `python3 tests/<name>/run.py`, for each folder in `tests/`
-  that has a run.py. gl_backend, gl_aa, gl_card, index_runs, psh_consts
-  and big_batch need EGL and OpenGL headers. The last three also need GCC,
-  and run only on Linux.
+  installed beside capstone (the versions in `.github/ci/tools-requirements.txt`).
+- Engine tests: `python3 tests/run_all.py`, which runs
+  `tests/<name>/run.py` for each folder in `tests/` that has one, or only
+  the tests named. gl_backend, gl_aa, gl_card, index_runs, psh_consts and
+  big_batch need EGL and OpenGL headers, and run only on Linux. The last
+  three also need GCC.
 - Report what passed, and what didn't run and why.
+
+## CI
+
+GitHub runs `.github/workflows/ci.yml` on every push and pull request, with
+none of the game's files. The engine is built against an empty
+generated-code folder, and `.github/ci/link_check.py` checks that its link
+lacks only what the generated code defines, then stubs that out so the rest
+links and can be packaged. The engine is never run.
+
+| Job | What it checks |
+|---|---|
+| Linux, GCC | The engine and the runtime built with GCC, and the link; the engine tests; the tool tests. |
+| Linux, clang, and the package | The Linux package, made by `launcher/linux/build.sh` as the release is, and the package check; the engine tests built with clang. |
+| Thread sanitizer | The engine tests that start threads, built with clang's ThreadSanitizer (`tests/run_all.py --tsan`). |
+| Windows build and package | The Windows package, made by `launcher/windows/build.sh` as the release is, and the package check. |
+| Windows tests | The engine tests that run on Windows, on GitHub's Windows Server 2022, built with llvm-mingw. |
+
+- **Known bugs:** a test that fails today in a known way is listed in
+  `tests/known-failures.txt`, and a race the sanitizer finds today in
+  `tests/tsan.supp`, each with its known bug and the change that removes
+  it. Such a failure is reported on the run and doesn't fail it. Anything
+  else does. The fix for a bug takes its lines out.
+- **Here:** every job but the Windows tests is a script in `.github/ci`,
+  run in a fresh build image by `.github/ci/docker.sh`, so the same commands
+  run here as on GitHub:
+  - `.github/ci/docker.sh "linux tests" .github/ci/linux.sh gcc`
+  - `.github/ci/docker.sh "linux tests" .github/ci/linux.sh clang`
+  - `.github/ci/docker.sh "linux tests" .github/ci/tsan.sh`
+  - `.github/ci/docker.sh windows .github/ci/windows.sh`
+
+  Behind the sandbox's proxy, `CI_BASE` and `CI_DOCKER_ARGS` give Docker
+  what it needs (the top of docker.sh). The Windows tests run only on
+  GitHub.
 
 ## Compatibility checks
 

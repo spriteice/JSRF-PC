@@ -1,0 +1,62 @@
+# CI: every push and pull request is built and tested on Linux and Windows,
+# without the game's files. Each job's steps are a script in .github/ci, run
+# in the build image (launcher/image.sh) by .github/ci/docker.sh, so the same
+# commands run anywhere with Docker. docs/build-and-test-reference.md ("CI")
+# says what each job checks, and how to run it.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-gcc:
+    name: Linux, GCC
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+      - run: .github/ci/docker.sh "linux tests" .github/ci/linux.sh gcc
+
+  linux-clang:
+    name: Linux, clang, and the package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+      - run: .github/ci/docker.sh "linux tests" .github/ci/linux.sh clang
+
+  thread-sanitizer:
+    name: Thread sanitizer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+      - run: .github/ci/docker.sh "linux tests" .github/ci/tsan.sh
+
+  windows-build:
+    name: Windows build and package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+      - run: .github/ci/docker.sh windows .github/ci/windows.sh
+
+  windows-tests:
+    name: Windows tests
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c  # v6.0.0
+        with:
+          python-version: "3.12.10"
+      - name: llvm-mingw
+        shell: bash
+        run: python .github/ci/llvm_mingw.py "$RUNNER_TEMP/llvm-mingw" >> "$GITHUB_PATH"
+      - name: Engine tests
+        shell: bash
+        run: python tests/run_all.py

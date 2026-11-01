@@ -13,6 +13,10 @@ import subprocess
 import sys
 import tempfile
 
+if os.name == "nt":
+    print("gl_aa: skipped, Linux only (EGL)")
+    sys.exit(0)
+
 root = pathlib.Path(__file__).resolve().parents[2]
 sources = ["tests/gl_aa/test_main.c", "src/nv2a_gl/nv2a_gfx_gl.c", "src/nv2a_gl/nv2a_smaa.c",
            "src/nv2a_gl/nv2a_shader_cache.c", "src/nv2a_gl/nv2a_uniforms.c"]

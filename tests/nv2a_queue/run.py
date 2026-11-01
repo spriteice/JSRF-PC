@@ -129,6 +129,11 @@ want = {
     "swm": ["wake-ups lost: 0"],
 }
 
+# Under the thread sanitizer (tests/run_all.py --tsan sets TEST_SANITIZER),
+# which slows every access, how many flushes are answered at the write
+# depends on timing, so that count isn't checked.
+sanitizer = os.environ.get("TEST_SANITIZER")
+
 with tempfile.TemporaryDirectory(prefix="nv2a_queue-") as directory:
     exe = str(pathlib.Path(directory) / "test")
     command = cc + ["-O2", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread", "-x", "c", "-",
@@ -152,6 +157,8 @@ with tempfile.TemporaryDirectory(prefix="nv2a_queue-") as directory:
         if run.returncode != 0:
             raise SystemExit(f"nv2a_queue {name}: exit {run.returncode}\n{text}")
         for line in lines:
+            if sanitizer and line.startswith("[NV2A] queue:"):
+                continue
             if line not in text:
                 raise SystemExit(f"nv2a_queue {name}: no '{line}' in:\n{text}")
         print(f"queue {name}:", "; ".join(l for l in text.splitlines()

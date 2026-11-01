@@ -1,0 +1,59 @@
+# The thread sanitizer's known reports, for tests/run_all.py --tsan. Each
+# entry is one known bug, still open, in the maintainer's known-bugs.md, or a
+# race that is there by design. A bug's entries come out with the change
+# that fixes it, and the sanitizer must then find nothing there. Anything not
+# listed here fails CI.
+#
+# Entries name a function anywhere in either thread's stack, or a global
+# variable; ^ and $ make the match exact.
+
+# Known bug 20: the NV2A's registers are plain memory, which the game (through
+# recomp_mmio_read and _write, and tests/nv2a_queue's DMA_GET poll) and the
+# GPU thread read and write at once. Removed by the device register table
+# (broader-fixes/CODEBASE.md R1).
+race:^recomp_mmio_read$
+race:^recomp_mmio_write$
+race:^wait_get$
+
+# Known bug 20, and by design: the push buffer, in guest memory, written by
+# the game and read by the GPU thread's walk. On the console DMA_PUT orders
+# the two, and here it is plain memory (above). D3D also patches the buffer
+# just ahead of DMA_GET while the walk may be reading it, as on the console.
+race:^nv2a_pb_scan$
+
+# Known bug 20: the GPU thread's kick (s_kick_on, a switch cached lazily, and
+# s_hurry), written by the game's thread and read by the GPU thread. Removed
+# with the kick itself (CODEBASE.md R3) and the switch registry (R10).
+race:^s_kick_on$
+race:^s_hurry$
+
+# Known bug 20: switches cached lazily by whichever thread reads them first:
+# RECOMP_NV2A_QUEUE (nv2a_queue_on) and the software methods' mode
+# (swm_mode). Removed by the switch registry (CODEBASE.md R10).
+race:^nv2a_queue_on$
+race:^swm_mode$
+
+# Known bug 20: the GPU queue's counts, kept by the GPU thread and read for
+# the log by the game's thread. No change planned yet.
+race:^nv2a_queue_report$
+
+# Known bugs 19 and 20: the display's and the GPU's interrupt registers are
+# plain memory. The timer thread raises interrupts in them
+# (kernel_pgraph_tick, kernel_vblank_tick), the GPU thread completes them
+# (vblank_intr_tick), and the game acknowledges them (D3D's interrupt
+# routine, through port/recomp_manual.c's sub_00194210), all at once, so one
+# can be lost. Removed by the b1.3 hotfix's write-1-to-clear registers (its
+# backlog row 11, broader-fixes/REVIEW.md change 5), which also takes out
+# vblank_intr_tick and sub_00194210.
+race:^vblank_intr_tick$
+race:^kernel_pgraph_tick$
+race:^sub_00194210$
+
+# Known bug 21: CreateThread (src/platform/win32_compat.c) neither joins nor
+# detaches the thread it starts, so each one's resources stay until the
+# process ends.
+thread:^CreateThread$
+
+# By design: tests/fence_wait's fence word, in guest memory, written by the
+# GPU side and polled by the game, as on the console.
+race:^g_guest$

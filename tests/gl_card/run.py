@@ -13,7 +13,12 @@ import pathlib
 import re
 import shlex
 import subprocess
+import sys
 import tempfile
+
+if os.name == "nt":
+    print("gl_card: skipped, Linux only (EGL)")
+    sys.exit(0)
 
 root = pathlib.Path(__file__).resolve().parents[2]
 gl = (root / "src/nv2a_gl/nv2a_gl.c").read_text(encoding="utf-8")

@@ -85,6 +85,10 @@ int64_t g_apu_throttle_lost_us;
                 "/* ============================================================\n * se_frame")
           + (root / "tests/apu_pacing/test_main.c").read_text(encoding="utf-8"))
 
+# Under the thread sanitizer (tests/run_all.py --tsan sets TEST_SANITIZER),
+# which slows every access, the timings aren't checked.
+sanitizer = os.environ.get("TEST_SANITIZER")
+
 with tempfile.TemporaryDirectory(prefix="apu_pacing-") as directory:
     exe = str(pathlib.Path(directory) / "test")
     command = cc + ["-O2", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread", "-x", "c", "-",
@@ -104,6 +108,8 @@ with tempfile.TemporaryDirectory(prefix="apu_pacing-") as directory:
         p99 = float(re.search(r"gaps: 99% under ([\d.]+) ms", text).group(1))
         under = int(re.search(r"underruns after the first half second: (\d+)", text).group(1))
         print(f"apu_pacing {name}:", "; ".join(text.splitlines()))
+        if sanitizer:
+            continue
         # 48 kHz in frames of 32 samples
         if abs(rate - 1500) > 30:
             raise SystemExit(f"apu_pacing {name}: {rate:.0f} frames a second, not 1500")
@@ -113,4 +119,5 @@ with tempfile.TemporaryDirectory(prefix="apu_pacing-") as directory:
                              f"({wait:.2f} ms to the next on average, 99% of gaps under {p99:.2f} ms)")
         if ring_ms is None and under:
             raise SystemExit(f"apu_pacing {name}: the device ran dry {under} times")
-print("apu_pacing: both cases pass")
+print("apu_pacing: both cases ran; timings not checked under the sanitizer" if sanitizer
+      else "apu_pacing: both cases pass")

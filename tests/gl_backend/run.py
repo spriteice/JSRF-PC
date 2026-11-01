@@ -10,7 +10,12 @@ import os
 import pathlib
 import shlex
 import subprocess
+import sys
 import tempfile
+
+if os.name == "nt":
+    print("gl_backend: skipped, Linux only (EGL)")
+    sys.exit(0)
 
 root = pathlib.Path(__file__).resolve().parents[2]
 gl = root / "src/nv2a_gl"

@@ -72,9 +72,13 @@ static uint32_t g_reserve_next;
         + (root / "tests/heap_lock/test_main.c").read_text(encoding="utf-8"))
 
 
+# Without the lock the threads race on purpose, so under the thread sanitizer
+# (tests/run_all.py --tsan sets TEST_SANITIZER) only the heap with it runs.
+sanitizer = os.environ.get("TEST_SANITIZER")
+
 with tempfile.TemporaryDirectory(prefix="heap_lock-") as directory:
     results = {}
-    for locked in (True, False):
+    for locked in ((True,) if sanitizer else (True, False)):
         exe = str(pathlib.Path(directory) / ("locked" if locked else "unlocked"))
         command = cc + ["-std=gnu11", "-O2", "-Wall", "-Wextra", "-Wno-unused-function",
                    "-x", "c", "-", "-o", exe, "-pthread"]
@@ -91,6 +95,6 @@ with tempfile.TemporaryDirectory(prefix="heap_lock-") as directory:
         print(("with the lock: " if locked else "without it: ") + said[-1])
     if results[True] != 0:
         raise SystemExit(f"heap_lock: exit {results[True]} with the lock")
-    if results[False] == 0:
+    if not sanitizer and results[False] == 0:
         raise SystemExit("heap_lock: the heap held without the lock too, so this tests nothing")
     print("heap_lock: all cases pass")

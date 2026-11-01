@@ -55,6 +55,12 @@ with tempfile.TemporaryDirectory(prefix="cpuprof-") as directory:
             raise SystemExit(f"no '{line}' in the log:\n{log}")
     if log.count("[CPUPROF] on:") != 1:
         raise SystemExit(f"the profile started again after the exec:\n{log}")
+    # Under the thread sanitizer (tests/run_all.py --tsan sets
+    # TEST_SANITIZER), its own functions take the samples, so the shares
+    # aren't checked.
+    if os.environ.get("TEST_SANITIZER"):
+        print("cpuprof: pass; the profile's shares not checked under the sanitizer")
+        raise SystemExit(0)
     # Each report: one thread mostly in spin_in_main, another mostly in
     # spin_in_worker, each at about a whole core.
     reports = log.split("[CPUPROF] the last ")[1:]
