@@ -2,9 +2,10 @@
  * kernel_bridge.h - What kernel_bridge.c shares with the kernel files split
  * out of it
  *
- * The guest's registers and memory as a bridge sees them, and the interrupt
- * and DPC code in kernel_interrupt.c, which the bridge's device ticks, timer
- * thread and ordinal table use.
+ * The guest's registers and memory as a bridge sees them, the interrupt and
+ * DPC code in kernel_interrupt.c, which the bridge's device ticks, timer
+ * thread and ordinal table use, and the file APCs in kernel_apc.c, which its
+ * file requests queue and its alertable waits deliver.
  */
 #ifndef XBOX_KERNEL_BRIDGE_H
 #define XBOX_KERNEL_BRIDGE_H
@@ -31,6 +32,15 @@ extern ptrdiff_t g_xbox_mem_offset;
 typedef void (*recomp_func_t)(void);
 recomp_func_t recomp_lookup(uint32_t xbox_va);
 recomp_func_t recomp_lookup_manual(uint32_t xbox_va);
+recomp_func_t recomp_lookup_kernel(uint32_t xbox_va);
+
+/* ── Synthetic VA range (for function exports) ─────────── */
+
+#define KERNEL_VA_BASE  0xFE000000u
+#define KERNEL_VA_END   (KERNEL_VA_BASE + XBOX_KERNEL_THUNK_TABLE_SIZE * 4)
+
+/* Ordinal for each slot (read from Xbox memory during init) */
+extern ULONG g_slot_ordinals[];
 
 /* Memory access - same as recomp_types.h MEM32 but without the #define guard */
 #define BRIDGE_MEM32(addr) (*(volatile uint32_t *)((uintptr_t)(addr) + g_xbox_mem_offset))
@@ -71,5 +81,14 @@ void bridge_KeSynchronizeExecution(void);
 void bridge_KeInitializeDpc(void);
 void bridge_KeInsertQueueDpc(void);
 void bridge_KeRemoveQueueDpc(void);
+
+/* kernel_apc.c */
+
+/* Run one file APC now, on this thread. */
+void deliver_one_apc(uint32_t apc_routine, uint32_t apc_context,
+                     uint32_t iostatus);
+/* Queue a file APC for this thread's next alertable wait. */
+void bridge_queue_apc(uint32_t apc_routine, uint32_t apc_context, uint32_t iostatus);
+int bridge_deliver_pending_apcs(void);
 
 #endif /* XBOX_KERNEL_BRIDGE_H */
