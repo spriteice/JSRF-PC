@@ -49,11 +49,6 @@ race:^vblank_intr_tick$
 race:^kernel_pgraph_tick$
 race:^sub_00194210$
 
-# Known bug 21: CreateThread (src/platform/win32_compat.c) neither joins nor
-# detaches the thread it starts, so each one's resources stay until the
-# process ends.
-thread:^CreateThread$
-
 # By design: tests/fence_wait's fence word, in guest memory, written by the
 # GPU side and polled by the game, as on the console.
 race:^g_guest$

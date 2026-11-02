@@ -234,8 +234,13 @@ typedef struct w32_object {
     int             mtx_recursion;
 
     /* thread */
+    /* CreateThread starts it detached: the host thread's stack goes when the
+     * thread ends, as on the console, while this object and its exit code
+     * last as long as a handle is open. So once ->exited is set, ->thread may
+     * name no thread, or a newer one given the same stack: it is used only
+     * under ->lock, with ->exited clear. A thread that self_obj made an
+     * object for wasn't started here, and is left as its creator made it. */
     pthread_t       thread;
-    int             thread_joinable;
     DWORD           tid;
     int             exited;
     DWORD           exit_code;
@@ -759,6 +764,7 @@ HANDLE CreateThread(LPSECURITY_ATTRIBUTES sa, SIZE_T stackSize,
 
     pthread_attr_t attr;
     pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
     if (stackSize)
         pthread_attr_setstacksize(&attr, stackSize < 65536 ? 65536 : stackSize);
 
@@ -770,7 +776,6 @@ HANDLE CreateThread(LPSECURITY_ATTRIBUTES sa, SIZE_T stackSize,
         return NULL;
     }
     pthread_attr_destroy(&attr);
-    o->thread_joinable = 1;
 
     if (threadId) *threadId = o->tid;
     return (HANDLE)o;
@@ -1185,7 +1190,9 @@ DWORD SuspendThread(HANDLE h)
       if (real < 0) real = getenv("RECOMP_SUSPEND_REAL") ? 1 : 0;
       if (real) {
           w32_suspend_signal_install();
-          if (o->thread) pthread_kill(o->thread, W32_SUSPEND_SIGNAL);
+          pthread_mutex_lock(&o->lock);
+          if (o->thread && !o->exited) pthread_kill(o->thread, W32_SUSPEND_SIGNAL);
+          pthread_mutex_unlock(&o->lock);
       } }
     handoff_note('s', o->tid, (int)prev + 1);
     return prev;
@@ -1195,13 +1202,13 @@ BOOL TerminateThread(HANDLE h, DWORD exitCode)
 {
     w32_object *o = obj_any(h);
     if (!o || o->kind != K_THREAD) return FALSE;
+    pthread_mutex_lock(&o->lock);
 #if defined(__ANDROID__)
     /* Android has no pthread_cancel: the thread is marked ended and left to
      * run to its own end. */
 #else
-    pthread_cancel(o->thread);
+    if (!o->exited) pthread_cancel(o->thread);
 #endif
-    pthread_mutex_lock(&o->lock);
     o->exit_code = exitCode;
     o->exited    = 1;
     o->signaled  = 1;
