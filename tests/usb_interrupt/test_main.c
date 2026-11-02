@@ -30,7 +30,9 @@
 #include "ohci.h"
 #include "usb_gamepad.h"
 
-#define SECONDS        1
+#define ENOUGH         40            /* of each interrupt, to test anything */
+#define MAX_MS         30000         /* however busy the machine */
+#define POLL_MS        10
 #define GUEST_BYTES    (16u << 20)   /* past the worker stacks' end */
 
 /* The game's side, in guest memory and in the dispatch table. */
@@ -268,7 +270,7 @@ int main(void)
     const uint32_t connect_usb[] = { USB_INTERRUPT }, connect_vblank[] = { VBLANK_INTERRUPT };
     unsigned long queued, run;
     long waiting;
-    int slot;
+    int slot, waited;
 
     s_guest = calloc(1, GUEST_BYTES);
     if (!s_guest) return 2;
@@ -297,7 +299,17 @@ int main(void)
 
     CloseHandle(CreateThread(NULL, 0, title_thread, NULL, 0, NULL));
     CloseHandle(CreateThread(NULL, 0, timer_thread, NULL, 0, NULL));
-    Sleep(SECONDS * 1000);
+    /* Run until each interrupt has been raised often enough to test
+     * anything, not for a fixed time: the controller raises one a tick
+     * (ohci.c, every 20 ms), and each waits for the guest lock, which the
+     * title and the timer thread take back to back. How many a second
+     * brings depends on the machine and how busy it is. */
+    for (waited = 0; waited < MAX_MS; waited += POLL_MS) {
+        if (__atomic_load_n(&s_usb_raised, __ATOMIC_RELAXED) >= ENOUGH &&
+            __atomic_load_n(&s_vblank_raised, __ATOMIC_RELAXED) >= ENOUGH)
+            break;
+        Sleep(POLL_MS);
+    }
     __atomic_store_n(&s_stop, 1, __ATOMIC_RELEASE);
     while (__atomic_load_n(&s_stop, __ATOMIC_ACQUIRE) < 3)
         Sleep(1);
@@ -320,7 +332,7 @@ int main(void)
            (long)s_usb_raised, (long)s_vblank_raised, (long)s_usb_queued,
            (long)s_vblank_queued, (long)s_usb_run, (long)s_vblank_run,
            queued, run, waiting);
-    if (s_usb_raised < 10 || s_vblank_raised < 10)
+    if (s_usb_raised < ENOUGH || s_vblank_raised < ENOUGH)
         fail("too few interrupts to test anything");
     if (s_usb_run != s_usb_queued || s_vblank_run != s_vblank_queued || waiting)
         fail("a DPC queued did not run once: it was lost in the queue");
