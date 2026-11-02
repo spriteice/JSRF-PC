@@ -338,6 +338,18 @@ class FunctionDetector:
             return addr
         return None
 
+    def _runs_into(self, addr: int) -> bool:
+        """Does the instruction the sweep decoded in front of `addr` run on
+        into it? Not if it ends its own path: a ret, a jmp, or a call that
+        never returns. Not if it is padding, which goes between functions."""
+        before = self.engine.instruction_ending_at(addr)
+        if before is None or bytes.fromhex(before.bytes_hex) in self._PADDING:
+            return False
+        return not (before.is_ret
+                    or (before.is_jump and not before.is_cond_jump)
+                    or (before.is_call
+                        and self.engine.call_never_returns(before)))
+
     def _tail_calls_known_function(self, addr: int) -> bool:
         """Does the straight-line body at `addr` end in a direct jmp to the
         exact start of a function already built?"""
@@ -953,6 +965,13 @@ class FunctionDetector:
         which is worse than missing one -- hence testing coverage rather than
         just membership.
 
+        A gap is only what the passes so far have found, though. The rest of
+        a body whose start no pass has found yet looks free, and so does the
+        switch table after a body's last ret. Two tests read the bytes
+        instead: no target that the instruction in front of it runs into, as
+        no caller enters a function that way, and none inside a measured
+        switch table, which is data.
+
         Runs after _build_functions for that reason, and returns whether it
         added anything so the caller can rebuild.
         """
@@ -996,13 +1015,19 @@ class FunctionDetector:
                     return sec.name
             return ""
 
+        # JSRF: DirectSound's constant 0x0003010F names the last bytes of
+        # sub_0002F7F0's table, and the decode from there ran on into
+        # sub_00030120, which was then lifted four times over.
+        in_jump_table = self._jump_table_test()
+
         targets = set()
         for insn in self.engine.instructions.values():
             target = insn.imm_ref
             if target is None or target in self.functions:
                 continue
             if (target in claimed or target in self._alias_entries
-                    or inside_a_function(target) or not in_code_section(target)):
+                    or inside_a_function(target) or not in_code_section(target)
+                    or in_jump_table(target)):
                 continue
             if (self.skip_library_immediates
                     and section_name(target) == ".text"
@@ -1022,6 +1047,11 @@ class FunctionDetector:
                     and not (self.engine.probes_as_prologue(target)
                              or self.engine.probes_as_constant_stub(target)
                              or self.engine.probes_as_vcall_thunk(target))):
+                continue
+            # JSRF: the number 198,000 is 0x00030570, where the mission file
+            # loader sub_000304F0's first state runs on from `add eax, 4`.
+            # Its start was found only later, so the loader was cut in two.
+            if self._runs_into(target):
                 continue
             # Weak references must close their CFG within the unclaimed gap.
             # ...or a virtual-call thunk, which never reaches a ret: it
