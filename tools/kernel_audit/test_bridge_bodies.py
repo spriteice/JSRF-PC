@@ -27,6 +27,8 @@ from tools.recomp import c_fixture  # noqa: E402
 
 BRIDGE_C = os.path.join(os.path.dirname(__file__), "..", "..",
                         "src", "kernel", "kernel_bridge.c")
+BRIDGE_H = os.path.join(os.path.dirname(__file__), "..", "..",
+                        "src", "kernel", "kernel_bridge.h")
 
 _PRELUDE = r"""
 #include <stddef.h>
@@ -88,10 +90,12 @@ def test_protect_and_boost_bridges(tmp_path):
         pytest.skip("C compiler unavailable")
     with open(BRIDGE_C, encoding="utf-8", errors="replace") as fh:
         src = fh.read()
+    with open(BRIDGE_H, encoding="utf-8", errors="replace") as fh:
+        shared = fh.read()
     source = "\n".join([
         _PRELUDE,
-        _cut(src, r"^#define BRIDGE_MEM32\(.*$"),
-        _cut(src, r"^#define STACK_ARG\(.*$"),
+        _cut(shared, r"^#define BRIDGE_MEM32\(.*$"),
+        _cut(shared, r"^#define STACK_ARG\(.*$"),
         _function(src, "bridge_out_ok"),
         _function(src, "bridge_NtProtectVirtualMemory"),
         _function(src, "bridge_KeSetDisableBoostThread"),

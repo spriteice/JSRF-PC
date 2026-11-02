@@ -20,6 +20,7 @@ cc = shlex.split(os.environ.get("CC", "gcc"))
 layout = (root / "src/kernel/xbox_memory_layout.c").read_text(encoding="utf-8")
 header = (root / "src/kernel/xbox_memory_layout.h").read_text(encoding="utf-8")
 bridge = (root / "src/kernel/kernel_bridge.c").read_text(encoding="utf-8")
+shared = (root / "src/kernel/kernel_bridge.h").read_text(encoding="utf-8")
 
 
 def define(text, name):
@@ -46,7 +47,7 @@ source = ("""
 """ + define(header, "NV2A_VBLANK_PENDING_TAG") + define(bridge, "NV2A_PMC_INTR_0")
           + define(bridge, "NV2A_PMC_INTR_PCRTC") + define(bridge, "NV2A_PCRTC_INTR_0")
           + define(bridge, "NV2A_PCRTC_INTR_VBLANK") + define(layout, "NV2A_PMC_INTR_PGRAPH")
-          + define(bridge, "BRIDGE_MEM32") + define(bridge, "XBOX_NV2A_REG_BASE")
+          + define(shared, "BRIDGE_MEM32") + define(bridge, "XBOX_NV2A_REG_BASE")
           + define(bridge, "NV2A_VECTOR") + """
 static void *g_nv2a_memory;
 static ptrdiff_t g_xbox_mem_offset;

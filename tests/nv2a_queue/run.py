@@ -38,6 +38,7 @@ mmio = (root / "src/kernel/kernel_mmio.c").read_text(encoding="utf-8")
 types = (root / "templates/runtime/recomp_types.h").read_text(encoding="utf-8")
 header = (root / "src/kernel/xbox_memory_layout.h").read_text(encoding="utf-8")
 bridge = (root / "src/kernel/kernel_bridge.c").read_text(encoding="utf-8")
+shared = (root / "src/kernel/kernel_bridge.h").read_text(encoding="utf-8")
 manual = (root / "port/recomp_manual.c").read_text(encoding="utf-8")
 
 
@@ -49,8 +50,8 @@ def define(text, name):
     return re.search(r"^#define " + name + r"\b.*$", text, re.M).group(0) + "\n"
 
 
-registers = "".join(define(bridge, name) for name in (
-    "BRIDGE_MEM32", "XBOX_NV2A_REG_BASE", "NV2A_PMC_INTR_0", "NV2A_PMC_INTR_PCRTC",
+registers = define(shared, "BRIDGE_MEM32") + "".join(define(bridge, name) for name in (
+    "XBOX_NV2A_REG_BASE", "NV2A_PMC_INTR_0", "NV2A_PMC_INTR_PCRTC",
     "NV2A_PCRTC_INTR_0", "NV2A_PCRTC_INTR_VBLANK", "NV2A_VECTOR", "NV2A_PGRAPH_INTR",
     "NV2A_PGRAPH_NSOURCE", "NV2A_PGRAPH_TRAP_ADDR", "NV2A_PGRAPH_TRAP_DATA",
     "NV2A_PGRAPH_INTR_ERROR", "NV2A_PMC_INTR_PGRAPH", "SWM_QUEUE")) + define(header, "NV2A_VBLANK_PENDING_TAG")

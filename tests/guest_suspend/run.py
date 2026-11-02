@@ -25,6 +25,7 @@ if os.name == "nt":
 root = pathlib.Path(__file__).resolve().parents[2]
 cc = shlex.split(os.environ.get("CC", "gcc"))
 bridge = (root / "src/kernel/kernel_bridge.c").read_text(encoding="utf-8")
+shared = (root / "src/kernel/kernel_bridge.h").read_text(encoding="utf-8")
 thread = (root / "src/kernel/kernel_thread.c").read_text(encoding="utf-8")
 here = root / "tests/guest_suspend"
 
@@ -54,9 +55,9 @@ source = ("""
 static uint8_t g_guest[0x10000];
 ptrdiff_t g_xbox_mem_offset;
 static __thread uint32_t g_eax, g_esp;
-""" + line(bridge, r"^#define BRIDGE_MEM32\(addr\).*$")
-    + line(bridge, r"^#define XBOX_TO_NATIVE\(va\).*$")
-    + line(bridge, r"^#define STACK_ARG\(n\).*$")
+""" + line(shared, r"^#define BRIDGE_MEM32\(addr\).*$")
+    + line(shared, r"^#define XBOX_TO_NATIVE\(va\).*$")
+    + line(shared, r"^#define STACK_ARG\(n\).*$")
     + cut(bridge, "#ifndef BRIDGE_HANDLE_TAG\n#define BRIDGE_HANDLE_TAG  0x48000000u\n#endif\n"
                   "#define BRIDGE_HANDLE_MASK", "\n\n")
     + """
