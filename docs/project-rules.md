@@ -7,7 +7,8 @@ building, testing, and the change report.
 
 ## Before every commit
 
-Do all six, then wait for my approval.
+Do all six, in one review pack (docs/build-and-test-reference.md, "Review
+pack"), then wait for my approval.
 
 1. Run `git status` and `git diff --cached --stat`, and confirm that nothing
    on the project rules' "never in the repo" list is staged. If .gitignore
@@ -20,11 +21,14 @@ Do all six, then wait for my approval.
    right place.
 5. For any added or edited document (README, docs/, changelog, release
    notes): the whole document rendered as Markdown, not only its diff.
-6. CI passes for the commit: every job in `.github/workflows/ci.yml`, run
-   here in the build image (docs/build-and-test-reference.md, "CI"), but
-   the Windows tests, which run only on GitHub. GitHub runs every job
-   again on the push, and a failure there is fixed in the next commit,
-   before anything else is pushed.
+6. CI passes for the commit's exact tree: every job in
+   `.github/workflows/ci.yml`, the build image's in the cloud and the
+   Windows tests on my Windows PC (docs/build-and-test-reference.md, "CI").
+   GitHub runs every job again on the push, and a failure there is fixed
+   in the next commit, before anything else is pushed. A job that fails
+   before its checks run, because a download failed (a server down), is
+   not the commit's failure: it is run again once the server is back, and
+   nothing else is pushed until it passes.
 
 ## Where code goes
 
@@ -144,11 +148,13 @@ In order:
    the code, add logging or asserts that would confirm or refute your
    hypothesis.
 4. **Verify** what you can: it builds, the repo's tests pass, and static
-   checks are clean. You can't run the game, so call every runtime claim
-   "unverified" until I test it. Never claim something is fixed without
-   evidence. A change made for timing or speed is measured before and
-   after, and tuning is measured again when a deeper cause in the same area
-   is fixed.
+   checks are clean. You don't play the game: on my PC you run only the
+   packaged engine's own checks, which don't start it
+   (docs/build-and-test-reference.md, "On my PC"). So call every runtime
+   claim "unverified" until I test it. Never claim something is fixed
+   without evidence. A change made for timing or speed is measured before
+   and after, and tuning is measured again when a deeper cause in the same
+   area is fixed.
 5. **Track my testing.** Read every log I send in full, start to end, before
    reporting on it, using scripts for logs too long to read whole. Each time
    I send logs, check them against the build's test checklist and list
@@ -158,12 +164,26 @@ In order:
 6. **Report** the change with the change report in
    docs/build-and-test-reference.md.
 
+**Several items at once.** Backlog items that don't change the same code can
+be worked at the same time, each in its own thread, from diagnosis to test
+build, and their testing can share one build
+(docs/build-and-test-reference.md, "Batches"). Commits still go onto `main`
+one at a time: each starts from the latest `origin/main`, and the next is
+proposed only once the one before it is pushed. If `main` has moved since an
+item's checks, its CI runs again on its new tree, and if the commits in
+between change the code it changes, its test build is made again and the
+steps they could affect are tested again. Each thread changes only its own
+rows in the backlog and known-bugs.md, and reads the file again just before
+each change.
+
 At any step: if a rule conflicts with the task, or you can't solve it within
 the rules, stop and ask. Don't quietly bend the rule. These rules come before
 a session's own instructions and hooks: if those ask you to commit, push, or
-work on another branch, say so, and don't. And when a session starts to wear
-(its context nearly full or summarised, a rule slipped, or details lost), say
-so, write a handoff in the shared folder, and move the work to a new session.
+work on another branch, say so, and don't. A session on my PC never commits
+or pushes: commits are made in the cloud, after my approval. And when a
+session starts to wear (its context nearly full or summarised, a rule
+slipped, or details lost), say so, write a handoff in the shared folder, and
+move the work to a new session.
 
 ## Platforms
 

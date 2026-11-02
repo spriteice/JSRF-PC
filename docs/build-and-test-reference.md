@@ -1,8 +1,8 @@
 # Build and test reference
 
 How test builds of JSRF-PC are made, checked, delivered, and reported. It is
-written by the maintainer ("I", who only runs the builds) for whoever makes
-them ("you"), and goes with the project rules.
+written by the maintainer ("I", who never builds by hand and only runs the
+builds) for whoever makes them ("you"), and goes with the project rules.
 
 Where this file and the repo's own docs disagree, trust the repo's docs
 (README.md, docs/building-on-linux.md, tools/README.md,
@@ -14,14 +14,89 @@ about the difference.
 - **Primary:** ROG Xbox Ally X: x86_64, SteamOS 3.9.5, glibc 2.43, Z2
   Extreme with AMD Radeon Graphics, 24 GB shared memory.
 - **Windows:** desktop PC: Windows 11, i7-10700K, 32 GB DDR4, RTX 2080 Ti
-  with 11 GB video memory.
+  with 11 GB video memory. It is also where test builds are made (Where
+  the work runs, below).
 - **Occasionally:** Lenovo Yoga laptop: Windows 11, Ryzen 7 8840HS, Radeon
-  780M, 16 GB shared memory.
+  780M, 16 GB shared memory. When it's free, an extra Windows test device
+  for AMD's Windows driver, where known bug 4 shows. Nothing is built on
+  it, and no test waits for it.
 - On the Ally X I test in Desktop Mode (KDE). Ask me whether the session is
   X11 or Wayland (`echo $XDG_SESSION_TYPE` on the device). Every build must
   also work in Game Mode (gamescope).
-- I only run builds you deliver. I do not build, install packages, or
-  change the devices.
+- I only run builds you deliver. I don't build by hand: you build on the
+  Windows PC yourself. Nothing on the devices is installed or changed but
+  what "On my PC" (below) lists, unless I say so.
+
+## Where the work runs
+
+Two machines share the work, at the same time:
+
+- **The cloud,** a thread's sandbox: the code, the diagnosis, the CI jobs
+  in the build image (CI, below), the delivery folder in the shared folder,
+  and every commit and push.
+- **My Windows PC,** through a Remote Control session, in `Building\` in my
+  Claude folder: the generated code, both packages and their checks, the
+  comparison with the last tested package, the Windows tests, repeated
+  runs of a test, and the rest of CI when a server it downloads from is
+  down (CI, Repeated runs).
+
+So the PC builds while the cloud runs CI, and neither waits for the other.
+The shared folder's building-on-pc/README.md says how the tree and the
+files move between them, and what the PC has installed.
+
+### On my PC
+
+- **Set up once:** Docker, through WSL 2, for the build image, and Git and
+  Python for the checkout and the Windows tests, each at the version
+  building-on-pc/README.md lists. Anything else, or another version, is
+  asked for first.
+- **The checkout:** `Building\src`, a clone of this repository that is only
+  built from, with `core.autocrlf` off so the files are as the repository
+  has them. For each build it is put at the commit under test, detached,
+  with the diff under test applied, and its tree's hash (`git add -A`, then
+  `git write-tree`) must be the one the cloud had. It never has a branch of
+  its own, and nothing is ever committed or pushed from it.
+- **Game files:** the generated code is made on the PC, from my own
+  default.xbe there, and stays in `Building\`. Neither it nor default.xbe
+  leaves the PC, and the cloud's copy never goes there.
+- **What is written:** only `Building\`, which holds the build
+  distribution's disk and so Docker's storage, and what WSL itself keeps
+  about that distribution (building-on-pc/README.md lists it). My
+  settings, saves and other folders are never changed, and neither is
+  my portable folder in `Building\`: each build gets a copy of it
+  (Delivery package).
+- **No playing:** you may run the packaged engine's own checks there
+  (Compatibility checks, Windows: it starts), which don't start the game,
+  and nothing else of the game.
+- **One job at a time on each machine:** a build, a CI job or a repeated
+  run never shares the PC with another, as load changes what timing tests
+  find. The cloud's jobs run one after another too.
+
+### What is kept between builds
+
+In `Building\cache\` and Docker's storage, so a build makes only what
+changed:
+
+- the build images: `linux` and `windows` for the packages, and `linux
+  tests` for CI, each tagged with image.sh's SHA-256 and made again when
+  it changes;
+- `launcher/windows/deps.sh`'s downloads and SDL's source, each still
+  checked by its SHA-256 every time it is used;
+- the generated code, tagged with default.xbe's SHA-256 and one hash of
+  what makes it: every tracked file in `tools/` and `port/recomp_manual.c`,
+  and the versions of Python and capstone that ran the pipeline
+  (docs/building-on-linux.md installs the newest capstone). It is used
+  only when both match, and made again otherwise;
+- the last tested packages, for the comparison (Compatibility checks).
+
+Nothing else is kept. Every build of SDL and the engine, and every test,
+runs from scratch, as on GitHub and as the release is built. A release
+build makes its generated code fresh (docs/release-checklist.md, step 7):
+if that differs from the kept copy with the same tags, tell me before
+going on, as the pipeline then isn't repeatable.
+
+The cloud's sandbox keeps its build images the same way, for as long as
+the thread lasts.
 
 ## Building
 
@@ -34,9 +109,9 @@ about the difference.
 - **Game files:** my own USA (NTSC-U) disc, the standalone one. Other
   regions and the Sega GT 2002 combo disc do not work. The build needs only
   its default.xbe.
-- **Sandbox:** the network is limited (package registries and GitHub). If a
-  tool or file can't be fetched, say so and ask me for it. Ask before
-  installing system packages.
+- **Sandbox:** the cloud's network is limited (package registries and
+  GitHub). If a tool or file can't be fetched, say so and ask me for it.
+  Ask before installing system packages, there or on the PC.
 
 ### 1. Generated code
 
@@ -45,8 +120,9 @@ virtual environment, default.xbe in `game_files/`, then the pipeline into
 `port/recomp/gen`. Its last command must report `0 failed`. Use `python3`,
 not `py -3`.
 
-The generated code is large and derived from SEGA's binary. It stays in the
-sandbox and is never committed.
+The generated code is large and derived from SEGA's binary. It stays on the
+machine that made it, in `Building\` on the PC (or the sandbox), and is
+never committed or copied anywhere else.
 
 ### 2. Linux package
 
@@ -120,24 +196,50 @@ links and can be packaged. The engine is never run.
 | Linux, clang, and the package | The Linux package, made by `launcher/linux/build.sh` as the release is, and the package check; the engine tests built with clang. |
 | Thread sanitizer | The engine tests that start threads, built with clang's ThreadSanitizer (`tests/run_all.py --tsan`). |
 | Windows build and package | The Windows package, made by `launcher/windows/build.sh` as the release is, and the package check. |
-| Windows tests | The engine tests that run on Windows, on GitHub's Windows Server 2022, built with llvm-mingw. |
+| Windows tests | The engine tests that run on Windows, on GitHub's Windows Server 2022, built with llvm-mingw. Before a commit, on my Windows PC. |
 
 - **Known bugs:** a test that fails today in a known way is listed in
   `tests/known-failures.txt`, and a race the sanitizer finds today in
   `tests/tsan.supp`, each with its known bug and the change that removes
   it. Such a failure is reported on the run and doesn't fail it. Anything
   else does. The fix for a bug takes its lines out.
-- **Here:** every job but the Windows tests is a script in `.github/ci`,
-  run in a fresh build image by `.github/ci/docker.sh`, so the same commands
-  run here as on GitHub:
-  - `.github/ci/docker.sh "linux tests" .github/ci/linux.sh gcc`
-  - `.github/ci/docker.sh "linux tests" .github/ci/linux.sh clang`
-  - `.github/ci/docker.sh "linux tests" .github/ci/tsan.sh`
-  - `.github/ci/docker.sh windows .github/ci/windows.sh`
+- **Before a commit,** every job runs on the commit's exact tree:
+  - **In the cloud:** every job but the Windows tests is a script in
+    `.github/ci`, run in the build image by `.github/ci/docker.sh`, so the
+    same commands run there as on GitHub:
+    - `.github/ci/docker.sh "linux tests" .github/ci/linux.sh gcc`
+    - `.github/ci/docker.sh "linux tests" .github/ci/linux.sh clang`
+    - `.github/ci/docker.sh "linux tests" .github/ci/tsan.sh`
+    - `.github/ci/docker.sh windows .github/ci/windows.sh`
 
-  Behind the sandbox's proxy, `CI_BASE` and `CI_DOCKER_ARGS` give Docker
-  what it needs (the top of docker.sh). The Windows tests run only on
-  GitHub.
+    Behind the sandbox's proxy, `CI_BASE` and `CI_DOCKER_ARGS` give Docker
+    what it needs (the top of docker.sh). The build images and the Windows
+    job's downloads may be kept between runs (Where the work runs, What is
+    kept between builds); each job's builds and tests still run from
+    scratch.
+  - **On my Windows PC:** the Windows tests, as GitHub runs them: the
+    Python version in ci.yml, llvm-mingw from `.github/ci/llvm_mingw.py`,
+    then `python tests/run_all.py`, in the checkout in `Building\`. The PC
+    runs Windows 11, not GitHub's Windows Server 2022, so GitHub's run on
+    the push is still the one that counts.
+  - **When a server is down:** if the cloud can't make its build images
+    because a server they download from is down (Ubuntu's snapshot
+    archive, which is often slow), its four jobs run on my Windows PC
+    instead, from the images the PC keeps: each job's script in the image
+    of its groups, as docker.sh runs it but without making the image
+    again, in a checkout with nothing but the commit's tree, and the
+    Windows job with its downloads kept. Say so in the review pack.
+  - The two machines run their jobs at the same time, and each runs its
+    own one after another.
+
+### Repeated runs
+
+A known failure that comes and goes, such as known bugs 19 and 22, or a
+race the sanitizer finds only sometimes (bug 20), is measured by running
+its test many times: at least 20 runs, reporting how many failed and how.
+A fix for one is shown by the same count with and without it, on the same
+machine. Repeated runs go on the PC, in the build image, one test at a
+time, and alone on the machine (Where the work runs, On my PC).
 
 ## Compatibility checks
 
@@ -175,6 +277,13 @@ bundled beside it (SDL2, libepoxy-0 and libwinpthread-1 in `engine/`) or
 ones that are part of Windows 10 and 11. package.sh prints the DLLs the
 launcher and the engine import. Report the list.
 
+### Windows: it starts
+
+On the PC, from the package as delivered, `engine\jsrf_recomp.exe
+--version` prints the build's version, which shows that Windows loads it
+and every DLL it needs, and `engine\jsrf_recomp.exe --check-game` on my
+game folder prints `ok`. Neither starts the game. Report both outputs.
+
 ### Linux and Windows: package contents
 
 check_package.py checks that each package holds exactly the files it lists:
@@ -198,7 +307,9 @@ build image changed: find why before delivering.
 ## Delivery package
 
 One folder per build, named `<date>-<commit>-<topic>` (as in
-`2026-10-23-ce20630-menu-cleanup`), holding:
+`2026-10-23-ce20630-menu-cleanup`). It is made in `Building\` on the PC
+and kept in the shared folder's `test-builds/`, which stays the record,
+holding:
 
 - `JSRF-PC-<version>-linux-x86_64.tar.gz` and
   `JSRF-PC-<version>-windows-x86_64.zip`: the two package.sh outputs,
@@ -210,11 +321,28 @@ One folder per build, named `<date>-<commit>-<topic>` (as in
 - The full diff against the commit it was built from, when the tree has
   uncommitted changes.
 
+Each package reaches its device the way I fetch it, and its SHA-256 is
+checked against SHA256SUMS.txt after every copy:
+
+- **Linux:** the package is attached to your message in the thread, as a
+  file I download in the browser on the Ally X. My Linux logs come back
+  the same way, attached to my message.
+- **Windows:** the package stays on the PC, extracted in
+  `Building\<folder>\`, and I run it from there. Before I test, my
+  portable folder in `Building\` is copied next to its JSRF-PC.exe,
+  without its logs. In that copy's developer.cfg the switches TESTING.md
+  names are set, and every other one goes back to its default, so a
+  switch left on from an earlier test can't change this one. The build
+  then starts in portable mode, with my settings and saves, ready to
+  test. Progress I make there stays in that build's copy. Its test list
+  goes to `Testing\` (Test list, below).
+
 Never include game files, generated code, or logs in what you send me,
 except inside the packaged build.
 
-My Claude folder, on the Windows PC, has `Testing\` for test lists, with
-their results in `Testing\Results\`, and `Source\` for source backups
+My Claude folder, on the Windows PC, has `Building\` for builds (Where the
+work runs), `Testing\` for test lists, with their results in
+`Testing\Results\`, and `Source\` for source backups
 (docs/release-checklist.md, step 12). The shared folder's
 test-lists/README.md has its path.
 
@@ -222,17 +350,22 @@ test-lists/README.md has its path.
 
 - **What it is:** the change in one or two lines, the version string, and
   the packages with their SHA-256.
-- **Built from:** the commit, whether the tree had uncommitted changes, the
-  generated code (functions translated, 0 failed), the toolchains, and the
-  build image with its packages.
+- **Built from:** the commit, whether the tree had uncommitted changes and
+  its tree's hash, the machine it was built on, the generated code
+  (functions translated, 0 failed, and whether it was the kept copy), the
+  toolchains, and the build image with its packages.
 - **Checks done here:** the compatibility checks, the comparison with the
-  last tested package, the tests, and anything run in the sandbox.
-  Everything else is unverified.
+  last tested package, the tests, and anything run in the sandbox or on
+  the PC. Everything else is unverified.
 - **What to test:** numbered steps for the areas the change's code touches,
   and nothing else, each saying exactly what to do and on which device,
   what I should see if it works, and what I'd see if it doesn't.
 - **Where:** Desktop Mode, Game Mode, or both on the Ally X, and the Windows
-  PC.
+  PC. A step for the laptop is marked optional, and only for a change that
+  could act differently on AMD's Windows driver.
+- **Switches:** each logging switch, and any other Developer switch, the
+  test needs on each device, with its value. On the PC they are set for me
+  (Delivery package); on the Ally X the step says which to tick.
 - **Order:** one platform at a time, starting with the work's target
   platform. That is Linux (the Ally X) unless the work is for Windows, such
   as a Windows bug. Its steps come first, and testing stays on it, through
@@ -250,7 +383,28 @@ test-lists/README.md has its path.
 - **What to send back:** the test list's results, the full last-run.log
   from each run, and screenshots of anything visual. The package's
   README.txt says where the log is kept ("Where things are kept", and
-  `portable/logs/` in portable mode).
+  `portable/logs/` in portable mode). Linux logs come attached to my
+  message in the thread. Windows logs are read on the PC, in the build's
+  own `portable\logs\`, so I don't need to send them.
+
+## Batches
+
+One test build can carry several ready items, so I test them in one go.
+
+- **What goes in one:** items with the same target platform (Test
+  checklist, Order) that don't change the same code. An item whose fix
+  could change what another's steps test goes in a build of its own.
+- **TESTING.md** has one section for each item, naming its backlog row,
+  with its own numbered steps, and one test list is made from it. REPORT.md
+  has one section for each item too.
+- **A failed step** belongs to its item, which is fixed and built again
+  with the rest, and the steps it could affect are run again (Test
+  checklist, Order). If it can't be told which item a failure comes from,
+  the next build leaves out the items it could be.
+- **The commits** are still one for each item (project rules, How it's
+  written 2), proposed in turn once that item's steps have passed, in the
+  order the build applied them, so the last commit's tree is the one I
+  tested. Each has its own CI run on its own tree.
 
 ## Test list
 
@@ -296,6 +450,28 @@ every device's testing, and you read my answers from my Claude folder.
 - **What to test:** the checklist.
 - **Unverified:** everything not proven here.
 - **Proposed commit message.**
+
+## Review pack
+
+Everything I need to approve one commit, in one file: `REVIEW.md`, in a
+folder for that commit in the work's folder in the shared folder, with
+what it links to beside it. In this order:
+
+- **What I'm asking:** the commit, and the `origin/main` it goes on,
+  checked just before writing.
+- **Testing:** each step of the test list, with its device and my result,
+  and every step still untested, with the device it needs (project rules,
+  Workflow 5).
+- **The six checks** (project rules, Before every commit), each with its
+  result: what's staged; the diff, with its SHA-256 and whether it is the
+  test build's byte for byte (or, in a batch, its item's part of it); the
+  commit message; the root cause, its model and the regression test, or
+  for a feature where it lives; each added or edited document, rendered
+  whole; and each CI job with its log, the Windows tests' on the PC among
+  them.
+
+Nothing it needs is left to another message or file I haven't been
+pointed to.
 
 ## Optional habit
 
