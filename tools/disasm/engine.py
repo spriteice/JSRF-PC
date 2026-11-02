@@ -413,10 +413,10 @@ class DisasmEngine:
         so the index is 0..N and the table holds N + 1 bytes.
         """
         for site in self.byte_tables.get(table, ()):
-            ja = self._instruction_ending_at(site)
+            ja = self.instruction_ending_at(site)
             if ja is None or ja.mnemonic.lower() not in ("ja", "jae"):
                 continue
-            cmp = self._instruction_ending_at(ja.address)
+            cmp = self.instruction_ending_at(ja.address)
             if cmp is None or cmp.mnemonic.lower() != "cmp":
                 continue
             _, _, imm = cmp.op_str.replace(" ", "").partition(",")
@@ -429,7 +429,9 @@ class DisasmEngine:
             return bound + 1 if ja.mnemonic.lower() == "ja" else bound
         return None
 
-    def _instruction_ending_at(self, addr: int) -> Optional[Instruction]:
+    def instruction_ending_at(self, addr: int) -> Optional[Instruction]:
+        """The instruction the sweep decoded that ends exactly at addr, if
+        any: the one in front of it."""
         for back in range(1, 16):
             insn = self.instructions.get(addr - back)
             if insn is not None and insn.end_address == addr:

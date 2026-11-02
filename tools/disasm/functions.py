@@ -11,7 +11,7 @@ Implements multi-pass function detection with confidence scoring:
 
 import bisect
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from . import config
 from .engine import DisasmEngine, Instruction
@@ -1155,6 +1155,18 @@ class FunctionDetector:
         added = self._pass_cond_branch_orphans(bodies, starts, reachable) or added
         return added
 
+    def _jump_table_test(self) -> Callable[[int], bool]:
+        """A test for an address inside a switch table the sweep measured.
+        The tables are fixed once the sweep has run, so a pass makes it once.
+        """
+        tables = sorted(self.engine.jump_tables.items())
+        table_starts = [t for t, _ in tables]
+
+        def in_jump_table(addr: int) -> bool:
+            i = bisect.bisect_right(table_starts, addr) - 1
+            return i >= 0 and addr < tables[i][1]
+        return in_jump_table
+
     def _pass_data_ptr_targets(self, sections: List[SectionInfo]) -> bool:
         """
         A code pointer stored in a data section is a function whose address is
@@ -1213,12 +1225,7 @@ class FunctionDetector:
         # a word is an operand or an instruction, not a table.
         # A switch's jump table also sits between functions, right after its
         # own; its words are case labels, not callables.
-        tables = sorted(self.engine.jump_tables.items())
-        table_starts = [t for t, _ in tables]
-
-        def in_jump_table(addr: int) -> bool:
-            i = bisect.bisect_right(table_starts, addr) - 1
-            return i >= 0 and addr < tables[i][1]
+        in_jump_table = self._jump_table_test()
 
         targets = set()
         for sec in self.image.sections:
