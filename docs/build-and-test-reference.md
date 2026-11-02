@@ -24,7 +24,8 @@ about the difference.
   X11 or Wayland (`echo $XDG_SESSION_TYPE` on the device). Every build must
   also work in Game Mode (gamescope).
 - I only run builds you deliver. I don't build by hand: you build on the
-  Windows PC yourself. Nothing on the devices is installed or changed but
+  Windows PC yourself, or in the cloud while another thread has it (When
+  the PC is busy, below). Nothing on the devices is installed or changed but
   what "On my PC" (below) lists, unless I say so.
 
 ## Where the work runs
@@ -32,8 +33,9 @@ about the difference.
 Two machines share the work, at the same time:
 
 - **The cloud,** a thread's sandbox: the code, the diagnosis, the CI jobs
-  in the build image (CI, below), the delivery folder in the shared folder,
-  and every commit and push.
+  in the build image (CI, below), test builds while another thread has the
+  PC (When the PC is busy, below), the delivery folder in the shared
+  folder, and every commit and push.
 - **My Windows PC,** through a Remote Control session, in `Building\` in my
   Claude folder: the generated code, both packages and their checks, the
   comparison with the last tested package, the Windows tests, repeated
@@ -57,8 +59,9 @@ files move between them, and what the PC has installed.
   `git write-tree`) must be the one the cloud had. It never has a branch of
   its own, and nothing is ever committed or pushed from it.
 - **Game files:** the generated code is made on the PC, from my own
-  default.xbe there, and stays in `Building\`. Neither it nor default.xbe
-  leaves the PC, and the cloud's copy never goes there.
+  default.xbe there, and stays in `Building\`. It never leaves the PC, and
+  generated code made in the cloud never goes there. default.xbe leaves
+  the PC only for a build in the cloud (When the PC is busy, below).
 - **What is written:** only `Building\`, which holds the build
   distribution's disk and so Docker's storage, and what WSL itself keeps
   about that distribution (building-on-pc/README.md lists it). My
@@ -71,6 +74,40 @@ files move between them, and what the PC has installed.
 - **One job at a time on each machine:** a build, a CI job or a repeated
   run never shares the PC with another, as load changes what timing tests
   find. The cloud's jobs run one after another too.
+
+### When the PC is busy
+
+One thread has the PC at a time. It claims it in the shared folder's
+building-on-pc/PC-IN-USE.md before its Remote Control session starts, and
+clears the claim when the session ends. While another thread has it, a
+test build doesn't wait: it is made in the cloud, in the thread's sandbox.
+A release build still waits for the PC, as it checks its generated code
+against the kept copy (What is kept between builds).
+
+- **In the sandbox:** the generated code (Building, 1), both packages
+  (Building, 2 and 3), their compatibility checks but the Windows start
+  check, and the comparison with the last tested packages in the shared
+  folder's `test-builds/`. They use the same pinned build images, which
+  the sandbox makes and keeps for as long as the thread lasts (What is
+  kept between builds). TESTING.md names the machine it was built on
+  (Test checklist).
+- **Game files:** default.xbe is copied from my game folder into the
+  sandbox. It and the generated code made from it stay there, are never
+  sent anywhere else, and go when the thread ends.
+- **What waits for the PC:** the work that needs Windows itself, under the
+  thread's own claim once the PC is free: the Windows package's start
+  check (Compatibility checks, Windows: it starts) and its setup for
+  testing (Delivery package), and the Windows tests before a commit (CI).
+  Repeated runs wait for it too, as their counts are compared on one
+  machine (Repeated runs).
+- **Delivery:** the Linux package is delivered as soon as its checks pass,
+  and the Windows package once the PC is free. Work for Windows starts its
+  testing only then (Test checklist, Order).
+- **If the sandbox can't make its build images** either, because a server
+  they download from is down (CI, below), the build and the CI jobs wait
+  for whichever is back first, the server or the PC.
+- **One job at a time:** the sandbox runs its build and its thread's CI
+  jobs one after another (On my PC).
 
 ### What is kept between builds
 
@@ -307,7 +344,8 @@ build image changed: find why before delivering.
 ## Delivery package
 
 One folder per build, named `<date>-<commit>-<topic>` (as in
-`2026-10-23-ce20630-menu-cleanup`). It is made in `Building\` on the PC
+`2026-10-23-ce20630-menu-cleanup`). It is made in `Building\` on the PC,
+or in the sandbox while another thread has the PC (When the PC is busy),
 and kept in the shared folder's `test-builds/`, which stays the record,
 holding:
 
@@ -335,7 +373,9 @@ checked against SHA256SUMS.txt after every copy:
   switch left on from an earlier test can't change this one. The build
   then starts in portable mode, with my settings and saves, ready to
   test. Progress I make there stays in that build's copy. Its test list
-  goes to `Testing\` (Test list, below).
+  goes to `Testing\` (Test list, below). A package made in the cloud is
+  copied there from `test-builds/` once the PC is free, then set up the
+  same way.
 
 Never include game files, generated code, or logs in what you send me,
 except inside the packaged build.
