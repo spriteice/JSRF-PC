@@ -1097,13 +1097,13 @@ static void bridge_NtFreeVirtualMemory(void)
             return;
         }
         /* Heap space no live block holds: the title released it already.
-         * JSRF's graffiti cache builder does this on every scene change. It
-         * releases each texture buffer after copying it into the sheet
-         * (0x2DA70), keeps the pointer, and releases it again after writing
-         * JSRF_TEXS0/1.JTX (0x2D8D0, 0x2D950). The console fails the second
-         * call and the title ignores the result. The host must not see it:
-         * Windows cannot release part of the guest view (error 487), and the
-         * POSIX shim's VirtualFree says yes to anything. */
+         * The console fails the second call, and a title that ignores the
+         * result carries on. The host must not see it: Windows cannot
+         * release part of the guest view (error 487), and the POSIX shim's
+         * VirtualFree says yes to anything. Neither this nor the console can
+         * tell a pointer kept after its release from a block handed out
+         * again since, so a title's own double releases are fixed in its
+         * code (JSRF's in port/resource_load.c). */
         if (xbox_HeapIsFreeSpace(base)) {
             if (KERNEL_LOG_ON())
                 fprintf(stderr, "  [KERNEL] NtFreeVirtualMemory: MEM_RELEASE of 0x%08X,"

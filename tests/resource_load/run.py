@@ -4,7 +4,9 @@ drive it without the game.
 Takes port/resource_load.c as it is and runs it on made-up guest memory, one
 case to a run (test_main.c). A character file buffer the made-up heap says
 was released is forgotten and logged, one a live allocation holds is kept,
-and an empty one is left alone without asking the heap. A flow that has
+and an empty one is left alone without asking the heap. The graffiti cache's
+buffer is checked the same way, and a sheet written logs how often the buffer
+was forgotten since the last, or nothing when it wasn't. A flow that has
 asked for its stage is logged with what it asked for, and said to have had
 its file written over when the file's first word no longer matches the copy
 made as it loaded; one still waiting to ask is not logged.
@@ -25,6 +27,9 @@ FORGOT = ("[LOAD] t=229.5 the character loader released its file buffer 00008000
 ASKS = "[LOAD] t=229.5 mission 000401A9 asks for stage 00020000 (its file at 00008000)\n"
 OVER = ("[LOAD] t=229.5 mission 000401A9 asks for stage 544C554D, but its file at 00008000"
         " said 00020000 when it loaded: something wrote over it since\n")
+GRAFFITI = ("[LOAD] t=229.5 writing graffiti sheet {sheet}: the cache's file buffer was released"
+            " and kept {n} since the last sheet, last 00008000, and forgotten each time, so the"
+            " write can't release it again\n")
 # case: the whole log it must print
 cases = {
     "kept": FORGOT,
@@ -33,6 +38,10 @@ cases = {
     "stage": ASKS,
     "written_over": OVER,
     "waiting": "",
+    "graffiti_kept": GRAFFITI.format(n="1 time", sheet=0),
+    "graffiti_live": "",
+    "graffiti_none": "",
+    "graffiti_build": GRAFFITI.format(n="16 times", sheet=0) + GRAFFITI.format(n="4 times", sheet=1),
 }
 
 failed = 0
