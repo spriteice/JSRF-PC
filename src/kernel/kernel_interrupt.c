@@ -31,11 +31,7 @@
  * interrupt enable and queues here, and the enumeration it should have started
  * lives entirely in the deferred routine.
  *
- * ponytail: runs the routine inline rather than queueing it. A real DPC runs
- * at DISPATCH_LEVEL shortly after the ISR returns, and this runs it before the
- * ISR returns, on whichever thread queued it. That ordering difference has not
- * mattered for anything here yet; when it does, the upgrade is a real queue
- * drained by the thread that lowered IRQL, not a second call site.
+ * Queued, and run after the ISR has returned: the pending DPC queue, below.
  */
 /* Run a DPC's deferred routine on the calling thread.
  *
@@ -110,10 +106,10 @@ static int kernel_run_dpc_locked(uint32_t dpc_va, uint32_t arg1, uint32_t arg2)
  * ran -- the same failure as an unqueued DPC, and just as quiet: the driver
  * asks for exclusive access, is told it did not get it, and skips the work.
  *
- * ponytail: no lock is taken. Nothing else here runs at ISR IRQL, and the one
- * caller that matters is a device model on its own thread; if two of those
- * ever contend, this wants the interrupt object's own lock rather than a
- * global one.
+ * The exclusion is the guest lock. The caller holds it, as every thread
+ * running the title's code does, and every interrupt routine is called
+ * holding it too (kernel_raise_interrupt), so the routine here never runs
+ * beside the ISR it synchronises with, as on the console.
  */
 void bridge_KeSynchronizeExecution(void)
 {
@@ -170,11 +166,22 @@ void bridge_KeRemoveQueueDpc(void)
  * ponytail: one queue, no IRQL, no per-processor list, and a DPC queued from a
  * DPC runs on the next drain rather than immediately. Nothing here depends on
  * DPC ordering beyond "after the ISR".
+ *
+ * Every caller holds the guest lock -- an interrupt routine, a DPC or the
+ * title's own code -- so callers never meet. The drain, the one reader, runs
+ * without it: it reads a slot only once the tail has published it, and gives
+ * the slot back only once it has been read. The USB interrupt's routine used
+ * to queue here without the lock (ohci_call_isr), in the same instant as the
+ * timer thread queued the vblank's, and both took the same slot: the vblank's
+ * DPC was lost, the display interrupt stayed masked, and JSRF froze at its
+ * first frame on some Windows starts.
  */
 #define XBOX_MAX_PENDING_DPC 64
 typedef struct { uint32_t dpc, arg1, arg2; } PendingDpc;
 static PendingDpc g_dpc_queue[XBOX_MAX_PENDING_DPC];
-static volatile LONG g_dpc_head, g_dpc_tail;
+static LONG g_dpc_head, g_dpc_tail;
+/* For the freeze report: queued minus run is what is waiting. */
+static unsigned long g_dpc_queued, g_dpc_run;
 
 void bridge_KeInsertQueueDpc(void)
 {
@@ -187,7 +194,7 @@ void bridge_KeInsertQueueDpc(void)
 
     tail = g_dpc_tail;
     next = (tail + 1) % XBOX_MAX_PENDING_DPC;
-    if (next == g_dpc_head) {
+    if (next == __atomic_load_n(&g_dpc_head, __ATOMIC_ACQUIRE)) {
         fprintf(stderr, "  [KERNEL] DPC queue full, dropping 0x%08X\n", dpc);
         fflush(stderr);
         g_eax = 0;
@@ -196,7 +203,8 @@ void bridge_KeInsertQueueDpc(void)
     g_dpc_queue[tail].dpc  = dpc;
     g_dpc_queue[tail].arg1 = arg1;
     g_dpc_queue[tail].arg2 = arg2;
-    g_dpc_tail = next;
+    __atomic_add_fetch(&g_dpc_queued, 1, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_dpc_tail, next, __ATOMIC_RELEASE);
     g_eax = 1;
 }
 
@@ -253,15 +261,28 @@ int kernel_raise_interrupt_locked(uint32_t vector)
 }
 
 /* Run whatever is queued. Called from the timer thread, which has the guest
- * stack and TIB that a deferred routine needs. */
+ * stack and TIB that a deferred routine needs. The only reader, so it takes
+ * no lock (the queue, above). */
 void kernel_drain_dpcs(void)
 {
-    while (g_dpc_head != g_dpc_tail) {
+    while (g_dpc_head != __atomic_load_n(&g_dpc_tail, __ATOMIC_ACQUIRE)) {
         LONG head = g_dpc_head;
         PendingDpc d = g_dpc_queue[head];
-        g_dpc_head = (head + 1) % XBOX_MAX_PENDING_DPC;
+        __atomic_store_n(&g_dpc_head, (head + 1) % XBOX_MAX_PENDING_DPC,
+                         __ATOMIC_RELEASE);
+        __atomic_add_fetch(&g_dpc_run, 1, __ATOMIC_RELAXED);
         kernel_run_dpc(d.dpc, d.arg1, d.arg2);
     }
+}
+
+/* DPCs queued, run, and waiting now, for the freeze report. */
+void kernel_dpc_counts(unsigned long *queued, unsigned long *run, long *waiting)
+{
+    LONG tail = __atomic_load_n(&g_dpc_tail, __ATOMIC_ACQUIRE);
+    LONG head = __atomic_load_n(&g_dpc_head, __ATOMIC_ACQUIRE);
+    *queued  = __atomic_load_n(&g_dpc_queued, __ATOMIC_RELAXED);
+    *run     = __atomic_load_n(&g_dpc_run, __ATOMIC_RELAXED);
+    *waiting = (long)((tail - head + XBOX_MAX_PENDING_DPC) % XBOX_MAX_PENDING_DPC);
 }
 
 /* ── KeInitializeDpc (ordinal 107) ────────────────────────

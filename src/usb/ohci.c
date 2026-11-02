@@ -24,14 +24,14 @@ extern ptrdiff_t xbox_GetMemoryOffset(void);
  * A recompiled function reads its arguments off the guest stack and keeps its
  * registers in thread-local storage, so it can only be called from a thread
  * that has both. xbox_worker_stack_alloc hands out a guest stack slice for
- * exactly this -- a host thread calling recompiled code -- and recomp_lookup
- * turns a guest address into something callable.
+ * exactly this -- a host thread calling recompiled code -- and
+ * kernel_raise_interrupt calls the routine connected on a vector, as the
+ * kernel does for every interrupt (src/kernel/kernel_interrupt.c).
  */
-typedef void (*recomp_func_t)(void);
-extern recomp_func_t recomp_lookup(uint32_t xbox_va);
 extern int  xbox_worker_stack_alloc(void);
 extern void xbox_worker_stack_free(int slot);
 extern uint32_t xbox_GetConnectedInterrupt(uint32_t vector);
+extern int  kernel_raise_interrupt(uint32_t vector);
 
 /* Declared in the generated runtime; thread-local, so the values below are
  * this thread's and not the guest thread's. */
@@ -589,39 +589,27 @@ static int ohci_run_periodic_list(OhciController *hc)
 
 /* Call the title's ISR on this thread, with a guest stack under it.
  *
- * BOOLEAN ServiceRoutine(PKINTERRUPT Interrupt, PVOID ServiceContext), stdcall,
- * so the two arguments go on the stack right to left with a return address on
- * top. The sentinel is what the routine pops on the way out; nothing jumps to
- * it, and a recognisable value beats a real address if it ever shows up in a
- * report.
+ * Through the kernel, as every other interrupt is delivered: under the guest
+ * lock, and marked as an interrupt, so no other thread runs the title's code
+ * until the routine returns, as on the console's one processor. The
+ * controller's registers stay on this thread.
  *
- * Returns what the routine returned: an ISR that does not claim the interrupt
- * returns FALSE, and that is worth seeing rather than assuming.
+ * Called here without the lock, as it was, the routine ran beside whichever
+ * thread held it. It queues a DPC, and when that met the timer thread
+ * queueing the vblank's, both took the same slot and the vblank's was lost:
+ * the display interrupt stayed masked, and JSRF froze at its first frame on
+ * some Windows starts (known bug 16).
+ *
+ * Returns what the routine returned, or -1 if nothing callable is connected:
+ * an ISR that does not claim the interrupt returns FALSE, and that is worth
+ * seeing rather than assuming.
  */
 static int ohci_call_isr(OhciController *hc)
 {
-    uint32_t kinterrupt = xbox_GetConnectedInterrupt(OHCI_VECTOR);
-    uint32_t routine, context;
-    recomp_func_t fn;
-    uint8_t *mem;
-    int slot;
+    int slot, claimed;
 
-    if (!kinterrupt)
+    if (!xbox_GetConnectedInterrupt(OHCI_VECTOR))
         return -1;                      /* nothing connected yet            */
-
-    mem     = (uint8_t *)xbox_GetMemoryOffset();
-    routine = *(uint32_t *)(mem + kinterrupt + 0);
-    context = *(uint32_t *)(mem + kinterrupt + 4);
-    if (!routine)
-        return -1;
-
-    fn = recomp_lookup(routine);
-    if (!fn) {
-        fprintf(stderr, "  [OHCI%d] ISR 0x%08X has no translation\n",
-                hc->index, routine);
-        fflush(stderr);
-        return -1;
-    }
 
     /* One slice for the life of the raise. Sixteen exist and this takes one
      * only while the routine runs, so a title using them for its own workers
@@ -635,15 +623,9 @@ static int ohci_call_isr(OhciController *hc)
 
     g_esp = XBOX_WORKER_STACK_TOP(slot);
     g_eax = g_ecx = g_edx = g_ebx = g_esi = g_edi = 0;
-
-    g_esp -= 4; *(uint32_t *)(mem + g_esp) = context;      /* arg 2 */
-    g_esp -= 4; *(uint32_t *)(mem + g_esp) = kinterrupt;   /* arg 1 */
-    g_esp -= 4; *(uint32_t *)(mem + g_esp) = 0xDEADBEEFu;  /* return address */
-
-    fn();
-
+    claimed = kernel_raise_interrupt(OHCI_VECTOR);
     xbox_worker_stack_free(slot);
-    return (int)(g_eax & 1u);
+    return claimed;
 }
 
 /* Set the status bits and, if the driver has unmasked them, call the ISR.
@@ -761,20 +743,6 @@ static DWORD WINAPI ohci_thread(LPVOID unused)
         uint32_t control, enable, status;
 
         Sleep(20);
-        /* The guest-lock watchdog rides here because this loop is the only
-         * one in the process that ticks steadily and never wants the lock
-         * itself -- a watchdog that can be blocked by the thing it is
-         * watching reports nothing at exactly the moment it matters. */
-        { extern void xbox_guest_lock_report(void) __attribute__((weak));
-          extern void xbox_guest_lock_stats(void) __attribute__((weak));
-          extern void xbox_guest_cs_report(void) __attribute__((weak));
-          extern void recomp_fp_report(void) __attribute__((weak));
-          if (xbox_guest_lock_report) xbox_guest_lock_report();
-          if (xbox_guest_lock_stats)  xbox_guest_lock_stats();
-          if (xbox_guest_cs_report)   xbox_guest_cs_report();
-          /* Same reasoning: the x87 census has to reach stderr on a run that
-           * is killed, which is every run. */
-          if (recomp_fp_report)       recomp_fp_report(); }
         control = hc->reg[HcControl / 4];
         enable  = hc->reg[HcInterruptEnable / 4];
 

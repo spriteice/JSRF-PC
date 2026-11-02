@@ -60,6 +60,8 @@ int  kernel_raise_interrupt_locked(uint32_t vector);
 int  kernel_run_dpc(uint32_t dpc_va, uint32_t arg1, uint32_t arg2);
 /* Run every queued DPC. */
 void kernel_drain_dpcs(void);
+/* DPCs queued, run, and waiting now. */
+void kernel_dpc_counts(unsigned long *queued, unsigned long *run, long *waiting);
 
 /* Bridges, for the ordinal table. */
 void bridge_HalGetInterruptVector(void);

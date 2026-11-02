@@ -341,9 +341,9 @@ static void recomp_fp_summary(void)
     fflush(stderr);
 }
 
-/* Called from the USB tick, which is the only loop in the process that runs
- * steadily and wants no lock. The run is normally killed rather than exited,
- * so a summary that only ran at exit would never be seen. */
+/* Called from the kernel's report thread (kernel_bridge.c), which ticks
+ * steadily and never waits for the guest lock. The run is normally killed
+ * rather than exited, so a summary that only ran at exit would never be seen. */
 void recomp_fp_report(void)
 {
     static unsigned ticks;

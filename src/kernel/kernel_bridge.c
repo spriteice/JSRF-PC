@@ -2149,11 +2149,17 @@ static void bridge_HalReadSMCTrayState(void)
 #define NV2A_PMC_INTR_PCRTC    (1u << 24)
 #define NV2A_PCRTC_INTR_0      0x00600100u
 #define NV2A_PCRTC_INTR_VBLANK (1u << 0)
+#define NV2A_PMC_INTR_EN_0     0x00000140u
 #define NV2A_VECTOR            3u
 
 /* How many display interrupts have been delivered. Read by the renderer's
  * pacing report, so "the guest's frame clock" is a number and not a belief. */
 unsigned long g_vblank_count;
+/* And what the title's routine made of them, for the freeze report. D3D's
+ * routine masks PMC_INTR_EN_0 when it claims one and only its DPC unmasks it,
+ * so a run of declines with PMC_INTR_EN_0 at 0 is a routine waiting for a DPC.
+ * Only the timer thread writes these. */
+static unsigned long g_vblank_claimed, g_vblank_declined_since_claim;
 
 static void kernel_vblank_tick(void)
 {
@@ -2214,6 +2220,12 @@ static void kernel_vblank_tick(void)
     {
         static unsigned n;
         int claimed = kernel_raise_interrupt(NV2A_VECTOR);
+        if (claimed > 0) {
+            g_vblank_claimed++;
+            g_vblank_declined_since_claim = 0;
+        } else if (claimed == 0) {
+            g_vblank_declined_since_claim++;
+        }
         if (n++ < 3) {
             fprintf(stderr, "  [NV2A] vblank -> ISR %s\n",
                     claimed < 0 ? "not callable" :
@@ -6280,6 +6292,29 @@ void xbox_guest_lock_stats(void)
     g_edge_vblank_checks = 0;
     fflush(stderr);
 }
+
+/* The guest lock's reports, on a thread of their own.
+ *
+ * They have to tick steadily and never wait for the guest lock: a watchdog
+ * that can be blocked by the thing it is watching reports nothing at exactly
+ * the moment it matters. The x87 census comes too, as it has to reach stderr
+ * on a run that is killed, which is every run. All four rode the USB
+ * controller's loop until its interrupt took the guest lock like every other
+ * (ohci_call_isr in src/usb/ohci.c), at the same 20 ms. */
+#define KERNEL_REPORT_MS 20
+void recomp_fp_report(void);
+static DWORD WINAPI kernel_report_thread(LPVOID unused)
+{
+    (void)unused;
+    for (;;) {
+        Sleep(KERNEL_REPORT_MS);
+        xbox_guest_lock_report();
+        xbox_guest_lock_stats();
+        xbox_guest_cs_report();
+        recomp_fp_report();
+    }
+    return 0;
+}
 void xbox_guest_lock_release(void)
 {
     if (!guest_lock_on() || !t_guest_holds) return;
@@ -6977,6 +7012,20 @@ static void kernel_freeze_watch(void)
         fprintf(stderr, "  [FROZEN] APU interrupts: %u raised, %u claimed by "
                         "the title's ISR\n", g_apu_raised, g_apu_claimed);
     }
+    /* In the first-frame freeze (known bug 16) the display interrupt declined
+     * for good: masked by its own routine, waiting for a DPC that never ran.
+     * Queued minus run is what is waiting, so a masked interrupt with nothing
+     * waiting is a DPC that was lost. */
+    {   unsigned long queued, run;
+        long waiting;
+        kernel_dpc_counts(&queued, &run, &waiting);
+        fprintf(stderr, "  [FROZEN] display interrupts: %lu raised, %lu claimed, "
+                        "%lu declined since the last claim; PMC_INTR_EN_0 = "
+                        "0x%08X. DPCs: %lu queued, %lu run, %ld waiting\n",
+                g_vblank_count, g_vblank_claimed, g_vblank_declined_since_claim,
+                BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PMC_INTR_EN_0),
+                queued, run, waiting);
+    }
     kthread_report();
 #ifdef __APPLE__
     {   long i, n = g_kthread_n;
@@ -7043,6 +7092,30 @@ static int kthread_all_stuck_ms(void)
     return (int)second;
 }
 
+/* A kernel call made without the guest lock, said once for each thread and
+ * ordinal.
+ *
+ * The guest lock is the console's one processor: the title's code, its
+ * interrupt routines and its DPCs all run holding it, and the kernel's state
+ * here -- the DPC queue, the thread table above, a synchronize routine's
+ * exclusion -- is guarded by that alone. A thread that calls in without it
+ * is running the title's code beside another. The USB interrupt did, until
+ * it took the lock like every other (ohci_call_isr in src/usb/ohci.c), and
+ * its DPC overwrote the vblank's. This should never print; if it does, it
+ * names the next race of that kind. */
+static void kernel_call_unlocked(ULONG ordinal, uint32_t caller)
+{
+    static RECOMP_TLS unsigned char said[(XBOX_KERNEL_THUNK_TABLE_SIZE + 7) / 8];
+
+    if (ordinal >= XBOX_KERNEL_THUNK_TABLE_SIZE) return;
+    if (said[ordinal / 8] & (1u << (ordinal % 8))) return;
+    said[ordinal / 8] |= (unsigned char)(1u << (ordinal % 8));
+    fprintf(stderr, "  [LOCK] thread %lu made kernel call %u (from guest 0x%08X) "
+                    "without the guest lock\n",
+            (unsigned long)GetCurrentThreadId(), (unsigned)ordinal, caller);
+    fflush(stderr);
+}
+
 static void kernel_thunk_dispatch(void)
 {
     int slot = g_kernel_dispatch_slot;
@@ -7069,6 +7142,8 @@ static void kernel_thunk_dispatch(void)
         k->entered_ms = (long long)GetTickCount64();
         k->left_ms = 0;
         k->calls++;
+        if (guest_lock_on() && !t_guest_holds)
+            kernel_call_unlocked(ordinal, k->caller);
     }
 
     if (KERNEL_LOG_ON()) {
@@ -7520,6 +7595,12 @@ void xbox_kernel_bridge_init(void)
     fprintf(stderr, "  Synthetic VA range: 0x%08X-0x%08X\n",
             KERNEL_VA_BASE, KERNEL_VA_BASE + (resolved - 1) * 4);
 
+    /* Before the title's code runs, so a hang at its first frame is
+     * reported too. */
+    {   static int started;
+        if (!started++)
+            CloseHandle(CreateThread(NULL, 0, kernel_report_thread, NULL, 0, NULL));
+    }
 }
 
 /* ---- store watch: who writes a given piece of guest memory ------------------
