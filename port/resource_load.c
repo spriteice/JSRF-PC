@@ -32,17 +32,28 @@ static uint32_t rd32(const uint8_t *mem, uint32_t at)
     return v;
 }
 
+/* Forgets the buffer pointer at `slot` once the buffer it names has been
+ * released, and returns that buffer: 0 when the slot is empty or a live
+ * allocation holds its buffer. */
+static uint32_t forget_released(uint8_t *mem, uint32_t slot, resource_load_released_fn released)
+{
+    uint32_t buf = rd32(mem, slot), none = 0;
+
+    if (!buf || !released(buf))
+        return 0;
+    memcpy(mem + slot, &none, 4);
+    return buf;
+}
+
 void resource_load_char_step(uint8_t *mem, uint32_t mgr, resource_load_released_fn released,
                              double t)
 {
-    uint32_t buf = rd32(mem, mgr + RL_MGR_FILE_BUF), none = 0;
+    uint32_t buf = forget_released(mem, mgr + RL_MGR_FILE_BUF, released);
 
-    if (!buf || !released(buf))
-        return;
-    memcpy(mem + mgr + RL_MGR_FILE_BUF, &none, 4);
-    fprintf(stderr, "[LOAD] t=%.1f the character loader released its file buffer %08X"
-                    " and kept it: forgotten, so a character unload can't release it again\n",
-            t, buf);
+    if (buf)
+        fprintf(stderr, "[LOAD] t=%.1f the character loader released its file buffer %08X"
+                        " and kept it: forgotten, so a character unload can't release it again\n",
+                t, buf);
 }
 
 uint32_t resource_load_flow_state(const uint8_t *mem, uint32_t flow)
