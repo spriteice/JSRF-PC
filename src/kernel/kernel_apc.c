@@ -7,8 +7,8 @@
  * and bridge_deliver_pending_apcs. kernel_bridge.c's file requests queue them
  * and its alertable waits deliver them.
  *
- * Moved out of kernel_bridge.c as it was, so that it can be linked and tested
- * on its own.
+ * Moved out of kernel_bridge.c so that it can be linked and tested on its
+ * own. An APC's routine is the title's code, and runs holding the guest lock.
  */
 
 #include "kernel.h"
@@ -29,6 +29,13 @@ void deliver_one_apc(uint32_t apc_routine, uint32_t apc_context,
     int kernel_target = 0;
     if (!fn) { fn = recomp_lookup_kernel(apc_routine); kernel_target = fn != NULL; }
     if (fn) {
+        /* The routine is the title's code, so it runs holding the guest lock,
+         * as on the console's one processor. The alertable waits and the file
+         * requests that deliver it are blocking calls, which gave the lock up
+         * (kernel_call_blocks), and without it the title's completion routine
+         * ran beside whichever thread held the lock: CRI's file server's, for
+         * one, updating a request its stream's threads read. */
+        int took = xbox_guest_lock_take();
         /* VOID ApcRoutine(PVOID ApcContext, PIO_STATUS_BLOCK, ULONG) */
         uint32_t esp0 = g_esp;
         g_esp -= 4; BRIDGE_MEM32(g_esp) = 0;
@@ -44,6 +51,7 @@ void deliver_one_apc(uint32_t apc_routine, uint32_t apc_context,
          * SleepEx came back with esp 12 high and esi from the wrong slot). */
         (void)kernel_target;
         g_esp = esp0;
+        if (took) xbox_guest_lock_release();
     } else {
         uint32_t ord = 0;
         if (apc_routine >= KERNEL_VA_BASE && apc_routine < KERNEL_VA_END) {

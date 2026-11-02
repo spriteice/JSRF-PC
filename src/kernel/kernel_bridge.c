@@ -580,8 +580,13 @@ static void bridge_PsCreateSystemThreadEx(void)
                     fflush(stderr);
                     bridge_run_thread_inline(fn, start_context1, start_context2);
                 } else {
+                    /* The child takes the lock: give it up for the spawn, so
+                     * that the child can start. Only here: every other way
+                     * through this call runs the routine on this thread. */
+                    int held = xbox_guest_lock_drop();
                     HANDLE th = bridge_spawn_thread(fn, start_context1,
                                                     start_context2, stack_top);
+                    xbox_guest_lock_retake(held);
                     fprintf(stderr, "  [KERNEL] PsCreateSystemThreadEx: spawned "
                             "worker 0x%08X (ctx=0x%08X, stack top 0x%08X)\n",
                             start_routine, start_context1, stack_top);
@@ -6493,6 +6498,17 @@ void xbox_guest_lock_retake(int held)
 {
     if (held) xbox_guest_lock_acquire();
 }
+/* The other way round: take the guest lock for the title's code run from
+ * inside a kernel call that gave it up -- a file APC, delivered in an
+ * alertable wait (kernel_apc.c). Reports whether it took it, as the thread
+ * may hold it already, and giving back a lock it held before would leave it
+ * running the title's code without one. */
+int xbox_guest_lock_take(void)
+{
+    if (t_guest_holds) return 0;
+    xbox_guest_lock_acquire();
+    return t_guest_holds;
+}
 void xbox_guest_lock_mark_idle(void)
 {
     xbox_guest_lock_release();
@@ -6762,7 +6778,13 @@ void xbox_waitlog_report(void)
  * in ninety on Linux and one in twenty-five on Windows, and into the ADX
  * watchdog's recovery of a stream while the stream's error code was set,
  * where its check of that code stops the game on its "disc can't be read"
- * path (issue #1). */
+ * path (issue #1).
+ *
+ * PsCreateSystemThreadEx (255) isn't here either: it gives the lock up around
+ * a spawn, and only there (bridge_PsCreateSystemThreadEx). Its first call
+ * spawns nothing -- it runs the game's main thread there and then -- and
+ * with the lock given up for every call, the game's code ran without it from
+ * the main thread's start to its first blocking call. */
 static int kernel_call_blocks(ULONG ordinal)
 {
     switch (ordinal) {
@@ -6777,7 +6799,6 @@ static int kernel_call_blocks(ULONG ordinal)
     case 236:  /* NtWriteFile */
     case 190:  /* NtCreateFile */
     case 202:  /* NtOpenFile */
-    case 255:  /* PsCreateSystemThreadEx (spawns; the child takes the lock) */
     case 258:  /* PsTerminateSystemThread */
         return 1;
     default:
@@ -6986,10 +7007,12 @@ static int kthread_all_stuck_ms(void)
         const KThreadState *k = &g_kthreads[i];
         long long age;
         if (k->left_ms) continue;                 /* not inside a call */
-        /* NtSuspendThread (231) and NtResumeThread (224) count as waits here,
-         * as they did before their bridges took over the lock decision: a
-         * thread parked in its own suspend is waiting like any other. */
-        if (!kernel_call_blocks(k->ordinal) && k->ordinal != 231 && k->ordinal != 224)
+        /* NtSuspendThread (231), NtResumeThread (224) and
+         * PsCreateSystemThreadEx (255) count as waits here, as they did
+         * before their bridges took over the lock decision: a thread parked
+         * in its own suspend is waiting like any other. */
+        if (!kernel_call_blocks(k->ordinal) && k->ordinal != 231 &&
+            k->ordinal != 224 && k->ordinal != 255)
             continue;
         if (k->ordinal == 277) continue;          /* lock churn is the spin */
         age = now - k->entered_ms;

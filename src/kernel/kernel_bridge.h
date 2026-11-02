@@ -16,6 +16,11 @@
 
 void xbox_guest_lock_acquire(void);
 void xbox_guest_lock_release(void);
+/* Give the lock up, if held, and take it back after (1 if it was given up). */
+int  xbox_guest_lock_drop(void);
+void xbox_guest_lock_retake(int held);
+/* Take the lock, if not held, and give it back after (1 if it was taken). */
+int  xbox_guest_lock_take(void);
 uint32_t xbox_GetConnectedInterrupt(uint32_t vector);
 
 /* Access to recompiled code registers. Per-thread: RECOMP_TLS comes from

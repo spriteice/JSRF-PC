@@ -22,8 +22,8 @@
  *   nothing to resume, at DISPATCH_LEVEL, inside a callback, and when the
  *   caller does not hold the lock.
  * - A resume writes the previous count back, and takes no pointer for it.
- * - NtSuspendThread (231) and NtResumeThread (224) are off kernel_call_blocks'
- *   list, and the other 13 calls stay on it.
+ * - NtSuspendThread (231), NtResumeThread (224) and PsCreateSystemThreadEx
+ *   (255) are off kernel_call_blocks' list, and the other 12 calls stay on it.
  */
 
 static void fail(const char *what)
@@ -266,7 +266,7 @@ static void others(void)
 static void call_list(void)
 {
     static const int want[] = { 99, 159, 158, 233, 234, 235, 277, 219, 236, 190,
-                                202, 255, 258 };
+                                202, 258 };
     int ordinal, i;
     for (ordinal = 0; ordinal < 512; ordinal++) {
         int listed = 0;
@@ -274,10 +274,10 @@ static void call_list(void)
             if (want[i] == ordinal) listed = 1;
         if (kernel_call_blocks((ULONG)ordinal) != listed) {
             printf("ordinal %d\n", ordinal);
-            fail("kernel_call_blocks' list is not the 13 calls");
+            fail("kernel_call_blocks' list is not the 12 calls");
         }
     }
-    printf("guest_suspend: kernel_call_blocks lists 13 calls, not 224 or 231\n");
+    printf("guest_suspend: kernel_call_blocks lists 12 calls, not 224, 231 or 255\n");
 }
 
 int main(void)
