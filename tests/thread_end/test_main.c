@@ -5,16 +5,20 @@
  * goes when the thread ends, and its object, with the exit code, lasts while
  * a handle to it is open.
  *
- * - Threads that end, with their handles closed, give their stacks back:
- *   sixty-four of them, each with a 4 MiB stack, leave the address space less
- *   than a quarter of their stacks larger (glibc keeps a few for the next
- *   threads). Left out under the thread sanitizer, which reports a thread
- *   left behind itself, and whose own mappings would be in the count.
+ * - Threads that end, with their handles closed, give their stacks back: of
+ *   the 4 MiB stacks sixty-four of them ran on, fewer than a quarter are
+ *   still mapped once they have ended (glibc keeps a few for the next
+ *   threads). The stacks are counted, not the address space: a thread that
+ *   allocates or frees is given a malloc arena, 64 MiB of address space that
+ *   glibc keeps for the next threads. These threads allocate, as the game's
+ *   do, so the arena is there in every run. Left out under the thread
+ *   sanitizer, which reports a thread left behind itself.
  * - A thread that has ended is not reached through its handle: terminating
  *   it leaves a newer thread running, also when the newer thread was given
  *   the ended one's stack, and so its pthread_t.
  */
 #define _GNU_SOURCE
+#include <inttypes.h>
 #include <pthread.h>
 #include <sched.h>
 #include <stdio.h>
@@ -26,6 +30,7 @@
 
 #define THREADS      64
 #define STACK_BYTES  (4u << 20)
+#define BLOCK_BYTES  64          /* what each of them allocates */
 
 static void fail(const char *what)
 {
@@ -34,16 +39,23 @@ static void fail(const char *what)
     _exit(1);
 }
 
-static long vm_size_kib(void)
+/* How many of the process's mappings hold one or more of these addresses. */
+static int mappings_holding(const uintptr_t *at, int n)
 {
-    char line[256];
-    long kib = -1;
-    FILE *f = fopen("/proc/self/status", "r");
-    if (!f) fail("no /proc/self/status");
-    while (fgets(line, sizeof line, f))
-        if (sscanf(line, "VmSize: %ld", &kib) == 1) break;
+    char *line = NULL;
+    size_t size = 0;
+    int i, held = 0;
+    FILE *f = fopen("/proc/self/maps", "r");
+    if (!f) fail("no /proc/self/maps");
+    while (getline(&line, &size, f) > 0) {
+        uintptr_t lo, hi;
+        if (sscanf(line, "%" SCNxPTR "-%" SCNxPTR, &lo, &hi) != 2) continue;
+        for (i = 0; i < n; i++)
+            if (at[i] >= lo && at[i] < hi) { held++; break; }
+    }
+    free(line);
     fclose(f);
-    return kib;
+    return held;
 }
 
 /* Until the host thread with this id has gone: a thread's handle is
@@ -65,42 +77,44 @@ static void until_gone(pid_t tid)
 /* ---- the stacks of threads that ended ------------------------------------ */
 
 static volatile pid_t g_tid;
+static uintptr_t g_stack[THREADS];   /* an address on each thread's stack */
 
+/* Notes where its stack is, through arg, and allocates. */
 static DWORD WINAPI returns(LPVOID arg)
 {
-    (void)arg;
+    char on_stack;
+    void *volatile block = malloc(BLOCK_BYTES);
+    free(block);
+    *(uintptr_t *)arg = (uintptr_t)&on_stack;
     g_tid = gettid();
     return 7;
 }
 
 static void stacks_given_back(void)
 {
-    long before, grown;
-    int i;
+    int i, kept;
 
     if (getenv("TEST_SANITIZER")) {
         printf("thread_end: the stacks' case is left out under the sanitizer\n");
         return;
     }
-    before = vm_size_kib();
     for (i = 0; i < THREADS; i++) {
         DWORD code = 0;
-        HANDLE h = CreateThread(NULL, STACK_BYTES, returns, NULL, 0, NULL);
+        HANDLE h = CreateThread(NULL, STACK_BYTES, returns, &g_stack[i], 0, NULL);
         if (!h) fail("CreateThread");
         if (WaitForSingleObject(h, 5000) != WAIT_OBJECT_0) fail("a thread did not end");
         if (!GetExitCodeThread(h, &code) || code != 7) fail("the exit code was not kept");
         CloseHandle(h);
         until_gone(g_tid);
     }
-    grown = vm_size_kib() - before;
-    if (grown >= (long)THREADS * (STACK_BYTES >> 10) / 4) {
-        printf("%d threads ended and the address space grew by %ld KiB, "
-               "%ld of their %u KiB stacks\n", THREADS, grown,
-               grown / (STACK_BYTES >> 10), STACK_BYTES >> 10);
+    kept = mappings_holding(g_stack, THREADS);
+    if (kept >= THREADS / 4) {
+        printf("%d threads ended and %d of the stacks they ran on are still "
+               "mapped\n", THREADS, kept);
         fail("threads that ended kept their stacks");
     }
     printf("thread_end: %d threads that ended gave their stacks back "
-           "(the address space grew by %ld KiB)\n", THREADS, grown);
+           "(%d of the stacks they ran on still mapped)\n", THREADS, kept);
 }
 
 /* ---- a thread that ended, reached through its handle --------------------- */
