@@ -170,8 +170,9 @@ static void kernel_data_init(void)
     BRIDGE_MEM16(XBOX_KERNEL_DATA_BASE + KDATA_KRNL_VERSION + 4) = 5849;
     BRIDGE_MEM16(XBOX_KERNEL_DATA_BASE + KDATA_KRNL_VERSION + 6) = 0;
 
-    /* KeTickCount (ordinal 156) - initialized to current tick count.
-     * A background thread in main.c updates this every ~1ms. */
+    /* KeTickCount (ordinal 156) - initialized to current tick count. The
+     * kernel's timer thread moves it every millisecond from then on
+     * (kernel_timer.c). */
     BRIDGE_MEM32(XBOX_KERNEL_DATA_BASE + KDATA_TICK_COUNT) = GetTickCount();
 
     /* LaunchDataPage (ordinal 164).
@@ -7484,6 +7485,9 @@ void xbox_kernel_bridge_init(void)
         if (!started++)
             CloseHandle(CreateThread(NULL, 0, kernel_report_thread, NULL, 0, NULL));
     }
+    /* The kernel's clock, timers and interrupts, from now on, as the
+     * console's run from boot: not from the title's first KeSetTimer. */
+    kernel_timer_start();
 }
 
 /* ---- store watch: who writes a given piece of guest memory ------------------

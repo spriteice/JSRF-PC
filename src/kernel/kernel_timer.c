@@ -3,10 +3,11 @@
  *
  * Timer objects (KeInitializeTimerEx, KeSetTimer, KeSetTimerEx, and the
  * firing table KeCancelTimer drops a timer from), and the kernel's timer
- * thread: every millisecond it fires the timers that are due and runs their
- * DPCs, drains the DPC queue, and does the devices' periodic work in
- * kernel_bridge.c (the display and APU interrupts, the GPU's software
- * methods, and the freeze and file-device watches).
+ * thread, which starts with the kernel: every millisecond it moves
+ * KeTickCount, fires the timers that are due and runs their DPCs, drains the
+ * DPC queue, and does the devices' periodic work in kernel_bridge.c (the
+ * display and APU interrupts, the GPU's software methods, and the freeze and
+ * file-device watches).
  *
  * Moved out of kernel_bridge.c as it was, so that it can be linked and tested
  * on its own.
@@ -53,7 +54,7 @@ void bridge_KeInitializeTimerEx(void)
  * absolute due time is treated as immediate, which is wrong in principle and
  * has not come up in practice.
  *
- * ponytail: one thread, a fixed table, and a 10 ms tick, so a due time is late
+ * ponytail: one thread, a fixed table, and a 1 ms tick, so a due time is late
  * by up to a tick and a periodic timer drifts. Nothing here is scheduling
  * audio off a timer. A title that needs better wants the host's timer queue,
  * not a smaller sleep.
@@ -69,38 +70,34 @@ static XboxTimer g_timers[XBOX_MAX_TIMERS];
 static CRITICAL_SECTION g_timer_lock;
 static int g_timer_started;
 
+/* The thread's guest stack and TIB, which kernel_timer_start takes for it. */
+static uint32_t g_timer_esp, g_timer_tib;
+
 static DWORD WINAPI kernel_timer_thread(LPVOID unused)
 {
-    int slot = xbox_worker_stack_alloc();
-
     (void)unused;
-    if (slot < 0) {
-        fprintf(stderr, "  [KERNEL] timer thread has no worker stack; "
-                        "timer DPCs will not run\n");
-        fflush(stderr);
-        return 0;
-    }
-    g_esp = XBOX_WORKER_STACK_TOP(slot);
-    {
-        /* Its own TIB, for the same reason bridge_thread_main gives one to
-         * every worker: a DPC routine with an SEH prologue reads fs:[0],
-         * and a thread whose g_fs_base is zero faults inside the runtime
-         * before the routine runs. */
-        uint32_t tib = xbox_AllocThreadTib();
-        if (!tib) {
-            fprintf(stderr, "  [KERNEL] timer thread has no TIB; "
-                            "timer DPCs will not run\n");
-            fflush(stderr);
-            return 0;
-        }
-        g_fs_base = tib;
-    }
+    g_esp = g_timer_esp;
+    g_fs_base = g_timer_tib;
 
     for (;;) {
         long long now;
         int i;
 
         Sleep(1);
+        /* KeTickCount, the console's millisecond clock, which the XDK's
+         * GetTickCount reads. The console's clock interrupt moves it every
+         * millisecond whatever else is running, so this thread does, first
+         * on each pass and from the clock its interrupts and timers use.
+         *
+         * It was written at the bottom of the GPU thread's loop, so it moved
+         * a frame at a time and stood still through a long frame, such as a
+         * shader build. Before that it was written once and left frozen,
+         * which broke every timeout that polls it: Halo's DHCP setup waits
+         * on a tick deadline that never came and spun forever bringing up
+         * XNet. One writer and an aligned store, so no lock; atomic, so the
+         * guest's reads on other threads see it. */
+        __atomic_store_n(&BRIDGE_MEM32(XBOX_KERNEL_DATA_BASE + KDATA_TICK_COUNT),
+                         (uint32_t)GetTickCount(), __ATOMIC_RELAXED);
         /*
          * RECOMP_TABLE_WATCH=<addr>,<bytes>,<stride>: catch a pointer table
          * going bad at the moment it goes bad.
@@ -198,16 +195,51 @@ static DWORD WINAPI kernel_timer_thread(LPVOID unused)
                 kernel_run_dpc(dpc, 0, 0);
         }
     }
+    return 0;   /* not reached: it runs until the engine exits */
 }
 
-/* Start the timer thread, once. */
+/* Start the timer thread, once: with the kernel (xbox_kernel_bridge_init),
+ * as the console's clock interrupt runs from boot. It started at the
+ * title's first KeSetTimer, so until a title set a timer nothing raised the
+ * display interrupt or ran DPCs. */
 void kernel_timer_start(void)
 {
-    if (!g_timer_started) {
-        InitializeCriticalSection(&g_timer_lock);
-        g_timer_started = 1;
-        CloseHandle(CreateThread(NULL, 0, kernel_timer_thread, NULL, 0, NULL));
+    int slot;
+
+    if (g_timer_started)
+        return;
+    InitializeCriticalSection(&g_timer_lock);
+    g_timer_started = 1;
+
+    /* Its guest stack and TIB are taken here, before it runs, not by the
+     * thread itself. It starts just as the thread that starts the title
+     * writes its first lines, and on Windows two threads' lines in the log
+     * mix character by character, so the TIB's line from the heap, written
+     * by the new thread, would come out mixed with "Entry point". Taken
+     * here, the lines come in order, and the TIB is always the heap's first
+     * block. */
+    slot = xbox_worker_stack_alloc();
+    if (slot < 0) {
+        fprintf(stderr, "  [KERNEL] timer thread has no worker stack; "
+                        "it doesn't start: no clock, timers or DPCs\n");
+        fflush(stderr);
+        return;
     }
+    g_timer_esp = XBOX_WORKER_STACK_TOP(slot);
+    /* Its own TIB, for the same reason bridge_thread_main gives one to
+     * every worker: a DPC routine with an SEH prologue reads fs:[0], and a
+     * thread whose g_fs_base is zero faults inside the runtime before the
+     * routine runs. */
+    g_timer_tib = xbox_AllocThreadTib();
+    if (!g_timer_tib) {
+        fprintf(stderr, "  [KERNEL] timer thread has no TIB; "
+                        "it doesn't start: no clock, timers or DPCs\n");
+        fflush(stderr);
+        return;
+    }
+    CloseHandle(CreateThread(NULL, 0, kernel_timer_thread, NULL, 0, NULL));
+    fprintf(stderr, "  Kernel timer thread: KeTickCount, timers, DPCs and "
+                    "device interrupts every millisecond\n");
 }
 
 /* Shared by KeSetTimer and KeSetTimerEx; period is 0 for the former. */
@@ -217,8 +249,6 @@ static void kernel_set_timer(uint32_t timer_va, long long due_100ns,
     long long delay_ms = (due_100ns < 0) ? (-due_100ns) / 10000 : 0;
     int i, free_slot = -1;
     uint32_t was_set = 0;
-
-    kernel_timer_start();
 
     EnterCriticalSection(&g_timer_lock);
     for (i = 0; i < XBOX_MAX_TIMERS; i++) {
