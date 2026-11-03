@@ -258,25 +258,16 @@ static LONG win32_priority_to_xbox(int priority)
  *
  * So Windows now does what the Mac and Linux builds always did: every guest
  * thread runs at normal priority, and the title reads back what it set.
- * RECOMP_THREAD_PRIORITIES=1 applies them as before, to compare.
  */
 #if defined(_WIN32)
 #define GUEST_PRIO_SLOTS 256
 static struct { DWORD tid; int prio; } g_guest_prio[GUEST_PRIO_SLOTS];
 static SRWLOCK g_guest_prio_lock = SRWLOCK_INIT;
 
-static int apply_priorities(void)
-{
-    static int v = -1;
-    if (v < 0) { const char *e = getenv("RECOMP_THREAD_PRIORITIES"); v = e && atoi(e) ? 1 : 0; }
-    return v;
-}
-
 static int guest_priority_get(HANDLE h)
 {
     DWORD tid = GetThreadId(h);
     int i, p = THREAD_PRIORITY_NORMAL;
-    if (apply_priorities()) return GetThreadPriority(h);
     AcquireSRWLockShared(&g_guest_prio_lock);
     for (i = 0; i < GUEST_PRIO_SLOTS; i++)
         if (g_guest_prio[i].tid == tid) { p = g_guest_prio[i].prio; break; }
@@ -288,7 +279,6 @@ static void guest_priority_set(HANDLE h, int prio)
 {
     DWORD tid = GetThreadId(h);
     int i, free_slot = -1;
-    if (apply_priorities()) { SetThreadPriority(h, prio); return; }
     if (!tid) return;
     AcquireSRWLockExclusive(&g_guest_prio_lock);
     for (i = 0; i < GUEST_PRIO_SLOTS; i++) {

@@ -1288,13 +1288,10 @@ static BOOL s_dir_cs_init = FALSE;
  * FindFirstFile, so a failed one made an ADX stream zero bytes long -- the
  * stream "ended" before its first read, the tutorial music never started and
  * the DJ K scene waited forever on its voice track (a black screen). About
- * half the launches, depending on how the allocator reused the address.
- * RECOMP_DIR_KEEPCTX=1 restores the old behaviour for comparison. */
+ * half the launches, depending on how the allocator reused the address. */
 void xbox_dir_context_release(HANDLE FileHandle)
 {
-    static int keep = -1;
-    if (keep < 0) keep = getenv("RECOMP_DIR_KEEPCTX") ? 1 : 0;
-    if (keep || !s_dir_cs_init || !FileHandle) return;
+    if (!s_dir_cs_init || !FileHandle) return;
     EnterCriticalSection(&s_dir_cs);
     for (int i = 0; i < MAX_DIR_CONTEXTS; i++) {
         if (s_dir_contexts[i].handle != FileHandle) continue;

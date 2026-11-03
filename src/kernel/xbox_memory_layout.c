@@ -2659,16 +2659,14 @@ uint32_t xbox_ContiguousAlloc(uint32_t size, uint32_t alignment)
         return 0;
     }
     /* The alignment gap in front of an aligned block becomes a free block of
-     * its own, so a later small allocation can use it. RECOMP_CONTIG_NOGAPS=1
-     * leaves gaps unused, as the old bump allocator did. (For a while this
-     * defaulted to unused, on the suspicion that the audio side wrote past
-     * its blocks into the gaps and silenced the tutorial; the silence came
-     * from a file-size query failing -- see xbox_dir_context_release -- and
-     * happened with the gaps unused too.) */
-    { static int nogap = -1;
-      if (nogap < 0) nogap = getenv("RECOMP_CONTIG_NOGAPS") ? 1 : 0;
-      if (result > g_contig_next)
-          contig_insert(g_contig_block_count, g_contig_next, result - g_contig_next, nogap ? 0 : 1); }
+     * its own, so a later small allocation can use it, where the old bump
+     * allocator left gaps unused. (For a while this defaulted to unused, on
+     * the suspicion that the audio side wrote past its blocks into the gaps
+     * and silenced the tutorial; the silence came from a file-size query
+     * failing -- see xbox_dir_context_release -- and happened with the gaps
+     * unused too.) */
+    if (result > g_contig_next)
+        contig_insert(g_contig_block_count, g_contig_next, result - g_contig_next, 1);
     contig_insert(g_contig_block_count, result, size, 0);
     g_contig_next = result + size;
     if (g_contig_next > g_contig_high) g_contig_high = g_contig_next;
@@ -2697,11 +2695,6 @@ int xbox_ContiguousFree(uint32_t va)
         return i >= 0;   /* inside the window: not the heap's either */
     }
     size = g_contig_blocks[i].size;
-    /* RECOMP_CONTIG_NOREUSE=1: keep every block, as the bump allocator did.
-     * For telling whether a fault is caused by memory being reused. */
-    { static int noreuse = -1;
-      if (noreuse < 0) noreuse = getenv("RECOMP_CONTIG_NOREUSE") ? 1 : 0;
-      if (noreuse) { g_contig_nfree++; return 1; } }
     g_contig_blocks[i].free = 1;
     g_contig_blocks[i].serial = 0;
     g_contig_live -= size;

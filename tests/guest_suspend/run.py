@@ -120,7 +120,7 @@ with tempfile.TemporaryDirectory(prefix="guest_suspend-") as directory:
                     "-x", "c", "-", "-x", "none", compat, "-lm", "-o", exe],
                    cwd=root, input=source, text=True, check=True)
     env = {k: v for k, v in os.environ.items()
-           if k not in ("RECOMP_SUSPEND_REAL", "RECOMP_SUSPEND_STRICT")}
+           if k not in ("RECOMP_SUSPEND_REAL",)}
     try:
         run = subprocess.run([exe], env=env, capture_output=True, text=True, timeout=60)
     except subprocess.TimeoutExpired:

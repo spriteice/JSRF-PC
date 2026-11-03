@@ -10082,8 +10082,8 @@ static void pace_sleep(const struct timespec *ts)
  * absolute time, which the slices before it cannot push later, and the spin
  * starts at 0.3 ms. A sleep that ends within a quarter of the spin's start
  * widens it at once, to what that sleep overran by and 0.2 ms more (1.2 ms at
- * most); it narrows back by 2 us a frame. RECOMP_PACE_SPIN_US fixes it
- * instead (1200: as before). Windows and macOS keep 1.2 ms. */
+ * most); it narrows back by 2 us a frame. RECOMP_PACE_SPIN_US=<us> fixes it
+ * instead. Windows and macOS keep 1.2 ms. */
 #if defined(__linux__)
 #include <errno.h>
 #define PACE_ABSOLUTE 1
@@ -12007,13 +12007,8 @@ static void gl_method(uint32_t method, uint32_t param)
              * to the wrong words. Paced, the two stay together. (Those
              * frames copy into a display buffer, so they are shown above
              * now, and present() paces them the same way.) */
-            static int pace_nodraw = -1;   /* RECOMP_PACE_NODRAW=0: the old way, for A/B */
-            if (pace_nodraw < 0) {
-                const char *v = getenv("RECOMP_PACE_NODRAW");
-                pace_nodraw = v ? atoi(v) : 1;
-            }
             fliplog("stall(nodraw)");
-            if (pace_nodraw) frame_pace();
+            frame_pace();
         }
         break;
     default:

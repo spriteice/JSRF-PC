@@ -3778,7 +3778,7 @@ static void bridge_NtSuspendThread(void)
             fflush(stderr);
         }
 
-        /* Report success anyway, unless asked not to.
+        /* Report success anyway.
          *
          * This is a workaround and worth being honest about. The handle the
          * title passes here does not resolve to a thread object -- often it
@@ -3798,15 +3798,10 @@ static void bridge_NtSuspendThread(void)
          * What it does NOT do is fix the real defect, which is upstream: that
          * handle should have been a valid thread. Whoever picks this up should
          * find who produced it -- most likely a thread creation that never
-         * wrote its handle back -- and then this can go. RECOMP_SUSPEND_STRICT=1
-         * restores the honest failure for that investigation. */
-        { static int strict = -1;
-          if (strict < 0) strict = getenv("RECOMP_SUSPEND_STRICT") ? 1 : 0;
-          if (!strict) {
-              if (count_va) BRIDGE_MEM32(count_va) = 0;
-              g_eax = 0;   /* STATUS_SUCCESS */
-              return;
-          } }
+         * wrote its handle back -- and then this can go. */
+        if (count_va) BRIDGE_MEM32(count_va) = 0;
+        g_eax = 0;   /* STATUS_SUCCESS */
+        return;
     }
     g_eax = (uint32_t)st;
 }
@@ -5813,7 +5808,7 @@ static int kernel_raise_interrupt_here(uint32_t vector)
  * count ends the wait as soon as the woken thread is in.
  * RECOMP_HANDOFF_US is now the longest it waits (1000), because a queued
  * thread that cannot run -- one suspended inside its wait -- must not
- * hold up the rest; 0 still restores the old behaviour.
+ * hold up the rest.
  */
 static void guest_lock_hand_over(int even_if_none_queued,
                                  unsigned long *handoffs, unsigned long *timeouts)
@@ -5822,11 +5817,10 @@ static void guest_lock_hand_over(int even_if_none_queued,
     xbox_guest_lock_release();
     { static long handoff = -1;
       if (handoff < 0) { const char *e = getenv("RECOMP_HANDOFF_US");
-                         handoff = e ? atol(e) : 1000; if (handoff < 0) handoff = 0;
+                         handoff = e ? atol(e) : 0; if (handoff <= 0) handoff = 1000;
                          if (handoff > 1000000) handoff = 1000000; }
-      if (handoff && (even_if_none_queued
-                      || __atomic_load_n(&g_xbox_guest_cpu_preempt,
-                                         __ATOMIC_RELAXED) > 0)) {
+      if (even_if_none_queued
+          || __atomic_load_n(&g_xbox_guest_cpu_preempt, __ATOMIC_RELAXED) > 0) {
           LARGE_INTEGER freq, t0, t;
           long long limit;
           __atomic_add_fetch(handoffs, 1, __ATOMIC_RELAXED);
