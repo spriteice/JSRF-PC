@@ -2531,8 +2531,6 @@ void *xbox_McpxPlainAt(uint32_t va, uint32_t bytes)
  * whole 8 MB is gone. Xbox VAs, not host memory: recompiled code addresses its
  * stack through MEM32() like any other Xbox pointer.
  */
-uint32_t xbox_HeapAlloc(uint32_t size, uint32_t alignment);
-
 #define XBOX_THREAD_STACK_SIZE  (512 * 1024)
 #define XBOX_MAX_THREAD_STACKS  8
 
@@ -2582,7 +2580,7 @@ uint32_t xbox_AllocThreadTib(void)
 
     total = g_tls_total;
     tib = xbox_HeapAlloc(tib_size + total + g_tls_thread_size
-                         + ctx_size + rw_size, 16);
+                         + ctx_size + rw_size, 16, XBOX_HEAP_RUNTIME);
     if (!tib)
         return 0;
     block       = tib + tib_size;
@@ -2639,7 +2637,7 @@ uint32_t xbox_AllocThreadStack(void)
      * taking slices from it is correct for any image size instead of only
      * for small ones.
      */
-    base = xbox_HeapAlloc(XBOX_THREAD_STACK_SIZE, 4096);
+    base = xbox_HeapAlloc(XBOX_THREAD_STACK_SIZE, 4096, XBOX_HEAP_RUNTIME);
     if (!base)
         return 0;
     g_thread_stacks_used++;
@@ -2666,7 +2664,7 @@ void xbox_FreeThreadStack(uint32_t stack_top)
 {
     if (!stack_top)
         return;
-    xbox_HeapFree(stack_top + 16 - XBOX_THREAD_STACK_SIZE);
+    xbox_HeapFree(stack_top + 16 - XBOX_THREAD_STACK_SIZE, XBOX_HEAP_RUNTIME);
     if (g_thread_stacks_used > 0)
         g_thread_stacks_used--;
 }

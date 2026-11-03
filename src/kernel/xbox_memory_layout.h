@@ -462,16 +462,52 @@ extern RECOMP_TLS uint32_t g_fs_base;
 void xbox_HeapInit(void);
 
 /**
- * Allocate from the Xbox heap. Returns an Xbox VA, or 0 on failure.
- * Alignment must be a power of 2 (minimum 4).
- * Thread-safe: no (single-threaded recompiled code).
+ * The call a heap block is allocated or released through, so that the guard
+ * (RECOMP_HEAP_GUARD, xbox_heap.c) can say when a block is released through
+ * another call than the one it came from. The runtime's own are its thread
+ * stacks, TIBs and launch page; the pool's include the string buffers
+ * RtlAnsiStringToUnicodeString and its twin allocate, as on the console.
+ * MmFreeContiguousMemory releases into the heap only what is not the
+ * contiguous window's, and allocates nothing from it.
  */
-uint32_t xbox_HeapAlloc(uint32_t size, uint32_t alignment);
+typedef enum XboxHeapCall {
+    XBOX_HEAP_RUNTIME,      /* the runtime itself */
+    XBOX_HEAP_POOL,         /* ExAllocatePool(WithTag), ExFreePool */
+    XBOX_HEAP_VIRTUAL,      /* NtAllocateVirtualMemory, NtFreeVirtualMemory */
+    XBOX_HEAP_SYSTEM,       /* MmAllocateSystemMemory, MmFreeSystemMemory */
+    XBOX_HEAP_KERNEL_STACK, /* MmCreateKernelStack, MmDeleteKernelStack */
+    XBOX_HEAP_IO_SPACE,     /* MmMapIoSpace, MmUnmapIoSpace */
+    XBOX_HEAP_DEVICE,       /* IoCreateDevice, IoDeleteDevice */
+    XBOX_HEAP_CONTIGUOUS,   /* MmFreeContiguousMemory */
+    XBOX_HEAP_CALLS
+} XboxHeapCall;
 
 /**
- * Free a block from the Xbox heap. Currently a no-op (bump allocator).
+ * Allocate from the Xbox heap through a call. Returns an Xbox VA, or 0 on
+ * failure. Alignment must be a power of 2 (minimum 4). Thread-safe: the heap
+ * has a lock of its own.
  */
-void xbox_HeapFree(uint32_t xbox_va);
+uint32_t xbox_HeapAlloc(uint32_t size, uint32_t alignment, XboxHeapCall call);
+
+/**
+ * Give a block back to the Xbox heap through a call: free space for the next
+ * allocation, or held for a while with the guard on. An address that is not
+ * a live block's start is ignored (and said, with the guard on).
+ */
+void xbox_HeapFree(uint32_t xbox_va, XboxHeapCall call);
+
+/**
+ * Nonzero when RECOMP_HEAP_GUARD was set at xbox_HeapInit.
+ */
+int xbox_HeapGuardOn(void);
+
+/**
+ * For the fault handlers (port/main.c): a fault at native address `native`,
+ * a read (0), a write (1) or either (2), from host code `where`. Returns 1
+ * when the guard has dealt with it and the faulting access can run again,
+ * 0 when it is not the guard's.
+ */
+int xbox_HeapGuardFault(uintptr_t native, int access, const char *where);
 
 /**
  * Bytes remaining in the heap block containing this guest address, or 0 if the

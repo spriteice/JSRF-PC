@@ -10,6 +10,9 @@
  * "locked" runs the heap with its lock, "unlocked" without it: the heap's
  * file is built with its lock calls named heap_lock_enter and
  * heap_lock_leave (run.py), which pass on to the lock only when it is on.
+ * run.py runs "locked" with the heap guard on too (RECOMP_HEAP_GUARD), which
+ * holds each released block with its pages' access taken away, so the
+ * guest's memory is whole pages of its own, as the runtime's is.
  */
 #include "kernel.h"
 #include <pthread.h>
@@ -19,13 +22,14 @@
 #include "xbox_memory_layout.h"
 #include "kernel_bridge.h"
 
-/* What the runtime gives the heap: the guest's memory, its size, and the
- * calling thread's guest stack. */
+/* What the runtime gives the heap: the guest's memory, its size, the
+ * calling thread's guest stack (none here), and where the game's code is. */
 RECOMP_TLS uint32_t g_esp;
 ptrdiff_t g_xbox_mem_offset;
 size_t g_xbox_total_ram = 0x04000000u;   /* the heap runs to 64 MB */
 size_t g_xbox_map_size;
 size_t xbox_GetMappedSize(void) { return g_xbox_total_ram; }
+uint32_t g_xbox_code_lo, g_xbox_code_hi;
 
 static int s_locked;
 void heap_lock_enter(LPCRITICAL_SECTION cs);
@@ -73,14 +77,14 @@ static void *worker(void *arg)
                 break;
             }
             if (live[k].size >= 512 * 1024) big--;
-            xbox_HeapFree(live[k].va);
+            xbox_HeapFree(live[k].va, XBOX_HEAP_POOL);
             live[k] = live[--n];
             continue;
         }
         if (r % 64 == 0 && big < 2) { size = 512 * 1024; align = 4096; }
         else if (r % 8 == 0) size = 4500;
         else size = 16 + next_random(&x) % 4096;
-        live[n].va = xbox_HeapAlloc(size, align);
+        live[n].va = xbox_HeapAlloc(size, align, XBOX_HEAP_POOL);
         if (!live[n].va) continue;
         live[n].size = size;
         live[n].fill = (unsigned char)(1 + (t * 61 + i) % 255);
@@ -95,13 +99,13 @@ int main(int argc, char **argv)
 {
     pthread_t threads[THREADS];
     int t;
-    void *ram = calloc(1, XBOX_HEAP_TOP);
+    void *ram = VirtualAlloc(NULL, XBOX_HEAP_TOP, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
     if (!ram) { printf("heap_lock: no memory\n"); return 1; }
     s_locked = !(argc > 1 && !strcmp(argv[1], "unlocked"));
     g_xbox_mem_offset = (ptrdiff_t)ram;
     xbox_HeapInit();                            /* as xbox_MemoryLayoutInit does */
-    xbox_HeapFree(xbox_HeapAlloc(16, 16));      /* the settings, read once */
+    xbox_HeapFree(xbox_HeapAlloc(16, 16, XBOX_HEAP_POOL), XBOX_HEAP_POOL);  /* the settings, read once */
 
     for (t = 0; t < THREADS; t++)
         pthread_create(&threads[t], NULL, worker, (void *)(intptr_t)t);

@@ -99,9 +99,10 @@ Dear ImGui
 
 ## Developer
 
-- A new logging switch, an environment variable that only adds lines to the
-  log, also gets a row under Developer > Logging (`k_logging` in
-  `port/developer.c`).
+- A new logging switch, an environment variable that adds lines to the log,
+  or changes what the engine does only to find a bug and log it, as
+  RECOMP_HEAP_GUARD does, also gets a row under Developer > Logging
+  (`k_logging` in `port/developer.c`).
 - A new engine switch, an environment variable that changes what the engine
   does, to compare one way with the other, also gets a row under Developer >
   Engine switches (`k_engine`).

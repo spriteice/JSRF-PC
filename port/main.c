@@ -558,6 +558,26 @@ static void host_fault_regs(void *ctx, uintptr_t *pc, uintptr_t *sp)
 static void segv_handler(int sig, siginfo_t *si, void *ctx)
 {
     uintptr_t fault_addr = (uintptr_t)si->si_addr;
+    /* RECOMP_HEAP_GUARD: a block the game released has no access while the
+     * heap holds it (src/kernel/xbox_heap.c). A touch of it is said there,
+     * with the host code here, and the game carries on. */
+    if (sig == SIGSEGV && ctx && xbox_HeapGuardOn()) {
+        uintptr_t rip, rsp_unused;
+        Dl_info di;
+        char where[160];
+        int access = 2;
+        host_fault_regs(ctx, &rip, &rsp_unused);
+#if defined(__linux__) && defined(__x86_64__)
+        access = (((ucontext_t *)ctx)->uc_mcontext.gregs[REG_ERR] & 2) ? 1 : 0;
+#endif
+        if (dladdr((void *)rip, &di) && di.dli_sname)
+            snprintf(where, sizeof where, "%s+0x%lx", di.dli_sname,
+                     (unsigned long)(rip - (uintptr_t)di.dli_saddr));
+        else
+            snprintf(where, sizeof where, "native %p", (void *)rip);
+        if (xbox_HeapGuardFault(fault_addr, access, where))
+            return;
+    }
     if (g_protect_data_armed && ctx) {
         uint32_t va = (uint32_t)(fault_addr - (uintptr_t)g_xbox_mem_offset);
         uint32_t alias_base;
@@ -680,6 +700,29 @@ static void exe_range(uintptr_t *lo, uintptr_t *hi)
     const IMAGE_NT_HEADERS *nt = (const IMAGE_NT_HEADERS *)(base + dos->e_lfanew);
     *lo = (uintptr_t)base;
     *hi = (uintptr_t)base + nt->OptionalHeader.SizeOfImage;
+}
+
+/* RECOMP_HEAP_GUARD: a block the game released has no access while the heap
+ * holds it (src/kernel/xbox_heap.c). A touch of it is said there, with the
+ * host code here, and the game carries on. A vectored handler, as the
+ * unhandled-exception filter below can only end the process. */
+static LONG WINAPI heap_guard_handler(EXCEPTION_POINTERS *ep)
+{
+    const EXCEPTION_RECORD *er = ep->ExceptionRecord;
+    uintptr_t lo, hi, rip = (uintptr_t)ep->ContextRecord->Rip;
+    char where[64];
+
+    if (er->ExceptionCode != EXCEPTION_ACCESS_VIOLATION || er->NumberParameters < 2)
+        return EXCEPTION_CONTINUE_SEARCH;
+    exe_range(&lo, &hi);
+    if (rip >= lo && rip < hi)
+        snprintf(where, sizeof where, "jsrf_recomp.exe+0x%llX", (unsigned long long)(rip - lo));
+    else
+        snprintf(where, sizeof where, "native %p", (void *)rip);
+    return xbox_HeapGuardFault((uintptr_t)er->ExceptionInformation[1],
+                               er->ExceptionInformation[0] <= 1
+                               ? (int)er->ExceptionInformation[0] : 2, where)
+           ? EXCEPTION_CONTINUE_EXECUTION : EXCEPTION_CONTINUE_SEARCH;
 }
 
 /* Every fault the process does not handle itself ends here, on whichever
@@ -863,6 +906,11 @@ static int host_main(void)
 
     g_xbox_mem_offset = xbox_GetMemoryOffset();
     printf("Xbox memory mapped. Offset: 0x%llX\n", (unsigned long long)g_xbox_mem_offset);
+#if defined(_WIN32)
+    /* The heap guard's faults, first, before anything sees them. */
+    if (xbox_HeapGuardOn())
+        AddVectoredExceptionHandler(1, heap_guard_handler);
+#endif
 
     /* Step 3: Initialize Xbox kernel */
     printf("Initializing Xbox kernel replacement...\n");

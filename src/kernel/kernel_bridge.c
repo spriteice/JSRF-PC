@@ -195,7 +195,7 @@ static void kernel_data_init(void)
         const char *cmdline = getenv("RECOMP_CMDLINE");
 
         if (cmdline && *cmdline) {
-            uint32_t page = xbox_HeapAlloc(0x1000 + 0x0C00, 4096);
+            uint32_t page = xbox_HeapAlloc(0x1000 + 0x0C00, 4096, XBOX_HEAP_RUNTIME);
             if (page) {
                 size_t n = strlen(cmdline);
                 size_t i;
@@ -704,7 +704,7 @@ static void bridge_MmAllocateSystemMemory(void)
         g_eax = 0;
         return;
     }
-    xbox_va = xbox_HeapAlloc(size, 4096);
+    xbox_va = xbox_HeapAlloc(size, 4096, XBOX_HEAP_SYSTEM);
     if (xbox_va)
         memset((void *)((uintptr_t)xbox_va + g_xbox_mem_offset), 0, size);
     else
@@ -787,7 +787,7 @@ static void bridge_MmFreeContiguousMemory(void)
      * silently kept every one of them: JSRF's D3D frees its textures here on
      * every stage change, and after the tutorial the window was full. */
     if (!xbox_ContiguousFree(addr))
-        xbox_HeapFree(addr);
+        xbox_HeapFree(addr, XBOX_HEAP_CONTIGUOUS);
     g_eax = 0;
 }
 
@@ -909,7 +909,7 @@ static void bridge_NtAllocateVirtualMemory(void)
      * two. This clamp is enough for a title that reserves generously and
      * commits little, and it fails loudly and later rather than silently and
      * at startup if one does not. */
-    uint32_t xbox_va = xbox_HeapAlloc(size, 4096);
+    uint32_t xbox_va = xbox_HeapAlloc(size, 4096, XBOX_HEAP_VIRTUAL);
     if (!xbox_va && (alloc_type & 0x2000) && !(alloc_type & 0x1000)) {
         /* A pure reservation too big for the heap. Take it from the mapped
          * space above RAM, where it costs no heap and the pages are distinct.
@@ -933,7 +933,7 @@ static void bridge_NtAllocateVirtualMemory(void)
         uint32_t want = size;
         while (want > 0x10000 && !xbox_va) {
             want /= 2;
-            xbox_va = xbox_HeapAlloc(want, 4096);
+            xbox_va = xbox_HeapAlloc(want, 4096, XBOX_HEAP_VIRTUAL);
         }
         if (xbox_va) {
             fprintf(stderr, "  [KERNEL] NtAllocateVirtualMemory: reserve of %u "
@@ -1059,7 +1059,7 @@ static void bridge_NtFreeVirtualMemory(void)
         if (blk) {
             DWORD old;
             VirtualProtect((void *)XBOX_TO_NATIVE(base), blk, PAGE_READWRITE, &old);
-            xbox_HeapFree(base);
+            xbox_HeapFree(base, XBOX_HEAP_VIRTUAL);
             if (base_ptr) BRIDGE_MEM32(base_ptr) = 0;
             if (size_ptr) BRIDGE_MEM32(size_ptr) = blk;
             g_eax = 0;
@@ -1072,11 +1072,14 @@ static void bridge_NtFreeVirtualMemory(void)
          * VirtualFree says yes to anything. Neither this nor the console can
          * tell a pointer kept after its release from a block handed out
          * again since, so a title's own double releases are fixed in its
-         * code (JSRF's in port/resource_load.c). */
+         * code (JSRF's in port/resource_load.c). The heap is still told: it
+         * ignores the release, but with RECOMP_HEAP_GUARD on it says where
+         * this one and the first came from. */
         if (xbox_HeapIsFreeSpace(base)) {
             if (KERNEL_LOG_ON())
                 fprintf(stderr, "  [KERNEL] NtFreeVirtualMemory: MEM_RELEASE of 0x%08X,"
                                 " %s\n", base, xbox_HeapDescribe(base));
+            xbox_HeapFree(base, XBOX_HEAP_VIRTUAL);
             g_eax = 0xC00000A0u;   /* STATUS_MEMORY_NOT_ALLOCATED */
             return;
         }
@@ -1324,7 +1327,7 @@ static void bridge_HalReturnToFirmware(void)
 static void bridge_ExAllocatePool(void)
 {
     uint32_t size = STACK_ARG(0);
-    uint32_t xbox_va = xbox_HeapAlloc(size, 16);
+    uint32_t xbox_va = xbox_HeapAlloc(size, 16, XBOX_HEAP_POOL);
 
     if (KERNEL_LOG_ON()) {
         fprintf(stderr, "  [KERNEL] ExAllocatePool: size=%u → Xbox VA 0x%08X\n",
@@ -1339,7 +1342,7 @@ static void bridge_ExAllocatePoolWithTag(void)
 {
     uint32_t size = STACK_ARG(0);
     uint32_t tag = STACK_ARG(1);
-    uint32_t xbox_va = xbox_HeapAlloc(size, 16);
+    uint32_t xbox_va = xbox_HeapAlloc(size, 16, XBOX_HEAP_POOL);
 
     if (KERNEL_LOG_ON()) {
         fprintf(stderr, "  [KERNEL] ExAllocatePoolWithTag: size=%u tag='%c%c%c%c' → Xbox VA 0x%08X\n",
@@ -3937,7 +3940,7 @@ static void bridge_MmMapIoSpace(void)
     uint32_t phys_addr = STACK_ARG(0);
     uint32_t num_bytes = STACK_ARG(1);
     uint32_t protect = STACK_ARG(2);
-    uint32_t xbox_va = xbox_HeapAlloc(num_bytes, 4096);
+    uint32_t xbox_va = xbox_HeapAlloc(num_bytes, 4096, XBOX_HEAP_IO_SPACE);
 
     fprintf(stderr, "  [KERNEL] MmMapIoSpace: phys=0x%08X size=%u → Xbox VA 0x%08X\n",
             phys_addr, num_bytes, xbox_va);
@@ -4005,7 +4008,7 @@ static void bridge_AvSendTVEncoderOption(void)
  * through the block table and takes the raw 32-bit guest VA. */
 static void bridge_ExFreePool(void)
 {
-    xbox_HeapFree(STACK_ARG(0));
+    xbox_HeapFree(STACK_ARG(0), XBOX_HEAP_POOL);
     g_eax = 0;
 }
 
@@ -4049,7 +4052,7 @@ static void bridge_IoCreateDevice(void)
         return;
     }
 
-    object_va = xbox_HeapAlloc(XBOX_DEVICE_OBJECT_SIZE + extension_size, 16);
+    object_va = xbox_HeapAlloc(XBOX_DEVICE_OBJECT_SIZE + extension_size, 16, XBOX_HEAP_DEVICE);
     if (!object_va) {
         g_eax = 0xC000009Au;   /* STATUS_INSUFFICIENT_RESOURCES */
         return;
@@ -4427,7 +4430,7 @@ static void bridge_ExSaveNonVolatileSetting(void)
  * matches against the block table and takes the raw 32-bit guest VA. */
 static void bridge_MmUnmapIoSpace(void)
 {
-    xbox_HeapFree(STACK_ARG(0));
+    xbox_HeapFree(STACK_ARG(0), XBOX_HEAP_IO_SPACE);
     g_eax = 0;
 }
 
@@ -4439,7 +4442,7 @@ static void bridge_MmUnmapIoSpace(void)
  * never saw. */
 static void bridge_IoDeleteDevice(void)
 {
-    xbox_HeapFree(STACK_ARG(0));
+    xbox_HeapFree(STACK_ARG(0), XBOX_HEAP_DEVICE);
     g_eax = 0;
 }
 
@@ -4912,7 +4915,7 @@ static void bridge_MmLockUnlockPhysicalPage(void)
  * seen this address. */
 static void bridge_MmFreeSystemMemory(void)
 {
-    xbox_HeapFree(STACK_ARG(0));
+    xbox_HeapFree(STACK_ARG(0), XBOX_HEAP_SYSTEM);
     g_eax = 0;
 }
 
@@ -4925,14 +4928,14 @@ static void bridge_MmFreeSystemMemory(void)
 static void bridge_MmCreateKernelStack(void)
 {
     uint32_t size = STACK_ARG(0);
-    uint32_t base_va = xbox_HeapAlloc(size, 16);
+    uint32_t base_va = xbox_HeapAlloc(size, 16, XBOX_HEAP_KERNEL_STACK);
 
     g_eax = base_va ? base_va + size : 0;
 }
 
 static void bridge_MmDeleteKernelStack(void)
 {
-    xbox_HeapFree(STACK_ARG(1));
+    xbox_HeapFree(STACK_ARG(1), XBOX_HEAP_KERNEL_STACK);
     g_eax = 0;
 }
 
@@ -5061,7 +5064,7 @@ static void bridge_RtlAnsiStringToUnicodeString(void)
 
     d_max = BRIDGE_MEM16(dst_va + 2);
     if (do_alloc) {
-        d_buf_va = xbox_HeapAlloc(unicode_bytes, 16);
+        d_buf_va = xbox_HeapAlloc(unicode_bytes, 16, XBOX_HEAP_POOL);
         if (!d_buf_va) {
             g_eax = 0xC0000017u;   /* STATUS_NO_MEMORY */
             return;
@@ -5117,7 +5120,7 @@ static void bridge_RtlUnicodeStringToAnsiString(void)
 
     d_max = BRIDGE_MEM16(dst_va + 2);
     if (do_alloc) {
-        d_buf_va = xbox_HeapAlloc(ansi_bytes, 16);
+        d_buf_va = xbox_HeapAlloc(ansi_bytes, 16, XBOX_HEAP_POOL);
         if (!d_buf_va) {
             g_eax = 0xC0000017u;
             return;

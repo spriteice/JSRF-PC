@@ -105,6 +105,11 @@ menu.
 - **Developer:** Settings for testing and bug reports.
   - **Log to file:** Stops or starts writing to `last-run.log` at once.
   - **Logging:** The engine's diagnostic logs, for bug reports.
+    RECOMP_HEAP_GUARD logs the game's mistakes with the memory it releases,
+    and where in the game's code each one is: a block released twice, used
+    after its release, or released through the wrong call. While it is on,
+    the memory the game releases is kept back, out of reach, until the game
+    needs that space again; where the game's memory goes doesn't change.
   - **Engine switches:** Turn parts of the engine off, or back to how they
     were, to compare.
   - **Performance:** What the engine does for speed, each on by default

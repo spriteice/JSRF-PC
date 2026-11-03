@@ -46,8 +46,9 @@ extern int  nv_window_file_get(const char *file, const char *key, int def);
 extern void nv_window_file_set(const char *file, const char *key, int val);
 #define DEV_FILE "developer.cfg"
 
-/* The switches: Developer > Logging's, each of which only adds lines to the
- * log, then Developer > Engine switches', each of which changes what the
+/* The switches: Developer > Logging's, each of which adds lines to the log,
+ * or changes what the engine does only to find a bug and log it (the heap
+ * guard), then Developer > Engine switches', each of which changes what the
  * engine does, then Developer > Performance's, each of which changes what the
  * engine does for speed, then Developer > Experimental's, each of which
  * changes what the game does. A switch is ticked to give its variable the
@@ -84,6 +85,7 @@ static const DevSwitch k_logging[] = {
     { "RECOMP_GL_TIMELINE", "1" },          /* a frame's surfaces and skinned draws, every 5 s */
     { "RECOMP_GL_UNHANDLED", "1" },
     { "RECOMP_GL_VERBOSE", "1" },
+    { "RECOMP_HEAP_GUARD", "1" },           /* released memory held, and its misuse said (src/kernel/xbox_heap.c) */
     { "RECOMP_KERNEL_IO", "1" },
     { "RECOMP_LOCK_WATCH", "1" },
     { "RECOMP_USB_TRACE", "1" },
