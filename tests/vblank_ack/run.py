@@ -2,9 +2,9 @@
 drive them without the game.
 
 Takes vblank_intr_tick and xbox_nv2a_vblank_service from
-src/kernel/xbox_memory_layout.c, and xbox_GuestCpuPreempt and
-kernel_vblank_tick from src/kernel/kernel_bridge.c, verbatim, with the
-registers and bits the bridge raises a vblank with. Requires GCC on PATH,
+src/kernel/xbox_memory_layout.c, xbox_GuestCpuPreempt from
+src/kernel/kernel_bridge.c, and kernel_vblank_tick from src/kernel/nv2a_intr.c,
+verbatim, with the registers and bits the runtime raises a vblank with. Requires GCC on PATH,
 including MinGW on Windows, and POSIX threads (winpthreads there).
 CC, when set, is the compiler instead of gcc.
 """
@@ -21,6 +21,7 @@ layout = (root / "src/kernel/xbox_memory_layout.c").read_text(encoding="utf-8")
 header = (root / "src/kernel/xbox_memory_layout.h").read_text(encoding="utf-8")
 bridge = (root / "src/kernel/kernel_bridge.c").read_text(encoding="utf-8")
 shared = (root / "src/kernel/kernel_bridge.h").read_text(encoding="utf-8")
+intr = (root / "src/kernel/nv2a_intr.c").read_text(encoding="utf-8")
 
 
 def define(text, name):
@@ -31,8 +32,8 @@ vblank = layout[layout.index("static void vblank_intr_tick(volatile uint32_t *re
                 layout.index("static DWORD WINAPI nv2a_ack_thread")]
 preempt = bridge[bridge.index("void xbox_GuestCpuPreempt(uint32_t va)\n{"):
                  bridge.index("/* Give the guest lock up across a wait that is not a kernel call.")]
-raise_ = bridge[bridge.index("unsigned long g_vblank_count;"):
-                bridge.index("/* The GPU's software methods, delivered.")]
+raise_ = intr[intr.index("unsigned long g_vblank_count;"):
+              intr.index("/* The display interrupt's counts and PMC_INTR_EN_0 now")]
 source = ("""
 #define _POSIX_C_SOURCE 200809L
 #include <pthread.h>
@@ -44,11 +45,11 @@ source = ("""
 #define RECOMP_TLS
 #define DISPATCH_LEVEL 2
 #define APU_VECTOR 5u
-""" + define(header, "NV2A_VBLANK_PENDING_TAG") + define(bridge, "NV2A_PMC_INTR_0")
-          + define(bridge, "NV2A_PMC_INTR_PCRTC") + define(bridge, "NV2A_PCRTC_INTR_0")
-          + define(bridge, "NV2A_PCRTC_INTR_VBLANK") + define(layout, "NV2A_PMC_INTR_PGRAPH")
-          + define(shared, "BRIDGE_MEM32") + define(bridge, "XBOX_NV2A_REG_BASE")
-          + define(bridge, "NV2A_VECTOR") + """
+""" + define(header, "NV2A_VBLANK_PENDING_TAG") + define(intr, "NV2A_PMC_INTR_0")
+          + define(intr, "NV2A_PMC_INTR_PCRTC") + define(intr, "NV2A_PCRTC_INTR_0")
+          + define(intr, "NV2A_PCRTC_INTR_VBLANK") + define(layout, "NV2A_PMC_INTR_PGRAPH")
+          + define(shared, "BRIDGE_MEM32") + define(intr, "XBOX_NV2A_REG_BASE")
+          + define(intr, "NV2A_VECTOR") + """
 static void *g_nv2a_memory;
 static ptrdiff_t g_xbox_mem_offset;
 int xbox_nv2a_swm_on(void) { return 0; }

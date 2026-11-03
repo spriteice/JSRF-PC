@@ -5,9 +5,9 @@
  * firing table KeCancelTimer drops a timer from), and the kernel's timer
  * thread, which starts with the kernel: every millisecond it moves
  * KeTickCount, fires the timers that are due and runs their DPCs, drains the
- * DPC queue, and does the devices' periodic work in kernel_bridge.c (the
- * display and APU interrupts, the GPU's software methods, and the freeze and
- * file-device watches).
+ * DPC queue, and does the devices' periodic work: the display interrupt and
+ * the GPU's software methods (nv2a_intr.c), and the APU's interrupt and the
+ * freeze and file-device watches (kernel_bridge.c).
  *
  * Moved out of kernel_bridge.c as it was, so that it can be linked and tested
  * on its own.

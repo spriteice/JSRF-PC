@@ -5,8 +5,9 @@
  * The guest's registers and memory as a bridge sees them, the interrupt and
  * DPC code in kernel_interrupt.c, which the bridge's device ticks, timer
  * thread and ordinal table use, the file APCs in kernel_apc.c, which its
- * file requests queue and its alertable waits deliver, and the timers and
- * timer thread in kernel_timer.c, with the device ticks that thread runs.
+ * file requests queue and its alertable waits deliver, the timers and timer
+ * thread in kernel_timer.c, with the device ticks that thread runs, and the
+ * NV2A's interrupts in nv2a_intr.c.
  */
 #ifndef XBOX_KERNEL_BRIDGE_H
 #define XBOX_KERNEL_BRIDGE_H
@@ -114,9 +115,17 @@ void bridge_KeSetTimerEx(void);
 uint32_t xbox_dispatcher_signal(uint32_t va);
 /* The devices' periodic work, on every pass of the timer thread. */
 void kernel_freeze_watch(void);   /* has the picture stopped? */
-void kernel_vblank_tick(void);    /* the GPU's frame clock */
-void kernel_pgraph_tick(void);    /* the GPU's software methods */
 void kernel_apu_tick(void);       /* the APU's interrupt line */
 void kernel_cvfs_watch(void);     /* CRI's streaming file device */
+
+/* nv2a_intr.c */
+
+/* The NV2A's interrupts, on every pass of the timer thread. */
+void kernel_vblank_tick(void);    /* the GPU's frame clock */
+void kernel_pgraph_tick(void);    /* the GPU's software methods */
+/* The display interrupt: raised, claimed by the title's routine, declined
+ * since the last claim, and PMC_INTR_EN_0 now. */
+void kernel_vblank_counts(unsigned long *raised, unsigned long *claimed,
+                          unsigned long *declined_since_claim, uint32_t *enabled);
 
 #endif /* XBOX_KERNEL_BRIDGE_H */

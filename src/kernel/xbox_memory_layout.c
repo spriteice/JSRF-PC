@@ -794,7 +794,7 @@ static void vblank_intr_tick(volatile uint32_t *regs)
 
     /* Acknowledged (or never raised): complete it, but never the next one.
      * The timer thread raises it as this runs, PCRTC_INTR_0 first and then
-     * PMC_INTR_0 (kernel_vblank_tick in kernel_bridge.c). So each register
+     * PMC_INTR_0 (kernel_vblank_tick in nv2a_intr.c). So each register
      * is changed only if it still holds what was read, and PMC_INTR_0 only
      * if PCRTC_INTR_0, read after it, says no vblank is pending. Stored
      * whole, and PMC_INTR_0 cleared without that look, as this did, a vblank
@@ -805,7 +805,7 @@ static void vblank_intr_tick(volatile uint32_t *regs)
     /* Everything but a software method's PGRAPH bit, while they are
      * delivered: the timer thread raises it as this runs, and the title's
      * handler clears it once it has looked (kernel_pgraph_tick in
-     * kernel_bridge.c). Clearing the register whole unless one was in
+     * nv2a_intr.c). Clearing the register whole unless one was in
      * flight, as this did, wiped a bit raised between the question and the
      * store, and D3D slept for good on the NOP(5) it was waiting for. */
     m = __atomic_load_n(pmc, __ATOMIC_SEQ_CST);

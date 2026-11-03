@@ -2271,7 +2271,7 @@ void sub_001912A0(void)
  * long as that is not zero.
  *
  * The runtime delivers those software methods now (kernel_pgraph_tick in
- * xboxrecomp's kernel_bridge.c), and the register here is memory: the write
+ * xboxrecomp's nv2a_intr.c), and the register here is memory: the write
  * that would have cleared the bits keeps them, so the DPC would call this
  * again and again. What it read, it acknowledged; that is cleared once it
  * returns, PMC_INTR_0's PGRAPH bit goes with it, the return value is the

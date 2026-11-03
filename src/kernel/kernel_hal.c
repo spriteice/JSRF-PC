@@ -807,7 +807,7 @@ uint64_t xbox_ReadTimeStampCounter(void)
  * EA intro waited on its loading screen indefinitely. JSRF's ISR reads it at
  * 0x0018E500.
  *
- * The count is g_vblank_count (kernel_bridge.c), bumped once per tick by the
+ * The count is g_vblank_count (nv2a_intr.c), bumped once per tick by the
  * timer thread. Two regimes follow from it:
  *  - tick-driven (once the first vblank is counted): the pin is the
  *    count's parity and holds still between vblanks, however often it is

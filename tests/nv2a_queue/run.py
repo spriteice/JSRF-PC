@@ -12,7 +12,7 @@ and DMA_GET is at each command as it runs (D3D patches a NOP ahead of GET to
 be woken when the GPU reaches it, so GET must never be behind what the walk
 has read). Then D3D's wait for the GPU against the walk, and a wrap with most
 of a 512 KB ring behind it, all of which must be walked. Last, the wake-up
-itself: software methods raised the way src/kernel/kernel_bridge.c raises them
+itself: software methods raised the way src/kernel/nv2a_intr.c raises them
 (its queue and kernel_pgraph_tick, verbatim) and acknowledged by
 port/recomp_manual.c's sub_00194210 (verbatim), while the GPU thread above
 completes the interrupt registers (vblank_intr_tick, verbatim): none may be
@@ -37,7 +37,7 @@ layout = (root / "src/kernel/xbox_memory_layout.c").read_text(encoding="utf-8")
 mmio = (root / "src/kernel/kernel_mmio.c").read_text(encoding="utf-8")
 types = (root / "templates/runtime/recomp_types.h").read_text(encoding="utf-8")
 header = (root / "src/kernel/xbox_memory_layout.h").read_text(encoding="utf-8")
-bridge = (root / "src/kernel/kernel_bridge.c").read_text(encoding="utf-8")
+intr = (root / "src/kernel/nv2a_intr.c").read_text(encoding="utf-8")
 shared = (root / "src/kernel/kernel_bridge.h").read_text(encoding="utf-8")
 manual = (root / "port/recomp_manual.c").read_text(encoding="utf-8")
 
@@ -50,7 +50,7 @@ def define(text, name):
     return re.search(r"^#define " + name + r"\b.*$", text, re.M).group(0) + "\n"
 
 
-registers = define(shared, "BRIDGE_MEM32") + "".join(define(bridge, name) for name in (
+registers = define(shared, "BRIDGE_MEM32") + "".join(define(intr, name) for name in (
     "XBOX_NV2A_REG_BASE", "NV2A_PMC_INTR_0", "NV2A_PMC_INTR_PCRTC",
     "NV2A_PCRTC_INTR_0", "NV2A_PCRTC_INTR_VBLANK", "NV2A_VECTOR", "NV2A_PGRAPH_INTR",
     "NV2A_PGRAPH_NSOURCE", "NV2A_PGRAPH_TRAP_ADDR", "NV2A_PGRAPH_TRAP_DATA",
@@ -104,7 +104,7 @@ static void framebuffer_probe_tick(void) { }
 ptrdiff_t xbox_GetMemoryOffset(void);
 void xbox_Nv2aRegisterWritten(uint32_t addr, unsigned size);
 """ + registers
-          + cut(bridge, "static struct { uint32_t subch, param; } g_swm_q[SWM_QUEUE];", "/* The audio processor's interrupt, delivered.")
+          + intr[intr.index("static struct { uint32_t subch, param; } g_swm_q[SWM_QUEUE];"):]
           + cut(manual, "int nv2a_title_acks_pgraph(void) { return 1; }", "/* ---- sub_001910E0")
           + cut(layout, "#if !defined(_WIN32) || defined(XBOXRECOMP_WIN_GL)\n#include <pthread.h>",
                 "/*\n * NV2A busy-bit acknowledgement.")
