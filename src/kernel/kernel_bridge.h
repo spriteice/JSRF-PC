@@ -4,8 +4,9 @@
  *
  * The guest's registers and memory as a bridge sees them, the interrupt and
  * DPC code in kernel_interrupt.c, which the bridge's device ticks, timer
- * thread and ordinal table use, and the file APCs in kernel_apc.c, which its
- * file requests queue and its alertable waits deliver.
+ * thread and ordinal table use, the file APCs in kernel_apc.c, which its
+ * file requests queue and its alertable waits deliver, and the timers and
+ * timer thread in kernel_timer.c, with the device ticks that thread runs.
  */
 #ifndef XBOX_KERNEL_BRIDGE_H
 #define XBOX_KERNEL_BRIDGE_H
@@ -95,5 +96,27 @@ void deliver_one_apc(uint32_t apc_routine, uint32_t apc_context,
 /* Queue a file APC for this thread's next alertable wait. */
 void bridge_queue_apc(uint32_t apc_routine, uint32_t apc_context, uint32_t iostatus);
 int bridge_deliver_pending_apcs(void);
+
+/* kernel_timer.c */
+
+/* Start the kernel's timer thread, once. */
+void kernel_timer_start(void);
+/* Drop a timer so it stops firing. Returns whether it was armed. */
+int  xbox_kernel_cancel_timer(uint32_t timer_va);
+/* Bridges, for the ordinal table. */
+void bridge_KeInitializeTimerEx(void);
+void bridge_KeSetTimer(void);
+void bridge_KeSetTimerEx(void);
+
+/* kernel_bridge.c, for the timer thread */
+
+/* Signal a guest dispatcher object. Returns the previous state. */
+uint32_t xbox_dispatcher_signal(uint32_t va);
+/* The devices' periodic work, on every pass of the timer thread. */
+void kernel_freeze_watch(void);   /* has the picture stopped? */
+void kernel_vblank_tick(void);    /* the GPU's frame clock */
+void kernel_pgraph_tick(void);    /* the GPU's software methods */
+void kernel_apu_tick(void);       /* the APU's interrupt line */
+void kernel_cvfs_watch(void);     /* CRI's streaming file device */
 
 #endif /* XBOX_KERNEL_BRIDGE_H */

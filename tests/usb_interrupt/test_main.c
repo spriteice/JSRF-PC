@@ -5,8 +5,8 @@
  *
  * src/usb/ohci.c's controller thread raises its start-of-frame interrupt
  * every tick, and a timer thread raises the display's interrupt and drains
- * the DPCs, as kernel_bridge.c's does, both through src/kernel/
- * kernel_interrupt.c. A third thread stands in for the title, holding the
+ * the DPCs, as the kernel's does (src/kernel/kernel_timer.c), both through
+ * src/kernel/kernel_interrupt.c. A third thread stands in for the title, holding the
  * guest lock most of the time. Each interrupt routine queues a DPC with
  * KeInsertQueueDpc, as the game's do.
  *

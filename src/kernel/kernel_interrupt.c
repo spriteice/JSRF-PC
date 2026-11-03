@@ -5,8 +5,9 @@
  * KeConnectInterrupt), delivering an interrupt to the routine a title
  * connected (kernel_raise_interrupt), KeSynchronizeExecution, and the DPC
  * queue: KeInitializeDpc, KeInsertQueueDpc, KeRemoveQueueDpc, and the drain
- * the timer thread runs. The device models and the timer thread in
- * kernel_bridge.c raise interrupts and drain the queue through these.
+ * the timer thread runs. The device models, in kernel_bridge.c and
+ * elsewhere, and the timer thread in kernel_timer.c raise interrupts and
+ * drain the queue through these.
  *
  * Moved out of kernel_bridge.c as it was, so that it can be linked and tested
  * on its own.

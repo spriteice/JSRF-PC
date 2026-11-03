@@ -22,6 +22,7 @@ set(KERNEL_SOURCES
     kernel_bridge.c
     kernel_interrupt.c
     kernel_apc.c
+    kernel_timer.c
     xbox_memory_layout.c
     xbox_heap.c
     icall_feedback.c
