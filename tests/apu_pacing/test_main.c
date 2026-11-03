@@ -5,7 +5,9 @@
  * (throttle, verbatim), note when it ran, and every eighth frame send the
  * encode processor's 256 samples to the ring, as mcpx_apu_monitor_frame does.
  * The device is the SDL ring's fake sink (verbatim): 512 frames every
- * 10.7 ms. DirectSound waits for the next voice processor frame each time it
+ * 10.7 ms. With the argument "wall", there is no ring and no device, as with
+ * XAudio2 (xa2_ring_level is -1), and throttle paces by the wall clock.
+ * DirectSound waits for the next voice processor frame each time it
  * restarts a sound, so what matters is how long, from any moment, until the
  * next frame: the mean of that is the sum of the squared gaps over twice
  * their sum. */
@@ -26,7 +28,7 @@ static int by_value(const void *a, const void *b)
     return (x > y) - (x < y);
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     static MCPXAPUState state;
     static int64_t at[MAX_FRAMES], gap[MAX_FRAMES];
@@ -35,12 +37,15 @@ int main(void)
     int n = 0, first = -1, i, k = 0;
     uint32_t under0 = 0;
     int64_t t0, sum = 0, sq = 0;
+    int wall = argc > 1 && !strcmp(argv[1], "wall");
 
     (void)g_dev; (void)sa_callback;         /* the real device's side: not here */
     pthread_mutex_init(&d->lock, NULL);
     pthread_cond_init(&d->cond, NULL);
-    g_active = 1;
-    if (pthread_create(&g_fake_thread, NULL, sa_fake_sink, NULL) != 0) return 2;
+    if (!wall) {
+        g_active = 1;
+        if (pthread_create(&g_fake_thread, NULL, sa_fake_sink, NULL) != 0) return 2;
+    }
 
     pthread_mutex_lock(&d->lock);
     t0 = now_us();

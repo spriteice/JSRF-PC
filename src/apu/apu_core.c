@@ -529,15 +529,16 @@ void mcpx_apu_monitor_frame(MCPXAPUState *d)
  * 40 ms): it produces whenever the ring is below it and waits when it is
  * above, so the APU runs on the device's clock, a trap drains the ring
  * instead of repeating sound, and the frames are made up at once when it
- * clears. 0 = the wall clock, as before.
+ * clears. With no ring (XAudio2), or nothing pulling from it, the frame
+ * thread is paced by the wall clock (throttle).
  */
 static int ring_target_frames(void)
 {
     static int t = -1;
     if (t < 0) {
         const char *v = getenv("RECOMP_APU_RING_MS");
-        int ms = v ? atoi(v) : 40;
-        t = ms > 0 ? ms * 48 : 0;
+        int ms = v ? atoi(v) : 0;
+        t = (ms > 0 ? ms : 40) * 48;
     }
     return t;
 }
@@ -584,7 +585,7 @@ static void throttle(MCPXAPUState *d)
 {
     int64_t now_us = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
 
-    if (ring_target_frames() > 0 && xa2_ring_level() >= 0) {
+    if (xa2_ring_level() >= 0) {
         for (;;) {
             int since;
             if (ring_ahead(d, 0) < ring_target_frames()) break;   /* room: produce */
@@ -728,26 +729,19 @@ static void *mcpx_apu_frame_thread(void *arg)
          * voice processor keep running and their messages to the front end
          * queue up. So a TRAPPED front end now leaves the pipeline running
          * (the voice processor holds its idle-voice reports until the trap
-         * clears, apu_vp.c) -- RECOMP_APU_RUN_TRAPPED=0 stops it as before.
-         * HALTED is the title stopping the front end on purpose, and waits:
-         * nothing is produced until it resumes (the output ring covers the
-         * gap and the throttle makes the frames up), instead of repeats.
-         * RECOMP_APU_TRAP_RESEND=1: the old repeat-the-last-frame behaviour.
+         * clears, apu_vp.c). HALTED is the title stopping the front end on
+         * purpose, and waits: nothing is produced until it resumes (the
+         * output ring covers the gap and the throttle makes the frames up),
+         * instead of repeats.
          */
-        static int run_trapped = -1;
-        if (run_trapped < 0) { const char *v = getenv("RECOMP_APU_RUN_TRAPPED");
-                               run_trapped = v ? atoi(v) : 1; }
         {
-            static int resend = -1;
             int xm = GET_MASK(qatomic_read(&d->regs[NV_PAPU_SECTL]),
                               NV_PAPU_SECTL_XCNTMODE);
             uint32_t fc = qatomic_read(&d->regs[NV_PAPU_FECTL]);
             uint32_t mode = fc & NV_PAPU_FECTL_FEMETHMODE;
-            if (resend < 0) { const char *v = getenv("RECOMP_APU_TRAP_RESEND");
-                              resend = v ? atoi(v) : 0; }
-            if (!resend && xm != NV_PAPU_SECTL_XCNTMODE_OFF
+            if (xm != NV_PAPU_SECTL_XCNTMODE_OFF
                 && mode != NV_PAPU_FECTL_FEMETHMODE_FREE_RUNNING
-                && !(mode == NV_PAPU_FECTL_FEMETHMODE_TRAPPED && run_trapped)
+                && mode != NV_PAPU_FECTL_FEMETHMODE_TRAPPED
                 && !g_test_tone.active && !g_mixer_active_count) {
                 extern void mcpx_apu_dsp_ack_tick(MCPXAPUState *d);
                 int64_t t0 = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
@@ -775,7 +769,7 @@ static void *mcpx_apu_frame_thread(void *arg)
         uint32_t femode = fectl & NV_PAPU_FECTL_FEMETHMODE;
         bool apu_active = (xcntmode != NV_PAPU_SECTL_XCNTMODE_OFF) &&
                           (femode == NV_PAPU_FECTL_FEMETHMODE_FREE_RUNNING ||
-                           (femode == NV_PAPU_FECTL_FEMETHMODE_TRAPPED && run_trapped));
+                           femode == NV_PAPU_FECTL_FEMETHMODE_TRAPPED);
         if (apu_active) st_run_us = 0;
         if (st_on && apu_active && femode == NV_PAPU_FECTL_FEMETHMODE_TRAPPED)
             st_ran_trapped++;

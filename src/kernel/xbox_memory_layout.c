@@ -83,7 +83,6 @@ static void *g_nv2a_memory = NULL;
 /* MCPX southbridge register span: APU 0xFE800000 through NIC 0xFEF00000. */
 #define XBOX_MCPX_BASE 0xFE800000u
 #define XBOX_MCPX_SIZE (8u * 1024u * 1024u)
-#define XBOX_APU_REGS_SIZE 0x00080000u  /* the APU's own 512K at its start */
 static void *g_mcpx_memory = NULL;
 
 /* Flash ROM. The console's 256 KB flash is mirrored through the top of the
@@ -434,11 +433,6 @@ static const uint32_t MCPX_COUNTERS[] = {
 };
 
 static void *g_mcpx_regs = NULL;
-/* Set when the APU's registers are unmapped so they can be routed to the
- * emulated APU. Once that happens they are no longer plain memory, and the
- * counter ticking below must leave them alone -- writing through the pointer
- * faults, and the emulated APU owns those registers anyway. */
-static int g_apu_mmio_trapped = 0;
 
 /*
  * GPU completion fences the title waits on in guest memory rather than in the
@@ -897,7 +891,7 @@ static DWORD WINAPI nv2a_ack_thread(LPVOID param)
             }
         }
 
-        if (g_mcpx_regs && !g_apu_mmio_trapped) {
+        if (g_mcpx_regs) {
             for (size_t i = 0; i < sizeof(MCPX_COUNTERS) / sizeof(MCPX_COUNTERS[0]); i++) {
                 volatile uint32_t *c =
                     (volatile uint32_t *)((char *)g_mcpx_regs + MCPX_COUNTERS[i]);
@@ -2062,8 +2056,8 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
              * nothing clears it, and the poll reads it on the first pass. */
             #define MCPX_AC97_CODEC_STATUS 0x00400130u   /* 0xFEC00130 */
             #define MCPX_AC97_CODEC_READY  0x00000100u
-            /* On unless RECOMP_AC97_READY_NOTRAP=0. JSRF needs the codec
-             * reported ready, and every release has run with it.
+            /* JSRF needs the codec reported ready, and every release has run
+             * with it.
              *
              * The toolkit left it off, though it is the correct answer --
              * DSERR_NODRIVER is not what hardware returns -- because it is
@@ -2071,41 +2065,14 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
              * DSP a command block in RAM and spins until the DSP clears it, so
              * a title that waits there trades a late crash for an early hang:
              * 44 assets loaded and then a fault, versus one asset and a stall
-             * in audio init. RECOMP_APU_DSP_ACK answers that wait. */
-            const char *notrap = getenv("RECOMP_AC97_READY_NOTRAP");
-            if (notrap ? atoi(notrap) != 0 : 1) {
-                /* Codec-ready bit only, no MMIO trapping: for hosts without a
-                 * fault-based MMIO decoder (POSIX / ARM64). The DSP doorbell
-                 * is answered by RECOMP_APU_DSP_ACK instead. */
-                *(volatile uint32_t *)((char *)g_mcpx_memory
-                                       + MCPX_AC97_CODEC_STATUS)
-                    |= MCPX_AC97_CODEC_READY;
-                fprintf(stderr, "  AC97: codec reported ready (no MMIO trap)\n");
-            } else
-            if (getenv("RECOMP_AC97_READY")) {
-                /* The APU's registers have to fault so they can be routed to
-                 * the emulated APU, which is the half that answers the DSP
-                 * handshake. Backed as plain memory the guest's writes go
-                 * nowhere the APU can see, so it initialises and then waits
-                 * forever. Only the APU's own 512K is unmapped: AC'97 above it
-                 * stays plain memory, which is what the codec-ready bit needs.
-                 *
-                 * Enabled by the same variable, because neither half is any
-                 * use without the other. */
-                DWORD old_protect;
-                if (VirtualProtect((char *)g_mcpx_memory, 0x00080000u,
-                                   PAGE_NOACCESS, &old_protect))
-                    g_apu_mmio_trapped = 1;
-                if (g_apu_mmio_trapped)
-                    fprintf(stderr, "  APU: 0x%08X..0x%08X trapped for MMIO\n",
-                            XBOX_MCPX_BASE, XBOX_MCPX_BASE + 0x00080000u);
-                *(volatile uint32_t *)((char *)g_mcpx_memory
-                                       + MCPX_AC97_CODEC_STATUS)
-                    |= MCPX_AC97_CODEC_READY;
-                fprintf(stderr, "  AC97: codec reported ready at 0x%08X"
-                                " (DirectSound will initialise)\n",
-                        XBOX_MCPX_BASE + MCPX_AC97_CODEC_STATUS);
-            }
+             * in audio init. RECOMP_APU_DSP_ACK answers that wait.
+             *
+             * The APU's registers stay plain memory, untrapped: only the
+             * codec-ready bit is set. */
+            *(volatile uint32_t *)((char *)g_mcpx_memory
+                                   + MCPX_AC97_CODEC_STATUS)
+                |= MCPX_AC97_CODEC_READY;
+            fprintf(stderr, "  AC97: codec reported ready (no MMIO trap)\n");
             fprintf(stderr, "  MCPX device aperture: %u MB at Xbox VA "
                     "0x%08X (APU/AC97/USB/NIC, zeroed)\n",
                     XBOX_MCPX_SIZE / (1024 * 1024), XBOX_MCPX_BASE);
@@ -2393,8 +2360,6 @@ void *xbox_McpxPlainAt(uint32_t va, uint32_t bytes)
     uint64_t off = (uint64_t)va - XBOX_MCPX_BASE;
 
     if (!g_mcpx_memory || va < XBOX_MCPX_BASE || off + bytes > XBOX_MCPX_SIZE)
-        return NULL;
-    if (g_apu_mmio_trapped && off < XBOX_APU_REGS_SIZE)
         return NULL;
     return (char *)g_mcpx_memory + off;
 }

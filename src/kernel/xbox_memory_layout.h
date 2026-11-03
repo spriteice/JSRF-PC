@@ -228,9 +228,8 @@ ptrdiff_t xbox_GetMemoryOffset(void);
  * that came out of guest memory rather than from this side. */
 size_t xbox_GetMappedSize(void);
 /* The host memory behind guest [va, va + bytes) in the MCPX device
- * aperture, when it is plain memory there: NULL if the aperture isn't
- * mapped, if the range isn't all in it, or if it's in the APU's registers
- * and they are trapped (RECOMP_AC97_READY). */
+ * aperture: NULL if the aperture isn't mapped, or if the range isn't all
+ * in it. */
 void *xbox_McpxPlainAt(uint32_t va, uint32_t bytes);
 void xbox_ProtectMirrorsForDebug(void);
 

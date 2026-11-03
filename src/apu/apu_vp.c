@@ -1201,8 +1201,7 @@ static int voice_get_samples(MCPXAPUState *d, uint32_t v, float samples[][2],
  * Linear interpolation between the two source frames the output sample falls
  * between. xemu uses a sinc resampler and notes in the same breath that the
  * hardware may well be linear; linear costs nothing here and is a world away
- * from no resampling at all. RECOMP_APU_NO_RESAMPLE=1 restores the old
- * behaviour for comparison.
+ * from no resampling at all.
  * ============================================================ */
 
 /* The next source frame, refilling from the voice in chunks. Returns 0 when
@@ -1237,24 +1236,6 @@ static int voice_resample(MCPXAPUState *d, uint16_t v, float samples[][2],
     MCPXAPUVoiceFilter *filter = &d->vp.filters[v];
     float step;
     int i;
-
-    { static int off = -1;
-      if (off < 0) off = getenv("RECOMP_APU_NO_RESAMPLE") ? 1 : 0;
-      if (off) {
-          int sample_count = 0;
-          while (sample_count < requested_num) {
-              int active = voice_get_mask(d, v, NV_PAVS_VOICE_PAR_STATE,
-                                          NV_PAVS_VOICE_PAR_STATE_ACTIVE_VOICE);
-              int count;
-              if (!active) break;
-              count = voice_get_samples(d, v, &samples[sample_count],
-                                        requested_num - sample_count);
-              if (count < 0) break;
-              if (count == 0) return -1;
-              sample_count += count;
-          }
-          return sample_count;
-      } }
 
     /* Source frames consumed per output frame. Guarded because the pitch
      * register is the title's to write and a silly value must not spin here. */

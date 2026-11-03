@@ -239,9 +239,7 @@ void mcpx_apu_dsp_frame(MCPXAPUState *d,
      * peaks at full scale in 6/7 while the music sits near 0.25 in 0/1 --
      * so they come in at xtlk_gain (0.35, RECOMP_APU_XTLK_GAIN), the back
      * pair and the centre a further -3 dB; the reverb and FX sends are left
-     * out: a dry mix. RECOMP_APU_FOLD=0: bins 0/1 only, as before. */
-    static int fold = -1;
-    if (fold < 0) { const char *v = getenv("RECOMP_APU_FOLD"); fold = v ? atoi(v) : 1; }
+     * out: a dry mix. */
 
     if (d->monitor.point != MCPX_APU_DEBUG_MON_VP) {
         /* Audio > Audio effects (RECOMP_APU_GPFX): our own effects on the
@@ -255,7 +253,7 @@ void mcpx_apu_dsp_frame(MCPXAPUState *d,
             /* Clamp to [-1, 1] range */
             float left = mixbins[0][i];
             float right = mixbins[1][i];
-            if (fold) {
+            {
                 static float xg = -1.0f;
                 const float k = 0.70710678f;
                 if (xg < 0.0f) { const char *v = getenv("RECOMP_APU_XTLK_GAIN");
@@ -277,23 +275,17 @@ void mcpx_apu_dsp_frame(MCPXAPUState *d,
              * comes back to unity over ~150 ms, so a loud moment is a little
              * quieter instead of distorted. Linked: both channels take the
              * same gain, so the stereo image does not move.
-             * RECOMP_APU_LIMIT=0: the clamp alone, as before.
              */
             {
-                static int lim = -1;
                 static float g = 1.0f;
-                if (lim < 0) { const char *v = getenv("RECOMP_APU_LIMIT");
-                               lim = v ? atoi(v) : 1; }
-                if (lim) {
-                    const float ceil = 0.944f;              /* -0.5 dBFS */
-                    float al = left < 0 ? -left : left;
-                    float ar = right < 0 ? -right : right;
-                    float pk = al > ar ? al : ar;
-                    if (pk * g > ceil) g = ceil / pk;       /* attack: at once */
-                    else g += (1.0f - g) * 0.00015f;        /* release: ~150 ms */
-                    left *= g;
-                    right *= g;
-                }
+                const float ceil = 0.944f;              /* -0.5 dBFS */
+                float al = left < 0 ? -left : left;
+                float ar = right < 0 ? -right : right;
+                float pk = al > ar ? al : ar;
+                if (pk * g > ceil) g = ceil / pk;       /* attack: at once */
+                else g += (1.0f - g) * 0.00015f;        /* release: ~150 ms */
+                left *= g;
+                right *= g;
             }
             if (left > 1.0f) left = 1.0f;
             if (left < -1.0f) left = -1.0f;

@@ -66,7 +66,6 @@ static uintptr_t g_memory_offset;
 static uint32_t s_tick_sink;
 static volatile LONG g_nv2a_ack_stop;
 static void *g_mcpx_regs;
-static int g_apu_mmio_trapped;
 static const uint32_t MCPX_COUNTERS[] = { 0x020010u };
 static int s_nv2a_trace;
 static DWORD GetTickCount(void)

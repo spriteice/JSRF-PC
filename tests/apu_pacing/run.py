@@ -4,11 +4,11 @@ Takes ring_target_frames, ring_ahead and throttle from src/apu/apu_core.c,
 and the SDL output ring with its fake sink (a thread that pulls 512 frames
 every 10.7 ms, as the device does) from src/apu/apu_sdl.c, verbatim, and
 runs mcpx_apu_frame_thread's loop with the work left out, for three seconds,
-with the ring (the default) and on the wall clock (RECOMP_APU_RING_MS=0, as
-with XAudio2). The voice processor must make its frames at 48 kHz, close
-together: DirectSound waits for the next one each time it restarts a sound.
-With the ring, the device must never run dry. POSIX only (the fake sink is
-pthreads'); requires GCC on PATH.
+with the ring (the default) and on the wall clock (the argument "wall": no
+ring, as with XAudio2). The voice processor must make its frames at 48 kHz,
+close together: DirectSound waits for the next one each time it restarts a
+sound. With the ring, the device must never run dry. POSIX only (the fake
+sink is pthreads'); requires GCC on PATH.
 CC, when set, is the compiler instead of gcc.
 """
 import os
@@ -94,12 +94,10 @@ with tempfile.TemporaryDirectory(prefix="apu_pacing-") as directory:
     command = cc + ["-O2", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread", "-x", "c", "-",
                "-o", exe]
     subprocess.run(command, cwd=root, input=source, text=True, check=True)
-    for name, ring_ms in (("ring", None), ("wall clock", "0")):
+    for name, args in (("ring", []), ("wall clock", ["wall"])):
         env = {k: v for k, v in os.environ.items()
                if k not in ("RECOMP_APU_RING_MS", "RECOMP_APU_SINK_RAW", "RECOMP_APU_STATS")}
-        if ring_ms is not None:
-            env["RECOMP_APU_RING_MS"] = ring_ms
-        run = subprocess.run([exe], env=env, capture_output=True, text=True, timeout=60)
+        run = subprocess.run([exe] + args, env=env, capture_output=True, text=True, timeout=60)
         text = run.stdout + run.stderr
         if run.returncode != 0:
             raise SystemExit(f"apu_pacing {name}: exit {run.returncode}\n{text}")
@@ -117,7 +115,7 @@ with tempfile.TemporaryDirectory(prefix="apu_pacing-") as directory:
         if wait > 1.0 or p99 > 2.5:
             raise SystemExit(f"apu_pacing {name}: frames too far apart "
                              f"({wait:.2f} ms to the next on average, 99% of gaps under {p99:.2f} ms)")
-        if ring_ms is None and under:
+        if not args and under:
             raise SystemExit(f"apu_pacing {name}: the device ran dry {under} times")
 print("apu_pacing: both cases ran; timings not checked under the sanitizer" if sanitizer
       else "apu_pacing: both cases pass")
