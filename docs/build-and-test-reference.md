@@ -258,7 +258,8 @@ links and can be packaged. The engine is never run.
     Python version in ci.yml, llvm-mingw from `.github/ci/llvm_mingw.py`,
     then `python tests/run_all.py`, in the checkout in `Building\`. The PC
     runs Windows 11, not GitHub's Windows Server 2022, so GitHub's run on
-    the push is still the one that counts.
+    the push is still the one that counts. A pre-approved thread reads
+    that run when it ends (Review pack).
   - **When a server is down:** if the cloud can't make its build images
     because a server they download from is down (Ubuntu's snapshot
     archive, which is often slow), its four jobs run on my Windows PC
@@ -406,6 +407,9 @@ test-lists/README.md has its path.
 - **Switches:** each logging switch, and any other Developer switch, the
   test needs on each device, with its value. On the PC they are set for me
   (Delivery package); on the Ally X the step says which to tick.
+- **Saved runs:** in a pre-approved thread (project rules, Pre-approved
+  threads), each step names the saved run that tests it, from the shared
+  folder's `input-playback/RUNS.md`, or says that I test it by hand.
 - **Order:** one platform at a time, starting with the work's target
   platform. That is Linux (the Ally X) unless the work is for Windows, such
   as a Windows bug. Its steps come first, and testing stays on it, through
@@ -467,6 +471,8 @@ every device's testing, and you read my answers from my Claude folder.
 - **My results count as my message** (project rules, Workflow 5): a step I
   marked Fail, Skip, or nothing hasn't passed, and one I marked Pass still
   has its log read in full. Record them in TESTING.md's notes, as before.
+  In a pre-approved thread, they are what lets a commit through (project
+  rules, Pre-approved threads).
 
 ## Change report (REPORT.md)
 
@@ -512,6 +518,12 @@ what it links to beside it. In this order:
 
 Nothing it needs is left to another message or file I haven't been
 pointed to.
+
+In a pre-approved thread (project rules, Pre-approved threads), the pack
+is the commit's record, written the same way before the commit. What I'm
+asking becomes what is committed and pushed, on which `origin/main`, and
+under which pre-approval (my words and their time). GitHub's run on the
+push is added when it ends.
 
 ## Optional habit
 
