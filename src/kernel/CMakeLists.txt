@@ -23,6 +23,7 @@ set(KERNEL_SOURCES
     kernel_interrupt.c
     kernel_apc.c
     xbox_memory_layout.c
+    xbox_heap.c
     icall_feedback.c
     recomp_trace.c
     nv2a_pb_scan.c

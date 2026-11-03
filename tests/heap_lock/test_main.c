@@ -6,7 +6,33 @@
  * whole before it is freed. Sizes are mostly small, with the two JSRF's
  * workers ask for when they start: 4,500 bytes for a TIB and 512 KB for a
  * stack.
+ *
+ * "locked" runs the heap with its lock, "unlocked" without it: the heap's
+ * file is built with its lock calls named heap_lock_enter and
+ * heap_lock_leave (run.py), which pass on to the lock only when it is on.
  */
+#include "kernel.h"
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "xbox_memory_layout.h"
+#include "kernel_bridge.h"
+
+/* What the runtime gives the heap: the guest's memory, its size, and the
+ * calling thread's guest stack. */
+RECOMP_TLS uint32_t g_esp;
+ptrdiff_t g_xbox_mem_offset;
+size_t g_xbox_total_ram = 0x04000000u;   /* the heap runs to 64 MB */
+size_t g_xbox_map_size;
+size_t xbox_GetMappedSize(void) { return g_xbox_total_ram; }
+
+static int s_locked;
+void heap_lock_enter(LPCRITICAL_SECTION cs);
+void heap_lock_leave(LPCRITICAL_SECTION cs);
+void heap_lock_enter(LPCRITICAL_SECTION cs) { if (s_locked) EnterCriticalSection(cs); }
+void heap_lock_leave(LPCRITICAL_SECTION cs) { if (s_locked) LeaveCriticalSection(cs); }
+
 #define THREADS 4
 #define ROUNDS  20000
 #define LIVE    24
@@ -21,7 +47,7 @@ static uint32_t next_random(uint32_t *x)
 
 static int intact(uint32_t va, uint32_t size, unsigned char fill)
 {
-    const unsigned char *p = (const unsigned char *)(g_memory_offset + va);
+    const unsigned char *p = (const unsigned char *)(g_xbox_mem_offset + va);
     uint32_t i;
 
     for (i = 0; i < size; i++)
@@ -58,23 +84,23 @@ static void *worker(void *arg)
         if (!live[n].va) continue;
         live[n].size = size;
         live[n].fill = (unsigned char)(1 + (t * 61 + i) % 255);
-        memset((void *)(g_memory_offset + live[n].va), live[n].fill, size);
+        memset((void *)(g_xbox_mem_offset + live[n].va), live[n].fill, size);
         if (size >= 512 * 1024) big++;
         n++;
     }
     return NULL;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     pthread_t threads[THREADS];
     int t;
     void *ram = calloc(1, XBOX_HEAP_TOP);
 
     if (!ram) { printf("heap_lock: no memory\n"); return 1; }
-    g_memory_offset = g_xbox_mem_offset = (ptrdiff_t)ram;
-    g_reserve_next = XBOX_HEAP_TOP;
-    InitializeCriticalSection(&g_heap_lock);    /* as xbox_MemoryLayoutInit does */
+    s_locked = !(argc > 1 && !strcmp(argv[1], "unlocked"));
+    g_xbox_mem_offset = (ptrdiff_t)ram;
+    xbox_HeapInit();                            /* as xbox_MemoryLayoutInit does */
     xbox_HeapFree(xbox_HeapAlloc(16, 16));      /* the settings, read once */
 
     for (t = 0; t < THREADS; t++)

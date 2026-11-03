@@ -456,6 +456,12 @@ extern RECOMP_TLS uint32_t g_fs_base;
 #define XBOX_TILED_BASE     0xF0000000u
 
 /**
+ * Ready the heap (xbox_heap.c): its lock, before anything allocates. Called by
+ * xbox_MemoryLayoutInit.
+ */
+void xbox_HeapInit(void);
+
+/**
  * Allocate from the Xbox heap. Returns an Xbox VA, or 0 on failure.
  * Alignment must be a power of 2 (minimum 4).
  * Thread-safe: no (single-threaded recompiled code).
