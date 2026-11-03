@@ -195,13 +195,49 @@ static NTSTATUS xbox_wait_result_to_ntstatus(DWORD result, ULONG count)
     }
 }
 
+/*
+ * One host wait: on Handles, Count of them, or on Handle alone when Handles
+ * is NULL. The two multiple-object calls pass their array even for one
+ * object, so each call keeps the host wait it always made.
+ */
+static DWORD sync_host_wait(HANDLE Handle, DWORD Count, const HANDLE *Handles,
+                            BOOL WaitAll, DWORD ms, BOOL Alertable)
+{
+    if (Handles)
+        return WaitForMultipleObjectsEx(Count, Handles, WaitAll, ms, Alertable);
+    return WaitForSingleObjectEx(Handle, ms, Alertable);
+}
+
+/*
+ * A wait, saying whether it had to (xbox_kernel_call_waited), for the guest
+ * lock's report of who takes the lock over at a call. A zero timeout is a
+ * look that never waits. With the report on, a longer wait also looks first,
+ * with a zero timeout, and waits only when nothing was ready: an object the
+ * look finds ready is taken by it, as the wait would have taken it, and an
+ * APC it runs ends it as it would have ended the wait. With the report off,
+ * each call makes the one host wait it always made.
+ */
+static DWORD sync_wait(HANDLE Handle, DWORD Count, const HANDLE *Handles,
+                       BOOL WaitAll, DWORD ms, BOOL Alertable)
+{
+    if (ms == 0 || xbox_kernel_call_watched()) {
+        DWORD result = sync_host_wait(Handle, Count, Handles, WaitAll, 0, Alertable);
+        if (result != WAIT_TIMEOUT || ms == 0) {
+            xbox_kernel_call_waited(0);
+            return result;
+        }
+        xbox_kernel_call_waited(1);
+    }
+    return sync_host_wait(Handle, Count, Handles, WaitAll, ms, Alertable);
+}
+
 NTSTATUS __stdcall xbox_NtWaitForSingleObject(
     HANDLE Handle,
     BOOLEAN Alertable,
     PLARGE_INTEGER Timeout)
 {
     DWORD ms = xbox_nt_timeout_to_ms(Timeout);
-    DWORD result = WaitForSingleObjectEx(Handle, ms, Alertable);
+    DWORD result = sync_wait(Handle, 1, NULL, FALSE, ms, Alertable);
     return xbox_wait_result_to_ntstatus(result, 1);
 }
 
@@ -221,7 +257,7 @@ NTSTATUS __stdcall xbox_NtWaitForSingleObjectEx(
      */
     (void)WaitMode;
 
-    result = WaitForSingleObjectEx(Handle, ms, Alertable);
+    result = sync_wait(Handle, 1, NULL, FALSE, ms, Alertable);
     return xbox_wait_result_to_ntstatus(result, 1);
 }
 
@@ -239,7 +275,7 @@ NTSTATUS __stdcall xbox_NtWaitForMultipleObjectsEx(
     /* WaitType: 0 = WaitAll, 1 = WaitAny (matches NT definitions) */
     bWaitAll = (WaitType == 0) ? TRUE : FALSE;
 
-    result = WaitForMultipleObjectsEx(Count, Handles, bWaitAll, ms, Alertable);
+    result = sync_wait(NULL, Count, Handles, bWaitAll, ms, Alertable);
     return xbox_wait_result_to_ntstatus(result, Count);
 }
 
@@ -260,7 +296,7 @@ NTSTATUS __stdcall xbox_KeWaitForSingleObject(
 
     HANDLE hObject = (HANDLE)Object;
     DWORD ms = xbox_nt_timeout_to_ms(Timeout);
-    DWORD result = WaitForSingleObjectEx(hObject, ms, Alertable);
+    DWORD result = sync_wait(hObject, 1, NULL, FALSE, ms, Alertable);
     return xbox_wait_result_to_ntstatus(result, 1);
 }
 
@@ -282,8 +318,8 @@ NTSTATUS __stdcall xbox_KeWaitForMultipleObjects(
     DWORD ms = xbox_nt_timeout_to_ms(Timeout);
 
     /* Objects[] is an array of PVOID which we treat as HANDLE[] */
-    DWORD result = WaitForMultipleObjectsEx(Count, (HANDLE*)Objects,
-                                            bWaitAll, ms, Alertable);
+    DWORD result = sync_wait(NULL, Count, (HANDLE*)Objects,
+                             bWaitAll, ms, Alertable);
     return xbox_wait_result_to_ntstatus(result, Count);
 }
 

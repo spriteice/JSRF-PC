@@ -169,6 +169,7 @@ NTSTATUS __stdcall xbox_KeDelayExecutionThread(
 
     if (Interval->QuadPart == 0) {
         /* Zero interval = yield the thread's time slice */
+        xbox_kernel_call_waited(0);
         SwitchToThread();
         return STATUS_SUCCESS;
     }
@@ -185,10 +186,13 @@ NTSTATUS __stdcall xbox_KeDelayExecutionThread(
         LARGE_INTEGER now;
         GetSystemTimeAsFileTime((LPFILETIME)&now);
         LONGLONG diff = Interval->QuadPart - now.QuadPart;
-        if (diff <= 0)
+        if (diff <= 0) {
+            xbox_kernel_call_waited(0);
             return STATUS_SUCCESS; /* Already past */
+        }
         ms = (DWORD)(diff / 10000);
     }
+    xbox_kernel_call_waited(1);
 
     if (Alertable) {
         DWORD result = SleepEx(ms, TRUE);

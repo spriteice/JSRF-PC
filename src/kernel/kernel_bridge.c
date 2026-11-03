@@ -1662,6 +1662,7 @@ static uint32_t xbox_dispatcher_wait(uint32_t va, const long long *timeout_100ns
     }
     disp_init();
     EnterCriticalSection(&g_disp_lock);
+    xbox_kernel_call_waited(DISP_SIGNAL(va) == 0 && ms != 0);
     while (DISP_SIGNAL(va) == 0) {
         if (ms == 0) { status = 0x102; break; }
         if (ms == INFINITE) {
@@ -5963,6 +5964,11 @@ void xbox_guest_lock_on_handover(void (*fn)(unsigned long tid, int prio))
 {
     g_lock_handover_fn = fn;
 }
+/* The [LOCK] report's take-overs at the calls that give the lock up, kept
+ * with the dispatcher (below the thread table they use): told of each change
+ * of hands, and printed with the rest of the report. */
+static void kernel_call_take_over(void);
+static void kernel_call_lock_report(void);
 
 /* Per-thread queueing statistics, kept in a small fixed table so that
  * reporting them needs no allocation and no lock of its own. */
@@ -6094,6 +6100,7 @@ void xbox_guest_lock_acquire(void)
         g_slice_since = t_guest_since;
         if (g_lock_handover_fn)
             g_lock_handover_fn(g_lock_owner, xbox_thread_guest_priority(GetCurrentThread()));
+        kernel_call_take_over();
     }
 #ifdef __APPLE__
     g_lock_owner_pt = pthread_self();
@@ -6196,6 +6203,7 @@ void xbox_guest_lock_stats(void)
             g_resume_handoffs, g_resume_handoff_timeouts);
     fprintf(stderr, "        %lu looks for an acknowledged display interrupt at a back edge "
                     "in an interrupt or DPC\n", g_edge_vblank_checks);
+    kernel_call_lock_report();
     g_slice_handoffs = 0;
     g_slice_handoff_timeouts = 0;
     g_resume_handoffs = 0;
@@ -6833,6 +6841,13 @@ typedef struct {
      * that is stuck in guest code and therefore making no kernel calls at
      * all, the exact case the rest of this table cannot describe. */
     volatile uint32_t mport;
+    /* For the [LOCK] report, while this thread is inside a call that gives
+     * the guest lock up: whether another guest thread took the lock in the
+     * meantime, and that thread's guest priority (kernel_call_take_over).
+     * Kept here, not on the caller's stack, so a thread that never comes
+     * back from the call leaves nothing behind that a taker could write. */
+    volatile int lock_taken;
+    volatile int lock_taker_prio;
 } KThreadState;
 static KThreadState g_kthreads[KTHREAD_SLOTS];
 static volatile long g_kthread_n;
@@ -7046,6 +7061,182 @@ static void kernel_call_unlocked(ULONG ordinal, uint32_t caller)
     fflush(stderr);
 }
 
+/* ---- Take-overs at the calls that give the guest lock up ----------------
+ *
+ * The guest lock is given up around every call on kernel_call_blocks' list,
+ * whether or not the call then has to wait. The console switches threads only
+ * when a call does wait: a wait on an object that is already signalled, or a
+ * critical section that is free, returns with the thread still running, and
+ * only a thread above it could have taken the processor in the meantime.
+ * Here, whichever guest thread is queued for the lock can get in at any call
+ * on the list. Issue #1 was that, at NtSuspendThread and NtResumeThread
+ * (3a74bfa took those two off the list); the rest of the list still does it.
+ *
+ * Giving the lock up only when a call has to wait would change every thread's
+ * timing (broader-fixes/CODEBASE.md, R6), so this counts first how often it
+ * matters, for the [LOCK] report under RECOMP_LOCK_WATCH: at each call on the
+ * list, whether another guest thread took the lock before the caller had it
+ * back, whether the call had to wait, and the taker's priority against the
+ * caller's. With the report off, none of it runs.
+ *
+ * Whether a call had to wait is said by the code that decides it, through
+ * xbox_kernel_call_waited: a critical section that wasn't free
+ * (kernel_rtl.c), a wait whose objects weren't ready (kernel_sync.c, and
+ * xbox_dispatcher_wait for the title's own events and timers), a delay that
+ * isn't a yield (kernel_thread.c), an alertable wait that ran an APC instead
+ * (kernel_apc.c). The file calls say nothing: whether the console's thread
+ * waits there depends on the drive and on whether the title asked for the
+ * request to complete later, neither of which is modelled here (the read is
+ * made at once and its completion signalled after). They count as not known.
+ *
+ * Only the first guest thread to take the lock after a call gave it up takes
+ * it over from that call, so each take-over is counted once, at the call
+ * that let it happen. A take that delivers an interrupt or a DPC, on the
+ * timer, USB or GPU thread, is not one: on the console an interrupt comes
+ * between any two instructions, and it isn't a switch of threads. A thread
+ * counts as a guest thread once it has made a kernel call outside an
+ * interrupt, DPC or synchronize routine, which those three never do. */
+#define KERNEL_CALL_WAIT_UNKNOWN (-1)
+static RECOMP_TLS int t_call_wait = KERNEL_CALL_WAIT_UNKNOWN;
+static RECOMP_TLS int t_guest_thread;
+/* The call that last gave the lock up, until a guest thread takes the lock
+ * over or the caller has it back. Read and written only under the lock. */
+static KThreadState *g_call_given_up;
+/* Per ordinal, since the start: calls that gave the lock up, calls at which
+ * another guest thread took it over, and of those, the ones that had to wait
+ * and the ones that didn't, by the taker's priority against the caller's. */
+typedef struct {
+    unsigned long gave_up, taken, waited, no_wait, no_wait_below, no_wait_at;
+} KernelCallLock;
+static KernelCallLock g_call_lock[XBOX_KERNEL_THUNK_TABLE_SIZE];
+
+void xbox_kernel_call_waited(int waited)
+{
+    t_call_wait = waited ? 1 : 0;
+}
+int xbox_kernel_call_watched(void)
+{
+    return lock_watch();
+}
+
+/* xbox_guest_lock_acquire, on a change of hands. */
+static void kernel_call_take_over(void)
+{
+    KThreadState *k = g_call_given_up;
+    if (!k || !t_guest_thread || k == t_kthread)
+        return;
+    k->lock_taker_prio = xbox_thread_guest_priority(GetCurrentThread());
+    k->lock_taken = 1;
+    g_call_given_up = NULL;
+}
+
+/* What a call on the list replaces while it is out, put back when it
+ * returns: a call can be made inside another, from an APC routine an
+ * alertable wait runs, and the outer call's state is then still pending. */
+typedef struct {
+    KThreadState *given_up;
+    int wait, taken, taker_prio;
+} KernelCallGiveUp;
+
+/* Before a call on the list gives the lock up. 1 if it is counted: the
+ * report is on, and the caller is a thread holding the lock, not an
+ * interrupt or DPC routine. */
+static int kernel_call_give_up(KernelCallGiveUp *up)
+{
+    KThreadState *k = t_kthread;
+    if (!k || !t_guest_holds || t_in_callback || !lock_watch())
+        return 0;
+    up->given_up = g_call_given_up;
+    up->wait = t_call_wait;
+    up->taken = k->lock_taken;
+    up->taker_prio = k->lock_taker_prio;
+    k->lock_taken = 0;
+    g_call_given_up = k;
+    t_call_wait = KERNEL_CALL_WAIT_UNKNOWN;
+    return 1;
+}
+
+/* After it, with the lock back. A thread that has dropped to idle priority
+ * in the call doesn't take the lock back where idle threads run without it
+ * (RECOMP_LOCK_IDLE=0), and then touches nothing shared here. */
+static void kernel_call_back(ULONG ordinal, const KernelCallGiveUp *up)
+{
+    KThreadState *k = t_kthread;
+    int untaken;
+    if (!t_guest_holds) {
+        t_call_wait = up->wait;
+        return;
+    }
+    untaken = g_call_given_up == k;
+    if (ordinal < XBOX_KERNEL_THUNK_TABLE_SIZE) {
+        KernelCallLock *c = &g_call_lock[ordinal];
+        __atomic_add_fetch(&c->gave_up, 1, __ATOMIC_RELAXED);
+        if (k->lock_taken) {
+            __atomic_add_fetch(&c->taken, 1, __ATOMIC_RELAXED);
+            if (t_call_wait == 1) {
+                __atomic_add_fetch(&c->waited, 1, __ATOMIC_RELAXED);
+            } else if (t_call_wait == 0) {
+                int prio = xbox_thread_guest_priority(GetCurrentThread());
+                __atomic_add_fetch(&c->no_wait, 1, __ATOMIC_RELAXED);
+                if (k->lock_taker_prio < prio)
+                    __atomic_add_fetch(&c->no_wait_below, 1, __ATOMIC_RELAXED);
+                else if (k->lock_taker_prio == prio)
+                    __atomic_add_fetch(&c->no_wait_at, 1, __ATOMIC_RELAXED);
+            }
+        }
+    }
+    /* Nobody took it over: an outer call of this thread's that gave the lock
+     * up is still out, and still waits to be taken over. */
+    g_call_given_up = untaken ? up->given_up : NULL;
+    k->lock_taken = up->taken;
+    k->lock_taker_prio = up->taker_prio;
+    t_call_wait = up->wait;
+}
+
+/* For xbox_guest_lock_stats: the take-overs since its last report, one line
+ * for each call with any. A take-over at a call that didn't wait, by a thread
+ * below the caller, is a switch the console never makes. By a thread at the
+ * caller's priority it makes one only at the end of a time slice, or at a
+ * delay of zero, which yields to such a thread. */
+static void kernel_call_lock_report(void)
+{
+    static KernelCallLock seen[XBOX_KERNEL_THUNK_TABLE_SIZE];
+    static KernelCallLock d[XBOX_KERNEL_THUNK_TABLE_SIZE];
+    unsigned long gave_up = 0, taken = 0;
+    int i;
+    for (i = 0; i < XBOX_KERNEL_THUNK_TABLE_SIZE; i++) {
+        const KernelCallLock *c = &g_call_lock[i];
+        KernelCallLock now;
+        now.gave_up       = __atomic_load_n(&c->gave_up, __ATOMIC_RELAXED);
+        now.taken         = __atomic_load_n(&c->taken, __ATOMIC_RELAXED);
+        now.waited        = __atomic_load_n(&c->waited, __ATOMIC_RELAXED);
+        now.no_wait       = __atomic_load_n(&c->no_wait, __ATOMIC_RELAXED);
+        now.no_wait_below = __atomic_load_n(&c->no_wait_below, __ATOMIC_RELAXED);
+        now.no_wait_at    = __atomic_load_n(&c->no_wait_at, __ATOMIC_RELAXED);
+        d[i].gave_up       = now.gave_up - seen[i].gave_up;
+        d[i].taken         = now.taken - seen[i].taken;
+        d[i].waited        = now.waited - seen[i].waited;
+        d[i].no_wait       = now.no_wait - seen[i].no_wait;
+        d[i].no_wait_below = now.no_wait_below - seen[i].no_wait_below;
+        d[i].no_wait_at    = now.no_wait_at - seen[i].no_wait_at;
+        seen[i] = now;
+        gave_up += d[i].gave_up;
+        taken += d[i].taken;
+    }
+    fprintf(stderr, "        %lu calls gave the guest lock up, and another guest thread "
+                    "took it over at %lu of them\n", gave_up, taken);
+    for (i = 0; i < XBOX_KERNEL_THUNK_TABLE_SIZE; i++) {
+        if (!d[i].taken) continue;
+        fprintf(stderr, "        kernel call %d: another guest thread took the lock at "
+                        "%lu of %lu calls: %lu that didn't wait (%lu by a thread below "
+                        "the caller's priority, %lu at it), %lu that waited, %lu not "
+                        "known\n",
+                i, d[i].taken, d[i].gave_up, d[i].no_wait, d[i].no_wait_below,
+                d[i].no_wait_at, d[i].waited,
+                d[i].taken - d[i].waited - d[i].no_wait);
+    }
+}
+
 static void kernel_thunk_dispatch(void)
 {
     int slot = g_kernel_dispatch_slot;
@@ -7072,6 +7263,8 @@ static void kernel_thunk_dispatch(void)
         k->entered_ms = (long long)GetTickCount64();
         k->left_ms = 0;
         k->calls++;
+        if (!t_in_callback && lock_watch())
+            t_guest_thread = 1;
         if (guest_lock_on() && !t_guest_holds)
             kernel_call_unlocked(ordinal, k->caller);
     }
@@ -7234,9 +7427,12 @@ static void kernel_thunk_dispatch(void)
         } else {
             wl = 0;
         }
+        KernelCallGiveUp up;
+        int counted = blocks && kernel_call_give_up(&up);
         if (blocks) xbox_guest_lock_release();
         bridge();
         if (blocks) xbox_guest_lock_acquire();
+        if (counted) kernel_call_back(ordinal, &up);
         if (wl) {
             if (waitlog_is_wait(ordinal))
                 waitlog_record(ordinal, wl_obj, wl_caller, wl_caller2,

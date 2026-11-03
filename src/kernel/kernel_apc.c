@@ -108,5 +108,7 @@ int bridge_deliver_pending_apcs(void)
         deliver_one_apc(r, c, io);
         n++;
     }
+    if (n)
+        xbox_kernel_call_waited(0);   /* the wait returns at once, for the APCs */
     return n;
 }

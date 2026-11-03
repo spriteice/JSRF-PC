@@ -740,6 +740,13 @@ NTSTATUS __stdcall xbox_NtClearEvent(HANDLE EventHandle);
 NTSTATUS __stdcall xbox_NtCreateMutant(PHANDLE MutantHandle, PXBOX_OBJECT_ATTRIBUTES ObjectAttributes, BOOLEAN InitialOwner);
 NTSTATUS __stdcall xbox_NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount);
 
+/* Whether the kernel call being made had to wait, said by the code that
+ * decides it, for the guest lock's report of the threads that take the lock
+ * over at a call (kernel_bridge.c). Nothing reads it while the report is off. */
+void     xbox_kernel_call_waited(int waited);
+/* Whether that report is on (Developer > Logging > RECOMP_LOCK_WATCH). */
+int      xbox_kernel_call_watched(void);
+
 LONG     __stdcall xbox_KeSetEvent(PVOID Event, LONG Increment, BOOLEAN Wait);
 NTSTATUS __stdcall xbox_KeWaitForSingleObject(PVOID Object, ULONG WaitReason, KPROCESSOR_MODE WaitMode, BOOLEAN Alertable, PLARGE_INTEGER Timeout);
 NTSTATUS __stdcall xbox_KeWaitForMultipleObjects(ULONG Count, PVOID Objects[], ULONG WaitType, ULONG WaitReason, KPROCESSOR_MODE WaitMode, BOOLEAN Alertable, PLARGE_INTEGER Timeout, PVOID WaitBlockArray);

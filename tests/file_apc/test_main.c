@@ -15,7 +15,8 @@
  * a kernel export, as XAPI's NtUserIoApcDispatcher is. A thread that holds the
  * lock already keeps it, and an APC delivered at once because the ring is full
  * runs holding it too. Before the routines took the lock, they ran without it,
- * beside the title, and the first one fails here.
+ * beside the title, and the first one fails here. A wait that runs APCs also
+ * says it didn't wait, for the guest lock's report (xbox_kernel_call_waited).
  */
 #include "kernel.h"
 #include <stdio.h>
@@ -62,6 +63,10 @@ int xbox_guest_lock_take(void)
     xbox_guest_lock_acquire();
     return s_holds;
 }
+
+/* What the delivery tells the guest lock's report: 1 waited, 0 didn't. */
+static RECOMP_TLS int s_waited = -1;
+void xbox_kernel_call_waited(int waited) { s_waited = waited; }
 
 /* ---- what the routines check ------------------------------------------- */
 
@@ -141,10 +146,17 @@ static void wait_alertably(int queued, const char *what)
 {
     char line[160];
     long before = ran_now();
-    int n = bridge_deliver_pending_apcs();
+    int n;
+    s_waited = -1;
+    n = bridge_deliver_pending_apcs();
     if (n != queued || ran_now() - before != queued) {
         snprintf(line, sizeof line, "%s: %d APCs delivered of %d queued", what,
                  n, queued);
+        fail(line);
+    }
+    if (s_waited != 0) {
+        snprintf(line, sizeof line, "%s: the wait that ran its APCs didn't say "
+                 "it returned without waiting (%d)", what, s_waited);
         fail(line);
     }
     if (s_holds) {

@@ -478,9 +478,11 @@ VOID __stdcall xbox_RtlEnterCriticalSection(PRTL_CRITICAL_SECTION CriticalSectio
     InterlockedIncrement(&g_cs_enters);
     crt_lock_trace("take", CriticalSection);
     if (TryEnterCriticalSection(cs)) {
+        xbox_kernel_call_waited(0);
         xbox_cs_note_owner(cs);
         return;
     }
+    xbox_kernel_call_waited(1);
     if (InterlockedIncrement(&g_cs_contention_reports) <= 16) {
         fprintf(stderr, "  [CS] thread %lu waiting on guest lock 0x%08X"
                         " (held by thread %lu)\n",
