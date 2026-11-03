@@ -21,11 +21,11 @@ each menu's rows live with the setting they change (File in
 - **Developer's switches are the exception.** Each row under Developer >
   Logging and Developer > Engine switches is the environment variable as
   ticking it sets it: "RECOMP_GL_PROFILE (Restart)" sets it to 1, and
-  "RECOMP_GL_TITLE_MIPS=0 (Restart)" to 0, for a switch that turns
-  something off, and "RECOMP_GL_CURTAIN=skip (Restart)" to the word the
-  engine reads. Developer > Performance's and Developer > Experimental's
-  rows have plain names, as "Use P cores (Restart)" and "Game runs ahead of
-  the GPU (Restart)" (b1.1's experiment).
+  "RECOMP_GL_VCACHE=0 (Restart)" to 0, for a switch that turns something
+  off, and "RECOMP_APU_MIX=xemu (Restart)" to the word the engine reads.
+  Developer > Performance's and Developer > Experimental's rows have plain
+  names, as "Use P cores (Restart)" and "Game runs ahead of the GPU
+  (Restart)" (b1.1's experiment).
 - No keyboard shortcuts in a label: "Free camera", not "Free camera (F8)".
   docs/playing.md and the packages' README.txt list the keys.
 - A box's message is a whole sentence, ending in a full stop. It must be as
@@ -107,9 +107,9 @@ Dear ImGui
   does, to compare one way with the other, also gets a row under Developer >
   Engine switches (`k_engine`).
 - Logging's and Engine switches' rows are in alphabetical order by the
-  variable's name, word by word: an underscore comes before any letter, so
-  RECOMP_GL_TEX_ONESAMPLER is above RECOMP_GL_TEXGEN. A new switch goes
-  where it falls in that order. tests/developer checks.
+  variable's name, word by word: an underscore comes before any letter, as
+  a space would. A new switch goes where it falls in that order.
+  tests/developer checks.
 - A new performance switch, an environment variable that turns off
   something the engine does by default for speed, also gets a row under
   Developer > Performance (`k_perf`), with a plain name in `k_perf_row`
@@ -126,5 +126,5 @@ Dear ImGui
 - A switch that works on some platforms only has a row on those alone, as
   RECOMP_CPU_PROFILE (Linux and Windows) and Use P cores (Linux) do. A
   variable that takes a value, such as an address, is not a switch and has
-  no row, unless one word of it turns something off: its row sets that
-  word, as RECOMP_GL_CURTAIN=skip does.
+  no row, unless one word of it is a switch: its row sets that word, as
+  RECOMP_APU_MIX=xemu does.

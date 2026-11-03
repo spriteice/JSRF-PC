@@ -117,8 +117,8 @@ output to last-run.log. Turned off, nothing more is written to it until it is
 turned on again, and what is there already stays. It changes straight away and
 is remembered as logging= in the settings file (1 or 0). Developer > Logging
 adds the engine's own diagnostic lines to the log, for bug reports,
-Developer > Engine switches turns parts of the engine off or back to how they
-were, to compare, Developer > Performance has what the engine does for speed,
+Developer > Engine switches turns parts of the engine off or changes how they
+work, to compare, Developer > Performance has what the engine does for speed,
 each on by default and ticked, to untick and compare: Use P cores (the game on
 the processor's fast cores), GPU queue, Display pacing, Sleep while waiting for
 the GPU, and Compressed textures direct, and Developer > Experimental, when

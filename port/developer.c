@@ -53,8 +53,8 @@ extern void nv_window_file_set(const char *file, const char *key, int val);
  * engine does for speed, then Developer > Experimental's, each of which
  * changes what the game does. A switch is ticked to give its variable the
  * value on: 1, or 0 for one that turns off something the engine does by
- * default, or the word the engine reads for it (RECOMP_GL_CURTAIN's skip). Its
- * row is the variable as ticking sets it -- NAME, NAME=0, or NAME=skip -- but
+ * default, or the word the engine reads for it (RECOMP_APU_MIX's xemu). Its
+ * row is the variable as ticking sets it -- NAME, NAME=0, or NAME=xemu -- but
  * Performance's and Experimental's, which have rows of their own, in plain
  * words; and with nothing ticked the engine does what it always does.
  * Performance's rows are the other way round: each is something the engine
@@ -68,9 +68,9 @@ extern void nv_window_file_set(const char *file, const char *key, int val);
  *
  * Logging's and Engine switches' are in alphabetical order by name, as their
  * rows are shown, word by word: a name's underscore comes before any letter,
- * so RECOMP_GL_TEX_ONESAMPLER is above RECOMP_GL_TEXGEN. A new one goes where
- * it falls, and tests/developer checks. Each switch is kept in developer.cfg
- * by its name, so the order is the menu's alone. */
+ * as a space would. A new one goes where it falls, and tests/developer checks.
+ * Each switch is kept in developer.cfg by its name, so the order is the
+ * menu's alone. */
 typedef struct { const char *name; const char *on; } DevSwitch;
 static const DevSwitch k_logging[] = {
     { "JSRF_ADX_ERR_LOG", "1" },            /* the sound library's stream errors (port/adx_err.c) */
@@ -93,14 +93,7 @@ static const DevSwitch k_logging[] = {
 };
 static const DevSwitch k_engine[] = {
     { "RECOMP_APU_MIX", "xemu" },           /* each voice's own sides, not the mixbins folded */
-    { "RECOMP_GL_CURTAIN", "skip" },        /* no fades to black (the full-screen black quad) */
-    { "RECOMP_GL_IMMEDIATE", "0" },         /* no batches sent a vertex at a time (the shadows) */
-    { "RECOMP_GL_NOPRECZ", "1" },           /* no precise fixed-function depth */
-    { "RECOMP_GL_NOREVZ", "1" },            /* no reversed depth */
     { "RECOMP_GL_STENCILVIS", "1" },        /* the stencil buffer in place of the shadows */
-    { "RECOMP_GL_TEX_ONESAMPLER", "1" },    /* one texture however it is sampled */
-    { "RECOMP_GL_TEXGEN", "0" },            /* no texture coordinates the T&L unit makes */
-    { "RECOMP_GL_TITLE_MIPS", "0" },        /* a texture's base level alone, not its mipmaps */
     { "RECOMP_GL_VCACHE", "0" },            /* no vertex cache */
 };
 /* Performance's, each with its row in k_perf_row: something the engine does

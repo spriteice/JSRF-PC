@@ -32,8 +32,8 @@ source = """
 
 # case: (settings file, developer.cfg, environment, lines the log must have,
 # lines it must not)
-switches = ("RECOMP_GL_PROFILE", "RECOMP_LOCK_WATCH", "RECOMP_GL_TEX_ONESAMPLER",
-            "RECOMP_GL_TITLE_MIPS", "RECOMP_GL_CURTAIN")
+switches = ("RECOMP_GL_PROFILE", "RECOMP_LOCK_WATCH", "RECOMP_GL_STENCILVIS",
+            "RECOMP_GL_VCACHE", "RECOMP_APU_MIX")
 cases = {
     "none": (None, None, {},
              [f"{when}: {name}=-" for when in ("started", "restarting") for name in switches],
@@ -45,22 +45,28 @@ cases = {
     "environment": (None, "RECOMP_GL_PROFILE=1\n", {"RECOMP_GL_PROFILE": "2"},
                     ["started: RECOMP_GL_PROFILE=2", "restarting: RECOMP_GL_PROFILE=2"],
                     ["from developer.cfg"]),
-    # Engine switches: one ticked to 1, one ticked to 0 (RECOMP_GL_TITLE_MIPS=0).
-    "engine": (None, "RECOMP_GL_TEX_ONESAMPLER=1\nRECOMP_GL_TITLE_MIPS=0\n", {},
-               ["[DEV] RECOMP_GL_TEX_ONESAMPLER=1 from developer.cfg",
-                "[DEV] RECOMP_GL_TITLE_MIPS=0 from developer.cfg",
-                "started: RECOMP_GL_TEX_ONESAMPLER=1", "started: RECOMP_GL_TITLE_MIPS=0",
-                "restarting: RECOMP_GL_TEX_ONESAMPLER=-", "restarting: RECOMP_GL_TITLE_MIPS=-"], []),
+    # Engine switches: one ticked to 1, one ticked to 0 (RECOMP_GL_VCACHE=0).
+    "engine": (None, "RECOMP_GL_STENCILVIS=1\nRECOMP_GL_VCACHE=0\n", {},
+               ["[DEV] RECOMP_GL_STENCILVIS=1 from developer.cfg",
+                "[DEV] RECOMP_GL_VCACHE=0 from developer.cfg",
+                "started: RECOMP_GL_STENCILVIS=1", "started: RECOMP_GL_VCACHE=0",
+                "restarting: RECOMP_GL_STENCILVIS=-", "restarting: RECOMP_GL_VCACHE=-"], []),
     # Unticked: off for one set to 1, and the engine's own 1 for one set to 0.
-    "engine_unticked": (None, "RECOMP_GL_TEX_ONESAMPLER=0\nRECOMP_GL_TITLE_MIPS=1\n", {},
-                        ["started: RECOMP_GL_TEX_ONESAMPLER=-", "started: RECOMP_GL_TITLE_MIPS=-"],
+    "engine_unticked": (None, "RECOMP_GL_STENCILVIS=0\nRECOMP_GL_VCACHE=1\n", {},
+                        ["started: RECOMP_GL_STENCILVIS=-", "started: RECOMP_GL_VCACHE=-"],
                         ["[DEV]"]),
-    # The one switch whose value is a word: ticked (1 in developer.cfg), skip.
-    "curtain": (None, "RECOMP_GL_CURTAIN=1\n", {},
-                ["[DEV] RECOMP_GL_CURTAIN=skip from developer.cfg",
-                 "started: RECOMP_GL_CURTAIN=skip", "restarting: RECOMP_GL_CURTAIN=-"], []),
-    "curtain_unticked": (None, "RECOMP_GL_CURTAIN=0\n", {},
-                         ["started: RECOMP_GL_CURTAIN=-"], ["[DEV]"]),
+    # The one switch whose value is a word: ticked (1 in developer.cfg), xemu.
+    "mix": (None, "RECOMP_APU_MIX=1\n", {},
+            ["[DEV] RECOMP_APU_MIX=xemu from developer.cfg",
+             "started: RECOMP_APU_MIX=xemu", "restarting: RECOMP_APU_MIX=-"], []),
+    "mix_unticked": (None, "RECOMP_APU_MIX=0\n", {},
+                     ["started: RECOMP_APU_MIX=-"], ["[DEV]"]),
+    # The rows b1.4 took out, each of which turned a released fix back (the
+    # release checklist's step 2): a developer.cfg from b1.3 with each ticked
+    # puts none of them in the environment.
+    "retired": (None, "RECOMP_GL_CURTAIN=1\nRECOMP_GL_IMMEDIATE=0\nRECOMP_GL_NOPRECZ=1\n"
+                "RECOMP_GL_NOREVZ=1\nRECOMP_GL_TEX_ONESAMPLER=1\nRECOMP_GL_TEXGEN=0\n"
+                "RECOMP_GL_TITLE_MIPS=0\n", {}, ["started:"], ["[DEV]"]),
     "log_off": ("game_dir=/games/jsrf\nlogging=0\n", None, {},
                 ["Log to file off", "restarting:"], ["started:"]),
     "log_on": ("logging=1\n", None, {}, ["started:", "restarting:"], ["Log to file off"]),
@@ -219,8 +225,7 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
            for row in ("RECOMP_GL_TIMELINE (Restart)", "JSRF_ADX_ERR_LOG (Restart)")):
         raise SystemExit(f"menu: Logging's rows are {pages['Logging']}")
     # Logging's and Engine switches' rows are in alphabetical order by name,
-    # word by word: an underscore comes before any letter, as a space would,
-    # so RECOMP_GL_TEX_ONESAMPLER is above RECOMP_GL_TEXGEN.
+    # word by word: an underscore comes before any letter, as a space would.
     def by_name(row):
         return row.partition(" ")[0].partition("=")[0].replace("_", " ")
     for page in ("Logging", "Engine switches"):
@@ -229,8 +234,8 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
     # And each switch ticked in developer.cfg ticks its own row, wherever the
     # order puts it.
     ticked = {"Logging": ["JSRF_ADX_ERR_LOG (Restart)", "RECOMP_LOCK_WATCH (Restart)"],
-              "Engine switches": ["RECOMP_GL_TITLE_MIPS=0 (Restart)"]}
-    pages, ticks = menu("JSRF_ADX_ERR_LOG=1\nRECOMP_LOCK_WATCH=1\nRECOMP_GL_TITLE_MIPS=0\n")
+              "Engine switches": ["RECOMP_GL_VCACHE=0 (Restart)"]}
+    pages, ticks = menu("JSRF_ADX_ERR_LOG=1\nRECOMP_LOCK_WATCH=1\nRECOMP_GL_VCACHE=0\n")
     for page, rows in ticked.items():
         want = sum(1 << pages[page].index(row) for row in rows)
         if ticks[page] != want:

@@ -84,10 +84,10 @@ static int gles_has_depth_clamp(void)
 #endif
 #include <string.h>
 
-/* Reversed depth: nv2a_gl.c turns it on with clip control, before init,
- * unless RECOMP_GL_NOREVZ is set. The emitters store nearer as larger
- * (nv2a_vsh.c), so every depth comparison, the depth clear, the polygon
- * offset and the depth readback turn round with them here. */
+/* Reversed depth: nv2a_gl.c turns it on with clip control, before init.
+ * The emitters store nearer as larger (nv2a_vsh.c), so every depth
+ * comparison, the depth clear, the polygon offset and the depth readback
+ * turn round with them here. */
 static int g_revz;
 void nv2a_gfx_gl_set_revz(int on);
 void nv2a_gfx_gl_set_revz(int on) { g_revz = on; }

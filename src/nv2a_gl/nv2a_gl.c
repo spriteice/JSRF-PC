@@ -1262,7 +1262,7 @@ static int gl_init(uint32_t w, uint32_t h)
 /* glClipControl is core from OpenGL 4.5 (major * 10 + minor). */
 #define REVZ_CORE_VERSION 45
 void nv2a_gfx_gl_set_revz(int on);   /* nv2a_gfx_gl.c */
-/* Reversed depth, on unless RECOMP_GL_NOREVZ is set.
+/* Reversed depth, wherever OpenGL has clip control.
  *
  * Clip control gives OpenGL the console's 0..w depth range, and the emitters
  * then count depth down from the far end rather than up from the near one,
@@ -1271,7 +1271,7 @@ void nv2a_gfx_gl_set_revz(int on);   /* nv2a_gfx_gl.c */
  * turns its depth comparisons, clear, polygon offset and readback round to
  * match. Desktop OpenGL only, with 4.5 or ARB_clip_control; anywhere else
  * depth is as before, and the log says so. With it comes the precise
- * fixed-function depth (nv2a_vsh.c), unless RECOMP_GL_NOPRECZ is set.
+ * fixed-function depth (nv2a_vsh.c).
  * Before init and before any program is emitted: the shader cache's programs
  * are made with it. */
 static void revz_start(void)
@@ -1279,10 +1279,6 @@ static void revz_start(void)
     typedef void (APIENTRY *ClipControlFn)(GLenum, GLenum);
     ClipControlFn fn = NULL;
     GLint maj = 0, min = 0, mode = 0;
-    if (getenv("RECOMP_GL_NOREVZ")) {
-        fprintf(stderr, "  [GL] reversed depth: off (RECOMP_GL_NOREVZ)\n");
-        return;
-    }
     glGetIntegerv(GL_MAJOR_VERSION, &maj);
     glGetIntegerv(GL_MINOR_VERSION, &min);
     if (maj * 10 + min >= REVZ_CORE_VERSION || SDL_GL_ExtensionSupported("GL_ARB_clip_control"))
@@ -1300,12 +1296,8 @@ static void revz_start(void)
     nv2a_glsl_set_revz(1);
     nv2a_gfx_gl_set_revz(1);
     fprintf(stderr, "  [GL] reversed depth: on, with clip control (0..w)\n");
-    if (getenv("RECOMP_GL_NOPRECZ"))
-        fprintf(stderr, "  [GL] precise depth: off (RECOMP_GL_NOPRECZ)\n");
-    else {
-        nv2a_glsl_set_precz(1);
-        fprintf(stderr, "  [GL] precise depth: on, fixed-function depth worked out in double\n");
-    }
+    nv2a_glsl_set_precz(1);
+    fprintf(stderr, "  [GL] precise depth: on, fixed-function depth worked out in double\n");
 }
 #endif
 
@@ -2965,15 +2957,6 @@ static void psh_consts_send(int slot)
  * fetch(), which copies the constant into the packed vertex, so "has an
  * array" and "has a value" are the same question here. Position is always
  * present -- do_draw() rejects a batch without it before this is reached. */
-/* RECOMP_GL_TEXGEN=0: no generated coordinates, as before; =ab: every other
- * displayed frame without them, for a before-and-after from one run. */
-static int texgen_off(void)
-{
-    static int off = -1;
-    if (off < 0) { const char *v = getenv("RECOMP_GL_TEXGEN");
-                   off = !v ? 0 : *v == '0' ? 1 : (*v == 'a' || *v == 'A') ? 2 : 0; }
-    return off == 2 ? (int)(S.frames & 1u) : off;
-}
 
 /*
  * Texture coordinate generation, for the fixed-function transform
@@ -2983,12 +2966,11 @@ static int texgen_off(void)
  * The normal-based modes are made (see emit_ff). The two linear modes would
  * need the planes as uniforms of their own and this title has not been seen
  * to ask for them: their components stay the vertex's own, and the first
- * batch that asks says so. RECOMP_GL_TEXGEN=0 makes none, as before.
+ * batch that asks says so.
  */
 static void texgen_describe(Nv2aVshFixed *f)
 {
     int s, c, nrm = 0;
-    if (texgen_off()) return;
     for (s = 0; s < 4; s++) {
         int any = 0;
         for (c = 0; c < 4; c++) {
@@ -3673,15 +3655,12 @@ static int decode_level(uint32_t color, const uint8_t *src, uint32_t w, uint32_t
  * All of it when the stage samples with a mipmapped filter (3 to 6), as many
  * as the format register says -- no more than the size allows, and no more
  * than TEXTURE_CONTROL0's MAX_LOD_CLAMP lets the sampler reach, as xemu reads
- * it -- and 1 otherwise: a linear texture has no chain. RECOMP_GL_TITLE_MIPS=0
- * uploads the base level alone, as before.
+ * it -- and 1 otherwise: a linear texture has no chain.
  */
 static uint32_t tex_title_levels(const TexStage *t, uint32_t w, uint32_t h)
 {
-    static int on = -1;
     uint32_t minf = (t->filter >> 16) & 0xF, n, m, maxl, clamp;
-    if (on < 0) { const char *v = getenv("RECOMP_GL_TITLE_MIPS"); on = v ? atoi(v) != 0 : 1; }
-    if (!on || minf < 3 || minf > 6 || t->levels < 2) return 1;
+    if (minf < 3 || minf > 6 || t->levels < 2) return 1;
     if (!fmt_is_swz(t->color) && !fmt_is_dxt(t->color)) return 1;
     m = w > h ? w : h;
     for (maxl = 1; (1u << (maxl - 1)) < m; maxl++) { }
@@ -4051,13 +4030,6 @@ static uint32_t upload_texture_inner(const TexStage *t)
     nlev = tex_title_levels(t, w, h);
     tex_sampler(t, nlev, &smp);
     sampling = sampler_key(&smp);
-    /* RECOMP_GL_TEX_ONESAMPLER=1: one texture however it is sampled -- the
-     * first draw's sampling for all -- as before, to compare (=ab: every
-     * other displayed frame, from textures of their own). */
-    { static int one = -1;
-      if (one < 0) { const char *v = getenv("RECOMP_GL_TEX_ONESAMPLER");
-                     one = !v ? 0 : (*v == 'a' || *v == 'A') ? 2 : 1; }
-      if (one == 1 || (one == 2 && (S.frames & 1u))) sampling = 0x80000000u; }
 
     /* Same routing census as the vertex arrays, for textures: a texture at
      * a heap VA below the arena mark is decoded from the window instead. */
@@ -4945,15 +4917,11 @@ static const char *vc_debug_switch(void)
         "SCALE", "READBACK", "CURTAIN", "PRESENTER", "PROFILE", "VCACHE",
         "VCACHE_MB", "VCACHE_VERIFY", "CONST_PART", "ANISO", "MIPMAP", "DEPTHCLAMP",
         "TEXHASH_FULL", "CONTIG_ALL", "HEAP_FIRST", "STICKY_ATTRS",
-        /* textures, texture coordinates (in the cache's key), a method count */
-        "TITLE_MIPS", "TEX_ONESAMPLER", "TEXGEN", "UNHANDLED", "DXT",
-        /* the batches sent a vertex at a time (imm_draw), which never use the
-         * cache: left out, or the stencil buffer drawn in their place */
-        "IMMEDIATE", "STENCILVIS",
-        /* reversed depth off (revz_start): shaders and depth state only */
-        "NOREVZ",
-        /* precise fixed-function depth off: one uniform and shaders */
-        "NOPRECZ",
+        /* a method count, textures */
+        "UNHANDLED", "DXT",
+        /* the stencil buffer drawn in place of the batches sent a vertex at a
+         * time (imm_draw), which never use the cache */
+        "STENCILVIS",
         /* GL errors after every draw (gl_error_check): reads nothing back */
         "ERRORS_PER_DRAW",
         /* the frame dumps: taken at the flip, from the picture */
@@ -7071,17 +7039,13 @@ static void do_draw_body(void)
      * from a mean of 80 to a mean of 5, which is black to the eye, and the
      * HUD drawn after it survives -- exactly what the picture shows.
      *
-     * Two things are wanted here and neither is a fix yet: what its alpha
-     * does over time (a fade that ramps and stops is a different bug from one
-     * that never ramps), and what the frame looks like without it.
+     * What is wanted here is what its alpha does over time: a fade that
+     * ramps and stops is a different bug from one that never ramps.
      *
      * RECOMP_GL_CURTAIN=log   report the alpha once a second
-     * RECOMP_GL_CURTAIN=skip  drop the draw entirely, and report
      */
-    int curtain_skip = 0;
     { static int mode_c = -1;
-      if (mode_c < 0) { const char *v = getenv("RECOMP_GL_CURTAIN");
-                        mode_c = !v ? 0 : !strcmp(v, "skip") ? 2 : 1; }
+      if (mode_c < 0) mode_c = getenv("RECOMP_GL_CURTAIN") ? 1 : 0;
       if (mode_c && out_n == 4 && S.blend_enable
           && !S.tex[0].enabled && !S.tex[1].enabled
           && attr_at[3] >= 0 && attr_at[0] >= 0) {
@@ -7121,20 +7085,18 @@ static void do_draw_body(void)
                    * back over the display -- and the character draws all go to
                    * surface 0x00084000 while the display framebuffer is
                    * 0x001B2000. If this quad is the blit that brings that
-                   * surface across, then skipping it (the current workaround
-                   * for the black tutorial) is also what removes the
-                   * characters, and the real bug is that its source is not
-                   * being bound. Print every stage's offset even when the
+                   * surface across, then leaving it out would remove the
+                   * characters too, and the real bug is that its source is
+                   * not being bound. Print every stage's offset even when the
                    * stage reads as disabled, because "disabled" is exactly
                    * what the broken case would look like. */
                   fprintf(stderr, "  [CURTAIN] full-screen quad %ux%u: "
-                          "alpha %.3f, %u this frame (worst %u), %u total%s | "
+                          "alpha %.3f, %u this frame (worst %u), %u total | "
                           "tex0 en=%d off=%08X %ux%u fmt=%08X | tex1 en=%d "
                           "off=%08X | surf=%08X | stencil %u func %X ref %X op %X/%X/%X"
                           " | blend %04X/%04X depth %d/%d func %X z %.1f w %.3f cm %08X\n",
                           (unsigned)p3[0], (unsigned)p3[1], c[3],
                           per_frame, worst, seen,
-                          mode_c == 2 ? " -- skipping" : "",
                           S.tex[0].enabled, S.tex[0].offset,
                           S.tex[0].width, S.tex[0].height, S.tex[0].format,
                           S.tex[1].enabled, S.tex[1].offset, S.color_offset,
@@ -7145,21 +7107,8 @@ static void do_draw_body(void)
                   (void)first_alpha;
                   fflush(stderr);
               }
-              /* With the stencil emulated, a curtain drawn under the
-               * stencil test is the shadow pass, masked to the shadows: it
-               * stays. One without it is a real fade, and is still skipped
-               * under RECOMP_GL_CURTAIN=skip. */
-              if (mode_c == 2 && !(S.stencil_en && !getenv("RECOMP_GL_NOSTENCIL")))
-                  curtain_skip = 1;
           }
       } }
-    /* Skipped by suppressing the draw call, NOT by returning.
-     *
-     * The first version of this returned from here, which quietly skipped the
-     * eleven hundred lines of bookkeeping that follow every draw in this
-     * function -- counters, and whatever state the next draw expects to have
-     * been left behind. A renderer workaround that silently changes the state
-     * machine is worse than the bug it works around, and harder to see. */
     /* Draws per program, for THIS frame.
      *
      * The question that should have been asked first: which programs draw in
@@ -7933,7 +7882,7 @@ static void do_draw_body(void)
       /* (OpenGL only: an occlusion query is a GL object, and the probe sets
        * GL state behind the device's back and puts it back afterwards.) */
 #ifdef NV2A_GL_HAVE_GL
-      if (g_is_gl && probe_this && !curtain_skip && !g_surf_lost && slot >= 0) {
+      if (g_is_gl && probe_this && !g_surf_lost && slot >= 0) {
           GLuint qo = 0;
           glGenQueries(1, &qo);
           if (qo) {
@@ -8095,8 +8044,7 @@ static void do_draw_body(void)
                     tl_events++;
                 } else if (out_n <= 6) {
                     fprintf(stderr, "  [TIMELINE]   draw %6u: quad, slot %d,"
-                            " %u verts%s\n", S.draws, slot, out_n,
-                            curtain_skip ? " [curtain, skipped]" : "");
+                            " %u verts\n", S.draws, slot, out_n);
                     tl_events++;
                 }
             }
@@ -8109,7 +8057,7 @@ static void do_draw_body(void)
       { static int xray = -1;
         if (xray < 0) { const char *v = getenv("RECOMP_GL_XRAY");
                         xray = v ? atoi(v) : 0; }
-        if (xray && is_mover && !curtain_skip && !g_surf_lost) {
+        if (xray && is_mover && !g_surf_lost) {
             Nv2aRenderState xr = g_draw_rs;
             xr.blend_enable = 0;
             xr.cull_enable = 0;
@@ -8124,7 +8072,7 @@ static void do_draw_body(void)
         } }
     }
     PROF_STEP(STEP_PROBES);
-    if (!curtain_skip && !g_surf_lost) {
+    if (!g_surf_lost) {
         PROF_T0();
         if (vc_vb && !vc_seq) G->draw_indexed(mode, out_n, vc_i32);
         else                  G->draw(mode, out_n);
@@ -10642,8 +10590,7 @@ static void present(int is_frame)
           if (t0 < 0.0) { const char *v = getenv("RECOMP_GL_DUMP_SECS");
                           t0 = mono_now(); after_s = v ? atof(v) : 0.0; }
           if (dump_due && after_s > 0.0 && mono_now() - t0 < after_s) dump_due = 0; }
-        /* RECOMP_GL_DUMP_PAIRS=1: each dump and the frame straight after it --
-         * with RECOMP_GL_TEXGEN=ab, the same moment with and without. */
+        /* RECOMP_GL_DUMP_PAIRS=1: each dump and the frame straight after it. */
         { static int pairs = -1, second;
           if (pairs < 0) pairs = getenv("RECOMP_GL_DUMP_PAIRS") ? 1 : 0;
           if (pairs && is_frame) {
@@ -10884,24 +10831,15 @@ static void methval_note(uint32_t method, uint32_t param)
  * reads, so a batch sent this way ended with no vertices and drew nothing --
  * among them, the one that darkens what this title's shadow volumes marked in
  * the stencil buffer: the volumes were drawn, the shadows never were.
- *
- * RECOMP_GL_IMMEDIATE=0: as before, nothing drawn.
  */
 #define MAX_IMM 2048
 static float    g_imm[MAX_IMM][NUM_ATTRS][4];
 static uint32_t g_imm_n, g_imm_dropped;
 
-static int imm_on(void)
-{
-    static int on = -1;
-    if (on < 0) { const char *v = getenv("RECOMP_GL_IMMEDIATE"); on = v ? atoi(v) != 0 : 1; }
-    return on;
-}
-
 /* The position is complete: a vertex, of every attribute's current value. */
 static void imm_emit(void)
 {
-    if (!S.prim || !imm_on()) return;     /* outside Begin/End: a value, not a vertex */
+    if (!S.prim) return;     /* outside Begin/End: a value, not a vertex */
     if (g_imm_n >= MAX_IMM) { g_imm_dropped++; return; }
     memcpy(g_imm[g_imm_n], S.const_attr, sizeof g_imm[0]);
     g_imm_n++;

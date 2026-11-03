@@ -35,13 +35,13 @@ void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count)
 #endif
 
 /* Two of Logging's switches, and three of Engine switches': one that is set
- * to 1, one that is set to 0, and RECOMP_GL_CURTAIN, set to a word, skip. A
+ * to 1, one that is set to 0, and RECOMP_APU_MIX, set to a word, xemu. A
  * line each, "-" when it is not set. */
 static void show(const char *when)
 {
     static const char *const name[] = { "RECOMP_GL_PROFILE", "RECOMP_LOCK_WATCH",
-                                        "RECOMP_GL_TEX_ONESAMPLER", "RECOMP_GL_TITLE_MIPS",
-                                        "RECOMP_GL_CURTAIN" };
+                                        "RECOMP_GL_STENCILVIS", "RECOMP_GL_VCACHE",
+                                        "RECOMP_APU_MIX" };
     size_t i;
     for (i = 0; i < sizeof name / sizeof name[0]; i++) {
         const char *v = getenv(name[i]);

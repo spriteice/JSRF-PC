@@ -110,8 +110,8 @@ menu.
     after its release, or released through the wrong call. While it is on,
     the memory the game releases is kept back, out of reach, until the game
     needs that space again; where the game's memory goes doesn't change.
-  - **Engine switches:** Turn parts of the engine off, or back to how they
-    were, to compare.
+  - **Engine switches:** Turn parts of the engine off, or change how they
+    work, to compare.
   - **Performance:** What the engine does for speed, each on by default
     and ticked; untick one to compare. Use P cores (Linux) runs the game's
     two busiest threads on the processor's P cores, its fast ones, where it

@@ -444,7 +444,7 @@ NV2A_GLSL_VERSION
 /*
  * Reversed depth: set by the OpenGL backend once clip control gives it the
  * console's 0..w depth range, before any program is emitted (nv2a_gl.c,
- * revz_start), unless RECOMP_GL_NOREVZ is set. Metal never sets it.
+ * revz_start). Metal never sets it.
  *
  * The title layers decals and its menus a step or two of the 24-bit range
  * apart, near the far end, with LEQUAL and no polygon offset. Converted to
@@ -460,8 +460,8 @@ void nv2a_glsl_set_revz(int on) { g_revz = on; }
 int  nv2a_glsl_revz(void) { return g_revz; }
 
 /*
- * Precise depth (with reversed depth, unless RECOMP_GL_NOPRECZ is set): the
- * fixed-function depth without float32's rounding at the far end.
+ * Precise depth (on with reversed depth): the fixed-function depth without
+ * float32's rounding at the far end.
  *
  * The composite matrix has the 0..16777215 depth scale folded in, so a wall
  * near the far end has a z of about three billion before the divide, where
