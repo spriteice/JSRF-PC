@@ -116,7 +116,6 @@ static double mono_now(void);
 extern int  xbox_guest_lock_drop(void)   __attribute__((weak));
 extern unsigned long g_vblank_count      __attribute__((weak));
 extern void xbox_guest_lock_retake(int)  __attribute__((weak));
-extern void xbox_nv2a_vblank_service(void) __attribute__((weak));
 
 extern ptrdiff_t xbox_GetMemoryOffset(void);
 extern uint32_t  xbox_ContiguousAllocatedBytes(void);
@@ -10316,31 +10315,15 @@ static void frame_pace(void)
 #else
                 double spin = deadline - 0.0012;
 #endif
-                /* Answer the display interrupt while waiting: this thread is
-                 * the one that completes its acknowledgement, and the title's
-                 * handler holds the guest lock until it does -- see
-                 * xbox_nv2a_vblank_service(). So the sleep is taken in slices
-                 * of a millisecond with the interrupt serviced between them.
-                 * RECOMP_PACE_VBLANK=0: one sleep, as before, for A/B. */
-                static int service = -1;
-                if (service < 0) {
-                    const char *v = getenv("RECOMP_PACE_VBLANK");
-                    service = (v ? atoi(v) : 1) && xbox_nv2a_vblank_service;
-                }
-                while (now < spin) {
+                if (now < spin) {
 #if defined(PACE_ABSOLUTE)
                     /* To an absolute time, the guest lock given up as below. */
-                    double until = spin;
-                    if (service && until - now > 0.001) until = now + 0.001;
-                    pace_sleep_until(until);
+                    pace_sleep_until(spin);
                     slept = 1;
                     now = mono_now();
-                    if (!service) break;
-                    xbox_nv2a_vblank_service();
 #else
                     struct timespec ts;
                     double wait = spin - now;
-                    if (service && wait > 0.001) wait = 0.001;
                     ts.tv_sec = (time_t)wait;
                     ts.tv_nsec = (long)((wait - (double)ts.tv_sec) * 1e9);
                     /* Wait the way the console waits: with the rest of the
@@ -10348,15 +10331,12 @@ static void frame_pace(void)
                      * that serialises guest threads, so sleeping here without
                      * giving it up stops the loader and the sound thread too. */
                     pace_sleep(&ts);
-                    if (!service) break;
-                    xbox_nv2a_vblank_service();
-                    now = mono_now();
 #endif
                 }
 #if defined(PACE_ABSOLUTE)
                 if (slept) pace_margin_learn(now - spin);
 #endif
-                while ((now = mono_now()) < deadline) { if (service) xbox_nv2a_vblank_service(); }
+                while ((now = mono_now()) < deadline) { }
                 /* A sleep that overran the deadline lets the frame go late;
                  * counted from half a millisecond. */
                 if (now - deadline > 0.0005) {
@@ -12386,11 +12366,9 @@ static void sdl_menu_shaders(void)
  * binaries file, and no older engine's files, so those are removed first.
  *
  * The game is not stopped for it: it waits for its first frame as it would
- * for a slow GPU. The display interrupt is answered after each program, as
- * frame_pace answers it, so that the title's handler does not hold the guest
- * lock all the while (xbox_nv2a_vblank_service). The box is shown at most
- * once a display refresh: a compositor that holds each swap to the refresh
- * (gamescope can) would otherwise add a refresh to every program.
+ * for a slow GPU. The box is shown at most once a display refresh: a
+ * compositor that holds each swap to the refresh (gamescope can) would
+ * otherwise add a refresh to every program.
  */
 static void sdl_shader_cache(void)
 {
@@ -12412,7 +12390,6 @@ static void sdl_shader_cache(void)
     t0 = mono_now();
     held = xbox_guest_lock_drop ? xbox_guest_lock_drop() : 0;
     for (left = total; left > 0; left = G->cache_idle(0.0)) {       /* one program a call */
-        if (xbox_nv2a_vblank_service) xbox_nv2a_vblank_service();
         if (shown > 0.0 && mono_now() - shown < period) continue;
         xbox_MenuBusy("Building shaders", total - left, total);
         sdl_show(nv2a_gfx_gl_fbo(rt), 640, 480);

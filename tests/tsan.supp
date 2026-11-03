@@ -37,18 +37,6 @@ race:^swm_mode$
 # the log by the game's thread. No change planned yet.
 race:^nv2a_queue_report$
 
-# Known bugs 19 and 20: the display's and the GPU's interrupt registers are
-# plain memory. The timer thread raises interrupts in them
-# (kernel_pgraph_tick, kernel_vblank_tick), the GPU thread completes them
-# (vblank_intr_tick), and the game acknowledges them (D3D's interrupt
-# routine, through port/recomp_manual.c's sub_00194210), all at once, so one
-# can be lost. Removed by the b1.3 hotfix's write-1-to-clear registers (its
-# backlog row 11, broader-fixes/REVIEW.md change 5), which also takes out
-# vblank_intr_tick and sub_00194210.
-race:^vblank_intr_tick$
-race:^kernel_pgraph_tick$
-race:^sub_00194210$
-
 # Known bug 25: the USB controller's registers (s_hc) are plain memory, read
 # and written at once by the controller's thread and the game's USB driver
 # (xbox_OhciWrite), the status and command words each with a read, a change

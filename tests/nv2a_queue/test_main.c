@@ -21,12 +21,6 @@
  * held near the ring's start, so the tail the walk finds after it is most of
  * the ring. Every command in it, and those after the jump up to PUT, must
  * run.
- *
- * With QUEUE_TEST_SWM=1 as well, the wake-up after that: two hundred thousand
- * NOP(5)s raised as the runtime's timer thread raises them, each with a
- * vblank the title has acknowledged, and handled by D3D's DPC, while the GPU
- * thread runs its loop flat out and completes the interrupt registers. Each
- * must reach D3D's handler.
  */
 #include <pthread.h>
 #include <sys/mman.h>
@@ -40,7 +34,6 @@
 #define WAKE_FROM   0x00100000u
 #define WAKE_ROUNDS 20000u
 
-#define SWM_ROUNDS 200000u
 
 #define RING_START 0x00040000u
 #define RING_END   0x000C0000u
@@ -155,71 +148,6 @@ static int wait_get(uint32_t want)
 
 static void *gpu_thread(void *p) { nv2a_ack_thread(p); return NULL; }
 
-/* The NV2A's ISR (JSRF 0x00193C50) only queues its DPC; the DPC (0x00194480)
- * calls the PGRAPH handler while PMC_INTR_0 says PGRAPH. The runtime drains
- * DPCs on the timer thread after its ticks, so here the driver runs it. */
-static volatile int s_dpc_queued;
-static unsigned s_swm_woke;
-
-static int kernel_raise_interrupt(uint32_t vector)
-{
-    (void)vector;
-    s_dpc_queued = 1;
-    return 1;
-}
-
-static void d3d_dpc(void)
-{
-    s_dpc_queued = 0;
-    if (BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PMC_INTR_0) & NV2A_PMC_INTR_PGRAPH)
-        sub_00194210();
-}
-
-/* CMiniport::ServiceGrInterrupt, as far as a NOP(5) goes: the error bit with
- * the trap registers saying NO_OPERATION 5 sets D3D's busy-block event. Then
- * the acknowledging write of what it read, which on the console clears it. */
-void sub_00194210_gen(void)
-{
-    uint32_t intr = BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PGRAPH_INTR);
-    if ((intr & NV2A_PGRAPH_INTR_ERROR)
-        && (BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PGRAPH_TRAP_ADDR) & 0x1FFCu) == 0x100u
-        && BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PGRAPH_TRAP_DATA) == 5u)
-        s_swm_woke++;
-    BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PGRAPH_INTR) = intr;
-}
-
-/* The walk reaches NOP(5) and queues it; the timer thread raises it, with a
- * vblank the title has acknowledged for the GPU thread to complete. Later
- * vblanks run the DPC again; after four, a software method still in flight
- * never reached the handler, and D3D sleeps for good. */
-static void swm_test(void)
-{
-    unsigned r, lost = 0;
-    g_xbox_mem_offset = (ptrdiff_t)(uintptr_t)s_guest;
-    for (r = 0; r < SWM_ROUNDS; r++) {
-        int k;
-        BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PCRTC_INTR_0) = NV2A_PCRTC_INTR_VBLANK;
-        __atomic_fetch_or(&BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PMC_INTR_0),
-                          NV2A_PMC_INTR_PCRTC, __ATOMIC_SEQ_CST);
-        xbox_nv2a_software_method(0, 5u);
-        kernel_pgraph_tick();
-        sched_yield();
-        for (k = 0; k < 5 && xbox_nv2a_swm_in_flight(); k++) {
-            if (!s_dpc_queued) sched_yield();
-            d3d_dpc();
-        }
-        if (xbox_nv2a_swm_in_flight()) {
-            lost++;
-            printf("wake-up %u lost: PMC_INTR_0 %08X, PGRAPH_INTR %08X\n", r + 1,
-                   BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PMC_INTR_0),
-                   BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PGRAPH_INTR));
-            break;
-        }
-    }
-    printf("software methods: %u raised, %u reached D3D's handler; wake-ups lost: %u\n",
-           r + (lost ? 1u : 0u), s_swm_woke, lost);
-}
-
 /* A wrap with most of the ring behind it. The game kicks the first stretch,
  * and while the walk is held at the slow command in it, runs on to the
  * ring's end, jumps to its start and kicks again: the GPU thread's next PUT
@@ -314,10 +242,9 @@ int main(void)
     write_nops(SEG1, END);
     pthread_create(&gpu, NULL, gpu_thread, s_regs);
 
-    if (getenv("QUEUE_TEST_WAKE") || getenv("QUEUE_TEST_RING") || getenv("QUEUE_TEST_SWM")) {
+    if (getenv("QUEUE_TEST_WAKE") || getenv("QUEUE_TEST_RING")) {
         if (getenv("QUEUE_TEST_WAKE")) wake_test();
-        else if (getenv("QUEUE_TEST_RING")) ring_test();
-        else swm_test();
+        else ring_test();
         __atomic_store_n(&g_nv2a_ack_stop, 1, __ATOMIC_RELEASE);
         pthread_join(gpu, NULL);
         return 0;

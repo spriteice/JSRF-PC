@@ -2259,51 +2259,15 @@ void sub_001912A0(void)
     xbox_nv2a_kick();
 }
 
-/* ---- sub_00194210: D3D's PGRAPH interrupt handler --------------------------
- *
- * CMiniport::ServiceGrInterrupt, called from the NV2A DPC (0x00194480) when
- * PMC_INTR_0 says PGRAPH. It reads PGRAPH_INTR (+0x400100) and the trap
- * registers (+0x400704 method, +0x400708 parameter, +0x400108 source), writes
- * PGRAPH_INTR back to acknowledge -- write-1-to-clear on the console -- and
- * for a NOP with a parameter calls the software-method dispatcher
- * (sub_00193F70; 5 = KeSetEvent on the push buffer's busy-block event). It
- * returns PGRAPH_INTR as it reads it afterwards, and the DPC loops for as
- * long as that is not zero.
- *
- * The runtime delivers those software methods now (kernel_pgraph_tick in
- * xboxrecomp's nv2a_intr.c), and the register here is memory: the write
- * that would have cleared the bits keeps them, so the DPC would call this
- * again and again. What it read, it acknowledged; that is cleared once it
- * returns, PMC_INTR_0's PGRAPH bit goes with it, the return value is the
- * register as the console would read it then, and the runtime may deliver the
- * next one. The hang this ends: the make-space wait at 0x0019151B, for good.
- * Both clears are atomic: the GPU thread clears these registers too, at the
- * same time (vblank_intr_tick in xboxrecomp's xbox_memory_layout.c). */
-int nv2a_title_acks_pgraph(void) { return 1; }
-extern void sub_00194210_gen(void);
-extern void xbox_nv2a_software_method_done(void);
-void sub_00194210(void)
-{
-    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
-    volatile uint32_t *intr = (volatile uint32_t *)(m + 0xFD400100u);
-    volatile uint32_t *pmc  = (volatile uint32_t *)(m + 0xFD000100u);
-    uint32_t seen = *intr;
-    sub_00194210_gen();
-    __atomic_fetch_and(intr, ~seen, __ATOMIC_SEQ_CST);
-    if (!__atomic_load_n(intr, __ATOMIC_SEQ_CST))
-        __atomic_fetch_and(pmc, ~0x1000u, __ATOMIC_SEQ_CST);
-    g_eax = *intr;
-    if (seen & 0x00100000u) xbox_nv2a_software_method_done();
-}
-
 /* ---- sub_001910E0: how far the GPU is behind the title (test only) ---------
  *
  * D3D's make-space path (0x00191440) inserts NOP(5), kicks, and asks this how
  * much of the push buffer the GPU still has to run before it reaches that
  * point: under 32 KB it spins; 32 KB or more it sleeps until the GPU raises
  * software method 5 -- the branch that froze the game for good while nothing
- * delivered software methods (see sub_00194210 above). Taken only when the
- * GPU thread happens to be far behind, so only now and then.
+ * delivered software methods (kernel_pgraph_tick in src/kernel/nv2a_intr.c).
+ * Taken only when the GPU thread happens to be far behind, so only now and
+ * then.
  *
  * JSRF_TEST_MAKESPACE_WAIT=1 takes it every time: the answer to the call from
  * 0x001914C6 is never below 32 KB. With the software methods delivered the

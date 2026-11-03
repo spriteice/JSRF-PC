@@ -5466,9 +5466,6 @@ static unsigned long g_slice_held_raised;
  * (bridge_NtResumeThread), with the ones nobody took. */
 static unsigned long g_resume_handoffs;
 static unsigned long g_resume_handoff_timeouts;
-/* And looks for an acknowledged display interrupt at a back edge inside an
- * interrupt or DPC (xbox_GuestCpuPreempt). */
-static unsigned long g_edge_vblank_checks;
 /* Every take of the lock, by any thread: a hand-over waits for it to move. */
 static unsigned long g_lock_acquires;
 /* Told of each take by a thread other than the last to hold it, on that
@@ -5717,15 +5714,12 @@ void xbox_guest_lock_stats(void)
     fprintf(stderr, "        %lu resumes of a thread above the caller's priority handed "
                     "it the lock (%lu taken over by nobody within RECOMP_HANDOFF_US)\n",
             g_resume_handoffs, g_resume_handoff_timeouts);
-    fprintf(stderr, "        %lu looks for an acknowledged display interrupt at a back edge "
-                    "in an interrupt or DPC\n", g_edge_vblank_checks);
     kernel_call_lock_report();
     g_slice_handoffs = 0;
     g_slice_handoff_timeouts = 0;
     g_resume_handoffs = 0;
     g_resume_handoff_timeouts = 0;
     g_slice_held_raised = 0;
-    g_edge_vblank_checks = 0;
     fflush(stderr);
 }
 
@@ -5966,27 +5960,15 @@ void xbox_guest_lock_yield_now(void)
  * The slice check's own raised-IRQL rule (hand over anyway after
  * RECOMP_SLICE_RAISED_MS) never sees a back edge, deliberately: every
  * raised-IRQL loop has back edges, and a hand-over there lets the timer
- * thread run a DPC partway through what the holder raised IRQL to protect.
- *
- * Inside an interrupt or DPC nothing is switched, but a display interrupt
- * the routine has acknowledged is completed here, as the hardware completes
- * it at the write. The title's vblank DPC writes its acknowledgement and
- * spins until PMC_INTR_0 is quiet. The registers are plain memory, so that
- * waited for the GPU thread to look (vblank_intr_tick), between pushbuffer
- * runs or frame pacing's sleeps, with the guest lock held all the while. */
+ * thread run a DPC partway through what the holder raised IRQL to protect. */
 void xbox_GuestCpuPreempt(uint32_t va)
 {
     extern unsigned g_recomp_tick;
     extern unsigned char xbox_KeCurrentIrql(void);
     extern int mcpx_apu_irq_pending_global(void) __attribute__((weak));
-    if (!t_guest_holds) return;
-    if (!t_in_callback) g_lock_owner_edge = va;
+    if (!t_guest_holds || t_in_callback) return;
+    g_lock_owner_edge = va;
     if ((++g_recomp_tick & 0xFFu) != 0u) return;
-    if (t_in_callback) {
-        g_edge_vblank_checks++;
-        xbox_nv2a_vblank_service();
-        return;
-    }
     g_lock_owner_irql = xbox_KeCurrentIrql();
     if (mcpx_apu_irq_pending_global && xbox_GetConnectedInterrupt(APU_VECTOR)
         && mcpx_apu_irq_pending_global())
@@ -6484,6 +6466,21 @@ void kernel_freeze_watch(void)
                         "%lu declined since the last claim; PMC_INTR_EN_0 = "
                         "0x%08X. DPCs: %lu queued, %lu run, %ld waiting\n",
                 raised, claimed, declined, enabled, queued, run, waiting);
+    }
+    /* A software method in flight is done once the title's handler has
+     * cleared PGRAPH_INTR's error bit and turned PGRAPH_FIFO's access bit
+     * back on (kernel_pgraph_tick), and D3D sleeps until it is: a freeze in
+     * that wait shows here. */
+    {   unsigned long raised, waiting;
+        int in_flight;
+        uint32_t param, intr, fifo;
+        char what[48];
+        kernel_swm_counts(&raised, &waiting, &in_flight, &param, &intr, &fifo);
+        if (in_flight) snprintf(what, sizeof what, "parameter %u in flight", param);
+        else snprintf(what, sizeof what, "none in flight");
+        fprintf(stderr, "  [FROZEN] software methods: %lu raised, %s, %lu waiting; "
+                        "PGRAPH_INTR = 0x%08X, PGRAPH_FIFO = 0x%08X\n",
+                raised, what, waiting, intr, fifo);
     }
     kthread_report();
 #ifdef __APPLE__

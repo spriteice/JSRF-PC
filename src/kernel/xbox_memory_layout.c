@@ -173,10 +173,8 @@ static volatile int s_hurry;
  * pthread_cond_timedwait there is winpthreads': it waits whole milliseconds,
  * then waits again until GetTickCount64, which moves in 15.6 ms steps, says
  * the time is up. Measured on Windows 11, a 200 us wait that timed out took
- * 12 ms on average and up to 17.5. This thread is also what ends the title's
- * vblank handler's spin (vblank_intr_tick), and the handler holds the guest
- * lock while it spins: the lock was held up to a third of the time, where
- * Linux holds it for 2-5%, with the game thread queued behind it. */
+ * 12 ms on average and up to 17.5, and this thread's work, when it isn't
+ * kicked, waited that long. */
 static HANDLE s_kick_ev, s_kick_timer;
 static void nv2a_kick_open(void)
 {
@@ -274,22 +272,8 @@ void xbox_nv2a_hurry(int on) { (void)on; }
  */
 static const struct { uint32_t offset; uint32_t busy_mask; } NV2A_ACK[] = {
     { 0x100410, 0x00010000u },  /* PFB flush kick, Halo 0x001EF930 */
-
-    /* Interrupt status registers. These are write-1-to-clear on hardware, so
-     * an ISR "clearing" one writes the pending bit back -- against plain RAM
-     * that sets it instead, the interrupt stays pending forever, and the
-     * service routine re-enters until the stack is gone. Halo dies exactly
-     * that way: CMiniport::ServiceGrInterrupt writes 0x1000 to PGRAPH_INTR to
-     * acknowledge, reads it back still pending, and recurses into a native
-     * stack overflow.
-     *
-     * Holding them at zero is correct rather than convenient for every source
-     * nothing here raises. The vertical blank is the exception -- the runtime
-     * does raise that one -- so PMC_INTR_0 and PCRTC_INTR_0 are handled by
-     * vblank_intr_tick() below instead of being wiped from here. */
-    { 0x001100, 0xFFFFFFFFu },  /* PBUS_INTR_0   */
-    { 0x002100, 0xFFFFFFFFu },  /* PFIFO_INTR_0  */
-    { 0x400100, 0xFFFFFFFFu },  /* PGRAPH_INTR   */
+    /* The interrupt status registers aren't here: they clear at the title's
+     * write, as the console's do (nv2a_intr.c). */
 };
 
 /*
@@ -334,11 +318,6 @@ static const struct { uint32_t offset; uint32_t idle_mask; } NV2A_IDLE[] = {
  */
 #define NV2A_USER_DMA_PUT 0x800040u
 #define NV2A_USER_DMA_GET 0x800044u
-/* A software method's interrupt bits (vblank_intr_tick, nv2a_ack_thread), as
- * kernel_bridge.c names them. */
-#define NV2A_PGRAPH_INTR       0x00400100u
-#define NV2A_PGRAPH_INTR_ERROR (1u << 20)
-#define NV2A_PMC_INTR_PGRAPH   (1u << 12)
 
 /*
  * The title running ahead of the GPU thread, as it runs ahead of the GPU.
@@ -758,93 +737,6 @@ static void framebuffer_probe_tick(void)
     fflush(stderr);
 }
 
-/* The vertical-blank interrupt, acknowledged the way the hardware does.
- *
- * This was the whole of the music fault. The runtime raises a vblank sixty
- * times a second: it sets PCRTC_INTR_0's VBLANK bit and PMC_INTR_0's PCRTC
- * bit, then calls the title's interrupt service routine, which queues a DPC
- * and returns. The DPC -- running later, on the timer thread -- reads
- * PMC_INTR_0 to find out which unit interrupted, and only then signals the
- * device's vertical-blank event.
- *
- * Between those two steps sat this thread, wiping both registers to zero
- * every 200 us. So the DPC ran fifty-nine times a second and found nothing
- * pending fifty-seven of them. D3DDevice_BlockUntilVerticalBlank, which waits
- * on that event with no timeout, returned one to three times a second, and
- * the two threads parked in it -- one of them CRI's ADX server -- ran at that
- * rate too. A music stream that must be refilled thirty-eight times a second
- * was refilled twice, which is why the title's own decoder produced correct
- * audio in the wrong order.
- *
- * Both registers are write-1-to-clear on hardware and plain RAM here, so the
- * title's acknowledging write cannot be seen as a clear. It can be seen as a
- * write: it stores the register whole, as 1, so the marker bit the raise sets
- * is gone afterwards. Pending while the marker is there, acknowledged when it
- * is not -- and the acknowledgement de-asserts PMC_INTR_0's PCRTC bit, which
- * is what the handler's own spin loop is waiting for.
- */
-static void vblank_intr_tick(volatile uint32_t *regs)
-{
-    volatile uint32_t *pcrtc = (volatile uint32_t *)((char *)regs + 0x600100);
-    volatile uint32_t *pmc   = (volatile uint32_t *)((char *)regs + 0x000100);
-    uint32_t v = *pcrtc, m;
-
-    if (v & NV2A_VBLANK_PENDING_TAG)
-        return;                       /* raised, not yet acknowledged */
-
-    /* Acknowledged (or never raised): complete it, but never the next one.
-     * The timer thread raises it as this runs, PCRTC_INTR_0 first and then
-     * PMC_INTR_0 (kernel_vblank_tick in nv2a_intr.c). So each register
-     * is changed only if it still holds what was read, and PMC_INTR_0 only
-     * if PCRTC_INTR_0, read after it, says no vblank is pending. Stored
-     * whole, and PMC_INTR_0 cleared without that look, as this did, a vblank
-     * raised in between was wiped: the title's DPC found nothing pending, and
-     * the vblank was lost. What is held off is done on a later pass. */
-    if (v && !__atomic_compare_exchange_n(pcrtc, &v, 0u, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
-        return;
-    /* Everything but a software method's PGRAPH bit, while they are
-     * delivered: the timer thread raises it as this runs, and the title's
-     * handler clears it once it has looked (kernel_pgraph_tick in
-     * nv2a_intr.c). Clearing the register whole unless one was in
-     * flight, as this did, wiped a bit raised between the question and the
-     * store, and D3D slept for good on the NOP(5) it was waiting for. */
-    m = __atomic_load_n(pmc, __ATOMIC_SEQ_CST);
-    if (m) {
-        extern int xbox_nv2a_swm_on(void);
-        uint32_t want = m & (xbox_nv2a_swm_on() ? NV2A_PMC_INTR_PGRAPH : 0u);
-        if (want == m)
-            return;
-        if (__atomic_load_n(pcrtc, __ATOMIC_SEQ_CST) & NV2A_VBLANK_PENDING_TAG) {
-            static unsigned long kept;
-            unsigned long n = __atomic_add_fetch(&kept, 1ul, __ATOMIC_RELAXED);
-            if (n <= 8 || (n & (n - 1)) == 0) {
-                fprintf(stderr, "  [NV2A] a vblank raised as the last was completed, "
-                        "kept (%lu so far)\n", n);
-                fflush(stderr);
-            }
-            return;
-        }
-        (void)__atomic_compare_exchange_n(pmc, &m, want, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
-    }
-}
-
-/* The same, for code that keeps this thread away from its loop.
- *
- * The title's vblank handler (a DPC, so it holds the guest lock) writes its
- * acknowledgement and then spins until PMC_INTR_0 says the PCRTC is quiet,
- * which here happens only when vblank_intr_tick() next runs. The renderer's
- * frame pacing sleeps on this thread for up to a frame at every flip, and for
- * all of that sleep the handler spun and every guest thread that wanted the
- * lock -- the game's sound calls, DirectSound's own thread -- waited behind
- * it. Worst on black and loading screens, where a whole frame is sleep: the
- * lock was held for most of each second and a vblank in four was lost.
- * frame_pace() calls this between short sleeps so the wait is under a
- * millisecond. */
-void xbox_nv2a_vblank_service(void)
-{
-    if (g_nv2a_memory) vblank_intr_tick((volatile uint32_t *)g_nv2a_memory);
-}
-
 static DWORD WINAPI nv2a_ack_thread(LPVOID param)
 {
     volatile uint32_t *regs = (volatile uint32_t *)param;
@@ -853,17 +745,10 @@ static DWORD WINAPI nv2a_ack_thread(LPVOID param)
         nv2a_pb_scan_keep_get((volatile uint32_t *)((char *)regs + NV2A_USER_DMA_GET));
     }
     while (!InterlockedCompareExchange(&g_nv2a_ack_stop, 0, 0)) {
-        vblank_intr_tick(regs);
         for (size_t i = 0; i < sizeof(NV2A_ACK) / sizeof(NV2A_ACK[0]); i++) {
             volatile uint32_t *r =
                 (volatile uint32_t *)((char *)regs + NV2A_ACK[i].offset);
-            extern int xbox_nv2a_swm_on(void);
             uint32_t mask = NV2A_ACK[i].busy_mask;
-            /* PGRAPH_INTR's error bit is a software method's, for the title's
-             * handler to clear, as PMC_INTR_0's PGRAPH bit is (see
-             * vblank_intr_tick). */
-            if (NV2A_ACK[i].offset == NV2A_PGRAPH_INTR && xbox_nv2a_swm_on())
-                mask &= ~NV2A_PGRAPH_INTR_ERROR;
             if (*r & mask) {
                 __atomic_fetch_and(r, ~mask, __ATOMIC_SEQ_CST);
             }

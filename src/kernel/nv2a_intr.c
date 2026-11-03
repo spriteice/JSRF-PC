@@ -1,14 +1,17 @@
 /**
- * nv2a_intr.c - The NV2A's interrupts: the display's vertical blank and the
- * GPU's software methods
+ * nv2a_intr.c - The NV2A's interrupts: its interrupt registers, the display's
+ * vertical blank and the GPU's software methods
  *
- * The two interrupts the runtime raises on the NV2A's vector, on every pass of
- * the kernel's timer thread (kernel_timer.c): the vertical blank, the guest's
- * frame clock, and the software methods the push-buffer executor queues
+ * The NV2A's interrupt registers, which clear at the title's write as the
+ * console's do (xbox_nv2a_intr_read and _write, which recomp_mmio_read and
+ * _write in kernel_mmio.c ask first), and the two interrupts the runtime
+ * raises on the NV2A's vector, on every pass of the kernel's timer thread
+ * (kernel_timer.c): the vertical blank, the guest's frame clock, and the
+ * software methods the push-buffer executor queues
  * (xbox_nv2a_software_method), with their counts for the freeze report.
  *
- * Moved out of kernel_bridge.c as it was, so that it can be linked and tested
- * on its own.
+ * In a file of its own, out of kernel_bridge.c, so that it can be linked and
+ * tested on its own (tests/vblank_ack).
  */
 
 #include "kernel.h"
@@ -18,6 +21,150 @@
 #include "xbox_memory_layout.h"
 #include "kernel_bridge.h"
 
+/* The interrupt registers, as the console has them.
+ *
+ * Each of the NV2A's units has an interrupt status register, with an enable
+ * register 0x40 after it. The unit sets a bit in its status when something
+ * happens, and the bit stays set until the driver writes a 1 to it: a write
+ * clears the bits written as 1 and leaves the rest (write-1-to-clear). The
+ * enables are stored as written. PMC_INTR_0 isn't stored at all: it has a
+ * bit for each unit, set while that unit's status and enable share a bit,
+ * and the line to the CPU is up while PMC_INTR_0 and PMC_INTR_EN_0 are both
+ * non-zero. That is xemu's model (each unit's `pending_interrupts &= ~val`,
+ * and nv2a_update_irq in hw/xbox/nv2a/nv2a.c), and it is what D3D's code
+ * expects: each of its writes to a status register is an acknowledgement,
+ * and each of its reads of PMC_INTR_0 asks which unit has an enabled
+ * interrupt pending.
+ *
+ * Here the registers are words in the NV2A's aperture, and the lifted code
+ * reaches them through recomp_mmio_read and _write (kernel_mmio.c), which ask
+ * this model first. The runtime raises interrupts on the timer thread
+ * (xbox_nv2a_intr_raise) while the title acknowledges them and sets the
+ * enables on its own threads, so every access to these registers here is one
+ * atomic operation, and neither side can undo the other's change. So is every
+ * access to PGRAPH_FIFO, whose access bit says when the title's handler is
+ * done with a software method (below). PBUS's status follows the same rule,
+ * though nothing here raises it; PVIDEO's, which D3D's DPC also acknowledges,
+ * isn't routed through PMC_INTR_0 by xemu and isn't here either.
+ */
+#define XBOX_NV2A_REG_BASE     0xFD000000u
+#define XBOX_NV2A_REG_SPAN     0x01000000u
+#define NV2A_PMC_INTR_0        0x00000100u
+#define NV2A_PMC_INTR_EN_0     0x00000140u
+#define NV2A_PMC_INTR_PFIFO    (1u << 8)
+#define NV2A_PMC_INTR_PGRAPH   (1u << 12)
+#define NV2A_PMC_INTR_PTIMER   (1u << 20)
+#define NV2A_PMC_INTR_PCRTC    (1u << 24)
+#define NV2A_PMC_INTR_PBUS     (1u << 28)
+#define NV2A_PBUS_INTR_0       0x00001100u
+#define NV2A_PFIFO_INTR_0      0x00002100u
+#define NV2A_PTIMER_INTR_0     0x00009100u
+#define NV2A_PGRAPH_INTR       0x00400100u
+#define NV2A_PCRTC_INTR_0      0x00600100u
+#define NV2A_INTR_EN(status)   ((status) + 0x40u)
+#define NV2A_PGRAPH_FIFO       0x00400720u
+#define NV2A_VECTOR            3u
+
+#define NV2A_REG(offset) BRIDGE_MEM32(XBOX_NV2A_REG_BASE + (offset))
+
+static const struct { uint32_t status, pmc; } NV2A_INTR_UNITS[] = {
+    { NV2A_PFIFO_INTR_0,  NV2A_PMC_INTR_PFIFO  },
+    { NV2A_PGRAPH_INTR,   NV2A_PMC_INTR_PGRAPH },
+    { NV2A_PTIMER_INTR_0, NV2A_PMC_INTR_PTIMER },
+    { NV2A_PCRTC_INTR_0,  NV2A_PMC_INTR_PCRTC  },
+    { NV2A_PBUS_INTR_0,   NV2A_PMC_INTR_PBUS   },
+};
+#define NV2A_INTR_UNIT_COUNT (sizeof NV2A_INTR_UNITS / sizeof NV2A_INTR_UNITS[0])
+
+void xbox_nv2a_intr_raise(uint32_t status, uint32_t bits)
+{
+    __atomic_fetch_or(&NV2A_REG(status), bits, __ATOMIC_SEQ_CST);
+}
+
+/* PMC_INTR_0, worked out. */
+static uint32_t intr_pending(void)
+{
+    uint32_t pmc = 0;
+    size_t i;
+    for (i = 0; i < NV2A_INTR_UNIT_COUNT; i++) {
+        uint32_t status = NV2A_INTR_UNITS[i].status;
+        if (__atomic_load_n(&NV2A_REG(status), __ATOMIC_SEQ_CST)
+            & __atomic_load_n(&NV2A_REG(NV2A_INTR_EN(status)), __ATOMIC_SEQ_CST))
+            pmc |= NV2A_INTR_UNITS[i].pmc;
+    }
+    return pmc;
+}
+
+/* What the model does with the register at an offset. */
+enum { INTR_NOT_OURS, INTR_PMC, INTR_STATUS, INTR_STORED };
+static int intr_kind(uint32_t offset)
+{
+    size_t i;
+    if (offset == NV2A_PMC_INTR_0)
+        return INTR_PMC;
+    if (offset == NV2A_PMC_INTR_EN_0 || offset == NV2A_PGRAPH_FIFO)
+        return INTR_STORED;
+    for (i = 0; i < NV2A_INTR_UNIT_COUNT; i++) {
+        if (offset == NV2A_INTR_UNITS[i].status)
+            return INTR_STATUS;
+        if (offset == NV2A_INTR_EN(NV2A_INTR_UNITS[i].status))
+            return INTR_STORED;
+    }
+    return INTR_NOT_OURS;
+}
+
+/* The bits of the 32-bit register an access of `size` bytes at `addr`
+ * covers, and where they start; 0 if it crosses into the next register. */
+static uint32_t intr_lanes(uint32_t addr, unsigned size, unsigned *shift)
+{
+    unsigned byte = addr & 3u;
+    if (size == 0 || byte + size > 4u)
+        return 0;
+    *shift = byte * 8u;
+    return size >= 4u ? 0xFFFFFFFFu : ((1u << (size * 8u)) - 1u) << *shift;
+}
+
+int xbox_nv2a_intr_read(uint32_t addr, unsigned size, uint32_t *val)
+{
+    uint32_t offset = (addr & ~3u) - XBOX_NV2A_REG_BASE, lanes, v;
+    unsigned shift;
+    int kind;
+    if (offset >= XBOX_NV2A_REG_SPAN || !(kind = intr_kind(offset)))
+        return 0;
+    if (!(lanes = intr_lanes(addr, size, &shift)))
+        return 0;
+    v = kind == INTR_PMC ? intr_pending()
+                         : __atomic_load_n(&NV2A_REG(offset), __ATOMIC_SEQ_CST);
+    *val = (v & lanes) >> shift;
+    return 1;
+}
+
+int xbox_nv2a_intr_write(uint32_t addr, uint32_t val, unsigned size)
+{
+    uint32_t offset = (addr & ~3u) - XBOX_NV2A_REG_BASE, lanes, bits, old;
+    unsigned shift;
+    int kind;
+    if (offset >= XBOX_NV2A_REG_SPAN || !(kind = intr_kind(offset)))
+        return 0;
+    if (!(lanes = intr_lanes(addr, size, &shift)))
+        return 0;
+    bits = (val << shift) & lanes;
+    switch (kind) {
+    case INTR_STATUS:
+        __atomic_fetch_and(&NV2A_REG(offset), ~bits, __ATOMIC_SEQ_CST);
+        break;
+    case INTR_STORED:
+        old = __atomic_load_n(&NV2A_REG(offset), __ATOMIC_SEQ_CST);
+        while (!__atomic_compare_exchange_n(&NV2A_REG(offset), &old, (old & ~lanes) | bits,
+                                            0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
+            ;
+        break;
+    default:
+        break;                          /* PMC_INTR_0: worked out, not stored */
+    }
+    return 1;
+}
+
 /* The GPU's vertical blank, delivered rather than merely enabled.
  *
  * The D3D8 library linked into a title installs an ISR for this and then waits
@@ -26,24 +173,19 @@
  * Half-Life 2's loader stops, with its videos open, its 23 MB of UI textures
  * loaded, and no second frame.
  *
- * The ISR reads the NV2A's own interrupt status to decide whether the
- * interrupt is its business, so the registers have to say vblank before the
- * routine is called: PCRTC_INTR_0 bit 0 for the vblank itself, and PMC_INTR_0
- * bit 24 to say the PCRTC block is the source. Without those the handler looks,
- * finds nothing, and correctly declines.
+ * D3D's DPC reads PMC_INTR_0 to find out which unit interrupted, so the
+ * vblank is raised in the registers before the routine is called:
+ * PCRTC_INTR_0's bit 0, which makes PMC_INTR_0 say PCRTC (bit 24) while
+ * PCRTC_INTR_EN_0, which D3D sets at start-up, has it too. D3D's vblank
+ * handler acknowledges it by writing 1 to PCRTC_INTR_0, and loops until
+ * PMC_INTR_0 no longer says PCRTC, which is at that first write.
  *
  * ponytail: a fixed 60 Hz off the timer tick rather than anything tied to the
  * display mode, and no field or interlace handling. A title that measures
  * refresh rate from this will read 60; a title that needs the real one wants
  * the mode AvSetDisplayMode was given, which is recorded a few files away.
  */
-#define XBOX_NV2A_REG_BASE     0xFD000000u
-#define NV2A_PMC_INTR_0        0x00000100u
-#define NV2A_PMC_INTR_PCRTC    (1u << 24)
-#define NV2A_PCRTC_INTR_0      0x00600100u
 #define NV2A_PCRTC_INTR_VBLANK (1u << 0)
-#define NV2A_PMC_INTR_EN_0     0x00000140u
-#define NV2A_VECTOR            3u
 
 /* How many display interrupts have been delivered. Read by the renderer's
  * pacing report, so "the guest's frame clock" is a number and not a belief. */
@@ -98,16 +240,7 @@ void kernel_vblank_tick(void)
     if (!xbox_GetConnectedInterrupt(NV2A_VECTOR))
         return;
 
-    /* Raised with the pending marker set, so the busy-bit thread can tell an
-     * interrupt the title has not looked at yet from one it has acknowledged.
-     * Without that distinction the status bits were wiped 200 us after this
-     * line and the DPC below found nothing pending -- see vblank_intr_tick(). */
-    BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PCRTC_INTR_0) |=
-        NV2A_PCRTC_INTR_VBLANK | NV2A_VBLANK_PENDING_TAG;
-    /* One atomic operation: PMC_INTR_0 is shared with the software methods
-     * below, and the GPU thread clears it as this runs. */
-    __atomic_fetch_or(&BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PMC_INTR_0),
-                      NV2A_PMC_INTR_PCRTC, __ATOMIC_SEQ_CST);
+    xbox_nv2a_intr_raise(NV2A_PCRTC_INTR_0, NV2A_PCRTC_INTR_VBLANK);
 
     g_vblank_count++;
     {
@@ -136,7 +269,7 @@ void kernel_vblank_counts(unsigned long *raised, unsigned long *claimed,
     *raised = g_vblank_count;
     *claimed = g_vblank_claimed;
     *declined_since_claim = g_vblank_declined_since_claim;
-    *enabled = BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PMC_INTR_EN_0);
+    *enabled = __atomic_load_n(&NV2A_REG(NV2A_PMC_INTR_EN_0), __ATOMIC_SEQ_CST);
 }
 
 /* The GPU's software methods, delivered.
@@ -144,7 +277,7 @@ void kernel_vblank_counts(unsigned long *raised, unsigned long *claimed,
  * NV097_NO_OPERATION with a non-zero parameter is how D3D asks the GPU to call
  * it back: the GPU stops on the method and raises a PGRAPH interrupt -- an
  * "error" whose trap registers hold the method (0x100) and the parameter --
- * and D3D's handler (CMiniport::ServiceGrInterrupt, sub_00194210 in JSRF) does
+ * and D3D's handler (CMiniport::ServiceGrInterrupt, 0x00194210 in JSRF) does
  * what the parameter says. Parameter 5 sets the push buffer's "busy block"
  * event, and the make-space path for a request of 32 KB or more inserts a
  * NOP(5) and sleeps on that event. Nothing here raised the interrupt, so once
@@ -154,43 +287,30 @@ void kernel_vblank_counts(unsigned long *raised, unsigned long *claimed,
  *
  * The push-buffer executor queues each one (xbox_nv2a_software_method) and
  * this tick, on the thread that delivers the other interrupts, raises the
- * oldest: trap registers, PGRAPH_INTR's error bit, PMC_INTR_0's PGRAPH bit,
- * then the NV2A vector. One at a time: the next waits until the title's
- * handler has acknowledged this one (xbox_nv2a_software_method_done). The
- * acknowledgement comes from the port's wrapper on that handler, which also
- * does what the console's write-1-to-clear register would -- here the
- * register is memory and keeps the bit, and D3D's DPC calls the handler for
- * as long as it reads anything pending. So nothing is raised for a title
- * without such a wrapper (nv2a_title_acks_pgraph): an interrupt nothing can
- * clear would hold its DPC in that loop for good.
- *
- * The two status bits a software method raises -- PGRAPH_INTR's error bit
- * and PMC_INTR_0's PGRAPH bit -- are set here and cleared by the title's
- * handler (the port's wrapper on it), both on this thread. The GPU thread
- * completes the same two registers for the other sources (vblank_intr_tick
- * and nv2a_ack_thread in xbox_memory_layout.c) and leaves these bits alone
- * while software methods are delivered (xbox_nv2a_swm_on); every change to
- * the registers is one atomic operation. It used to clear them whole when
- * nothing was in flight, and between its asking and its clearing, one could
- * be raised: the DPC then never called the handler, or the handler found
- * nothing to acknowledge, nothing more was delivered, and D3D slept for good
- * on the NOP(5) it had been sent. tests/nv2a_queue loses one that way within
- * a few hundred.
+ * oldest: trap registers, then PGRAPH_INTR's error bit, then the NV2A vector.
+ * One at a time, as on the console, where the GPU stays stopped on the method
+ * until the handler is done with it. D3D's handler turns PGRAPH's FIFO access
+ * off (PGRAPH_FIFO, bit 0), acknowledges the error bit, and only then reads
+ * the parameter from the trap registers and acts on it; then it turns FIFO
+ * access back on. So a software method is done once its error bit is clear
+ * and FIFO access is on again, and the next is raised only then: raised at
+ * the acknowledgement, it would overwrite the parameter the handler has yet
+ * to read. xemu holds PGRAPH the same way (waiting_for_nop, and the FIFO
+ * isn't read while can_fifo_access is off). D3D calls the handler from its
+ * DPC and also from loops on the title's own threads that poll PGRAPH_INTR,
+ * and either may be the one that acknowledges.
  *
  * Only the parameters a title is known to need are delivered -- JSRF's 5 --
  * because the others were never delivered either and the rest of the runtime
  * may already stand in for what their handlers do (parameter 1's, for one,
  * counts flips). RECOMP_NV2A_SWM=all delivers every one, =0 none.
  */
-#define NV2A_PGRAPH_INTR       0x00400100u
 #define NV2A_PGRAPH_NSOURCE    0x00400108u
 #define NV2A_PGRAPH_TRAP_ADDR  0x00400704u
 #define NV2A_PGRAPH_TRAP_DATA  0x00400708u
+#define NV2A_PGRAPH_FIFO_ACCESS (1u << 0)
 #define NV2A_PGRAPH_INTR_ERROR (1u << 20)
-#define NV2A_PMC_INTR_PGRAPH   (1u << 12)
 #define SWM_QUEUE 64u
-/* Overridden (strong) by a port that acknowledges PGRAPH interrupts. */
-__attribute__((weak)) int nv2a_title_acks_pgraph(void) { return 0; }
 static struct { uint32_t subch, param; } g_swm_q[SWM_QUEUE];
 static volatile uint32_t g_swm_head, g_swm_tail;
 static volatile int      g_swm_in_flight;
@@ -201,8 +321,7 @@ static int swm_mode(void)
     static int mode = -1;                 /* 0 none, 1 the known ones, 2 all */
     if (mode < 0) {
         const char *e = getenv("RECOMP_NV2A_SWM");
-        mode = !nv2a_title_acks_pgraph() ? 0
-             : (e && !strcmp(e, "all")) ? 2 : (e && e[0] == '0') ? 0 : 1;
+        mode = (e && !strcmp(e, "all")) ? 2 : (e && e[0] == '0') ? 0 : 1;
     }
     return mode;
 }
@@ -212,10 +331,6 @@ static int swm_wanted(uint32_t param)
     int mode = swm_mode();
     return mode == 2 || (mode == 1 && param == 5);
 }
-
-int xbox_nv2a_swm_on(void) { return swm_mode() != 0; }
-
-int xbox_nv2a_swm_in_flight(void) { return g_swm_in_flight; }
 
 void xbox_nv2a_software_method(uint32_t subch, uint32_t param)
 {
@@ -230,28 +345,35 @@ void xbox_nv2a_software_method(uint32_t subch, uint32_t param)
     __atomic_store_n(&g_swm_head, h + 1, __ATOMIC_RELEASE);
 }
 
-void xbox_nv2a_software_method_done(void)
+/* The one in flight is done: its error bit is clear and FIFO access is on.
+ * Read in that order. The handler turns access off before it acknowledges,
+ * so access seen on after the bit was seen clear is the handler's end, not
+ * the moment before its start. */
+static int swm_done(void)
 {
-    if (!g_swm_in_flight) return;
-    __atomic_store_n(&g_swm_tail, g_swm_tail + 1, __ATOMIC_RELEASE);
-    g_swm_in_flight = 0;
+    if (__atomic_load_n(&NV2A_REG(NV2A_PGRAPH_INTR), __ATOMIC_SEQ_CST)
+        & NV2A_PGRAPH_INTR_ERROR)
+        return 0;
+    return (__atomic_load_n(&NV2A_REG(NV2A_PGRAPH_FIFO), __ATOMIC_SEQ_CST)
+            & NV2A_PGRAPH_FIFO_ACCESS) != 0;
 }
 
 void kernel_pgraph_tick(void)
 {
     uint32_t t = g_swm_tail;
     int claimed;
-    if (g_swm_in_flight || t == __atomic_load_n(&g_swm_head, __ATOMIC_ACQUIRE)) return;
+    if (g_swm_in_flight) {
+        if (!swm_done()) return;
+        __atomic_store_n(&g_swm_tail, ++t, __ATOMIC_RELEASE);
+        g_swm_in_flight = 0;
+    }
+    if (t == __atomic_load_n(&g_swm_head, __ATOMIC_ACQUIRE)) return;
     if (!xbox_GetConnectedInterrupt(NV2A_VECTOR)) return;
-    BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PGRAPH_TRAP_ADDR) =
-        0x100u | (g_swm_q[t % SWM_QUEUE].subch << 16);
-    BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PGRAPH_TRAP_DATA) = g_swm_q[t % SWM_QUEUE].param;
-    BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PGRAPH_NSOURCE) = 1u;   /* a notification */
+    NV2A_REG(NV2A_PGRAPH_TRAP_ADDR) = 0x100u | (g_swm_q[t % SWM_QUEUE].subch << 16);
+    NV2A_REG(NV2A_PGRAPH_TRAP_DATA) = g_swm_q[t % SWM_QUEUE].param;
+    NV2A_REG(NV2A_PGRAPH_NSOURCE) = 1u;   /* a notification */
     g_swm_in_flight = 1;
-    __atomic_fetch_or(&BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PGRAPH_INTR),
-                      NV2A_PGRAPH_INTR_ERROR, __ATOMIC_SEQ_CST);
-    __atomic_fetch_or(&BRIDGE_MEM32(XBOX_NV2A_REG_BASE + NV2A_PMC_INTR_0),
-                      NV2A_PMC_INTR_PGRAPH, __ATOMIC_SEQ_CST);
+    xbox_nv2a_intr_raise(NV2A_PGRAPH_INTR, NV2A_PGRAPH_INTR_ERROR);
     claimed = kernel_raise_interrupt(NV2A_VECTOR);
     g_swm_raised++;
     if (g_swm_raised <= 3 || claimed <= 0) {
@@ -269,4 +391,18 @@ void xbox_nv2a_swm_stats(unsigned long *raised, unsigned long *dropped)
 {
     if (raised) *raised = g_swm_raised;
     if (dropped) *dropped = g_swm_dropped;
+}
+
+/* The software methods now, for the freeze report. On the timer thread, as
+ * kernel_pgraph_tick is. */
+void kernel_swm_counts(unsigned long *raised, unsigned long *waiting, int *in_flight,
+                       uint32_t *param, uint32_t *pgraph_intr, uint32_t *pgraph_fifo)
+{
+    uint32_t t = __atomic_load_n(&g_swm_tail, __ATOMIC_ACQUIRE);
+    *raised = g_swm_raised;
+    *in_flight = g_swm_in_flight;
+    *waiting = __atomic_load_n(&g_swm_head, __ATOMIC_ACQUIRE) - t - (*in_flight ? 1u : 0u);
+    *param = g_swm_q[t % SWM_QUEUE].param;
+    *pgraph_intr = __atomic_load_n(&NV2A_REG(NV2A_PGRAPH_INTR), __ATOMIC_SEQ_CST);
+    *pgraph_fifo = __atomic_load_n(&NV2A_REG(NV2A_PGRAPH_FIFO), __ATOMIC_SEQ_CST);
 }

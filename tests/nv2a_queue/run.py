@@ -11,17 +11,15 @@ KickOff's flush waits for the walk; on, the flush is answered at the write,
 and DMA_GET is at each command as it runs (D3D patches a NOP ahead of GET to
 be woken when the GPU reaches it, so GET must never be behind what the walk
 has read). Then D3D's wait for the GPU against the walk, and a wrap with most
-of a 512 KB ring behind it, all of which must be walked. Last, the wake-up
-itself: software methods raised the way src/kernel/nv2a_intr.c raises them
-(its queue and kernel_pgraph_tick, verbatim) and acknowledged by
-port/recomp_manual.c's sub_00194210 (verbatim), while the GPU thread above
-completes the interrupt registers (vblank_intr_tick, verbatim): none may be
-lost. POSIX only (the wait is pthreads'); requires GCC on PATH.
+of a 512 KB ring behind it, all of which must be walked. recomp_mmio_read and
+_write ask the NV2A's interrupt registers first, so src/kernel/nv2a_intr.c is
+built as it is too (and src/platform/win32_compat.c, which it needs): none of
+these registers is one of its. POSIX only (the wait is pthreads'); requires
+GCC on PATH.
 CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
-import re
 import shlex
 import subprocess
 import sys
@@ -36,25 +34,10 @@ cc = shlex.split(os.environ.get("CC", "gcc"))
 layout = (root / "src/kernel/xbox_memory_layout.c").read_text(encoding="utf-8")
 mmio = (root / "src/kernel/kernel_mmio.c").read_text(encoding="utf-8")
 types = (root / "templates/runtime/recomp_types.h").read_text(encoding="utf-8")
-header = (root / "src/kernel/xbox_memory_layout.h").read_text(encoding="utf-8")
-intr = (root / "src/kernel/nv2a_intr.c").read_text(encoding="utf-8")
-shared = (root / "src/kernel/kernel_bridge.h").read_text(encoding="utf-8")
-manual = (root / "port/recomp_manual.c").read_text(encoding="utf-8")
 
 
 def cut(text, start, end):
     return text[text.index(start):text.index(end, text.index(start))]
-
-
-def define(text, name):
-    return re.search(r"^#define " + name + r"\b.*$", text, re.M).group(0) + "\n"
-
-
-registers = define(shared, "BRIDGE_MEM32") + "".join(define(intr, name) for name in (
-    "XBOX_NV2A_REG_BASE", "NV2A_PMC_INTR_0", "NV2A_PMC_INTR_PCRTC",
-    "NV2A_PCRTC_INTR_0", "NV2A_PCRTC_INTR_VBLANK", "NV2A_VECTOR", "NV2A_PGRAPH_INTR",
-    "NV2A_PGRAPH_NSOURCE", "NV2A_PGRAPH_TRAP_ADDR", "NV2A_PGRAPH_TRAP_DATA",
-    "NV2A_PGRAPH_INTR_ERROR", "NV2A_PMC_INTR_PGRAPH", "SWM_QUEUE")) + define(header, "NV2A_VBLANK_PENDING_TAG")
 
 
 source = ("""
@@ -92,20 +75,19 @@ static DWORD GetTickCount(void)
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (DWORD)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
 }
-static ptrdiff_t g_xbox_mem_offset;
-static uint32_t g_eax;
-static uint32_t xbox_GetConnectedInterrupt(uint32_t vector) { (void)vector; return 1; }
-static int kernel_raise_interrupt(uint32_t vector);
-int nv2a_title_acks_pgraph(void);
+/* What src/kernel/nv2a_intr.c needs, for interrupts no case raises. */
+ptrdiff_t g_xbox_mem_offset;
+uint32_t xbox_GetConnectedInterrupt(uint32_t vector) { (void)vector; return 0; }
+int kernel_raise_interrupt(uint32_t vector) { (void)vector; return -1; }
+int xbox_nv2a_intr_read(uint32_t addr, unsigned size, uint32_t *val);
+int xbox_nv2a_intr_write(uint32_t addr, uint32_t val, unsigned size);
 static void fence_mirrors_tick(void) { }
 static void counter_mirrors_tick(void) { }
 static void frame_counters_tick(void) { }
 static void framebuffer_probe_tick(void) { }
 ptrdiff_t xbox_GetMemoryOffset(void);
 void xbox_Nv2aRegisterWritten(uint32_t addr, unsigned size);
-""" + registers
-          + intr[intr.index("static struct { uint32_t subch, param; } g_swm_q[SWM_QUEUE];"):]
-          + cut(manual, "int nv2a_title_acks_pgraph(void) { return 1; }", "/* ---- sub_001910E0")
+"""
           + cut(layout, "#if !defined(_WIN32) || defined(XBOXRECOMP_WIN_GL)\n#include <pthread.h>",
                 "/*\n * NV2A busy-bit acknowledgement.")
           + cut(layout, "static const struct { uint32_t offset; uint32_t busy_mask; } NV2A_ACK[]",
@@ -113,7 +95,7 @@ void xbox_Nv2aRegisterWritten(uint32_t addr, unsigned size);
           + cut(layout, "#define NV2A_USER_DMA_PUT", "/*\n * Free-running counters in the MCPX aperture.")
           + cut(types, "#ifndef RECOMP_MMIO_LO", "static inline volatile uint8_t *recomp_p8")
           + mmio[mmio.index("uint32_t (*g_recomp_mmio_read_fn)"):]
-          + cut(layout, "static void vblank_intr_tick(volatile uint32_t *regs)", "static void xbox_Nv2aAckStart(void)")
+          + cut(layout, "static DWORD WINAPI nv2a_ack_thread(LPVOID param)", "static void xbox_Nv2aAckStart(void)")
           + (root / "tests/nv2a_queue/test_main.c").read_text(encoding="utf-8"))
 
 want = {
@@ -127,7 +109,6 @@ want = {
            "[NV2A] queue: 2 flushes complete at the write; 2 walks, 32 KB on average, the most 32 KB at once"],
     "wake": ["wake-ups lost: 0"],
     "ring": ["commands run: 65279 of 65279; DMA_GET at the command each time: yes"],
-    "swm": ["wake-ups lost: 0"],
 }
 
 # Under the thread sanitizer (tests/run_all.py --tsan sets TEST_SANITIZER),
@@ -139,6 +120,15 @@ with tempfile.TemporaryDirectory(prefix="nv2a_queue-") as directory:
     exe = str(pathlib.Path(directory) / "test")
     command = cc + ["-O2", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread", "-x", "c", "-",
                "src/kernel/nv2a_pb_scan.c", "-o", exe]
+    # nv2a_intr.c and win32_compat.c build as the runtime builds them, with
+    # the runtime's headers and without -Werror.
+    objects = []
+    for name in ("src/kernel/nv2a_intr.c", "src/platform/win32_compat.c"):
+        obj = str(pathlib.Path(directory) / (pathlib.Path(name).stem + ".o"))
+        subprocess.run(cc + ["-O2", "-std=gnu11", "-pthread", "-Isrc", "-Isrc/platform",
+                             "-Isrc/kernel", "-c", name, "-o", obj], cwd=root, check=True)
+        objects.append(obj)
+    command[command.index("-o"):command.index("-o")] = ["-x", "none", *objects, "-lm"]
     subprocess.run(command, cwd=root, input=source, text=True, check=True)
     for name, lines in want.items():
         env = {k: v for k, v in os.environ.items()
@@ -146,13 +136,11 @@ with tempfile.TemporaryDirectory(prefix="nv2a_queue-") as directory:
         env["RECOMP_PB_EXEC"] = "1"
         if name not in ("on", "wake", "ring"):
             env["RECOMP_NV2A_QUEUE"] = "0"       # the queue is on unless set to 0
-        for case in ("WAKE", "RING", "SWM"):
+        for case in ("WAKE", "RING"):
             env.pop("QUEUE_TEST_" + case, None)
         env.pop("RECOMP_ACK_SLEEP_US", None)
-        if name in ("wake", "ring", "swm"):
+        if name in ("wake", "ring"):
             env["QUEUE_TEST_" + name.upper()] = "1"
-        if name == "swm":
-            env["RECOMP_ACK_SLEEP_US"] = "0"     # the GPU thread's loop flat out
         run = subprocess.run([exe], env=env, capture_output=True, text=True, timeout=60)
         text = run.stdout + run.stderr
         if run.returncode != 0:
@@ -164,5 +152,5 @@ with tempfile.TemporaryDirectory(prefix="nv2a_queue-") as directory:
                 raise SystemExit(f"nv2a_queue {name}: no '{line}' in:\n{text}")
         print(f"queue {name}:", "; ".join(l for l in text.splitlines()
                                           if l.startswith(("flush while", "commands run", "D3D's wait",
-                                                           "a wrap", "software methods"))))
-print("nv2a_queue: all five cases pass")
+                                                           "a wrap"))))
+print("nv2a_queue: all four cases pass")

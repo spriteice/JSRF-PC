@@ -36,7 +36,11 @@ uint32_t recomp_mmio_read(uint32_t addr, unsigned size)
 {
     uint32_t v;
     if (s_mmio_trace < 0) s_mmio_trace = getenv("RECOMP_MMIO_TRACE") ? 1 : 0;
-    if (g_recomp_mmio_read_fn)
+    /* The NV2A's interrupt registers first (nv2a_intr.c): PMC_INTR_0 is
+     * worked out from the units', not stored. */
+    if (xbox_nv2a_intr_read(addr, size, &v))
+        ;
+    else if (g_recomp_mmio_read_fn)
         v = g_recomp_mmio_read_fn(addr, size);
     else switch (size) {
     case 1:  v = *(volatile uint8_t *)plain(addr); break;
@@ -53,15 +57,21 @@ void recomp_mmio_write(uint32_t addr, uint32_t val, unsigned size)
     if (s_mmio_trace < 0) s_mmio_trace = getenv("RECOMP_MMIO_TRACE") ? 1 : 0;
     if (s_mmio_trace)
         fprintf(stderr, "  [MMIO] wr%u 0x%08X <- 0x%08X\n", size * 8, addr, val);
-    /* Keep the plain-memory image current as well, so a later read of a
-     * register the model does not answer (and the debugger) see the value. */
-    switch (size) {
-    case 1:  *(volatile uint8_t *)plain(addr) = (uint8_t)val; break;
-    case 2:  *(volatile uint16_t *)plain(addr) = (uint16_t)val; break;
-    default: *(volatile uint32_t *)plain(addr) = val; break;
+    /* The NV2A's interrupt registers are written by their model
+     * (nv2a_intr.c): a status register clears the bits written as 1, as the
+     * console's do. Every other write keeps the plain-memory image current
+     * as well, so a later read of a register no model answers (and the
+     * debugger) see the value. */
+    if (!xbox_nv2a_intr_write(addr, val, size)) {
+        switch (size) {
+        case 1:  *(volatile uint8_t *)plain(addr) = (uint8_t)val; break;
+        case 2:  *(volatile uint16_t *)plain(addr) = (uint16_t)val; break;
+        default: *(volatile uint32_t *)plain(addr) = val; break;
+        }
     }
-    /* The NV2A's registers are plain memory but for the few the runtime
-     * answers itself: D3D's pushbuffer flush, for one (xbox_memory_layout.c). */
+    /* The NV2A's other registers are plain memory but for the few the
+     * runtime answers itself: D3D's pushbuffer flush, for one
+     * (xbox_memory_layout.c). */
     xbox_Nv2aRegisterWritten(addr, size);
     if (g_recomp_mmio_write_fn)
         g_recomp_mmio_write_fn(addr, val, size);

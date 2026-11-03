@@ -120,6 +120,9 @@ void kernel_cvfs_watch(void);     /* CRI's streaming file device */
 
 /* nv2a_intr.c */
 
+/* Set bits in one of the NV2A's interrupt status registers (its offset in
+ * the NV2A's registers), as the unit does; the title's write clears them. */
+void xbox_nv2a_intr_raise(uint32_t status, uint32_t bits);
 /* The NV2A's interrupts, on every pass of the timer thread. */
 void kernel_vblank_tick(void);    /* the GPU's frame clock */
 void kernel_pgraph_tick(void);    /* the GPU's software methods */
@@ -127,5 +130,9 @@ void kernel_pgraph_tick(void);    /* the GPU's software methods */
  * since the last claim, and PMC_INTR_EN_0 now. */
 void kernel_vblank_counts(unsigned long *raised, unsigned long *claimed,
                           unsigned long *declined_since_claim, uint32_t *enabled);
+/* The software methods: raised, waiting behind the one in flight, whether one
+ * is and its parameter, and PGRAPH_INTR and PGRAPH_FIFO now. */
+void kernel_swm_counts(unsigned long *raised, unsigned long *waiting, int *in_flight,
+                       uint32_t *param, uint32_t *pgraph_intr, uint32_t *pgraph_fifo);
 
 #endif /* XBOX_KERNEL_BRIDGE_H */
