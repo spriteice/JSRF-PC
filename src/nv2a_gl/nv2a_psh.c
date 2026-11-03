@@ -154,24 +154,6 @@ static void emit_input(SB *s, uint8_t in, int stage, int alpha_path)
 #define OUT_CD_BLUE(x)  (((x) >> 18) & 1)
 #define OUT_AB_BLUE(x)  (((x) >> 19) & 1)
 
-/* RECOMP_GL_OLD_OCW=1: the old reading of the output word, for A/B. */
-static int old_ocw(void)
-{
-    static int v = -1;
-    if (v < 0) v = getenv("RECOMP_GL_OLD_OCW") ? 1 : 0;
-    return v;
-}
-#define OLD_OUT_MAP(x)    (((x) >> 12) & 0x07)
-#define OLD_OUT_AB_DOT(x) (((x) >> 15) & 1)
-#define OLD_OUT_CD_DOT(x) (((x) >> 16) & 1)
-#define OLD_OUT_MUX(x)    (((x) >> 17) & 1)
-#define O_MAP(x)    (old_ocw() ? OLD_OUT_MAP(x) : OUT_MAP(x))
-#define O_AB_DOT(x) (old_ocw() ? OLD_OUT_AB_DOT(x) : OUT_AB_DOT(x))
-#define O_CD_DOT(x) (old_ocw() ? OLD_OUT_CD_DOT(x) : OUT_CD_DOT(x))
-#define O_MUX(x)    (old_ocw() ? OLD_OUT_MUX(x) : OUT_MUX(x))
-#define O_AB_BLUE(x) (old_ocw() ? 0 : OUT_AB_BLUE(x))
-#define O_CD_BLUE(x) (old_ocw() ? 0 : OUT_CD_BLUE(x))
-
 /* The output mapping is a scale and bias applied to everything the stage
  * produces. shl1/shl2 are how a title gets more than unit range out of a
  * combiner, and dropping them costs it every highlight it was counting on. */
@@ -228,8 +210,8 @@ static int psh_emit(const Nv2aPshState *ps, char *buf, int bufsize, int msl)
 
     if (stages < 1) stages = 1;
     if (stages > NV2A_PSH_STAGES) stages = NV2A_PSH_STAGES;
-    s_c0_each = old_ocw() ? 1 : (int)((ps->control >> 12) & 1);
-    s_c1_each = old_ocw() ? 1 : (int)((ps->control >> 16) & 1);
+    s_c0_each = (int)((ps->control >> 12) & 1);
+    s_c1_each = (int)((ps->control >> 16) & 1);
 
     if (msl) {
         char fu[2048];
@@ -429,11 +411,11 @@ static int psh_emit(const Nv2aPshState *ps, char *buf, int bufsize, int msl)
      * [-1, 1], as xemu does. The mux picks on R0's alpha: its top bit, or
      * with NV097_SET_COMBINER_CONTROL bit 8 clear, its bottom bit. */
     {
-    const char *mux_sel = (old_ocw() || ((ps->control >> 8) & 1))
+    const char *mux_sel = ((ps->control >> 8) & 1)
                         ? "(r_r0.a >= 0.5)"
                         : "((uint(r_r0.a * 255.0) & 1u) == 1u)";
-    const char *lo = old_ocw() ? "" : "clamp(";
-    const char *hi3 = old_ocw() ? "" : ", -1.0, 1.0)";
+    const char *lo = "clamp(";
+    const char *hi3 = ", -1.0, 1.0)";
     for (i = 0; i < stages; i++) {
         uint32_t ric = ps->rgb_icw[i], aic = ps->alpha_icw[i];
         uint32_t roc = ps->rgb_ocw[i], aoc = ps->alpha_ocw[i];
@@ -444,7 +426,7 @@ static int psh_emit(const Nv2aPshState *ps, char *buf, int bufsize, int msl)
 
         /* --- colour --- */
         e.buf = expr; e.cap = sizeof expr; e.pos = 0; e.overflow = 0;
-        if (O_AB_DOT(roc)) {
+        if (OUT_AB_DOT(roc)) {
             sb(&e, "vec3(dot(");
             emit_input(&e, (uint8_t)(ric >> 24), i, 0);
             sb(&e, ", ");
@@ -460,7 +442,7 @@ static int psh_emit(const Nv2aPshState *ps, char *buf, int bufsize, int msl)
         sb(&s, "    ab_raw = %s;\n", expr);
 
         e.pos = 0; e.overflow = 0;
-        if (O_CD_DOT(roc)) {
+        if (OUT_CD_DOT(roc)) {
             sb(&e, "vec3(dot(");
             emit_input(&e, (uint8_t)(ric >> 8), i, 0);
             sb(&e, ", ");
@@ -474,13 +456,13 @@ static int psh_emit(const Nv2aPshState *ps, char *buf, int bufsize, int msl)
             sb(&e, ")");
         }
         sb(&s, "    cd_raw = %s;\n", expr);
-        sb(&s, "    ab = %s", lo); emit_out_map(&s, O_MAP(roc), "ab_raw"); sb(&s, "%s;\n", hi3);
-        sb(&s, "    cd = %s", lo); emit_out_map(&s, O_MAP(roc), "cd_raw"); sb(&s, "%s;\n", hi3);
+        sb(&s, "    ab = %s", lo); emit_out_map(&s, OUT_MAP(roc), "ab_raw"); sb(&s, "%s;\n", hi3);
+        sb(&s, "    cd = %s", lo); emit_out_map(&s, OUT_MAP(roc), "cd_raw"); sb(&s, "%s;\n", hi3);
         /* The sum is of the *unmapped* products; the mapping is applied once
          * to each of the three results, not twice to the sum. */
         snprintf(mux, sizeof mux, "%s ? cd_raw : ab_raw", mux_sel);
         sb(&s, "    sum = %s", lo);
-        emit_out_map(&s, O_MAP(roc), O_MUX(roc) ? mux : "ab_raw + cd_raw");
+        emit_out_map(&s, OUT_MAP(roc), OUT_MUX(roc) ? mux : "ab_raw + cd_raw");
         sb(&s, "%s;\n", hi3);
 
         /* --- alpha --- */
@@ -499,19 +481,19 @@ static int psh_emit(const Nv2aPshState *ps, char *buf, int bufsize, int msl)
         emit_input(&e, (uint8_t)aic, i, 1);
         sb(&e, ")");
         sb(&s, "    cd_a_raw = %s;\n", expr);
-        sb(&s, "    ab_a = %s", lo); emit_out_map(&s, O_MAP(aoc), "ab_a_raw"); sb(&s, "%s;\n", hi3);
-        sb(&s, "    cd_a = %s", lo); emit_out_map(&s, O_MAP(aoc), "cd_a_raw"); sb(&s, "%s;\n", hi3);
+        sb(&s, "    ab_a = %s", lo); emit_out_map(&s, OUT_MAP(aoc), "ab_a_raw"); sb(&s, "%s;\n", hi3);
+        sb(&s, "    cd_a = %s", lo); emit_out_map(&s, OUT_MAP(aoc), "cd_a_raw"); sb(&s, "%s;\n", hi3);
         snprintf(mux, sizeof mux, "%s ? cd_a_raw : ab_a_raw", mux_sel);
         sb(&s, "    sum_a = %s", lo);
-        emit_out_map(&s, O_MAP(aoc), O_MUX(aoc) ? mux : "ab_a_raw + cd_a_raw");
+        emit_out_map(&s, OUT_MAP(aoc), OUT_MUX(aoc) ? mux : "ab_a_raw + cd_a_raw");
         sb(&s, "%s;\n", hi3);
 
         /* --- the writes: colour, its blue-to-alpha, then alpha --- */
         emit_store(&s, OUT_AB(roc), i, "ab", 0);
-        if (O_AB_BLUE(roc) && OUT_AB(roc) != NV2A_PSH_REG_ZERO)
+        if (OUT_AB_BLUE(roc) && OUT_AB(roc) != NV2A_PSH_REG_ZERO)
             emit_store(&s, OUT_AB(roc), i, "ab.b", 1);
         emit_store(&s, OUT_CD(roc), i, "cd", 0);
-        if (O_CD_BLUE(roc) && OUT_CD(roc) != NV2A_PSH_REG_ZERO)
+        if (OUT_CD_BLUE(roc) && OUT_CD(roc) != NV2A_PSH_REG_ZERO)
             emit_store(&s, OUT_CD(roc), i, "cd.b", 1);
         emit_store(&s, OUT_SUM(roc), i, "sum", 0);
         emit_store(&s, OUT_AB(aoc), i, "ab_a", 1);
@@ -523,13 +505,11 @@ static int psh_emit(const Nv2aPshState *ps, char *buf, int bufsize, int msl)
 
     /* --- final combiner --- */
     sb(&s, "    // final combiner\n");
-    { int fst = old_ocw() ? stages - 1 : PSH_FINAL_STAGE;
+    { int fst = PSH_FINAL_STAGE;
     /* V1R0_SUM: specular plus R0, each optionally complemented, clamped only
      * when the title asks (SPECULAR_FOG_CW1 bits 5, 6, 7 -- xemu's inv_r0,
      * inv_v1, clamp_sum). It used to be clamped always and never inverted. */
-    if (old_ocw())
-        sb(&s, "    r_sum = clamp(r_v1 + r_r0, 0.0, 1.0);\n");
-    else {
+    {
         uint32_t fl = ps->final_efg & 0xFF;
         sb(&s, "    r_sum.rgb = %s%s + %s%s%s;\n",
            (fl & 0x80) ? "clamp(" : "",

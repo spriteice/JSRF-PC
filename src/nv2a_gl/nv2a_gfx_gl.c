@@ -990,11 +990,7 @@ static void glx_uniform_i(int id, int v)
  * rather than all 192 every time any one did. */
 static int glx_uniform_f_part(int id, int first, const float *v, int n)
 {
-    static int off = -1;
     GLint loc, size;
-    /* RECOMP_GL_CONST_PART=0: always the whole file, as before. */
-    if (off < 0) { const char *e = getenv("RECOMP_GL_CONST_PART"); off = (e && e[0] == '0') ? 1 : 0; }
-    if (off) return 0;
     if (!prog_ok(g_cur_prog) || id != NV2A_U_C || first < 0 || n < 0) return 0;
     loc = g_prog[g_cur_prog - 1].loc[id];
     if (loc < 0) return 1;                  /* not read at all */
@@ -1219,10 +1215,7 @@ static void glx_state(const Nv2aRenderState *rs)
     g_last.valid = 1;
 
     /*
-     * Culling. RECOMP_GL_NOCULL turns it off, because "geometry is missing"
-     * and "geometry that should be hidden is not" look nothing alike, and
-     * having both pictures separates them in one run; RECOMP_GL_CULLFLIP
-     * turns the winding over.
+     * Culling. RECOMP_GL_CULLFLIP turns the winding over.
      *
      * The registers hold OpenGL's own enumerants: 0x900 is GL_CW, 0x901
      * GL_CCW, 0x404 GL_FRONT, 0x405 GL_BACK, 0x408 GL_FRONT_AND_BACK. The
@@ -1234,9 +1227,8 @@ static void glx_state(const Nv2aRenderState *rs)
      * surface, which left the city as the dark insides of its own buildings.
      */
     {
-        static int cull = -1, flip = -1;
-        if (cull < 0) { cull = getenv("RECOMP_GL_NOCULL") ? 0 : 1;
-                        flip = getenv("RECOMP_GL_CULLFLIP") ? 1 : 0; }
+        static int flip = -1;
+        if (flip < 0) flip = getenv("RECOMP_GL_CULLFLIP") ? 1 : 0;
         { static uint32_t seen_en[2], seen_cf[8], seen_ff[4]; static uint64_t n;
           static int on = -2;
           if (on == -2) on = getenv("RECOMP_GL_CULL_MAP") ? 1 : 0;
@@ -1252,7 +1244,7 @@ static void glx_state(const Nv2aRenderState *rs)
                           + seen_cf[6] + seen_cf[7],
                           seen_ff[0], seen_ff[1], seen_ff[2], seen_ff[3]);
           } }
-        if (!cull || !rs->cull_enable) {
+        if (!rs->cull_enable) {
             glDisable(GL_CULL_FACE);
         } else {
             int ccw = (rs->front_face == 0x901);

@@ -1188,7 +1188,7 @@ static int vp_trace(void)
  * floats.
  *
  * So the window is used only for offsets the contiguous allocator has
- * actually handed out. RECOMP_GL_CONTIG_ALL=1 restores the old behaviour.
+ * actually handed out.
  */
 /* Where the runtime's general heap begins (xbox_memory_layout.h: stacks end
  * at 0x00F80000 and the heap runs from there to the top of the map). A DMA
@@ -1206,15 +1206,9 @@ int g_world_dump_pending;   /* set by present() when a frame dump is taken */
 static uint32_t resolve(uint32_t off)
 {
     extern uint32_t nv2a_dma_resolve(uint32_t) __attribute__((weak));
-    static int all = -1, heap_first = -1;
-    if (all < 0) { const char *v = getenv("RECOMP_GL_CONTIG_ALL");
-                   all = v ? atoi(v) : 0; }
+    static int heap_first = -1;
     if (heap_first < 0) { const char *v = getenv("RECOMP_GL_HEAP_FIRST");
                           heap_first = v ? atoi(v) : 0; }
-    if (all) {   /* the old behaviour, for comparing against */
-        if (off < XBOX_CONTIG_SIZE) return XBOX_CONTIG_BASE + off;
-        return off;
-    }
     if (heap_first && off >= GL_HEAP_BASE && off < XBOX_CONTIG_SIZE)
         return off;
     if (nv2a_dma_resolve) return nv2a_dma_resolve(off);
@@ -2836,11 +2830,6 @@ static void psh_sync_textures(void)
         /* The stage's texture shader mode decides whether it is sampled at
          * all: NONE means the sampler is never touched, whatever is bound. */
         { uint32_t mode = (S.shader_stage_prog >> (5 * i)) & 31u;
-          static int nobump = -1;
-          if (nobump < 0) nobump = getenv("RECOMP_GL_NOBUMP") ? 1 : 0;
-          /* RECOMP_GL_NOBUMP=1: sample a BUMPENVMAP stage as plain 2D,
-           * the way every stage was sampled before it was implemented. */
-          if (nobump && (mode == 6 || mode == 7)) mode = 1;
           S.psh.tex_mode[i] = (uint8_t)mode;
           /* Which earlier stage a BUMPENVMAP stage takes its (du, dv) from:
            * stage 1 always from 0; 2 and 3 from SET_SHADER_OTHER_STAGE_INPUT
@@ -2880,17 +2869,16 @@ static void psh_sync_textures(void)
     S.psh.alpha_test = (uint8_t)(S.alpha_test ? 1 : 0);
     S.psh.alpha_func = (uint32_t)S.alpha_func;
     S.psh.alpha_ref  = S.alpha_ref;
-    /* RECOMP_GL_WBUFFER=0 ignores the register (the old behaviour); =1
-     * forces it on; unset honours what the title wrote to CONTROL0. */
+    /* What the title wrote to CONTROL0; RECOMP_GL_WBUFFER=1 forces it on. */
     { static int wb = -2;
       if (wb == -2) { const char *v = getenv("RECOMP_GL_WBUFFER");
-                      wb = v ? atoi(v) : -1; }
-      S.psh.w_buffer = (uint8_t)(wb >= 0 ? wb
-                                         : ((S.control0 >> 16) & 1u)); }
+                      wb = (v && atoi(v)) ? 1 : 0; }
+      S.psh.w_buffer = (uint8_t)(wb ? 1u : ((S.control0 >> 16) & 1u)); }
 }
 
 /*
- * Sticky vertex attributes (RECOMP_GL_STICKY_ATTRS=0 turns this off).
+ * Sticky vertex attributes (do_draw_body keeps them, and the fixed-function
+ * programs read them).
  *
  * The hardware keeps one current value per vertex attribute, and fetching a
  * vertex from an array writes into it: after a draw, every attribute that
@@ -2907,13 +2895,6 @@ static void psh_sync_textures(void)
  * title gives the light for each of them; here they got a normal of nothing
  * and came out black.
  */
-static int sticky_attrs(void)
-{
-    static int on = -1;
-    if (on < 0) { const char *v = getenv("RECOMP_GL_STICKY_ATTRS");
-                  on = (v && v[0] == '0') ? 0 : 1; }
-    return on;
-}
 
 /* The combiner state's half of the program key, hashed again only when it
  * changed: comparing it costs a few nanoseconds, hashing it a byte at a time
@@ -2995,7 +2976,7 @@ static void texgen_describe(Nv2aVshFixed *f)
         if (any) f->inputs_read |= 1u << (9 + s);
     }
     if (nrm && !f->lit) {
-        if (S.attr[2].size || sticky_attrs()) { f->inputs_read |= 1u << 2; f->has_normal = 1; }
+        f->inputs_read |= 1u << 2; f->has_normal = 1;
         f->tg_normalize = S.normalization ? 1 : 0;
     }
 }
@@ -3016,17 +2997,11 @@ static void ff_describe(Nv2aVshFixed *f)
     f->fog_gen = (uint8_t)(S.fog_gen_mode <= 6 ? S.fog_gen_mode : 0xFF);
     if (f->fog_gen == 6 && S.attr[5].size) f->inputs_read |= 1u << 5;
     f->lit = (uint8_t)(S.ff_lighting ? 1 : 0);
-    /* RECOMP_GL_FF_NOLIGHT=1: the old way -- the stream colour through, or
-     * white -- for A/B. */
-    { static int off = -1;
-      if (off < 0) off = getenv("RECOMP_GL_FF_NOLIGHT") ? 1 : 0;
-      if (off) f->lit = 0; }
     if (f->lit) {
         /* Lit, the normal is always read: from its array when the batch has
-         * one, otherwise the attribute's current value (see sticky_attrs). */
-        if (S.attr[2].size || sticky_attrs()) {
-            f->inputs_read |= 1u << 2; f->has_normal = 1;
-        }
+         * one, otherwise the attribute's current value (Sticky vertex
+         * attributes, above). */
+        f->inputs_read |= 1u << 2; f->has_normal = 1;
         f->colmat = (uint8_t)(S.color_material & 0xFF);
         f->lflags = (uint8_t)(((S.light_control & 1u) ? 1 : 0)
                             | ((S.light_control & (1u << 16)) ? 2 : 0)
@@ -3211,11 +3186,7 @@ static int program_for_current(void)
      * program was loaded last, which is how the scenery ended up being drawn
      * by the driver's pre-transformed-vertex passthrough.
      */
-    if (S.xf_mode == NV2A_XF_MODE_FIXED) {
-        static int off = -1;
-        if (off < 0) off = getenv("RECOMP_GL_NO_FIXEDFUNC") ? 1 : 0;
-        if (!off) return ff_program_for_current();
-    }
+    if (S.xf_mode == NV2A_XF_MODE_FIXED) return ff_program_for_current();
 
     start = S.prog_start < NV2A_VSH_MAX_INSNS ? S.prog_start : 0;
     /* Decoding the program and hashing it was most of a draw's own cost here
@@ -4915,8 +4886,8 @@ static const char *vc_debug_switch(void)
 {
     static const char *const fine[] = {
         "SCALE", "READBACK", "CURTAIN", "PRESENTER", "PROFILE", "VCACHE",
-        "VCACHE_MB", "VCACHE_VERIFY", "CONST_PART", "ANISO", "MIPMAP", "DEPTHCLAMP",
-        "TEXHASH_FULL", "CONTIG_ALL", "HEAP_FIRST", "STICKY_ATTRS",
+        "VCACHE_MB", "VCACHE_VERIFY", "ANISO", "MIPMAP", "DEPTHCLAMP",
+        "TEXHASH_FULL", "HEAP_FIRST",
         /* a method count, textures */
         "UNHANDLED", "DXT",
         /* the stencil buffer drawn in place of the batches sent a vertex at a
@@ -5639,11 +5610,11 @@ static void do_draw_body(void)
     if (n < 1) return;
 
     /* The attributes this draw fetched from arrays keep its last vertex's
-     * values (see sticky_attrs). Done before anything below can drop the
-     * draw, because the hardware would have fetched it regardless; the
-     * draw's own constant attributes are the ones with no array, which this
-     * leaves alone. */
-    if (sticky_attrs()) {
+     * values (Sticky vertex attributes, above). Done before anything below
+     * can drop the draw, because the hardware would have fetched it
+     * regardless; the draw's own constant attributes are the ones with no
+     * array, which this leaves alone. */
+    {
         uint32_t last = S.idx[n - 1];
         for (i = 0; i < NUM_ATTRS; i++) {
             const Attr *a = &S.attr[i];
@@ -6869,28 +6840,24 @@ static void do_draw_body(void)
         rs.w_buffer     = S.psh.w_buffer;
         rs.cull_face    = S.cull_face;
         rs.front_face   = S.front_face;
-        /* Stencil. RECOMP_GL_NOSTENCIL=1: ignore it, as before. */
-        { static int nost = -1;
-          if (nost < 0) nost = getenv("RECOMP_GL_NOSTENCIL") ? 1 : 0;
-          rs.stencil_test  = nost ? 0 : (S.stencil_en ? 1 : 0);
-          rs.stencil_func  = S.stencil_func;
-          rs.stencil_ref   = S.stencil_ref;
-          rs.stencil_rmask = S.stencil_fmask;
-          rs.stencil_wmask = S.stencil_wmask;
-          rs.stencil_op[0] = S.stencil_op[0];
-          rs.stencil_op[1] = S.stencil_op[1];
-          rs.stencil_op[2] = S.stencil_op[2]; }
+        /* Stencil. */
+        rs.stencil_test  = S.stencil_en ? 1 : 0;
+        rs.stencil_func  = S.stencil_func;
+        rs.stencil_ref   = S.stencil_ref;
+        rs.stencil_rmask = S.stencil_fmask;
+        rs.stencil_wmask = S.stencil_wmask;
+        rs.stencil_op[0] = S.stencil_op[0];
+        rs.stencil_op[1] = S.stencil_op[1];
+        rs.stencil_op[2] = S.stencil_op[2];
         rs.poly_offset = S.poly_fill_en ? 1 : 0;
         poly_offset_gl(&rs.poly_factor, &rs.poly_units);
         /* The window clip. A rectangle that covers the surface is the same as
          * none and costs a state change per draw to say so, which is why the
          * test is here and not in a backend. */
-        { static int off = -1;
-          /* In the title's pixels, the far edges exclusive. */
+        { /* In the title's pixels, the far edges exclusive. */
           uint32_t cx0 = 0, cy0 = 0, cx1 = g_fbo_w, cy1 = g_fbo_h;
           int clip = 0;
-          if (off < 0) off = getenv("RECOMP_GL_NOWCLIP") ? 1 : 0;
-          if (!off && S.wclip_valid && S.wclip_type == 0) {
+          if (S.wclip_valid && S.wclip_type == 0) {
               uint32_t x0 =  S.wclip_h[0]        & 0xFFFu;
               uint32_t x1 = (S.wclip_h[0] >> 16) & 0xFFFu;
               uint32_t y0 =  S.wclip_v[0]        & 0xFFFu;
@@ -10742,10 +10709,6 @@ static int gfx_init(uint32_t w, uint32_t h);
 
 static void split_batch_if_state_moved(void)
 {
-    static int on = -1;
-    if (on < 0) { const char *v = getenv("RECOMP_GL_MIDBATCH");
-                  on = v ? atoi(v) : 1; }
-    if (!on) return;
     if (!S.consts_since_geom && !S.arrays_since_geom) return;
     { int by_array = S.arrays_since_geom;
       S.consts_since_geom = 0;
@@ -11914,14 +11877,6 @@ static void gl_method(uint32_t method, uint32_t param)
         uint32_t first = param & 0xFFFFFF;
         uint32_t count = ((param >> 24) & 0xFF) + 1;
         uint32_t q;
-        /* RECOMP_GL_DRAWARRAYS_LAST=1 puts the old behaviour back -- keep the
-         * last range and draw only that -- so the two can be photographed
-         * from the same camera on the same run of the attract sequence.
-         * "The picture changed" is not the same claim as "the picture is
-         * better", and only a pair of frames settles which. */
-        static int last_only = -1;
-        if (last_only < 0) last_only = getenv("RECOMP_GL_DRAWARRAYS_LAST") ? 1 : 0;
-        if (last_only) S.idx_count = 0;
         for (q = 0; q < count && S.idx_count < MAX_INDICES; q++)
             S.idx[S.idx_count++] = first + q;
         S.draw_first = first;
