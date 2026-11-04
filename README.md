@@ -41,12 +41,12 @@ contains no game files.
 
 ## Download
 
-The latest release is **b1.3**.
+The latest release is **b1.4**.
 
 | Platform | File |
 |---|---|
-| Linux x86_64: SteamOS, Ubuntu 22.04+, and most modern distros. | [JSRF-PC-b1.3-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b1.3/JSRF-PC-b1.3-linux-x86_64.tar.gz) |
-| Windows 10 or 11, x86_64. | [JSRF-PC-b1.3-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b1.3/JSRF-PC-b1.3-windows-x86_64.zip) |
+| Linux x86_64: SteamOS, Ubuntu 22.04+, and most modern distros. | [JSRF-PC-b1.4-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b1.4/JSRF-PC-b1.4-linux-x86_64.tar.gz) |
+| Windows 10 or 11, x86_64. | [JSRF-PC-b1.4-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b1.4/JSRF-PC-b1.4-windows-x86_64.zip) |
 
 See the [changelog](CHANGELOG-JSRF-PC.md) for what changed in each version,
 and the [releases](https://github.com/spriteice/JSRF-PC/releases) page for
@@ -114,8 +114,6 @@ target and the most tested. Windows comes second.
   - Some elements half a pixel out of place.
   - Black screenshots on Windows.
   - Graffiti menu icons on some AMD graphics on Windows.
-  - A freeze at the first start after installing or updating, on Windows.
-  - A rare hang entering Rokkaku-dai Heights from The Garage.
 
 **Found a bug?** [Open an issue](https://github.com/spriteice/JSRF-PC/issues)
 and attach the `last-run.log` from that run.

@@ -4,6 +4,45 @@ What changed in each JSRF-PC version, newest first. Upstream JSRF Unleashed's
 own changes are in
 [its changelog](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/blob/main/CHANGELOG.md).
 
+## b1.4 (beta) — 4 November 2026
+
+### Added
+
+- **Heap guard:** Developer > Logging > RECOMP_HEAP_GUARD logs the game's
+  mistakes with the memory it releases, and where in the game's code each one
+  is: a block released twice, used after its release, or released through the
+  wrong call. It is there to find hangs and crashes like the one on Rokkaku-dai
+  Heights.
+
+### Fixed
+
+- **Freeze at the first start:** The first start after installing or
+  updating could freeze on its first frame, before the title. Two parts of the
+  game could run at the same instant, where the Xbox runs one at a time, and
+  the signal for the first frame was lost. They take turns now. _(Windows)_
+- **Hang entering Rokkaku-dai Heights:** Rarely, entering Rokkaku-dai Heights
+  from The Garage didn't finish loading. The game released a character's file
+  twice, and the second time freed the next mission's file. It is released
+  once now.
+- **Graffiti loading:** The game made the same mistake with its graffiti
+  designs, as it built them after a save loaded, which could free a file still
+  in use.
+- **Lost frame signals:** Under heavy load, the signal for a new frame could
+  be lost, and the frame shown late. The graphics chip's signals now clear as
+  the Xbox's do, so none is lost.
+
+### Changed
+
+- **Launcher:** The launcher now only handles the game's folders and your
+  settings, with no engine switches. The engine's own defaults are the game's
+  working setup.
+- **Engine switches:** Developer > Engine switches loses the seven rows that
+  put a fix back the way it was before: the fades to black, the shadows,
+  depth, and three for textures. It keeps the rows that turn part of the
+  engine off or change how it works. A developer.cfg with the old rows ticked
+  still loads, without them. 27 more switches like them, which only an
+  environment variable could set, are gone too.
+
 ## b1.3 (beta) — 1 November 2026
 
 ### Added
