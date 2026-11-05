@@ -1,15 +1,15 @@
 /*
  * kernel_sync.c - Xbox Synchronization Primitives
  *
- * Implements events, semaphores, wait functions, kernel timers, and DPCs
- * using Win32 synchronization objects.
+ * Implements events, semaphores, mutants and wait functions using Win32
+ * synchronization objects. The kernel's timers are kernel_timer.c's, and its
+ * DPCs kernel_interrupt.c's.
  *
  * Xbox synchronization model:
  *   - Events: notification (manual-reset) or synchronization (auto-reset)
  *   - Semaphores: standard counting semaphores
+ *   - Mutants: mutexes
  *   - Wait functions: single and multiple, with optional timeout
- *   - Timers: kernel timers with optional DPC callback on expiry
- *   - DPCs: deferred procedure calls, executed via thread pool on Windows
  *
  * Time values use NT 100-nanosecond units (negative = relative).
  */
@@ -321,40 +321,6 @@ NTSTATUS __stdcall xbox_KeWaitForMultipleObjects(
     DWORD result = sync_wait(NULL, Count, (HANDLE*)Objects,
                              bWaitAll, ms, Alertable);
     return xbox_wait_result_to_ntstatus(result, Count);
-}
-
-/* ============================================================================
- * Kernel Timers
- *
- * Xbox kernel timers are dispatcher objects that can be waited on and
- * optionally queue a DPC when they expire. The game's are kernel_timer.c's:
- * the bridge's KeInitializeTimerEx, KeSetTimer and KeSetTimerEx are there.
- * kernel_timer.c's KeCancelTimer calls its own cancel and then this.
- * ============================================================================ */
-
-/* Nothing here creates a timer queue now, so this stays NULL, which is Win32's
- * default queue. */
-static HANDLE g_timer_queue = NULL;
-
-BOOLEAN __stdcall xbox_KeCancelTimer(PXBOX_KTIMER Timer)
-{
-    BOOLEAN was_inserted;
-
-    if (!Timer)
-        return FALSE;
-
-    was_inserted = Timer->Inserted;
-
-    if (was_inserted && Timer->win32_timer) {
-        DeleteTimerQueueTimer(g_timer_queue, Timer->win32_timer, INVALID_HANDLE_VALUE);
-        Timer->win32_timer = NULL;
-        Timer->Inserted = FALSE;
-    }
-
-    xbox_log(XBOX_LOG_DEBUG, XBOX_LOG_SYNC,
-        "KeCancelTimer: timer=%p, was_inserted=%d", Timer, was_inserted);
-
-    return was_inserted;
 }
 
 /* ============================================================================

@@ -328,7 +328,6 @@ typedef enum _XBOX_EVENT_TYPE {
 } XBOX_EVENT_TYPE;
 
 /* Forward declarations for kernel objects */
-typedef struct _XBOX_KTIMER       XBOX_KTIMER, *PXBOX_KTIMER;
 typedef struct _XBOX_KDPC         XBOX_KDPC, *PXBOX_KDPC;
 typedef struct _XBOX_KINTERRUPT   XBOX_KINTERRUPT, *PXBOX_KINTERRUPT;
 
@@ -339,15 +338,6 @@ typedef VOID (*PKDEFERRED_ROUTINE)(
     PVOID SystemArgument1,
     PVOID SystemArgument2
 );
-
-/* Kernel Timer */
-struct _XBOX_KTIMER {
-    HANDLE      win32_timer;        /* Win32 timer-queue timer handle */
-    HANDLE      win32_event;        /* Associated event for signaling */
-    PXBOX_KDPC  Dpc;               /* Optional DPC to queue on expiry */
-    BOOLEAN     Inserted;
-    LONG        Period;
-};
 
 /* Deferred Procedure Call */
 struct _XBOX_KDPC {
@@ -669,8 +659,6 @@ int      xbox_kernel_call_watched(void);
 LONG     __stdcall xbox_KeSetEvent(PVOID Event, LONG Increment, BOOLEAN Wait);
 NTSTATUS __stdcall xbox_KeWaitForSingleObject(PVOID Object, ULONG WaitReason, KPROCESSOR_MODE WaitMode, BOOLEAN Alertable, PLARGE_INTEGER Timeout);
 NTSTATUS __stdcall xbox_KeWaitForMultipleObjects(ULONG Count, PVOID Objects[], ULONG WaitType, ULONG WaitReason, KPROCESSOR_MODE WaitMode, BOOLEAN Alertable, PLARGE_INTEGER Timeout, PVOID WaitBlockArray);
-
-BOOLEAN  __stdcall xbox_KeCancelTimer(PXBOX_KTIMER Timer);
 
 /* ============================================================================
  * HAL & Hardware (kernel_hal.c)

@@ -298,12 +298,14 @@ int xbox_kernel_cancel_timer(uint32_t timer_va)
 }
 
 /* -- KeCancelTimer (ordinal 97, 1 arg) ---------------------
- * BOOLEAN KeCancelTimer(PKTIMER Timer) */
+ * BOOLEAN KeCancelTimer(PKTIMER Timer)
+ *
+ * Drops the timer from the table above, and says whether it was set. The
+ * table is the only place a guest timer is kept: the guest's own 40 bytes
+ * are the game's, and nothing here reads or writes them. (A host function
+ * once took them for a host timer of its own, and could free whatever that
+ * read as a handle.) */
 void bridge_KeCancelTimer(void)
 {
-    /* Both halves: the shadow object this runtime keeps, and the firing
-     * table above, or a cancelled timer keeps calling its DPC. */
-    uint32_t timer_va = STACK_ARG(0);
-    int armed = xbox_kernel_cancel_timer(timer_va);
-    g_eax = (uint32_t)xbox_KeCancelTimer(XBOX_TO_NATIVE(timer_va)) || armed;
+    g_eax = (uint32_t)xbox_kernel_cancel_timer(STACK_ARG(0));
 }

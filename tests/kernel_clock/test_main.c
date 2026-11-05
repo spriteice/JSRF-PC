@@ -12,7 +12,10 @@
  * And the thread's guest stack and TIB must be taken by kernel_timer_start,
  * on the thread that starts it, before it runs: taken by the thread itself,
  * their lines in the log came out mixed with the starting thread's on
- * Windows, at every start.
+ * Windows, at every start. Last, KeCancelTimer must stop a timer that is set
+ * and say so, and leave the game's 40 bytes of KTIMER as they were: a host
+ * function took them for a host timer of its own, and on Linux read through
+ * whatever its handle's bytes held (code/pass2's F).
  *
  * The thread's per-pass device work (the display and APU interrupts, the
  * GPU's software methods, the watches) and the DPCs are kernel_bridge.c's and
@@ -23,6 +26,7 @@
 #include "kernel.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #ifndef _WIN32
 #include <unistd.h>   /* _exit */
 #endif
@@ -39,6 +43,9 @@
 #define TIMER          0x00001000u   /* a KTIMER, 40 bytes */
 #define DPC            0x00001040u   /* its KDPC, 32 bytes */
 #define TIMER_DUE_MS   20
+#define TIMER2         0x00001080u   /* the KTIMER KeCancelTimer is given */
+#define DPC2           0x000010C0u   /* its KDPC, which must never run */
+#define TIMER2_DUE_MS  50
 #define TIB            0x00003000u
 
 /* What the runtime gives a recompiled function: its registers, per thread,
@@ -89,11 +96,9 @@ void kernel_apu_tick(void) { }
 void kernel_cvfs_watch(void) { }
 void kernel_drain_dpcs(void) { }
 void xbox_kernel_thread_report(void) { }
-/* KeCancelTimer's host half, kernel_sync.c's: a timer it never set. */
-BOOLEAN __stdcall xbox_KeCancelTimer(PXBOX_KTIMER Timer) { (void)Timer; return FALSE; }
 
 /* What a timer that fires does: its object signalled, its DPC run. */
-static volatile LONG s_signalled, s_dpc_runs;
+static volatile LONG s_signalled, s_dpc_runs, s_dpc2_runs;
 static volatile uint32_t s_dpc_va;
 uint32_t xbox_dispatcher_signal(uint32_t va)
 {
@@ -104,6 +109,10 @@ uint32_t xbox_dispatcher_signal(uint32_t va)
 int kernel_run_dpc(uint32_t dpc_va, uint32_t arg1, uint32_t arg2)
 {
     (void)arg1; (void)arg2;
+    if (dpc_va == DPC2) {
+        __atomic_add_fetch(&s_dpc2_runs, 1, __ATOMIC_RELEASE);
+        return 1;
+    }
     __atomic_store_n(&s_dpc_va, dpc_va, __ATOMIC_RELAXED);
     __atomic_add_fetch(&s_dpc_runs, 1, __ATOMIC_RELEASE);
     return 1;
@@ -224,6 +233,43 @@ static void a_timer_fires(void)
         fail("the timer's object was not signalled when it fired");
 }
 
+/* 3: KeCancelTimer stops a timer that is set, says whether it was, and
+ * leaves the game's KTIMER as it was. The bytes past its Type are the game's
+ * (on the console, its kernel's list entry is at +24): filled here, so that a
+ * cancel that reads them as anything else shows. */
+static void a_timer_is_cancelled(void)
+{
+    long long due = -(long long)TIMER2_DUE_MS * 10000;
+    const uint32_t init[] = { TIMER2, 0 };
+    const uint32_t set[] = { TIMER2, (uint32_t)due, (uint32_t)((unsigned long long)due >> 32), DPC2 };
+    const uint32_t cancel[] = { TIMER2 };
+    uint8_t before[40];
+    uint32_t first, second;
+    int i;
+
+    call_bridge(bridge_KeInitializeTimerEx, init, 2);
+    for (i = 4; i < 40; i++)
+        BRIDGE_MEM8(TIMER2 + (uint32_t)i) = (uint8_t)(0xA0 + i);
+    memcpy(before, XBOX_TO_NATIVE(TIMER2), sizeof before);
+    call_bridge(bridge_KeSetTimer, set, 4);
+    call_bridge(bridge_KeCancelTimer, cancel, 1);
+    first = g_eax;
+    call_bridge(bridge_KeCancelTimer, cancel, 1);
+    second = g_eax;
+    Sleep(TIMER2_DUE_MS * 5);
+    printf("kernel_clock: KeCancelTimer said %u for a set timer and %u for it "
+           "cancelled; its DPC ran %ld times after\n", first, second,
+           (long)__atomic_load_n(&s_dpc2_runs, __ATOMIC_ACQUIRE));
+    if (first != 1)
+        fail("KeCancelTimer did not say a set timer was set");
+    if (second != 0)
+        fail("KeCancelTimer said a cancelled timer was still set");
+    if (__atomic_load_n(&s_dpc2_runs, __ATOMIC_ACQUIRE))
+        fail("a cancelled timer still ran its DPC");
+    if (memcmp(before, XBOX_TO_NATIVE(TIMER2), sizeof before))
+        fail("KeCancelTimer changed the game's KTIMER");
+}
+
 int main(void)
 {
     /* Under the thread sanitizer (tests/run_all.py --tsan) the checks of
@@ -240,6 +286,7 @@ int main(void)
 
     the_clock_moves(!(sanitizer && *sanitizer));
     a_timer_fires();
+    a_timer_is_cancelled();
     if (__atomic_load_n(&s_taken_elsewhere, __ATOMIC_RELAXED))
         fail("the timer thread took its own stack or TIB: kernel_timer_start "
              "must, before it starts, so its lines in the log come in order");

@@ -5037,9 +5037,10 @@ static bridge_func_t bridge_for_ordinal(ULONG ordinal)
      * through the guest heap; MmUnmapIoSpace/IoDeleteDevice do the same.
      *
      * The three beside them were parked, never broken: AvGetSavedDataAddress
-     * returns a ULONG value, KeCancelTimer takes a guest KTIMER through
-     * XBOX_TO_NATIVE, KeDisconnectInterrupt takes a guest KINTERRUPT the same
-     * way. None of them allocates, frees, or hands back a host pointer. */
+     * returns a ULONG value, KeCancelTimer drops a guest KTIMER from
+     * kernel_timer.c's table, KeDisconnectInterrupt takes a guest KINTERRUPT
+     * through XBOX_TO_NATIVE. None of them allocates, frees, or hands back a
+     * host pointer. */
     case   1: return bridge_AvGetSavedDataAddress;
     case  17: return bridge_ExFreePool;
     case  97: return bridge_KeCancelTimer;
