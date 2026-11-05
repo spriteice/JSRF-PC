@@ -84,6 +84,7 @@ void kernel_dpc_counts(unsigned long *queued, unsigned long *run, long *waiting)
 void bridge_HalGetInterruptVector(void);
 void bridge_KeInitializeInterrupt(void);
 void bridge_KeConnectInterrupt(void);
+void bridge_KeDisconnectInterrupt(void);
 void bridge_KeSynchronizeExecution(void);
 void bridge_KeInitializeDpc(void);
 void bridge_KeInsertQueueDpc(void);

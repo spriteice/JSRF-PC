@@ -3522,13 +3522,6 @@ static void bridge_IoCreateDevice(void)
     g_eax = 0;                                          /* STATUS_SUCCESS   */
 }
 
-/* ── KeDisconnectInterrupt (ordinal 100, 1 arg) */
-static void bridge_KeDisconnectInterrupt(void)
-{
-    g_eax = (uint32_t)xbox_KeDisconnectInterrupt(
-        (PXBOX_KINTERRUPT)XBOX_TO_NATIVE(STACK_ARG(0)));
-}
-
 /* ── KeSetBasePriorityThread (ordinal 143, 2 args) */
 /* KeQueryBasePriorityThread (ordinal 124, 1 arg). The implementation has
  * existed in kernel_thread.c all along; only the bridge wrapper was

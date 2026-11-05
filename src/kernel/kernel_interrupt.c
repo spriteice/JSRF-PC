@@ -2,7 +2,8 @@
  * kernel_interrupt.c - The kernel's interrupts and DPCs
  *
  * Interrupt objects (HalGetInterruptVector, KeInitializeInterrupt,
- * KeConnectInterrupt), delivering an interrupt to the routine a title
+ * KeConnectInterrupt, KeDisconnectInterrupt), delivering an interrupt to the
+ * routine a title
  * connected (kernel_raise_interrupt), KeSynchronizeExecution, and the DPC
  * queue: KeInitializeDpc, KeInsertQueueDpc, KeRemoveQueueDpc, and the drain
  * the timer thread runs. The device models, in kernel_bridge.c and
@@ -393,4 +394,12 @@ void bridge_KeConnectInterrupt(void)
 uint32_t xbox_GetConnectedInterrupt(uint32_t vector)
 {
     return (vector < XBOX_MAX_VECTORS) ? g_connected_isr[vector] : 0;
+}
+
+/* -- KeDisconnectInterrupt (ordinal 100, 1 arg) ------------
+ * BOOLEAN KeDisconnectInterrupt(PKINTERRUPT Interrupt) */
+void bridge_KeDisconnectInterrupt(void)
+{
+    g_eax = (uint32_t)xbox_KeDisconnectInterrupt(
+        (PXBOX_KINTERRUPT)XBOX_TO_NATIVE(STACK_ARG(0)));
 }

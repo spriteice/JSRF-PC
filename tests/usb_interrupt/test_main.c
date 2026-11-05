@@ -108,6 +108,8 @@ int usb_gamepad_control(const UsbSetup *setup, uint8_t *out, int max)
     return -1;
 }
 int usb_gamepad_report(uint8_t *out, int max) { (void)out; (void)max; return 0; }
+/* KeDisconnectInterrupt's host half, kernel_hal.c's: an object never connected. */
+BOOLEAN __stdcall xbox_KeDisconnectInterrupt(PXBOX_KINTERRUPT Interrupt) { (void)Interrupt; return FALSE; }
 
 /* ---- what the routines check ------------------------------------------- */
 
