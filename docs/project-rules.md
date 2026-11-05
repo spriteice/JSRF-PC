@@ -150,8 +150,12 @@ new function, and justify each new one.
 **Every fixed bug gets a regression test** that fails without the fix and
 passes with it. If the bug can't be reached from a test in the sandbox (it
 needs the game's code running, or a device), say why, and add what would
-catch it again instead: an assert, a line in the log or the freeze report,
-or a step on the test checklist.
+catch it again instead: a check with `RECOMP_CHECK`
+(src/platform/recomp_check.h), a line in the log or the freeze report, or a
+step on the test checklist. Not `assert()`: CI, the test builds and the
+releases are all built with `NDEBUG`, so an assert is in none of them.
+`RECOMP_CHECK` is tested in every build, says once in the log where it
+failed, and lets the code carry on.
 
 **Every feature gets tests** of the parts of it that link on their own,
 such as its maths, its settings and its menu rows, as tests/menu and
@@ -204,8 +208,8 @@ In order:
    the diagnosis and the proposal, and goes on (Pre-approved threads).
 3. **Implement.** Add the fix's regression test, and update the docs the
    change affects (How it's written). When a fix can't be proven by reading
-   the code, add logging or asserts that would confirm or refute your
-   hypothesis.
+   the code, add logging or checks (`RECOMP_CHECK`) that would confirm or
+   refute your hypothesis.
 4. **Verify** what you can: it builds, the repo's tests pass, and static
    checks are clean. You don't play the game: on my PC you run only the
    packaged engine's own checks and its runs with nobody at the pad, the
