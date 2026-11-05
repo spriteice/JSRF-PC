@@ -199,37 +199,6 @@ static inline void pci_set_long(uint8_t *config, uint32_t val) {
 static inline void pci_irq_assert(PCIDevice *d) { (void)d; }
 static inline void pci_irq_deassert(PCIDevice *d) { (void)d; }
 
-/* ============================================================
- * VGA (stub - minimal needed by NV2A)
- * ============================================================ */
-
-typedef struct VGACommonState {
-    uint8_t *vram_ptr;
-    uint32_t vram_size;
-    uint8_t cr[256];
-    uint8_t sr[256];
-} VGACommonState;
-
-typedef struct VGADisplayParams {
-    int line_offset;
-    int start_addr;
-    int line_compare;
-} VGADisplayParams;
-
-#define VGA_CRTC_LINE_COMPARE 0x18
-#define VGA_CRTC_OVERFLOW     0x07
-#define VGA_CRTC_MAX_SCAN     0x09
-#define VGA_SEQ_CLOCK_MODE    0x01
-#define VGA_SR01_SCREEN_OFF   0x20
-
-typedef struct GraphicHwOps {
-    void *gfx_update;
-} GraphicHwOps;
-
-typedef struct QEMUTimer {
-    int dummy;
-} QEMUTimer;
-
 /* container_of macro */
 #ifndef container_of
 #define container_of(ptr, type, member) \
@@ -273,28 +242,6 @@ static inline void clear_bit(long nr, unsigned long *addr) {
 static inline bool test_bit(long nr, const unsigned long *addr) {
     return (addr[nr / BITS_PER_LONG] >> (nr % BITS_PER_LONG)) & 1;
 }
-
-/* ============================================================
- * Logging and error handling
- * ============================================================ */
-
-#define error_report(...) fprintf(stderr, "[NV2A] " __VA_ARGS__)
-#define warn_report(...) fprintf(stderr, "[NV2A-WARN] " __VA_ARGS__)
-#define warn_report_once(...) do { \
-    static int _once = 0; \
-    if (!_once) { _once = 1; fprintf(stderr, "[NV2A-WARN] " __VA_ARGS__); } \
-} while (0)
-
-/* ============================================================
- * Tracing (stub - no-op)
- * ============================================================ */
-
-#define trace_nv2a_irq(...)             do {} while(0)
-#define trace_nv2a_dma_map(...)         do {} while(0)
-#define trace_nv2a_reg_read(...)        do {} while(0)
-#define trace_nv2a_reg_write(...)       do {} while(0)
-#define trace_nv2a_pgraph_method(...)   do {} while(0)
-#define trace_nv2a_pfifo_dma_push(...) do {} while(0)
 
 /* ============================================================
  * Migration / VM state (stub)
