@@ -365,9 +365,11 @@ between builds).
     kept between runs too; each job's builds and tests still run from
     scratch.
   - **On my Windows PC:** the Windows tests, as GitHub runs them: the
-    Python version in ci.yml, llvm-mingw from `.github/ci/llvm_mingw.py`,
-    then `python tests/run_all.py`, in the run's own worktree (On my PC,
-    The checkout), with TEMP and TMP set to an empty `tmp\` in the run's
+    Python version in ci.yml, llvm-mingw from `.github/ci/llvm_mingw.py`
+    (in `Building\cache\llvm-mingw-tests`, where a zip with its SHA-256
+    isn't downloaded again, nor a copy unpacked whole from it unpacked
+    again), then `python tests/run_all.py`, in the run's own worktree (On
+    my PC, The checkout), with TEMP and TMP set to an empty `tmp\` in the run's
     folder, so the tests' own temporary folders are made there too, and
     the run shows it left nothing behind (On my PC, What is written). The
     PC runs Windows 11, not GitHub's Windows Server 2022, so GitHub's run on

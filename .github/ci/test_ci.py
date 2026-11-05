@@ -2,8 +2,9 @@
 (.github/ci/linux.sh): fetch.py's tries, how tests/run_all.py names a
 sanitizer's leak, checks that each known bug names its release and counts
 what each tsan.supp entry hides, how count_warnings.py counts a build's
-warnings, how coverage.py adds up the tests' line counts, and how
-launcher/images.sh names each image."""
+warnings, how coverage.py adds up the tests' line counts, how
+launcher/images.sh names each image, and when llvm_mingw.py uses its copy
+again."""
 
 import hashlib
 import http.server
@@ -20,6 +21,7 @@ here = pathlib.Path(__file__).resolve().parent
 root = here.parents[1]
 sys.path.insert(0, str(here))
 import fetch  # noqa: E402
+import llvm_mingw  # noqa: E402
 import count_warnings  # noqa: E402
 import coverage  # noqa: E402
 
@@ -290,3 +292,43 @@ def test_conformance_image_is_alone():
     r = subprocess.run(["bash", str(root / "launcher/images.sh"), "name", "conformance tests"],
                        capture_output=True, text=True)
     assert r.returncode == 2 and "usage" in r.stderr
+
+
+def test_llvm_mingw_uses_a_whole_checked_copy_again(tmp_path, monkeypatch, capsys):
+    # A tiny stand-in for the release's zip, by its own SHA-256.
+    import io
+    import zipfile
+    blob = io.BytesIO()
+    with zipfile.ZipFile(blob, "w") as z:
+        z.writestr("tc/bin/gcc.exe", b"clang")
+    data = blob.getvalue()
+    monkeypatch.setattr(llvm_mingw, "NAME", "tc")
+    monkeypatch.setattr(llvm_mingw, "SHA256", hashlib.sha256(data).hexdigest())
+    fetched = []
+
+    def fake_fetch(url, path, sha256):
+        fetched.append(url)
+        pathlib.Path(path).write_bytes(data)
+    monkeypatch.setattr(llvm_mingw, "fetch", fake_fetch)
+    unpacked = []
+    real = zipfile.ZipFile.extractall
+    monkeypatch.setattr(zipfile.ZipFile, "extractall",
+                        lambda self, where: (unpacked.append(where), real(self, where)))
+    d = str(tmp_path)
+    bin_path = str((tmp_path / "tc" / "bin").resolve())
+
+    assert llvm_mingw.main([d]) == 0                        # fetched, unpacked
+    assert (len(fetched), len(unpacked)) == (1, 1)
+    assert llvm_mingw.main([d]) == 0                        # both kept
+    assert (len(fetched), len(unpacked)) == (1, 1)
+    (tmp_path / "tc.unpacked").unlink()                     # an unpack cut short
+    (tmp_path / "tc" / "bin" / "stale").write_text("x")
+    assert llvm_mingw.main([d]) == 0                        # the zip kept, unpacked afresh
+    assert (len(fetched), len(unpacked)) == (1, 2)
+    assert not (tmp_path / "tc" / "bin" / "stale").exists()
+    (tmp_path / "tc.zip").write_bytes(b"not it")            # a zip without the SHA-256
+    assert llvm_mingw.main([d]) == 0                        # the marker still holds
+    (tmp_path / "tc.unpacked").write_text("another\n")
+    assert llvm_mingw.main([d]) == 0                        # fetched and unpacked again
+    assert (len(fetched), len(unpacked)) == (2, 3)
+    assert capsys.readouterr().out.split() == [bin_path] * 5
