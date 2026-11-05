@@ -1,8 +1,9 @@
 # The tool tests' Python packages, for CI's Linux GCC job (.github/ci/linux.sh):
 # capstone, which the tools need, and pefile, numpy and pytest, which their
 # tests do, with what pytest needs, each by version and SHA-256, for Python
-# 3.10 (Ubuntu 22.04's) on x86_64.
-capstone==5.0.6 --hash=sha256:0358855773100bb91ae6681fabce7299df83156945ba943f6211061a592c54a6
+# 3.10 (Ubuntu 22.04's) on x86_64. capstone is the version
+# docs/building-on-linux.md installs for the pipeline.
+capstone==5.0.9 --hash=sha256:273fd8d747d2e35c88f91450be51a603ecfaafb00d96d9f315dcb8689c86193e
 exceptiongroup==1.3.1 --hash=sha256:a7a39a3bd276781e98394987d3a5701d0c4edffb633bb7a5144577f82c773598
 iniconfig==2.3.1 --hash=sha256:9121e2c1fdb355232495be3194c8dfe87ccc2d5dee45947b78e68f499790d7a7
 numpy==2.2.6 --hash=sha256:fc7b73d02efb0e18c000e9ad8b83480dfcd5dfd11065997ed4c6747470ae8915

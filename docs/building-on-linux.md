@@ -30,12 +30,13 @@ a fresh Ubuntu 24.04; the dependency script also knows Debian, Arch, and Fedora.
    The script asks for your password, because it installs packages with
    `sudo`.
 
-2. **Set up Python.** The tools need one package, `capstone`:
+2. **Set up Python.** The tools need one package, `capstone`, at the
+   version CI tests them with (`.github/ci/tools-requirements.txt`):
 
    ```sh
    python3 -m venv .venv
    . .venv/bin/activate
-   pip install capstone
+   pip install capstone==5.0.9
    ```
 
    If you open a new terminal later, run `. .venv/bin/activate` again first.

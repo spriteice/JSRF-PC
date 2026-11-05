@@ -158,7 +158,8 @@ changed:
 - the generated code, tagged with default.xbe's SHA-256 and one hash of
   what makes it: every tracked file in `tools/` and `port/recomp_manual.c`,
   and the versions of Python and capstone that ran the pipeline
-  (docs/building-on-linux.md installs the newest capstone). It is used
+  (docs/building-on-linux.md installs capstone 5.0.9, the version CI
+  tests the tools with). It is used
   only when both match, and made again otherwise;
 - the last tested packages, for the comparison (Compatibility checks).
 

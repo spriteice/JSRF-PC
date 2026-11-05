@@ -15,7 +15,7 @@ Python tools that transform an Xbox executable (XBE) into compilable C source co
 ## Prerequisites
 
 ```bash
-pip install capstone    # x86 disassembly engine
+pip install capstone==5.0.9    # x86 disassembly engine, the version CI tests with
 ```
 
 Python 3.10+ required. On Windows, use `py -3` instead of `python3`.
