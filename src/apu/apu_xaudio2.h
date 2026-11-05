@@ -1,18 +1,21 @@
 /**
- * XAudio2 Audio Output Backend
+ * The sound back end: what the APU calls to play its mix. apu_sdl.c answers
+ * it, with SDL2's audio, on Linux and Windows. The names are those of the
+ * XAudio2 back end it was first written for, which went with Windows'
+ * Direct3D 11 path.
  */
 #ifndef APU_XAUDIO2_H
 #define APU_XAUDIO2_H
 
 #include <stdint.h>
 
-/* Initialize XAudio2. Returns 1 on success, 0 on failure. */
+/* Open the sound device. Returns 1 on success, 0 on failure. */
 int xa2_init(void);
 
-/* Shut down XAudio2 and release all resources. */
+/* Close it and release all resources. */
 void xa2_shutdown(void);
 
-/* Returns 1 if XAudio2 is active. */
+/* Returns 1 if the device is open. */
 int xa2_is_active(void);
 
 /* Submit interleaved stereo 16-bit samples. Returns 1 if accepted. */

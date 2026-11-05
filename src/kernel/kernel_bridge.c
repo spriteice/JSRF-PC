@@ -1298,26 +1298,6 @@ static void bridge_HalReturnToFirmware(void)
      * RECOMP_ICALL_FEEDBACK is on. */
     RECOMP_ICALL_FEEDBACK_DUMP();
 
-    /* Let a host-played FMV finish before the process goes away.
-     *
-     * The title is not the one presenting it, so it has no reason to wait --
-     * it opens the file, carries on, and quits, which would kill the video
-     * thread part-way through a five-second clip. Waiting here is what makes
-     * the clip actually watchable, and it costs nothing when no video is
-     * playing. Bounded, so a stuck player cannot stop the process exiting. */
-    {
-        extern int xbox_VideoIsPlaying(void);
-        int waited = 0;
-
-        while (xbox_VideoIsPlaying() && waited < 60000) {
-            Sleep(50);
-            waited += 50;
-        }
-        if (waited)
-            fprintf(stderr, "  [KERNEL] waited %dms for the video to finish\n",
-                    waited);
-    }
-
     xbox_HalReturnToFirmware(routine);
 }
 
@@ -2038,26 +2018,18 @@ static void bridge_AvSetDisplayMode(void)
     fflush(stderr);
 
     {
-        /* Point the framebuffer window at whatever the title just set, and
-         * start it on the first display mode -- before that there is nothing
-         * to show and no pitch to interpret it with. */
-        extern void xbox_FramebufferWindowSet(uint32_t, uint32_t);
-        extern void xbox_FramebufferWindowStart(void);
         uint32_t fb_va = fb;
 
         /* AvSetDisplayMode reports the scanout address the way the CRTC wants
-         * it -- a physical address. The window has to read it the way the CPU
-         * sees it. Where the title allocated says which: a framebuffer from
-         * MmAllocateContiguousMemory lives in the window at XBOX_CONTIG_BASE,
-         * so physical P is visible at XBOX_CONTIG_BASE + P. Reading P
-         * directly lands in the loaded image instead, which is why the window
-         * showed black while the executor was clearing and rasterising
-         * correctly a few megabytes away. */
+         * it -- a physical address. Guest memory has to be read with it the
+         * way the CPU sees it. Where the title allocated says which: a
+         * framebuffer from MmAllocateContiguousMemory lives in the window at
+         * XBOX_CONTIG_BASE, so physical P is visible at XBOX_CONTIG_BASE + P.
+         * Reading P directly lands in the loaded image instead, which is why a
+         * window on the framebuffer showed black while the executor was
+         * clearing and rasterising correctly a few megabytes away. */
         if (fb_va && fb_va < XBOX_CONTIG_SIZE)
             fb_va = XBOX_CONTIG_BASE + fb_va;
-
-        xbox_FramebufferWindowSet(fb_va, pitch);
-        xbox_FramebufferWindowStart();
 
         /* Record the resolved address, not the physical one the title passed.
          * Every reader of this wants to read guest memory with it, and the
@@ -2722,40 +2694,6 @@ static void bridge_NtCreateFile(void)
     g_eax = (uint32_t)bridge_create_file_impl(
         handle_va, access, obj_attrs, iostatus,
         file_attrs, share, disposition, options);
-
-    /* An FMV the host can decode itself.
-     *
-     * The title's own decoder is emulated like everything else, but it only
-     * produces pixels once there is something to execute its GPU work -- so on
-     * a bring-up where that does not exist yet, the video the game just asked
-     * for can still be shown. The trigger is the title opening the file, so
-     * this plays when the game decides to play it, not on a timer, and it
-     * plays the file the game chose.
-     *
-     * Off unless RECOMP_FMV_HOST is set: it is a substitute for the title's
-     * own output, and that should be a decision rather than a default. */
-    if (g_eax == 0 && getenv("RECOMP_FMV_HOST")) {
-        /* Declared here rather than included: the player lives in xbox_video,
-         * which links xbox_d3d8, and having the kernel include its header
-         * would make the dependency circular for no gain. Both land in the
-         * same executable. */
-        extern int xbox_VideoPlayFile(const char *host_path);
-        extern int xbox_VideoIsPlaying(void);
-
-        char host[MAX_PATH * 2];
-        size_t n = 0;
-
-        const wchar_t *w = xbox_LastHostPath();
-
-        while (n < sizeof(host) - 1 && w[n]) {
-            host[n] = (char)w[n];
-            n++;
-        }
-        host[n] = 0;
-        if (n > 4 && _stricmp(host + n - 4, ".wmv") == 0
-                && !xbox_VideoIsPlaying())
-            xbox_VideoPlayFile(host);
-    }
 
     /* Paired with the [PATH] line the translation just printed: that says what
      * was asked for, this says whether it opened. A failed open is not itself

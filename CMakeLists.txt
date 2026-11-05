@@ -8,9 +8,9 @@ project(xboxrecomp VERSION 0.8.0 LANGUAGES C CXX)
 #
 # Libraries:
 #   xbox_kernel    - Xbox kernel replacement layer (147 imports → Win32)
-#   xbox_d3d8      - D3D8 → D3D11 graphics compatibility
+#   xbox_d3d8      - D3D8 headers: the types, and texture swizzling
 #   xbox_dsound    - DirectSound → software mixer compatibility
-#   xbox_input     - Xbox gamepad → XInput compatibility
+#   xbox_input     - Xbox gamepad → SDL2 GameController
 #   xbox_apu       - MCPX APU audio emulation (extracted from xemu)
 #   xbox_nv2a      - NV2A GPU emulation (extracted from xemu)
 
@@ -23,16 +23,6 @@ add_compile_definitions(
     NOMINMAX
 )
 
-# Windows with the host layers the Linux build uses -- the OpenGL
-# renderer (nv2a_gl) through SDL2 and libepoxy, SDL2's sound and controllers --
-# instead of Direct3D 11, XAudio2 and XInput. JSRF-PC's Windows build
-# (MinGW) turns it on: its title brings its own D3D and draws through the
-# pushbuffer, which is nv2a_gl's job on every other host.
-option(XBOXRECOMP_WIN_GL "Windows: OpenGL/SDL2 host layers instead of D3D11/XAudio2/XInput" OFF)
-if(WIN32 AND XBOXRECOMP_WIN_GL)
-    add_compile_definitions(XBOXRECOMP_WIN_GL=1)
-endif()
-
 # ── Runtime Libraries ─────────────────────────────────────────
 
 # Platform: Win32/NT type vocabulary + POSIX implementation of generic
@@ -43,7 +33,8 @@ add_subdirectory(src/platform)
 # Core: Xbox kernel replacement (memory layout, file I/O, threading, sync)
 add_subdirectory(src/kernel)
 
-# Graphics: D3D8 → D3D11 compatibility layer
+# Graphics: the D3D8 headers (the title brings its own D3D, and nv2a_gl draws
+# what it writes to the pushbuffer)
 add_subdirectory(src/d3d)
 
 # Audio: DirectSound → software mixer compatibility
@@ -55,10 +46,8 @@ add_subdirectory(src/apu)
 # GPU: NV2A hardware emulation (register handlers, MMIO, push buffer)
 add_subdirectory(src/nv2a)
 
-# NV2A -> OpenGL translation (POSIX, and Windows with XBOXRECOMP_WIN_GL)
-if(NOT WIN32 OR XBOXRECOMP_WIN_GL)
-    add_subdirectory(src/nv2a_gl)
-endif()
+# NV2A -> OpenGL translation
+add_subdirectory(src/nv2a_gl)
 
 # The in-game menu (Dear ImGui), over nv2a_gl's SDL window. Before the
 # libraries that add rows to it, so they can find it (if(TARGET xbox_menu)).
@@ -70,11 +59,8 @@ endif()
 # drives these registers directly, so a pad only exists if they do.
 add_subdirectory(src/usb)
 
-# Input: Xbox gamepad → XInput
+# Input: Xbox gamepad → SDL2 GameController
 add_subdirectory(src/input)
-
-# Shared FMV player (Media Foundation -> D3D8 texture)
-add_subdirectory(src/video)
 
 # ── Umbrella target ───────────────────────────────────────────
 
@@ -88,7 +74,6 @@ target_link_libraries(xboxrecomp INTERFACE
     xbox_usb
     xbox_apu
     xbox_nv2a
-    $<$<OR:$<NOT:$<BOOL:${WIN32}>>,$<BOOL:${XBOXRECOMP_WIN_GL}>>:xbox_nv2a_gl>
-    xbox_video
+    xbox_nv2a_gl
 )
 

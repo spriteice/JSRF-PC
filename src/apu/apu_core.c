@@ -277,7 +277,7 @@ static struct {
 } g_test_tone = { false, 0.0, 0.0, 0 };
 
 /* ============================================================
- * Monitor - Audio output (XAudio2 primary, waveOut fallback)
+ * Monitor - Audio output (the sound back end, waveOut as a fallback)
  * ============================================================ */
 
 #if defined(_WIN32)
@@ -310,7 +310,7 @@ void mcpx_apu_monitor_init(MCPXAPUState *d, Error **errp)
     d->monitor.queued_bytes_low = 1024;
     d->monitor.queued_bytes_high = 3072;
 
-    /* Try XAudio2 first (lower latency) */
+    /* The sound back end first (apu_xaudio2.h: SDL2's audio) */
     if (xa2_init()) {
         fprintf(stderr, "[APU] Using XAudio2 audio backend\n");
         return;
@@ -374,7 +374,7 @@ void mcpx_apu_monitor_frame(MCPXAPUState *d)
         return;
     }
 
-    /* XAudio2 path: submit the frame the APU just finished.
+    /* The sound back end's path: submit the frame the APU just finished.
      *
      * This used to memset frame_buf before filling it -- which erased the
      * only thing in it that the title had actually produced. The voice
@@ -529,8 +529,8 @@ void mcpx_apu_monitor_frame(MCPXAPUState *d)
  * 40 ms): it produces whenever the ring is below it and waits when it is
  * above, so the APU runs on the device's clock, a trap drains the ring
  * instead of repeating sound, and the frames are made up at once when it
- * clears. With no ring (XAudio2), or nothing pulling from it, the frame
- * thread is paced by the wall clock (throttle).
+ * clears. With no ring (XAudio2 had none), or nothing pulling from it, the
+ * frame thread is paced by the wall clock (throttle).
  */
 static int ring_target_frames(void)
 {

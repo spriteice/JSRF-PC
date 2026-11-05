@@ -67,11 +67,7 @@ if(WIN32)
 endif()
 message(STATUS "nv2a_gl context: ${NV2A_GL_CONTEXT}")
 
-if(MSVC)
-    target_compile_options(xbox_nv2a_gl PRIVATE /W4 /O2)
-else()
-    target_compile_options(xbox_nv2a_gl PRIVATE -Wall -Wextra -O2)
-endif()
+target_compile_options(xbox_nv2a_gl PRIVATE -Wall -Wextra -O2)
 
 # The in-game menu (F1, or Back on a controller), src/menu: drawn
 # over this SDL window, so built only with it.

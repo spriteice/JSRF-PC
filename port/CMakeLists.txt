@@ -83,14 +83,6 @@ if(NOT JSRF_VERSION)
 endif()
 message(STATUS "JSRF-PC version: ${JSRF_VERSION}")
 
-# Windows (MinGW): the runtime's OpenGL / SDL2 host layers, as on Linux, rather
-# than its Direct3D 11 ones -- the title draws through its own D3D and the
-# pushbuffer, which is what nv2a_gl renders everywhere else.
-if(WIN32)
-    set(XBOXRECOMP_WIN_GL ON)
-    add_compile_definitions(XBOXRECOMP_WIN_GL=1)
-endif()
-
 # The runtime: everything in this repository outside port/ and launcher/.
 add_subdirectory("${JSRF_REPO}" "${CMAKE_BINARY_DIR}/xboxrecomp")
 
@@ -120,7 +112,7 @@ target_include_directories(jsrf_recomp PRIVATE
     "${JSRF_GEN_DIR}"
     "${JSRF_REPO}/include"
 )
-if(WIN32 AND XBOXRECOMP_WIN_GL)
+if(WIN32)
     # The icon, a manifest (UTF-8 file names, a sharp window on a high-DPI
     # screen) and version information, shared with the launcher
     # (launcher/windows).
@@ -155,8 +147,6 @@ if(WIN32 AND XBOXRECOMP_WIN_GL)
     # The linker map names the function at any jsrf_recomp.exe+offset a crash
     # report prints (kept with a release build, not shipped).
     target_link_options(jsrf_recomp PRIVATE "-Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/jsrf_recomp.map")
-elseif(WIN32)
-    target_link_libraries(jsrf_recomp PRIVATE d3d11 dxgi dxguid xinput winmm dbghelp)
 else()
     target_link_libraries(jsrf_recomp PRIVATE pthread m dl)
     target_link_options(jsrf_recomp PRIVATE -rdynamic)
@@ -167,8 +157,4 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND TARGET xbox_menu)
     # statically, nothing of it is pulled in and the engine needs no
     # libstdc++ of the machine it runs on.
     target_link_options(jsrf_recomp PRIVATE -static-libstdc++ -static-libgcc)
-endif()
-if(MSVC)
-    target_link_options(jsrf_recomp PRIVATE /LARGEADDRESSAWARE)
-    target_compile_options(jsrf_recomp PRIVATE /bigobj)
 endif()

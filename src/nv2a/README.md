@@ -1,6 +1,6 @@
 # xbox_nv2a — NV2A GPU Emulation
 
-Hardware emulation of the Xbox's NV2A GPU (a custom NVIDIA chip derived from GeForce 3/4), extracted from [xemu](https://github.com/xemu-project/xemu). Provides register-level GPU emulation including the push buffer command processor, PGRAPH method dispatch, and MMIO interception.
+Hardware emulation of the Xbox's NV2A GPU (a custom NVIDIA chip derived from GeForce 3/4), extracted from [xemu](https://github.com/xemu-project/xemu). Provides register-level GPU emulation including the push buffer command processor and PGRAPH method dispatch.
 
 ## Files
 
@@ -10,14 +10,11 @@ Hardware emulation of the Xbox's NV2A GPU (a custom NVIDIA chip derived from GeF
 | `nv2a_regs.h` | 1,522 | Complete register definitions (1500+ defines for all GPU blocks) |
 | `qemu_shim.h` | 397 | QEMU → Win32 type abstraction (hwaddr, MemoryRegion, threading, bit ops) |
 | `nv2a_core.c` | 791 | Register read/write handlers for all GPU blocks + pgraph_method() |
-| `nv2a_mmio_hook.c` | 412 | VEH x86-64 instruction decoder for 0xFD000000+ MMIO |
-| `nv2a_mmio_hook.h` | 54 | MMIO hook public API |
 
 ## Quick Start
 
 ```c
 #include "nv2a_state.h"
-#include "nv2a_mmio_hook.h"
 
 // Allocate VRAM (64 MB) and RAMIN (1 MB)
 uint8_t *vram = VirtualAlloc(NULL, 64*1024*1024, MEM_COMMIT, PAGE_READWRITE);
@@ -25,13 +22,6 @@ uint8_t *ramin = VirtualAlloc(NULL, 1*1024*1024, MEM_COMMIT, PAGE_READWRITE);
 
 // Initialize NV2A
 NV2AState *gpu = nv2a_init_standalone(vram, 64*1024*1024, ramin, 1*1024*1024);
-
-// Install VEH hooks (intercepts 0xFD000000+ memory access)
-nv2a_hook_init(g_xbox_mem_offset);
-
-// Now recompiled game code can access GPU registers normally:
-//   *(uint32_t*)(0xFD000000 + NV_PMC_BOOT_0)  → intercepted → pmc_read()
-//   *(uint32_t*)(0xFD100000 + NV_PBUS_PCI_NV_0) → intercepted → pbus_read()
 
 // Direct API access (bypassing MMIO):
 uint64_t boot_id = nv2a_mmio_read(gpu, NV_PMC_BOOT_0, 4);
@@ -139,35 +129,6 @@ NV_PRAMDAC_GENERAL_CONTROL      // Display control
 NV_PRAMDAC_NVPLL_COEFF          // Core clock PLL
 NV_PRAMDAC_MPLL_COEFF           // Memory clock PLL
 NV_PRAMDAC_FP_VDISPLAY_END      // Display timing
-```
-
-## MMIO Hook
-
-The VEH hook intercepts all memory accesses to the GPU register range:
-
-```c
-// Install the hook
-nv2a_hook_init(g_xbox_mem_offset);
-
-// When game code does:
-//   uint32_t val = *(uint32_t*)(0xFD000100);  // Read NV_PMC_INTR_0
-//
-// The VEH handler:
-// 1. Catches EXCEPTION_ACCESS_VIOLATION at 0xFD000100
-// 2. Decodes the x86-64 instruction (MOV, MOVZX, ADD, XOR, etc.)
-// 3. Calls pmc_read(nv2a_state, 0x100, 4)
-// 4. Writes result to the destination register
-// 5. Advances RIP past the instruction
-```
-
-Supported instructions: MOV (all sizes), MOVZX, MOVSX, ADD, SUB, OR, AND, XOR, CMP, TEST.
-
-```c
-// Hook API
-void nv2a_hook_init(ptrdiff_t xbox_mem_offset);
-bool nv2a_hook_handle_mmio(PCONTEXT ctx, uintptr_t fault_addr,
-                           uint32_t fault_xbox_va, int is_write);
-bool nv2a_hook_handle_vram(uintptr_t fault_addr, uint32_t fault_xbox_va);
 ```
 
 ## Push Buffer

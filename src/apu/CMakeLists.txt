@@ -12,14 +12,10 @@ set(XBOX_APU_SOURCES
     apu_mmio_hook.c
     apu_channels.c
     apu_gpfx.c
+    # SDL2's audio, answering the sound back end's entry points
+    # (apu_xaudio2.h), on Linux and Windows.
+    apu_sdl.c
 )
-if(WIN32 AND NOT XBOXRECOMP_WIN_GL)
-    list(APPEND XBOX_APU_SOURCES apu_xaudio2.c)
-else()
-    # Linux, and Windows with XBOXRECOMP_WIN_GL: SDL2's audio, answering the
-    # same entry points (apu_sdl.c).
-    list(APPEND XBOX_APU_SOURCES apu_sdl.c)
-endif()
 
 add_library(xbox_apu STATIC ${XBOX_APU_SOURCES})
 
@@ -30,26 +26,10 @@ target_include_directories(xbox_apu PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../nv2a
 )
 
-if(MSVC)
-    target_compile_options(xbox_apu PRIVATE
-        /W3
-        /wd4244  # conversion warnings (float/double/int)
-        /wd4146  # unary minus on unsigned
-        /wd4267  # size_t to int conversion
-    )
-    target_compile_definitions(xbox_apu PRIVATE
-        _CRT_SECURE_NO_WARNINGS
-        _USE_MATH_DEFINES
-    )
-endif()
-
-if(WIN32 AND NOT XBOXRECOMP_WIN_GL)
-    target_link_libraries(xbox_apu PRIVATE platform kernel32 winmm)
-else()
-    # Linux: platform layer (Win32 primitives on POSIX) + SDL2 audio + libm
-    find_package(SDL2 REQUIRED)
-    target_link_libraries(xbox_apu PRIVATE platform SDL2::SDL2 m)
-    if(WIN32)
-        target_link_libraries(xbox_apu PRIVATE kernel32 winmm)
-    endif()
+# The platform layer (on Linux, Win32 primitives on POSIX), SDL2's audio and
+# libm.
+find_package(SDL2 REQUIRED)
+target_link_libraries(xbox_apu PRIVATE platform SDL2::SDL2 m)
+if(WIN32)
+    target_link_libraries(xbox_apu PRIVATE kernel32 winmm)
 endif()

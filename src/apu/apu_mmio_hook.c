@@ -1,8 +1,9 @@
 /*
  * MCPX APU MMIO Hook - VEH instruction decoder for APU register access
  *
- * Reuses the same x86-64 instruction decoder pattern as nv2a_mmio_hook.c
- * but routes reads/writes through the MCPX APU register handlers.
+ * The same x86-64 instruction decoder pattern as the NV2A's MMIO hook had
+ * (nv2a_mmio_hook.c, which went with Direct3D 11), routing reads and writes
+ * through the MCPX APU register handlers.
  */
 
 #include "apu.h"

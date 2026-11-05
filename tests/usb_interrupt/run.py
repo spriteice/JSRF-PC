@@ -16,11 +16,8 @@ import tempfile
 root = pathlib.Path(__file__).resolve().parents[2]
 cc = shlex.split(os.environ.get("CC", "gcc"))
 sources = ["tests/usb_interrupt/test_main.c", "src/usb/ohci.c", "src/kernel/kernel_interrupt.c"]
-if os.name == "nt":
-    # The registers answered through the MMIO hook, as in the engine's build,
-    # not by trapping guest pages this test doesn't map.
-    flags = ["-DXBOXRECOMP_WIN_GL"]
-else:
+flags = []
+if os.name != "nt":
     sources.append("src/platform/win32_compat.c")
     flags = ["-pthread"]
 

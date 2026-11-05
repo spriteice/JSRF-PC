@@ -2,7 +2,7 @@
  * Xbox Texture Swizzle/Unswizzle
  *
  * Xbox textures use a Z-order curve (Morton code) swizzled memory layout
- * instead of the linear row-major layout that D3D11 expects. This provides
+ * instead of the linear row-major layout a host GPU expects. This provides
  * better 2D locality for texture cache hits on the NV2A GPU.
  *
  * The swizzle interleaves the bits of the X and Y coordinates:
@@ -133,7 +133,7 @@ static inline uint32_t swizzle_offset(uint32_t x, uint32_t y,
 
 /**
  * Unswizzle a texture from Xbox swizzled (Z-order/Morton) layout
- * to linear row-major layout suitable for D3D11.
+ * to linear row-major layout suitable for a host GPU.
  *
  * Uses the masked-increment trick from xemu (Fabian Giesen):
  *   off_x = (off_x - mask_x) & mask_x

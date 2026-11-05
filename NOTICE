@@ -108,10 +108,6 @@ Derived algorithms — credited, independently implemented
     xemu's hw/xbox/nv2a/pgraph/swizzle.c is cited in the file as the
     reference that pointed us at it.
 
-  src/d3d/d3d8_combiners.h
-    NV2A register-combiner translation. Cites xemu's pgraph combiner
-    implementation as a reference for the hardware's behaviour.
-
   Algorithms and hardware behaviour are not themselves copyrightable, and
   these are our own implementations. They are listed here because the debt is
   real and should be visible even where no licence obligation attaches. If

@@ -12,7 +12,9 @@
  * - No CAPS querying (known fixed hardware)
  *
  * This header provides the ABI-compatible types so that translated
- * game/RW code can compile against our D3D11-backed implementation.
+ * game code can compile against them. The implementation that went with
+ * it, over Direct3D 11, has gone: a title brings its own D3D, and nv2a_gl
+ * draws what it writes to the pushbuffer.
  */
 
 #ifndef BURNOUT3_D3D8_XBOX_H
@@ -568,7 +570,7 @@ typedef enum D3DMULTISAMPLE_TYPE {
     D3DMULTISAMPLE_4_SAMPLES = D3DMULTISAMPLE_4_SAMPLES_MULTISAMPLE_LINEAR,
 } D3DMULTISAMPLE_TYPE;
 
-/* Resolve an Xbox multisample type to a D3D11 sample count.
+/* Resolve an Xbox multisample type to a sample count.
  * NONE (0x0011) yields 1; 2/4/9-sample grids map to their X*Y counts. */
 static inline UINT d3d8_msaa_sample_count(D3DMULTISAMPLE_TYPE ms)
 {
@@ -1132,34 +1134,6 @@ typedef struct IDirect3D8Vtbl {
 struct IDirect3D8 {
     const IDirect3D8Vtbl *lpVtbl;
 };
-
-/* ================================================================
- * Initialization
- * ================================================================ */
-
-/**
- * Create the D3D8-compatible interface backed by D3D11.
- * This replaces the Xbox Direct3DCreate8() call.
- */
-IDirect3D8 *xbox_Direct3DCreate8(UINT SDKVersion);
-
-/**
- * Set the window title used by the D3D8 GL backend (POSIX builds) when it
- * creates its own SDL window. The Win32 backend renders into a host-provided
- * HWND and does not use this. Passing NULL restores the generic default.
- */
-void xbox_D3D8SetWindowTitle(const char *title);
-
-/**
- * Get the current D3D device (Xbox uses a global device pointer).
- */
-IDirect3DDevice8 *xbox_GetD3DDevice(void);
-
-/**
- * Present frame and pump window messages.
- * Called from recompiled game code (replaces RW driver Present path).
- */
-void d3d8_PresentFrame(void);
 
 #ifdef __cplusplus
 }

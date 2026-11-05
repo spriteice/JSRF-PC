@@ -23,15 +23,13 @@ get_filename_component(XBOXRECOMP_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOL
 if(WIN32)
     add_library(platform INTERFACE)
     target_include_directories(platform INTERFACE ${XBOXRECOMP_SRC_DIR})
-    if(XBOXRECOMP_WIN_GL)
-        # win32_compat.h is included by name from code shared with POSIX; on
-        # Windows it is empty.
-        target_include_directories(platform INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
-        # The POSIX-side code paths these hosts share use pthreads (MinGW's
-        # winpthreads).
-        find_package(Threads REQUIRED)
-        target_link_libraries(platform INTERFACE Threads::Threads)
-    endif()
+    # win32_compat.h is included by name from code shared with POSIX; on
+    # Windows it is empty.
+    target_include_directories(platform INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+    # The POSIX-side code paths these hosts share use pthreads (MinGW's
+    # winpthreads).
+    find_package(Threads REQUIRED)
+    target_link_libraries(platform INTERFACE Threads::Threads)
 else()
     add_library(platform STATIC win32_compat.c)
     target_include_directories(platform PUBLIC

@@ -36,10 +36,6 @@ void xbox_OhciInit(void);
 /* 1 if the address is inside a controller this model owns. */
 int  xbox_OhciOwnsAddress(uint32_t xbox_va);
 
-/* Service a trapped access. Returns 1 if the faulting instruction was decoded
- * and stepped over. `ctx` is a PCONTEXT; void * keeps windows.h out of here. */
-int  xbox_OhciHandleMmio(void *ctx, uint32_t xbox_va);
-
 /* Served through the runtime's MMIO function pointers rather than by
  * faulting, which is how the APU is served and is both faster and portable.
  * xbox_OhciEnabled() says whether the model is on at all. */

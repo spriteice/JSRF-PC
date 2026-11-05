@@ -87,7 +87,7 @@ static void framebuffer_probe_tick(void) { }
 ptrdiff_t xbox_GetMemoryOffset(void);
 void xbox_Nv2aRegisterWritten(uint32_t addr, unsigned size);
 """
-          + cut(layout, "#if !defined(_WIN32) || defined(XBOXRECOMP_WIN_GL)\n#include <pthread.h>",
+          + cut(layout, "#include <pthread.h>\n#include <sched.h>\nstatic int s_kick_on",
                 "/*\n * NV2A busy-bit acknowledgement.")
           + cut(layout, "static const struct { uint32_t offset; uint32_t busy_mask; } NV2A_ACK[]",
                 "/*\n * PFIFO channel DMA pointers.")

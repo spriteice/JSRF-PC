@@ -5,8 +5,8 @@
  * using Win32 VirtualAlloc/VirtualFree/VirtualQuery.
  *
  * Xbox contiguous memory (MmAllocateContiguousMemory) is used for GPU-accessible
- * buffers. On Windows, actual GPU resources are handled by our D3D11 layer;
- * these allocations just need to return valid CPU-accessible memory.
+ * buffers. The GPU's own resources are the renderer's (nv2a_gl); these
+ * allocations just need to return valid CPU-accessible memory.
  */
 
 #include "kernel.h"
@@ -58,7 +58,7 @@ PVOID __stdcall xbox_MmAllocateContiguousMemoryEx(
      * Xbox requests physically contiguous, aligned memory for GPU use.
      * We can't guarantee physical contiguity on Windows, but the game's
      * CPU-side code just needs a valid pointer. GPU resources are handled
-     * separately by our D3D11 layer.
+     * separately, by the renderer.
      *
      * Use _aligned_malloc for alignment, then VirtualAlloc for a fallback.
      */
@@ -152,7 +152,7 @@ NTSTATUS __stdcall xbox_MmQueryStatistics(PXBOX_MM_STATISTICS MemoryStatistics)
 
 PVOID __stdcall xbox_MmMapIoSpace(ULONG_PTR PhysicalAddress, ULONG NumberOfBytes, ULONG Protect)
 {
-    /* GPU register access - handled by our D3D11 layer. Return a dummy buffer. */
+    /* GPU register access - handled by the renderer. Return a dummy buffer. */
     PVOID p = VirtualAlloc(NULL, NumberOfBytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     XBOX_TRACE(XBOX_LOG_MEM, "MmMapIoSpace(0x%08X, %u) = %p (stub)", (ULONG)PhysicalAddress, NumberOfBytes, p);
     return p;
@@ -205,7 +205,7 @@ ULONG __stdcall xbox_MmQueryAllocationSize(PVOID BaseAddress)
 
 PVOID __stdcall xbox_MmClaimGpuInstanceMemory(ULONG NumberOfBytes, PULONG NumberOfPaddingBytes)
 {
-    /* GPU instance memory - handled by D3D11 layer */
+    /* GPU instance memory - handled by the renderer */
     if (NumberOfPaddingBytes)
         *NumberOfPaddingBytes = 0;
     PVOID p = VirtualAlloc(NULL, NumberOfBytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);

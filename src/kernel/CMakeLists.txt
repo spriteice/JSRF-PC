@@ -47,21 +47,13 @@ target_include_directories(xbox_kernel PUBLIC
 if(WIN32)
     # platform is an INTERFACE target on Windows: it contributes the src/
     # include path that "platform/xbox_winnt.h" resolves against.
-    target_link_libraries(xbox_kernel PUBLIC platform kernel32 bcrypt)
-    if(XBOXRECOMP_WIN_GL)
-        target_link_libraries(xbox_kernel PUBLIC xbox_nv2a_gl)
-    endif()
+    target_link_libraries(xbox_kernel PUBLIC platform kernel32 bcrypt xbox_nv2a_gl)
 else()
     # Linux: platform layer (POSIX host primitives) + OpenSSL for crypto.
     find_package(OpenSSL REQUIRED)
     target_link_libraries(xbox_kernel PUBLIC platform OpenSSL::Crypto xbox_nv2a_gl)
 endif()
 
-if(MSVC)
-    target_compile_options(xbox_kernel PRIVATE /W4 /WX- /O2 /GS- /Gy)
-    target_compile_definitions(xbox_kernel PRIVATE _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(xbox_kernel PRIVATE -Wall -Wextra -Wno-unused-parameter -O2)
-endif()
+target_compile_options(xbox_kernel PRIVATE -Wall -Wextra -Wno-unused-parameter -O2)
 
 target_compile_definitions(xbox_kernel PRIVATE $<$<CONFIG:Debug>:_DEBUG>)

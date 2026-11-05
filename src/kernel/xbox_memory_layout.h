@@ -141,7 +141,7 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size);
  * waiting on the 96-byte MmAllocateContiguousMemoryEx block its device struct
  * points at.
  *
- * Nothing executes the push buffer -- the D3D11 layer draws -- so everything
+ * Nothing executes the push buffer -- the renderer draws -- so everything
  * submitted is complete, and advancing the fence is the same honest
  * acknowledgement the register tables make.
  *

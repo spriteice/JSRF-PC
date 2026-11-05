@@ -14,8 +14,4 @@ target_link_libraries(xbox_dsound PUBLIC xbox_apu)
 # primitives), so both hosts need it for "platform/xbox_winnt.h".
 target_link_libraries(xbox_dsound PUBLIC platform)
 
-if(MSVC)
-    target_compile_options(xbox_dsound PRIVATE /W4 /O2)
-else()
-    target_compile_options(xbox_dsound PRIVATE -Wall -Wextra -O2)
-endif()
+target_compile_options(xbox_dsound PRIVATE -Wall -Wextra -O2)

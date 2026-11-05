@@ -159,7 +159,6 @@ static volatile LONG g_nv2a_ack_stop = 0;
  * old period as its timeout, so a kick is served in microseconds and nothing
  * else changes. RECOMP_NV2A_KICK=0 turns both off (polling only, as before).
  */
-#if !defined(_WIN32) || defined(XBOXRECOMP_WIN_GL)
 #include <pthread.h>
 #include <sched.h>
 static int s_kick_on = -1;
@@ -241,10 +240,6 @@ void xbox_nv2a_hurry(int on)
     s_hurry = on;
     if (on) xbox_nv2a_kick();   /* out of its sleep now, not at the end of it */
 }
-#else
-void xbox_nv2a_kick(void) { }
-void xbox_nv2a_hurry(int on) { (void)on; }
-#endif
 
 /*
  * NV2A busy-bit acknowledgement.
@@ -260,7 +255,7 @@ void xbox_nv2a_hurry(int on) { (void)on; }
  * Clearing those bits from a thread is not a hack around the handshake, it is
  * the handshake: on hardware the GPU clears them asynchronously, which is
  * exactly what this does. Work that would have been submitted is being done by
- * the D3D11 layer instead, so acknowledging immediately is honest.
+ * the renderer instead, so acknowledging immediately is honest.
  *
  * Only registers listed here are touched. Blanket-zeroing the aperture would
  * also wipe registers holding real state.
@@ -306,7 +301,7 @@ static const struct { uint32_t offset; uint32_t idle_mask; } NV2A_IDLE[] = {
  * [dev+0x2304] is 0xFD800000, so the channel's USER area sits at aperture
  * offset 0x800000 and the two pointers are at +0x40 / +0x44. Copying PUT to
  * GET is the acknowledgement; the commands are not executed from the push
- * buffer here -- the D3D11 layer draws -- so reporting them consumed is the
+ * buffer here -- the renderer draws -- so reporting them consumed is the
  * truthful answer.
  *
  * This was written once, removed, and restored. It was removed because
@@ -907,13 +902,8 @@ static DWORD WINAPI nv2a_ack_thread(LPVOID param)
             static int us = -1;
             if (us < 0) {
                 const char *e = getenv("RECOMP_ACK_SLEEP_US");
-#if defined(_WIN32) && !defined(XBOXRECOMP_WIN_GL)
-                us = e ? atoi(e) : 0;
-#else
                 us = e ? atoi(e) : 200;
-#endif
             }
-#if !defined(_WIN32) || defined(XBOXRECOMP_WIN_GL)
             if (us > 0) {
                 if (s_kick_on < 0) { const char *e = getenv("RECOMP_NV2A_KICK"); s_kick_on = e ? atoi(e) : 1; }
                 if (s_kick_on && s_hurry) sched_yield();
@@ -921,10 +911,6 @@ static DWORD WINAPI nv2a_ack_thread(LPVOID param)
                 else { struct timespec ts = { 0, (long)us * 1000L }; nanosleep(&ts, NULL); }
             }
             else Sleep(0);
-#else
-            if (us > 0) { struct timespec ts = { 0, (long)us * 1000L }; nanosleep(&ts, NULL); }
-            else Sleep(0);
-#endif
         }
     }
     return 0;
@@ -933,7 +919,7 @@ static DWORD WINAPI nv2a_ack_thread(LPVOID param)
 static void xbox_Nv2aAckStart(void)
 {
     g_nv2a_ack_stop = 0;
-#if defined(_WIN32) && defined(XBOXRECOMP_WIN_GL)
+#if defined(_WIN32)
     nv2a_kick_open();
 #endif
     g_nv2a_ack_thread = CreateThread(NULL, 0, nv2a_ack_thread,

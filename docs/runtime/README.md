@@ -24,7 +24,7 @@ Template: [../../templates/runtime/kernel_stubs.h](../../templates/runtime/kerne
 
 The Xbox uses a modified Direct3D 8. You need a translation layer to D3D11 (or D3D12, Vulkan, etc.). This is the largest runtime component.
 
-See: [../technical/d3d-translation.md](../technical/d3d-translation.md)
+See: [d3d-translation.md](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/d3d-translation.md), in the toolkit's repository
 
 ### 4. Input System (`xbox_input.c`)
 

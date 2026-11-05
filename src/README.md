@@ -26,11 +26,11 @@ The `src/` directory contains 6 static libraries that provide the Xbox hardware 
 │  │xbox_   │ │xbox_    │ │xbox_     │ │xbox_  │ │xbox_ ││
 │  │d3d8    │ │dsound   │ │apu       │ │nv2a   │ │input ││
 │  │        │ │         │ │          │ │       │ │      ││
-│  │D3D8→   │ │DSound→  │ │MCPX APU │ │NV2A   │ │XPP→  ││
-│  │D3D11   │ │mixer    │ │(xemu)   │ │(xemu) │ │XInput││
+│  │D3D8    │ │DSound→  │ │MCPX APU │ │NV2A   │ │XPP→  ││
+│  │headers │ │mixer    │ │(xemu)   │ │(xemu) │ │SDL2  ││
 │  └────────┘ └─────────┘ └──────────┘ └───────┘ └──────┘│
 ├──────────────────────────────────────────────────────────┤
-│    Windows: D3D11, DXGI, XInput, waveOut, Win32 API      │
+│    SDL2, OpenGL, Win32 API (POSIX on Linux)              │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -39,11 +39,11 @@ The `src/` directory contains 6 static libraries that provide the Xbox hardware 
 | Library | Dir | LOC | Origin | Description |
 |---------|-----|-----|--------|-------------|
 | **xbox_kernel** | `kernel/` | 7,935 | Custom | Xbox kernel → Win32 replacement (147 imports) |
-| **xbox_d3d8** | `d3d/` | 3,372 | Custom | D3D8 → D3D11 graphics compatibility layer |
+| **xbox_d3d8** | `d3d/` | 1,709 | Custom | Headers only: the D3D8 types, and the NV2A's texture swizzling |
 | **xbox_dsound** | `audio/` | 573 | Custom | DirectSound → software mixer |
 | **xbox_apu** | `apu/` | 3,918 | xemu | MCPX APU audio emulation (256 voices) |
 | **xbox_nv2a** | `nv2a/` | 3,761 | xemu | NV2A GPU register handlers + MMIO |
-| **xbox_input** | `input/` | 212 | Custom | Xbox gamepad → XInput mapping |
+| **xbox_input** | `input/` | 212 | Custom | Xbox gamepad → SDL2 GameController mapping |
 
 ## Building
 
@@ -100,16 +100,14 @@ int main() {
     xbox_kernel_init();
     xbox_kernel_bridge_init();
 
-    // 3. Initialize graphics
-    IDirect3D8 *d3d = xbox_Direct3DCreate8(0);
-    // ... create device, window, etc.
+    // 3. Graphics: the title's own D3D writes the NV2A's pushbuffer, and
+    //    nv2a_gl draws it (nothing to call here)
 
     // 4. Initialize audio (optional)
     MCPXAPUState *apu = mcpx_apu_init_standalone(ram_ptr);
 
     // 5. Initialize GPU (optional)
     NV2AState *gpu = nv2a_init_standalone(vram, vram_size, ramin, ramin_size);
-    nv2a_hook_init(g_xbox_mem_offset);
 
     // 6. Jump to game entry point
     void (*entry)(void) = recomp_lookup(ENTRY_POINT_VA);
@@ -122,7 +120,6 @@ int main() {
 Each subdirectory has its own README with API reference:
 
 - [kernel/README.md](kernel/README.md) — Memory layout, file I/O, threading, sync, crypto
-- [d3d/README.md](d3d/README.md) — D3D8 interface, render states, textures, shaders
 - [audio/README.md](audio/README.md) — DirectSound buffers, 3D audio, mixbins
 - [apu/README.md](apu/README.md) — MCPX APU voice processor, mixer, MMIO
 - [nv2a/README.md](nv2a/README.md) — NV2A GPU registers, push buffer, PGRAPH

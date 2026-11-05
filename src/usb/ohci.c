@@ -7,7 +7,6 @@
  * that decides how the rest gets built.
  */
 #include "ohci.h"
-#include "../platform/mmio_decode.h"
 #include "../kernel/xbox_memory_layout.h"
 #include "usb_gamepad.h"
 
@@ -885,37 +884,6 @@ void xbox_OhciInit(void)
     ohci_reset(&s_hc[0], XBOX_OHCI0_BASE, 0);
     ohci_reset(&s_hc[1], XBOX_OHCI1_BASE, 1);
 
-#if defined(_WIN32) && !defined(XBOXRECOMP_WIN_GL)
-    /* The registers have to fault to be answered. The MCPX aperture is mapped
-     * as plain committed memory, so both blocks are made inaccessible here and
-     * the title's VEH routes the faults back to xbox_OhciHandleMmio.
-     *
-     * A failed protect switches the model off rather than leaving it half on:
-     * a controller whose registers read as zero out of RAM is exactly the
-     * situation this exists to end, and it would look identical. */
-    {
-        ptrdiff_t off = xbox_GetMemoryOffset();
-        int i;
-
-        if (!off) {
-            s_enabled = 0;
-            fprintf(stderr, "  OHCI: guest memory not mapped yet; disabled\n");
-            return;
-        }
-        for (i = 0; i < 2; i++) {
-            DWORD old_protect;
-            LPVOID at = (LPVOID)((uintptr_t)off + s_hc[i].base);
-            if (!VirtualProtect(at, XBOX_OHCI_SIZE, PAGE_NOACCESS,
-                                &old_protect)) {
-                s_enabled = 0;
-                fprintf(stderr, "  OHCI: cannot trap 0x%08X (error %lu); "
-                                "disabled\n", s_hc[i].base, GetLastError());
-                return;
-            }
-        }
-    }
-#endif
-
     fprintf(stderr, "  OHCI: two controllers at 0x%08X and 0x%08X, "
                     "%d ports each, one device on HC0 port 1\n",
             XBOX_OHCI0_BASE, XBOX_OHCI1_BASE, OHCI_PORTS);
@@ -945,11 +913,12 @@ static OhciController *hc_for(uint32_t va)
 }
 
 
-/* ---- the MMIO-hook path (everywhere that is not Windows) ----------------
+/* ---- the MMIO-hook path -------------------------------------------------
  *
- * On Windows the registers are answered by making the page inaccessible and
- * decoding the faulting instruction. That works and it is slow, and it needs
- * a structured-exception handler to route the fault back here. This runtime
+ * The registers could be answered by making the page inaccessible and
+ * decoding the faulting instruction, as Windows' Direct3D 11 build did. That
+ * works and it is slow, and it needs a structured-exception handler to route
+ * the fault back here. This runtime
  * already has a faster and simpler route for exactly this: the recompiled
  * code funnels every access in the MCPX aperture through a function pointer,
  * which is how the APU is served. The USB block sits at the very top of that
@@ -976,31 +945,6 @@ void xbox_OhciWrite(uint32_t xbox_va, uint32_t val, int size)
 int xbox_OhciOwnsAddress(uint32_t xbox_va)
 {
     return hc_for(xbox_va) != NULL;
-}
-
-int xbox_OhciHandleMmio(void *ctx, uint32_t xbox_va)
-{
-#if defined(_WIN32) && !defined(XBOXRECOMP_WIN_GL)
-    OhciController *hc = hc_for(xbox_va);
-    int ok;
-
-    if (!hc)
-        return 0;
-    ok = mmio_emulate((PCONTEXT)ctx, xbox_va - hc->base, hc,
-                      ohci_read, ohci_write);
-    if (!ok && hc->decode_fail++ < 20) {
-        const uint8_t *ip = (const uint8_t *)((PCONTEXT)ctx)->Rip;
-        fprintf(stderr, "  [OHCI%d] undecoded access at +0x%03X: "
-                        "%02X %02X %02X %02X %02X %02X\n",
-                hc->index, xbox_va - hc->base,
-                ip[0], ip[1], ip[2], ip[3], ip[4], ip[5]);
-        fflush(stderr);
-    }
-    return ok;
-#else
-    (void)ctx; (void)xbox_va;
-    return 0;
-#endif
 }
 
 void xbox_OhciReport(void)

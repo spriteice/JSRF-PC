@@ -1,9 +1,10 @@
 /**
  * Xbox Input Compatibility Layer - Type Definitions
  *
- * Defines the Xbox XPP (Xbox Peripheral Port) input types and
- * translates them to Windows XInput. The Xbox controller API
- * differs from XInput in structure layout and polling model.
+ * Defines the Xbox XPP (Xbox Peripheral Port) input types, which
+ * xinput_device.c fills from SDL2's GameController API. The Xbox
+ * controller API differs from Windows' XInput in structure layout and
+ * polling model.
  *
  * The game uses 9 XPP entry points with 12 total calls:
  * - Controller state polling
@@ -84,7 +85,7 @@ typedef struct XBOX_INPUT_CAPABILITIES {
 
 /**
  * Initialize the input system.
- * Maps Xbox controller ports to XInput slots.
+ * Maps Xbox controller ports to the host's pads.
  */
 void xbox_InputInit(void);
 

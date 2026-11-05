@@ -11,8 +11,6 @@
 
 #include "apu_xaudio2.h"
 
-#if !defined(_WIN32) || defined(XBOXRECOMP_WIN_GL)
-
 #include <SDL.h>
 #include <stdatomic.h>
 #include <string.h>
@@ -206,5 +204,3 @@ int xa2_submit_samples(const int16_t *samples, int num_samples)
     atomic_store_explicit(&g_wr, wr + (uint32_t)num_samples, memory_order_release);
     return 1;
 }
-
-#endif /* !_WIN32 || XBOXRECOMP_WIN_GL */
