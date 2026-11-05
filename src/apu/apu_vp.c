@@ -25,6 +25,7 @@
 #include "apu_channels.h"
 #include "apu_gpfx.h"
 #include "apu_hrtf.h"
+#include "platform/recomp_check.h"
 
 /* #define DEBUG_MCPX */
 
@@ -99,7 +100,8 @@ static ApuHrtfEars s_ears[MCPX_HW_MAX_3D_VOICES];
 
 static void voice_reset_filters(MCPXAPUState *d, uint16_t v)
 {
-    assert(v < MCPX_HW_MAX_VOICES);
+    if (!RECOMP_CHECK(v < MCPX_HW_MAX_VOICES, "voice %u", v))
+        return;
     memset(&d->vp.filters[v].svf, 0, sizeof(d->vp.filters[v].svf));
     hrtf_filter_clear_history(&d->vp.filters[v].hrtf);
     /* A 3D voice starting again starts where its setting places it. */
@@ -174,17 +176,17 @@ static void voice_off(MCPXAPUState *d, uint16_t v)
     bool stream = voice_get_mask(d, v, NV_PAVS_VOICE_CFG_FMT,
                                  NV_PAVS_VOICE_CFG_FMT_DATA_TYPE) != 0;
     int notifier = MCPX_HW_NOTIFIER_SSLA_DONE;
-    if (stream) {
-        assert(v < MCPX_HW_MAX_VOICES);
-        assert(d->vp.ssl[v].ssl_index <= 1);
+    if (stream && RECOMP_CHECK(v < MCPX_HW_MAX_VOICES, "voice %u", v)
+               && RECOMP_CHECK((unsigned)d->vp.ssl[v].ssl_index <= 1,
+                               "voice %u's list %d", v, d->vp.ssl[v].ssl_index))
         notifier += d->vp.ssl[v].ssl_index;
-    }
     set_notify_status(d, v, notifier, NV1BA0_NOTIFICATION_STATUS_DONE_SUCCESS);
 }
 
 static void voice_lock(MCPXAPUState *d, uint16_t v, bool lock)
 {
-    assert(v < MCPX_HW_MAX_VOICES);
+    if (!RECOMP_CHECK(v < MCPX_HW_MAX_VOICES, "voice %u", v))
+        return;
     qemu_mutex_lock(&d->lock);
 
     uint64_t mask = 1ULL << (v % 64);
@@ -200,7 +202,8 @@ static void voice_lock(MCPXAPUState *d, uint16_t v, bool lock)
 
 static bool is_voice_locked(MCPXAPUState *d, uint16_t v)
 {
-    assert(v < MCPX_HW_MAX_VOICES);
+    if (!RECOMP_CHECK(v < MCPX_HW_MAX_VOICES, "voice %u", v))
+        return false;
     uint64_t mask = 1ULL << (v % 64);
     return (qatomic_read(&d->vp.voice_locked[v / 64]) & mask) != 0;
 }
@@ -286,6 +289,10 @@ static void fe_method(MCPXAPUState *d, uint32_t method, uint32_t argument)
 
     case NV1BA0_PIO_VOICE_ON: {
         selected_handle = argument & NV1BA0_PIO_VOICE_ON_HANDLE;
+        /* The handle is 16 bits and indexes the voices' own state below
+         * (ssl[], the filters): a voice past the last can't be started. */
+        if (!RECOMP_CHECK(selected_handle < MCPX_HW_MAX_VOICES, "voice %u", selected_handle))
+            break;
         /* What format each voice is started in.
          *
          * The voice processor ran 378,000 voice-frames in a hundred seconds
@@ -323,19 +330,22 @@ static void fe_method(MCPXAPUState *d, uint32_t method, uint32_t argument)
         } else {
             unsigned int antecedent_voice =
                 GET_MASK(d->regs[NV_PAPU_FEAV], NV_PAPU_FEAV_VALUE);
-            assert(antecedent_voice != 0xFFFF);
 
-            uint32_t next_handle = voice_get_mask(
-                d, (uint16_t)antecedent_voice, NV_PAVS_VOICE_TAR_PITCH_LINK,
-                NV_PAVS_VOICE_TAR_PITCH_LINK_NEXT_VOICE_HANDLE);
-            voice_set_mask(d, (uint16_t)selected_handle,
-                           NV_PAVS_VOICE_TAR_PITCH_LINK,
-                           NV_PAVS_VOICE_TAR_PITCH_LINK_NEXT_VOICE_HANDLE,
-                           next_handle);
-            voice_set_mask(d, (uint16_t)antecedent_voice,
-                           NV_PAVS_VOICE_TAR_PITCH_LINK,
-                           NV_PAVS_VOICE_TAR_PITCH_LINK_NEXT_VOICE_HANDLE,
-                           selected_handle);
+            /* No voice to follow: linking after "none" would write the
+             * link 0xFFFF voices past the voice array, in the game's memory. */
+            if (RECOMP_CHECK(antecedent_voice != 0xFFFF, "voice %u", selected_handle)) {
+                uint32_t next_handle = voice_get_mask(
+                    d, (uint16_t)antecedent_voice, NV_PAVS_VOICE_TAR_PITCH_LINK,
+                    NV_PAVS_VOICE_TAR_PITCH_LINK_NEXT_VOICE_HANDLE);
+                voice_set_mask(d, (uint16_t)selected_handle,
+                               NV_PAVS_VOICE_TAR_PITCH_LINK,
+                               NV_PAVS_VOICE_TAR_PITCH_LINK_NEXT_VOICE_HANDLE,
+                               next_handle);
+                voice_set_mask(d, (uint16_t)antecedent_voice,
+                               NV_PAVS_VOICE_TAR_PITCH_LINK,
+                               NV_PAVS_VOICE_TAR_PITCH_LINK_NEXT_VOICE_HANDLE,
+                               selected_handle);
+            }
         }
 
         voice_set_mask(d, (uint16_t)selected_handle, NV_PAVS_VOICE_PAR_OFFSET,
@@ -468,13 +478,14 @@ static void fe_method(MCPXAPUState *d, uint32_t method, uint32_t argument)
 
     case NV1BA0_PIO_SET_VOICE_TAR_HRTF: {
         int handle = GET_MASK(argument, NV1BA0_PIO_SET_VOICE_TAR_HRTF_HANDLE);
-        int current_voice = d->regs[NV_PAPU_FECV];
+        unsigned int current_voice = d->regs[NV_PAPU_FECV];
         voice_set_mask(d, (uint16_t)current_voice,
                        NV_PAVS_VOICE_CFG_HRTF_TARGET,
                        NV_PAVS_VOICE_CFG_HRTF_TARGET_HANDLE, handle);
         if (current_voice < MCPX_HW_MAX_3D_VOICES &&
-            handle != HRTF_NULL_HANDLE) {
-            assert(handle < HRTF_ENTRY_COUNT);
+            handle != HRTF_NULL_HANDLE &&
+            RECOMP_CHECK(handle < HRTF_ENTRY_COUNT, "voice %u's HRTF entry %d",
+                         current_voice, handle)) {
             hrtf_filter_set_target_params(&d->vp.filters[current_voice].hrtf,
                                           d->vp.hrtf.entries[handle].hrir,
                                           d->vp.hrtf.entries[handle].itd);
@@ -560,8 +571,9 @@ static void fe_method(MCPXAPUState *d, uint32_t method, uint32_t argument)
 
     case NV1BA0_PIO_SET_VOICE_SSL_A: {
         int ssl = 0;
-        int current_voice = d->regs[NV_PAPU_FECV];
-        assert(current_voice < MCPX_HW_MAX_VOICES);
+        unsigned int current_voice = d->regs[NV_PAPU_FECV];
+        if (!RECOMP_CHECK(current_voice < MCPX_HW_MAX_VOICES, "voice %u", current_voice))
+            break;
         d->vp.ssl[current_voice].base[ssl] =
             GET_MASK(argument, NV1BA0_PIO_SET_VOICE_SSL_A_BASE);
         d->vp.ssl[current_voice].count[ssl] =
@@ -570,8 +582,9 @@ static void fe_method(MCPXAPUState *d, uint32_t method, uint32_t argument)
     }
     case NV1BA0_PIO_SET_VOICE_SSL_B: {
         int ssl = 1;
-        int current_voice = d->regs[NV_PAPU_FECV];
-        assert(current_voice < MCPX_HW_MAX_VOICES);
+        unsigned int current_voice = d->regs[NV_PAPU_FECV];
+        if (!RECOMP_CHECK(current_voice < MCPX_HW_MAX_VOICES, "voice %u", current_voice))
+            break;
         d->vp.ssl[current_voice].base[ssl] =
             GET_MASK(argument, NV1BA0_PIO_SET_VOICE_SSL_A_BASE);
         d->vp.ssl[current_voice].count[ssl] =
@@ -580,8 +593,10 @@ static void fe_method(MCPXAPUState *d, uint32_t method, uint32_t argument)
     }
 
     case NV1BA0_PIO_SET_CURRENT_SSL: {
-        assert((argument & 0x3f) == 0);
-        assert(argument < (MCPX_HW_MAX_SSL_PRDS * NV_PSGE_SIZE));
+        /* Only the game's memory is reached through it (the SSL segment
+         * writes below), so the console's way is kept: said, then taken. */
+        RECOMP_CHECK((argument & 0x3f) == 0, "list base 0x%X", argument);
+        RECOMP_CHECK(argument < (MCPX_HW_MAX_SSL_PRDS * NV_PSGE_SIZE), "list base 0x%X", argument);
         d->vp.ssl_base_page = argument;
         break;
     }
@@ -610,7 +625,9 @@ static void fe_method(MCPXAPUState *d, uint32_t method, uint32_t argument)
     default:
         /* Handle range-based cases that can't use case ranges in MSVC */
         if (method >= NV1BA0_PIO_SET_HRIR && method < NV1BA0_PIO_SET_HRIR_X) {
-            assert(d->vp.hrtf.current_entry < HRTF_ENTRY_COUNT);
+            if (!RECOMP_CHECK((unsigned)d->vp.hrtf.current_entry < HRTF_ENTRY_COUNT,
+                              "HRTF entry %d", d->vp.hrtf.current_entry))
+                break;
             slot = (method - NV1BA0_PIO_SET_HRIR) / 4;
             int8_t left0 = (int8_t)GET_MASK(argument, NV1BA0_PIO_SET_HRIR_LEFT0);
             int8_t right0 = (int8_t)GET_MASK(argument, NV1BA0_PIO_SET_HRIR_RIGHT0);
@@ -622,7 +639,9 @@ static void fe_method(MCPXAPUState *d, uint32_t method, uint32_t argument)
             set_hrir_coeff_tar(d, 0, coeff_idx + 1, left1);
             set_hrir_coeff_tar(d, 1, coeff_idx + 1, right1);
         } else if (method == NV1BA0_PIO_SET_HRIR_X) {
-            assert(d->vp.hrtf.current_entry < HRTF_ENTRY_COUNT);
+            if (!RECOMP_CHECK((unsigned)d->vp.hrtf.current_entry < HRTF_ENTRY_COUNT,
+                              "HRTF entry %d", d->vp.hrtf.current_entry))
+                break;
             int8_t left30 = (int8_t)GET_MASK(argument, NV1BA0_PIO_SET_HRIR_X_LEFT30);
             int8_t right30 = (int8_t)GET_MASK(argument, NV1BA0_PIO_SET_HRIR_X_RIGHT30);
             int16_t itd = (int16_t)GET_MASK(argument, NV1BA0_PIO_SET_HRIR_X_ITD);
@@ -631,14 +650,14 @@ static void fe_method(MCPXAPUState *d, uint32_t method, uint32_t argument)
             d->vp.hrtf.entries[d->vp.hrtf.current_entry].itd = s6p9_to_float(itd);
         } else if (method >= NV1BA0_PIO_SET_SSL_SEGMENT_OFFSET &&
                    method < NV1BA0_PIO_SET_SSL_SEGMENT_LENGTH + 8 * 64) {
-            assert((method & 0x3) == 0);
+            RECOMP_CHECK((method & 0x3) == 0, "method 0x%X", method);
             hwaddr addr = d->regs[NV_PAPU_VPSSLADDR]
                           + (d->vp.ssl_base_page * 8)
                           + (method - NV1BA0_PIO_SET_SSL_SEGMENT_OFFSET);
             stl_le_phys(address_space_memory, addr, argument);
         } else if (method >= NV1BA0_PIO_SET_SUBMIX_HEADROOM &&
                    method <= NV1BA0_PIO_SET_SUBMIX_HEADROOM + 4 * (NUM_MIXBINS - 1)) {
-            assert((method & 3) == 0);
+            RECOMP_CHECK((method & 3) == 0, "method 0x%X", method);
             slot = (method - NV1BA0_PIO_SET_SUBMIX_HEADROOM) / 4;
             d->vp.submix_headroom[slot] =
                 (uint8_t)(argument & NV1BA0_PIO_SET_SUBMIX_HEADROOM_AMOUNT);
@@ -698,7 +717,9 @@ static hwaddr get_data_ptr(hwaddr sge_base, unsigned int max_sge, uint32_t addr)
 {
     unsigned int entry = addr / TARGET_PAGE_SIZE;
     uint32_t prd_address;
-    assert(entry <= max_sge);
+    /* The table is in the game's memory: past its end is read as the
+     * console reads it, once said. */
+    RECOMP_CHECK(entry <= max_sge, "page %u of %u", entry, max_sge);
     prd_address = ldl_le_phys(address_space_memory, sge_base + entry * 4 * 2);
 
     /*
@@ -873,7 +894,8 @@ static float voice_step_envelope(MCPXAPUState *d, uint16_t v, uint32_t reg_0,
 static int voice_get_samples(MCPXAPUState *d, uint32_t v, float samples[][2],
                        int num_samples_requested)
 {
-    assert(v < MCPX_HW_MAX_VOICES);
+    if (!RECOMP_CHECK(v < MCPX_HW_MAX_VOICES, "voice %u", v))
+        return -1;
     bool stereo = voice_get_mask(d, (uint16_t)v, NV_PAVS_VOICE_CFG_FMT,
                                  NV_PAVS_VOICE_CFG_FMT_STEREO) != 0;
     unsigned int channels = stereo ? 2 : 1;
@@ -988,7 +1010,7 @@ static int voice_get_samples(MCPXAPUState *d, uint32_t v, float samples[][2],
             }
         }
 
-        assert(!loop);
+        RECOMP_CHECK(!loop, "voice %u", v);
         ssl_index = d->vp.ssl[v].ssl_index;
         ssl_seg = d->vp.ssl[v].ssl_seg;
         page = d->vp.ssl[v].base[ssl_index] + ssl_seg;
@@ -1013,8 +1035,8 @@ static int voice_get_samples(MCPXAPUState *d, uint32_t v, float samples[][2],
         hwaddr addr = d->regs[NV_PAPU_VPSSLADDR] + page * 8;
         segment_offset = ldl_le_phys(address_space_memory, addr);
         segment_length = ldl_le_phys(address_space_memory, addr + 4);
-        assert(segment_offset != 0);
-        assert(segment_length != 0);
+        RECOMP_CHECK(segment_offset != 0, "voice %u, list page %d", v, page);
+        RECOMP_CHECK(segment_length != 0, "voice %u, list page %d", v, page);
         seg_len = (segment_length >> 0) & 0xffff;
         seg_cs = (segment_length >> 16) & 3;
         seg_spb = (segment_length >> 18) & 0x1f;
@@ -1023,7 +1045,7 @@ static int voice_get_samples(MCPXAPUState *d, uint32_t v, float samples[][2],
         if (seg_cs == NV_PAVS_VOICE_CFG_FMT_CONTAINER_SIZE_ADPCM) {
             sample_size = NV_PAVS_VOICE_CFG_FMT_SAMPLE_SIZE_S24;
         }
-        assert(seg_len > 0);
+        RECOMP_CHECK(seg_len > 0, "voice %u, list page %d", v, page);
         ebo = seg_len - 1;
     }
 
@@ -1280,7 +1302,8 @@ static void voice_process(MCPXAPUState *d,
                           float sample_buf[NUM_SAMPLES_PER_FRAME][2],
                           uint16_t v, int voice_list)
 {
-    assert(v < MCPX_HW_MAX_VOICES);
+    if (!RECOMP_CHECK(v < MCPX_HW_MAX_VOICES, "voice %u", v))
+        return;
     bool stereo = voice_get_mask(d, v, NV_PAVS_VOICE_CFG_FMT,
                                  NV_PAVS_VOICE_CFG_FMT_STEREO) != 0;
     unsigned int channels = stereo ? 2 : 1;
