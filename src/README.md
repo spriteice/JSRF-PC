@@ -95,7 +95,8 @@ int main() {
     // 1. Map Xbox 64MB address space (sections, stack, heap, mirrors)
     xbox_MemoryLayoutInit(xbe_data, xbe_size);
 
-    // 2. Initialize kernel thunk table (147 imports → Win32)
+    // 2. The kernel layer: its log, then the game's kernel imports
+    //    routed to the bridge
     xbox_kernel_init();
     xbox_kernel_bridge_init();
 

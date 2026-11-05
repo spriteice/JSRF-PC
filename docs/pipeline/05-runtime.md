@@ -253,7 +253,7 @@ JSRF-PC is built with CMake from `port/` ([building-on-linux.md](../building-on-
 
 1. Load the XBE file from disk (keep in memory for .rdata string fallback)
 2. Call `xbox_MemoryLayoutInit()` to map sections to Xbox VAs
-3. Call `xbox_kernel_init()` to fill the kernel thunk table
+3. Call `xbox_kernel_init()` to open the kernel log
 4. Call `xbox_kernel_bridge_init()` to wire synthetic VAs
 5. Initialize g_esp to XBOX_STACK_TOP
 6. Create the window and its OpenGL context, with SDL2 (src/nv2a_gl)

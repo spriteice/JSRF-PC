@@ -18,7 +18,7 @@ set(KERNEL_SOURCES
     kernel_ob.c
     kernel_io.c
     kernel_crypto.c
-    kernel_thunks.c
+    kernel_init.c
     kernel_bridge.c
     kernel_interrupt.c
     kernel_apc.c

@@ -37,92 +37,6 @@ static DWORD xbox_protect_to_win32(ULONG xbox_protect)
 }
 
 /* ============================================================================
- * Contiguous Memory (GPU-accessible on Xbox)
- * ============================================================================ */
-
-PVOID __stdcall xbox_MmAllocateContiguousMemory(ULONG NumberOfBytes)
-{
-    PVOID p = VirtualAlloc(NULL, NumberOfBytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    XBOX_TRACE(XBOX_LOG_MEM, "MmAllocateContiguousMemory(%u) = %p", NumberOfBytes, p);
-    return p;
-}
-
-PVOID __stdcall xbox_MmAllocateContiguousMemoryEx(
-    ULONG NumberOfBytes,
-    ULONG_PTR LowestAcceptableAddress,
-    ULONG_PTR HighestAcceptableAddress,
-    ULONG Alignment,
-    ULONG Protect)
-{
-    /*
-     * Xbox requests physically contiguous, aligned memory for GPU use.
-     * We can't guarantee physical contiguity on Windows, but the game's
-     * CPU-side code just needs a valid pointer. GPU resources are handled
-     * separately, by the renderer.
-     *
-     * Use _aligned_malloc for alignment, then VirtualAlloc for a fallback.
-     */
-    PVOID p = NULL;
-
-    if (Alignment > 0 && (Alignment & (Alignment - 1)) == 0) {
-        /* Power-of-2 alignment: use _aligned_malloc */
-        p = _aligned_malloc(NumberOfBytes, Alignment);
-        if (p)
-            memset(p, 0, NumberOfBytes);
-    }
-
-    if (!p) {
-        /* Fallback: page-aligned VirtualAlloc */
-        p = VirtualAlloc(NULL, NumberOfBytes, MEM_COMMIT | MEM_RESERVE,
-                         xbox_protect_to_win32(Protect));
-    }
-
-    XBOX_TRACE(XBOX_LOG_MEM, "MmAllocateContiguousMemoryEx(%u, align=%u) = %p",
-        NumberOfBytes, Alignment, p);
-    return p;
-}
-
-VOID __stdcall xbox_MmFreeContiguousMemory(PVOID BaseAddress)
-{
-    XBOX_TRACE(XBOX_LOG_MEM, "MmFreeContiguousMemory(%p)", BaseAddress);
-    if (!BaseAddress)
-        return;
-
-    /*
-     * Determine if this was allocated with _aligned_malloc or VirtualAlloc.
-     * We use VirtualQuery to check: if it's a VirtualAlloc'd region,
-     * AllocationBase will equal the pointer (page-aligned).
-     */
-    MEMORY_BASIC_INFORMATION mbi;
-    if (VirtualQuery(BaseAddress, &mbi, sizeof(mbi)) &&
-        mbi.AllocationBase == BaseAddress &&
-        mbi.State == MEM_COMMIT) {
-        VirtualFree(BaseAddress, 0, MEM_RELEASE);
-    } else {
-        _aligned_free(BaseAddress);
-    }
-}
-
-/* ============================================================================
- * System Memory
- * ============================================================================ */
-
-PVOID __stdcall xbox_MmAllocateSystemMemory(ULONG NumberOfBytes, ULONG Protect)
-{
-    PVOID p = VirtualAlloc(NULL, NumberOfBytes, MEM_COMMIT | MEM_RESERVE,
-                           xbox_protect_to_win32(Protect));
-    XBOX_TRACE(XBOX_LOG_MEM, "MmAllocateSystemMemory(%u) = %p", NumberOfBytes, p);
-    return p;
-}
-
-VOID __stdcall xbox_MmFreeSystemMemory(PVOID BaseAddress, ULONG NumberOfBytes)
-{
-    XBOX_TRACE(XBOX_LOG_MEM, "MmFreeSystemMemory(%p, %u)", BaseAddress, NumberOfBytes);
-    if (BaseAddress)
-        VirtualFree(BaseAddress, 0, MEM_RELEASE);
-}
-
-/* ============================================================================
  * Memory Query & Protection
  * ============================================================================ */
 
@@ -150,14 +64,6 @@ NTSTATUS __stdcall xbox_MmQueryStatistics(PXBOX_MM_STATISTICS MemoryStatistics)
     return STATUS_SUCCESS;
 }
 
-PVOID __stdcall xbox_MmMapIoSpace(ULONG_PTR PhysicalAddress, ULONG NumberOfBytes, ULONG Protect)
-{
-    /* GPU register access - handled by the renderer. Return a dummy buffer. */
-    PVOID p = VirtualAlloc(NULL, NumberOfBytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    XBOX_TRACE(XBOX_LOG_MEM, "MmMapIoSpace(0x%08X, %u) = %p (stub)", (ULONG)PhysicalAddress, NumberOfBytes, p);
-    return p;
-}
-
 VOID __stdcall xbox_MmUnmapIoSpace(PVOID BaseAddress, ULONG NumberOfBytes)
 {
     XBOX_TRACE(XBOX_LOG_MEM, "MmUnmapIoSpace(%p, %u)", BaseAddress, NumberOfBytes);
@@ -169,12 +75,6 @@ ULONG_PTR __stdcall xbox_MmGetPhysicalAddress(PVOID BaseAddress)
 {
     /* No physical address translation on Windows - return the VA as a placeholder */
     return (ULONG_PTR)BaseAddress;
-}
-
-VOID __stdcall xbox_MmPersistContiguousMemory(PVOID BaseAddress, ULONG NumberOfBytes, BOOLEAN Persist)
-{
-    /* Xbox: mark memory to survive soft-reboot. No-op on Windows. */
-    XBOX_TRACE(XBOX_LOG_MEM, "MmPersistContiguousMemory(%p, %u, %d) - stub", BaseAddress, NumberOfBytes, Persist);
 }
 
 ULONG __stdcall xbox_MmQueryAddressProtect(PVOID VirtualAddress)
@@ -203,16 +103,6 @@ ULONG __stdcall xbox_MmQueryAllocationSize(PVOID BaseAddress)
     return 0;
 }
 
-PVOID __stdcall xbox_MmClaimGpuInstanceMemory(ULONG NumberOfBytes, PULONG NumberOfPaddingBytes)
-{
-    /* GPU instance memory - handled by the renderer */
-    if (NumberOfPaddingBytes)
-        *NumberOfPaddingBytes = 0;
-    PVOID p = VirtualAlloc(NULL, NumberOfBytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    XBOX_TRACE(XBOX_LOG_MEM, "MmClaimGpuInstanceMemory(%u) = %p (stub)", NumberOfBytes, p);
-    return p;
-}
-
 VOID __stdcall xbox_MmLockUnlockBufferPages(PVOID BaseAddress, ULONG NumberOfBytes, BOOLEAN UnlockPages)
 {
     /* Page locking is not meaningful in user mode. No-op. */
@@ -225,58 +115,8 @@ VOID __stdcall xbox_MmLockUnlockPhysicalPage(ULONG_PTR PhysicalAddress, BOOLEAN 
 }
 
 /* ============================================================================
- * Kernel Stack
- * ============================================================================ */
-
-PVOID __stdcall xbox_MmCreateKernelStack(ULONG NumberOfBytes, BOOLEAN DebuggerThread)
-{
-    /* Allocate a stack-like region. Return the TOP of the stack (high address). */
-    PVOID base = VirtualAlloc(NULL, NumberOfBytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    if (!base)
-        return NULL;
-
-    /* Xbox convention: return pointer to top of stack */
-    PVOID stack_top = (PUCHAR)base + NumberOfBytes;
-    XBOX_TRACE(XBOX_LOG_MEM, "MmCreateKernelStack(%u) = %p (base=%p)", NumberOfBytes, stack_top, base);
-    return stack_top;
-}
-
-VOID __stdcall xbox_MmDeleteKernelStack(PVOID StackBase, PVOID StackLimit)
-{
-    /* StackLimit is the low address (base of VirtualAlloc), StackBase is the high address */
-    XBOX_TRACE(XBOX_LOG_MEM, "MmDeleteKernelStack(base=%p, limit=%p)", StackBase, StackLimit);
-    if (StackLimit)
-        VirtualFree(StackLimit, 0, MEM_RELEASE);
-}
-
-/* ============================================================================
  * Virtual Memory (Nt API)
  * ============================================================================ */
-
-NTSTATUS __stdcall xbox_NtAllocateVirtualMemory(
-    PVOID* BaseAddress,
-    ULONG_PTR ZeroBits,
-    PSIZE_T RegionSize,
-    ULONG AllocationType,
-    ULONG Protect)
-{
-    if (!BaseAddress || !RegionSize)
-        return STATUS_INVALID_PARAMETER;
-
-    PVOID result = VirtualAlloc(*BaseAddress, *RegionSize,
-                                AllocationType, xbox_protect_to_win32(Protect));
-    if (!result) {
-        xbox_log(XBOX_LOG_WARN, XBOX_LOG_MEM,
-            "NtAllocateVirtualMemory failed: base=%p size=%u type=0x%X err=%u",
-            *BaseAddress, (ULONG)*RegionSize, AllocationType, GetLastError());
-        return STATUS_NO_MEMORY;
-    }
-
-    *BaseAddress = result;
-    XBOX_TRACE(XBOX_LOG_MEM, "NtAllocateVirtualMemory(%p, %u) = %p",
-        *BaseAddress, (ULONG)*RegionSize, result);
-    return STATUS_SUCCESS;
-}
 
 NTSTATUS __stdcall xbox_NtFreeVirtualMemory(
     PVOID* BaseAddress,

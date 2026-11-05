@@ -4851,14 +4851,14 @@ static int stdcall_args_for_ordinal(ULONG ordinal)
 
     /* ── Pool Allocator ── */
     /* ordinal 16 is the ExEventObjectType data export; see
-     * kernel_thunks.c, which points its thunk at kernel data.
+     * kernel_data_va_for_ordinal, which points its thunk at kernel data.
      * 17 is ExFreePool and is a real function. */
 
     /* ── HAL ── */
 
     /* ── I/O Manager ── */
     /* ordinal 64 is the IoCompletionObjectType data export; see
-     * kernel_thunks.c. 65 is IoCreateDevice, a real function. */
+     * kernel_data_va_for_ordinal. 65 is IoCreateDevice, a real function. */
     /* case  71: DATA export - IoDeviceObjectType */
 
     /* ── Kernel Synchronization ── */
@@ -6850,17 +6850,6 @@ recomp_func_t recomp_lookup_kernel(uint32_t xbox_va)
  */
 static uint32_t g_thunk_table_base  = XBOX_KERNEL_THUNK_TABLE_BASE;
 static uint32_t g_thunk_table_count = XBOX_KERNEL_THUNK_TABLE_SIZE;
-
-/**
- * Return the kernel thunk table address and entry count currently in effect.
- * The address is parsed from the XBE header during memory layout init, so the
- * values are per-title, not hardcoded. *base/*count are set to 0 if unavailable.
- */
-void xbox_kernel_get_thunk_address(uint32_t *xbox_va, uint32_t *count)
-{
-    if (xbox_va) *xbox_va = g_thunk_table_base;
-    if (count)  *count  = g_thunk_table_count;
-}
 
 void xbox_kernel_set_thunk_address(uint32_t xbox_va, uint32_t count)
 {

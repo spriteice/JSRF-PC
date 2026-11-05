@@ -13,22 +13,6 @@
 #include <string.h>
 
 /* ============================================================================
- * Type Object Pointers
- *
- * Exported type objects for device and completion port types.
- * Game code rarely uses these directly - they're mainly for the
- * XDK libraries we're replacing.
- * ============================================================================ */
-
-static ULONG g_device_object_type_data     = 0x44455643; /* 'DEVC' */
-static ULONG g_completion_object_type_data = 0x434F4D50; /* 'COMP' */
-static ULONG g_file_object_type_data       = 0x46494C45; /* 'FILE' */
-
-PVOID xbox_IoDeviceObjectType     = &g_device_object_type_data;
-PVOID xbox_IoCompletionObjectType = &g_completion_object_type_data;
-PVOID xbox_IoFileObjectType       = &g_file_object_type_data;
-
-/* ============================================================================
  * Device Management
  *
  * IoCreateDevice/IoDeleteDevice create kernel device objects. Since we

@@ -91,10 +91,10 @@ def thunk_routes():
     Counting them as gaps overstates the work, which is why they are separated
     out here.
 
-    Read from kernel_bridge.c's kernel_data_va_for_ordinal specifically, not
-    from kernel_thunks.c. kernel_thunks.c has its own ordinal switch for a
-    different purpose, and matching against it happened to give the right answer
-    for one title and the wrong one for the next.
+    Read from kernel_bridge.c's kernel_data_va_for_ordinal specifically. The
+    host thunk table in kernel_thunks.c (since removed, as nothing read it)
+    had its own ordinal switch, and matching against it happened to give the
+    right answer for one title and the wrong one for the next.
     """
     src = open(BRIDGE_C, encoding="utf-8", errors="replace").read()
     m = re.search(r"kernel_data_va_for_ordinal.*?\n\}", src, re.S)

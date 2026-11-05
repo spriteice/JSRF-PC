@@ -14,20 +14,6 @@
 #include "kernel.h"
 
 /* ============================================================================
- * Type Object Pointers
- *
- * Xbox kernel exports type objects for common types. Game code uses these
- * with ObReferenceObjectByHandle to validate handle types.
- * We provide dummy non-NULL pointers so type checks pass.
- * ============================================================================ */
-
-static ULONG g_thread_object_type_data = 0x54485244; /* 'THRD' */
-static ULONG g_event_object_type_data  = 0x45564E54; /* 'EVNT' */
-
-PVOID xbox_PsThreadObjectType = &g_thread_object_type_data;
-PVOID xbox_ExEventObjectType  = &g_event_object_type_data;
-
-/* ============================================================================
  * Reference Counting
  *
  * On Xbox, kernel objects have embedded reference counts. On Windows,
@@ -58,39 +44,6 @@ VOID __fastcall xbox_ObfDereferenceObject(PVOID Object)
      */
     (void)Object;
     XBOX_TRACE(XBOX_LOG_OB, "ObfDereferenceObject: %p", Object);
-}
-
-/* ============================================================================
- * ObReferenceObjectByHandle
- *
- * Retrieves the object pointer for a given handle. On Xbox, this returns
- * a pointer to the kernel object structure. On Windows, we simply pass
- * the handle through as the "object pointer" since our Ke* functions
- * treat object pointers as HANDLEs.
- * ============================================================================ */
-
-NTSTATUS __stdcall xbox_ObReferenceObjectByHandle(
-    HANDLE Handle,
-    PVOID ObjectType,
-    PVOID* Object)
-{
-    (void)ObjectType;
-
-    if (!Object)
-        return STATUS_INVALID_PARAMETER;
-
-    if (!Handle || Handle == INVALID_HANDLE_VALUE) {
-        *Object = NULL;
-        return STATUS_INVALID_HANDLE;
-    }
-
-    /* Return the handle as the "object pointer" */
-    *Object = (PVOID)Handle;
-
-    XBOX_TRACE(XBOX_LOG_OB, "ObReferenceObjectByHandle: handle=%p → object=%p",
-        Handle, *Object);
-
-    return STATUS_SUCCESS;
 }
 
 /* ============================================================================

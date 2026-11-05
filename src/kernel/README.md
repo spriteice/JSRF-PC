@@ -11,18 +11,18 @@ Replaces 147 Xbox kernel imports with Win32 equivalents. This is the foundation 
 | `xbox_memory_layout.c` | 534 | Memory mapping (CreateFileMapping + 28 mirror views) |
 | `kernel_bridge.c` | 1,973 | Core dispatcher — thunk table, ICALL resolution, kernel data exports |
 | `kernel_file.c` | 834 | File I/O — NtCreateFile, NtReadFile, path translation |
-| `kernel_thread.c` | 344 | Threading — PsCreateSystemThreadEx, thread priorities |
+| `kernel_thread.c` | 344 | Threading — thread priorities, suspend and resume, KeDelayExecutionThread |
 | `kernel_sync.c` | 547 | Synchronization — events, semaphores, mutexes, critical sections |
-| `kernel_memory.c` | 323 | Memory allocation — MmAllocateContiguousMemory, page alloc |
-| `kernel_rtl.c` | 334 | Runtime library — string ops, memory copy, ANSI/Unicode conversion |
+| `kernel_memory.c` | 323 | Memory — MmQueryStatistics, NtFreeVirtualMemory, NtQueryVirtualMemory, page protection |
+| `kernel_rtl.c` | 334 | Runtime library — critical sections, counted strings, time fields |
 | `kernel_hal.c` | 453 | Hardware abstraction — PCI, timers, DPC, IRQLs |
 | `kernel_crypto.c` | 409 | Cryptography — SHA1, RC4, HMAC |
-| `kernel_thunks.c` | 414 | Thunk layer for recompiled code → kernel dispatch |
-| `kernel_ob.c` | 126 | Object manager — handle table, reference counting |
+| `kernel_init.c` | 124 | The kernel layer's start and end (`xbox_kernel_init`, `xbox_kernel_shutdown`), and its log (`xbox_log`) |
+| `kernel_ob.c` | 126 | Object manager — reference counting, lookup by name |
 | `kernel_io.c` | 242 | Device I/O control |
 | `kernel_path.c` | 199 | Xbox path parsing (`\Device\CdRom0\` → Windows path) |
-| `kernel_pool.c` | 49 | Pool memory allocator |
-| `kernel_xbox.c` | 121 | Misc Xbox APIs (XeLoadSection, etc.) |
+| `kernel_pool.c` | 49 | Pool memory — ExFreePool |
+| `kernel_xbox.c` | 121 | Misc Xbox APIs (the EEPROM settings, the network PHY) |
 
 ## Memory Layout
 
@@ -105,22 +105,13 @@ The `xbe_parser` tool outputs these values for any XBE.
 
 ## Kernel Thunk Table
 
-The Xbox kernel exposes functions via ordinal numbers. Games import them through a thunk table at a fixed address. We reproduce this:
-
-```c
-// The thunk table lives at the same Xbox VA as the original
-#define XBOX_KERNEL_THUNK_TABLE_BASE  0x0036B7C0
-#define XBOX_KERNEL_THUNK_TABLE_SIZE  147
-
-// Each entry maps ordinal → function pointer (as synthetic VA)
-extern ULONG_PTR xbox_kernel_thunk_table[147];
-```
+The Xbox kernel exposes functions via ordinal numbers. Games import them through a thunk table in the XBE, at the address its header gives. `xbox_kernel_bridge_init()` (kernel_bridge.c) reads each slot's ordinal from that table in Xbox memory, writes the slot's synthetic VA or kernel data address there, and routes each ordinal to its `bridge_*` function (`bridge_for_ordinal`). [docs/technical/kernel-replacement.md](../../docs/technical/kernel-replacement.md) has the whole scheme.
 
 ### Initialization
 
 ```c
-xbox_kernel_init();         // Populate thunk table with ordinal → function mappings
-xbox_kernel_bridge_init();  // Write thunk entries into Xbox memory, set up kernel data area
+xbox_kernel_init();         // Open the kernel log
+xbox_kernel_bridge_init();  // Route the game's thunk table to the bridge, set up kernel data area
 ```
 
 ### Kernel Data Exports
@@ -164,11 +155,11 @@ xbox_path_init("Burnout 3 Takedown", "saves");
 Xbox threads use `PsCreateSystemThreadEx` with NT-style parameters. We create Win32 threads with a wrapper that sets up the register context:
 
 ```c
-// The kernel bridge creates a thread that:
+// The kernel bridge's bridge_PsCreateSystemThreadEx creates a thread that:
 // 1. Looks up the start routine via recomp_lookup()
 // 2. Sets up ESP for the new thread
 // 3. Calls the recompiled function
-NTSTATUS xbox_PsCreateSystemThreadEx(
+NTSTATUS PsCreateSystemThreadEx(
     PHANDLE ThreadHandle,
     ULONG   ThreadExtraSize,
     ULONG   KernelStackSize,

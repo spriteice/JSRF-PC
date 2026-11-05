@@ -184,43 +184,6 @@ NTSTATUS __stdcall xbox_KeRestoreFloatingPointState(PVOID FloatingPointState)
 }
 
 /* ============================================================================
- * Bug Check (Blue Screen of Death)
- *
- * KeBugCheck/KeBugCheckEx are the Xbox equivalent of BSOD. In our
- * recompilation, we log the error and terminate the process.
- * ============================================================================ */
-
-VOID __stdcall xbox_KeBugCheck(ULONG BugCheckCode)
-{
-    xbox_log(XBOX_LOG_ERROR, XBOX_LOG_HAL,
-        "*** KeBugCheck: code=0x%08X ***", BugCheckCode);
-
-#ifdef _DEBUG
-    DebugBreak();
-#endif
-
-    ExitProcess(BugCheckCode);
-}
-
-VOID __stdcall xbox_KeBugCheckEx(
-    ULONG BugCheckCode,
-    ULONG_PTR Param1,
-    ULONG_PTR Param2,
-    ULONG_PTR Param3,
-    ULONG_PTR Param4)
-{
-    xbox_log(XBOX_LOG_ERROR, XBOX_LOG_HAL,
-        "*** KeBugCheckEx: code=0x%08X, params=(0x%p, 0x%p, 0x%p, 0x%p) ***",
-        BugCheckCode, (void*)Param1, (void*)Param2, (void*)Param3, (void*)Param4);
-
-#ifdef _DEBUG
-    DebugBreak();
-#endif
-
-    ExitProcess(BugCheckCode);
-}
-
-/* ============================================================================
  * HAL PCI Access
  *
  * HalReadWritePCISpace reads/writes PCI configuration space. The Xbox uses
@@ -277,22 +240,6 @@ BOOLEAN __stdcall xbox_HalIsResetOrShutdownPending(void)
 }
 
 /* ============================================================================
- * SMC (System Management Controller)
- *
- * HalReadSMCTrayState reads the DVD tray state. No disc tray on PC.
- * ============================================================================ */
-
-ULONG __stdcall xbox_HalReadSMCTrayState(PULONG TrayState, PULONG TrayStateChangeCount)
-{
-    /* Tray state: 0x10 = media detected (disc present) */
-    if (TrayState)
-        *TrayState = 0x10;
-    if (TrayStateChangeCount)
-        *TrayStateChangeCount = 0;
-    return 0; /* Success */
-}
-
-/* ============================================================================
  * Software Interrupts
  *
  * Used for APC/DPC delivery on Xbox. Stubbed since we don't have real
@@ -315,60 +262,12 @@ VOID __stdcall xbox_HalDisableSystemInterrupt(ULONG BusInterruptLevel, KIRQL Irq
     (void)Irql;
 }
 
-ULONG __stdcall xbox_HalGetInterruptVector(ULONG BusInterruptLevel, PKIRQL Irql)
-{
-    (void)BusInterruptLevel;
-    if (Irql)
-        *Irql = PASSIVE_LEVEL;
-    return 0;
-}
-
 /* ============================================================================
  * Interrupt Objects
  *
  * Used by DSOUND and other drivers for hardware interrupt handling.
  * Since we replace the audio/graphics subsystems entirely, these are stubs.
  * ============================================================================ */
-
-VOID __stdcall xbox_KeInitializeInterrupt(
-    PXBOX_KINTERRUPT Interrupt,
-    PVOID ServiceRoutine,
-    PVOID ServiceContext,
-    ULONG Vector,
-    KIRQL Irql,
-    ULONG InterruptMode,
-    BOOLEAN ShareVector)
-{
-    (void)Vector;
-    (void)InterruptMode;
-    (void)ShareVector;
-
-    if (!Interrupt)
-        return;
-
-    Interrupt->ServiceRoutine = ServiceRoutine;
-    Interrupt->ServiceContext = ServiceContext;
-    Interrupt->Irql = Irql;
-    Interrupt->Connected = FALSE;
-
-    xbox_log(XBOX_LOG_DEBUG, XBOX_LOG_HAL,
-        "KeInitializeInterrupt: interrupt=%p, routine=%p, vector=%u",
-        Interrupt, ServiceRoutine, Vector);
-}
-
-BOOLEAN __stdcall xbox_KeConnectInterrupt(PXBOX_KINTERRUPT Interrupt)
-{
-    if (!Interrupt)
-        return FALSE;
-
-    Interrupt->Connected = TRUE;
-
-    xbox_log(XBOX_LOG_DEBUG, XBOX_LOG_HAL,
-        "KeConnectInterrupt: interrupt=%p (stubbed - no real HW interrupts)",
-        Interrupt);
-
-    return TRUE;
-}
 
 BOOLEAN __stdcall xbox_KeDisconnectInterrupt(PXBOX_KINTERRUPT Interrupt)
 {
@@ -639,75 +538,8 @@ NTSTATUS __stdcall xbox_HalWriteSMBusValue(
 }
 
 /* ============================================================================
- * HAL Data Exports
- *
- * Ordinals 40, 41 and 42 are variables, not functions. Games read them
- * directly through the thunk table, so the thunk must hand back the address
- * of real storage -- pointing these at a function is what produced garbage
- * disk metadata before.
- *
- * The strings are counted (Length/MaximumLength), not NUL-terminated, matching
- * the kernel's STRING type. Values describe the virtual disk we present; no
- * real hardware is queried.
- * ============================================================================ */
-
-ULONG xbox_HalDiskCachePartitionCount = 3;
-
-static char g_disk_model[]  = "XBOXRECOMP VIRTUAL HDD";
-static char g_disk_serial[] = "XR0000000000";
-
-XBOX_ANSI_STRING xbox_HalDiskModelNumber = {
-    sizeof(g_disk_model) - 1,
-    sizeof(g_disk_model) - 1,
-    g_disk_model
-};
-
-XBOX_ANSI_STRING xbox_HalDiskSerialNumber = {
-    sizeof(g_disk_serial) - 1,
-    sizeof(g_disk_serial) - 1,
-    g_disk_serial
-};
-
-/*
- * Video mode the SMC reported at boot. 0 lets title code fall back to querying
- * the AV pack, which we answer properly in AvGetSavedDataAddress/SMBus.
- */
-ULONG xbox_HalBootSMCVideoMode = 0;
-
-/*
- * IDE channel object. Real kernels export a device object for the ATA channel;
- * drivers only ever pass it back to us, so identity is all that is required.
- */
-static ULONG g_idex_channel_data = 0x49444558; /* 'IDEX' */
-PVOID xbox_IdexChannelObject = &g_idex_channel_data;
-
-/* ============================================================================
- * Shutdown Notification
- * ============================================================================ */
-
-VOID __stdcall xbox_HalRegisterShutdownNotification(
-    PVOID ShutdownRegistration,
-    BOOLEAN Register)
-{
-    /*
-     * Registers a callback to run on reboot/shutdown. We never initiate an
-     * Xbox-style shutdown -- HalReturnToFirmware terminates the process -- so
-     * the callback would never fire. Recorded in the log so a title relying on
-     * shutdown cleanup is visible rather than silently ignored.
-     */
-    xbox_log(XBOX_LOG_DEBUG, XBOX_LOG_HAL,
-        "HalRegisterShutdownNotification: %s registration=%p (never invoked)",
-        Register ? "register" : "unregister", ShutdownRegistration);
-}
-
-/* ============================================================================
  * Unknown Ordinal Stubs
  * ============================================================================ */
-
-VOID __stdcall xbox_Unknown_8(void)
-{
-    xbox_log(XBOX_LOG_WARN, XBOX_LOG_HAL, "Unknown ordinal 8 called (stubbed)");
-}
 
 VOID __stdcall xbox_Unknown_23(void)
 {

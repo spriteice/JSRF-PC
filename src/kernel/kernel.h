@@ -475,21 +475,9 @@ typedef VOID (*PIO_APC_ROUTINE)(
  */
 void xbox_kernel_set_thunk_address(uint32_t xbox_va, uint32_t count);
 
-/**
- * Get the kernel thunk table address and entry count currently in effect.
- * Set during memory layout init from the XBE header. *xbox_va/*count are
- * zeroed if never configured.
- */
-void xbox_kernel_get_thunk_address(uint32_t *xbox_va, uint32_t *count);
-
-extern ULONG_PTR xbox_kernel_thunk_table[XBOX_KERNEL_THUNK_TABLE_SIZE];
-
-/* Initialize the thunk table - must be called before game code runs */
+/* Open the kernel log, before game code runs, and close it (kernel_init.c) */
 void xbox_kernel_init(void);
 void xbox_kernel_shutdown(void);
-
-/* Resolve a kernel ordinal to a function/data pointer */
-ULONG_PTR xbox_resolve_ordinal(ULONG ordinal);
 
 /* Kernel bridge (kernel_bridge.c) - resolve kernel thunks in Xbox memory */
 void xbox_kernel_bridge_init(void);
@@ -549,30 +537,18 @@ ULONGLONG xbox_partition_length(HANDLE h);
  * Pool Allocator (kernel_pool.c)
  * ============================================================================ */
 
-PVOID   __stdcall xbox_ExAllocatePool(ULONG NumberOfBytes);
-PVOID   __stdcall xbox_ExAllocatePoolWithTag(ULONG NumberOfBytes, ULONG Tag);
 VOID    __stdcall xbox_ExFreePool(PVOID P);
-ULONG   __stdcall xbox_ExQueryPoolBlockSize(PVOID PoolBlock);
 
 /* ============================================================================
  * Runtime Library (kernel_rtl.c)
  * ============================================================================ */
-
-VOID    __stdcall xbox_RtlInitAnsiString(PXBOX_ANSI_STRING DestinationString, const char* SourceString);
-VOID    __stdcall xbox_RtlInitUnicodeString(PXBOX_UNICODE_STRING DestinationString, const WCHAR* SourceString);
 
 NTSTATUS __stdcall xbox_RtlAnsiStringToUnicodeString(
     PXBOX_UNICODE_STRING DestinationString,
     PXBOX_ANSI_STRING SourceString,
     BOOLEAN AllocateDestinationString);
 
-NTSTATUS __stdcall xbox_RtlUnicodeStringToAnsiString(
-    PXBOX_ANSI_STRING DestinationString,
-    PXBOX_UNICODE_STRING SourceString,
-    BOOLEAN AllocateDestinationString);
-
 BOOLEAN __stdcall xbox_RtlEqualString(PXBOX_ANSI_STRING String1, PXBOX_ANSI_STRING String2, BOOLEAN CaseInSensitive);
-ULONG   __stdcall xbox_RtlCompareMemoryUlong(PVOID Source, ULONG Length, ULONG Pattern);
 
 /* Name contended CRT locks by index instead of by address. */
 void xbox_SetCrtLockTable(uint32_t table_va, uint32_t count);
@@ -581,47 +557,25 @@ VOID    __stdcall xbox_RtlEnterCriticalSection(PRTL_CRITICAL_SECTION CriticalSec
 VOID    __stdcall xbox_RtlLeaveCriticalSection(PRTL_CRITICAL_SECTION CriticalSection);
 VOID    __stdcall xbox_RtlInitializeCriticalSection(PRTL_CRITICAL_SECTION CriticalSection);
 
-ULONG   __stdcall xbox_RtlNtStatusToDosError(NTSTATUS Status);
-
 BOOLEAN __stdcall xbox_RtlTimeFieldsToTime(PXBOX_TIME_FIELDS TimeFields, PLARGE_INTEGER Time);
 VOID    __stdcall xbox_RtlTimeToTimeFields(PLARGE_INTEGER Time, PXBOX_TIME_FIELDS TimeFields);
 
-VOID    __stdcall xbox_RtlUnwind(PVOID TargetFrame, PVOID TargetIp, PVOID ExceptionRecord, PVOID ReturnValue);
-VOID    __stdcall xbox_RtlRaiseException(PVOID ExceptionRecord);
 VOID    __stdcall xbox_RtlRip(PCHAR ApiName, PCHAR Expression, PCHAR Message);
-
-int     __cdecl   xbox_RtlSnprintf(char* buffer, size_t count, const char* format, ...);
-int     __cdecl   xbox_RtlSprintf(char* buffer, const char* format, ...);
-int     __cdecl   xbox_RtlVsnprintf(char* buffer, size_t count, const char* format, va_list argptr);
-int     __cdecl   xbox_RtlVsprintf(char* buffer, const char* format, va_list argptr);
 
 /* ============================================================================
  * Memory Management (kernel_memory.c)
  * ============================================================================ */
 
-PVOID   __stdcall xbox_MmAllocateContiguousMemory(ULONG NumberOfBytes);
-PVOID   __stdcall xbox_MmAllocateContiguousMemoryEx(ULONG NumberOfBytes, ULONG_PTR LowestAcceptableAddress, ULONG_PTR HighestAcceptableAddress, ULONG Alignment, ULONG Protect);
-VOID    __stdcall xbox_MmFreeContiguousMemory(PVOID BaseAddress);
-
-PVOID   __stdcall xbox_MmAllocateSystemMemory(ULONG NumberOfBytes, ULONG Protect);
-VOID    __stdcall xbox_MmFreeSystemMemory(PVOID BaseAddress, ULONG NumberOfBytes);
-
 NTSTATUS __stdcall xbox_MmQueryStatistics(PXBOX_MM_STATISTICS MemoryStatistics);
-PVOID   __stdcall xbox_MmMapIoSpace(ULONG_PTR PhysicalAddress, ULONG NumberOfBytes, ULONG Protect);
 VOID    __stdcall xbox_MmUnmapIoSpace(PVOID BaseAddress, ULONG NumberOfBytes);
 ULONG_PTR __stdcall xbox_MmGetPhysicalAddress(PVOID BaseAddress);
 
-VOID    __stdcall xbox_MmPersistContiguousMemory(PVOID BaseAddress, ULONG NumberOfBytes, BOOLEAN Persist);
 ULONG   __stdcall xbox_MmQueryAddressProtect(PVOID VirtualAddress);
 VOID    __stdcall xbox_MmSetAddressProtect(PVOID BaseAddress, ULONG NumberOfBytes, ULONG NewProtect);
 ULONG   __stdcall xbox_MmQueryAllocationSize(PVOID BaseAddress);
-PVOID   __stdcall xbox_MmClaimGpuInstanceMemory(ULONG NumberOfBytes, PULONG NumberOfPaddingBytes);
 VOID    __stdcall xbox_MmLockUnlockBufferPages(PVOID BaseAddress, ULONG NumberOfBytes, BOOLEAN UnlockPages);
 VOID    __stdcall xbox_MmLockUnlockPhysicalPage(ULONG_PTR PhysicalAddress, BOOLEAN UnlockPage);
-PVOID   __stdcall xbox_MmCreateKernelStack(ULONG NumberOfBytes, BOOLEAN DebuggerThread);
-VOID    __stdcall xbox_MmDeleteKernelStack(PVOID StackBase, PVOID StackLimit);
 
-NTSTATUS __stdcall xbox_NtAllocateVirtualMemory(PVOID* BaseAddress, ULONG_PTR ZeroBits, PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect);
 NTSTATUS __stdcall xbox_NtFreeVirtualMemory(PVOID* BaseAddress, PSIZE_T RegionSize, ULONG FreeType);
 NTSTATUS __stdcall xbox_NtQueryVirtualMemory(PVOID BaseAddress, PVOID MemoryInformation, ULONG MemoryInformationLength, PULONG ReturnLength);
 
@@ -634,11 +588,6 @@ NTSTATUS __stdcall xbox_NtCreateFile(
     PXBOX_OBJECT_ATTRIBUTES ObjectAttributes, PXBOX_IO_STATUS_BLOCK IoStatusBlock,
     PLARGE_INTEGER AllocationSize, ULONG FileAttributes, ULONG ShareAccess,
     ULONG CreateDisposition, ULONG CreateOptions);
-
-NTSTATUS __stdcall xbox_NtOpenFile(
-    PHANDLE FileHandle, ACCESS_MASK DesiredAccess,
-    PXBOX_OBJECT_ATTRIBUTES ObjectAttributes, PXBOX_IO_STATUS_BLOCK IoStatusBlock,
-    ULONG ShareAccess, ULONG OpenOptions);
 
 NTSTATUS __stdcall xbox_NtReadFile(
     HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
@@ -679,38 +628,9 @@ NTSTATUS __stdcall xbox_NtQueryDirectoryFile(
 /* Drop the enumeration state of a directory handle being closed (NtClose). */
 void xbox_dir_context_release(HANDLE FileHandle);
 
-NTSTATUS __stdcall xbox_NtFsControlFile(
-    HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
-    PXBOX_IO_STATUS_BLOCK IoStatusBlock, ULONG FsControlCode,
-    PVOID InputBuffer, ULONG InputBufferLength,
-    PVOID OutputBuffer, ULONG OutputBufferLength);
-
-NTSTATUS __stdcall xbox_NtDeviceIoControlFile(
-    HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
-    PXBOX_IO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode,
-    PVOID InputBuffer, ULONG InputBufferLength,
-    PVOID OutputBuffer, ULONG OutputBufferLength);
-
-NTSTATUS __stdcall xbox_IoCreateFile(
-    PHANDLE FileHandle, ACCESS_MASK DesiredAccess,
-    PXBOX_OBJECT_ATTRIBUTES ObjectAttributes, PXBOX_IO_STATUS_BLOCK IoStatusBlock,
-    PLARGE_INTEGER AllocationSize, ULONG FileAttributes, ULONG ShareAccess,
-    ULONG Disposition, ULONG CreateOptions, ULONG Options);
-
-NTSTATUS __stdcall xbox_NtOpenSymbolicLinkObject(PHANDLE LinkHandle, PXBOX_OBJECT_ATTRIBUTES ObjectAttributes);
-NTSTATUS __stdcall xbox_NtQuerySymbolicLinkObject(HANDLE LinkHandle, PXBOX_ANSI_STRING LinkTarget, PULONG ReturnedLength);
-
 /* ============================================================================
  * Threading (kernel_thread.c)
  * ============================================================================ */
-
-NTSTATUS __stdcall xbox_PsCreateSystemThreadEx(
-    PHANDLE ThreadHandle, ULONG ThreadExtraSize, ULONG KernelStackSize,
-    ULONG TlsDataSize, PULONG ThreadId, PVOID StartContext1, PVOID StartContext2,
-    BOOLEAN CreateSuspended, BOOLEAN DebugStack,
-    PXBOX_SYSTEM_ROUTINE StartRoutine);
-
-NTSTATUS __stdcall xbox_PsTerminateSystemThread(NTSTATUS ExitStatus);
 
 NTSTATUS __stdcall xbox_KeDelayExecutionThread(KPROCESSOR_MODE WaitMode, BOOLEAN Alertable, PLARGE_INTEGER Interval);
 LONG     __stdcall xbox_KeSetBasePriorityThread(PVOID Thread, LONG Increment);
@@ -721,7 +641,6 @@ int      xbox_thread_guest_priority(HANDLE Thread);
 int      xbox_thread_is_current(HANDLE Thread);
 NTSTATUS __stdcall xbox_KeAlertThread(PVOID Thread, KPROCESSOR_MODE AlertMode);
 NTSTATUS __stdcall xbox_NtYieldExecution(void);
-NTSTATUS __stdcall xbox_NtDuplicateObject(HANDLE SourceHandle, PHANDLE TargetHandle, ULONG Options);
 
 /* ============================================================================
  * Synchronization (kernel_sync.c)
@@ -752,15 +671,6 @@ NTSTATUS __stdcall xbox_KeWaitForSingleObject(PVOID Object, ULONG WaitReason, KP
 NTSTATUS __stdcall xbox_KeWaitForMultipleObjects(ULONG Count, PVOID Objects[], ULONG WaitType, ULONG WaitReason, KPROCESSOR_MODE WaitMode, BOOLEAN Alertable, PLARGE_INTEGER Timeout, PVOID WaitBlockArray);
 
 BOOLEAN  __stdcall xbox_KeCancelTimer(PXBOX_KTIMER Timer);
-BOOLEAN  __stdcall xbox_KeSetTimer(PXBOX_KTIMER Timer, LARGE_INTEGER DueTime, PXBOX_KDPC Dpc);
-BOOLEAN  __stdcall xbox_KeSetTimerEx(PXBOX_KTIMER Timer, LARGE_INTEGER DueTime, LONG Period, PXBOX_KDPC Dpc);
-VOID     __stdcall xbox_KeInitializeTimerEx(PXBOX_KTIMER Timer, XBOX_TIMER_TYPE Type);
-
-VOID     __stdcall xbox_KeInitializeDpc(PXBOX_KDPC Dpc, PKDEFERRED_ROUTINE DeferredRoutine, PVOID DeferredContext);
-BOOLEAN  __stdcall xbox_KeInsertQueueDpc(PXBOX_KDPC Dpc, PVOID SystemArgument1, PVOID SystemArgument2);
-BOOLEAN  __stdcall xbox_KeRemoveQueueDpc(PXBOX_KDPC Dpc);
-
-BOOLEAN  __stdcall xbox_KeSynchronizeExecution(PXBOX_KINTERRUPT Interrupt, PVOID SynchronizeRoutine, PVOID SynchronizeContext);
 
 /* ============================================================================
  * HAL & Hardware (kernel_hal.c)
@@ -768,11 +678,9 @@ BOOLEAN  __stdcall xbox_KeSynchronizeExecution(PXBOX_KINTERRUPT Interrupt, PVOID
 
 VOID    __stdcall xbox_HalReadWritePCISpace(ULONG BusNumber, ULONG SlotNumber, ULONG RegisterNumber, PVOID Buffer, ULONG Length, BOOLEAN WritePCISpace);
 VOID    __stdcall xbox_HalReturnToFirmware(ULONG Routine);
-ULONG   __stdcall xbox_HalReadSMCTrayState(PULONG TrayState, PULONG TrayStateChangeCount);
 VOID    __fastcall xbox_HalClearSoftwareInterrupt(KIRQL RequestIrql);
 VOID    __fastcall xbox_HalRequestSoftwareInterrupt(KIRQL RequestIrql);
 VOID    __stdcall xbox_HalDisableSystemInterrupt(ULONG BusInterruptLevel, KIRQL Irql);
-ULONG   __stdcall xbox_HalGetInterruptVector(ULONG BusInterruptLevel, PKIRQL Irql);
 VOID    __stdcall xbox_HalInitiateShutdown(void);
 BOOLEAN __stdcall xbox_HalIsResetOrShutdownPending(void);
 
@@ -788,12 +696,6 @@ VOID    __stdcall xbox_KeQuerySystemTime(PLARGE_INTEGER CurrentTime);
 NTSTATUS __stdcall xbox_KeSaveFloatingPointState(PVOID FloatingPointState);
 NTSTATUS __stdcall xbox_KeRestoreFloatingPointState(PVOID FloatingPointState);
 
-VOID    __stdcall xbox_KeBugCheck(ULONG BugCheckCode);
-VOID    __stdcall xbox_KeBugCheckEx(ULONG BugCheckCode, ULONG_PTR Param1, ULONG_PTR Param2, ULONG_PTR Param3, ULONG_PTR Param4);
-
-VOID    __stdcall xbox_KeInitializeInterrupt(PXBOX_KINTERRUPT Interrupt, PVOID ServiceRoutine, PVOID ServiceContext, ULONG Vector, KIRQL Irql, ULONG InterruptMode, BOOLEAN ShareVector);
-BOOLEAN __stdcall xbox_KeConnectInterrupt(PXBOX_KINTERRUPT Interrupt);
-
 /* KeTickCount - exported as a data pointer, not a function */
 extern volatile ULONG xbox_KeTickCount;
 
@@ -801,22 +703,10 @@ extern volatile ULONG xbox_KeTickCount;
  * Xbox Identity & Stubs (kernel_xbox.c)
  * ============================================================================ */
 
-extern XBOX_HARDWARE_INFO      xbox_HardwareInfo;
 extern XBOX_KRNL_VERSION       xbox_KrnlVersion;
 
 /* Override the reported kernel version (ordinal 324). */
 void xbox_kernel_set_version(USHORT major, USHORT minor, USHORT build, USHORT qfe);
-extern UCHAR                   xbox_EEPROMKey[16];
-extern UCHAR                   xbox_HDKey[16];
-extern UCHAR                   xbox_SignatureKey[16];
-extern UCHAR                   xbox_LANKey[16];
-extern UCHAR                   xbox_AlternateSignatureKeys[16][16];
-extern XBOX_ANSI_STRING        xbox_XeImageFileName;
-extern UCHAR                   xbox_XePublicKeyData[284];
-extern XBOX_LAUNCH_DATA_PAGE*  xbox_LaunchDataPage;
-
-NTSTATUS __stdcall xbox_XeLoadSection(PXBE_SECTION_HEADER Section);
-NTSTATUS __stdcall xbox_XeUnloadSection(PXBE_SECTION_HEADER Section);
 
 ULONG   __stdcall xbox_PhyGetLinkState(BOOLEAN Verify);
 NTSTATUS __stdcall xbox_PhyInitialize(BOOLEAN ForceReset, PVOID Param2);
@@ -827,11 +717,7 @@ NTSTATUS __stdcall xbox_PhyInitialize(BOOLEAN ForceReset, PVOID Param2);
 
 VOID    __fastcall xbox_ObfDereferenceObject(PVOID Object);
 VOID    __fastcall xbox_ObfReferenceObject(PVOID Object);
-NTSTATUS __stdcall xbox_ObReferenceObjectByHandle(HANDLE Handle, PVOID ObjectType, PVOID* Object);
 NTSTATUS __stdcall xbox_ObReferenceObjectByName(PXBOX_ANSI_STRING ObjectName, ULONG Attributes, PVOID ObjectType, PVOID ParseContext, PVOID* Object);
-
-extern PVOID xbox_PsThreadObjectType;
-extern PVOID xbox_ExEventObjectType;
 
 /* ============================================================================
  * I/O Manager (kernel_io.c)
@@ -839,10 +725,6 @@ extern PVOID xbox_ExEventObjectType;
 
 NTSTATUS __stdcall xbox_IoCreateDevice(PVOID DriverObject, ULONG DeviceExtensionSize, PXBOX_ANSI_STRING DeviceName, ULONG DeviceType, BOOLEAN Exclusive, PVOID* DeviceObject);
 VOID     __stdcall xbox_IoDeleteDevice(PVOID DeviceObject);
-
-extern PVOID xbox_IoDeviceObjectType;
-extern PVOID xbox_IoCompletionObjectType;
-extern PVOID xbox_IoFileObjectType;
 
 VOID    __stdcall xbox_IoInitializeIrp(PVOID Irp, USHORT PacketSize, CCHAR StackSize);
 VOID    __stdcall xbox_IoStartNextPacket(PVOID DeviceObject, BOOLEAN Cancelable);
@@ -910,17 +792,9 @@ VOID    __stdcall xbox_AvSetDisplayMode(PVOID RegisterBase, ULONG Step, ULONG Mo
 NTSTATUS __stdcall xbox_HalReadSMBusValue(UCHAR SlaveAddress, UCHAR CommandCode, BOOLEAN ReadWordValue, PULONG DataValue);
 NTSTATUS __stdcall xbox_HalWriteSMBusValue(UCHAR SlaveAddress, UCHAR CommandCode, BOOLEAN WriteWordValue, ULONG DataValue);
 
-VOID    __stdcall xbox_HalRegisterShutdownNotification(PVOID ShutdownRegistration, BOOLEAN Register);
 VOID       __stdcall xbox_DbgBreakPoint(void);
 ULONGLONG  __stdcall xbox_KeQueryInterruptTime(void);
 BOOLEAN __stdcall xbox_KeDisconnectInterrupt(PXBOX_KINTERRUPT Interrupt);
-
-/* HAL data exports -- ordinals 40/41/42 and 356/357 are variables, not calls. */
-extern ULONG            xbox_HalDiskCachePartitionCount;
-extern XBOX_ANSI_STRING xbox_HalDiskModelNumber;
-extern XBOX_ANSI_STRING xbox_HalDiskSerialNumber;
-extern ULONG            xbox_HalBootSMCVideoMode;
-extern PVOID            xbox_IdexChannelObject;
 
 /* EEPROM / Non-Volatile Settings */
 NTSTATUS __stdcall xbox_ExQueryNonVolatileSetting(ULONG ValueIndex, PULONG Type, PVOID Value, ULONG ValueLength, PULONG ResultLength);
@@ -1033,8 +907,6 @@ NTSTATUS __stdcall xbox_ExSaveNonVolatileSetting(ULONG ValueIndex, ULONG Type, P
 #define XC_VIDEO_FLAGS_PAL_I        0x04
 #define XC_VIDEO_FLAGS_LETTERBOX    0x10
 
-/* Unknown ordinals - stub */
-VOID    __stdcall xbox_Unknown_8(void);
 VOID    __stdcall xbox_Unknown_23(void);
 VOID    __stdcall xbox_Unknown_42(void);
 
