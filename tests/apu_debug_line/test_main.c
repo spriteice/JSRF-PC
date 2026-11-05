@@ -23,9 +23,7 @@ int xa2_get_buffer_size(void) { return 0; }
 int xa2_ring_level(void) { return 0; }
 int xa2_ms_since_pull(void) { return 0; }
 
-/* apu_mmio_hook.c's, which the test doesn't link. */
-MCPXAPUState *g_apu_state;
-
+extern MCPXAPUState *g_apu_state;
 extern unsigned long g_apu_notifies, g_apu_voice_offs;
 extern unsigned g_apu_fe_on, g_apu_fe_off, g_apu_fe_total;
 extern unsigned long g_apu_seg_done, g_apu_notify_ssl, g_apu_notify_persist;

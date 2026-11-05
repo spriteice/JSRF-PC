@@ -38,6 +38,10 @@ int g_apu_window_only = 0;
 
 MCPXAPUState *g_state = NULL;
 
+/* The APU port/main.c starts (mcpx_apu_init_standalone), whose registers
+ * kernel_mmio.c sends it, and whose state the reports print. */
+MCPXAPUState *g_apu_state = NULL;
+
 /* Forward declarations for software mixer */
 static void mixer_init(void);
 static void mixer_render(int16_t frame_buf[][2], int num_samples);

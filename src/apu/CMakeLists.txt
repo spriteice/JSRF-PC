@@ -9,7 +9,6 @@ set(XBOX_APU_SOURCES
     apu_core.c
     apu_vp.c
     apu_dsp.c
-    apu_mmio_hook.c
     apu_channels.c
     apu_gpfx.c
     # SDL2's audio, answering the sound back end's entry points
