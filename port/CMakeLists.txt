@@ -110,7 +110,6 @@ target_include_directories(jsrf_recomp PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${JSRF_GEN_ROOT}"
     "${JSRF_GEN_DIR}"
-    "${JSRF_REPO}/include"
 )
 if(WIN32)
     # The icon, a manifest (UTF-8 file names, a sharp window on a high-DPI

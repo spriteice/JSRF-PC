@@ -9,7 +9,6 @@ project(xboxrecomp VERSION 0.8.0 LANGUAGES C CXX)
 # Libraries:
 #   xbox_kernel    - Xbox kernel replacement layer (147 imports → Win32)
 #   xbox_d3d8      - D3D8 headers: the types, and texture swizzling
-#   xbox_dsound    - DirectSound → software mixer compatibility
 #   xbox_input     - Xbox gamepad → SDL2 GameController
 #   xbox_apu       - MCPX APU audio emulation (extracted from xemu)
 #   xbox_nv2a      - NV2A GPU emulation (extracted from xemu)
@@ -36,9 +35,6 @@ add_subdirectory(src/kernel)
 # Graphics: the D3D8 headers (the title brings its own D3D, and nv2a_gl draws
 # what it writes to the pushbuffer)
 add_subdirectory(src/d3d)
-
-# Audio: DirectSound → software mixer compatibility
-add_subdirectory(src/audio)
 
 # Audio: MCPX APU hardware emulation (voice processor, DSP)
 add_subdirectory(src/apu)
@@ -69,7 +65,6 @@ add_library(xboxrecomp INTERFACE)
 target_link_libraries(xboxrecomp INTERFACE
     xbox_kernel
     xbox_d3d8
-    xbox_dsound
     xbox_input
     xbox_usb
     xbox_apu

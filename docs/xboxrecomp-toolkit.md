@@ -306,7 +306,7 @@ xboxrecomp/
 ### Per-Module API Reference
 - [xbox_kernel](src/kernel/README.md) — Memory layout, file I/O, threading, sync, crypto, EEPROM, SMBus (11,128 LOC)
 - [xbox_d3d8](https://github.com/sp00nznet/xboxrecomp/blob/main/src/d3d/README.md) — D3D8 interface, register combiners, vertex shaders, texture unswizzle (8,838 LOC)
-- [xbox_dsound](src/audio/README.md) — DirectSound buffers, 3D audio, mixbins (573 LOC)
+- [xbox_dsound](https://github.com/sp00nznet/xboxrecomp/blob/main/src/audio/README.md) — DirectSound buffers, 3D audio, mixbins (573 LOC)
 - [xbox_apu](src/apu/README.md) — MCPX APU voice processor, mixer, MMIO (4,168 LOC)
 - [xbox_nv2a](src/nv2a/README.md) — NV2A GPU registers, push buffer, PGRAPH→D3D11 (4,892 LOC)
 - [xbox_input](src/input/README.md) — Gamepad state, vibration, button mapping (360 LOC)

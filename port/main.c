@@ -68,22 +68,12 @@
 #endif
 
 /* xboxrecomp runtime headers */
-#include <xbox/xboxrecomp.h>
+#include "kernel.h"
+#include "xbox_memory_layout.h"
 #include "ohci.h"
 
 /* generated dispatch table (src/recomp/gen/recomp_types.h) */
 int recomp_dispatch_init(void);
-
-/*
- * If xboxrecomp.h is not an umbrella header in your setup, include
- * the individual headers directly:
- *
- * #include "kernel.h"
- * #include "xbox_memory_layout.h"
- * #include "d3d8_xbox.h"
- * #include "dsound_xbox.h"
- * #include "xinput_xbox.h"
- */
 
 /* ── Global register state (defined in xbox_memory_layout.c) ── */
 

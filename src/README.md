@@ -1,6 +1,6 @@
 # Runtime Libraries
 
-The `src/` directory contains 6 static libraries that provide the Xbox hardware and OS abstraction layer for statically recompiled games. Your recompiled game links against these at build time — no emulator needed at runtime.
+The `src/` directory contains 5 static libraries that provide the Xbox hardware and OS abstraction layer for statically recompiled games. Your recompiled game links against these at build time — no emulator needed at runtime.
 
 ## Architecture
 
@@ -22,13 +22,13 @@ The `src/` directory contains 6 static libraries that provide the Xbox hardware 
 │         │  (kernel_bridge)  │  sync, crypto, HAL          │
 │         └─────────┬─────────┘                             │
 │                   │                                       │
-│  ┌────────┐ ┌─────┴───┐ ┌──────────┐ ┌───────┐ ┌──────┐│
-│  │xbox_   │ │xbox_    │ │xbox_     │ │xbox_  │ │xbox_ ││
-│  │d3d8    │ │dsound   │ │apu       │ │nv2a   │ │input ││
-│  │        │ │         │ │          │ │       │ │      ││
-│  │D3D8    │ │DSound→  │ │MCPX APU │ │NV2A   │ │XPP→  ││
-│  │headers │ │mixer    │ │(xemu)   │ │(xemu) │ │SDL2  ││
-│  └────────┘ └─────────┘ └──────────┘ └───────┘ └──────┘│
+│  ┌────────┐ ┌─────┴────┐ ┌───────┐ ┌──────┐            │
+│  │xbox_   │ │xbox_     │ │xbox_  │ │xbox_ │            │
+│  │d3d8    │ │apu       │ │nv2a   │ │input │            │
+│  │        │ │          │ │       │ │      │            │
+│  │D3D8    │ │MCPX APU │ │NV2A   │ │XPP→  │            │
+│  │headers │ │(xemu)   │ │(xemu) │ │SDL2  │            │
+│  └────────┘ └──────────┘ └───────┘ └──────┘            │
 ├──────────────────────────────────────────────────────────┤
 │    SDL2, OpenGL, Win32 API (POSIX on Linux)              │
 └──────────────────────────────────────────────────────────┘
@@ -40,7 +40,6 @@ The `src/` directory contains 6 static libraries that provide the Xbox hardware 
 |---------|-----|-----|--------|-------------|
 | **xbox_kernel** | `kernel/` | 7,935 | Custom | Xbox kernel → Win32 replacement (147 imports) |
 | **xbox_d3d8** | `d3d/` | 1,709 | Custom | Headers only: the D3D8 types, and the NV2A's texture swizzling |
-| **xbox_dsound** | `audio/` | 573 | Custom | DirectSound → software mixer |
 | **xbox_apu** | `apu/` | 3,918 | xemu | MCPX APU audio emulation (256 voices) |
 | **xbox_nv2a** | `nv2a/` | 3,761 | xemu | NV2A GPU register handlers + MMIO |
 | **xbox_input** | `input/` | 212 | Custom | Xbox gamepad → SDL2 GameController mapping |
@@ -53,7 +52,7 @@ cmake -S . -B build
 cmake --build build --config Release
 ```
 
-Output: 6 `.lib` files in `build/src/*/Release/`.
+Output: 5 `.lib` files in `build/src/*/Release/`.
 
 ## Linking to Your Game
 
@@ -63,7 +62,7 @@ In your game's CMakeLists.txt:
 # Point to xboxrecomp
 add_subdirectory(path/to/xboxrecomp)
 
-# Link the umbrella target (all 6 libs)
+# Link the umbrella target (all 5 libs)
 target_link_libraries(my_game PRIVATE xboxrecomp)
 
 # Or link individual modules
@@ -120,7 +119,6 @@ int main() {
 Each subdirectory has its own README with API reference:
 
 - [kernel/README.md](kernel/README.md) — Memory layout, file I/O, threading, sync, crypto
-- [audio/README.md](audio/README.md) — DirectSound buffers, 3D audio, mixbins
 - [apu/README.md](apu/README.md) — MCPX APU voice processor, mixer, MMIO
 - [nv2a/README.md](nv2a/README.md) — NV2A GPU registers, push buffer, PGRAPH
 - [input/README.md](input/README.md) — Gamepad state, vibration, button mapping
