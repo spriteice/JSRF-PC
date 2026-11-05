@@ -8,7 +8,7 @@
  * honestly on POSIX so the Xbox-specific HLE code above it is unchanged and
  * stays verifiable.
  *
- * Linux/MacOS only: on Windows these come from the real <windows.h>.
+ * Linux only: on Windows these come from the real <windows.h>.
  */
 
 #ifndef WIN32_COMPAT_H

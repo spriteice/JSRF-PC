@@ -69,8 +69,8 @@ MIT — SMAA, the reference implementation
     src/nv2a_gl/smaa/SMAA.hlsl,     SMAA (Enhanced Subpixel Morphological
     AreaTex.h, SearchTex.h          Antialiasing) as published, with its
                                     licence (LICENSE.txt beside them)
-    src/nv2a_gl/nv2a_smaa_src.h     SMAA.hlsl as GLSL and as Metal source,
-                                    made by src/nv2a_gl/smaa/embed.py
+    src/nv2a_gl/nv2a_smaa_src.h     SMAA.hlsl as GLSL source, made by
+                                    src/nv2a_gl/smaa/embed.py
 
   Copyright (C) 2013 Jorge Jimenez (jorge@iryoku.com)
   Copyright (C) 2013 Jose I. Echevarria (joseignacioechevarria@gmail.com)

@@ -7,7 +7,7 @@ xbox_thread_is_current, xbox_NtSuspendThread and xbox_NtResumeThread from
 src/kernel/kernel_thread.c, all verbatim, and builds them with
 src/platform/win32_compat.c's threads, against a guest lock that is a plain
 mutex and a hand-over that is recorded rather than made (test_main.c). POSIX
-only (win32_compat.c is the Linux and macOS side); requires GCC on PATH.
+only (win32_compat.c is the Linux side); requires GCC on PATH.
 CC, when set, is the compiler instead of gcc.
 """
 import os

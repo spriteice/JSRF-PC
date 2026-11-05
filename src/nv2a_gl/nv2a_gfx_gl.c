@@ -1,14 +1,14 @@
 /*
  * The NV2A's back half, in OpenGL 3.3 core.
  *
- * Everything in here was in nv2a_gl.c until the Metal backend arrived, and
- * moved rather than changed: the same calls, the same state caching, the same
- * reasons, now behind the device interface in nv2a_backend.h so that the other
- * API can stand beside it. The front half (nv2a_gl.c) still owns every cache
+ * Everything in here was in nv2a_gl.c until a Metal backend arrived (the
+ * Mac's, since removed), and moved rather than changed: the same calls, the
+ * same state caching, the same reasons, now behind the device interface in
+ * nv2a_backend.h so that another API can stand beside it. The front half (nv2a_gl.c) still owns every cache
  * and every decision; this file owns the GL objects.
  *
- * The context is not made here. nv2a_gl.c brings one up (EGL headless, SDL on
- * Linux, CGL on a Mac), makes it current on the pushbuffer thread, and only
+ * The context is not made here. nv2a_gl.c brings one up (EGL headless, SDL
+ * with a window), makes it current on the pushbuffer thread, and only
  * then calls init(). Presenting to a window stays there too, because it is a
  * property of how the context was made.
  */
@@ -18,10 +18,7 @@
 #include "nv2a_smaa.h"
 
 #define GL_GLEXT_PROTOTYPES 1
-#if defined(NV2A_GL_USE_CGL) || (defined(NV2A_GL_USE_SDL) && defined(__APPLE__))
-#  include <OpenGL/gl3.h>
-#  include <OpenGL/gl3ext.h>
-#elif defined(_WIN32)
+#if defined(_WIN32)
 #  include <epoxy/gl.h>     /* opengl32.dll stops at 1.1: see nv2a_gl.c */
 #else
 #  include <GL/gl.h>

@@ -10,8 +10,7 @@ cmake_minimum_required(VERSION 3.20)
 #   cmake -S port -B build -DCMAKE_BUILD_TYPE=Release
 #   cmake --build build
 #
-# On Linux add -DNV2A_GL_CONTEXT=sdl (a window, sound and pads through SDL2);
-# the Mac uses its own frameworks by default.
+# On Linux add -DNV2A_GL_CONTEXT=sdl (a window, sound and pads through SDL2).
 #
 # The version is the release tag this tree is at (git describe: "b1", or
 # "b1-3-gabc1234-dirty" between releases); a tree without its git history
@@ -19,12 +18,6 @@ cmake_minimum_required(VERSION 3.20)
 # first line and answers --version; the launchers take it from there.
 # This fork's tags have no "v" (b1, b1.1, b2, then 1.0), so upstream's
 # vX.Y.Z tags, in a clone that has fetched them, are never taken for ours.
-
-# The Mac build is Apple Silicon only. Said before project(), so that a cmake
-# running under Rosetta (an Intel Homebrew's) does not quietly build x86_64.
-if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
-    set(CMAKE_OSX_ARCHITECTURES arm64 CACHE STRING "Mac architecture" FORCE)
-endif()
 
 # C++ only for Dear ImGui, the in-game menu's (src/menu).
 project(jsrf_recomp C CXX)
@@ -90,9 +83,9 @@ if(NOT JSRF_VERSION)
 endif()
 message(STATUS "JSRF-PC version: ${JSRF_VERSION}")
 
-# Windows (MinGW): the runtime's OpenGL / SDL2 host layers, as on Linux and the
-# Mac, rather than its Direct3D 11 ones -- the title draws through its own D3D
-# and the pushbuffer, which is what nv2a_gl renders everywhere else.
+# Windows (MinGW): the runtime's OpenGL / SDL2 host layers, as on Linux, rather
+# than its Direct3D 11 ones -- the title draws through its own D3D and the
+# pushbuffer, which is what nv2a_gl renders everywhere else.
 if(WIN32)
     set(XBOXRECOMP_WIN_GL ON)
     add_compile_definitions(XBOXRECOMP_WIN_GL=1)
@@ -119,20 +112,6 @@ add_executable(jsrf_recomp
     xiso.c
     ${JSRF_GEN_SOURCES}
 )
-if(IOS)
-    # The iPhone / iPad app around the engine (ios/jsrf_ios.m: the window,
-    # the controls, the game in Documents; the disc-image unpacker, xiso.c,
-    # is in every build -- the Mac and Linux apps use it through the engine). The
-    # bundle -- Info.plist, icons, signature -- is put together by
-    # launcher/ios/package_ios.sh from this executable.
-    target_sources(jsrf_recomp PRIVATE ios/jsrf_ios.m)
-    set_source_files_properties(ios/jsrf_ios.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
-    set_target_properties(jsrf_recomp PROPERTIES MACOSX_BUNDLE OFF)
-    target_link_libraries(jsrf_recomp PRIVATE
-        "-framework UIKit" "-framework GameController" "-framework AVFoundation"
-        "-framework Metal" "-framework QuartzCore" "-framework CoreGraphics"
-        "-framework Foundation")
-endif()
 target_compile_definitions(jsrf_recomp PRIVATE JSRF_VERSION="${JSRF_VERSION}")
 target_link_libraries(jsrf_recomp PRIVATE xboxrecomp)
 target_include_directories(jsrf_recomp PRIVATE

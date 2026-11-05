@@ -374,7 +374,7 @@ void mcpx_apu_monitor_frame(MCPXAPUState *d)
         return;
     }
 
-    /* XAudio2 / CoreAudio path: submit the frame the APU just finished.
+    /* XAudio2 path: submit the frame the APU just finished.
      *
      * This used to memset frame_buf before filling it -- which erased the
      * only thing in it that the title had actually produced. The voice

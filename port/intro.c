@@ -16,7 +16,8 @@
 extern int  nv_window_pref_num(const char *key, double *v);
 extern void nv_window_pref_set_num(const char *key, double v);
 #else
-/* The Mac and iOS keep their settings as preferences of their own: no keys. */
+/* Without the SDL window (a headless build) there is no settings file: no
+ * keys. */
 static int nv_window_pref_num(const char *key, double *v)
 {
     (void)key; (void)v;

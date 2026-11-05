@@ -32,7 +32,9 @@ class ConformanceTest(unittest.TestCase):
                 # bug -- failing here would point the reader at the wrong thing.
                 self.skipTest(
                     "XBOXRECOMP_PYTEST_DOCKER=1 but the linux/386 image is not "
-                    "built; run `bash tools/macos/setup.sh --test`")
+                    "built; from the repository's root, run `docker build "
+                    "--platform linux/386 -t xboxrecomp-gcc-i386 -f "
+                    "Dockerfile.gcc .`")
 
         rc = conformance.main_with_args([], allow_container=_ALLOW_DOCKER)
         self.assertEqual(rc, 0, "the lifted C disagreed with the CPU; run "

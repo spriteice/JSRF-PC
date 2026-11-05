@@ -112,19 +112,8 @@ static int input_script(DWORD port, XBOX_INPUT_STATE *pState)
  * both work, and a run with neither should behave exactly as before. So
  * the keys are OR-ed over whatever the controller reported: nothing held
  * changes nothing. Only available in a windowed run -- there is no keyboard
- * to read otherwise -- so the symbol is weak (the AppKit window on the Mac,
- * the SDL one elsewhere). Returns 1 if a key was held. */
-/* The iPhone app's on-screen stick (port/ios/jsrf_ios.m): 1, and where it
- * is, while a thumb is on it. A weak definition that says "none", which the
- * app's own replaces -- Mach-O will not link a weak reference that nothing
- * defines. */
-__attribute__((weak)) int nv_window_touch_stick(short *x, short *y);
-__attribute__((weak)) int nv_window_touch_stick(short *x, short *y)
-{
-    (void)x; (void)y;
-    return 0;
-}
-
+ * to read otherwise -- so the symbol is weak (the SDL window's, nv2a_gl.c).
+ * Returns 1 if a key was held. */
 static int kb_merge(DWORD dwPort, WORD *out, unsigned char analog[8], short axes[4])
 {
     extern int nv_window_keys(unsigned short *b, unsigned char *a)
@@ -159,12 +148,6 @@ static int kb_merge(DWORD dwPort, WORD *out, unsigned char analog[8], short axes
             short v = (rx && ry) ? 23170 : 32767;
             axes[2] = (short)(rx * v); axes[3] = (short)(ry * v);
         }
-    }
-    /* The on-screen stick moves the left stick by as much as the thumb
-     * does -- over the full deflection its d-pad bits gave above. */
-    {
-        short tx = 0, ty = 0;
-        if (nv_window_touch_stick(&tx, &ty)) { axes[0] = tx; axes[1] = ty; }
     }
     return 1;
 }
@@ -284,139 +267,7 @@ DWORD xbox_InputGetCapabilities(DWORD dwPort, DWORD dwFlags, XBOX_INPUT_CAPABILI
 }
 
 /* ======================================================================== */
-#elif defined(__APPLE__)
-/* ====================  Apple GameController backend  ==================== */
-/* ======================================================================== */
-
-/* The Objective-C half is in xinput_gc.m and speaks only plain C types --
- * see the note at the top of that file for why the two cannot share a
- * translation unit. */
-void nv_gc_init(void);
-int  nv_gc_poll(unsigned port, unsigned short *buttons,
-                unsigned char *analog, short *axes);
-
-/* Button bits as xinput_gc.m defines them. */
-#define GC_DPAD_UP    0x0001u
-#define GC_DPAD_DOWN  0x0002u
-#define GC_DPAD_LEFT  0x0004u
-#define GC_DPAD_RIGHT 0x0008u
-#define GC_START      0x0010u
-#define GC_BACK       0x0020u
-#define GC_LTHUMB     0x0040u
-#define GC_RTHUMB     0x0080u
-
-static BOOL  g_connected[XBOX_MAX_CONTROLLERS];
-static DWORD g_packet[XBOX_MAX_CONTROLLERS];
-
-/* RECOMP_HOST_PAD=0 (host_pad_off, above) leaves the GameController
- * framework alone entirely. For unattended runs driven by RECOMP_AUTO_INPUT:
- * headless, the guest's main thread is the process's main thread, and the
- * framework is called from whichever guest thread reads the pad while it
- * holds the guest lock. On 23 Sep one such first call never returned (the
- * holder sat in mach_msg2_trap for the whole run, before the title) -- with
- * nobody at the keyboard there is nothing to gain from the host pad and a
- * whole run to lose. */
-
-void xbox_InputInit(void)
-{
-    if (!host_pad_off())
-        nv_gc_init();
-}
-
-DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
-{
-    if (pState && input_script(dwPort, pState)) return ERROR_SUCCESS;
-    unsigned short btn = 0;
-    unsigned char analog[8];
-    short axes[4];
-    WORD out = 0;
-
-    if (dwPort >= XBOX_MAX_CONTROLLERS || !pState)
-        return ERROR_DEVICE_NOT_CONNECTED;
-
-    memset(pState, 0, sizeof(XBOX_INPUT_STATE));
-    memset(analog, 0, sizeof analog);
-    memset(axes, 0, sizeof axes);
-
-    int have_pad = host_pad_off() ? 0
-                 : nv_gc_poll((unsigned)dwPort, &btn, analog, axes);
-
-    /* The window's keyboard (kb_merge, above). */
-    if (kb_merge(dwPort, &out, analog, axes)) have_pad = 1;
-
-    if (!have_pad) {
-        g_connected[dwPort] = FALSE;
-        return ERROR_DEVICE_NOT_CONNECTED;
-    }
-
-    /* Say once, per port, that a pad turned up. Bluetooth pairing, macOS
-     * privacy prompts and the run loop all have to line up before this is
-     * true, and "the game does not respond to the controller" has too many
-     * possible causes to leave it unsaid. */
-    if (!g_connected[dwPort])
-        fprintf(stderr, "[PAD] controller %u connected\n", (unsigned)dwPort);
-    g_connected[dwPort] = TRUE;
-    pState->dwPacketNumber = ++g_packet[dwPort];
-
-    if (btn & GC_DPAD_UP)    out |= XBOX_GAMEPAD_DPAD_UP;
-    if (btn & GC_DPAD_DOWN)  out |= XBOX_GAMEPAD_DPAD_DOWN;
-    if (btn & GC_DPAD_LEFT)  out |= XBOX_GAMEPAD_DPAD_LEFT;
-    if (btn & GC_DPAD_RIGHT) out |= XBOX_GAMEPAD_DPAD_RIGHT;
-    if (btn & GC_START)      out |= XBOX_GAMEPAD_START;
-    if (btn & GC_BACK)       out |= XBOX_GAMEPAD_BACK;
-    if (btn & GC_LTHUMB)     out |= XBOX_GAMEPAD_LEFT_THUMB;
-    if (btn & GC_RTHUMB)     out |= XBOX_GAMEPAD_RIGHT_THUMB;
-    pState->Gamepad.wButtons = out;
-
-    pState->Gamepad.bAnalogButtons[XBOX_BUTTON_A]        = analog[0];
-    pState->Gamepad.bAnalogButtons[XBOX_BUTTON_B]        = analog[1];
-    pState->Gamepad.bAnalogButtons[XBOX_BUTTON_X]        = analog[2];
-    pState->Gamepad.bAnalogButtons[XBOX_BUTTON_Y]        = analog[3];
-    pState->Gamepad.bAnalogButtons[XBOX_BUTTON_BLACK]    = analog[4];
-    pState->Gamepad.bAnalogButtons[XBOX_BUTTON_WHITE]    = analog[5];
-    pState->Gamepad.bAnalogButtons[XBOX_BUTTON_LTRIGGER] = analog[6];
-    pState->Gamepad.bAnalogButtons[XBOX_BUTTON_RTRIGGER] = analog[7];
-
-    pState->Gamepad.sThumbLX = axes[0];
-    pState->Gamepad.sThumbLY = axes[1];
-    pState->Gamepad.sThumbRX = axes[2];
-    pState->Gamepad.sThumbRY = axes[3];
-    return ERROR_SUCCESS;
-}
-
-DWORD xbox_InputSetState(DWORD dwPort, const XBOX_VIBRATION *pVibration)
-{
-    /* Rumble goes through CoreHaptics here, which wants a haptic engine per
-     * controller and a running pattern rather than a motor speed. The game
-     * polls this every frame; reporting success and doing nothing keeps it
-     * happy until that engine exists. */
-    if (dwPort >= XBOX_MAX_CONTROLLERS || !pVibration)
-        return ERROR_DEVICE_NOT_CONNECTED;
-    return g_connected[dwPort] ? ERROR_SUCCESS : ERROR_DEVICE_NOT_CONNECTED;
-}
-
-BOOL xbox_InputIsConnected(DWORD dwPort)
-{
-    if (dwPort >= XBOX_MAX_CONTROLLERS) return FALSE;
-    return g_connected[dwPort];
-}
-
-DWORD xbox_InputGetCapabilities(DWORD dwPort, DWORD dwFlags,
-                                XBOX_INPUT_CAPABILITIES *pCaps)
-{
-    (void)dwFlags;
-    if (dwPort >= XBOX_MAX_CONTROLLERS || !pCaps)
-        return ERROR_DEVICE_NOT_CONNECTED;
-    if (!g_connected[dwPort]) return ERROR_DEVICE_NOT_CONNECTED;
-    memset(pCaps, 0, sizeof(XBOX_INPUT_CAPABILITIES));
-    pCaps->Type    = 1;   /* gamepad */
-    pCaps->SubType = 1;
-    pCaps->Flags   = 0;
-    return ERROR_SUCCESS;
-}
-
-/* ======================================================================== */
-#else /* !_WIN32, !__APPLE__ */
+#else /* !_WIN32 */
 /* ====================  SDL2 GameController backend  ===================== */
 /* ======================================================================== */
 
@@ -564,7 +415,7 @@ DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
              && pad_back_is_games())                                            out |= XBOX_GAMEPAD_BACK;
             if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_LEFTSTICK))  out |= XBOX_GAMEPAD_LEFT_THUMB;
             if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_RIGHTSTICK)) out |= XBOX_GAMEPAD_RIGHT_THUMB;
-            /* analog[] in the order the Mac's backend uses:
+            /* analog[] in the order kb_merge fills it and the end maps it:
              * A B X Y Black White LT RT; the shoulders are Black and White. */
             analog[0] = SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_A) ? 255 : 0;
             analog[1] = SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_B) ? 255 : 0;

@@ -584,12 +584,12 @@ static int psh_emit(const Nv2aPshState *ps, char *buf, int bufsize, int msl)
 
     /* RECOMP_GL_ZVIEW: the depth this fragment landed at, as a picture.
      *
-     * Apple's OpenGL will not read a depth attachment back out of an FBO --
-     * every 3D surface comes back as a buffer of exact zeros -- so the
+     * Apple's OpenGL would not read a depth attachment back out of an FBO --
+     * every 3D surface came back as a buffer of exact zeros -- so the
      * ordinary way of asking "is there any geometry under that floating bus"
-     * is closed on this platform. Writing gl_FragCoord.z into the COLOUR
-     * buffer instead goes out through the readback path that demonstrably
-     * works, and answers the same question.
+     * was closed on the Mac this was written on. Writing gl_FragCoord.z into
+     * the COLOUR buffer instead goes out through the colour readback path,
+     * and answers the same question.
      *
      * What it settles: a shape under the bus means the road deck IS being
      * drawn and something downstream is making it invisible, which is a

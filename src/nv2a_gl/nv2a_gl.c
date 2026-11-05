@@ -40,37 +40,21 @@
  * Two ways to get a 3.3 core context.
  *
  * EGL with a surfaceless display is what a headless Linux box wants: no
- * window server, no window, just a context to render into an FBO. It does not
- * exist on macOS at all.
+ * window server, no window, just a context to render into an FBO. The
+ * renderer's tests use it.
  *
- * SDL2 gives a window and a context on both, so it is what the Apple build
- * uses -- and being able to select it on Linux too means this path can be
- * tested here rather than first compiled on the machine it is meant for.
+ * SDL2 gives a window and a context, on Linux and on Windows (which has no
+ * EGL): it is what the game's builds use.
  */
 #define GL_GLEXT_PROTOTYPES 1
-/* NV2A_GL_USE_NONE: no OpenGL at all -- iOS, which has none (only the
- * long-deprecated OpenGL ES). The device is Metal's, and the few
- * diagnostics built from GL objects are left out. */
-#if !defined(NV2A_GL_USE_NONE)
-#  define NV2A_GL_HAVE_GL 1
-#endif
-#if defined(NV2A_GL_USE_NONE)
-   /* nothing to include */
-#elif defined(NV2A_GL_USE_CGL)
-#  include <OpenGL/OpenGL.h>
-#  include <OpenGL/gl3.h>
-#  include <OpenGL/gl3ext.h>
-#elif defined(NV2A_GL_USE_SDL)
+#if defined(NV2A_GL_USE_SDL)
 #  include <SDL2/SDL.h>
 #  include <sys/stat.h>
 #  if defined(XBOXRECOMP_MENU)
 #    include "menu_sdl.h"        /* the in-game menu (F1), src/menu */
 #    include "menu.h"
 #  endif
-#  if defined(__APPLE__)
-#    include <OpenGL/gl3.h>
-#    include <OpenGL/gl3ext.h>
-#  elif defined(_WIN32)
+#  if defined(_WIN32)
      /* opengl32.dll stops at OpenGL 1.1: everything after it is fetched from
       * the driver at run time, which libepoxy does behind the usual names. */
 #    include <epoxy/gl.h>
@@ -502,8 +486,8 @@ static int g_imm_drawing;
  * formats -- all look identical from the frame rate alone.
  *
  * CLOCK_MONOTONIC around GL calls measures what the driver does on this
- * thread, which on this platform is most of the cost: an OpenGL draw call on
- * macOS is a substantial piece of CPU work before it is anything else.
+ * thread, which is much of the cost: an OpenGL draw call is a substantial
+ * piece of CPU work before it is anything else.
  */
 /* Where a draw's time goes, step by step, in the order do_draw_body takes
  * them. Only every DRAW_STEP_EVERY-th draw reads the clock at each step's
@@ -716,19 +700,16 @@ static int      g_on = -1;
 static int      g_ready;
 static int      g_failed;
 
-/* The device everything below draws through: OpenGL (nv2a_gfx_gl.c) or Metal
- * (nv2a_metal.m). Chosen once, in gfx_init(). */
+/* The device everything below draws through: OpenGL's (nv2a_gfx_gl.c), set up
+ * once, in gfx_init(). */
 static const Nv2aGfx *G;
 static int g_is_gl;        /* G is OpenGL: the GL-only diagnostics may run */
 static int g_revz;         /* depth is reversed (revz_start) */
 unsigned nv2a_gfx_gl_fbo(uint32_t rt);   /* nv2a_gfx_gl.c */
-#if defined(NV2A_GL_USE_CGL)
-static CGLContextObj g_cgl_ctx;
-#elif defined(NV2A_GL_USE_SDL)
+#if defined(NV2A_GL_USE_SDL)
 static SDL_Window   *g_window;
 static SDL_GLContext g_sdl_ctx;
 int  nv2a_widescreen(void);   /* below; the window opens in its shape */
-#elif defined(NV2A_GL_USE_NONE)
 #else
 static EGLDisplay g_dpy;
 static EGLContext g_ctx;
@@ -861,7 +842,7 @@ static struct {
  * or three times the period, every now and then -- which the averages in the
  * pacing report (and RECOMP_GL_PROFILE's per-second shares) cannot show. So
  * the renderer notes, per frame, the work that comes in lumps: programs built
- * (a GLSL compile and link, or a Metal library, is milliseconds each, and a
+ * (a GLSL compile and link is milliseconds each, and a
  * new effect or object brings several at once), and textures decoded and
  * uploaded. A frame half again the period or longer is written to the log
  * with those, and with what is left over -- the game itself, its loading and
@@ -937,14 +918,13 @@ static void poly_offset_gl(float *factor, float *units)
  *
  *   Multisampling: every target drawn with 2, 4 or 8 samples a pixel (the
  *   backend's samples), which smooths what is drawn rather than the picture
- *   afterwards. OpenGL takes a new count at the next flip, carrying every
- *   target across; Metal only at start, so there a change is kept for the
- *   next one.
+ *   afterwards. A new count is taken at the next flip, carrying every target
+ *   across.
  *
  * Nothing the title can observe changes with either -- its surfaces, their
  * sizes and the raster stay what they were. RECOMP_GL_SMAA=0|1 and
- * RECOMP_GL_MSAA=n win over the settings (the window's smaa= and msaa=, the
- * Mac's and the iPhone's preferences); both are off by default.
+ * RECOMP_GL_MSAA=n win over the settings (the window's smaa= and msaa=); both
+ * are off by default.
  */
 static volatile int g_smaa_want;       /* asked for */
 static int          g_smaa_now;        /* and in use */
@@ -953,22 +933,7 @@ static int          g_msaa_now = 1;    /* and in use */
 static int          g_msaa_max;        /* the most the device offers; 0 not up yet */
 static uint32_t     g_shown_rt;        /* what was put on screen at the last flip */
 
-/* For the windows' menus and settings (nv2a_window_mac.m, the iPhone app's):
- * what is in use and what can be asked for. Storing a choice is theirs to
- * do; this only takes it. */
-void nv2a_set_smaa(int on);
-void nv2a_set_smaa(int on) { g_smaa_want = on ? 1 : 0; }
-int  nv2a_smaa(void);
-int  nv2a_smaa(void) { return g_smaa_want; }
-int  nv2a_msaa(void);
-int  nv2a_msaa(void) { return g_msaa_now; }
-int  nv2a_msaa_max(void);
-int  nv2a_msaa_max(void) { return g_msaa_max; }
 static int g_msaa_live;                /* the device takes a new count while running */
-int  nv2a_msaa_live(void);
-int  nv2a_msaa_live(void) { return g_msaa_live; }
-void nv2a_set_msaa(int n);
-void nv2a_set_msaa(int n) { g_msaa_want = n > 1 ? n : 1; }
 
 static void smaa_take(void)
 {
@@ -1224,19 +1189,7 @@ static uint32_t fnv(const void *p, size_t n)
 
 /* ---- context ------------------------------------------------------------ */
 
-#if defined(NV2A_GL_USE_NONE)
-
-/* No OpenGL in this build: Metal or nothing. */
-static int gl_init(uint32_t w, uint32_t h)
-{
-    (void)w; (void)h;
-    fprintf(stderr, "  [GL] this build has no OpenGL renderer\n");
-    return 0;
-}
-
-#else
-
-#if defined(NV2A_GL_USE_SDL) && !defined(__APPLE__)
+#if defined(NV2A_GL_USE_SDL)
 #ifndef GL_LOWER_LEFT
 #  define GL_LOWER_LEFT      0x8CA1
 #endif
@@ -1294,85 +1247,13 @@ static int gl_init_common(uint32_t w, uint32_t h)
     (void)w; (void)h;
     G = nv2a_gfx_gl();
     g_is_gl = 1;
-#if defined(NV2A_GL_USE_SDL) && !defined(__APPLE__)
+#if defined(NV2A_GL_USE_SDL)
     revz_start();
 #endif
     return G->init();
 }
 
-#endif
-
-#if defined(NV2A_GL_USE_NONE)
-#elif defined(NV2A_GL_USE_CGL)
-
-/*
- * A context with no window and no third-party dependency.
- *
- * macOS has no EGL, and the obvious substitute -- SDL or GLFW -- has to come
- * from a package manager, which on a Mac carrying Intel Homebrew means an
- * x86_64 library that will not link into an arm64 binary. CGL is in the
- * system OpenGL framework, needs nothing installed, and gives exactly what
- * the backend wants: a Core Profile context to render into an FBO.
- *
- * No window, so nothing appears on screen -- frames come out through the same
- * BMP dump the headless Linux build uses. That is the right trade while the
- * renderer is being debugged: what the GPU buys here is speed, and a window
- * can be added once there is something worth watching in real time.
- */
-/* The AppKit window, in nv2a_window_mac.m. Plain C types across the boundary
- * -- see the note at the top of that file for why the two cannot share a
- * translation unit. */
-int   nv_window_is_open(void);
-void  nv_window_submit_frame(const void *pixels, int width, int height);
-void  nv_window_present(void);
-void  nv_window_pump(void);
-int   nv_window_should_close(void);
-void  nv_window_drawable_size(int *w, int *h);
-
-static int g_windowed;
-
-static int gl_init(uint32_t w, uint32_t h)
-{
-    CGLPixelFormatAttribute attribs[] = {
-        kCGLPFAOpenGLProfile, (CGLPixelFormatAttribute)kCGLOGLPVersion_3_2_Core,
-        kCGLPFAColorSize,   (CGLPixelFormatAttribute)24,
-        kCGLPFAAlphaSize,   (CGLPixelFormatAttribute)8,
-        kCGLPFADepthSize,   (CGLPixelFormatAttribute)24,
-        kCGLPFAAccelerated,
-        (CGLPixelFormatAttribute)0
-    };
-    CGLPixelFormatObj pix = NULL;
-    GLint npix = 0;
-    CGLError err;
-
-    /* RECOMP_WINDOW: also show the frame.
-     *
-     * The window has its own context and draws on the main thread; this one
-     * stays exactly as it is. They are deliberately not shared -- the window
-     * is handed finished pixels rather than GL objects, which is what makes
-     * the display path independent of AppKit's layer behaviour. */
-    err = CGLChoosePixelFormat(attribs, &pix, &npix);
-    if (err != kCGLNoError || !pix) {
-        fprintf(stderr, "  [GL] CGLChoosePixelFormat failed (%d)\n", (int)err);
-        return 0;
-    }
-    err = CGLCreateContext(pix, NULL, &g_cgl_ctx);
-    CGLDestroyPixelFormat(pix);
-    if (err != kCGLNoError || !g_cgl_ctx) {
-        fprintf(stderr, "  [GL] CGLCreateContext failed (%d)\n", (int)err);
-        return 0;
-    }
-    CGLSetCurrentContext(g_cgl_ctx);
-
-    fprintf(stderr, "  [GL] %s | %s | GLSL %s\n",
-            (const char *)glGetString(GL_VERSION),
-            (const char *)glGetString(GL_RENDERER),
-            (const char *)glGetString(GL_SHADING_LANGUAGE_VERSION));
-
-    return gl_init_common(w, h);
-}
-
-#elif defined(NV2A_GL_USE_SDL)
+#if defined(NV2A_GL_USE_SDL)
 
 static void pres_start(void);        /* the presenter, below */
 static volatile int g_presenter;     /* ... and whether it runs */
@@ -1395,9 +1276,9 @@ static int gl_init(uint32_t w, uint32_t h)
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
                         SDL_GL_CONTEXT_PROFILE_CORE);
-    /* macOS gives 3.3 core only when asked for forward-compatible; without
-     * this the request quietly returns a 2.1 context and every shader in the
-     * game fails to compile. */
+    /* Forward-compatible: nothing deprecated in the context. macOS gave 3.3
+     * core only when asked this way (2.1 otherwise, and no shader compiled),
+     * and every driver the game runs on since has been asked the same. */
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS,
                         SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
@@ -1481,9 +1362,8 @@ static int gl_init(uint32_t w, uint32_t h)
 
 /* ---- the SDL window: settings, keyboard, presenting, events --------------
  *
- * What the AppKit window (nv2a_window_mac.m) does on the Mac, for the SDL
- * build (Linux): the frame fitted into a resizable window, the keyboard as a
- * pad, full screen, and Widescreen with its choice remembered. All of it on
+ * The frame fitted into a resizable window, the keyboard as a pad, full
+ * screen, and Widescreen with its choice remembered. All of it on
  * the thread that created the window, which is the one that presents. */
 
 int  nv2a_widescreen(void);
@@ -1653,7 +1533,7 @@ void nv_window_file_set(const char *file, const char *key, int val)
 /* nv2a_widescreen() asks this when RECOMP_WIDESCREEN is not set. */
 int nv_window_pref_widescreen(void) { return sdl_cfg_get("widescreen", 0) != 0; }
 
-/* The keyboard as a gamepad -- the same layout as the Mac's, by key POSITION
+/* The keyboard as a gamepad, by key POSITION
  * (scancodes), so W A S D on QWERTY is Z Q S D on AZERTY:
  *   W A S D    left stick + d-pad       arrows   right stick
  *   Space, J   A        K  B            H  X     L  Y
@@ -1769,7 +1649,7 @@ static void sdl_pad_hotkey(Uint8 b)
             g_sdl_hotkey[i].run();
 }
 
-/* Read by the input layer (xinput_device.c), with the Mac's signature. */
+/* Read by the input layer (xinput_device.c). */
 int nv_window_keys(unsigned short *buttons, unsigned char *analog)
 {
     int i, any;
@@ -1807,7 +1687,7 @@ static void sdl_toggle_widescreen(void)
     nv2a_set_widescreen(on);
     sdl_cfg_set("widescreen", on);
     /* A window (not full screen, not maximised) takes the new shape at the
-     * same height, as the Mac's does. */
+     * same height. */
     if (!(SDL_GetWindowFlags(g_window) & (SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_MAXIMIZED))) {
         int ww, wh;
         SDL_GetWindowSize(g_window, &ww, &wh);
@@ -1816,13 +1696,12 @@ static void sdl_toggle_widescreen(void)
     fprintf(stderr, "[WIN] widescreen %s\n", on ? "on (16:9)" : "off (4:3)");
 }
 
-/* F9: the internal resolution, 1x to 4x the Xbox's 640x480 -- what the Mac's
- * Video menu and the iPhone's settings offer. The renderer sizes its targets
- * once, at start-up, so a new one means starting again: after asking, the
- * choice is stored under the launchers' own "scale" key (they pass it on as
- * RECOMP_GL_SCALE), put in the environment and the engine relaunches itself
- * (port/main.c), as the Mac's does -- in full screen again if that is where
- * it was. */
+/* F9: the internal resolution, 1x to 4x the Xbox's 640x480. The renderer
+ * sizes its targets once, at start-up, so a new one means starting again:
+ * after asking, the choice is stored under the launchers' own "scale" key
+ * (they pass it on as RECOMP_GL_SCALE), put in the environment and the engine
+ * relaunches itself (port/main.c) -- in full screen again if that is where it
+ * was. */
 extern void recomp_restart_self(void) __attribute__((weak));
 
 /* The engine started again, in full screen again if that is where it was:
@@ -2094,7 +1973,7 @@ static void sdl_present(GLuint src_fbo, int sw, int sh)
  * drift against each other, and every so often a frame is shown twice and the
  * next not at all -- a stutter; in full screen, tearing as well.
  *
- * Now it goes as the Metal renderer does it on the Mac. The flip only hands
+ * Now it goes as the Mac's Metal renderer did. The flip only hands
  * the frame over: a copy on the GPU into one of three textures, and a fence.
  * A presenter thread, with a context of its own that shares those textures,
  * puts the newest one on screen with the swap synchronised to the display,
@@ -2703,8 +2582,8 @@ static char *frag_solid(void)
 }
 
 /* A #define spliced into generated source: after the #version line, which
- * GLSL requires to come first, or at the very top of Metal source. Returns a
- * new string, or NULL to keep the original. */
+ * GLSL requires to come first. Returns a new string, or NULL to keep the
+ * original. */
 static char *splice_define(const char *src, const char *def)
 {
     size_t head = 0, len, dl = strlen(def);
@@ -4279,7 +4158,7 @@ static int nv2a_prim(uint32_t p, uint32_t *fan_expand)
     case PRIM_TRIANGLE_STRIP: return NV2A_PRIM_TRIANGLE_STRIP;
     case PRIM_TRIANGLE_FAN:   return NV2A_PRIM_TRIANGLE_FAN;
     case PRIM_POLYGON:        return NV2A_PRIM_TRIANGLE_FAN;
-    /* Quads have no core-profile equivalent (nor a Metal one), so they are
+    /* Quads have no core-profile equivalent, so they are
      * expanded into two triangles per quad on the way to the buffer rather
      * than emulated with a geometry shader. */
     case PRIM_QUADS:          *fan_expand = 1; return NV2A_PRIM_TRIANGLES;
@@ -4288,7 +4167,6 @@ static int nv2a_prim(uint32_t p, uint32_t *fan_expand)
     }
 }
 
-#ifdef NV2A_GL_HAVE_GL
 /* The same in GL's terms, for the GL-only probes below. */
 static GLenum gl_mode_of(int prim)
 {
@@ -4345,7 +4223,6 @@ static GLenum depth_dir(GLenum f)
     default:         return f;
     }
 }
-#endif /* NV2A_GL_HAVE_GL */
 
 
 /*
@@ -4613,7 +4490,7 @@ int nv2a_widescreen(void)
                    ? (nv_window_pref_widescreen() != 0) : 0;
         }
         /* RECOMP_WIDE_ASPECT=<width/height>, e.g. 2.17: widen to that shape
-         * instead of 16:9 (the iPhone sets its screen's itself). */
+         * instead of 16:9. */
         if ((v = getenv("RECOMP_WIDE_ASPECT")) != NULL && atof(v) > 0.0)
             nv2a_set_wide_aspect((float)atof(v));
     }
@@ -4629,9 +4506,8 @@ void nv2a_set_widescreen(int on) { g_wide = on ? 1 : 0; }
 static volatile int g_wide_scene = 1;
 void nv2a_set_wide_scene(int on) { g_wide_scene = on ? 1 : 0; }
 int nv2a_wide_scene(void) { return nv2a_widescreen() && g_wide_scene; }
-/* The shape a widened scene is shown at, width over height: 16:9 unless a
- * platform asks for its screen's own (the iPhone's "Fill the screen", about
- * 19.5:9). The camera and its culling (recomp_manual.c), the 2D squeeze and
+/* The shape a widened scene is shown at, width over height: 16:9 unless
+ * RECOMP_WIDE_ASPECT asks for another. The camera and its culling (recomp_manual.c), the 2D squeeze and
  * the framed-3D move below and the presenter all follow it, through s, how
  * much the 640x480 frame squeezes the wider view: (4/3) / aspect, 0.75 at
  * 16:9 -- exactly, so that the 16:9 picture is what it always was. Kept
@@ -4824,9 +4700,6 @@ static uint64_t vc_mix(uint64_t h, uint64_t v)
  * of them are RECOMP_GL_*; these are the RECOMP_GL_* that are not. */
 #if defined(_WIN32)
 #  define VC_ENVIRON _environ
-#elif defined(__APPLE__)
-#  include <crt_externs.h>
-#  define VC_ENVIRON (*_NSGetEnviron())
 #else
 extern char **environ;
 #  define VC_ENVIRON environ
@@ -5332,7 +5205,6 @@ static int texgen_note(uint32_t n)
  * Street, a draw took 7.8 us with it and 5.1 without.
  * RECOMP_GL_ERRORS_PER_DRAW=1 asks after every draw again, to name the draw
  * that raised one. */
-#ifdef NV2A_GL_HAVE_GL
 static int gl_errors_per_draw(void)
 {
     static int on = -1;
@@ -5359,7 +5231,6 @@ static void gl_error_check(int after_draw, uint32_t verts)
                 glCheckFramebufferStatus(GL_FRAMEBUFFER));
     said++;
 }
-#endif
 
 /* ── the graphics card's own clock ────────────────────────────────────────
  *
@@ -5377,7 +5248,6 @@ static void gl_error_check(int after_draw, uint32_t verts)
  * long they took. It says how long after its hand-over the card finished each
  * frame -- next to nothing while it keeps up -- and how far apart it finished
  * them by its own clock. OpenGL 3.3's timer queries. */
-#if defined(NV2A_GL_HAVE_GL)
 #define CARD_QUERIES 128                     /* two seconds of frames at 60 fps */
 static GLuint   g_card_q[CARD_QUERIES];
 static double   g_card_sent[CARD_QUERIES];   /* our clock at each hand-over */
@@ -5446,10 +5316,6 @@ static void card_report(void)
         fprintf(stderr, "[GLPROF]   the card, by its own clock: no frame finished since the "
                 "last report; %d still out%s\n", waiting, untimed);
 }
-#else
-static void card_mark(void) {}
-static void card_report(void) {}
-#endif
 
 static void do_draw_body(void);
 /* A draw, timed whole for the profile (it has a great many ways out), and
@@ -5957,7 +5823,6 @@ static void do_draw_body(void)
         if (verbose() && shown < 6) {
             uint32_t j;
             shown++;
-#ifdef NV2A_GL_HAVE_GL
             if (g_is_gl) {
                 GLint fb = 0, vp4[4] = {0,0,0,0}, cp = 0, va = 0;
                 glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &fb);
@@ -5970,7 +5835,6 @@ static void do_draw_body(void)
                         glIsEnabled(GL_DEPTH_TEST), glIsEnabled(GL_BLEND),
                         glIsEnabled(GL_CULL_FACE), glIsEnabled(GL_SCISSOR_TEST));
             }
-#endif
             fprintf(stderr, "  [GL] draw prim=%u verts=%u inputs=%04X inline=%d\n",
                     S.prim, out_n, g_pcache[slot].inputs, inl);
             for (j = 0; j < NUM_ATTRS; j++)
@@ -6569,9 +6433,7 @@ static void do_draw_body(void)
              * row of the picture is the LAST row of the framebuffer. A
              * texture decoded from guest memory is the other way up (row 0
              * is the top), and the coordinates are the title's, so sampling
-             * a surface has to turn t around: t' = 1 - t. (On OpenGL, that
-             * is: Metal keeps a target top row first, the same way up as a
-             * texture, and nothing is turned -- see rt_bottom_up.)
+             * a surface has to turn t around: t' = 1 - t (see rt_bottom_up).
              *
              * Without it every render-to-texture pass turned the picture
              * over. JSRF's normal frame passes through exactly one (the
@@ -6672,9 +6534,7 @@ static void do_draw_body(void)
 
     /* Everything about this draw that is neither a shader nor a uniform,
      * handed over in the console's own terms. What OpenGL does with it is in
-     * nv2a_gfx_gl.c; what Metal does is different enough that the two cannot
-     * share the code, and similar enough that they must not disagree about
-     * what the registers meant. */
+     * nv2a_gfx_gl.c. */
     {
         Nv2aRenderState rs;
         memset(&rs, 0, sizeof rs);
@@ -7792,7 +7652,6 @@ static void do_draw_body(void)
        */
       /* (OpenGL only: an occlusion query is a GL object, and the probe sets
        * GL state behind the device's back and puts it back afterwards.) */
-#ifdef NV2A_GL_HAVE_GL
       if (g_is_gl && probe_this && !g_surf_lost && slot >= 0) {
           GLuint qo = 0;
           glGenQueries(1, &qo);
@@ -7891,7 +7750,6 @@ static void do_draw_body(void)
               G->state(&g_draw_rs);
           }
       }
-#endif /* NV2A_GL_HAVE_GL */
 
       /* [TIMELINE] -- the order things happen inside one frame.
        *
@@ -9233,9 +9091,7 @@ static void do_draw_body(void)
     g_prof.n_draws++;
     S.since_present++;
     /* The draw's GL errors: once a frame, in present (see gl_error_check). */
-#ifdef NV2A_GL_HAVE_GL
     if (gl_errors_per_draw()) gl_error_check(1, out_n);
-#endif
     /* RECOMP_GL_STATE_AT=<draw number>: the full per-draw state for a few
      * draws at a chosen point in the run. Early draws answer questions about
      * bring-up; a title that renders its logos and then goes blank needs the
@@ -9908,9 +9764,7 @@ static void do_clear(uint32_t param)
      * clears xmax - xmin + 1 pixels): this title clears 0..639 x 0..479.
      * Taken as exclusive, the last column and the last row were never
      * cleared and kept whatever the target was made with -- the "1-pixel
-     * dark line along the right edge" (and the bottom one, less seen), and
-     * on Metal every clear was a drawn triangle instead of a free load
-     * action, because none of them covered the whole target. */
+     * dark line along the right edge" (and the bottom one, less seen). */
     if (S.clear_x1 > S.clear_x0 && S.clear_y1 > S.clear_y0) {
         uint32_t sc = gl_scale();
         rect[0] = S.clear_x0 * sc;       rect[1] = S.clear_y0 * sc;
@@ -10020,7 +9874,7 @@ static void pace_sleep(const struct timespec *ts)
  * starts at 0.3 ms. A sleep that ends within a quarter of the spin's start
  * widens it at once, to what that sleep overran by and 0.2 ms more (1.2 ms at
  * most); it narrows back by 2 us a frame. RECOMP_PACE_SPIN_US=<us> fixes it
- * instead. Windows and macOS keep 1.2 ms. */
+ * instead. Windows keeps 1.2 ms. */
 #if defined(__linux__)
 #include <errno.h>
 #define PACE_ABSOLUTE 1
@@ -10312,9 +10166,7 @@ static void present(int is_frame)
 
     /* The frame's GL errors (see gl_error_check), before pacing: its sleep
      * covers the wait for the driver's thread. */
-#ifdef NV2A_GL_HAVE_GL
     if (is_frame && !gl_errors_per_draw()) gl_error_check(0, 0);
-#endif
 
     if (is_frame) { PROF_T0(); cache_idle_frame(); frame_pace(); PROF_ADD(pace); }
 
@@ -10341,40 +10193,13 @@ static void present(int is_frame)
         if (g_smaa_now && G->target_smaa) prt = G->target_smaa(prt);
         g_shown_rt = prt;
         card_mark();
-#if defined(NV2A_GL_USE_CGL)
-        /* OpenGL on a Mac: read the finished frame and hand it to the window.
-         *
-         * Blitting straight into the window's back buffer works -- measurably,
-         * the pixels arrive -- and a layer-backed view never presents what
-         * another thread drew into its context. So the frame crosses as
-         * pixels and the main thread draws it. One readback a frame. (Metal
-         * draws into the window's layer itself, in present() below.) */
-        if (g_windowed && g_is_gl) {
-            static uint8_t *shot;
-            static uint32_t cap;
-            uint32_t need = pw * ph * 4;
-            if (cap < need) { free(shot); shot = (uint8_t *)malloc(need); cap = need; }
-            /* At the frame's real size: the window is happy to show more
-             * pixels than the title thinks it drew. */
-            if (shot && G->target_read(prt, 0, 0, pw, ph, 1, shot))
-                nv_window_submit_frame(shot, (int)pw, (int)ph);
-            nv_window_present();
-        }
-#elif defined(NV2A_GL_USE_SDL)
+#if defined(NV2A_GL_USE_SDL)
         if (g_window) {
             sdl_show(nv2a_gfx_gl_fbo(prt), (int)pw, (int)ph);
         }
 #endif
-        /* The device's end of the frame: Metal shows it in the window's
-         * layer, and either way the frame's work is handed to the GPU. */
+        /* The device's end of the frame: its work is handed to the GPU. */
         G->present(prt, pw, ph);
-#if defined(NV2A_GL_USE_CGL)
-        if (g_windowed && nv_window_should_close()) {
-            fprintf(stderr, "  [GL] window closed; stopping\n");
-            nv2a_gl_report();
-            exit(0);
-        }
-#endif
         PROF_ADD(present);
     }
 
@@ -12089,29 +11914,9 @@ void nv2a_gl_report(void)
  *
  * nv2a_backend.h draws the line between "what the NV2A was asked to do" and
  * "how this machine does it". Everything above is one copy of the pushbuffer
- * translation; below it there is an OpenGL implementation (nv2a_gfx_gl.c) and
- * a Metal one (nv2a_metal.m), which is what macOS is moving to and what makes
- * iOS possible at all.
+ * translation; below it is the device that draws it, OpenGL's (nv2a_gfx_gl.c).
  */
 
-/* A build without the Metal backend still has to link. The header's rule is
- * that a backend which cannot be built at all returns NULL, and that is a
- * cheaper way to say "this platform has no Metal" than an #ifdef at every
- * place that might ask for one. */
-#ifndef NV2A_HAVE_METAL
-const Nv2aGfx *nv2a_gfx_metal(void) { return NULL; }
-#endif
-
-/*
- * Which one runs.
- *
- * RECOMP_BACKEND=metal or =opengl asks for one; otherwise, in a window, the
- * stored preference (Video > Renderer on a Mac: Metal unless OpenGL was
- * chosen), and without a window OpenGL. A Metal build that cannot bring a
- * device up gets OpenGL, and says so. Chosen once and kept, because a
- * backend that changed halfway through a frame would leave its surfaces and
- * programs behind in the other one.
- */
 /* The shader cache (nv2a_shader_cache.h), in <JSRF_SAVE_DIR>/shaders: every
  * launcher sets the save folder, and a run without one has no cache. Its files
  * are named for the backend and for the translator -- a hash of a reference
@@ -12315,11 +12120,7 @@ static void shader_cache_start(void)
 }
 
 /* Anti-aliasing from the start: RECOMP_GL_SMAA and RECOMP_GL_MSAA, else the
- * settings -- the window's (smaa=, msaa=) or, on a Mac or an iPhone, the
- * app's preferences. Before the shader cache opens: the Metal backend builds
- * pipelines ahead from it, and a pipeline is made for one count of samples. */
-extern int nv_window_pref_smaa(void) __attribute__((weak));
-extern int nv_window_pref_msaa(void) __attribute__((weak));
+ * window's settings (smaa=, msaa=). */
 static void aa_start(void)
 {
     const char *vs = getenv("RECOMP_GL_SMAA"), *vm = getenv("RECOMP_GL_MSAA");
@@ -12327,9 +12128,6 @@ static void aa_start(void)
 #if defined(NV2A_GL_USE_SDL)
     smaa = sdl_cfg_get("smaa", 0) != 0;
     msaa = sdl_cfg_get("msaa", 0);
-#else
-    if (nv_window_pref_smaa) smaa = nv_window_pref_smaa() != 0;
-    if (nv_window_pref_msaa) msaa = nv_window_pref_msaa();
 #endif
     if (vs && *vs) smaa = atoi(vs) != 0;
     if (vm && *vm) msaa = atoi(vm);
@@ -12369,45 +12167,6 @@ static void aniso_start(void)
 
 static int gfx_init(uint32_t w, uint32_t h)
 {
-    const char *v = getenv("RECOMP_BACKEND");
-    int want_metal = 0, metal_window = 0;
-#if defined(NV2A_GL_USE_CGL)
-    /* With a window, the window has already decided (it was made for one or
-     * the other, from the same preference); without one, only the
-     * environment can ask. */
-    extern void *nv_window_metal_layer(void) __attribute__((weak));
-    extern void  nv_window_use_gl(void) __attribute__((weak));
-    { const char *w = getenv("RECOMP_WINDOW");
-      if ((w ? atoi(w) != 0 : 1) && nv_window_is_open())
-          g_windowed = 1; }
-    metal_window = nv_window_metal_layer && nv_window_metal_layer() != NULL;
-#endif
-    want_metal = (v && *v) ? !strcmp(v, "metal") : metal_window;
-#if defined(NV2A_GL_USE_NONE)
-    want_metal = 1;                   /* there is nothing else */
-#endif
-    if (want_metal) {
-        const Nv2aGfx *m = nv2a_gfx_metal();
-        if (m && m->init()) {
-            G = m;
-            g_is_gl = 0;
-            fprintf(stderr, "  [GL] backend: %s\n", G->name);
-            aa_start();
-            shader_cache_start();
-            aniso_start();
-            return 1;
-        }
-        fprintf(stderr, "  [GL] Metal backend unavailable%s\n",
-#if defined(NV2A_GL_USE_NONE)
-                "; nothing to draw with"
-#else
-                ", using OpenGL"
-#endif
-                );
-#if defined(NV2A_GL_USE_CGL)
-        if (metal_window && nv_window_use_gl) nv_window_use_gl();
-#endif
-    }
     if (!gl_init(w, h)) return 0;     /* the context, then the device */
     fprintf(stderr, "  [GL] backend: %s\n", G->name);
     aa_start();

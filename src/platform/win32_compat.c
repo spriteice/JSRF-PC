@@ -5,7 +5,7 @@
  * (threads/events/mutexes/atomics/heap/timers) -- it carries no Xbox
  * semantics. The Xbox kernel HLE in src/kernel builds on top of it.
  *
- * POSIX (Linux/MacOS) only.
+ * POSIX (Linux) only.
  */
 
 #if !defined(_WIN32)
@@ -29,16 +29,7 @@
 #include <sched.h>
 #include <fenv.h>
 #include <sys/mman.h>
-#if defined(__APPLE__)
-#include <sys/sysctl.h>
-#include <sys/stat.h>
-#include <sys/proc.h>
-#include <fcntl.h>
-#include <mach/mach.h>
-#include <mach/mach_host.h>
-#else
 #include <sys/sysinfo.h>
-#endif
 
 /* ===================================================================== */
 /* Last-error (thread-local)                                             */
@@ -81,32 +72,6 @@ VOID InitializeCriticalSection(LPCRITICAL_SECTION cs)
     pthread_mutexattr_t attr;
     pthread_mutexattr_init(&attr);
     pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-    /*
-     * RECOMP_LOCK_FAIR=1: hand the lock to whoever has been waiting longest.
-     *
-     * Darwin's default mutex policy lets a thread that releases a lock and
-     * immediately asks for it again jump the queue. That is usually the right
-     * trade -- it saves a context switch -- and it is the wrong one for the
-     * guest scheduler lock, which is released and re-taken every time slice
-     * by whichever thread is running. Under that pattern a barging mutex can
-     * leave a waiting thread waiting more or less indefinitely, and a
-     * sampling profile found the game's main thread doing exactly that for
-     * every one of twelve seconds' worth of samples while other guest threads
-     * ran.
-     *
-     * Behind a switch and off by default until it is measured, because
-     * fairness is not free: every handover becomes a real context switch.
-     */
-    { static int fair = -1;
-      if (fair < 0) fair = getenv("RECOMP_LOCK_FAIR") ? 1 : 0;
-#if defined(__APPLE__) && defined(PTHREAD_MUTEX_POLICY_FAIRSHARE_NP)
-      if (fair)
-          pthread_mutexattr_setpolicy_np(&attr,
-                                         PTHREAD_MUTEX_POLICY_FAIRSHARE_NP);
-#else
-      (void)fair;
-#endif
-    }
     pthread_mutex_init(m, &attr);
     pthread_mutexattr_destroy(&attr);
     cs->LockSemaphore = m;
@@ -1404,9 +1369,9 @@ SIZE_T HeapSize(HANDLE heap, DWORD flags, LPCVOID mem)
 /* Execute permission is left out. Nothing here runs guest code from memory --
  * the title's code was compiled ahead of time into this binary -- so for a
  * recompiled title "executable" only ever meant "readable", and asking the
- * host for it costs something: Apple Silicon refuses writable-and-executable
- * pages outside MAP_JIT, and iOS refuses executable pages to an app at all,
- * so a title committing memory PAGE_EXECUTE_READWRITE would get none. */
+ * host for it costs something: a host that keeps writable and executable
+ * apart refuses pages that are both, so a title committing memory
+ * PAGE_EXECUTE_READWRITE would get none. */
 static int prot_from_page(DWORD protect)
 {
     switch (protect & 0xFF) {
@@ -1472,7 +1437,8 @@ void *win32_reserve_address_space(void *base, size_t size)
 
 /* ---- host page granularity ----------------------------------------------
  *
- * The console's pages are 4 KB and so are Windows'. Apple Silicon's are 16 KB,
+ * The console's pages are 4 KB and so are Windows' and x86 Linux's, but a
+ * host's can be larger -- 16 KB on the Apple Silicon Macs this once ran on --
  * and mprotect rounds outward: a guest asking to protect one 4 KB page there
  * changes the protection of the 16 KB around it, including up to three pages
  * that belong to something else. JSRF makes exactly that call and then faults
@@ -1550,7 +1516,7 @@ LPVOID VirtualAlloc(LPVOID address, SIZE_T size, DWORD allocationType, DWORD pro
     if (p == MAP_FAILED) { SetLastError(8); return NULL; }
 #if !defined(MAP_FIXED_NOREPLACE)
     if (owned) return p;
-    /* Without MAP_FIXED_NOREPLACE -- Darwin, and older Linux -- a requested
+    /* Without MAP_FIXED_NOREPLACE -- older Linux -- a requested
      * address is only a hint, and the kernel is free to place the mapping
      * somewhere else entirely. MAP_FIXED is not the answer: it would take the
      * address by unmapping whatever already lives there, which for a caller
@@ -1671,22 +1637,8 @@ VOID ExitProcess(UINT exitCode) { exit((int)exitCode); }
 
 BOOL IsDebuggerPresent(void)
 {
-#if defined(__APPLE__)
-    /* The documented Darwin test: ask the kernel for this process's own proc
-     * entry and look at P_TRACED. */
-    {
-        struct kinfo_proc info;
-        size_t len = sizeof info;
-        int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, 0 };
-        mib[3] = getpid();
-        memset(&info, 0, sizeof info);
-        if (sysctl(mib, 4, &info, &len, NULL, 0) != 0) return FALSE;
-        return (info.kp_proc.p_flag & P_TRACED) ? TRUE : FALSE;
-    }
-#else
     /* TODO: On Linux a non-zero TracerPid in /proc/self/status means ptrace is attached. */
     return FALSE;
-#endif
 }
 
 VOID DebugBreak(void) {
@@ -1695,18 +1647,7 @@ VOID DebugBreak(void) {
 
 VOID SecureZeroMemory(PVOID ptr, SIZE_T cnt)
 {
-#if defined(__APPLE__)
-    /* Darwin's memset_s is only declared when __STDC_WANT_LIB_EXT1__ is set
-     * before every string.h in the translation unit, which is not something a
-     * compat header can promise. A volatile store cannot be optimised away
-     * either, and needs no cooperation from libc. */
-    {
-        volatile unsigned char *q = (volatile unsigned char *)ptr;
-        while (cnt--) *q++ = 0;
-    }
-#else
     explicit_bzero(ptr, cnt);
-#endif
 }
 
 unsigned int _clearfp(void)
@@ -1950,46 +1891,11 @@ static size_t view_take(const void *addr)
     return len;
 }
 
-/* An unnamed file descriptor that ftruncate and mmap both accept. Linux has
- * memfd_create for this; elsewhere an immediately-unlinked temp file does. */
+/* An unnamed file descriptor that ftruncate and mmap both accept: Linux's
+ * memfd_create. */
 static int anon_map_fd(const char *name)
 {
-#if defined(__APPLE__)
-    /* Darwin has no memfd_create. POSIX shared memory is the closest thing:
-     * shm_open gives a descriptor that ftruncate and MAP_SHARED both accept,
-     * and unlinking the name immediately leaves an object that lives only as
-     * long as the descriptor -- which is the whole point of memfd_create.
-     *
-     * The name must be unique and under SHM_NAME_MAX, and it must not survive
-     * a crash, or the next run inherits a stale object of the wrong size.
-     * Hence pid and a counter, and the unlink before anything else happens.
-     *
-     * shm_open is unavailable to sandboxed iOS apps, so fall back to a temp
-     * file in whatever directory the process is allowed to write to. Unlinked
-     * at once for the same reason. */
-    {
-        static int seq;
-        char nm[64];
-        int fd;
-        snprintf(nm, sizeof nm, "/xbr.%d.%d", (int)getpid(), seq++);
-        fd = shm_open(nm, O_RDWR | O_CREAT | O_EXCL, 0600);
-        if (fd >= 0) { shm_unlink(nm); return fd; }
-
-        {
-            const char *tmp = getenv("TMPDIR");
-            char path[512];
-            snprintf(path, sizeof path, "%s%sxbr.%d.%d.XXXXXX",
-                     tmp ? tmp : "/tmp",
-                     (tmp && tmp[0] && tmp[strlen(tmp) - 1] == '/') ? "" : "/",
-                     (int)getpid(), seq++);
-            fd = mkstemp(path);
-            if (fd >= 0) unlink(path);
-            return fd;
-        }
-    }
-#else
     return memfd_create(name ? name : "xbox_map", 0);
-#endif
 }
 
 HANDLE CreateFileMappingA(HANDLE file, LPSECURITY_ATTRIBUTES sa, DWORD protect,
@@ -2087,37 +1993,6 @@ SIZE_T VirtualQuery(LPCVOID address, PMEMORY_BASIC_INFORMATION buffer, SIZE_T le
 
 BOOL GlobalMemoryStatusEx(LPMEMORYSTATUSEX b)
 {
-#if defined(__APPLE__)
-    /* Darwin has no sysinfo(2). Physical memory is a sysctl; the free page
-     * count comes from the Mach VM statistics, where "available" has to
-     * include the inactive and purgeable pages -- counting only the free list
-     * reports a few hundred megabytes on a machine with tens of gigabytes
-     * spare, because Darwin keeps almost everything in the file cache. */
-    {
-        uint64_t memsize = 0;
-        size_t len = sizeof memsize;
-        vm_statistics64_data_t vm;
-        mach_msg_type_number_t cnt = HOST_VM_INFO64_COUNT;
-        vm_size_t page = 0;
-
-        if (!b) return FALSE;
-        if (sysctlbyname("hw.memsize", &memsize, &len, NULL, 0) != 0) return FALSE;
-        b->ullTotalPhys = memsize;
-        b->ullAvailPhys = memsize;
-
-        if (host_page_size(mach_host_self(), &page) == KERN_SUCCESS
-            && host_statistics64(mach_host_self(), HOST_VM_INFO64,
-                                 (host_info64_t)&vm, &cnt) == KERN_SUCCESS) {
-            b->ullAvailPhys = (ULONGLONG)(vm.free_count + vm.inactive_count
-                                          + vm.purgeable_count) * page;
-        }
-        /* No swap figure: vm.swapusage is a sysctl of its own and nothing
-         * here needs it. Reporting page file as physical is honest enough for
-         * a caller asking "how much room is there". */
-        b->ullTotalPageFile = b->ullTotalPhys;
-        b->ullAvailPageFile = b->ullAvailPhys;
-    }
-#else
     struct sysinfo si;
     if (!b) return FALSE;
     if (sysinfo(&si) != 0) return FALSE;
@@ -2127,7 +2002,6 @@ BOOL GlobalMemoryStatusEx(LPMEMORYSTATUSEX b)
     b->ullAvailPhys     = (ULONGLONG)si.freeram   * unit;
     b->ullTotalPageFile = b->ullTotalPhys + (ULONGLONG)si.totalswap * unit;
     b->ullAvailPageFile = b->ullAvailPhys + (ULONGLONG)si.freeswap  * unit;
-#endif
     b->ullTotalVirtual  = b->ullTotalPhys;
     b->ullAvailVirtual  = b->ullAvailPhys;
     b->ullAvailExtendedVirtual = 0;

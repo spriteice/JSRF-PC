@@ -5,8 +5,12 @@ Vendored from [msvc-wine](https://github.com/mstorsjo/msvc-wine) (ISC, see
 
 The snippet phase does not need any of this — a snippet is assembly *text*, so
 GCC assembles the same bytes MSVC would and nothing about the comparison
-changes. Run `bash tools/macos/setup.sh` once, then
-`py -3 -m tools.conformance --only snippets`.
+changes. Build its image once, from the repository's root:
+
+```bash
+docker build --platform linux/386 -t xboxrecomp-gcc-i386 -f Dockerfile.gcc .
+python3 -m tools.conformance --only snippets
+```
 
 The corpus and XBE phases are different. They exist to exercise **MSVC's own
 codegen** — the instruction selection, calling conventions and CRT helpers real
@@ -60,44 +64,6 @@ an easy source of false hope.)
 So the two images are complements rather than alternatives, and both corpus and
 XBE use both: **amd64 builds, i386 runs.** A 32-bit PE built on one executes on
 the other unmodified.
-
-## Could the amd64 image be replaced by native wine?
-
-Half of it, in principle. Worth recording because it looks like a clean win and
-only half of it is.
-
-The amd64 image exists to run `cl.exe` and `link.exe`, which are **64-bit** PEs.
-Wine on macOS with Rosetta translating x86-64 can run those, so that half could
-move to the host and the image could go away. The i386 image could not follow:
-executing the 32-bit harnesses needs 32-bit x86, macOS has had no 32-bit process
-support since Catalina, and Rosetta translates x86-64 only. Wine 9's new WoW64
-avoids needing a 32-bit *Unix* process, but the instructions still have to
-execute somewhere, and that is the part Rosetta refuses.
-
-So the trade is: one fewer container, in exchange for a host toolchain to keep
-working alongside a container you still need. The hard Docker dependency does
-not move.
-
-Two things to check before attempting it:
-
-- **Homebrew's wine casks are disabled.** `wine-stable`, `wine@devel` and
-  `wine@staging` were all disabled on 2026-09-01 for failing the macOS
-  Gatekeeper check, and the disable is hard — no `--no-quarantine` flag gets
-  past it. The remaining routes are an unsigned `.pkg` from winehq.org with the
-  quarantine attribute stripped, or CrossOver.
-- **Upstream PR [#232](https://github.com/mstorsjo/msvc-wine/pull/232)**
-  ("macOS Apple Silicon support", open at the time of writing) is the relevant
-  work. It makes `install.sh` treat an arm64 *Darwin* host as `host=x64`, which
-  is the same conclusion these images reach — use the x64 toolchain under
-  Rosetta, never arm64. It does not affect the containers (`uname` inside them
-  is `x86_64`/`i686` on Linux, never `arm64`/`Darwin`), and it does not replace
-  the `MSVC_HOST_ARCH` patch below, which exists because upstream has no x86
-  host branch at all. Note its README recommends `brew install wine-stable`,
-  which no longer works.
-
-The one route that would remove **both** images is CrossOver, which claims
-32-bit Windows app support on Apple Silicon through its own thunking rather than
-Rosetta. Commercial, and unverified here.
 
 ## Building
 

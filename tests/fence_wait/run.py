@@ -6,7 +6,7 @@ a GPU thread that writes fences the way the executor does (test_main.c). Run
 once as it ships and once with RECOMP_FENCE_WAIT=0. Then port/recomp_manual.c's
 sub_00191440 and guest_call_cdecl, verbatim, against stand-ins for the game
 functions it calls (test_wrapper.c). POSIX only (win32_compat.c is the Linux
-and macOS side); requires GCC on PATH.
+side); requires GCC on PATH.
 CC, when set, is the compiler instead of gcc.
 """
 import os

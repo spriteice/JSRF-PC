@@ -13,12 +13,7 @@ set(XBOX_APU_SOURCES
     apu_channels.c
     apu_gpfx.c
 )
-if(APPLE)
-    # CoreAudio, which is in the system on macOS and iOS alike. The XAudio2
-    # file compiles to nothing here and waveOut does not exist at all, so the
-    # AudioQueue backend answers the same five entry points instead.
-    list(APPEND XBOX_APU_SOURCES apu_coreaudio.c)
-elseif(WIN32 AND NOT XBOXRECOMP_WIN_GL)
+if(WIN32 AND NOT XBOXRECOMP_WIN_GL)
     list(APPEND XBOX_APU_SOURCES apu_xaudio2.c)
 else()
     # Linux, and Windows with XBOXRECOMP_WIN_GL: SDL2's audio, answering the
@@ -50,9 +45,6 @@ endif()
 
 if(WIN32 AND NOT XBOXRECOMP_WIN_GL)
     target_link_libraries(xbox_apu PRIVATE platform kernel32 winmm)
-elseif(APPLE)
-    target_link_libraries(xbox_apu PRIVATE platform
-        "-framework AudioToolbox" "-framework CoreFoundation" m)
 else()
     # Linux: platform layer (Win32 primitives on POSIX) + SDL2 audio + libm
     find_package(SDL2 REQUIRED)

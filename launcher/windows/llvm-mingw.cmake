@@ -1,5 +1,5 @@
 # CMake toolchain file: the Windows engine, cross-built with llvm-mingw
-# (https://github.com/mstorsjo/llvm-mingw) on Linux or macOS -- how the
+# (https://github.com/mstorsjo/llvm-mingw) on Linux -- how the
 # release is built (see package.sh).
 #
 #   cmake -S port -B build-win -G Ninja \

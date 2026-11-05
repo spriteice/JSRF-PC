@@ -6,9 +6,10 @@ white flash, teal and acid yellow -- around a mark of its own: a spray can
 letting go. It reads at 32 pixels, which is the only test an app icon has to
 pass.
 
-Writes an .iconset folder; `iconutil -c icns` turns that into AppIcon.icns.
+Writes jsrf-pc.png, 256 pixels square: the icon the Linux package installs
+(launcher/linux/package.sh).
 """
-import math, os, sys
+import math, sys
 from PIL import Image, ImageDraw
 
 RED_A   = (232,  58,  38)
@@ -123,18 +124,9 @@ def draw_master():
 
 
 def main(dest):
-    master = draw_master()
-    os.makedirs(dest, exist_ok=True)
-    master.save(os.path.join(dest, "icon_512x512@2x.png"))
-    for px in (16, 32, 128, 256, 512):
-        for scale in (1, 2):
-            n = px * scale
-            name = f"icon_{px}x{px}{'@2x' if scale == 2 else ''}.png"
-            master.resize((n, n), Image.LANCZOS).save(os.path.join(dest, name))
-    master.resize((256, 256), Image.LANCZOS).save(
-        os.path.join(os.path.dirname(dest) or ".", "icon-preview.png"))
+    draw_master().resize((256, 256), Image.LANCZOS).save(dest)
     print("wrote", dest)
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "AppIcon.iconset")
+    main(sys.argv[1] if len(sys.argv) > 1 else "jsrf-pc.png")

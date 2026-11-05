@@ -80,7 +80,7 @@ int g_apu_throttle_resets;
 int64_t g_apu_throttle_lost_us;
 """ + define(regs, "NUM_SAMPLES_PER_FRAME") + define(regs, "EP_FRAME_US")
           + cut(sdl, "#define SA_RATE", "int xa2_init(void)")
-          + cut(sdl, "int xa2_get_buffer_size(void)", "#endif /* !_WIN32 && !__APPLE__ */")
+          + cut(sdl, "int xa2_get_buffer_size(void)", "#endif /* !_WIN32 || XBOXRECOMP_WIN_GL */")
           + cut(core, "static int ring_target_frames(void)",
                 "/* ============================================================\n * se_frame")
           + (root / "tests/apu_pacing/test_main.c").read_text(encoding="utf-8"))

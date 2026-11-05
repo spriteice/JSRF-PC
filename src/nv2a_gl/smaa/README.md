@@ -12,7 +12,7 @@ Gutierrez, 2012), as published at https://github.com/iryoku/smaa (commit
 
 They are kept as they were published, line endings included. The renderer
 does not compile `SMAA.hlsl` from here: `embed.py` turns it into
-`../nv2a_smaa_src.h`, which holds it as GLSL and as Metal source, and
+`../nv2a_smaa_src.h`, which holds it as GLSL, and
 `../nv2a_smaa.c` wraps the three passes around it. After changing either
 `SMAA.hlsl` or `embed.py`, run
 

@@ -7,8 +7,9 @@
  * directories that are binary trees of entries pointing at sectors. Both
  * kinds of image people have are handled: an XISO (the game partition alone,
  * what extract-xiso and most tools write) and a full disc image with the
- * video partition in front of it. The Mac and Linux apps reach it through the
- * engine (--check-iso, --unpack-iso in port/main.c).
+ * video partition in front of it. The Linux launcher reaches it through the
+ * engine (--check-iso, --unpack-iso in port/main.c); the Windows launcher
+ * links it itself.
  */
 #ifndef JSRF_XISO_H
 #define JSRF_XISO_H

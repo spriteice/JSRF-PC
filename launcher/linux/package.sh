@@ -32,7 +32,7 @@ install -m 755 "$engine" "$dir/bin/jsrf_recomp"
 echo "version: $(cat "$dir/VERSION")"
 install -m 644 "$sdl" "$dir/lib/libSDL2-2.0.so.0"
 strip --strip-unneeded "$dir/lib/libSDL2-2.0.so.0" 2>/dev/null || true
-install -m 644 "$repo/launcher/icon/AppIcon.iconset/icon_256x256.png" "$dir/share/jsrf-pc.png"
+install -m 644 "$repo/launcher/icon/jsrf-pc.png" "$dir/share/jsrf-pc.png"
 install -m 644 "$repo/LICENSE" "$dir/licences/LICENSE.txt"
 install -m 644 "$repo/NOTICE" "$dir/licences/NOTICE.txt"
 install -m 644 "$repo/LICENSES/LGPL-2.1.txt" "$dir/licences/LGPL-2.1.txt"

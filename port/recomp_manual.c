@@ -1260,7 +1260,7 @@ void sub_0017CAB0(void)
  * through MMIO; nothing answers those registers here, so XGetDevices never
  * reported a pad and the title sat on its attract loop for ever. Replace the
  * eight entry points the game calls with direct host input. On the host the
- * pad is whatever xbox_input has (SDL2 here, GameController on Apple);
+ * pad is whatever xbox_input has (SDL2's controllers);
  * JSRF_PAD_SCRIPT="20 START;26 A;30 A" presses buttons on a schedule for
  * unattended runs (seconds since start, 250 ms per press).
  *
@@ -3994,8 +3994,8 @@ void sub_0003FEC0(void)
  *
  * Widescreen (nv2a_widescreen(): RECOMP_WIDESCREEN, or Video > Widescreen)
  * keeps the vertical field of view and widens the horizontal one to 16:9 --
- * or to the screen's own shape where the platform asks for it (the iPhone's
- * "Fill the screen", nv2a_set_wide_aspect): m00 = s = (4/3) / that shape
+ * or to another shape where RECOMP_WIDE_ASPECT asks for it
+ * (nv2a_set_wide_aspect): m00 = s = (4/3) / that shape
  * (0.75 at 16:9) for every perspective projection, and the side planes'
  * slope / s so the title culls against what is now on screen. The 640x480
  * frame then holds the wide view squeezed, and the window shows it at its

@@ -105,7 +105,7 @@ static void sweep(const char *dir)
     put(dir, "binaries-old-0BADF00D.dat");
     put(dir, "programs-t-0BADF00D.dat");
     put(dir, "recipes-t-0BADF00D.dat");
-    /* Another backend's, which a Mac switches to. */
+    /* Another backend's, for a run that draws with it. */
     put(dir, "programs-u-0BADF00D.dat");
     put(dir, "recipes-u-0BADF00D.dat");
     /* Not the cache's. */

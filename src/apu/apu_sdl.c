@@ -1,11 +1,9 @@
 /**
- * SDL2 audio output backend, for Linux (and any POSIX host that is not
- * Apple's).
+ * SDL2 audio output backend, for Linux and Windows.
  *
- * The same entry points as the CoreAudio backend (apu_coreaudio.c), and the
- * same shape: the device pulls, the emulated APU pushes on the timing of the
- * guest's own frame delivery, and a ring between them absorbs the
- * difference. Underrun plays silence rather than stalling the guest. The
+ * The entry points apu_xaudio2.h declares, in this shape: the device pulls,
+ * the emulated APU pushes on the timing of the guest's own frame delivery,
+ * and a ring between them absorbs the difference. Underrun plays silence rather than stalling the guest. The
  * ring level and the time since the device last pulled are what the APU
  * paces itself on (apu_core.c, throttle), so the game's audio runs on the
  * sound card's clock rather than drifting against it.
@@ -13,7 +11,7 @@
 
 #include "apu_xaudio2.h"
 
-#if (!defined(_WIN32) || defined(XBOXRECOMP_WIN_GL)) && !defined(__APPLE__)
+#if !defined(_WIN32) || defined(XBOXRECOMP_WIN_GL)
 
 #include <SDL.h>
 #include <stdatomic.h>
@@ -186,7 +184,7 @@ int xa2_submit_samples(const int16_t *samples, int num_samples)
         atomic_store_explicit(&g_rd, rd + drop, memory_order_release);
         atomic_fetch_add_explicit(&g_drops, drop, memory_order_relaxed);
     }
-    /* RECOMP_APU_STATS=1: the ring once a second (see apu_coreaudio.c). */
+    /* RECOMP_APU_STATS=1: how the ring is doing, once a second. */
     { static int on = -1; static uint64_t last_ms; static uint32_t lu, ld;
       if (on < 0) on = getenv("RECOMP_APU_STATS") ? 1 : 0;
       if (on) {
@@ -209,4 +207,4 @@ int xa2_submit_samples(const int16_t *samples, int num_samples)
     return 1;
 }
 
-#endif /* !_WIN32 && !__APPLE__ */
+#endif /* !_WIN32 || XBOXRECOMP_WIN_GL */

@@ -6,8 +6,8 @@
  * texture formats, deciding when a frame has ended, translating vertex
  * microcode and register combiners, caching programs and textures -- lives in
  * nv2a_gl.c and is the same on every platform. Everything below it is one
- * graphics API: OpenGL (nv2a_gfx_gl.c, every platform) or Metal
- * (nv2a_metal/nv2a_metal.m, Apple's).
+ * graphics API: OpenGL (nv2a_gfx_gl.c). A Metal one stood beside it on the
+ * Mac until that was removed, and what it taught is kept below for the next.
  *
  * The device interface (Nv2aGfx, at the foot of this file) is small and close
  * to the metal on purpose. An earlier version of it was pitched higher -- "here
@@ -344,7 +344,7 @@ typedef struct Nv2aGfx {
     /*
      * Everything below is optional: a backend that leaves it NULL gets every
      * draw through vertices() and draw() and every constant upload whole, as
-     * before. (Metal does.)
+     * before.
      *
      * Geometry kept between draws. The front half decides what is kept, for
      * how long, and whether it is still what the title's memory holds (the
@@ -371,7 +371,7 @@ typedef struct Nv2aGfx {
     int      (*uniform_f_part)(int id, int first, const float *v, int n);
 
     /* Milliseconds spent so far making pipelines at draw time -- the part
-     * of building a program that a backend does lazily (Metal's pipeline
+     * of building a program that a backend does lazily (an API's pipeline
      * states) and prog_new does not cover. NULL where there is none. */
     double   (*pipeline_ms)(void);
 
@@ -395,15 +395,14 @@ typedef struct Nv2aGfx {
     /* Multisampling: the most samples a pixel a target can have here (1:
      * none), and every target drawn with `n` from now on, what each holds
      * carried across -- or, where the backend can only take a count before
-     * its first target (Metal), the count then and the one in use
-     * after. Returns the count in use, fewer than asked where the device
+     * its first target, the count then and the one in use after. Returns the count in use, fewer than asked where the device
      * refuses one. NULL where the backend has none. */
     int      (*samples_max)(void);
     int      (*samples)(int n);
 
     /* Anisotropic filtering: the most this device samples with (1: none).
      * A texture is given its level by tex_new (Nv2aSampler's aniso). NULL
-     * where the backend has none (Metal, today). */
+     * where the backend has none. */
     int      (*aniso_max)(void);
 
     /* Every program the cache holds queued for cache_idle, whether this
@@ -416,23 +415,20 @@ typedef struct Nv2aGfx {
      * the alpha it holds: for a target sampled as a format with no alpha
      * bits, which the console reads as alpha 1 whatever was drawn into the
      * target. Set on every draw that samples a target. NULL where the
-     * backend has none (Metal, today). */
+     * backend has none. */
     void     (*texture_opaque)(int unit, int opaque);
 
     /* A DXT1, DXT3 or DXT5 texture (`dxt` 1, 3 or 5) as the title stored
      * it: w x h texels in 4x4 blocks, and with `s->levels` the rest of the
      * chain, each level's blocks after the last's. Sampled as tex_new's.
      * 0 where the device does not take them as they are, and the front half
-     * decodes them for tex_new instead. NULL where the backend has none
-     * (Metal, today). */
+     * decodes them for tex_new instead. NULL where the backend has none. */
     uint32_t (*tex_new_dxt)(uint32_t w, uint32_t h, int dxt, const void *blocks,
                             const Nv2aSampler *s);
 } Nv2aGfx;
 
-/* The implementations. Each returns NULL where it cannot run (no Metal
- * device, no Metal in this build). */
+/* The implementation: OpenGL's. */
 const Nv2aGfx *nv2a_gfx_gl(void);
-const Nv2aGfx *nv2a_gfx_metal(void);
 
 #ifdef __cplusplus
 }

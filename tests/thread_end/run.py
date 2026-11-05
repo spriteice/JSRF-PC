@@ -1,6 +1,6 @@
 """Compile src/platform/win32_compat.c's threads and see what one leaves
 behind once it has ended (test_main.c). POSIX only (win32_compat.c is the
-Linux and macOS side); requires GCC on PATH.
+Linux side); requires GCC on PATH.
 CC, when set, is the compiler instead of gcc.
 """
 import os

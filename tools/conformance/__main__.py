@@ -259,9 +259,9 @@ def main_with_args(argv, allow_container=True):
     backend = "msvc" if vcvars else None
 
     # allow_container is what keeps containers out of `pytest tools/`. The
-    # MSVC check above is not a substitute: it happens to skip on macOS, but a
-    # Linux CI box with Docker and no MSVC would otherwise start spinning up
-    # containers during a unit-test pass.
+    # MSVC check above is not a substitute: a Linux CI box with Docker and no
+    # MSVC would otherwise start spinning up containers during a unit-test
+    # pass.
     if not backend and allow_container and _docker_image_present():
         backend = "docker"
 

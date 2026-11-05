@@ -23,7 +23,7 @@ add_compile_definitions(
     NOMINMAX
 )
 
-# Windows with the host layers the Mac and Linux builds use -- the OpenGL
+# Windows with the host layers the Linux build uses -- the OpenGL
 # renderer (nv2a_gl) through SDL2 and libepoxy, SDL2's sound and controllers --
 # instead of Direct3D 11, XAudio2 and XInput. JSRF-PC's Windows build
 # (MinGW) turns it on: its title brings its own D3D and draws through the

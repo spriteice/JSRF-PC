@@ -5354,85 +5354,6 @@ static RECOMP_TLS int g_kernel_dispatch_slot = -1;
  * RECOMP_GUEST_LOCK=0 disables it. */
 static CRITICAL_SECTION g_guest_lock;
 static volatile unsigned long g_lock_owner;   /* see xbox_guest_lock_report */
-#ifdef __APPLE__
-#include <pthread.h>
-#include <mach/mach.h>
-#include <dlfcn.h>
-static pthread_t g_lock_owner_pt;
-/* The whole chain, once per stall. Two frames say "in mach_msg2_trap", which
- * is where half of the system waits; the frames above it say who is waiting
- * and for what. The holder is suspended only while its frame records are
- * copied -- no allocation, no locks in that window -- and symbolised after
- * it runs again. Frame records are [previous fp, return address] on arm64;
- * system libraries sign the return address, so the top bits are stripped. */
-static volatile long long g_lock_since;   /* defined below; the stall this is */
-static void lock_holder_backtrace(mach_port_t mt)
-{
-    static long long printed_for = -1;
-    arm_thread_state64_t st;
-    mach_msg_type_number_t cnt = ARM_THREAD_STATE64_COUNT;
-    uint64_t fr[32];
-    int n = 0, i;
-    uint64_t hi, lo, fp, prev = 0;
-    if (printed_for == g_lock_since || pthread_equal(g_lock_owner_pt, pthread_self()))
-        return;
-    printed_for = g_lock_since;
-    hi = (uint64_t)(uintptr_t)pthread_get_stackaddr_np(g_lock_owner_pt);
-    lo = hi - (uint64_t)pthread_get_stacksize_np(g_lock_owner_pt);
-    if (thread_suspend(mt) != KERN_SUCCESS)
-        return;
-    if (thread_get_state(mt, ARM_THREAD_STATE64, (thread_state_t)&st, &cnt) == KERN_SUCCESS) {
-        fr[n++] = (uint64_t)arm_thread_state64_get_pc(st);
-        fr[n++] = (uint64_t)arm_thread_state64_get_lr(st);
-        fp = (uint64_t)arm_thread_state64_get_fp(st);
-        while (n < 32 && fp > prev && fp >= lo && fp + 16 <= hi && !(fp & 7)) {
-            uint64_t next = ((const uint64_t *)(uintptr_t)fp)[0];
-            uint64_t ret  = ((const uint64_t *)(uintptr_t)fp)[1] & 0x00007FFFFFFFFFFFull;
-            if (!ret)
-                break;
-            fr[n++] = ret;
-            prev = fp;
-            fp = next;
-        }
-    }
-    thread_resume(mt);
-    fprintf(stderr, "  [LOCK] holder's stack (%d frames):\n", n);
-    for (i = 0; i < n; i++) {
-        Dl_info di;
-        uint64_t a = fr[i] & 0x00007FFFFFFFFFFFull;
-        if (!dladdr((void *)(uintptr_t)a, &di)) di.dli_sname = NULL, di.dli_saddr = NULL, di.dli_fname = NULL;
-        fprintf(stderr, "        #%-2d %#llx %s+0x%llx  (%s)\n", i, (unsigned long long)a,
-                di.dli_sname ? di.dli_sname : "?",
-                (unsigned long long)(a - (uint64_t)(uintptr_t)di.dli_saddr),
-                di.dli_fname ? (strrchr(di.dli_fname, '/') ? strrchr(di.dli_fname, '/') + 1 : di.dli_fname) : "?");
-    }
-}
-/* Where the holder is. A guest thread that holds the lock for seconds is
- * spinning in guest code with no kernel calls (a loop that makes calls
- * reaches the yield hook), and the [THREADS] report can only say what it
- * called last. Its native program counter, read from outside, lands in a
- * lifted function whose name is the guest address -- the same thing a
- * `sample` of the process gives, without needing the process kept alive
- * for someone to run it. */
-static void lock_holder_where(void)
-{
-    mach_port_t mt = pthread_mach_thread_np(g_lock_owner_pt);
-    arm_thread_state64_t st;
-    mach_msg_type_number_t cnt = ARM_THREAD_STATE64_COUNT;
-    Dl_info pi, li;
-    uint64_t pc, lr;
-    if (!mt || thread_get_state(mt, ARM_THREAD_STATE64, (thread_state_t)&st, &cnt) != KERN_SUCCESS)
-        return;
-    pc = (uint64_t)arm_thread_state64_get_pc(st);
-    lr = (uint64_t)arm_thread_state64_get_lr(st);
-    if (!dladdr((void *)pc, &pi)) pi.dli_sname = NULL, pi.dli_saddr = NULL;
-    if (!dladdr((void *)lr, &li)) li.dli_sname = NULL, li.dli_saddr = NULL;
-    fprintf(stderr, "  [LOCK] holder is at %s+0x%llx (pc %#llx), called from %s+0x%llx\n",
-            pi.dli_sname ? pi.dli_sname : "?", pc - (uint64_t)(uintptr_t)pi.dli_saddr, pc,
-            li.dli_sname ? li.dli_sname : "?", lr - (uint64_t)(uintptr_t)li.dli_saddr);
-    lock_holder_backtrace(mt);
-}
-#endif
 /* How many guest threads are queueing for the lock right now. Used by the
  * yield to decide whether standing back is worth anything, and read by every
  * loop back edge in lifted code (RECOMP_BACK_EDGE, under the toolkit's name):
@@ -5610,9 +5531,6 @@ void xbox_guest_lock_acquire(void)
             g_lock_handover_fn(g_lock_owner, xbox_thread_guest_priority(GetCurrentThread()));
         kernel_call_take_over();
     }
-#ifdef __APPLE__
-    g_lock_owner_pt = pthread_self();
-#endif
     g_lock_since = t_guest_since;
 }
 
@@ -5675,9 +5593,6 @@ void xbox_guest_lock_report(void)
     }
     { extern void xbox_kernel_thread_report(void);
       xbox_kernel_thread_report(); }
-#ifdef __APPLE__
-    if (now - since >= 3000) lock_holder_where();
-#endif
     fflush(stderr);
 }
 
@@ -6327,12 +6242,6 @@ typedef struct {
     volatile long long entered_ms; /* when the call began */
     volatile long long left_ms;    /* when it returned; 0 while inside */
     volatile unsigned long long calls;
-    /* The thread's own mach port, recorded by the thread itself because only
-     * it can ask for it. With this, a watchdog on another thread can read
-     * this one's program counter -- which is the only way to see a thread
-     * that is stuck in guest code and therefore making no kernel calls at
-     * all, the exact case the rest of this table cannot describe. */
-    volatile uint32_t mport;
     /* For the [LOCK] report, while this thread is inside a call that gives
      * the guest lock up: whether another guest thread took the lock in the
      * meantime, and that thread's guest priority (kernel_call_take_over).
@@ -6357,9 +6266,6 @@ static KThreadState *kthread_slot(void)
         if (i < KTHREAD_SLOTS) {
             g_kthread_n = i + 1;
             g_kthreads[i].tid = (unsigned long long)(uintptr_t)GetCurrentThreadId();
-#ifdef __APPLE__
-            g_kthreads[i].mport = (uint32_t)pthread_mach_thread_np(pthread_self());
-#endif
             t_kthread = &g_kthreads[i];
         } else {
             t_kthread = &g_kthreads[KTHREAD_SLOTS - 1];
@@ -6374,32 +6280,6 @@ static KThreadState *kthread_slot(void)
 static void kthread_report(void);
 void xbox_kernel_thread_report(void);
 void xbox_kernel_thread_report(void) { kthread_report(); }
-
-#ifdef __APPLE__
-/* Where one thread is, read from another. Same trick as lock_holder_where,
- * generalised: the symbol a lifted function was given is its guest address,
- * so a native program counter names the guest code being executed. */
-static void thread_where(uint32_t mport, unsigned long long tid)
-{
-    arm_thread_state64_t st;
-    mach_msg_type_number_t cnt = ARM_THREAD_STATE64_COUNT;
-    Dl_info pi, li;
-    uint64_t pc, lr;
-    if (!mport) return;
-    if (thread_get_state((mach_port_t)mport, ARM_THREAD_STATE64,
-                         (thread_state_t)&st, &cnt) != KERN_SUCCESS)
-        return;
-    pc = (uint64_t)arm_thread_state64_get_pc(st);
-    lr = (uint64_t)arm_thread_state64_get_lr(st);
-    if (!dladdr((void *)pc, &pi)) { pi.dli_sname = NULL; pi.dli_saddr = NULL; }
-    if (!dladdr((void *)lr, &li)) { li.dli_sname = NULL; li.dli_saddr = NULL; }
-    fprintf(stderr, "  [FROZEN]   tid %-6llu is in %s+0x%llx, called from %s\n",
-            tid,
-            pi.dli_sname ? pi.dli_sname : "?",
-            pc - (uint64_t)(uintptr_t)pi.dli_saddr,
-            li.dli_sname ? li.dli_sname : "?");
-}
-#endif
 
 /* Say so when the picture stops, and say who stopped it.
  *
@@ -6477,12 +6357,6 @@ void kernel_freeze_watch(void)
                 raised, what, waiting, intr, fifo);
     }
     kthread_report();
-#ifdef __APPLE__
-    {   long i, n = g_kthread_n;
-        for (i = 0; i < n; i++)
-            thread_where(g_kthreads[i].mport, g_kthreads[i].tid);
-    }
-#endif
     fflush(stderr);
 }
 
@@ -7252,10 +7126,7 @@ void xbox_kernel_bridge_init(void)
  *
  * This function is deliberately out of line: its return address then points
  * into the recompiled function whose store was inlined around the call, and
- * that address, less the ASLR slide, is what `atos` needs to name it. */
-#ifdef __APPLE__
-#include <mach-o/dyld.h>
-#endif
+ * that address is what addr2line needs to name it. */
 #include <time.h>
 #include <pthread.h>
 #if defined(_WIN32)
@@ -7318,22 +7189,17 @@ void recomp_watch_hit(uint32_t a, uint32_t n)
     }
     clock_gettime(CLOCK_MONOTONIC, &now);
     if (now.tv_sec - last.tv_sec >= 4) {
-#ifdef __APPLE__
-        uintptr_t slide = (uintptr_t)_dyld_get_image_vmaddr_slide(0);
-#else
-        uintptr_t slide = 0;   /* addr2line takes the address as it is */
-#endif
         int f;
         last = now;
         fprintf(stderr, "[WATCH] %lu stores so far, %d distinct writers:\n",
                 total, nseen);
         for (i = 0; i < nseen; i++) {
             fprintf(stderr, "[WATCH]   writer 0x%llx x%lu  guest %08X..%08X  chain",
-                    (unsigned long long)(seen[i].ra - slide), seen[i].hits,
+                    (unsigned long long)seen[i].ra, seen[i].hits,
                     seen[i].amin, seen[i].amax);
             for (f = 1; f < seen[i].nbt; f++)
                 fprintf(stderr, " 0x%llx",
-                        (unsigned long long)((uintptr_t)seen[i].bt[f] - slide));
+                        (unsigned long long)(uintptr_t)seen[i].bt[f]);
             fprintf(stderr, "\n");
         }
         fflush(stderr);

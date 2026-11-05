@@ -37,7 +37,7 @@ source = ("""
 static int g_is_gl = 1;
 #define PROF_ON() 1
 """ + cut(gl, "static double prof_now(void)", "#define PROF_ON()")
-          + cut(gl, "#define CARD_QUERIES", "#else\nstatic void card_mark(void) {}")
+          + cut(gl, "#define CARD_QUERIES", "static void do_draw_body(void);")
           + (root / "tests/gl_card/test_main.c").read_text(encoding="utf-8"))
 
 line = re.compile(r"the card, by its own clock: (\d+) frames finished (-?[0-9.]+) ms after hand-over "

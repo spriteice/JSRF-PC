@@ -1,9 +1,9 @@
 /*
  * SMAA (Enhanced Subpixel Morphological Antialiasing; Jimenez, Echevarria,
- * Sousa, Gutierrez 2012) for the backends: what both of them need to run it --
- * the shader sources, made from the reference implementation in smaa/, and
- * its two look-up textures. How each backend draws the three passes is its
- * own business (nv2a_gfx_gl.c, nv2a_metal.m).
+ * Sousa, Gutierrez 2012) for the backend: what it needs to run it -- the
+ * shader sources, made from the reference implementation in smaa/, and its
+ * two look-up textures. How the backend draws the three passes is its own
+ * business (nv2a_gfx_gl.c).
  *
  * The passes, over the finished frame:
  *
@@ -33,10 +33,10 @@ extern "C" {
 #define NV2A_SMAA_SEARCH_W  64      /* R8 */
 #define NV2A_SMAA_SEARCH_H  16
 
-/* The look-up textures, row 0 first -- uploaded as they are on both APIs: a
- * texture's first row is its coordinate 0 on each, and that is all SMAA
- * addresses them by. The area texture is sampled with linear filtering, the
- * search texture with point filtering. */
+/* The look-up textures, row 0 first -- uploaded as they are: a texture's
+ * first row is its coordinate 0, and that is all SMAA addresses them by. The
+ * area texture is sampled with linear filtering, the search texture with
+ * point filtering. */
 const unsigned char *nv2a_smaa_area(void);
 const unsigned char *nv2a_smaa_search(void);
 
@@ -48,14 +48,6 @@ const unsigned char *nv2a_smaa_search(void);
  * samplers colorTex (passes 0 and 2), edgesTex, areaTex, searchTex (pass 1)
  * and blendTex (pass 2). malloc'd; NULL if out of memory. */
 char *nv2a_smaa_glsl_source(int pass, int fragment);
-
-/* MSL: one library with a vertex and a fragment function per pass --
- * smaa_edge_v/_f, smaa_weight_v/_f, smaa_blend_v/_f -- for a target of
- * pw x ph (baked in: Metal has no uniform a helper function can reach),
- * coordinates running the way a Metal target is held (row 0 at the top).
- * Textures: edges [[texture(0)]] colour; weights 0 edges, 1 area, 2 search;
- * blend 0 colour, 1 weights. malloc'd; NULL if out of memory. */
-char *nv2a_smaa_msl_source(uint32_t pw, uint32_t ph);
 
 #ifdef __cplusplus
 }
