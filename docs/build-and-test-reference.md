@@ -9,6 +9,24 @@ Where this file and the repo's own docs disagree, trust the repo's docs
 launcher/linux/package.sh, and launcher/windows/package.sh) and tell me
 about the difference.
 
+## At a glance: a test build
+
+In order, with where each step is said in full:
+
+1. **Where:** claim the PC in building-on-pc/PC-IN-USE.md, or build in the
+   sandbox while another thread has it (Where the work runs).
+2. **The tree:** the commit under test with its diff, and the same tree
+   hash on both machines (On my PC).
+3. **Build:** the generated code with 0 failed, then both packages in
+   their pinned images (Building).
+4. **Check:** the tests, the compatibility checks, and the comparison with
+   the last tested packages (Building 4, Compatibility checks).
+5. **Deliver:** the folder in `test-builds/`, with TESTING.md, its test
+   list, and REPORT.md for a change (Delivery package, Test checklist,
+   Test list).
+6. **Read back:** my results and every log in full, and every step still
+   untested, per device (Test list; project rules, Workflow 5).
+
 ## Test devices
 
 - **Primary:** ROG Xbox Ally X: x86_64, SteamOS 3.9.5, glibc 2.43, Z2
@@ -240,7 +258,9 @@ links and can be packaged. The engine is never run.
   `tests/tsan.supp`, each with its known bug and the change that removes
   it. Such a failure is reported on the run and doesn't fail it. Anything
   else does. The fix for a bug takes its lines out.
-- **Before a commit,** every job runs on the commit's exact tree:
+- **Before a commit,** every job runs on the commit's exact tree, except
+  for a commit that changes only Markdown files, whose CI is GitHub's run
+  on its push (project rules, Before every commit, 6):
   - **In the cloud:** every job but the Windows tests is a script in
     `.github/ci`, run in the build image by `.github/ci/docker.sh`, so the
     same commands run there as on GitHub:

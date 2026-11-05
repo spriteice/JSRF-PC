@@ -5,6 +5,22 @@ written by the maintainer ("I") for whoever makes the change ("you"), and
 goes with the short project rules. docs/build-and-test-reference.md covers
 building, testing, and the change report.
 
+## At a glance: a commit
+
+In order, with where each step is said in full:
+
+1. **Diagnose,** and write down the root cause and its model (Workflow 1).
+2. **Propose** the fix at the root, and wait for my go-ahead, or post it in
+   a pre-approved thread (Workflow 2).
+3. **Implement** it in the layer that owns it, with its regression test and
+   the docs it changes (Where code goes, How it's written).
+4. **Test build and my testing,** for anything the game runs
+   (docs/build-and-test-reference.md).
+5. **The six checks,** in one review pack (Before every commit).
+6. **My approval,** or a pre-approval's tests all passing (Pre-approved
+   threads).
+7. **Push** `main` only when I say so, or under a pre-approval.
+
 ## Before every commit
 
 Do all six, in one review pack (docs/build-and-test-reference.md, "Review
@@ -29,7 +45,10 @@ pack"), then wait for my approval. A pre-approved thread doesn't wait
    in the next commit, before anything else is pushed. A job that fails
    before its checks run, because a download failed (a server down), is
    not the commit's failure: it is run again once the server is back, and
-   nothing else is pushed until it passes.
+   nothing else is pushed until it passes. A commit that changes only
+   Markdown files (`*.md`) is the exception: no job's result depends on
+   them, so GitHub's run on its push is its CI. Its review pack says so,
+   and the run is added when it ends.
 
 ## Where code goes
 
@@ -192,7 +211,9 @@ write a handoff in the shared folder, and move the work to a new session.
 I can pre-approve a thread to work through its task on its own: to
 diagnose, fix, adjust and fix again as the tests show, commit, and push
 `main`, without waiting for me at each step. Everything else in these
-rules still applies, with the changes below.
+rules still applies, with the changes below. This section is the only
+full statement of it: the short project rules say only who can give one,
+and point here.
 
 ### How it's given
 
@@ -262,7 +283,8 @@ tree:
 
 1. **The six checks** of Before every commit, CI among them: the four
    jobs in the cloud (or on my PC while a server is down) and the Windows
-   tests on my PC.
+   tests on my PC, or, for a commit that changes only Markdown files,
+   GitHub's run on its push.
 2. **For a fix, its regression test,** failing without the fix and
    passing with it (How it's written).
 3. **For a change to what the game runs,** which is anything but `docs/`,
@@ -346,6 +368,20 @@ Kept as the usual rules keep them, and:
 When I say so in the thread, when its task is pushed and GitHub's run on
 it has passed, or when the work moves to a new thread. From then on the
 usual rules apply to anything not yet pushed.
+
+## Changing the rules
+
+The rules are the short project rules, this file,
+docs/build-and-test-reference.md and docs/release-checklist.md.
+
+- **Gathered, then made together:** a change to them is proposed in the
+  current release's backlog, under Rule changes, with who asked for it
+  and why. They are made at that release's rules review
+  (docs/release-checklist.md, step 5), each with my approval as always.
+- **At once,** when work can't go on without one: say so, and I decide.
+- **Not held:** a commit that changes the code, CI or the tests updates
+  the rule docs that describe them in the same commit (How it's written,
+  "Docs change with the code").
 
 ## Platforms
 

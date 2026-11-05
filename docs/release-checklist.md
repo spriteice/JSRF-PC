@@ -5,6 +5,21 @@ settle what ships, step 8 is the only one on the test devices, and nothing is
 pushed or published before step 9. docs/versioning.md says how a release is
 named, and docs/build-and-test-reference.md how it is built and tested.
 
+## At a glance
+
+1. Backlog closed.
+2. Switches retired.
+3. Main ready.
+4. Known bugs current, and the gate.
+5. Rules review, with the rule changes gathered since the last release.
+6. README and docs.
+7. Release build.
+8. Test those packages.
+9. Go-ahead.
+10. Push and publish together.
+11. Check the release.
+12. Archive and move on.
+
 The maintainer's shared folder, outside the repository, holds known-bugs.md
 and `release-prep/`: each release's backlog, the release notes template with
 the writing rules, and the files of past releases. Each backlog's last row,
@@ -56,6 +71,10 @@ progressing, however rarely it happens.
    Every fixed bug has its regression test, or says why not; every
    override's comment says why it isn't fixed at the source; and the docs
    changed with their code (docs/project-rules.md, How it's written).
+
+   The rule changes gathered under Rule changes in the release's backlog
+   are made here too, each in its own commit with the maintainer's
+   approval (docs/project-rules.md, Changing the rules).
 
    Code findings are fixed now, each in its own commit, and doc findings in
    step 6. The review comes before the docs, as its fixes can change what
