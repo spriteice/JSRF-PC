@@ -2074,8 +2074,39 @@ WCHAR *xbox_wcscpy(WCHAR *dst, const WCHAR *src)
 /* Time conversion                                                        */
 /* ===================================================================== */
 
+/* Win32's own rules, which the kernel's RtlTimeFieldsToTime and
+ * RtlTimeToTimeFields count on: a SYSTEMTIME names a moment that exists,
+ * from 1601 (a FILETIME's 0) to the end of 30827, or SystemTimeToFileTime
+ * refuses it (wDayOfWeek is never read); and FileTimeToSystemTime takes any
+ * count below 2^63, 1601 on. timegm and gmtime_r, with a 64-bit time_t,
+ * cover those years, but timegm rolls a field out of range over into the
+ * next (29 February 2001 would be 1 March), so the fields are checked first. */
+#define SYSTEMTIME_YEAR_FIRST    1601
+#define SYSTEMTIME_YEAR_LAST     30827
+#define FILETIME_TICKS_PER_SEC   10000000LL
+#define FILETIME_TICKS_PER_MS    10000LL
+#define FILETIME_COUNT_LIMIT     0x8000000000000000ULL  /* 2^63 */
+
+static BOOL systemtime_exists(const SYSTEMTIME *st)
+{
+    static const WORD k_days_in_month[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    if (st->wYear < SYSTEMTIME_YEAR_FIRST || st->wYear > SYSTEMTIME_YEAR_LAST
+            || st->wMonth < 1 || st->wMonth > 12)
+        return FALSE;
+    WORD days = k_days_in_month[st->wMonth - 1];
+    BOOL leap = (st->wYear % 4 == 0 && st->wYear % 100 != 0) || st->wYear % 400 == 0;
+    if (st->wMonth == 2 && leap)
+        days = 29;
+    return st->wDay >= 1 && st->wDay <= days && st->wHour < 24 && st->wMinute < 60
+        && st->wSecond < 60 && st->wMilliseconds < 1000;
+}
+
 BOOL SystemTimeToFileTime(const SYSTEMTIME *st, LPFILETIME ft)
 {
+    if (!systemtime_exists(st)) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
     struct tm tm;
     memset(&tm, 0, sizeof(tm));
     tm.tm_year = st->wYear - 1900;
@@ -2084,10 +2115,10 @@ BOOL SystemTimeToFileTime(const SYSTEMTIME *st, LPFILETIME ft)
     tm.tm_hour = st->wHour;
     tm.tm_min  = st->wMinute;
     tm.tm_sec  = st->wSecond;
-    time_t t = timegm(&tm);
-    ULONGLONG ticks = FILETIME_EPOCH_DIFF
-                    + (ULONGLONG)t * 10000000ULL
-                    + (ULONGLONG)st->wMilliseconds * 10000ULL;
+    time_t t = timegm(&tm);   /* below 0 before 1970 */
+    ULONGLONG ticks = (ULONGLONG)((LONGLONG)FILETIME_EPOCH_DIFF
+                                  + (LONGLONG)t * FILETIME_TICKS_PER_SEC
+                                  + (LONGLONG)st->wMilliseconds * FILETIME_TICKS_PER_MS);
     ft->dwLowDateTime  = (DWORD)(ticks & 0xFFFFFFFFULL);
     ft->dwHighDateTime = (DWORD)(ticks >> 32);
     return TRUE;
@@ -2096,12 +2127,15 @@ BOOL SystemTimeToFileTime(const SYSTEMTIME *st, LPFILETIME ft)
 BOOL FileTimeToSystemTime(const FILETIME *ft, LPSYSTEMTIME st)
 {
     ULONGLONG ticks = ((ULONGLONG)ft->dwHighDateTime << 32) | ft->dwLowDateTime;
-    if (ticks < FILETIME_EPOCH_DIFF) { memset(st, 0, sizeof(*st)); return FALSE; }
-    ULONGLONG since = ticks - FILETIME_EPOCH_DIFF;
-    time_t t = (time_t)(since / 10000000ULL);
     struct tm tm;
-    gmtime_r(&t, &tm);
-    fill_systemtime(st, &tm, (long)((since % 10000000ULL) * 100ULL));
+    time_t t = (time_t)(ticks / FILETIME_TICKS_PER_SEC)
+             - (time_t)(FILETIME_EPOCH_DIFF / FILETIME_TICKS_PER_SEC);
+    if (ticks >= FILETIME_COUNT_LIMIT || !gmtime_r(&t, &tm)) {
+        memset(st, 0, sizeof(*st));
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+    fill_systemtime(st, &tm, (long)((ticks % FILETIME_TICKS_PER_SEC) * 100ULL));
     return TRUE;
 }
 

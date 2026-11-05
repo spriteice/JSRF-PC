@@ -132,13 +132,19 @@ BOOLEAN __stdcall xbox_RtlEqualString(
     PXBOX_ANSI_STRING String2,
     BOOLEAN CaseInSensitive)
 {
+    USHORT i;
+
     if (String1->Length != String2->Length)
         return FALSE;
 
-    if (CaseInSensitive)
-        return _strnicmp(String1->Buffer, String2->Buffer, String1->Length) == 0;
-    else
-        return strncmp(String1->Buffer, String2->Buffer, String1->Length) == 0;
+    /* A counted string: all Length bytes count, a 0 among them too, and none
+     * need follow them. The C library's string compares stop at a 0. */
+    if (!CaseInSensitive)
+        return memcmp(String1->Buffer, String2->Buffer, String1->Length) == 0;
+    for (i = 0; i < String1->Length; i++)
+        if (toupper((unsigned char)String1->Buffer[i]) != toupper((unsigned char)String2->Buffer[i]))
+            return FALSE;
+    return TRUE;
 }
 
 /*
