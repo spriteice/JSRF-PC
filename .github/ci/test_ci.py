@@ -1,8 +1,8 @@
 """Tests for CI's own scripts, run with the tool tests in CI's GCC job
 (.github/ci/linux.sh): fetch.py's tries, how tests/run_all.py names a
 sanitizer's leak, checks that each known bug names its release and counts
-what each tsan.supp entry hides, and how count_warnings.py counts a build's
-warnings."""
+what each tsan.supp entry hides, how count_warnings.py counts a build's
+warnings, and how coverage.py adds up the tests' line counts."""
 
 import hashlib
 import http.server
@@ -19,6 +19,7 @@ root = here.parents[1]
 sys.path.insert(0, str(here))
 import fetch  # noqa: E402
 import count_warnings  # noqa: E402
+import coverage  # noqa: E402
 
 spec = importlib.util.spec_from_file_location("run_all", root / "tests" / "run_all.py")
 run_all = importlib.util.module_from_spec(spec)
@@ -243,3 +244,28 @@ def test_tsan_hidden_reports_summed_over_a_tests_programs():
         "4 race_top:^recomp_mmio_write$",
     ])
     assert run_all.hidden(reports) == {"race_top:^recomp_mmio_write$": 6, "race:^s_hc$": 3}
+
+
+def test_coverage_merges_each_tests_counts(tmp_path, monkeypatch):
+    # Two tests build src/a.c, each reaching a line of it; port/b.c is
+    # built and not run; the generated code and the system's headers aren't
+    # ours.
+    (tmp_path / "one").mkdir()
+    (tmp_path / "two").mkdir()
+    (tmp_path / "one" / "a.gcno").write_bytes(b"")
+    (tmp_path / "two" / "a.gcno").write_bytes(b"")
+    (tmp_path / "two" / "-.gcno").write_bytes(b"")
+    cwd = coverage.root.as_posix()
+    reports = {
+        "one": [{"current_working_directory": cwd, "files": [
+            {"file": "src/a.c", "lines": [{"line_number": 1, "count": 3}, {"line_number": 2, "count": 0}]},
+            {"file": "/usr/include/stdio.h", "lines": [{"line_number": 9, "count": 1}]}]}],
+        "two": [{"current_working_directory": cwd + "/tests", "files": [
+            {"file": "../src/a.c", "lines": [{"line_number": 2, "count": 1}, {"line_number": 3, "count": 0}]},
+            {"file": "../port/b.c", "lines": [{"line_number": 5, "count": 0}]},
+            {"file": "../port/recomp/gen/f.c", "lines": [{"line_number": 1, "count": 1}]}]}],
+    }
+    monkeypatch.setattr(coverage, "gcov", lambda note: None if note.name == "-.gcno" else reports[note.parent.name])
+    found, unread = coverage.coverage(tmp_path)
+    assert found == {"src/a.c": (2, 3), "port/b.c": (0, 1)}
+    assert unread == ["two/-.gcno"]

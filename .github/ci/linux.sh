@@ -52,6 +52,11 @@ gcc)
     "$work/venv/bin/python" -m pytest -q -p no:cacheprovider tools .github/ci/test_ci.py
     python3 .github/ci/count_warnings.py gcc "$work/build.log"
     python3 .github/ci/count_warnings.py gcc-debug "$work/debug.log"
+    # The engine tests' line coverage of src/ and port/, for information
+    # only: the tests again, with GCC's line counts, and the report.
+    python3 tests/run_all.py --coverage "$work/coverage" | tail -n 1
+    python3 .github/ci/coverage.py "$work/coverage" \
+        || echo "coverage: no report (for information only, so the job goes on)"
     ;;
 clang)
     python3 .github/ci/link_check.py --log "$work/build.log" "$gen" \

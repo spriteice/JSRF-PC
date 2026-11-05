@@ -294,7 +294,7 @@ between builds).
 | Job | What it checks |
 |---|---|
 | Build image | Nothing: on a push to `main`, it publishes each build image not yet published (`launcher/images.sh publish`). |
-| Linux, GCC | The engine and the runtime built with GCC, and the link; the Debug build too, as far as the link, with the recompiler's register check and indirect-call records (`port/CMakeLists.txt`); the engine tests; the tool tests, and CI's own (`.github/ci/test_ci.py`); both builds' warnings (below). |
+| Linux, GCC | The engine and the runtime built with GCC, and the link; the Debug build too, as far as the link, with the recompiler's register check and indirect-call records (`port/CMakeLists.txt`); the engine tests; the tool tests, and CI's own (`.github/ci/test_ci.py`); both builds' warnings (below); and, for information only, the engine tests' line coverage of `src/` and `port/` (below). |
 | Linux, clang, and the package | The Linux package, made by `launcher/linux/build.sh` as the release is, and the package check; the engine tests built with clang; the build's warnings. |
 | Thread sanitizer | The engine tests that start threads, built with clang's ThreadSanitizer (`tests/run_all.py --tsan`). |
 | Address and undefined-behaviour sanitizers | Every engine test, built with GCC's AddressSanitizer, its leak check included, and UndefinedBehaviorSanitizer (`tests/run_all.py --asan`). |
@@ -326,6 +326,12 @@ between builds).
   At 0, any warning fails the job, as `-Werror` would. The job's log lists
   every warning it counted. These are the static checks of the project
   rules (Workflow 4).
+- **Coverage:** the GCC job runs the engine tests again built with GCC's
+  line counts (`tests/run_all.py --coverage`), and its log ends with each
+  file's lines reached, the files of `src/` and `port/` no test builds,
+  and the totals (`.github/ci/coverage.py`). It is for information only:
+  it fails nothing, and nothing keeps it. A test that builds a copy of a
+  file's text, as `tests/nv2a_queue` does, counts towards the copy.
 - **Before a commit,** every job runs on the commit's exact tree, except
   for a commit that changes only Markdown files, whose CI is GitHub's run
   on its push, and for one moved since its run onto commits that change

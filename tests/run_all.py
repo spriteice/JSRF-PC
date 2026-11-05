@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run every engine test (each tests/<name>/run.py), as CI does.
 
-    python3 tests/run_all.py [--tsan | --asan] [name...]
+    python3 tests/run_all.py [--tsan | --asan | --coverage <dir>] [name...]
 
 With names, only those tests. Each test passes, fails, or fails in a way
 listed in tests/known-failures.txt: a known bug, still open, whose failure is
@@ -27,6 +27,11 @@ leak at a program's exit included, or if it fails.
 
 Each sets TEST_SANITIZER (thread or address), and a test whose checks depend
 on timing leaves those out under it, as cpuprof, heap_lock and nv2a_queue do.
+
+--coverage runs every test built with GCC's line counts: CC, or gcc, and CXX,
+or g++, with --coverage, each test's counts kept in <dir>/<test>/ for
+.github/ci/coverage.py's report. It is for information only: the tests'
+results are shown, and the exit status is 0 whatever they are.
 """
 
 import fnmatch
@@ -196,10 +201,17 @@ def run(test, env):
 
 
 def main(argv):
+    argv = list(argv)
+    coverage = None
+    if "--coverage" in argv:
+        i = argv.index("--coverage")
+        coverage = argv[i + 1] if i + 1 < len(argv) else ""
+        del argv[i:i + 2]
     tsan = "--tsan" in argv
     asan = "--asan" in argv
     names = [a for a in argv if a not in ("--tsan", "--asan")]
-    if (tsan and asan) or any(a.startswith("-") for a in names):
+    if (tsan + asan + (coverage is not None) > 1 or coverage == ""
+            or any(a.startswith("-") for a in names)):
         print(__doc__.strip().split("\n\n")[1], file=sys.stderr)
         return 2
     tests = sorted(pathlib.Path(p).parent for p in glob.glob(str(root / "tests/*/run.py")))
@@ -235,8 +247,17 @@ def main(argv):
         env["CC"] = env.get("CC", "gcc") + flags
         env["CXX"] = env.get("CXX", "g++") + flags
         env["TEST_SANITIZER"] = "address"
+    if coverage is not None:
+        cc, cxx = env.get("CC", "gcc"), env.get("CXX", "g++")
     passed, failed, known_seen = [], [], []
     for test in tests:
+        if coverage is not None:
+            # Each test's counts in a folder of its own, as its programs'
+            # names (test.exe) and sources repeat from test to test.
+            counts = pathlib.Path(coverage, test.name).resolve()
+            counts.mkdir(parents=True, exist_ok=True)
+            flags = " --coverage -fprofile-update=atomic -dumpdir %s/" % counts.as_posix()
+            env["CC"], env["CXX"] = cc + flags, cxx + flags
         with tempfile.TemporaryDirectory(prefix="sanitizer-") as logs:
             # Reports go to files, whatever run.py does with the test's
             # output; and they don't change its exit status, so each of its
@@ -301,8 +322,10 @@ def main(argv):
         {"ok": passed, "known": known_seen, "FAIL": failed}[verdict].append(test.name)
 
     print("run_all%s: %d passed, %d known failures, %d failed%s" % (
-        " --tsan" if tsan else " --asan" if asan else "", len(passed), len(known_seen),
-        len(failed), ": " + ", ".join(failed) if failed else ""))
+        " --tsan" if tsan else " --asan" if asan else " --coverage" if coverage else "",
+        len(passed), len(known_seen), len(failed), ": " + ", ".join(failed) if failed else ""))
+    if coverage is not None:
+        return 0
     return 1 if failed else 0
 
 
