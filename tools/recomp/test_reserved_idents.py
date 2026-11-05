@@ -2,8 +2,7 @@
 
 `_func_ident` is the last guard before a func_db name becomes a C token, and
 the only one every name source passes through -- Ghidra, IDA, a hand-written
-symbols file. `tools/ghidra_naming/merge_names.py` filters a similar set
-earlier, but it sees the Ghidra path alone.
+symbols file.
 
 The C99 `<math.h>` classification names are the sharp case, because they are
 function-like *macros*. A guest function recovered as `isnan` does not
@@ -125,32 +124,6 @@ class ReservedIdentTest(unittest.TestCase):
         for name in ("MyGameFunc", "sub_00401000", "CPlayer__Update",
                      "isnan_helper", "rounding"):
             self.assertEqual(_func_ident(ADDR, name), name)
-
-    def test_merge_names_is_not_the_stronger_list(self):
-        """The generation-time guard must cover the merge-time one.
-
-        merge_names only sees Ghidra. If a name is filtered there but not
-        here, the IDA path and any hand-written symbols file walk straight
-        past it into the generated C.
-        """
-        from tools.ghidra_naming.merge_names import RESERVED
-        missing = sorted(
-            n for n in RESERVED
-            if n.isidentifier() and n in _MATH_AND_STDLIB and
-            _func_ident(ADDR, n) == n)
-        self.assertEqual(missing, [], f"reachable unmangled: {missing}")
-
-
-# merge_names guards a wider surface than the generated TU has headers for
-# (ctype, time, wchar, MSVC internals). Only the ones a generated chunk can
-# actually collide with are required to be in both.
-_MATH_AND_STDLIB = frozenset("""
-sqrt pow exp log log10 sin cos tan asin acos atan atan2 sinh cosh tanh
-ceil floor fabs fmod frexp ldexp modf hypot nextafter copysign round trunc
-rint cbrt log2 log1p expm1 asinh acosh atanh erf erfc lgamma tgamma fmin
-fmax fma fpclassify isfinite isinf isnan isnormal signbit
-setjmp longjmp
-""".split())
 
 
 if __name__ == "__main__":

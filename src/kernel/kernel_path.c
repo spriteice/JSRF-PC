@@ -362,7 +362,8 @@ void xbox_path_init(const char* game_dir, const char* save_dir)
             MultiByteToWideChar(CP_ACP, 0, game_dir, -1, s_game_dir, MAX_PATH);
     } else {
         /* Neutral default: the CWD's "game" subdirectory, which is the
-         * layout the game projects use (see templates/new-game). */
+         * layout the toolkit's game projects use (see templates/new-game
+         * in sp00nznet/xboxrecomp). */
         GetCurrentDirectoryW(MAX_PATH, s_game_dir);
     }
 

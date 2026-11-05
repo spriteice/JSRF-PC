@@ -58,9 +58,9 @@ class RuntimeHelpersDefinedTest(unittest.TestCase):
         for i in range(8):
             self.assertIn(f"#define xmm{i} g_xmm{i}", runtime)
         self.assertIn("typedef union RecompXmm", runtime)
-        main_c = (_ROOT / "templates" / "new-game" / "src" / "main.c").read_text(
+        layout = (_ROOT / "src" / "kernel" / "xbox_memory_layout.c").read_text(
             encoding="utf-8")
-        self.assertIn("RecompXmm g_xmm0", main_c)
+        self.assertIn("\nRECOMP_TLS RecompXmm g_xmm0,", layout)
 
 
 if __name__ == "__main__":

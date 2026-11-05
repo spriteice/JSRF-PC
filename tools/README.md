@@ -222,38 +222,6 @@ ret                               esp += 4; return;
 
 ---
 
-### 5. xmv — Xbox Media Video Demuxer
-
-Extracts video/audio streams from Xbox XMV container files.
-
-```bash
-py -3 -m tools.xmv game_files/Video/intro.xmv
-```
-
-XMV is the Xbox's proprietary video container format used for FMV sequences, boot videos, and cutscenes. This tool splits the container into separate video and audio elementary streams that can be converted with FFmpeg or played with Media Foundation.
-
-### 6. ghidra_naming — Optional function-name recovery (Ghidra headless)
-
-Recovers real function names from an XBE via a headless Ghidra pass and merges
-them into the recompiler's `functions.json` so the generated C uses meaningful
-names instead of `sub_XXXXXXXX`. Optional and supplementary — the core pipeline
-needs no disassembler.
-
-```bash
-# 1. analyze the XBE (builds a flat image, imports raw, runs FidDb analysis, exports JSON)
-XBE=/path/to/default.xbe tools/ghidra_naming/run_ghidra.sh
-# 2. build the {address: name} map and (optionally) apply it to functions.json
-py -3 tools/ghidra_naming/merge_names.py            # preview
-py -3 tools/ghidra_naming/merge_names.py --apply     # write into tools/disasm/output/functions.json (.bak first)
-```
-
-Set `GHIDRA_HOME` if Ghidra is not at the default path. Since retail XBEs are
-stripped, the realistic yield is the statically-linked CRT/XDK/library functions
-(FidDb signatures); proprietary engine code keeps `sub_` names unless you add
-RTTI/vtable recovery or library signatures. See `tools/ghidra_naming/README.md`.
-
----
-
 ## After Recompilation
 
 Once you have the generated C files:

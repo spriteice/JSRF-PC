@@ -51,9 +51,7 @@ if os.path.exists(_WIN32_EXPORTS_FILE):
 #
 # This is the last guard before a name becomes a C token, and the only one
 # every name source passes through -- Ghidra, IDA, a hand-written symbols
-# file. tools/ghidra_naming/merge_names.py filters a similar set earlier, but
-# it only sees the Ghidra path, so this list must not be the smaller of the
-# two. Over-mangling costs an address suffix on a name; under-mangling costs
+# file. Over-mangling costs an address suffix on a name; under-mangling costs
 # a build.
 _FUNC_RESERVED_IDENT = frozenset({
     # C and C++ keywords

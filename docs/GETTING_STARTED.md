@@ -143,7 +143,8 @@ not need it.) The runner takes the newest `ghidra_*_PUBLIC` under
 `/c/tools/ghidra`; set `GHIDRA_ROOT` if you keep them elsewhere, or
 `GHIDRA_HOME` to name one install exactly. Full detail, including optional
 decompilation and why function seeding is off by default, is in
-[tools/ghidra_naming/README.md](../tools/ghidra_naming/README.md).
+[tools/ghidra_naming/README.md](https://github.com/sp00nznet/xboxrecomp/blob/main/tools/ghidra_naming/README.md), in the
+toolkit's repository.
 
 Re-run Step 3 after this and the names are lost — `tools.disasm` rewrites
 `functions.json` from scratch. Re-apply with `merge_names.py --apply`; the
@@ -330,4 +331,4 @@ Once the game boots and shows something on screen, you're past the hardest part.
 - **Keep notes** — document every address, every function you identify, every patch you make
 - **Don't try to fix everything at once** — stub what you can, fix what you must
 - **The 80/20 rule applies** — 80% of functions "just work" in recompiled form. The other 20% is where you spend your time.
-- **Read the technical docs** — especially [indirect-calls.md](technical/indirect-calls.md) and [lessons-learned.md](technical/lessons-learned.md)
+- **Read the technical docs** — especially [indirect-calls.md](technical/indirect-calls.md) and [lessons-learned.md](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/lessons-learned.md) (in the toolkit's repository)

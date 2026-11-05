@@ -105,18 +105,18 @@ class FpuLifterTest(unittest.TestCase):
         runtime_types = (
             root / "templates" / "runtime" / "recomp_types.h"
         ).read_text()
-        main = (
-            root / "templates" / "new-game" / "src" / "main.c"
-        ).read_text()
+        layout = (
+            root / "src" / "kernel" / "xbox_memory_layout.c"
+        ).read_text(encoding="utf-8")
 
         self.assertIn("extern RECOMP_TLS double g_fp_stack[8];", runtime_types)
         self.assertIn("extern RECOMP_TLS int g_fp_top;", runtime_types)
         self.assertIn("#define SMEM64(addr)", runtime_types)
-        self.assertIn("extern RECOMP_TLS double g_fp_stack[8];", main)
-        self.assertIn("extern RECOMP_TLS int g_fp_top;", main)
+        self.assertIn("\nRECOMP_TLS double g_fp_stack[8];", layout)
+        self.assertIn("\nRECOMP_TLS int g_fp_top = 0;", layout)
         self.assertIn("extern RECOMP_TLS uint16_t g_fp_control_word;", runtime_types)
         self.assertIn("#define RECOMP_PARITY8(x)", runtime_types)
-        self.assertIn("extern RECOMP_TLS uint16_t g_fp_control_word;", main)
+        self.assertIn("\nRECOMP_TLS uint16_t g_fp_control_word = 0x037Fu;", layout)
 
     def test_control_word_store_and_load_use_shared_state(self):
         operand = Operand(type="mem", mem_base="ebp", mem_disp=0xFFFFFFFC,

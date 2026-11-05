@@ -36,7 +36,7 @@ Static recompilation takes the raw x86 machine code from an Xbox binary and tran
 **This is the first *public* static recompilation toolkit for the original Xbox.**
 Microsoft got here first: their internal Ficl/Fission recompiler shipped Xbox
 back-compat on the 360. We have since studied it — see
-[Microsoft's Own Recompiler](docs/technical/ms-fusion-recompiler.md).
+[Microsoft's Own Recompiler](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/ms-fusion-recompiler.md).
 
 The technique has been proven on other platforms — [N64Recomp](https://github.com/N64Recomp/N64Recomp) showed MIPS-to-C was viable, [XenonRecomp](https://github.com/hedge-dev/XenonRecomp) brought it to Xbox 360's PowerPC — but nobody had tackled the OG Xbox until now. Its x86 architecture makes it both easier (same instruction set family as the host) and harder (variable-length instructions, complex addressing modes, x87 FPU stack) than MIPS or PPC targets.
 
@@ -115,7 +115,7 @@ cmake --build build --config Release
 
 This produces 6 static libraries in `build/src/*/Release/`. Link your game project against `xboxrecomp` (umbrella target) or individual libraries.
 
-**This repo builds libraries only — there is no game `.exe` here, and building it will never produce one.** The executable is built by *your* game project, which lives in its own directory and links these libraries. Start it by copying [`templates/new-game/`](templates/new-game/): it has the `CMakeLists.txt` that produces the `.exe` and the `main.c` that boots the guest. See [Getting Started, Step 6](docs/GETTING_STARTED.md#step-6-create-your-game-project).
+**This repo builds libraries only — there is no game `.exe` here, and building it will never produce one.** The executable is built by *your* game project, which lives in its own directory and links these libraries. Start it by copying [`templates/new-game/`](https://github.com/sp00nznet/xboxrecomp/tree/main/templates/new-game): it has the `CMakeLists.txt` that produces the `.exe` and the `main.c` that boots the guest. See [Getting Started, Step 6](docs/GETTING_STARTED.md#step-6-create-your-game-project).
 
 ### Integration Pattern
 
@@ -299,7 +299,7 @@ xboxrecomp/
 
 ### Start Here
 - **[Getting Started Guide](docs/GETTING_STARTED.md)** — End-to-end walkthrough from XBE to running game
-- **[Decompilation Guide](docs/DECOMP.md)** — Using this as a function splitter instead: one byte-exact `.s` per function, with signatures and the call graph. You never run the recompiler
+- **[Decompilation Guide](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/DECOMP.md)** — Using this as a function splitter instead: one byte-exact `.s` per function, with signatures and the call graph. You never run the recompiler
 - **[Tools Reference](tools/README.md)** — Detailed usage for every pipeline tool
 - **[Runtime Libraries](src/README.md)** — Architecture, build instructions, integration guide
 
@@ -325,14 +325,14 @@ xboxrecomp/
 - [Indirect Call Dispatch](docs/technical/indirect-calls.md) — The RECOMP_ICALL problem and how to solve it
 - [D3D8 to D3D11 Translation](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/d3d-translation.md) — Bridging Xbox's graphics API to modern DirectX
 - [NV2A Shader Translation](docs/technical/nv2a-shaders.md) — Register combiners and vertex microcode to HLSL
-- [D3D8LTCG Device Context](docs/technical/d3d8ltcg-device-context.md) — Device field map, PB ring management, stub calling conventions
+- [D3D8LTCG Device Context](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/d3d8ltcg-device-context.md) — Device field map, PB ring management, stub calling conventions
 - [Xbox Kernel Replacement](docs/technical/kernel-replacement.md) — Mapping Xbox kernel ordinals to Win32
 - [SEH and Exception Handling](docs/technical/seh-handling.md) — Structured exception handling in recompiled code
-- [Lessons Learned](docs/technical/lessons-learned.md) — What worked, what didn't, mistakes to avoid
-- [Gap Analysis vs xemu](docs/technical/gap-analysis.md) — What's implemented, what's missing, prioritized roadmap
-- [Microsoft's Own Recompiler](docs/technical/ms-fusion-recompiler.md) — White-room analysis of Ficl/Fission: pipeline, address map, HLE boundary
-- [Ficl/Fission Codegen Teardown](docs/technical/ms-fusion-codegen-teardown.md) — IDA/Hex-Rays teardown of both their translators, and how it reframes our roadmap
-- [Burnout 3 Reunification](docs/technical/burnout3-reunification.md) — bringing the origin title back onto the extracted toolkit: what's done, and the threading gate that makes the runtime a merge not a swap
+- [Lessons Learned](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/lessons-learned.md) — What worked, what didn't, mistakes to avoid
+- [Gap Analysis vs xemu](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/gap-analysis.md) — What's implemented, what's missing, prioritized roadmap
+- [Microsoft's Own Recompiler](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/ms-fusion-recompiler.md) — White-room analysis of Ficl/Fission: pipeline, address map, HLE boundary
+- [Ficl/Fission Codegen Teardown](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/ms-fusion-codegen-teardown.md) — IDA/Hex-Rays teardown of both their translators, and how it reframes our roadmap
+- [Burnout 3 Reunification](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/burnout3-reunification.md) — bringing the origin title back onto the extracted toolkit: what's done, and the threading gate that makes the runtime a merge not a swap
 
 ### Xbox Formats
 - [XBE File Format](docs/formats/xbe.md) — Xbox executable format reference
@@ -370,7 +370,7 @@ Based on our experience with Burnout 3, the best candidates for Xbox static reco
 | **Online** | Offline only | Xbox Live dependent |
 | **PC port** | No PC version (worth the effort!) | Good PC port exists |
 
-See [docs/technical/candidate-games.md](docs/technical/candidate-games.md) for a detailed list of promising targets.
+See [docs/technical/candidate-games.md](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/candidate-games.md) for a detailed list of promising targets.
 
 ## Projects Using This Toolkit
 
@@ -638,7 +638,7 @@ comment beside them, because x86 has multiple encodings per mnemonic and
 reassembling a listing produces code that runs identically and does not *match*.
 Verified against the binary: 2,254 of 2,254 functions in the Xbox Dashboard's
 `.text` are byte-identical, including the ones with MSVC switch tables parked
-mid-body. See [docs/DECOMP.md](docs/DECOMP.md).
+mid-body. See [docs/DECOMP.md](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/DECOMP.md).
 
 **Fixed for new users**, all three from people reporting where they got stuck:
 `recomp_types.h` is now written into `--gen-dir` by the pipeline instead of

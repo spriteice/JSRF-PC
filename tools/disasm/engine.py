@@ -1231,7 +1231,8 @@ class DisasmEngine:
                     # sweep already decoded and stops at ret/jmp, so it seldom
                     # walks into a hole in the first place -- the call-target
                     # path in _pass_call_targets already catches the cases that
-                    # matter. See docs/technical/ms-fusion-adoption-plan.md.
+                    # matter. See docs/technical/ms-fusion-adoption-plan.md in
+                    # sp00nznet/xboxrecomp.
                     break
 
                 reachable.add(addr)

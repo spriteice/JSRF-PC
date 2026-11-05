@@ -34,7 +34,6 @@ build/
 bin/
 *.obj
 *.exe
-tools/split/output/
 
 # Builds of the game (see port/CMakeLists.txt) and packaged apps
 /build*/

@@ -7,7 +7,8 @@ codegen pass knows about them.
 Static analysis cannot see every function. Two kinds are routinely invisible:
 
   * **Indirect-call targets.** Where a vtable call goes is a runtime fact.
-    (`tools.rtti` recovers these statically when a title has RTTI; most do not.)
+    (The toolkit's `tools.rtti`, in sp00nznet/xboxrecomp, recovers these
+    statically when a title has RTTI; most do not.)
   * **Thread start routines.** The address handed to PsCreateSystemThreadEx is
     only ever pushed as an argument -- nothing calls it -- so the detector never
     finds it, it gets no dispatch entry, and the game thread silently never

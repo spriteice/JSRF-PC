@@ -486,7 +486,7 @@ static HANDLE bridge_spawn_thread(recomp_func_t fn, uint32_t ctx1,
  * to drive the per-frame tick afterwards (Burnout 3 is tick-driven). Here the
  * first call must spawn a real thread and return, so control comes back to the
  * host. Opt in with xbox_SetThreadMode before the game starts. See
- * docs/technical/burnout3-reunification.md. */
+ * docs/technical/burnout3-reunification.md in sp00nznet/xboxrecomp. */
 /* XBOX_THREAD_MODE_* and xbox_SetThreadMode are declared in xbox_memory_layout.h. */
 static int g_thread_mode = XBOX_THREAD_MODE_INLINE;
 void xbox_SetThreadMode(int mode) { g_thread_mode = mode; }

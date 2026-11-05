@@ -5,9 +5,10 @@ pipeline, or upload raw vertex-shader microcode. Both have to become something
 D3D11 or OpenGL will accept, and both are translated at runtime and cached.
 
 This document covers the two translators. For what is and is not implemented,
-see [gap-analysis.md](gap-analysis.md); for the wider D3D8 layer, see
-[d3d-translation.md](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/d3d-translation.md)
-in the toolkit's repository.
+see [gap-analysis.md](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/gap-analysis.md),
+and for the wider D3D8 layer
+[d3d-translation.md](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/d3d-translation.md),
+both in the toolkit's repository.
 
 ## Register combiners → HLSL pixel shaders
 

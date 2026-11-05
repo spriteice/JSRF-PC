@@ -10,7 +10,7 @@
  *
  * Memory model:
  *   Xbox data sections are mapped to their original VAs via
- *   CreateFileMapping + MapViewOfFileEx (see xbox_memory.h).
+ *   CreateFileMapping + MapViewOfFileEx (see xbox_memory_layout.c).
  *   Recompiled code accesses globals via pointer casts, e.g.:
  *     *(uint32_t*)0x003B2360
  *

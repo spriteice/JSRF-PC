@@ -326,7 +326,8 @@ This is the local equivalent of the two feedback inputs Microsoft's own
 recompiler takes: `VirtualDispatchTraceFiles` (recorded indirect-branch target
 sets) and `UpdateEnlightenments: true` (a persisted analysis database the
 compiler rewrites on every build). See
-[ms-fusion-codegen-teardown.md](ms-fusion-codegen-teardown.md).
+[ms-fusion-codegen-teardown.md](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/ms-fusion-codegen-teardown.md)
+in the toolkit's repository.
 
 It replaces inference with measurement. `analyze_unresolved.py` classifies
 unresolved addresses by where they land relative to known functions, which is a

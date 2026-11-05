@@ -7,7 +7,8 @@ Static analysis cannot see where a vtable call goes. Running the title can.
 This closes that loop, the same way Microsoft's own recompiler does with
 VirtualDispatchTraceFiles (recorded indirect-branch target sets) and
 UpdateEnlightenments (a persisted analysis database the compiler rewrites on
-every build). See docs/technical/ms-fusion-codegen-teardown.md.
+every build). See docs/technical/ms-fusion-codegen-teardown.md in
+sp00nznet/xboxrecomp.
 
 Workflow:
 

@@ -10,7 +10,7 @@ Reproduce the Xbox's 64 MB address space at the correct virtual addresses. This 
 
 See: [../technical/memory-layout.md](../technical/memory-layout.md)
 
-Template: [../../templates/runtime/xbox_memory.h](../../templates/runtime/xbox_memory.h)
+Template: [xbox_memory.h](https://github.com/sp00nznet/xboxrecomp/blob/main/templates/runtime/xbox_memory.h), in the toolkit's repository
 
 ### 2. Kernel Shim (`xbox_kernel.c`)
 
@@ -18,7 +18,7 @@ Replace the 147 Xbox kernel imports with Win32 equivalents. Most can be stubbed 
 
 See: [../technical/kernel-replacement.md](../technical/kernel-replacement.md)
 
-Template: [../../templates/runtime/kernel_stubs.h](../../templates/runtime/kernel_stubs.h)
+Template: [kernel_stubs.h](https://github.com/sp00nznet/xboxrecomp/blob/main/templates/runtime/kernel_stubs.h), in the toolkit's repository
 
 ### 3. Graphics Translation (`d3d8_to_d3d11.c`)
 

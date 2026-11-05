@@ -6,8 +6,9 @@
  * macros). Kept separate from recomp_types.h so the generated-code header stays
  * a template and this stays a runtime detail.
  *
- * See src/kernel/icall_feedback.c for the rationale and
- * docs/technical/ms-fusion-codegen-teardown.md for where the idea comes from.
+ * See src/kernel/icall_feedback.c for the rationale, and
+ * docs/technical/ms-fusion-codegen-teardown.md in sp00nznet/xboxrecomp for
+ * where the idea comes from.
  */
 
 #ifndef RECOMP_ICALL_FEEDBACK_H

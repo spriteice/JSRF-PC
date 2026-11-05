@@ -7,7 +7,7 @@
  * Microsoft's own recompiler takes -- VirtualDispatchTraceFiles (recorded
  * indirect-branch target sets) and UpdateEnlightenments (a persisted analysis
  * database the compiler rewrites every build). See
- * docs/technical/ms-fusion-codegen-teardown.md.
+ * docs/technical/ms-fusion-codegen-teardown.md in sp00nznet/xboxrecomp.
  *
  * Static analysis cannot see where a vtable call goes. Running the title can.
  * tools/recomp/analyze_unresolved.py currently classifies unresolved targets by

@@ -373,7 +373,8 @@ extern RECOMP_TLS uint32_t g_fs_base;
  * ================================================================
  *
  * A second way to drive a recompiled title, ported from the Burnout 3 fork as
- * the runtimes reunite (see docs/technical/burnout3-reunification.md).
+ * the runtimes reunite (see docs/technical/burnout3-reunification.md in
+ * sp00nznet/xboxrecomp).
  *
  * The default model (Halo, Crimson Skies) runs the game's entry routine inline
  * and it drives its own main loop. Some titles instead return from their entry
@@ -543,8 +544,8 @@ uint32_t xbox_AllocThreadTib(void);
 void xbox_FreeThreadStack(uint32_t stack_top);
 
 /* Worker stack slices for host-tick-driven titles (see XBOX_WORKER_STACK_* and
- * docs/technical/burnout3-reunification.md). Additive; unused by default-model
- * titles. */
+ * docs/technical/burnout3-reunification.md in sp00nznet/xboxrecomp).
+ * Additive; unused by default-model titles. */
 int  xbox_worker_stack_alloc(void);   /* slice index, or -1 if none free */
 void xbox_worker_stack_free(int slot);
 void   xbox_set_game_thread(void *h);  /* HANDLE, recorded for the host watchdog */
