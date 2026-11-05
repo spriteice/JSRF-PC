@@ -11,12 +11,12 @@
  * resolves most function addresses. recomp_lookup_manual() is called FIRST,
  * giving you a chance to override any function with a custom implementation.
  *
- * Common reasons to add manual overrides:
- *   - Trace a function to understand call flow (wrap the generated version)
- *   - Fix a function the lifter translated incorrectly
- *   - Stub out a function that crashes (return early, set eax to a safe value)
- *   - Redirect a function to a native implementation (e.g., skip CRT init)
- *   - Intercept D3D/audio calls for custom rendering or sound
+ * An override goes here only to trace a function (wrap the generated
+ * version), or when the game function's own logic is the root cause
+ * (docs/project-rules.md, Where code goes 6). A function the lifter got
+ * wrong is fixed in the recompiler (tools/recomp), and a crash is fixed
+ * where it starts: nothing is stubbed out, and no call is intercepted here
+ * to make up for a bug in another layer.
  */
 
 #include <stdio.h>
