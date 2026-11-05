@@ -8,39 +8,45 @@
 #   launcher/images.sh get "<groups>"      have the image here, and print its name
 #   launcher/images.sh publish "<groups>"  make it and push it, unless it's there
 #
-# <groups> are image.sh's, as in "linux tests". An image is named for its
-# groups and for image.sh's SHA-256, which covers everything that makes it:
-# the base image (BASE in image.sh), the snapshot and every package's
-# version. So a change to image.sh names new images, and an image is never
-# replaced once published. Each carries the same two facts as labels, which
-# get checks.
+# <groups> are image.sh's, as in "linux tests", or "conformance" alone, the
+# 32-bit image launcher/image-386.sh makes (linux/386) for the recompiler's
+# conformance tests. An image is named for its groups and for its recipe's
+# SHA-256 (image.sh's, or image-386.sh's), which covers everything that
+# makes it: the base image (the recipe's BASE), the snapshot and every
+# package's version. So a change to a recipe names new images, and an image
+# is never replaced once published. Each carries the same two facts as
+# labels, which get checks.
 #
 # get uses the image if Docker has it, or pulls it. If it isn't published
 # (image.sh changed in a commit not yet on main; CI's first job publishes
 # it on the push to main) or the registry can't be reached, it makes the
 # image from BASE with image.sh, as publish does. On a machine that needs more (a
-# proxy), CI_BASE names another base image and CI_DOCKER_ARGS adds arguments
-# to docker create; an image made that way is kept here and never published.
+# proxy), CI_BASE names another base image for image.sh's (not the conformance
+# image's) and CI_DOCKER_ARGS adds arguments to docker create; an image made
+# that way is kept here and never published.
 set -euo pipefail
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 REGISTRY=ghcr.io/spriteice/jsrf-pc-build
 
 usage() {
-    echo "usage: launcher/images.sh name|get|publish \"<launcher/image.sh groups>\"" >&2
+    echo "usage: launcher/images.sh name|get|publish \"<launcher/image.sh groups>\"|conformance" >&2
     exit 2
 }
 
 action="${1:-}"
 groups="${2:-}"
 [ $# = 2 ] && [ -n "$groups" ] || usage
-for group in $groups; do
-    case "$group" in linux|windows|tests) ;; *) usage ;; esac
-done
-
-recipe="$repo/launcher/image.sh"
+recipe="$repo/launcher/image.sh" platform=() ci_base="${CI_BASE:-}"
+if [ "$groups" = conformance ]; then
+    recipe="$repo/launcher/image-386.sh" platform=(--platform linux/386) ci_base=
+else
+    for group in $groups; do
+        case "$group" in linux|windows|tests) ;; *) usage ;; esac
+    done
+fi
 sha="$(sha256sum "$recipe" | cut -d' ' -f1)"
 base="$(sed -n 's/^BASE=//p' "$recipe")"
-[ -n "$base" ] || { echo "images.sh: no BASE= line in launcher/image.sh" >&2; exit 1; }
+[ -n "$base" ] || { echo "images.sh: no BASE= line in ${recipe#"$repo"/}" >&2; exit 1; }
 name="$REGISTRY:${groups// /-}-$sha"
 
 # The image's labels match this image.sh and these groups.
@@ -57,15 +63,15 @@ check() {
 # its labels. Its output goes to stderr, and its last line says what it
 # installed.
 make_image() {
-    local from="${CI_BASE:-$base}" cid log
+    local from="${ci_base:-$base}" cid log
     log="$(mktemp)"
     # shellcheck disable=SC2086
-    cid="$(docker create ${CI_DOCKER_ARGS:-} -v "$recipe:/image.sh:ro" "$from" /image.sh $groups)"
+    cid="$(docker create "${platform[@]}" ${CI_DOCKER_ARGS:-} -v "$recipe:/image.sh:ro" "$from" /image.sh $groups)"
     if ! docker start -a "$cid" > "$log" 2>&1; then
         cat "$log" >&2
         docker rm "$cid" > /dev/null
         rm -f "$log"
-        echo "images.sh: image.sh $groups failed in $from" >&2
+        echo "images.sh: ${recipe##*/} $groups failed in $from" >&2
         exit 1
     fi
     tail -n 1 "$log" >&2
@@ -86,7 +92,7 @@ name)
 get)
     if docker image inspect "$name" > /dev/null 2>&1; then
         echo "images.sh: $name, kept here" >&2
-    elif docker pull -q "$name" > /dev/null 2>&1; then
+    elif docker pull -q "${platform[@]}" "$name" > /dev/null 2>&1; then
         echo "images.sh: $name, pulled" >&2
     else
         echo "images.sh: $name isn't published, or the registry can't be reached: making it" >&2

@@ -1,9 +1,11 @@
 """Runs the differential conformance suite as part of `pytest tools/`.
 
 Skipped where it cannot run rather than failed, so the rest of the suite stays
-meaningful everywhere. Two things can satisfy it:
+meaningful everywhere. Three things can satisfy it:
 
-  - a 32-bit MSVC (vcvars32.bat), which is the native Windows path; or
+  - a 32-bit MSVC (vcvars32.bat), which is the native Windows path;
+  - a 32-bit x86 Linux Python with gcc, as in CI's conformance image
+    (launcher/image-386.sh), which runs the snippets where it is; or
   - XBOXRECOMP_PYTEST_DOCKER=1, which lets it use the linux/386 containers.
 
 The container backend is opt-in rather than automatic because `pytest tools/`
@@ -21,7 +23,7 @@ _ALLOW_DOCKER = os.environ.get("XBOXRECOMP_PYTEST_DOCKER") == "1"
 
 class ConformanceTest(unittest.TestCase):
     def test_lifted_code_matches_the_cpu(self):
-        if conformance._find_vcvars() is None:
+        if conformance._find_vcvars() is None and not conformance._local_ok():
             if not _ALLOW_DOCKER:
                 self.skipTest(
                     "needs a 32-bit MSVC (vcvars32.bat) to assemble and build "

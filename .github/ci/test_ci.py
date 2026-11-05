@@ -2,12 +2,14 @@
 (.github/ci/linux.sh): fetch.py's tries, how tests/run_all.py names a
 sanitizer's leak, checks that each known bug names its release and counts
 what each tsan.supp entry hides, how count_warnings.py counts a build's
-warnings, and how coverage.py adds up the tests' line counts."""
+warnings, how coverage.py adds up the tests' line counts, and how
+launcher/images.sh names each image."""
 
 import hashlib
 import http.server
 import importlib.util
 import pathlib
+import subprocess
 import sys
 import threading
 import urllib.error
@@ -269,3 +271,22 @@ def test_coverage_merges_each_tests_counts(tmp_path, monkeypatch):
     found, unread = coverage.coverage(tmp_path)
     assert found == {"src/a.c": (2, 3), "port/b.c": (0, 1)}
     assert unread == ["two/-.gcno"]
+
+
+@pytest.mark.parametrize("groups, recipe", [
+    ("linux tests", "launcher/image.sh"),
+    ("conformance", "launcher/image-386.sh"),
+])
+def test_images_named_for_their_recipe(groups, recipe):
+    # launcher/images.sh's name needs no Docker: the groups, and the SHA-256
+    # of the recipe that makes the image.
+    sha = hashlib.sha256((root / recipe).read_bytes()).hexdigest()
+    out = subprocess.run(["bash", str(root / "launcher/images.sh"), "name", groups],
+                         capture_output=True, text=True, check=True).stdout.strip()
+    assert out == "ghcr.io/spriteice/jsrf-pc-build:%s-%s" % (groups.replace(" ", "-"), sha)
+
+
+def test_conformance_image_is_alone():
+    r = subprocess.run(["bash", str(root / "launcher/images.sh"), "name", "conformance tests"],
+                       capture_output=True, text=True)
+    assert r.returncode == 2 and "usage" in r.stderr

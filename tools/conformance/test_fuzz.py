@@ -58,8 +58,8 @@ def test_fuzz_count_must_be_positive():
 def test_runner_accepts_flag_preserving_nop_noise(monkeypatch):
     from tools.conformance import __main__ as runner
 
-    if runner._find_vcvars() is None:
-        pytest.skip("needs 32-bit MSVC")
+    if runner._find_vcvars() is None and not runner._local_ok():
+        pytest.skip("needs 32-bit MSVC, or a 32-bit x86 Linux Python with gcc")
     cases = generate_cases(1, 7)
     assert "lea edi, [edi]" in cases[0]["asm"]
     monkeypatch.setattr(runner, "CASES", cases)

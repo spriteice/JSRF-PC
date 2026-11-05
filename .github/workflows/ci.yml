@@ -15,10 +15,11 @@ permissions:
 
 jobs:
   # On a push to main, each build image not yet published for this
-  # launcher/image.sh is made and published on GitHub's registry
-  # (launcher/images.sh), and the jobs in its images wait for it, so that even
-  # the push that changes image.sh pulls its images. Anywhere else this job
-  # publishes nothing, and a job whose image isn't published makes it.
+  # launcher/image.sh (and the conformance image, for launcher/image-386.sh)
+  # is made and published on GitHub's registry (launcher/images.sh), and the
+  # jobs in its images wait for it, so that even the push that changes a
+  # recipe pulls its images. Anywhere else this job publishes nothing, and a
+  # job whose image isn't published makes it.
   images:
     name: Build image (${{ matrix.groups }})
     runs-on: ubuntu-24.04
@@ -29,7 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        groups: ["linux", "linux tests", "windows"]
+        groups: ["linux", "linux tests", "windows", "conformance"]
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
       - name: Publish it unless it's there
@@ -77,6 +78,15 @@ jobs:
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
       - run: .github/ci/docker.sh "linux tests" .github/ci/asan.sh
+
+  conformance:
+    name: Recompiler conformance tests
+    needs: images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+      - run: .github/ci/docker.sh conformance .github/ci/conformance.sh
 
   windows-build:
     name: Windows build and package

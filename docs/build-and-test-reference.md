@@ -153,6 +153,11 @@ changed:
   while it isn't published yet, makes it: from Ubuntu's snapshot archive,
   or the same versions from Ubuntu's own archive when the snapshot fails,
   while that archive still has them. So a new image.sh names new images;
+- the conformance image, for CI only: `launcher/image-386.sh` makes it
+  from Alpine for i386 (linux/386), and it is published and got the same
+  way, named for that file's SHA-256. Alpine's archive keeps only each
+  package's newest version, so making it from scratch again needs the
+  file's versions brought up to date, which names a new image;
 - `launcher/windows/deps.sh`'s downloads and SDL's source, each still
   checked by its SHA-256 every time it is used;
 - the generated code, tagged with default.xbe's SHA-256 and one hash of
@@ -299,6 +304,7 @@ between builds).
 | Linux, clang, and the package | The Linux package, made by `launcher/linux/build.sh` as the release is, and the package check; the engine tests built with clang; the build's warnings. |
 | Thread sanitizer | The engine tests that start threads, built with clang's ThreadSanitizer (`tests/run_all.py --tsan`). |
 | Address and undefined-behaviour sanitizers | Every engine test, built with GCC's AddressSanitizer, its leak check included, and UndefinedBehaviorSanitizer (`tests/run_all.py --asan`). |
+| Recompiler conformance tests | The recompiler's lifter against the CPU: each snippet in `tools/conformance` assembled by GCC and run, then lifted and its C run beside it, and the two compared (`python3 -m tools.conformance`), in the 32-bit conformance image (`launcher/image-386.sh`, linux/386). The corpus phase, which needs MSVC, is skipped. |
 | Windows build and package | The Windows package, made by `launcher/windows/build.sh` as the release is, and the package check; the build's warnings. |
 | Windows tests | The engine tests that run on Windows, on GitHub's Windows Server 2022, built with llvm-mingw. Before a commit, on my Windows PC. |
 
@@ -347,12 +353,13 @@ between builds).
     - `.github/ci/docker.sh "linux tests" .github/ci/linux.sh clang`
     - `.github/ci/docker.sh "linux tests" .github/ci/tsan.sh`
     - `.github/ci/docker.sh "linux tests" .github/ci/asan.sh`
+    - `.github/ci/docker.sh conformance .github/ci/conformance.sh`
     - `.github/ci/docker.sh windows .github/ci/windows.sh`
 
     Each job runs in its published build image, pulled or kept (What is
     kept between builds). Behind the sandbox's proxy, `CI_DOCKER_ARGS`
-    gives Docker what it needs, and `CI_BASE` a base image for an image
-    made there (the top of docker.sh). The shared folder's
+    gives Docker what it needs, and `CI_BASE` a base image for a build
+    image made there (the top of docker.sh). The shared folder's
     cloud-builds/SANDBOX.md has the recipe, with a script that starts
     Docker and sets both. The Windows job's downloads may be
     kept between runs too; each job's builds and tests still run from

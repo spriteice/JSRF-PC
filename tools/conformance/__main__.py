@@ -17,14 +17,20 @@ The flow, per case:
   2. Those bytes go through our real Disassembler + Lifter.
   3. A harness runs both versions over the same inputs and compares eax.
 
-Needs a 32-bit MSVC (vcvars32) or Docker linux/386 container.
+Needs a 32-bit MSVC (vcvars32), a Docker linux/386 container, or to run as
+32-bit x86 Linux Python with gcc on PATH, as in CI's conformance image
+(launcher/image-386.sh), where the snippets run here, with no container.
 Guest addresses map 1:1 onto host addresses here (g_xbox_mem_offset = 0),
 so a memory operand reads the same bytes on both sides.
 """
 
 import argparse
 import os
+import platform
 import re
+import shlex
+import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -88,7 +94,10 @@ def _docker_image_present():
 
 
 class _Container:
-    """One Docker container held open for the whole run, not one per command."""
+    """One Docker container held open for the whole run, not one per command.
+    The runtime's headers are mounted at /rt."""
+
+    inc = "/rt"
 
     def __init__(self, workdir, mounts=()):
         cmd = ["docker", "run", "-d", "--rm", "--platform", "linux/386",
@@ -109,6 +118,31 @@ class _Container:
         if self.cid:
             subprocess.run(["docker", "rm", "-f", self.cid], capture_output=True)
             self.cid = None
+
+
+def _local_ok():
+    """Whether this Python is a 32-bit x86 Linux program with gcc on PATH, as
+    in CI's conformance image: then the snippets build and run here, as they
+    would in the linux/386 container."""
+    return (sys.platform.startswith("linux") and struct.calcsize("P") == 4
+            and platform.machine() in ("i386", "i486", "i586", "i686", "x86_64")
+            and shutil.which("gcc") is not None)
+
+
+class _Local:
+    """The same commands as _Container's, run on this machine (_local_ok),
+    in the workdir, with the runtime's headers where they are."""
+
+    def __init__(self, workdir, runtime_inc):
+        self.workdir, self.inc = workdir, runtime_inc
+        self.cid, self.error = "local", ""
+
+    def run(self, script):
+        return subprocess.run(["sh", "-c", script], cwd=self.workdir,
+                              capture_output=True, text=True)
+
+    def close(self):
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -141,8 +175,12 @@ _MSVC_BUILD_HINT = (
 
 
 def _image_present(name):
-    return subprocess.run(["docker", "image", "inspect", name],
-                          capture_output=True).returncode == 0
+    try:
+        return subprocess.run(["docker", "image", "inspect", name],
+                              capture_output=True).returncode == 0
+    except OSError:
+        # No docker at all, as in CI's conformance image.
+        return False
 
 
 def _msvc(image, platform, workdir, script, mounts=()):
@@ -258,6 +296,11 @@ def main_with_args(argv, allow_container=True):
     vcvars = _find_vcvars()
     backend = "msvc" if vcvars else None
 
+    # A 32-bit x86 Linux Python with gcc needs no container: it is what the
+    # container would give.
+    if not backend and _local_ok():
+        backend = "local"
+
     # allow_container is what keeps containers out of `pytest tools/`. The
     # MSVC check above is not a substitute: a Linux CI box with Docker and no
     # MSVC would otherwise start spinning up containers during a unit-test
@@ -267,8 +310,10 @@ def main_with_args(argv, allow_container=True):
 
     if not backend:
         print("ERROR: no 32-bit x86 toolchain. Either a 32-bit MSVC "
-              "(vcvars32.bat under Visual Studio 2022), or Docker running so a "
-              "linux/386 container can supply the CPU.", file=sys.stderr)
+              "(vcvars32.bat under Visual Studio 2022), Docker running so a "
+              "linux/386 container can supply the CPU, or this run in a "
+              "32-bit x86 Linux Python with gcc (launcher/image-386.sh).",
+              file=sys.stderr)
         return 2
 
     cases = [c for c in CASES if not args.k or args.k in c["name"]]
@@ -284,6 +329,8 @@ def main_with_args(argv, allow_container=True):
         print(f"workdir: {workdir}")
 
     dk = None
+    if backend == "local":
+        dk = _Local(workdir, runtime_inc)
     if backend == "docker":
         dk = _Container(workdir, mounts=[(runtime_inc, "/rt")])
         if not dk.cid:
@@ -371,8 +418,8 @@ def main_with_args(argv, allow_container=True):
         run = subprocess.run([os.path.join(workdir, "harness.exe")],
                              capture_output=True, text=True)
     else:
-        r = dk.run("gcc -m32 -msse2 -mfpmath=sse -fno-pic -no-pie -O0 -I/rt "
-                   "harness.c native.o "
+        r = dk.run("gcc -m32 -msse2 -mfpmath=sse -fno-pic -no-pie -O0 "
+                   f"-I{shlex.quote(dk.inc)} harness.c native.o "
                    "-o harness -lm")
         if r.returncode != 0:
             print("harness build failed:\n" + r.stdout + r.stderr,
