@@ -28,6 +28,13 @@ from . import config
 from .translator import BatchTranslator
 from .output import write_summary, print_stats, generate_header
 
+# Where this repository keeps the generated code and the functions written by
+# hand: port/CMakeLists.txt's JSRF_GEN_DIR, and port/recomp_manual.c (from
+# the repository's root, where docs/building-on-linux.md runs the pipeline).
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DEFAULT_GEN_DIR = os.path.join(_ROOT, "port", "recomp", "gen")
+DEFAULT_MANUAL = "port/recomp_manual.c"
+
 
 def find_data_files(disasm_dir=None, func_id_dir=None, abi_dir=None, overrides=None):
     """Locate the disasm/func_id output files.
@@ -217,7 +224,7 @@ def main():
                         help="Split output into files of N functions each")
     parser.add_argument("--gen-dir",
                         help="Output dir for split generated files "
-                             "(default: src/game/recomp/gen)")
+                             "(default: port/recomp/gen)")
     parser.add_argument("--disasm-dir",
                         help="Directory holding tools.disasm output "
                              "(default: tools/disasm/output)")
@@ -247,8 +254,8 @@ def main():
                              "hand. Their bodies are not generated, so the "
                              "hand-written definition links instead")
     parser.add_argument("--exclude-manual", metavar="FILE",
-                        nargs="?", const="src/game/recomp/recomp_manual.c",
-                        help="Scan a C file (default recomp_manual.c) for the "
+                        nargs="?", const=DEFAULT_MANUAL,
+                        help="Scan a C file (default port/recomp_manual.c) for the "
                              "functions it defines by hand and skip generating "
                              "their bodies -- the same effect as listing them in "
                              "--manual-functions, but read straight from the "
@@ -431,9 +438,7 @@ def main():
 
     if args.split:
         # Split output mode: multiple .c files + header + dispatch table
-        gen_dir = args.gen_dir or os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "src", "game", "recomp", "gen")
+        gen_dir = args.gen_dir or DEFAULT_GEN_DIR
 
         if args.max_funcs:
             funcs = funcs[:args.max_funcs]
