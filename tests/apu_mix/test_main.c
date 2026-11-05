@@ -126,6 +126,20 @@ static int hrtf_case(MCPXAPUState *d)
     return 0;
 }
 
+/* Frees what main allocates, the DSP state included, and returns status:
+ * every return goes through it, so the leak check finds nothing. */
+static int done(MCPXAPUState *d, int status)
+{
+    if (d) {
+        free(d->gp.dsp);
+        free(d->ep.dsp);
+        free(d);
+    }
+    free(g_apu_ram_ptr);
+    g_apu_ram_ptr = NULL;
+    return status;
+}
+
 int main(int argc, char **argv)
 {
     int lock = argc > 1 && !strcmp(argv[1], "lock");
@@ -137,7 +151,7 @@ int main(int argc, char **argv)
     int i, last;
 
     g_apu_ram_ptr = calloc(1, 64u << 20);
-    if (!d || !g_apu_ram_ptr) return 1;
+    if (!d || !g_apu_ram_ptr) return done(d, 1);
     d->ram_ptr = g_apu_ram_ptr;
     for (i = 0; i < FRAMES; i++)
         memcpy(g_apu_ram_ptr + DATA + 4 * i, frame, 4);
@@ -147,7 +161,7 @@ int main(int argc, char **argv)
     d->regs[NV_PAPU_VPVADDR] = VOICES;
     d->regs[NV_PAPU_VPSGEADDR] = SGE;
     if (argc > 1 && !strcmp(argv[1], "hrtf"))
-        return hrtf_case(d);
+        return done(d, hrtf_case(d));
     d->regs[NV_PAPU_TVL2D] = 68;
     d->regs[NV_PAPU_TVL3D] = 0xFFFF;
     d->regs[NV_PAPU_TVLMP] = 0xFFFF;
@@ -187,7 +201,9 @@ int main(int argc, char **argv)
                    t.waited ? "waited for the unlock" : "did not wait",
                    mixbins[1][NUM_SAMPLES_PER_FRAME - 1],
                    mixbins[10][NUM_SAMPLES_PER_FRAME - 1]);
-            return 0;
+            qemu_cond_destroy(&d->cond);
+            qemu_mutex_destroy(&d->lock);
+            return done(d, 0);
         }
         mcpx_apu_vp_frame(d, mixbins);
         mcpx_apu_dsp_frame(d, mixbins);
@@ -196,5 +212,5 @@ int main(int argc, char **argv)
     last = (int)((d->ep_frame_div - 1) % 8) * NUM_SAMPLES_PER_FRAME + NUM_SAMPLES_PER_FRAME - 1;
     printf("right channel into bin %u: left %d, right %d\n", right_bin,
            d->monitor.frame_buf[last][0], d->monitor.frame_buf[last][1]);
-    return 0;
+    return done(d, 0);
 }

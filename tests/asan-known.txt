@@ -1,0 +1,21 @@
+# The address and undefined-behaviour sanitizers' known reports, for
+# tests/run_all.py --asan. Each line is one known bug, still open, in the
+# maintainer's known-bugs.md:
+#
+#   test | the report's SUMMARY line | the bug, and what removes it
+#
+# In the line, * stands for any text, and paths are from the repository's
+# root, as in
+#
+#   SUMMARY: AddressSanitizer: heap-use-after-free src/platform/win32_compat.c:* in *
+#
+# A leak's line is run_all's own, of the same shape, naming the first place
+# in the repository it was allocated from, as in
+#
+#   SUMMARY: LeakSanitizer: leak from src/platform/win32_compat.c:* in cv_lazy_init
+#
+# The report is shown on the run but doesn't fail it; any other report does.
+# A bug's lines come out with the change that fixes it, and the sanitizers
+# must then find nothing there.
+
+apu_mix | SUMMARY: LeakSanitizer: leak from src/platform/win32_compat.c:* in cv_lazy_init | known bug 30: on Linux nothing frees a condition variable's pthread_cond_t, as qemu_cond_destroy is a no-op (the lock case frees d, which holds d->cond); removed by making qemu_cond_destroy free it

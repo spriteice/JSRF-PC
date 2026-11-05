@@ -295,14 +295,17 @@ between builds).
 | Linux, GCC | The engine and the runtime built with GCC, and the link; the engine tests; the tool tests. |
 | Linux, clang, and the package | The Linux package, made by `launcher/linux/build.sh` as the release is, and the package check; the engine tests built with clang. |
 | Thread sanitizer | The engine tests that start threads, built with clang's ThreadSanitizer (`tests/run_all.py --tsan`). |
+| Address and undefined-behaviour sanitizers | Every engine test, built with GCC's AddressSanitizer, its leak check included, and UndefinedBehaviorSanitizer (`tests/run_all.py --asan`). |
 | Windows build and package | The Windows package, made by `launcher/windows/build.sh` as the release is, and the package check. |
 | Windows tests | The engine tests that run on Windows, on GitHub's Windows Server 2022, built with llvm-mingw. Before a commit, on my Windows PC. |
 
 - **Known bugs:** a test that fails today in a known way is listed in
-  `tests/known-failures.txt`, and a race the sanitizer finds today in
-  `tests/tsan.supp`, each with its known bug and the change that removes
-  it. Such a failure is reported on the run and doesn't fail it. Anything
-  else does. The fix for a bug takes its lines out.
+  `tests/known-failures.txt`, a race the thread sanitizer finds today in
+  `tests/tsan.supp`, and what the address and undefined-behaviour
+  sanitizers find today in `tests/asan-known.txt`, each with its known bug
+  and the change that removes it. Such a failure is reported on the run
+  and doesn't fail it. Anything else does. The fix for a bug takes its
+  lines out.
 - **Before a commit,** every job runs on the commit's exact tree, except
   for a commit that changes only Markdown files, whose CI is GitHub's run
   on its push, and for one moved since its run onto commits that change
@@ -316,6 +319,7 @@ between builds).
     - `.github/ci/docker.sh "linux tests" .github/ci/linux.sh gcc`
     - `.github/ci/docker.sh "linux tests" .github/ci/linux.sh clang`
     - `.github/ci/docker.sh "linux tests" .github/ci/tsan.sh`
+    - `.github/ci/docker.sh "linux tests" .github/ci/asan.sh`
     - `.github/ci/docker.sh windows .github/ci/windows.sh`
 
     Each job runs in its published build image, pulled or kept (What is

@@ -371,7 +371,7 @@ The thread's first reply:
 A commit is made and pushed only when all of these pass for its exact
 tree:
 
-1. **The six checks** of Before every commit, CI among them: the four
+1. **The six checks** of Before every commit, CI among them: the
    jobs in the cloud (or on my PC while a server is down) and the Windows
    tests on my PC, or, for a commit that changes only Markdown files,
    GitHub's run on its push.
@@ -444,8 +444,9 @@ pre-approval then holds again for the rest of the task.
 - **The rules and the checks:** the short project rules, this file,
   docs/build-and-test-reference.md, docs/release-checklist.md,
   docs/versioning.md, docs/menu-format.md, `.github/`, and any line
-  added to `tests/known-failures.txt` or `tests/tsan.supp`. A fix still
-  takes its own bug's lines out (docs/build-and-test-reference.md, CI).
+  added to `tests/known-failures.txt`, `tests/tsan.supp` or
+  `tests/asan-known.txt`. A fix still takes its own bug's lines out
+  (docs/build-and-test-reference.md, CI).
 - **Tests made weaker:** skipping, disabling or loosening a test, or
   changing what it expects so that it passes, unless the task is that
   test's own fix.

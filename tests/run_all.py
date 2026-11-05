@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run every engine test (each tests/<name>/run.py), as CI does.
 
-    python3 tests/run_all.py [--tsan] [name...]
+    python3 tests/run_all.py [--tsan | --asan] [name...]
 
 With names, only those tests. Each test passes, fails, or fails in a way
 listed in tests/known-failures.txt: a known bug, still open, whose failure is
@@ -11,9 +11,15 @@ The exit status is 1 if any test failed.
 --tsan runs the tests that start threads (those whose files mention
 pthread_create, CreateThread or std::thread) built with the thread
 sanitizer: CC, or clang, with -fsanitize=thread. A test fails if the
-sanitizer reports anything tests/tsan.supp doesn't list, or if it fails. It
-sets TEST_SANITIZER=thread, and a test whose checks depend on timing leaves
-those out under it, as cpuprof, heap_lock and nv2a_queue do.
+sanitizer reports anything tests/tsan.supp doesn't list, or if it fails.
+
+--asan runs every test built with the address and undefined-behaviour
+sanitizers: CC, or gcc, and CXX, or g++, with -fsanitize=address,undefined.
+A test fails if they report anything tests/asan-known.txt doesn't list, a
+leak at a program's exit included, or if it fails.
+
+Each sets TEST_SANITIZER (thread or address), and a test whose checks depend
+on timing leaves those out under it, as cpuprof, heap_lock and nv2a_queue do.
 """
 
 import fnmatch
@@ -31,16 +37,46 @@ THREADS = re.compile(r"pthread_create|CreateThread|std::thread")
 TIMEOUT = 600   # seconds for one test's run.py, all its cases
 
 
-def known_failures():
-    """{test: [(line, why)]} from known-failures.txt."""
+def known(name):
+    """{test: [(line, why)]} from tests/<name>: known-failures.txt, or
+    asan-known.txt, whose lines are the reports' SUMMARY lines."""
     out = {}
-    for n, raw in enumerate((root / "tests/known-failures.txt").read_text(encoding="utf-8").splitlines(), 1):
+    for n, raw in enumerate((root / "tests" / name).read_text(encoding="utf-8").splitlines(), 1):
         if not raw.strip() or raw.lstrip().startswith("#"):
             continue
         parts = [p.strip() for p in raw.split(" | ")]
         if len(parts) != 3 or not all(parts):
-            raise SystemExit("tests/known-failures.txt:%d: not 'test | line | why'" % n)
+            raise SystemExit("tests/%s:%d: not 'test | line | why'" % (name, n))
         out.setdefault(parts[0], []).append((parts[1], parts[2]))
+    return out
+
+
+def matching(lines, entries):
+    """The why of each entry that one of lines matches."""
+    return [why for line, why in entries if any(fnmatch.fnmatchcase(l, line) for l in lines)]
+
+
+def report_lines(reports):
+    """One line for each of the sanitizers' reports: an error's SUMMARY line,
+    or, for a leak (LeakSanitizer's direct leaks, as an indirect one goes
+    with its direct one), a line of the same shape naming the first place in
+    the repository it was allocated from."""
+    out, leak = [], False
+    for line in reports.splitlines():
+        if re.match(r"SUMMARY: AddressSanitizer: \d+ byte\(s\) leaked in", line):
+            continue
+        if re.match(r"SUMMARY: (AddressSanitizer|UndefinedBehaviorSanitizer):", line):
+            out.append(line)
+        elif line.startswith("Direct leak of "):
+            leak = True
+        elif leak:
+            frame = re.match(r"\s*#\d+ 0x[0-9a-f]+ in (\S+) ([^/(\s]\S*)$", line)
+            if frame and not frame.group(2).startswith("libsanitizer/"):
+                out.append("SUMMARY: LeakSanitizer: leak from %s in %s" % (frame.group(2), frame.group(1)))
+                leak = False
+            elif not line.strip():
+                out.append("SUMMARY: LeakSanitizer: leak from outside the repository")
+                leak = False
     return out
 
 
@@ -68,16 +104,19 @@ def run(test, env):
 
 def main(argv):
     tsan = "--tsan" in argv
-    names = [a for a in argv if a != "--tsan"]
-    if any(a.startswith("-") for a in names):
+    asan = "--asan" in argv
+    names = [a for a in argv if a not in ("--tsan", "--asan")]
+    if (tsan and asan) or any(a.startswith("-") for a in names):
         print(__doc__.strip().split("\n\n")[1], file=sys.stderr)
         return 2
     tests = sorted(pathlib.Path(p).parent for p in glob.glob(str(root / "tests/*/run.py")))
-    known = known_failures()
-    stale = set(known) - {t.name for t in tests}
-    if stale:
-        raise SystemExit("run_all: tests/known-failures.txt names tests with no run.py: "
-                         + ", ".join(sorted(stale)))
+    failures = known("known-failures.txt")
+    reported = known("asan-known.txt")
+    for name, entries in (("known-failures.txt", failures), ("asan-known.txt", reported)):
+        stale = set(entries) - {t.name for t in tests}
+        if stale:
+            raise SystemExit("run_all: tests/%s names tests with no run.py: %s"
+                             % (name, ", ".join(sorted(stale))))
     if names:
         missing = set(names) - {t.name for t in tests}
         if missing:
@@ -91,47 +130,69 @@ def main(argv):
     if tsan:
         env["CC"] = env.get("CC", "clang") + " -fsanitize=thread -g -O1"
         env["TEST_SANITIZER"] = "thread"
+    if asan:
+        # The address sanitizer goes on after what it can recover from, as
+        # the undefined-behaviour one does, so each of a test's cases runs.
+        flags = " -fsanitize=address,undefined -fsanitize-recover=address -fno-omit-frame-pointer -g -O1"
+        env["CC"] = env.get("CC", "gcc") + flags
+        env["CXX"] = env.get("CXX", "g++") + flags
+        env["TEST_SANITIZER"] = "address"
     passed, failed, known_seen = [], [], []
     for test in tests:
-        with tempfile.TemporaryDirectory(prefix="tsan-") as logs:
+        with tempfile.TemporaryDirectory(prefix="sanitizer-") as logs:
+            # Reports go to files, whatever run.py does with the test's
+            # output; and they don't change its exit status, so each of its
+            # cases runs.
+            report = "log_path=" + os.path.join(logs, "report")
             if tsan:
-                # Reports go to files, whatever run.py does with the test's
-                # output; and they don't change its exit status, so each of
-                # its cases runs.
                 env["TSAN_OPTIONS"] = " ".join([
-                    "suppressions=" + str(supp), "log_path=" + os.path.join(logs, "report"),
+                    "suppressions=" + str(supp), report,
                     "exitcode=0", "halt_on_error=0", "second_deadlock_stack=1"])
+            if asan:
+                # Each report ends with a SUMMARY line, its paths from the
+                # repository's root.
+                common = [report, "halt_on_error=0", "print_summary=1",
+                          "strip_path_prefix=%s/" % root.as_posix()]
+                env["ASAN_OPTIONS"] = " ".join(common + ["detect_leaks=1", "exitcode=0"])
+                env["UBSAN_OPTIONS"] = " ".join(common + ["print_stacktrace=1", "report_error_type=1"])
             code, out, secs = run(test, env)
             reports = "".join(pathlib.Path(f).read_text(encoding="utf-8", errors="replace")
                               for f in sorted(glob.glob(os.path.join(logs, "report*"))))
-        races = reports.count("WARNING: ThreadSanitizer")
-        lines = out.splitlines()
-        match = [why for line, why in known.get(test.name, [])
-                 if any(fnmatch.fnmatchcase(l, line) for l in lines)]
-        if races:
+        if asan:
+            summaries = report_lines(reports)
+            seen = [matching([l], reported.get(test.name, [])) for l in summaries]
+            new = sum(1 for why in seen if not why)
+            count, why_reported = len(summaries), sorted({w for why in seen for w in why})
+        else:
+            new = count = reports.count("WARNING: ThreadSanitizer")
+            why_reported = []
+        match = matching(out.splitlines(), failures.get(test.name, []))
+        if new:
             verdict = "FAIL"
         elif code == 0:
-            verdict = "ok"
+            verdict = "known" if why_reported else "ok"
         elif match:
             verdict = "known"
         else:
             verdict = "FAIL"
         note = "%5.1f s" % secs
-        if races:
-            note += ", %d sanitizer report%s" % (races, "" if races == 1 else "s")
+        if count:
+            note += ", %d sanitizer report%s" % (count, "" if count == 1 else "s")
+            if count != new:
+                note += ", %d known" % (count - new)
         if code != 0:
             note += ", no result" if code is None else ", exit %d" % code
         print("%-6s%-18s%s" % (verdict, test.name, note))
         if verdict == "known":
-            print("      known: " + "; ".join(match))
+            print("      known: " + "; ".join(why_reported + match))
         if verdict != "ok":
             for l in (out + reports).rstrip().splitlines():
                 print("      | " + l)
         {"ok": passed, "known": known_seen, "FAIL": failed}[verdict].append(test.name)
 
     print("run_all%s: %d passed, %d known failures, %d failed%s" % (
-        " --tsan" if tsan else "", len(passed), len(known_seen), len(failed),
-        ": " + ", ".join(failed) if failed else ""))
+        " --tsan" if tsan else " --asan" if asan else "", len(passed), len(known_seen),
+        len(failed), ": " + ", ".join(failed) if failed else ""))
     return 1 if failed else 0
 
 
