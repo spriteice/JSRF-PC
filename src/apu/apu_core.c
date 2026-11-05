@@ -319,12 +319,13 @@ void mcpx_apu_monitor_init(MCPXAPUState *d, Error **errp)
     d->monitor.queued_bytes_low = 1024;
     d->monitor.queued_bytes_high = 3072;
 
-    /* The sound back end first (apu_xaudio2.h: SDL2's audio) */
+    /* The sound back end first (apu_xaudio2.h: SDL2's audio, apu_sdl.c),
+     * named in the log as what it is, not as the toolkit's XAudio2 */
     if (xa2_init()) {
-        fprintf(stderr, "[APU] Using XAudio2 audio backend\n");
+        fprintf(stderr, "[APU] Sound back end open (apu_sdl.c)\n");
         return;
     }
-    fprintf(stderr, "[APU] XAudio2 unavailable, falling back to waveOut\n");
+    fprintf(stderr, "[APU] Sound back end (apu_sdl.c) didn't open, falling back to waveOut\n");
 
     WAVEFORMATEX wfx = { 0 };
     wfx.wFormatTag      = WAVE_FORMAT_PCM;
