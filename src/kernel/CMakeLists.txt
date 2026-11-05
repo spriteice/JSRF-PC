@@ -44,14 +44,15 @@ target_include_directories(xbox_kernel PUBLIC
     ${XBOXRECOMP_SRC_DIR}
 )
 
+# The kernel's crypto (kernel_crypto.c) is its own software, with no library
+# behind it.
 if(WIN32)
     # platform is an INTERFACE target on Windows: it contributes the src/
     # include path that "platform/xbox_winnt.h" resolves against.
-    target_link_libraries(xbox_kernel PUBLIC platform kernel32 bcrypt xbox_nv2a_gl)
+    target_link_libraries(xbox_kernel PUBLIC platform kernel32 xbox_nv2a_gl)
 else()
-    # Linux: platform layer (POSIX host primitives) + OpenSSL for crypto.
-    find_package(OpenSSL REQUIRED)
-    target_link_libraries(xbox_kernel PUBLIC platform OpenSSL::Crypto xbox_nv2a_gl)
+    # Linux: platform layer (POSIX host primitives).
+    target_link_libraries(xbox_kernel PUBLIC platform xbox_nv2a_gl)
 endif()
 
 target_compile_options(xbox_kernel PRIVATE -Wall -Wextra -O2)

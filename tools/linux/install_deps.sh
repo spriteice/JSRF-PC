@@ -19,8 +19,6 @@ OS_RELEASE="${OS_RELEASE:-/etc/os-release}"
 #   build toolchain (C, and C++ for the in-game menu) + cmake + pkg-config
 #   SDL2    - window, input, audio
 #   OpenGL headers - the renderer (nv2a_gl)
-#   OpenSSL - crypto, replaces bcrypt
-#   ffmpeg  - video decode/demux/scale
 detect_family() {
     local id id_like
     [ -r "$OS_RELEASE" ] || return 1
@@ -38,31 +36,27 @@ detect_family() {
 family=$(detect_family) || {
     echo "Could not identify the distro from $OS_RELEASE." >&2
     echo "Install these by hand: a C and C++ toolchain, cmake, pkg-config, SDL2," >&2
-    echo "OpenGL headers, OpenSSL, and ffmpeg (all with headers)." >&2
+    echo "and OpenGL headers (all with headers)." >&2
     exit 1
 }
 
 case "$family" in
     debian)
-        PKGS=(cmake build-essential pkg-config libsdl2-dev libgl1-mesa-dev
-              libssl-dev libavcodec-dev libavformat-dev libavutil-dev
-              libswscale-dev)
+        PKGS=(cmake build-essential pkg-config libsdl2-dev libgl1-mesa-dev)
         echo "Detected Debian/Ubuntu. Installing ${#PKGS[@]} packages..."
         sudo apt-get update
         sudo apt-get install -y "${PKGS[@]}"
         ;;
     arch)
-        # base-devel covers gcc/make/pkgconf; ffmpeg and mesa ship headers.
+        # base-devel covers gcc/make/pkgconf; mesa ships headers.
         # sdl2 resolves to sdl2-compat on current Arch.
-        PKGS=(base-devel cmake sdl2 mesa openssl ffmpeg)
+        PKGS=(base-devel cmake sdl2 mesa)
         echo "Detected Arch. Installing ${#PKGS[@]} packages..."
         sudo pacman -S --needed "${PKGS[@]}"
         ;;
     fedora)
-        PKGS=(cmake gcc gcc-c++ make pkgconf-pkg-config SDL2-devel mesa-libGL-devel
-              openssl-devel ffmpeg-devel)
+        PKGS=(cmake gcc gcc-c++ make pkgconf-pkg-config SDL2-devel mesa-libGL-devel)
         echo "Detected Fedora/RHEL. Installing ${#PKGS[@]} packages..."
-        echo "(ffmpeg-devel needs RPM Fusion enabled.)"
         sudo dnf install -y "${PKGS[@]}"
         ;;
 esac
