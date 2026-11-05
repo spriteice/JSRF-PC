@@ -24,10 +24,10 @@ The `src/` directory contains 5 static libraries that provide the Xbox hardware 
 │                   │                                       │
 │  ┌────────┐ ┌─────┴────┐ ┌───────┐ ┌──────┐            │
 │  │xbox_   │ │xbox_     │ │xbox_  │ │xbox_ │            │
-│  │d3d8    │ │apu       │ │nv2a   │ │input │            │
+│  │d3d8    │ │apu       │ │nv2a_gl│ │input │            │
 │  │        │ │          │ │       │ │      │            │
-│  │D3D8    │ │MCPX APU │ │NV2A   │ │XPP→  │            │
-│  │headers │ │(xemu)   │ │(xemu) │ │SDL2  │            │
+│  │D3D8    │ │MCPX APU │ │NV2A → │ │XPP→  │            │
+│  │headers │ │(xemu)   │ │OpenGL │ │SDL2  │            │
 │  └────────┘ └──────────┘ └───────┘ └──────┘            │
 ├──────────────────────────────────────────────────────────┤
 │    SDL2, OpenGL, Win32 API (POSIX on Linux)              │
@@ -41,7 +41,6 @@ The `src/` directory contains 5 static libraries that provide the Xbox hardware 
 | **xbox_kernel** | `kernel/` | 7,935 | Custom | Xbox kernel → Win32 replacement (147 imports) |
 | **xbox_d3d8** | `d3d/` | 1,709 | Custom | Headers only: the D3D8 types, and the NV2A's texture swizzling |
 | **xbox_apu** | `apu/` | 3,918 | xemu | MCPX APU audio emulation (256 voices) |
-| **xbox_nv2a** | `nv2a/` | 3,761 | xemu | NV2A GPU register handlers + MMIO |
 | **xbox_input** | `input/` | 212 | Custom | Xbox gamepad → SDL2 GameController mapping |
 
 ## Building
@@ -106,10 +105,7 @@ int main() {
     // 4. Initialize audio (optional)
     MCPXAPUState *apu = mcpx_apu_init_standalone(ram_ptr);
 
-    // 5. Initialize GPU (optional)
-    NV2AState *gpu = nv2a_init_standalone(vram, vram_size, ramin, ramin_size);
-
-    // 6. Jump to game entry point
+    // 5. Jump to game entry point
     void (*entry)(void) = recomp_lookup(ENTRY_POINT_VA);
     entry();
 }
@@ -121,5 +117,5 @@ Each subdirectory has its own README with API reference:
 
 - [kernel/README.md](kernel/README.md) — Memory layout, file I/O, threading, sync, crypto
 - [apu/README.md](apu/README.md) — MCPX APU voice processor, mixer, MMIO
-- [nv2a/README.md](nv2a/README.md) — NV2A GPU registers, push buffer, PGRAPH
+- [nv2a/README.md](nv2a/README.md) — the QEMU shim the APU's xemu code builds against
 - [input/README.md](input/README.md) — Gamepad state, vibration, button mapping

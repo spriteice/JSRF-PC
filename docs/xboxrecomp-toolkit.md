@@ -108,7 +108,6 @@ Following the [RexGlueSDK](https://github.com/rexglue/rexglue-sdk) pattern (whic
 | **xbox_d3d8** | Custom | D3D8 → D3D11 graphics: **4-stage multi-texture** FFP pipeline, **NV2A register combiner** pixel shaders, **programmable vertex shaders** (NV2A microcode → HLSL), **hardware T&L lighting** (8 lights), **vertex fog**, DrawPrimitiveUP ring buffer, texture unswizzling, 20+ format conversions |
 | **xbox_dsound** | Custom | DirectSound → software mixer (IDirectSound8/IDirectSoundBuffer8) |
 | **xbox_apu** | xemu *(LGPL-2.1+)* | MCPX APU audio (256-voice processor, ADPCM/PCM, envelopes, HRTF, waveOut output) |
-| **xbox_nv2a** | xemu *(regs, LGPL-2.1+)* + Custom | NV2A GPU (register handlers, MMIO interception, push buffer parsing, PGRAPH → D3D11 translation) |
 | **xbox_input** | Custom | Xbox gamepad → XInput |
 | **xbox_video** | Custom | FMV playback: Media Foundation decode onto a D3D8 texture, plus a window on the guest framebuffer. For titles whose video is a container Windows already decodes, the emulated decoder does not have to work for the video to be watchable — and the title still decides when it plays |
 
@@ -283,7 +282,7 @@ xboxrecomp/
 │   ├── d3d/                     # xbox_d3d8   - D3D8 → D3D11 graphics
 │   ├── audio/                   # xbox_dsound - DirectSound compat
 │   ├── apu/                     # xbox_apu    - MCPX APU emulation (xemu)
-│   ├── nv2a/                    # xbox_nv2a   - NV2A GPU emulation (xemu)
+│   ├── nv2a/                    # qemu_shim.h - the QEMU types the APU's xemu code uses
 │   ├── input/                   # xbox_input  - Gamepad → XInput
 │   └── video/                   # xbox_video  - FMV playback + framebuffer window
 ├── include/xbox/                # Public umbrella header (xboxrecomp.h)
@@ -315,7 +314,6 @@ xboxrecomp/
 - [xbox_d3d8](https://github.com/sp00nznet/xboxrecomp/blob/main/src/d3d/README.md) — D3D8 interface, register combiners, vertex shaders, texture unswizzle (8,838 LOC)
 - [xbox_dsound](https://github.com/sp00nznet/xboxrecomp/blob/main/src/audio/README.md) — DirectSound buffers, 3D audio, mixbins (573 LOC)
 - [xbox_apu](../src/apu/README.md) — MCPX APU voice processor, mixer, MMIO (4,168 LOC)
-- [xbox_nv2a](../src/nv2a/README.md) — NV2A GPU registers, push buffer, PGRAPH→D3D11 (4,892 LOC)
 - [xbox_input](../src/input/README.md) — Gamepad state, vibration, button mapping (360 LOC)
 
 ### Pipeline Guides
@@ -460,10 +458,9 @@ licence:
 | Component | Licence | Copyright |
 |---|---|---|
 | the MCPX APU sources in `src/apu/` | LGPL-2.1-or-later | espes; Jannik Vogel; Matt Borgerson |
-| `src/nv2a/nv2a_regs.h` | LGPL-2.1-or-later | espes; Jannik Vogel |
 | everything else | MIT | sp00nz and contributors |
 
-The APU and the NV2A register definitions were extracted from
+The APU sources were extracted from
 [xemu](https://github.com/xemu-project/xemu) and are that project's work, not
 ours. LGPL-2.1 expressly permits linking them from MIT or proprietary code, so
 a recompiled game is unaffected; what it asks is that the notices stay, the
@@ -471,7 +468,7 @@ source stays available, and users can relink against a modified library.
 [LICENSES/LGPL-2.1.txt](../LICENSES/LGPL-2.1.txt) is the verbatim licence text —
 shipping it alongside those files is a requirement, not a courtesy.
 
-Not every file under `src/apu/` and `src/nv2a/` is xemu-derived. See
+Not every file under `src/apu/` is xemu-derived. See
 [NOTICE](../NOTICE) for the exact list, each with the copyright it actually
 carries — including algorithms we implemented ourselves but learned from xemu,
 credited there even where no licence obligation attaches.

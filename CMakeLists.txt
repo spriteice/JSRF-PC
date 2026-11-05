@@ -11,7 +11,6 @@ project(xboxrecomp VERSION 0.8.0 LANGUAGES C CXX)
 #   xbox_d3d8      - D3D8 headers: the types, and texture swizzling
 #   xbox_input     - Xbox gamepad → SDL2 GameController
 #   xbox_apu       - MCPX APU audio emulation (extracted from xemu)
-#   xbox_nv2a      - NV2A GPU emulation (extracted from xemu)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -39,9 +38,6 @@ add_subdirectory(src/d3d)
 # Audio: MCPX APU hardware emulation (voice processor, DSP)
 add_subdirectory(src/apu)
 
-# GPU: NV2A hardware emulation (register handlers, MMIO, push buffer)
-add_subdirectory(src/nv2a)
-
 # NV2A -> OpenGL translation
 add_subdirectory(src/nv2a_gl)
 
@@ -68,7 +64,6 @@ target_link_libraries(xboxrecomp INTERFACE
     xbox_input
     xbox_usb
     xbox_apu
-    xbox_nv2a
     xbox_nv2a_gl
 )
 

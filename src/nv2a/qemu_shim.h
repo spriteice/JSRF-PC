@@ -1,8 +1,8 @@
 /*
- * QEMU Shim Layer for xemu NV2A extraction
+ * QEMU Shim Layer for the code extracted from xemu
  *
  * Replaces QEMU types and functions with minimal equivalents so that
- * xemu's NV2A GPU emulation code can compile standalone.
+ * xemu's MCPX APU code (src/apu, through apu_shim.h) compiles standalone.
  *
  * This file is included instead of the real QEMU headers.
  */
@@ -74,7 +74,7 @@ static inline int ctz32(uint32_t val) {
     return __builtin_ctz(val);
 }
 
-/* GET_MASK/SET_MASK - defined here, guarded in nv2a_regs.h */
+/* GET_MASK/SET_MASK, as QEMU's */
 #define GET_MASK(v, mask) (((v) & (mask)) >> ctz32(mask))
 #define SET_MASK(v, mask, val) \
     do { (v) &= ~(mask); (v) |= ((val) << ctz32(mask)) & (mask); } while (0)

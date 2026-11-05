@@ -233,7 +233,7 @@ extern uint32_t  xbox_ContiguousBlockSerial(uint32_t va);
  * was written for every draw regardless of what was asked. Found by a
  * census that printed write=-1 for 1,176,606 draws out of 1,176,606, which
  * is not a state a title leaves a register in; it is a register nobody is
- * reading. src/nv2a/nv2a_regs.h had the right number all along. */
+ * reading. xemu's nv2a_regs.h had the right number all along. */
 #define M_SET_DEPTH_MASK            0x035C
 #define M_SET_COLOR_MASK            0x0358   /* per-channel write enables */
 #define M_SET_DEPTH_FUNC            0x0354
@@ -261,7 +261,7 @@ extern uint32_t  xbox_ContiguousBlockSerial(uint32_t va);
 #define M_SET_SEMAPHORE_OFFSET      0x1D6C   /* the fences */
 #define M_BACK_END_WRITE_SEMAPHORE_RELEASE 0x1D70
 
-/* Fields of the words those methods carry, by src/nv2a/nv2a_regs.h's names. */
+/* Fields of the words those methods carry, by xemu's nv2a_regs.h names. */
 #define SURFACE_FORMAT_ZETA(v)       (((v) >> 4) & 0xFu)  /* NV097_SET_SURFACE_FORMAT_ZETA */
 #define SURFACE_FORMAT_ZETA_Z16      1u
 /* Bits in a depth value: the buffer every backend draws into, and a 16-bit

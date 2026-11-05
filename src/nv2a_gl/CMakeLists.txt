@@ -1,7 +1,6 @@
 # NV2A -> OpenGL backend.
 #
-# Separate from xbox_nv2a (register-level emulation) and from nv2a_pb_exec
-# (the software rasteriser): this one turns the same pushbuffer into real
+# Separate from nv2a_pb_exec (the software rasteriser): this one turns the same pushbuffer into real
 # draw calls. Built only where EGL and GL are available; on a host without
 # them the runtime keeps the software path and nothing else changes.
 set(NV2A_GL_SOURCES

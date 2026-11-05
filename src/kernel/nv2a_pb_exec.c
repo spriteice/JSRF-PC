@@ -1716,7 +1716,7 @@ void nv2a_pb_exec_method(uint32_t subch, uint32_t method, uint32_t param)
     case NV097_SET_TEXTURE_FORMAT:
         s_gpu.tex.color = (param >> 8) & 0xFF;
         /* A swizzled texture carries its own dimensions here, as log2 in
-         * BASE_SIZE_U/V (nv2a_regs.h: 0x00F00000 / 0x0F000000). It has to:
+         * BASE_SIZE_U/V (xemu's nv2a_regs.h: 0x00F00000 / 0x0F000000). It has to:
          * SET_TEXTURE_IMAGE_RECT describes a linear image, and a title that
          * only uses swizzled textures never sends one -- this title sends it
          * once and sets a format 3,176 times. Without this the width and
