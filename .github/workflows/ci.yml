@@ -2,7 +2,8 @@
 # without the game's files. Each job's steps are a script in .github/ci, run
 # in the build image (launcher/image.sh) by .github/ci/docker.sh, so the same
 # commands run anywhere with Docker. docs/build-and-test-reference.md ("CI")
-# says what each job checks, and how to run it.
+# says what each job checks, and how to run it, and ("What is kept between
+# builds") how the build images are kept.
 name: CI
 
 on:
@@ -13,8 +14,37 @@ permissions:
   contents: read
 
 jobs:
+  # On a push to main, each build image not yet published for this
+  # launcher/image.sh is made and published on GitHub's registry
+  # (launcher/images.sh), and the jobs in its images wait for it, so that even
+  # the push that changes image.sh pulls its images. Anywhere else this job
+  # publishes nothing, and a job whose image isn't published makes it.
+  images:
+    name: Build image (${{ matrix.groups }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        groups: ["linux", "linux tests", "windows"]
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+      - name: Publish it unless it's there
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+          IMAGE_GROUPS: ${{ matrix.groups }}
+        run: |
+          echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          launcher/images.sh publish "$IMAGE_GROUPS"
+
   linux-gcc:
     name: Linux, GCC
+    needs: images
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -23,6 +53,7 @@ jobs:
 
   linux-clang:
     name: Linux, clang, and the package
+    needs: images
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -31,6 +62,7 @@ jobs:
 
   thread-sanitizer:
     name: Thread sanitizer
+    needs: images
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -39,6 +71,7 @@ jobs:
 
   windows-build:
     name: Windows build and package
+    needs: images
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

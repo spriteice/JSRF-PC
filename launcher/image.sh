@@ -1,18 +1,20 @@
 #!/bin/bash
 #
 # The build image: what the release packages are built in, and CI's jobs run
-# in. Run as root in a fresh container of
-#
-#   ubuntu:22.04@sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11
-#
-# (Ubuntu 22.04, so glibc 2.35, and the Linux package runs on 2.34 or later):
+# in. Run as root in a fresh container of BASE, below (Ubuntu 22.04, so glibc
+# 2.35, and the Linux package runs on 2.34 or later):
 #
 #   launcher/image.sh linux|windows [tests]
 #
+# launcher/images.sh runs it, and the images it makes are kept on GitHub's
+# registry, named for this file's SHA-256.
+#
 # It installs the packages below from Ubuntu's snapshot archive as it was at
 # SNAPSHOT, each at the version named, so the image is the same whenever and
-# wherever it is made, and nothing else. A package added here can change what
-# SDL builds: launcher/linux/sdl.sh checks.
+# wherever it is made, and nothing else. The snapshot archive is often slow,
+# so each download is tried up to 5 times, and Ubuntu's own archive is tried
+# after it (below). A package added here can change what SDL builds:
+# launcher/linux/sdl.sh checks.
 #
 #   linux   the Linux package: clang, CMake and Ninja, and the headers SDL and
 #           the engine build against
@@ -23,6 +25,9 @@
 #           for the thread sanitizer's reports
 set -euo pipefail
 
+# The base image, by digest, which launcher/images.sh reads from here.
+# shellcheck disable=SC2034
+BASE=ubuntu:22.04@sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11
 SNAPSHOT=20261101T000000Z
 
 linux=(
@@ -66,18 +71,29 @@ done
 [ "${#want[@]}" -gt 0 ] || { echo "usage: launcher/image.sh linux|windows [tests]" >&2; exit 2; }
 
 export DEBIAN_FRONTEND=noninteractive
+apt=(apt-get -o Acquire::Retries=5)
 # The snapshot archive is HTTPS only, and the base image has no CA
 # certificates. They come first from the release pocket, which never changes,
 # over plain HTTP; apt checks every package's signature either way.
 echo "deb http://archive.ubuntu.com/ubuntu jammy main" > /etc/apt/sources.list
-apt-get update
-apt-get install -y --no-install-recommends ca-certificates=20211016
-archive="https://snapshot.ubuntu.com/ubuntu/$SNAPSHOT"
-printf 'deb %s %s main universe\n' "$archive" jammy "$archive" jammy-updates \
-    "$archive" jammy-security > /etc/apt/sources.list
-apt-get update
-apt-get install -y --no-install-recommends ca-certificates=20260816ubuntu0.22.04.1 "${want[@]}"
+"${apt[@]}" update
+"${apt[@]}" install -y --no-install-recommends ca-certificates=20211016
+# The packages come from the snapshot. If it fails, the same versions come
+# from Ubuntu's own archive, while it still has them; either way they are
+# the same files.
+from=
+for archive in "https://snapshot.ubuntu.com/ubuntu/$SNAPSHOT" http://archive.ubuntu.com/ubuntu; do
+    printf 'deb %s %s main universe\n' "$archive" jammy "$archive" jammy-updates \
+        "$archive" jammy-security > /etc/apt/sources.list
+    if "${apt[@]}" update && "${apt[@]}" install -y --no-install-recommends \
+            ca-certificates=20260816ubuntu0.22.04.1 "${want[@]}"; then
+        from="$archive"
+        break
+    fi
+    echo "image.sh: the packages couldn't be installed from $archive" >&2
+done
+[ -n "$from" ] || { echo "image.sh: no archive had them" >&2; exit 1; }
 rm -rf /var/lib/apt/lists/*
 # The repository is mounted, owned by someone else: let git read it.
 if command -v git > /dev/null; then git config --global --add safe.directory '*'; fi
-echo "image.sh: $* from the snapshot of $SNAPSHOT; glibc $(ldd --version | sed -n '1s/.* //p')"
+echo "image.sh: $* at the snapshot of $SNAPSHOT, from $from; glibc $(ldd --version | sed -n '1s/.* //p')"

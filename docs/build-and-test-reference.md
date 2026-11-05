@@ -105,9 +105,9 @@ against the kept copy (What is kept between builds).
 - **In the sandbox:** the generated code (Building, 1), both packages
   (Building, 2 and 3), their compatibility checks but the Windows start
   check, and the comparison with the last tested packages in the shared
-  folder's `test-builds/`. They use the same pinned build images, which
-  the sandbox makes and keeps for as long as the thread lasts (What is
-  kept between builds). TESTING.md names the machine it was built on
+  folder's `test-builds/`. They use the same published build images,
+  which the sandbox pulls and keeps for as long as the thread lasts (What
+  is kept between builds). TESTING.md names the machine it was built on
   (Test checklist).
 - **Game files:** default.xbe is copied from my game folder into the
   sandbox. It and the generated code made from it stay there, are never
@@ -121,9 +121,9 @@ against the kept copy (What is kept between builds).
 - **Delivery:** the Linux package is delivered as soon as its checks pass,
   and the Windows package once the PC is free. Work for Windows starts its
   testing only then (Test checklist, Order).
-- **If the sandbox can't make its build images** either, because a server
-  they download from is down (CI, below), the build and the CI jobs wait
-  for whichever is back first, the server or the PC.
+- **If the sandbox can't get its build images** either (CI, When a
+  server is down), the build and the CI jobs wait for whichever is back
+  first, the server or the PC.
 - **One job at a time:** the sandbox runs its build and its thread's CI
   jobs one after another (On my PC).
 
@@ -133,8 +133,15 @@ In `Building\cache\` and Docker's storage, so a build makes only what
 changed:
 
 - the build images: `linux` and `windows` for the packages, and `linux
-  tests` for CI, each tagged with image.sh's SHA-256 and made again when
-  it changes;
+  tests` for CI. `launcher/image.sh` makes them, and CI's first job
+  publishes them on GitHub's registry (`ghcr.io/spriteice/jsrf-pc-build`)
+  on a push to `main` that finds them missing, before its other jobs
+  start, each named for its groups and image.sh's SHA-256 and never
+  replaced. The package is public, so they're pulled without signing in.
+  `launcher/images.sh get` uses the image Docker has, or pulls it, or,
+  while it isn't published yet, makes it: from Ubuntu's snapshot archive,
+  or the same versions from Ubuntu's own archive when the snapshot fails,
+  while that archive still has them. So a new image.sh names new images;
 - `launcher/windows/deps.sh`'s downloads and SDL's source, each still
   checked by its SHA-256 every time it is used;
 - the generated code, tagged with default.xbe's SHA-256 and one hash of
@@ -151,7 +158,8 @@ if that differs from the kept copy with the same tags, tell me before
 going on, as the pipeline then isn't repeatable.
 
 The cloud's sandbox keeps its build images the same way, for as long as
-the thread lasts.
+the thread lasts. A build image made there or on the PC, while one isn't
+published, is never published itself.
 
 ## Building
 
@@ -187,7 +195,8 @@ release is, the way docs/building-on-linux.md's "A package for other
 machines" says:
 
 - The build image: `ubuntu:22.04` by digest, set up by
-  `launcher/image.sh linux`.
+  `launcher/image.sh linux`, and pulled with `launcher/images.sh get
+  linux` (What is kept between builds).
 - `launcher/linux/build.sh /work`, with no network: SDL 2.30.12 from source
   (`launcher/linux/sdl.sh`), the engine with the release flags, then
   `launcher/linux/package.sh`.
@@ -206,7 +215,8 @@ Cross-compiled on Linux, as the release is, the way
 docs/building-on-linux.md's "Windows" says:
 
 - The build image: `ubuntu:22.04` by digest, set up by
-  `launcher/image.sh windows`.
+  `launcher/image.sh windows`, and pulled with `launcher/images.sh get
+  windows`.
 - `launcher/windows/build.sh /work <version>`: llvm-mingw 20241217 (UCRT),
   SDL2 2.30.0 (the MinGW development package) and libepoxy 1.5.10, built
   with meson 1.12.1 (`launcher/windows/deps.sh`), then the engine with
@@ -243,10 +253,14 @@ GitHub runs `.github/workflows/ci.yml` on every push and pull request, with
 none of the game's files. The engine is built against an empty
 generated-code folder, and `.github/ci/link_check.py` checks that its link
 lacks only what the generated code defines, then stubs that out so the rest
-links and can be packaged. The engine is never run.
+links and can be packaged. The engine is never run. Its first job, Build
+image, publishes any build image not yet published for this image.sh, on a
+push to `main`, and the jobs in those images start after it (What is kept
+between builds).
 
 | Job | What it checks |
 |---|---|
+| Build image | Nothing: on a push to `main`, it publishes each build image not yet published (`launcher/images.sh publish`). |
 | Linux, GCC | The engine and the runtime built with GCC, and the link; the engine tests; the tool tests. |
 | Linux, clang, and the package | The Linux package, made by `launcher/linux/build.sh` as the release is, and the package check; the engine tests built with clang. |
 | Thread sanitizer | The engine tests that start threads, built with clang's ThreadSanitizer (`tests/run_all.py --tsan`). |
@@ -261,18 +275,19 @@ links and can be packaged. The engine is never run.
 - **Before a commit,** every job runs on the commit's exact tree, except
   for a commit that changes only Markdown files, whose CI is GitHub's run
   on its push (project rules, Before every commit, 6):
-  - **In the cloud:** every job but the Windows tests is a script in
-    `.github/ci`, run in the build image by `.github/ci/docker.sh`, so the
-    same commands run there as on GitHub:
+  - **In the cloud:** every job but Build image and the Windows tests is
+    a script in `.github/ci`, run in the build image by
+    `.github/ci/docker.sh`, so the same commands run there as on GitHub:
     - `.github/ci/docker.sh "linux tests" .github/ci/linux.sh gcc`
     - `.github/ci/docker.sh "linux tests" .github/ci/linux.sh clang`
     - `.github/ci/docker.sh "linux tests" .github/ci/tsan.sh`
     - `.github/ci/docker.sh windows .github/ci/windows.sh`
 
-    Behind the sandbox's proxy, `CI_BASE` and `CI_DOCKER_ARGS` give Docker
-    what it needs (the top of docker.sh). The build images and the Windows
-    job's downloads may be kept between runs (Where the work runs, What is
-    kept between builds); each job's builds and tests still run from
+    Each job runs in its published build image, pulled or kept (What is
+    kept between builds). Behind the sandbox's proxy, `CI_DOCKER_ARGS`
+    gives Docker what it needs, and `CI_BASE` a base image for an image
+    made there (the top of docker.sh). The Windows job's downloads may be
+    kept between runs too; each job's builds and tests still run from
     scratch.
   - **On my Windows PC:** the Windows tests, as GitHub runs them: the
     Python version in ci.yml, llvm-mingw from `.github/ci/llvm_mingw.py`,
@@ -280,13 +295,13 @@ links and can be packaged. The engine is never run.
     runs Windows 11, not GitHub's Windows Server 2022, so GitHub's run on
     the push is still the one that counts. A pre-approved thread reads
     that run when it ends (Review pack).
-  - **When a server is down:** if the cloud can't make its build images
-    because a server they download from is down (Ubuntu's snapshot
-    archive, which is often slow), its four jobs run on my Windows PC
-    instead, from the images the PC keeps: each job's script in the image
-    of its groups, as docker.sh runs it but without making the image
-    again, in a checkout with nothing but the commit's tree, and the
-    Windows job with its downloads kept. Say so in the review pack.
+  - **When a server is down:** if the cloud can't get its build images
+    because a server is down (GitHub's registry, or, for an image not
+    published yet, both of Ubuntu's archives), its jobs run on my Windows
+    PC instead, from the images the PC keeps: each job's script in the
+    image of its groups, as docker.sh runs it, in a checkout with nothing
+    but the commit's tree, and the Windows job with its downloads kept.
+    Say so in the review pack.
   - The two machines run their jobs at the same time, and each runs its
     own one after another.
 
@@ -414,7 +429,8 @@ test-lists/README.md has its path.
 - **Built from:** the commit, whether the tree had uncommitted changes and
   its tree's hash, the machine it was built on, the generated code
   (functions translated, 0 failed, and whether it was the kept copy), the
-  toolchains, and the build image with its packages.
+  toolchains, and the build images, by name and digest, with their
+  packages.
 - **Checks done here:** the compatibility checks, the comparison with the
   last tested package, the tests, and anything run in the sandbox or on
   the PC. Everything else is unverified.

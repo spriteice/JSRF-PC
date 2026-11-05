@@ -92,17 +92,16 @@ in a work folder:
 mkdir -p ~/jsrf-work
 curl -L -o ~/jsrf-work/SDL2-2.30.12.tar.gz \
     https://github.com/libsdl-org/SDL/releases/download/release-2.30.12/SDL2-2.30.12.tar.gz
-docker run --name jsrf-image \
-    -v "$PWD":/src ubuntu:22.04@sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11 \
-    /src/launcher/image.sh linux
-docker commit jsrf-image jsrf-image && docker rm jsrf-image
-docker run --rm --network none -v "$PWD":/src -v ~/jsrf-work:/work jsrf-image \
+image="$(launcher/images.sh get linux)"
+docker run --rm --network none -v "$PWD":/src -v ~/jsrf-work:/work "$image" \
     /src/launcher/linux/build.sh /work
 ```
 
 The package is `~/jsrf-work/out/JSRF-PC-linux-x86_64.tar.gz`.
 [`launcher/image.sh`](../launcher/image.sh) makes the build image, with each
-package at a fixed version, and
+package at a fixed version,
+[`launcher/images.sh`](../launcher/images.sh) pulls it from GitHub's
+registry, where it is published (or makes it, if it isn't there yet), and
 [`launcher/linux/build.sh`](../launcher/linux/build.sh) builds SDL, the
 engine and the package. The work folder must be mounted at `/work`, as here,
 for the bundled SDL to match the release's byte for byte.
@@ -114,11 +113,8 @@ package's, with your generated code in `port/recomp/gen`:
 
 ```sh
 mkdir -p ~/jsrf-work-win
-docker run --name jsrf-image-win \
-    -v "$PWD":/src ubuntu:22.04@sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11 \
-    /src/launcher/image.sh windows
-docker commit jsrf-image-win jsrf-image-win && docker rm jsrf-image-win
-docker run --rm -v "$PWD":/src -v ~/jsrf-work-win:/work jsrf-image-win \
+image="$(launcher/images.sh get windows)"
+docker run --rm -v "$PWD":/src -v ~/jsrf-work-win:/work "$image" \
     /src/launcher/windows/build.sh /work <version>
 ```
 
