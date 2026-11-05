@@ -171,4 +171,4 @@ def test_warnings_at_zero_fails_on_any(tmp_path, monkeypatch):
 
 
 def test_warnings_txt_has_every_job():
-    assert set(count_warnings.counts()) == {"gcc", "clang", "windows"}
+    assert set(count_warnings.counts()) == {"gcc", "gcc-debug", "clang", "windows"}

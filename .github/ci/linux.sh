@@ -4,7 +4,8 @@
 # (.github/ci/docker.sh "linux tests" .github/ci/linux.sh gcc|clang):
 #
 #   gcc     the engine built with GCC, linked as far as it can be without the
-#           game; the engine tests; the tool tests, and CI's own (test_ci.py)
+#           game, and its Debug build too; the engine tests; the tool tests,
+#           and CI's own (test_ci.py)
 #   clang   the release package, made by launcher/linux/build.sh and checked
 #           by launcher/check_package.py; the engine tests built with clang
 #
@@ -33,11 +34,24 @@ gcc)
         -DJSRF_GEN_DIR="$gen" -DJSRF_VERSION=ci > "$work/cmake.log" \
         || { cat "$work/cmake.log"; exit 1; }
     python3 .github/ci/link_check.py --log "$work/build.log" "$gen" cmake --build "$work/build"
+    # The Debug build, with the recompiler's register check and indirect-call
+    # records (port/CMakeLists.txt), so it can't stop compiling unnoticed:
+    # as far as the link, as the release build is, with its own folder for
+    # the generated code's stubs.
+    mkdir -p "$work/gen-debug/recomp/gen"
+    cp templates/runtime/recomp_types.h "$work/gen-debug/recomp/gen/"
+    CC=gcc CXX=g++ cmake -S port -B "$work/debug" -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+        -DNV2A_GL_CONTEXT=sdl -DOpenGL_GL_PREFERENCE=LEGACY -DCMAKE_PREFIX_PATH="$work/sdl" \
+        -DJSRF_GEN_DIR="$work/gen-debug/recomp/gen" -DJSRF_VERSION=ci > "$work/cmake-debug.log" \
+        || { cat "$work/cmake-debug.log"; exit 1; }
+    python3 .github/ci/link_check.py --log "$work/debug.log" "$work/gen-debug/recomp/gen" \
+        cmake --build "$work/debug"
     python3 tests/run_all.py
     python3 -m venv "$work/venv"
     "$work/venv/bin/pip" install --quiet --require-hashes -r .github/ci/tools-requirements.txt
     "$work/venv/bin/python" -m pytest -q -p no:cacheprovider tools .github/ci/test_ci.py
     python3 .github/ci/count_warnings.py gcc "$work/build.log"
+    python3 .github/ci/count_warnings.py gcc-debug "$work/debug.log"
     ;;
 clang)
     python3 .github/ci/link_check.py --log "$work/build.log" "$gen" \

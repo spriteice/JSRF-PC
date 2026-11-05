@@ -9,5 +9,6 @@
 # .github/. At 0, any warning fails the job, as -Werror would.
 
 gcc 50
+gcc-debug 42
 clang 21
 windows 43
