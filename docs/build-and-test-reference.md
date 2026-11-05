@@ -4,10 +4,9 @@ How test builds of JSRF-PC are made, checked, delivered, and reported. It is
 written by the maintainer ("I", who never builds by hand and only runs the
 builds) for whoever makes them ("you"), and goes with the project rules.
 
-Where this file and the repo's own docs disagree, trust the repo's docs
-(README.md, docs/building-on-linux.md, tools/README.md,
-launcher/linux/package.sh, and launcher/windows/package.sh) and tell me
-about the difference.
+Where this file and the repo's own docs (README.md,
+docs/building-on-linux.md, tools/README.md, launcher/linux/package.sh, and
+launcher/windows/package.sh) disagree, stop and tell me. Don't pick one.
 
 ## At a glance: a test build
 
@@ -90,9 +89,15 @@ files move between them, and what the PC has installed.
   settings, saves and other folders are never changed, and neither is
   my portable folder in `Building\`: each build gets a copy of it
   (Delivery package).
-- **No playing:** you may run the packaged engine's own checks there
-  (Compatibility checks, Windows: it starts), which don't start the game,
-  and nothing else of the game.
+- **No playing by hand:** you may run the packaged engine's own checks
+  there (Compatibility checks, Windows: it starts), which don't start the
+  game, and its runs with nobody at the pad: the idle run (Compatibility
+  checks, Windows: the idle run) and, once they exist, the smoke set's
+  saved runs (The smoke set). Nothing else of the game.
+- **A step the permission check refuses:** the session stops there and
+  reports it. It never runs that command again, or another to the same
+  end. The thread then asks me on a card whether to accept it in the
+  Claude app or to change the step.
 - **One job at a time on each machine:** a build, a CI job or a repeated
   run never shares the PC with another, as load changes what timing tests
   find. The cloud's jobs run one after another too.
@@ -101,7 +106,8 @@ files move between them, and what the PC has installed.
 
 One thread has the PC at a time. It claims it in the shared folder's
 building-on-pc/PC-IN-USE.md before its Remote Control session starts, and
-clears the claim when the session ends. While another thread has it, a
+clears the claim when the session ends, moving its entry to the top of
+building-on-pc/PC-HISTORY.md. While another thread has it, a
 test build doesn't wait: it is made in the cloud, in the thread's sandbox.
 A release build still waits for the PC, as it checks its generated code
 against the kept copy (What is kept between builds).
@@ -118,8 +124,9 @@ against the kept copy (What is kept between builds).
   sent anywhere else, and go when the thread ends.
 - **What waits for the PC:** the work that needs Windows itself, under the
   thread's own claim once the PC is free: the Windows package's start
-  check (Compatibility checks, Windows: it starts) and its setup for
-  testing (Delivery package), and the Windows tests before a commit (CI).
+  check and idle run (Compatibility checks, Windows: it starts, and
+  Windows: the idle run) and its setup for testing (Delivery package),
+  and the Windows tests before a commit (CI).
   Repeated runs wait for it too, as their counts are compared on one
   machine (Repeated runs).
 - **Delivery:** the Linux package is delivered as soon as its checks pass,
@@ -178,7 +185,9 @@ published, is never published itself.
   its default.xbe.
 - **Sandbox:** the cloud's network is limited (package registries and
   GitHub). If a tool or file can't be fetched, say so and ask me for it.
-  Ask before installing system packages, there or on the PC.
+  Ask before installing system packages, there or on the PC. A Python
+  virtual environment, in a container or the thread's own folder, isn't
+  one (Building, 4).
 
 ### 1. Generated code
 
@@ -244,6 +253,10 @@ checked by its SHA-256.
 
 - Tool tests: `python3 -m pytest -q tools`, with pytest, pefile, and numpy
   installed beside capstone (the versions in `.github/ci/tools-requirements.txt`).
+  In the sandbox they run in the `linux tests` image, with the engine
+  tests, as CI's GCC job runs them:
+  `.github/ci/docker.sh "linux tests" .github/ci/linux.sh gcc`. A runner of
+  the thread's own never stands in for them.
 - Engine tests: `python3 tests/run_all.py`, which runs
   `tests/<name>/run.py` for each folder in `tests/` that has one, or only
   the tests named. gl_backend, gl_aa, gl_card, index_runs, psh_consts and
@@ -278,7 +291,11 @@ between builds).
   else does. The fix for a bug takes its lines out.
 - **Before a commit,** every job runs on the commit's exact tree, except
   for a commit that changes only Markdown files, whose CI is GitHub's run
-  on its push (project rules, Before every commit, 6):
+  on its push, and for one moved since its run onto commits that change
+  only Markdown files, whose run stands (project rules, Before every
+  commit, 6, and Several items at once). Both hold only while no job or
+  test reads a Markdown file, so a change that makes one read it names
+  that file here:
   - **In the cloud:** every job but Build image and the Windows tests is
     a script in `.github/ci`, run in the build image by
     `.github/ci/docker.sh`, so the same commands run there as on GitHub:
@@ -290,13 +307,18 @@ between builds).
     Each job runs in its published build image, pulled or kept (What is
     kept between builds). Behind the sandbox's proxy, `CI_DOCKER_ARGS`
     gives Docker what it needs, and `CI_BASE` a base image for an image
-    made there (the top of docker.sh). The Windows job's downloads may be
+    made there (the top of docker.sh). The shared folder's
+    cloud-builds/SANDBOX.md has the recipe, with a script that starts
+    Docker and sets both. The Windows job's downloads may be
     kept between runs too; each job's builds and tests still run from
     scratch.
   - **On my Windows PC:** the Windows tests, as GitHub runs them: the
     Python version in ci.yml, llvm-mingw from `.github/ci/llvm_mingw.py`,
-    then `python tests/run_all.py`, in the checkout in `Building\`. The PC
-    runs Windows 11, not GitHub's Windows Server 2022, so GitHub's run on
+    then `python tests/run_all.py`, in the run's own worktree (On my PC,
+    The checkout), with TEMP and TMP set to an empty `tmp\` in the run's
+    folder, so the tests' own temporary folders are made there too, and
+    the run shows it left nothing behind (On my PC, What is written). The
+    PC runs Windows 11, not GitHub's Windows Server 2022, so GitHub's run on
     the push is still the one that counts. A pre-approved thread reads
     that run when it ends (Review pack).
   - **When a server is down:** if the cloud can't get its build images
@@ -317,6 +339,36 @@ its test many times: at least 20 runs, reporting how many failed and how.
 A fix for one is shown by the same count with and without it, on the same
 machine. Repeated runs go on the PC, in the build image, one test at a
 time, and alone on the machine (Where the work runs, On my PC).
+
+A new or changed test that starts threads or measures time is run the
+same way before its commit (project rules, How it's written): 20 runs in a
+row on Linux, in the build image, and 20 on Windows if it runs there, and it
+passes every one. A test whose commit is checked while another thread has
+the PC runs its Linux runs in the sandbox's build image, alone there, and
+its Windows runs once the PC is free. The review pack gives both counts.
+
+### The same engine
+
+A change to what the game runs that leaves the engine the same, byte for
+byte, needs no test build (project rules, What the game runs). Its review
+pack shows that with the engine built from the base tree and from the
+change's tree, each checkout mounted at the same path, in each way it's
+built:
+
+- with GCC, in the `linux tests` image, as `.github/ci/linux.sh gcc`
+  configures it;
+- with clang and the options `launcher/linux/build.sh` gives, as the Linux
+  package is built;
+- as the Windows package, by `launcher/windows/build.sh` with llvm-mingw
+  in the `windows` image.
+
+Every object and static library is compared by SHA-256, and every one must
+be the same. A linked program isn't compared, as its link's timestamp
+differs on every build. No build here has the generated code, so a change
+to what makes it (the parts of `tools/` the pipeline runs, and
+`port/recomp_manual.c`) can't be shown this way. The shared folder's
+rules-review/code-quality-2026-11-05/ci/masks/evidence/engine-objects-before-and-after.txt
+is an example.
 
 ## Compatibility checks
 
@@ -360,6 +412,29 @@ On the PC, from the package as delivered, `engine\jsrf_recomp.exe
 --version` prints the build's version, which shows that Windows loads it
 and every DLL it needs, and `engine\jsrf_recomp.exe --check-game` on my
 game folder prints `ok`. Neither starts the game. Report both outputs.
+
+### Windows: the idle run
+
+On the PC, the package as delivered then plays the game's title on its
+own, with nobody at the pad, to show that the build gets that far and stays
+up:
+
+- **How:** with the shared folder's building-on-pc/idle-run/ script (its
+  README says how), on a second copy of my portable folder, made as for
+  testing (Delivery package), so the copy I test with isn't touched. The
+  game shows its title and the scene behind it, and about 3 minutes 40
+  seconds in (the game's frame 13415) goes back to the intro, loading the
+  title again. The run ends there, and the game is closed through its
+  window, not killed. input-playback/PHASE-0.md's six idle runs are what
+  it looks like.
+- **Passes** when its log, read in full on the PC, has the build's version
+  on its first line, shows the title loaded at the start and again after
+  the timeout (two `[LOAD]` lines for mission 0000005A's stage 00010000),
+  and has no crash or freeze report (`[CRASH]` or `[FROZEN]`). The script
+  checks those lines and says which it found. Report it with the other
+  checks in TESTING.md.
+- **If it fails,** the build isn't delivered until it's fixed, or until
+  I've seen why and said to go on.
 
 ### Linux and Windows: package contents
 
@@ -440,7 +515,9 @@ test-lists/README.md has its path.
   the PC. Everything else is unverified.
 - **What to test:** numbered steps for the areas the change's code touches,
   and nothing else, each saying exactly what to do and on which device,
-  what I should see if it works, and what I'd see if it doesn't.
+  what I should see if it works, and what I'd see if it doesn't. A change
+  to a shared layer also has the smoke set's runs, once they exist (The
+  smoke set).
 - **Where:** Desktop Mode, Game Mode, or both on the Ally X, and the Windows
   PC. A step for the laptop is marked optional, and only for a change that
   could act differently on AMD's Windows driver.
@@ -470,6 +547,29 @@ test-lists/README.md has its path.
   `portable/logs/` in portable mode). Linux logs come attached to my
   message in the thread. Windows logs are read on the PC, in the build's
   own `portable\logs\`, so I don't need to send them.
+
+## The smoke set
+
+A fixed set of saved runs (input playback's recordings of my play, which
+play back with nobody at the pad), a few minutes each, that goes through
+the game end to end: the start to the title, a new game and the tutorial,
+one stage in each area, a save and a load, File > Restart, and the garage's
+graffiti picker. It finds what a change's own steps can't: a shared layer
+breaking a stage nobody was looking at.
+
+- **When:** every test build of a change to a shared layer, and every
+  release (docs/release-checklist.md, step 8). A shared layer is any of
+  the layers but `port/` in the project rules (Where code goes, 2): the
+  recompiler and the pipeline, the kernel, the device models, the renderer
+  and the platform layer, and the build itself (the CMake files, the build
+  images, the flags). When unsure, it is one.
+- **Where:** on the PC and on the Ally X, with nobody at the pad, as
+  input-playback/RUNS.md says. Each run is a step in TESTING.md, and it
+  passes when its log, read in full, shows what the step says I'd see.
+- **Until saved runs exist** (RUNS.md lists them once input playback is
+  built), there is no smoke set and nothing waits for it. Once it exists,
+  a new feature's own saved run joins it (project rules, How it's
+  written).
 
 ## Batches
 
@@ -544,7 +644,8 @@ folder for that commit in the work's folder in the shared folder, with
 what it links to beside it. In this order:
 
 - **What I'm asking:** the commit, and the `origin/main` it goes on,
-  checked just before writing.
+  checked just before writing. The ask itself goes on a card in the
+  thread (project rules, at the top).
 - **Testing:** each step of the test list, with its device and my result,
   and every step still untested, with the device it needs (project rules,
   Workflow 5).
@@ -562,8 +663,11 @@ pointed to.
 In a pre-approved thread (project rules, Pre-approved threads), the pack
 is the commit's record, written the same way before the commit. What I'm
 asking becomes what is committed and pushed, on which `origin/main`, and
-under which pre-approval (my words and their time). GitHub's run on the
-push is added when it ends.
+under which pre-approval (my words and their time). If `origin/main` moved
+after its tests, the pack also gives the commits it now goes onto, the
+check both ways and its answer (project rules, Pre-approved threads,
+Alongside other threads), and what ran again on the new tree. GitHub's run
+on the push is added when it ends.
 
 ## Optional habit
 

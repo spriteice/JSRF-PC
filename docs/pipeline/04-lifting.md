@@ -1,5 +1,14 @@
 # Step 4: x86 to C Lifting
 
+> **From the xboxrecomp toolkit,** by Ned Heller (sp00nznet), written for
+> the toolkit's own work, much of it on Burnout 3: Takedown, on Windows with
+> Direct3D 11. JSRF-PC keeps it for how the pipeline and runtime work. Where
+> it differs from how JSRF-PC is built or changed,
+> [building-on-linux.md](../building-on-linux.md) and
+> [project-rules.md](../project-rules.md) are right, and this doc is out
+> of date there: say so. The generated code is never edited, and a bug is
+> fixed where it starts, not stubbed out or guarded around.
+
 ## Overview
 
 This is the core of the static recompiler. The lifter takes each x86 instruction from the disassembly output and translates it to equivalent C code. The result is a massive C codebase that, when compiled with a native compiler (MSVC or GCC), produces a Windows executable that behaves identically to the original Xbox code.
@@ -428,21 +437,28 @@ py -3 -m tools.recomp "path/to/default.xbe" --all --split 1000
 Options:
 - `--all`: translate all detected functions (default: only translate functions reachable from entry point)
 - `--split N`: maximum functions per output file
-- `--output-dir <dir>`: where to write generated files (default: `src/game/recomp/gen/`)
+- `--gen-dir <dir>`: where to write the split files (default: `src/game/recomp/gen/`; JSRF-PC uses `port/recomp/gen`)
 - `--verbose`: print per-function translation progress
+
+JSRF-PC's full command, with the options this game needs, is in
+[building-on-linux.md, step 4](../building-on-linux.md#steps).
 
 The output directory is typically gitignored because the generated files are large (200+ MB total) and can be regenerated from the XBE at any time.
 
-## Post-Generation Patches
+## After Generation
 
-After regenerating the code, you will likely need to re-apply manual patches to the generated files. These patches disable broken functions, add diagnostic traces, or fix code generation bugs:
+The generated files are used as they come out, and never patched
+([project-rules.md](../project-rules.md), Where code goes 3). Each kind of
+change the toolkit once made by hand to them has its place:
 
-- `#if 0` / `#endif` around functions that crash or hang (replaced by manual overrides)
-- Vtable guard insertions that check pointer validity before indirect calls
-- Jump table replacements where the lifter's pattern matching failed
-- `extern` declarations for global variables shared with manual code
-
-Maintain a checklist of required patches and re-apply them after every regeneration. For Burnout 3, there are 10+ patch locations across 8 generated files.
+- A function written by hand goes in `port/` (Where code goes 6), and
+  `--exclude-manual port/recomp_manual.c` leaves its generated body out.
+- A trace on a function's entry comes from `--trace-functions`.
+- A jump table the lifter got wrong, or any other wrong code, is fixed in the
+  lifter, and the code is made again.
+- Hand-written code reads the game's globals through the memory macros, at
+  named addresses (as `MEM32(D3D_DEVICE)` in port/recomp_manual.c), so
+  nothing is declared in the generated files.
 
 ## Limitations
 

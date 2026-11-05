@@ -1,5 +1,14 @@
 # Step 3: Function Identification
 
+> **From the xboxrecomp toolkit,** by Ned Heller (sp00nznet), written for
+> the toolkit's own work, much of it on Burnout 3: Takedown, on Windows with
+> Direct3D 11. JSRF-PC keeps it for how the pipeline and runtime work. Where
+> it differs from how JSRF-PC is built or changed,
+> [building-on-linux.md](../building-on-linux.md) and
+> [project-rules.md](../project-rules.md) are right, and this doc is out
+> of date there: say so. The generated code is never edited, and a bug is
+> fixed where it starts, not stubbed out or guarded around.
+
 ## Why Identify Functions?
 
 A typical Xbox game produces tens of thousands of recompiled functions. Burnout 3 has 22,095 functions in its .text section -- a mix of game code, C runtime (CRT), RenderWare engine, and XDK library code all baked together with no clear boundaries.

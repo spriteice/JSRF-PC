@@ -20,6 +20,8 @@ named, and docs/build-and-test-reference.md how it is built and tested.
 11. Check the release.
 12. Archive and move on.
 
+A hotfix takes the gate and steps 7 to 12 only (If a release is broken).
+
 The maintainer's shared folder, outside the repository, holds known-bugs.md
 and `release-prep/`: each release's backlog, the release notes template with
 the writing rules, and the files of past releases. Each backlog's last row,
@@ -107,13 +109,23 @@ progressing, however rarely it happens.
    comparison with the last tested package. The
    version reads as the release's name everywhere docs/versioning.md lists,
    with its Windows File version, and SHA256SUMS.txt covers both packages.
+
+   A Debug build is made too, once a release: the Windows package from the
+   same commit, with `-DCMAKE_BUILD_TYPE=Debug` after the version
+   (`launcher/windows/build.sh /work b1.1-debug -DCMAKE_BUILD_TYPE=Debug`),
+   which turns on the recompiler's register check and indirect-call
+   records (port/CMakeLists.txt). It plays the idle run and, once they
+   exist, the smoke set's runs on the PC, and its logs show no `[ABI]`
+   report (docs/build-and-test-reference.md, Windows: the idle run, and The
+   smoke set). It is never shipped or tested by hand.
 8. **Test those packages:** the test checklist on the Ally X, in Desktop
    Mode and Game Mode, and on the Windows PC. It covers the areas the
-   release's changes touch and, on both devices, a fresh install and an
-   upgrade over the previous release. If anything fails, it is fixed, the
-   fix gets its own rules check, and the release is built again (step 7).
-   A critical bug found here stops the release (The gate). Nothing is
-   tagged yet, so no tag ever has to move.
+   release's changes touch and, on both devices, a fresh install, an
+   upgrade over the previous release and, once it exists, the smoke set
+   (docs/build-and-test-reference.md, The smoke set). If anything fails,
+   it is fixed, the fix gets its own rules check, and the release is built
+   again (step 7). A critical bug found here stops the release (The gate).
+   Nothing is tagged yet, so no tag ever has to move.
 
 ## Publish
 
@@ -164,5 +176,14 @@ Only on the maintainer's say-so.
 A published tag is never moved. The fix goes in the next bug fix release,
 and until then the published release text lists the problem as a known
 issue. The exception is a hotfix, on the maintainer's say-so: it ships the
-fix straight away, as docs/versioning.md describes. It still passes the
-gate, and gets step 12's source backup.
+fix straight away, as a release of its own (docs/versioning.md). It carries
+only its fix, so it skips steps 1 to 6, and takes the rest:
+
+- **The gate,** with its exception for a hotfix (The gate).
+- **Step 7:** the release build, from the hotfix's commit and with the
+  hotfix's name as its version, and all of its checks.
+- **Step 8:** its fix's test steps, and on both devices a fresh install and
+  an upgrade over the release it fixes.
+- **Steps 9 to 11:** the go-ahead, push and publish together, and the check
+  of the release.
+- **Step 12:** the archive, with the source backup.

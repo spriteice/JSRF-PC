@@ -1,5 +1,14 @@
 # Xbox Kernel Replacement
 
+> **From the xboxrecomp toolkit,** by Ned Heller (sp00nznet), written for
+> the toolkit's own work, much of it on Burnout 3: Takedown, on Windows with
+> Direct3D 11. JSRF-PC keeps it for how the pipeline and runtime work. Where
+> it differs from how JSRF-PC is built or changed,
+> [building-on-linux.md](../building-on-linux.md) and
+> [project-rules.md](../project-rules.md) are right, and this doc is out
+> of date there: say so. The generated code is never edited, and a bug is
+> fixed where it starts, not stubbed out or guarded around.
+
 Mapping 147 Xbox kernel imports to Windows equivalents for recompiled game code.
 
 ## How Xbox Kernel Imports Work
@@ -193,17 +202,18 @@ Xbox file paths use device notation (`\Device\CdRom0\`, `D:\`, `T:\`) which must
 | KeEnterCriticalSection | No-op |
 | KeLeaveCriticalSection | No-op |
 
-The recompiled game runs single-threaded. The first PsCreateSystemThreadEx call (the main game thread) runs synchronously, inheriting the current register state. Subsequent calls (worker threads) are deferred -- running them synchronously would corrupt game state.
+That table is the toolkit's first answer, for Burnout 3, which ran single-threaded. In JSRF-PC the title's threads are host threads: each PsCreateSystemThreadEx starts one (src/kernel/kernel_thread.c), and the events, waits, DPCs and critical sections are real ones (src/kernel/kernel_sync.c and kernel_bridge.c).
 
 ### Graphics (~10 ordinals)
 
 | Xbox Function | Implementation |
 |---------------|---------------|
-| AvSetDisplayMode | Sets resolution (stored for D3D11 init) |
+| AvSetDisplayMode | Records the framebuffer the display scans out, and its format (kernel_bridge.c) |
 | AvGetSavedDataAddress | Returns pointer to AV data area |
-| D3DDevice_CreateXXX | Routed through D3D8 compatibility layer |
 
-NV2A push buffer functions are stubbed entirely. They spin-wait on GPU registers:
+Direct3D 8 isn't the kernel's: JSRF links its own, which runs recompiled ([pipeline/05-runtime.md](../pipeline/05-runtime.md), Graphics).
+
+NV2A push buffer functions spin-wait on GPU registers:
 
 ```c
 // Original Xbox code (simplified):
@@ -214,7 +224,7 @@ void NV2A_PushCommand(uint32_t cmd) {
 }
 ```
 
-Allocating the NV2A register page via VEH prevents the access violation, but the while loop spins forever because the register reads as 0. The entire function must be stubbed.
+The NV2A's registers are modelled in JSRF-PC: every load and store in the device registers' range reaches the device that owns it, through src/kernel/kernel_mmio.c ([pipeline/05-runtime.md](../pipeline/05-runtime.md), NV2A GPU Registers), so a wait on a register that a device models ends as it does on the console. The toolkit stubbed such functions for Burnout 3, where those registers read as zero.
 
 ### Input (~3 ordinals)
 
@@ -224,7 +234,7 @@ Allocating the NV2A register page via VEH prevents the access violation, but the
 | XInputGetCapabilities | XInputGetCapabilities |
 | XInputSetState | XInputSetState (rumble) |
 
-Xbox input is nearly 1:1 with the Win32 XInput API. The main difference is the Xbox controller struct layout.
+Xbox input is nearly 1:1 with the Win32 XInput API. The main difference is the Xbox controller struct layout. In JSRF-PC, src/input fills the Xbox's controller state from SDL2's GameController API, on Linux and Windows.
 
 ### Audio (~5 ordinals)
 
@@ -234,7 +244,7 @@ Xbox input is nearly 1:1 with the Win32 XInput API. The main difference is the X
 | DirectSoundCreateBuffer | Returns stub buffer |
 | DirectSoundDoWork | No-op |
 
-Audio is fully stubbed in the current implementation. XAudio2 integration is planned but not yet implemented.
+That table is the toolkit's, for Burnout 3. JSRF brings its own DirectSound, statically linked in the title, which drives the emulated audio processor (src/apu) through its registers, so JSRF-PC's runtime provides no DirectSound of its own.
 
 ### HAL and System (~20 ordinals)
 
@@ -245,7 +255,7 @@ Audio is fully stubbed in the current implementation. XAudio2 integration is pla
 | KeBugCheck / KeBugCheckEx | Logs and continues (does not crash) |
 | KeQueryPerformanceCounter | QueryPerformanceCounter |
 | KeQueryPerformanceFrequency | QueryPerformanceFrequency |
-| RtlEnterCriticalSection | No-op (single-threaded) |
+| RtlEnterCriticalSection | A real critical section (kernel_bridge.c) |
 
 ## Implementation Breakdown
 

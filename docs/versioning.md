@@ -20,8 +20,9 @@ A release's git tag and the version it shows are both its name.
 - **One tag per release,** on the commit the release is built from.
 - **The release checklist before the tag:** every release goes through
   docs/release-checklist.md, which includes a check of everything since the
-  last release against the project's rules. A hotfix goes out without it, on
-  the maintainer's say-so.
+  last release against the project's rules. A hotfix, on the maintainer's
+  say-so, skips its first six steps and takes the rest
+  (docs/release-checklist.md, If a release is broken).
 
 ## The version string
 
@@ -66,5 +67,6 @@ A release's git tag and the version it shows are both its name.
 - **Our changelog is `CHANGELOG-JSRF-PC.md`,** newest entry first.
   `CHANGELOG.md` is upstream's and is left as it is.
 - **An entry** starts `## b1 (beta) — <date>`.
-- **It lists only what changed since the previous JSRF-PC version.** That
-  includes upstream changes picked since then, each credited to its author.
+- **It lists only what changed since the previous JSRF-PC version.** Until
+  1 November 2026 that included upstream changes picked since then, each
+  credited to its author; JSRF-PC takes none now (docs/upstream.md).

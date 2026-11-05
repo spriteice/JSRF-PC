@@ -1,5 +1,14 @@
 # Step 6: Iterative Debugging
 
+> **From the xboxrecomp toolkit,** by Ned Heller (sp00nznet), written for
+> the toolkit's own work, much of it on Burnout 3: Takedown, on Windows with
+> Direct3D 11. JSRF-PC keeps it for how the pipeline and runtime work. Where
+> it differs from how JSRF-PC is built or changed,
+> [building-on-linux.md](../building-on-linux.md) and
+> [project-rules.md](../project-rules.md) are right, and this doc is out
+> of date there: say so. The generated code is never edited, and a bug is
+> fixed where it starts, not stubbed out or guarded around.
+
 ## The Reality
 
 The game will crash. Constantly. The first boot attempt will fail within milliseconds. You will fix one crash, and the next instruction will crash differently. This is normal and expected.
@@ -109,44 +118,19 @@ obj->vtable[3]();                   // calls 0x1C45BA68 or similar nonsense
 3. **Wrong object type**: a pointer cast is wrong, and the "vtable" is actually data from a different structure
 4. **Memory layout mismatch**: our memory mapping put something different at the address where the object should live
 
-### Per-Function Vtable Guards
+### Fixing One
 
-When you identify a function that crashes on vtable dispatch, add a guard:
+A wrong vtable is fixed where it went wrong: which of the four causes above it
+is, and in which layer ([project-rules.md](../project-rules.md), Where code
+goes). The generated code is never patched with a guard around the call.
 
-```c
-// Before (generated code):
-eax = MEM32(ecx);           // load vtable
-PUSH32(esp, 0xDEAD);
-RECOMP_ICALL(MEM32(eax + 0x10));  // call vtable[4] -- crashes
+### What the Runtime Does with a Call That Isn't to Code
 
-// After (patched):
-eax = MEM32(ecx);
-if (eax < 0x00011000 || eax > 0x003B2360) {
-    // Vtable pointer is outside valid .text/.rdata range -- skip the call
-    goto loc_safe_skip;
-}
-PUSH32(esp, 0xDEAD);
-RECOMP_ICALL(MEM32(eax + 0x10));
-```
-
-### Centralized Early-Out
-
-Rather than guarding every individual ICALL site, the `RECOMP_ICALL` macro includes a range check:
-
-```c
-if (_va >= 0x00400000 && _va < 0xFE000000) {
-    g_esp += 4;   // pop dummy return address
-    eax = 0;      // return "failure"
-    break;         // skip the call
-}
-```
-
-This catches all garbage VAs in one place. The ranges are:
-- `0x00011000` - `0x003B2354`: valid code + data (allow)
-- `0x00400000` - `0xFDFFFFFF`: nothing should be here (block)
-- `0xFE000000` - `0xFE000600`: kernel thunk synthetic VAs (allow)
-
-For Burnout 3, this centralized guard reduced ICALL volume by 33% (from 180/2s to 121/2s) and completely eliminated the most frequent garbage VA (0x1C45BA68).
+`RECOMP_ICALL` (templates/runtime/recomp_types.h) skips a call whose target is
+outside the title's code sections, which it reads from the XBE's own section
+table, and logs the skip (`recomp_icall_not_code_log`). Kernel thunks, at
+`0xFE000000` and up, are always called. A skip in the log is a sign of one of
+the causes above, to be found and fixed, not a fix.
 
 ## Stack Leaks
 
@@ -285,15 +269,9 @@ This is only needed for .rdata reads that are sensitive to corruption. Most code
 
 **Cause**: NV2A push buffer functions that spin-wait on GPU registers. The GPU registers are zero, so the wait condition never clears.
 
-**Fix**: stub the function. Find it in the recompiled code and wrap it in `#if 0`:
-```c
-#if 0
-void sub_001CFDD0(void) {  // NtFlushBuffersFile or push buffer wait
-    ...
-}
-#endif
-```
-Then add a stub in `recomp_manual.c` that returns immediately.
+**Fix**: make the device model answer as the hardware does, so the wait ends
+as it does on the console ([project-rules.md](../project-rules.md), Where code
+goes 2). Stubbing the waiting function hides what is missing.
 
 ### Access Violation at 0x00000000
 
@@ -309,7 +287,10 @@ Then add a stub in `recomp_manual.c` that returns immediately.
 
 **Cause**: usually recursive `RECOMP_ICALL` dispatch -- function A calls function B calls function A via indirect calls, and the dispatch lookup burns through the native Windows stack (not the simulated Xbox stack).
 
-**Fix**: increase the native stack size in the linker settings, or break the recursion by stubbing one of the functions in the cycle.
+**Fix**: find out whether the game recurses as deep on the console. If it
+does, the native stack has to hold that depth: measure the frames, size the
+stack for them, and say why where it's set. If it doesn't, the recursion is the
+bug, and is fixed where it starts. Never stub a function in the cycle.
 
 ### Crash After Hours of Gameplay
 
@@ -323,16 +304,17 @@ Then add a stub in `recomp_manual.c` that returns immediately.
 
 1. **Run the game**. It crashes.
 2. **Check the ICALL trace ring buffer**. Was the crash an indirect call to a garbage address?
-   - Yes: add a vtable guard or identify why the vtable is corrupted
+   - Yes: find why the vtable is wrong (Why Vtables Get Corrupted, above)
    - No: check the crash address against the table above
 3. **Find the calling function**. Use `_ReturnAddress()` or the debugger's call stack, cross-reference with the `.map` file to find the Xbox VA.
 4. **Read the generated code**. Look at the recompiled C for that function. What is it trying to do?
 5. **Check prerequisites**. Does the function read globals that should have been set earlier? Are those globals NULL or garbage?
-6. **Apply the minimal fix**:
-   - Stub the function (if it's non-essential)
-   - Guard the bad call (if one specific ICALL is the problem)
-   - Initialize the missing global (if the root cause is clear)
-   - Override the function (if it needs a complete reimplementation)
+6. **Fix the cause where it starts** ([project-rules.md](../project-rules.md),
+   Where code goes): the recompiler for wrong lifted code, the kernel or the
+   device models for console behaviour that's missing, the code that should
+   have set a missing global, or an override in `port/` when the game
+   function's own logic is the cause (Where code goes 6). Never stub a
+   function or guard a call to get past a crash.
 7. **Rebuild and repeat**.
 
 ## Progress Tracking

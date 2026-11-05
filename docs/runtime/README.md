@@ -1,10 +1,19 @@
 # Runtime Implementation Guide
 
-The recompiled C code needs a host environment to run. This directory documents the four major runtime subsystems you need to build for each game.
+> **From the xboxrecomp toolkit,** by Ned Heller (sp00nznet), written for
+> the toolkit's own work, much of it on Burnout 3: Takedown, on Windows with
+> Direct3D 11. JSRF-PC keeps it for how the pipeline and runtime work. Where
+> it differs from how JSRF-PC is built or changed,
+> [building-on-linux.md](../building-on-linux.md) and
+> [project-rules.md](../project-rules.md) are right, and this doc is out
+> of date there: say so. The generated code is never edited, and a bug is
+> fixed where it starts, not stubbed out or guarded around.
+
+The recompiled C code needs a host environment to run. This page names the four major runtime subsystems, and where each is in JSRF-PC.
 
 ## The Four Pillars
 
-### 1. Memory Layout (`xbox_memory.c`)
+### 1. Memory Layout (`src/kernel/xbox_memory_layout.c`)
 
 Reproduce the Xbox's 64 MB address space at the correct virtual addresses. This is the most critical piece — get it wrong and nothing else works.
 
@@ -12,43 +21,31 @@ See: [../technical/memory-layout.md](../technical/memory-layout.md)
 
 Template: [xbox_memory.h](https://github.com/sp00nznet/xboxrecomp/blob/main/templates/runtime/xbox_memory.h), in the toolkit's repository
 
-### 2. Kernel Shim (`xbox_kernel.c`)
+### 2. Kernel Shim (`src/kernel/`)
 
-Replace the 147 Xbox kernel imports with Win32 equivalents. Most can be stubbed (return STATUS_SUCCESS). The critical ones are memory allocation and file I/O.
+Replace the Xbox kernel imports with host equivalents, each doing what the console's kernel does for the game ([project-rules.md](../project-rules.md), Where code goes 2). A stub that returns success hides what is missing. The critical ones are memory allocation, file I/O and threads.
 
 See: [../technical/kernel-replacement.md](../technical/kernel-replacement.md)
 
 Template: [kernel_stubs.h](https://github.com/sp00nznet/xboxrecomp/blob/main/templates/runtime/kernel_stubs.h), in the toolkit's repository
 
-### 3. Graphics Translation (`d3d8_to_d3d11.c`)
+### 3. Graphics (`src/nv2a_gl/`)
 
-The Xbox uses a modified Direct3D 8. You need a translation layer to D3D11 (or D3D12, Vulkan, etc.). This is the largest runtime component.
+JSRF's own Direct3D 8 runs recompiled and builds NV2A push buffers, as on the console. src/nv2a_gl draws them with OpenGL. This is the largest runtime component.
 
-See: [d3d-translation.md](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/d3d-translation.md), in the toolkit's repository
+See: [../pipeline/05-runtime.md](../pipeline/05-runtime.md) (Graphics) and [../technical/nv2a-shaders.md](../technical/nv2a-shaders.md)
 
-### 4. Input System (`xbox_input.c`)
+### 4. Input System (`src/input/`)
 
-Map Xbox controller input to Windows XInput. This is usually the simplest piece — Xbox controllers on Windows are nearly 1:1.
+Fill the Xbox controller's state from the host's pads, through SDL2's GameController API, on Linux and Windows. This is usually the simplest piece.
 
 ## Build System
 
-We recommend CMake with MSVC. Structure your project as static libraries:
-
-```
-src/
-├── kernel/     → xbox_kernel.lib
-├── d3d/        → d3d_translation.lib
-├── audio/      → audio_stubs.lib
-├── input/      → input_layer.lib
-└── game/       → your_game.exe (links all the above + recompiled code)
-```
+JSRF-PC builds with CMake from `port/`, with GCC or Clang on Linux and llvm-mingw for Windows ([../building-on-linux.md](../building-on-linux.md)). The runtime's libraries are in `src/` ([src/README.md](../../src/README.md)).
 
 ## Game-Specific Components
 
-Beyond the four pillars, each game needs:
+Beyond the four pillars, JSRF-PC has:
 
-- **Manual function overrides** — hand-written replacements for functions that don't work when mechanically translated (physics, rendering orchestrators, hardware-specific code)
-- **Asset loaders** — each game/engine has its own file formats for textures, models, levels, audio, etc.
-- **Game-specific workarounds** — vtable guards for corrupted pointers, state machine patches, etc.
-
-These go in the game-specific repo, not in the generic xboxrecomp toolkit.
+- **Game function overrides**, in `port/`, where the game function's own logic is the cause ([project-rules.md](../project-rules.md), Where code goes 6)
+- **Its own features and settings**, such as the free camera and the intro in `port/`, and the menus in `src/menu/`

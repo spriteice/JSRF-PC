@@ -1,5 +1,14 @@
 # Recompilation Toolchain
 
+> **From the xboxrecomp toolkit,** by Ned Heller (sp00nznet), written for
+> the toolkit's own work, much of it on Burnout 3: Takedown, on Windows with
+> Direct3D 11. JSRF-PC keeps it for how the pipeline and runtime work. Where
+> it differs from how JSRF-PC is built or changed,
+> [building-on-linux.md](../docs/building-on-linux.md) and
+> [project-rules.md](../docs/project-rules.md) are right, and this doc is out
+> of date there: say so. The generated code is never edited, and a bug is
+> fixed where it starts, not stubbed out or guarded around.
+
 Python tools that transform an Xbox executable (XBE) into compilable C source code. Run them in sequence — each tool's output feeds the next.
 
 ## Prerequisites
@@ -11,6 +20,11 @@ pip install capstone    # x86 disassembly engine
 Python 3.10+ required. On Windows, use `py -3` instead of `python3`.
 
 ## Pipeline Overview
+
+JSRF-PC runs five of these tools, with abi_analysis between func_id and
+recomp, and with options this game needs that the short commands below leave
+out: run the commands in
+[building-on-linux.md, step 4](../docs/building-on-linux.md#steps).
 
 ```
 default.xbe
@@ -101,7 +115,7 @@ py -3 -m tools.disasm game_files/default.xbe --text-only
 | Flag | Description |
 |------|-------------|
 | `--text-only` | Only analyze .text section (skip library sections) |
-| `--output-dir DIR` | Output directory (default: `tools/disasm/output/`) |
+| `-o` / `--output DIR` | Output directory (default: `tools/disasm/output/`) |
 | `--verbose` / `-v` | Show progress during analysis |
 
 **How it works:**
@@ -137,7 +151,7 @@ py -3 -m tools.func_id game_files/default.xbe -v
 | Flag | Description |
 |------|-------------|
 | `-v` / `--verbose` | Show identification details |
-| `--output-dir DIR` | Output directory (default: `tools/func_id/output/`) |
+| `-o` / `--output DIR` | Output directory (default: `tools/func_id/output/`) |
 
 **Classification strategies:**
 
@@ -177,9 +191,12 @@ py -3 -m tools.recomp game_files/default.xbe --all --split 1000
 |------|-------------|
 | `--all` | Recompile all detected functions |
 | `--split N` | Split output into files of N functions each |
-| `--func ADDR` | Recompile a single function (hex address) |
-| `--output-dir DIR` | Output directory (default: `tools/recomp/output/`) |
-| `--verbose` | Show per-function progress |
+| `--gen-dir DIR` | Where the split files go (JSRF-PC: `port/recomp/gen`) |
+| `--exclude-manual FILE` | Leave out the functions FILE defines by hand (JSRF-PC: `port/recomp_manual.c`) |
+| `--back-edge-yield` | Let a guest thread busy in a loop hand the CPU to the others |
+| `-f` / `--function ADDR` | Recompile a single function (hex address) |
+| `-o` / `--output-dir DIR` | Where the run's summary goes (default: `tools/recomp/output/`) |
+| `-v` / `--verbose` | Show per-function progress |
 
 **Output files:**
 | File | Contents |
@@ -224,22 +241,23 @@ ret                               esp += 4; return;
 
 ## After Recompilation
 
-Once you have the generated C files:
-
-1. **Create a game project** with CMake
-2. **Link against xboxrecomp** (the runtime libraries)
-3. **Add recomp_types.h** from `templates/runtime/` (or use the template as reference)
-4. **Build** — MSVC compiles the generated code into a native .exe
-5. **Run** — it will crash. That's normal.
-6. **Debug iteratively** — see [docs/pipeline/06-debugging.md](../docs/pipeline/06-debugging.md)
+In JSRF-PC the generated C files go in `port/recomp/gen`, and
+[port/CMakeLists.txt](../port/CMakeLists.txt) builds them with the runtime in
+`src/` and the hand-written code in `port/`: with GCC or Clang on Linux, and
+with llvm-mingw for Windows, cross-compiled on Linux.
+[docs/building-on-linux.md](../docs/building-on-linux.md) has the steps. A
+crash or a wrong result is found as
+[docs/pipeline/06-debugging.md](../docs/pipeline/06-debugging.md) says, and
+fixed where it starts ([docs/project-rules.md](../docs/project-rules.md),
+Where code goes).
 
 The generated code is intentionally verbose and mechanical — it's not meant to be pretty, it's meant to be correct. Each function maps 1:1 to the original Xbox binary.
 
 ## Regeneration
 
-If you regenerate the recompiled code (after fixing the recompiler or re-running with new options), you'll need to **re-apply manual patches** to the gen files. Keep a list of your patches — this is the most error-prone part of the workflow.
-
-Recommended workflow:
-1. Keep manual overrides in a separate file (`recomp_manual.c`)
-2. Use `#if 0` / `#endif` to disable gen functions that have manual replacements
-3. Track gen patches in a document (see CLAUDE.md in the burnout3 repo for an example)
+The generated files are never edited by hand
+([docs/project-rules.md](../docs/project-rules.md), Where code goes 3), so
+making them again loses nothing. A function written by hand lives in `port/`
+(Where code goes 6), and `--exclude-manual port/recomp_manual.c` tells the
+recompiler which functions those are, so it leaves their bodies out. A bug in
+the generated code is fixed in the recompiler, and the code is made again.

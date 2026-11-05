@@ -1,5 +1,14 @@
 # Xbox Kernel Exports
 
+> **From the xboxrecomp toolkit,** by Ned Heller (sp00nznet), written for
+> the toolkit's own work, much of it on Burnout 3: Takedown, on Windows with
+> Direct3D 11. JSRF-PC keeps it for how the pipeline and runtime work. Where
+> it differs from how JSRF-PC is built or changed,
+> [building-on-linux.md](../building-on-linux.md) and
+> [project-rules.md](../project-rules.md) are right, and this doc is out
+> of date there: say so. The generated code is never edited, and a bug is
+> fixed where it starts, not stubbed out or guarded around.
+
 The Xbox kernel (`xboxkrnl.exe`) exports up to 366 functions and data objects. Games import a subset of these via the kernel thunk table in the XBE header. This document covers the most commonly imported exports (~147 that a typical game uses), organized by category.
 
 Each entry shows: **ordinal**, function prototype, description, and suggested Win32 replacement.
@@ -15,7 +24,7 @@ Each entry shows: **ordinal**, function prototype, description, and suggested Wi
 | 171 | `VOID MmFreeContiguousMemory(PVOID BaseAddress)` | Free contiguous memory allocated by ordinals 165/166. |
 | 178 | `VOID MmPersistContiguousMemory(PVOID BaseAddress, ULONG NumberOfBytes, BOOLEAN Persist)` | Mark memory as persistent across quick reboot. |
 
-**Win32 replacement**: `VirtualAlloc(NULL, size, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE)` or `_aligned_malloc()` for alignment. Physical contiguity is irrelevant on PC since GPU resources are managed by D3D11/D3D12.
+**Win32 replacement**: `VirtualAlloc(NULL, size, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE)` or `_aligned_malloc()` for alignment. Physical contiguity is irrelevant on PC, as the host's graphics API manages GPU resources (OpenGL, in JSRF-PC).
 
 ### Virtual Memory
 
@@ -277,7 +286,7 @@ Then use `CreateFileW`, `ReadFile`, `WriteFile`, `CloseHandle`, etc. Key differe
 | 3 | `VOID AvSetDisplayMode(PVOID RegisterBase, ULONG Step, ULONG Mode, ULONG Format, ULONG Pitch, ULONG FrameBuffer)` | Set display mode. |
 | 4 | `VOID AvSetSavedDataAddress(ULONG Address)` | Save display configuration. |
 
-**Win32 replacement**: All display/AV functions should be no-ops. Display mode is handled by your D3D backend (D3D11 or D3D12 window creation).
+**Win32 replacement**: All display/AV functions should be no-ops. Display mode is handled by the renderer's window (in JSRF-PC, src/nv2a_gl, with SDL2 and OpenGL).
 
 ## Port I/O
 

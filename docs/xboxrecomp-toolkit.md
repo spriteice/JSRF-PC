@@ -1,5 +1,12 @@
 # xboxrecomp
 
+> **The toolkit's own README,** by Ned Heller (sp00nznet), kept as a record of
+> the xboxrecomp toolkit that JSRF-PC is built on, at its v0.8.0. It describes
+> the toolkit, not JSRF-PC: for JSRF-PC, read the [README](../README.md),
+> [building-on-linux.md](building-on-linux.md) and
+> [project-rules.md](project-rules.md). Many of the files it names were
+> removed from JSRF-PC, and are in the toolkit's own repository.
+
 ```
  #   #  ####    ###   #   #         #####   ###    ###   #       ###
  #   #  #   #  #   #  #   #           #    #   #  #   #  #      #
@@ -115,7 +122,7 @@ cmake --build build --config Release
 
 This produces 6 static libraries in `build/src/*/Release/`. Link your game project against `xboxrecomp` (umbrella target) or individual libraries.
 
-**This repo builds libraries only — there is no game `.exe` here, and building it will never produce one.** The executable is built by *your* game project, which lives in its own directory and links these libraries. Start it by copying [`templates/new-game/`](https://github.com/sp00nznet/xboxrecomp/tree/main/templates/new-game): it has the `CMakeLists.txt` that produces the `.exe` and the `main.c` that boots the guest. See [Getting Started, Step 6](docs/GETTING_STARTED.md#step-6-create-your-game-project).
+**This repo builds libraries only — there is no game `.exe` here, and building it will never produce one.** The executable is built by *your* game project, which lives in its own directory and links these libraries. Start it by copying [`templates/new-game/`](https://github.com/sp00nznet/xboxrecomp/tree/main/templates/new-game): it has the `CMakeLists.txt` that produces the `.exe` and the `main.c` that boots the guest. See the toolkit's [Getting Started, Step 6](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/GETTING_STARTED.md#step-6-create-your-game-project).
 
 ### Integration Pattern
 
@@ -171,7 +178,7 @@ The recompiler output (`tools/recomp`) generates these automatically. The xboxre
 
 ### Step-by-Step
 
-The condensed version. [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) is
+The condensed version. [docs/GETTING_STARTED.md](GETTING_STARTED.md) is
 the long one, and the one to read if a step here does not go as written — it
 explains *why* each flag is there, which is what you need when your title
 behaves differently from the example.
@@ -298,36 +305,36 @@ xboxrecomp/
 ## Documentation
 
 ### Start Here
-- **[Getting Started Guide](docs/GETTING_STARTED.md)** — End-to-end walkthrough from XBE to running game
+- **[Getting Started Guide](GETTING_STARTED.md)** — End-to-end walkthrough from XBE to running game
 - **[Decompilation Guide](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/DECOMP.md)** — Using this as a function splitter instead: one byte-exact `.s` per function, with signatures and the call graph. You never run the recompiler
-- **[Tools Reference](tools/README.md)** — Detailed usage for every pipeline tool
-- **[Runtime Libraries](src/README.md)** — Architecture, build instructions, integration guide
+- **[Tools Reference](../tools/README.md)** — Detailed usage for every pipeline tool
+- **[Runtime Libraries](../src/README.md)** — Architecture, build instructions, integration guide
 
 ### Per-Module API Reference
-- [xbox_kernel](src/kernel/README.md) — Memory layout, file I/O, threading, sync, crypto, EEPROM, SMBus (11,128 LOC)
+- [xbox_kernel](../src/kernel/README.md) — Memory layout, file I/O, threading, sync, crypto, EEPROM, SMBus (11,128 LOC)
 - [xbox_d3d8](https://github.com/sp00nznet/xboxrecomp/blob/main/src/d3d/README.md) — D3D8 interface, register combiners, vertex shaders, texture unswizzle (8,838 LOC)
 - [xbox_dsound](https://github.com/sp00nznet/xboxrecomp/blob/main/src/audio/README.md) — DirectSound buffers, 3D audio, mixbins (573 LOC)
-- [xbox_apu](src/apu/README.md) — MCPX APU voice processor, mixer, MMIO (4,168 LOC)
-- [xbox_nv2a](src/nv2a/README.md) — NV2A GPU registers, push buffer, PGRAPH→D3D11 (4,892 LOC)
-- [xbox_input](src/input/README.md) — Gamepad state, vibration, button mapping (360 LOC)
+- [xbox_apu](../src/apu/README.md) — MCPX APU voice processor, mixer, MMIO (4,168 LOC)
+- [xbox_nv2a](../src/nv2a/README.md) — NV2A GPU registers, push buffer, PGRAPH→D3D11 (4,892 LOC)
+- [xbox_input](../src/input/README.md) — Gamepad state, vibration, button mapping (360 LOC)
 
 ### Pipeline Guides
-- [Extracting and Parsing XBE Files](docs/pipeline/01-xbe-parsing.md)
-- [Disassembly and Function Detection](docs/pipeline/02-disassembly.md)
-- [Function Identification](docs/pipeline/03-function-id.md)
-- [x86 to C Lifting](docs/pipeline/04-lifting.md)
-- [Building the Runtime](docs/pipeline/05-runtime.md)
-- [Iterative Debugging](docs/pipeline/06-debugging.md)
+- [Extracting and Parsing XBE Files](pipeline/01-xbe-parsing.md)
+- [Disassembly and Function Detection](pipeline/02-disassembly.md)
+- [Function Identification](pipeline/03-function-id.md)
+- [x86 to C Lifting](pipeline/04-lifting.md)
+- [Building the Runtime](pipeline/05-runtime.md)
+- [Iterative Debugging](pipeline/06-debugging.md)
 
 ### Technical Deep Dives
-- [The Register Model](docs/technical/register-model.md) — Why global registers work and how the stack is simulated
-- [Memory Layout Reproduction](docs/technical/memory-layout.md) — CreateFileMapping, mirror views, and address space tricks
-- [Indirect Call Dispatch](docs/technical/indirect-calls.md) — The RECOMP_ICALL problem and how to solve it
+- [The Register Model](technical/register-model.md) — Why global registers work and how the stack is simulated
+- [Memory Layout Reproduction](technical/memory-layout.md) — CreateFileMapping, mirror views, and address space tricks
+- [Indirect Call Dispatch](technical/indirect-calls.md) — The RECOMP_ICALL problem and how to solve it
 - [D3D8 to D3D11 Translation](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/d3d-translation.md) — Bridging Xbox's graphics API to modern DirectX
-- [NV2A Shader Translation](docs/technical/nv2a-shaders.md) — Register combiners and vertex microcode to HLSL
+- [NV2A Shader Translation](technical/nv2a-shaders.md) — Register combiners and vertex microcode to HLSL
 - [D3D8LTCG Device Context](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/d3d8ltcg-device-context.md) — Device field map, PB ring management, stub calling conventions
-- [Xbox Kernel Replacement](docs/technical/kernel-replacement.md) — Mapping Xbox kernel ordinals to Win32
-- [SEH and Exception Handling](docs/technical/seh-handling.md) — Structured exception handling in recompiled code
+- [Xbox Kernel Replacement](technical/kernel-replacement.md) — Mapping Xbox kernel ordinals to Win32
+- [SEH and Exception Handling](technical/seh-handling.md) — Structured exception handling in recompiled code
 - [Lessons Learned](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/lessons-learned.md) — What worked, what didn't, mistakes to avoid
 - [Gap Analysis vs xemu](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/gap-analysis.md) — What's implemented, what's missing, prioritized roadmap
 - [Microsoft's Own Recompiler](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/ms-fusion-recompiler.md) — White-room analysis of Ficl/Fission: pipeline, address map, HLE boundary
@@ -335,26 +342,26 @@ xboxrecomp/
 - [Burnout 3 Reunification](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/burnout3-reunification.md) — bringing the origin title back onto the extracted toolkit: what's done, and the threading gate that makes the runtime a merge not a swap
 
 ### Xbox Formats
-- [XBE File Format](docs/formats/xbe.md) — Xbox executable format reference
-- [Xbox Kernel Exports](docs/formats/kernel-exports.md) — All 366 kernel functions documented
+- [XBE File Format](formats/xbe.md) — Xbox executable format reference
+- [Xbox Kernel Exports](formats/kernel-exports.md) — All 366 kernel functions documented
 
 ## How It Works
 
 The interesting parts each have their own document rather than a summary here,
 so there is one place to keep correct:
 
-- **[The Register Model](docs/technical/register-model.md)** — why the guest
+- **[The Register Model](technical/register-model.md)** — why the guest
   registers are globals (and thread-local), how the guest stack is simulated,
   and why every recompiled function is `void f(void)`.
-- **[Memory Layout](docs/technical/memory-layout.md)** — reproducing the Xbox
+- **[Memory Layout](technical/memory-layout.md)** — reproducing the Xbox
   address space with `CreateFileMapping` + 28 mirror views, and why
   `VirtualAlloc` cannot do it (mirrors must alias the same physical pages, not
   copy them).
-- **[Indirect Call Dispatch](docs/technical/indirect-calls.md)** — `call [eax+0x10]`
+- **[Indirect Call Dispatch](technical/indirect-calls.md)** — `call [eax+0x10]`
   with no compile-time target. The hardest part of any bring-up.
-- **[NV2A Shader Translation](docs/technical/nv2a-shaders.md)** — register
+- **[NV2A Shader Translation](technical/nv2a-shaders.md)** — register
   combiners and vertex microcode to HLSL, both translated at runtime and cached.
-- **[SEH and Exception Handling](docs/technical/seh-handling.md)** — how
+- **[SEH and Exception Handling](technical/seh-handling.md)** — how
   `__SEH_prolog`/`__SEH_epilog` are detected per title and bridged.
 
 ## Games That Work Well As Targets
@@ -417,7 +424,7 @@ further: it assembles each snippet with MSVC, lifts the resulting bytes, then
 runs the lifted C *and the original instructions* over the same inputs and
 requires them to agree. Because we target x86 and run on x86, the host CPU is
 the oracle — no model to be wrong. See
-[Conformance Testing](docs/technical/conformance-testing.md). It needs a 32-bit
+[Conformance Testing](technical/conformance-testing.md). It needs a 32-bit
 MSVC, and is skipped rather than failed where there isn't one.
 
 If you fix a lift, add the case.
@@ -447,7 +454,7 @@ A: C is portable, debuggable, and the compiler optimizes it for you. You can rea
 
 ## License
 
-**MIT** — see [LICENSE](LICENSE). Third-party components keep their original
+**MIT** — see [LICENSE](../LICENSE). Third-party components keep their original
 licence:
 
 | Component | Licence | Copyright |
@@ -461,18 +468,18 @@ The APU and the NV2A register definitions were extracted from
 ours. LGPL-2.1 expressly permits linking them from MIT or proprietary code, so
 a recompiled game is unaffected; what it asks is that the notices stay, the
 source stays available, and users can relink against a modified library.
-[LICENSES/LGPL-2.1.txt](LICENSES/LGPL-2.1.txt) is the verbatim licence text —
+[LICENSES/LGPL-2.1.txt](../LICENSES/LGPL-2.1.txt) is the verbatim licence text —
 shipping it alongside those files is a requirement, not a courtesy.
 
 Not every file under `src/apu/` and `src/nv2a/` is xemu-derived. See
-[NOTICE](NOTICE) for the exact list, each with the copyright it actually
+[NOTICE](../NOTICE) for the exact list, each with the copyright it actually
 carries — including algorithms we implemented ourselves but learned from xemu,
 credited there even where no licence obligation attaches.
 
 ## Contributors
 
 xboxrecomp is built by more than one person. See
-**[CONTRIBUTORS.md](CONTRIBUTORS.md)** for who did what — including the people
+**[CONTRIBUTORS.md](../CONTRIBUTORS.md)** for who did what — including the people
 who never sent a patch and still moved the project further than a patch would
 have, by finding the wall everyone else was about to hit.
 
@@ -482,8 +489,8 @@ Thank you, all of you.
 
 Built with [Claude Code](https://claude.ai) (Anthropic) — proving that AI-assisted systems programming can tackle problems previously considered impractical.
 
-Human contributors are credited in [CONTRIBUTORS.md](CONTRIBUTORS.md); the
-third-party code we build on is credited in [NOTICE](NOTICE).
+Human contributors are credited in [CONTRIBUTORS.md](../CONTRIBUTORS.md); the
+third-party code we build on is credited in [NOTICE](../NOTICE).
 
 ## Changelog
 
@@ -766,7 +773,7 @@ linked, ran, and was wrong, with no lifter warning anywhere.
 
 **Project**
 
-- **[CONTRIBUTORS.md](CONTRIBUTORS.md)** — including the people who only ever
+- **[CONTRIBUTORS.md](../CONTRIBUTORS.md)** — including the people who only ever
   filed an issue. [@Tiptup300](https://github.com/Tiptup300) (#1) found that
   every documented getting-started step was broken, on Linux; that report is why
   the pipeline was fixed *and* why this repository has a LICENSE file at all.

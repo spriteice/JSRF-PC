@@ -1,16 +1,21 @@
 # NV2A Shader Translation
 
+> **From the xboxrecomp toolkit,** by Ned Heller (sp00nznet), written for
+> the toolkit's own work, much of it on Burnout 3: Takedown, on Windows with
+> Direct3D 11. JSRF-PC keeps it for how the pipeline and runtime work. Where
+> it differs from how JSRF-PC is built or changed,
+> [building-on-linux.md](../building-on-linux.md) and
+> [project-rules.md](../project-rules.md) are right, and this doc is out
+> of date there: say so. The generated code is never edited, and a bug is
+> fixed where it starts, not stubbed out or guarded around.
+
 Xbox games do not ship HLSL. They configure the NV2A's fixed-function combiner
 pipeline, or upload raw vertex-shader microcode. Both have to become something
-D3D11 or OpenGL will accept, and both are translated at runtime and cached.
+OpenGL will accept, and both are translated at runtime and cached.
 
-This document covers the two translators. For what is and is not implemented,
-see [gap-analysis.md](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/gap-analysis.md),
-and for the wider D3D8 layer
-[d3d-translation.md](https://github.com/sp00nznet/xboxrecomp/blob/main/docs/technical/d3d-translation.md),
-both in the toolkit's repository.
+This document covers the two translators, in src/nv2a_gl.
 
-## Register combiners → HLSL pixel shaders
+## Register combiners → GLSL fragment shaders
 
 Xbox games do not use traditional pixel shaders. They configure the NV2A's
 8-stage register combiner pipeline. Each stage performs independent RGB and
@@ -23,7 +28,7 @@ The game sets this up as a packed descriptor:
 SetPixelShader(0x00000103);   /* 3 stages, tex0 = 2D, tex1 = 2D */
 ```
 
-At draw time that configuration is translated into an HLSL pixel shader:
+At draw time that configuration is translated into a GLSL fragment shader:
 
 ```
 Stage 0: r0.rgb = tex0 * diffuse
@@ -32,28 +37,27 @@ Stage 2: r0.a   = tex0.a * diffuse.a
 Final:   output = r0
 ```
 
-A 128-entry shader cache keys on the combiner configuration, so each unique
-setup is compiled once and reused. Multi-texturing is covered outright.
+Each program is kept in the shader cache (src/nv2a_gl/nv2a_shader_cache.h),
+keyed on a hash of its generated source, so a setup is compiled once, and on the
+next run built before the game asks for it. Multi-texturing is covered outright.
+Generated texture coordinates (sphere, reflection and normal maps) are made in
+the vertex shader (nv2a_vsh.c).
 
-Bump and environment mapping are **partial**: the combiner side is there, but
-texture-coordinate generation (`TEXCOORDINDEX` with the camera-space modes) is
-not, so effects that depend on generated coordinates will not look right yet.
-
-## Vertex-shader microcode → HLSL vertex shaders
+## Vertex-shader microcode → GLSL vertex shaders
 
 When a game uses programmable vertex shaders — water displacement, skeletal
 animation, custom lighting — it uploads NV2A microcode rather than any
 high-level source. Each instruction is 128 bits and carries a paired MAC and
 ILU operation.
 
-The translator parses that microcode and emits HLSL:
+The translator parses that microcode and emits GLSL:
 
-- **14 MAC ops** — `MOV`, `MUL`, `ADD`, `MAD`, `DP3`, `DP4`, `DPH`, `DST`,
+- **13 MAC ops** — `MOV`, `MUL`, `ADD`, `MAD`, `DP3`, `DP4`, `DPH`, `DST`,
   `MIN`, `MAX`, `SLT`, `SGE`, `ARL`
-- **8 ILU ops** — `MOV`, `RCP`, `RCC`, `RSQ`, `EXP`, `LOG`, `LIT`
+- **7 ILU ops** — `MOV`, `RCP`, `RCC`, `RSQ`, `EXP`, `LOG`, `LIT`
 - **192 constant registers**, 12 temporaries, 16 vertex inputs
 - Relative addressing through the address register (`A0`)
-- A 64-entry compiled-shader cache
+- The same shader cache as the combiners'
 
 Because both halves of an instruction issue together, the translator has to
 emit them so that the MAC and ILU results are written from the *pre-instruction*
@@ -64,9 +68,10 @@ way to get this subtly wrong.
 
 | Piece | File |
 |---|---|
-| Combiner → HLSL | [`src/d3d/d3d8_combiners.c`, `.h`](https://github.com/sp00nznet/xboxrecomp/blob/main/src/d3d/d3d8_combiners.c), in the toolkit's repository |
+| Combiner → GLSL | `src/nv2a_gl/nv2a_psh.c` |
 | Vertex microcode → GLSL | `src/nv2a_gl/nv2a_vsh.c` |
 | Texture unswizzling | `src/d3d/d3d8_swizzle.h` |
 
-`d3d8_combiners.h` and `d3d8_swizzle.h` cite xemu as a reference for the
-hardware's behaviour; both are our own implementations. See [NOTICE](../../NOTICE).
+`d3d8_swizzle.h` cites xemu as the reference that pointed to its technique, and
+the two translators cite xemu for the hardware's behaviour. See
+[NOTICE](../../NOTICE).

@@ -1,5 +1,14 @@
 # Step 5: Building the Runtime
 
+> **From the xboxrecomp toolkit,** by Ned Heller (sp00nznet), written for
+> the toolkit's own work, much of it on Burnout 3: Takedown, on Windows with
+> Direct3D 11. JSRF-PC keeps it for how the pipeline and runtime work. Where
+> it differs from how JSRF-PC is built or changed,
+> [building-on-linux.md](../building-on-linux.md) and
+> [project-rules.md](../project-rules.md) are right, and this doc is out
+> of date there: say so. The generated code is never edited, and a bug is
+> fixed where it starts, not stubbed out or guarded around.
+
 ## Overview
 
 The lifted C code from Step 4 is just one piece of the puzzle. It expects to run in an environment that mimics the original Xbox: memory at specific addresses, kernel functions available for calling, a D3D8 graphics device, and input from Xbox controllers. The runtime provides all of this.
@@ -7,8 +16,8 @@ The lifted C code from Step 4 is just one piece of the puzzle. It expects to run
 The runtime has four major subsystems:
 1. **Memory Layout** -- map Xbox virtual addresses into Windows process space
 2. **Kernel Shim** -- replace 147+ Xbox kernel functions with Win32 equivalents
-3. **D3D8-to-D3D11 Bridge** -- translate Direct3D 8 calls to modern Direct3D 11
-4. **Input** -- map Xbox controller input to XInput
+3. **Graphics** -- draw what the game's own Direct3D 8 tells the NV2A to draw, with OpenGL
+4. **Input** -- map the host's pads to the Xbox controller, through SDL2
 
 ## Memory Layout
 
@@ -104,24 +113,9 @@ loop:
     jnz loop                 ; wait until bit clears
 ```
 
-These registers don't exist on Windows. A Vectored Exception Handler (VEH) catches access violations in this range and maps a page on demand with zeroed values:
+In JSRF-PC the generated code sends every load and store in the device registers' range to src/kernel/kernel_mmio.c (`RECOMP_MMIO_LO` to `RECOMP_MMIO_HI` in recomp_types.h), which hands it to the device that owns the address, as the NV2A's interrupt registers or the audio processor's. So a register that a device models reads what the hardware would show, and a wait on it ends as it does on the console. A range no device claims behaves as plain memory.
 
-```c
-LONG WINAPI gpu_veh_handler(EXCEPTION_POINTERS *info) {
-    if (info->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {
-        uintptr_t addr = info->ExceptionRecord->ExceptionInformation[1];
-        if (addr >= 0xFD000000 && addr < 0xFF000000) {
-            // Map a zero page at this address
-            VirtualAlloc((void*)(addr & ~0xFFF), 4096,
-                         MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-            return EXCEPTION_CONTINUE_EXECUTION;
-        }
-    }
-    return EXCEPTION_CONTINUE_SEARCH;
-}
-```
-
-This makes GPU spin-waits return immediately (reading 0), which is correct since we're not using the NV2A GPU.
+The toolkit first answered these reads, for Burnout 3, with a zero page mapped on demand, which only works for a title that never needs the hardware's answer: JSRF's music player, for one, takes a silent audio processor for a dirty disc.
 
 ### Heap Allocator
 
@@ -220,112 +214,15 @@ MEM32(KDATA_TICK_COUNT) = GetTickCount();
 
 The kernel data area is a 4 KB block at `0x00740000` that holds all data exports.
 
-## D3D8-to-D3D11 Bridge
+## Graphics
 
-### The Problem
-
-Xbox games use Direct3D 8, which doesn't exist on modern Windows (D3D8 was removed from the Windows SDK years ago). Even if it did, Xbox D3D8 has extensions (push buffers, NV2A-specific features) that PC D3D8 doesn't support.
-
-### COM Vtable Emulation
-
-Xbox D3D8 objects (Device, VertexBuffer, IndexBuffer, Texture, Surface) are COM objects with vtables. Game code calls methods through vtable dispatch:
-
-```asm
-mov eax, [esi]           ; load vtable pointer
-call [eax + 0x88]        ; Device->SetRenderState (vtable slot 34)
-```
-
-The bridge creates fake COM objects with vtables that point to our D3D11 wrapper functions:
-
-```c
-typedef struct {
-    void **vtable;                     // points to d3d8_device_vtable[]
-    ID3D11Device *d3d11_device;
-    ID3D11DeviceContext *d3d11_context;
-    IDXGISwapChain *swap_chain;
-    // ... state tracking ...
-} D3D8Device;
-
-static void *d3d8_device_vtable[] = {
-    /* 0x00 */ d3d8_QueryInterface,
-    /* 0x04 */ d3d8_AddRef,
-    /* 0x08 */ d3d8_Release,
-    /* ... */
-    /* 0x88 */ d3d8_SetRenderState,
-    /* ... ~100 methods ... */
-};
-```
-
-### Fixed-Function to Programmable Pipeline
-
-D3D8 uses a fixed-function pipeline (SetTextureStageState, SetTransform, etc.). D3D11 requires programmable shaders. The bridge translates:
-
-- **Vertex transforms**: the bridge captures the World/View/Projection matrices from `SetTransform` calls and passes them to an HLSL vertex shader as constant buffers
-- **Texture stage states**: COLOROP, COLORARG1/2, ALPHAOP translate to pixel shader state
-- **Lighting**: fixed-function lighting parameters become shader constants
-- **Fog**: fog mode, start/end, color become pixel shader parameters
-
-A small set of HLSL shaders handles the common cases:
-- Vertex-color only (no texture)
-- Single texture with vertex colors
-- Multi-texture blending (2 texture stages)
-
-### Vertex and Index Buffers
-
-The bridge implements the Lock/Unlock staging pattern:
-
-```c
-HRESULT d3d8_VertexBuffer_Lock(/* ... */) {
-    // Create a CPU-accessible staging buffer
-    D3D11_MAPPED_SUBRESOURCE mapped;
-    context->Map(staging_buffer, 0, D3D11_MAP_WRITE, 0, &mapped);
-    *ppData = mapped.pData;
-    return D3D_OK;
-}
-
-HRESULT d3d8_VertexBuffer_Unlock(/* ... */) {
-    context->Unmap(staging_buffer, 0);
-    // Copy staging to GPU buffer
-    context->CopyResource(gpu_buffer, staging_buffer);
-    return D3D_OK;
-}
-```
-
-### Texture Formats
-
-Xbox textures use DXT compression (DXT1, DXT3, DXT5), which D3D11 supports natively as BC1/BC2/BC3. The bridge maps D3D8 format constants to DXGI format constants:
-
-| D3D8 (Xbox) | DXGI (D3D11) |
-|-------------|-------------|
-| D3DFMT_DXT1 | DXGI_FORMAT_BC1_UNORM |
-| D3DFMT_DXT3 | DXGI_FORMAT_BC2_UNORM |
-| D3DFMT_DXT5 | DXGI_FORMAT_BC3_UNORM |
-| D3DFMT_A8R8G8B8 | DXGI_FORMAT_B8G8R8A8_UNORM |
-| D3DFMT_X8R8G8B8 | DXGI_FORMAT_B8G8R8X8_UNORM |
-| D3DFMT_R5G6B5 | DXGI_FORMAT_B5G6R5_UNORM |
-
-Xbox textures may also be **swizzled** (Morton/Z-order layout instead of linear). The bridge detects swizzled textures and unswizzles them during upload.
+JSRF links its own Direct3D 8, from the XDK, so it runs recompiled like the rest of the game's code: it builds NV2A commands in a push buffer in guest memory, as on the console. The runtime consumes that push buffer (src/kernel/nv2a_pb_exec.c, with the NV2A's registers modelled in src/nv2a), and [src/nv2a_gl](../../src/nv2a_gl) draws it with OpenGL: the register combiners become GLSL fragment shaders, and the vertex programs GLSL vertex shaders ([technical/nv2a-shaders.md](../technical/nv2a-shaders.md)). src/d3d holds only the D3D8 types and the NV2A's texture swizzling.
 
 ## Input System
 
 ### Xbox Controller Mapping
 
-The Xbox controller is accessed through the XPP (Xbox Peripheral Port) library. Game code reads controller state from memory-mapped addresses. The runtime intercepts these reads and provides XInput data:
-
-```c
-// Map Xbox gamepad state to XInput
-XINPUT_STATE xi_state;
-XInputGetState(0, &xi_state);
-
-// Write to Xbox controller memory addresses
-MEM16(XBOX_GAMEPAD_BUTTONS) = xi_state.Gamepad.wButtons;
-MEM8(XBOX_GAMEPAD_LEFT_TRIGGER) = xi_state.Gamepad.bLeftTrigger;
-MEM8(XBOX_GAMEPAD_RIGHT_TRIGGER) = xi_state.Gamepad.bRightTrigger;
-MEM16(XBOX_GAMEPAD_THUMB_LX) = xi_state.Gamepad.sThumbLX;
-MEM16(XBOX_GAMEPAD_THUMB_LY) = xi_state.Gamepad.sThumbLY;
-```
-
-Keyboard input is also mapped for testing: WASD for movement, Shift for boost, etc.
+[src/input](../../src/input/README.md) fills the Xbox controller's state from the host's pads, through SDL2's GameController API, on Linux and Windows.
 
 ## Game-Specific: Manual Function Overrides
 
@@ -344,32 +241,13 @@ recomp_func_t recomp_lookup_manual(uint32_t xbox_va) {
 }
 ```
 
-Manual overrides are the primary debugging tool. When a function crashes or produces wrong results, you replace it with a hand-written version that either:
-- **Stubs it** (returns immediately, optionally returning a success code)
-- **Fixes it** (reimplements the logic with correct Win32 calls)
-- **Instruments it** (adds logging/traces to understand what it does)
+In JSRF-PC an override is the right place only when the game function's own logic is the cause ([project-rules.md](../project-rules.md), Where code goes 6). It reimplements that logic, and is named for what it does. It never stubs a function to get past a crash, and a trace while looking for a cause comes from `--trace-functions` (tools/recomp), not an override.
 
 For Burnout 3, approximately 33 functions have manual overrides, including the physics engine, frame pump, resource loader, and several RenderWare initialization functions.
 
 ## Build System
 
-The entire project is built with CMake:
-
-```bash
-cmake -S . -B build
-cmake --build build --config Release
-```
-
-The output is a single executable (`bin/burnout3.exe`) that links:
-- The auto-generated recompiled code (static library)
-- The manual overrides
-- The kernel shim (static library)
-- The D3D8-to-D3D11 bridge (static library)
-- The audio stubs (static library)
-- The input layer (static library)
-- The main scaffold (entry point, window creation, game loop)
-
-System dependencies: `d3d11.lib`, `dxgi.lib`, `d3dcompiler.lib`, `xinput.lib`, `ws2_32.lib`.
+JSRF-PC is built with CMake from `port/` ([building-on-linux.md](../building-on-linux.md), step 5), into one executable, `jsrf_recomp`, that links the generated code, the hand-written code in `port/`, and the runtime's libraries in `src/`: the kernel, the device models, the OpenGL renderer and input. The Windows build is cross-compiled on Linux with llvm-mingw (building-on-linux.md, Windows).
 
 ## Startup Sequence
 
@@ -378,6 +256,6 @@ System dependencies: `d3d11.lib`, `dxgi.lib`, `d3dcompiler.lib`, `xinput.lib`, `
 3. Call `xbox_kernel_init()` to fill the kernel thunk table
 4. Call `xbox_kernel_bridge_init()` to wire synthetic VAs
 5. Initialize g_esp to XBOX_STACK_TOP
-6. Create the window and D3D11 device
-7. Call the decoded entry point function: `sub_001D2807()`
-8. Enter the Windows message loop, calling the game's frame function each tick
+6. Create the window and its OpenGL context, with SDL2 (src/nv2a_gl)
+7. Call the generated entry point, `xbe_entry_point()`
+8. The game runs from there, on that thread and the threads it starts

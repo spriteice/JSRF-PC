@@ -1,5 +1,14 @@
 # Step 1: Extracting and Parsing XBE Files
 
+> **From the xboxrecomp toolkit,** by Ned Heller (sp00nznet), written for
+> the toolkit's own work, much of it on Burnout 3: Takedown, on Windows with
+> Direct3D 11. JSRF-PC keeps it for how the pipeline and runtime work. Where
+> it differs from how JSRF-PC is built or changed,
+> [building-on-linux.md](../building-on-linux.md) and
+> [project-rules.md](../project-rules.md) are right, and this doc is out
+> of date there: say so. The generated code is never edited, and a bug is
+> fixed where it starts, not stubbed out or guarded around.
+
 ## What is an XBE File?
 
 An XBE (Xbox Executable) is the native executable format for the original Microsoft Xbox (2001). It is analogous to PE (Portable Executable) on Windows or ELF on Linux. Every game shipped as a disc image containing one or more XBE files, with `default.xbe` being the primary game executable.
