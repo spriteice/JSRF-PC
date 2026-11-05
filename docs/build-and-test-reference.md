@@ -168,6 +168,20 @@ build makes its generated code fresh (docs/release-checklist.md, step 7):
 if that differs from the kept copy with the same tags, tell me before
 going on, as the pipeline then isn't repeatable.
 
+When the generated code is made again because the hash of what makes it
+changed, compare it with the kept copy the change's base used:
+`python3 tools/gen_diff.py <kept> <new>` (tools/README.md). It
+counts the functions that are the same, changed, changed only in their
+comments, added and removed, and lists the addresses of those changed,
+added and removed, never their code or names, so its report goes in
+TESTING.md (Test checklist, Built from). Each function it lists is
+accounted for there before delivery, as the package comparison's
+differences are: by what the change does, one reason covering as many
+functions as it explains, or by what you found when you looked. A change
+that shouldn't alter the code, such as a new tool or test in `tools/`,
+lists none. The sandbox keeps no generated code between threads, so there
+the kept copy is made from the base commit first.
+
 The cloud's sandbox keeps its build images the same way, for as long as
 the thread lasts. A build image made there or on the PC, while one isn't
 published, is never published itself.
@@ -507,9 +521,10 @@ test-lists/README.md has its path.
   the packages with their SHA-256.
 - **Built from:** the commit, whether the tree had uncommitted changes and
   its tree's hash, the machine it was built on, the generated code
-  (functions translated, 0 failed, and whether it was the kept copy), the
-  toolchains, and the build images, by name and digest, with their
-  packages.
+  (functions translated, 0 failed, whether it was the kept copy, and
+  gen_diff's report when it was made again for a change to what makes it:
+  What is kept between builds), the toolchains, and the build images, by
+  name and digest, with their packages.
 - **Checks done here:** the compatibility checks, the comparison with the
   last tested package, the tests, and anything run in the sandbox or on
   the PC. Everything else is unverified.

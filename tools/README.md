@@ -279,3 +279,26 @@ python3 tools/logsum.py last-run.log [more.log ...] > summary.md
 It needs only Python's standard library. Its test, `tools/test_logsum.py`,
 takes each line it reads from the engine's own source, so a log line changed
 in the engine fails that test until logsum is changed to match.
+
+## Which generated functions a change alters: gen_diff
+
+`tools/gen_diff.py` compares two folders of generated code made from
+the same default.xbe, the kept copy and the one a change to `tools/` or
+`port/recomp_manual.c` made, function by function:
+
+```bash
+python3 tools/gen_diff.py KEPT NEW
+```
+
+Each function is found by its definition in whichever file holds it, and
+compared by its code, with its comments and spacing left out. It prints
+counts and addresses only, never the code or a function's name, so its
+report can go in a build's TESTING.md: how many functions are the same,
+changed, changed only in their comments, added and removed, the addresses
+of those changed, added and removed, and how many declarations and tables
+outside the functions differ, by file. A function is known by the address
+in its name, its banner's `Original:` line, or its dispatch-table entry,
+and one with none of those is counted but never listed.
+docs/build-and-test-reference.md (What is kept between builds) says when it
+runs. It needs only Python's standard library, and its test,
+`tools/test_gen_diff.py`, runs on folders it makes up.
