@@ -98,58 +98,27 @@ if(WIN32)
     add_compile_definitions(XBOXRECOMP_WIN_GL=1)
 endif()
 
-# Android: plain char is signed on x86 and on Apple's arm64, everywhere this
-# has run so far; the Arm ABI that Android follows makes it unsigned. Signed,
-# as it was tested.
-if(ANDROID)
-    add_compile_options(-fsigned-char)
-endif()
-
 # The runtime: everything in this repository outside port/ and launcher/.
 add_subdirectory("${JSRF_REPO}" "${CMAKE_BINARY_DIR}/xboxrecomp")
 
 file(GLOB JSRF_GEN_SOURCES CONFIGURE_DEPENDS "${JSRF_GEN_DIR}/*.c")
 
-if(ANDROID)
-    # Android: the engine is libmain.so, which SDL's Java side loads and whose
-    # SDL_main it calls (main.c; android/jsrf_android.c sets the scene). The
-    # app around it -- launcher/android -- is built by launcher/android/build_apk.sh.
-    add_library(jsrf_recomp SHARED
-        main.c
-        recomp_manual.c
-        freecam.c
-        intro.c
-        audio.c
-        developer.c
-        adx_err.c
-        voice_follow.c
-        resource_load.c
-        cpuprof.c
-        pcores.c
-        xbe_check.c
-        android/jsrf_android.c
-        xiso.c
-        ${JSRF_GEN_SOURCES}
-    )
-    set_target_properties(jsrf_recomp PROPERTIES OUTPUT_NAME main)
-else()
-    add_executable(jsrf_recomp
-        main.c
-        recomp_manual.c
-        freecam.c
-        intro.c
-        audio.c
-        developer.c
-        adx_err.c
-        voice_follow.c
-        resource_load.c
-        cpuprof.c
-        pcores.c
-        xbe_check.c
-        xiso.c
-        ${JSRF_GEN_SOURCES}
-    )
-endif()
+add_executable(jsrf_recomp
+    main.c
+    recomp_manual.c
+    freecam.c
+    intro.c
+    audio.c
+    developer.c
+    adx_err.c
+    voice_follow.c
+    resource_load.c
+    cpuprof.c
+    pcores.c
+    xbe_check.c
+    xiso.c
+    ${JSRF_GEN_SOURCES}
+)
 if(IOS)
     # The iPhone / iPad app around the engine (ios/jsrf_ios.m: the window,
     # the controls, the game in Documents; the disc-image unpacker, xiso.c,
@@ -209,14 +178,6 @@ if(WIN32 AND XBOXRECOMP_WIN_GL)
     target_link_options(jsrf_recomp PRIVATE "-Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/jsrf_recomp.map")
 elseif(WIN32)
     target_link_libraries(jsrf_recomp PRIVATE d3d11 dxgi dxguid xinput winmm dbghelp)
-elseif(ANDROID)
-    # pthreads are in bionic's libc; log and android for the glue.
-    target_link_libraries(jsrf_recomp PRIVATE m dl log android)
-    # -Bsymbolic: the game's functions call one another directly rather than
-    # through the PLT, as in an executable (nothing ever interposes on them);
-    # they stay in the dynamic symbol table, which is what names them in a
-    # crash report.
-    target_link_options(jsrf_recomp PRIVATE -Wl,--no-undefined -Wl,-Bsymbolic)
 else()
     target_link_libraries(jsrf_recomp PRIVATE pthread m dl)
     target_link_options(jsrf_recomp PRIVATE -rdynamic)

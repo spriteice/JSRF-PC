@@ -51,9 +51,9 @@ if(WIN32)
     if(XBOXRECOMP_WIN_GL)
         target_link_libraries(xbox_kernel PUBLIC xbox_nv2a_gl)
     endif()
-elseif(APPLE OR ANDROID)
+elseif(APPLE)
     # The crypto is the portable code in kernel_crypto.c; OpenSSL is not
-    # needed (and on an iPhone or an Android phone not there).
+    # needed (and on an iPhone not there).
     target_link_libraries(xbox_kernel PUBLIC platform xbox_nv2a_gl)
 else()
     # Linux: platform layer (POSIX host primitives) + OpenSSL for crypto.

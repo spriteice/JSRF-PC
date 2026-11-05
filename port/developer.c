@@ -77,7 +77,7 @@ static const DevSwitch k_logging[] = {
     { "JSRF_CAM_LOG", "1" },                /* the game's camera (port/recomp_manual.c) */
     { "RECOMP_APU_CHANNELS", "1" },
     { "RECOMP_APU_STATS", "1" },
-#if (defined(__linux__) && !defined(__ANDROID__)) || defined(_WIN32)
+#if defined(__linux__) || defined(_WIN32)
     { "RECOMP_CPU_PROFILE", "1" },
 #endif
     { "RECOMP_GL_ERRORS_PER_DRAW", "1" },
@@ -100,11 +100,11 @@ static const DevSwitch k_engine[] = {
  * by default, which the switch turns off. Use P cores is the first, and stays
  * the first: a new one goes after it. */
 static const DevSwitch k_perf[] = {
-#if defined(__linux__) && !defined(__ANDROID__)
+#if defined(__linux__)
     { "RECOMP_P_CORES", "0" },              /* the game's thread and the renderer's on any core */
 #endif
     { "RECOMP_NV2A_QUEUE", "0" },           /* the game no more than a kick ahead of the GPU thread */
-#if defined(__linux__) && !defined(__ANDROID__)
+#if defined(__linux__)
     { "RECOMP_PACE_DISPLAY", "0" },         /* frames paced by the game's clock, not the display's */
 #endif
     { "RECOMP_FENCE_WAIT", "0" },           /* the game spins while it waits for the GPU thread */
@@ -145,11 +145,11 @@ static const char *s_row[DEV_NAMED];
 /* Performance's rows, one for each of k_perf, in its order: what the engine
  * does, ticked while it does it. */
 static const char *const k_perf_row[] = {
-#if defined(__linux__) && !defined(__ANDROID__)
+#if defined(__linux__)
     "Use P cores (Restart)",
 #endif
     "GPU queue (Restart)",
-#if defined(__linux__) && !defined(__ANDROID__)
+#if defined(__linux__)
     "Display pacing (Restart)",
 #endif
     "Sleep while waiting for the GPU (Restart)",

@@ -4,9 +4,7 @@
  * Read once, at start (audio_start), and passed to the effects
  * (apu_gpfx_choose) before the APU starts. The effects are set up as the
  * game starts, so the menu's row keeps the change in the settings file and,
- * after asking, restarts the game, as Graphics > Shader cache does. Where
- * the game can't restart itself (Android), the change waits for the next
- * start. */
+ * after asking, restarts the game, as Graphics > Shader cache does. */
 #include <stdio.h>
 #include <stdlib.h>
 #include "audio.h"

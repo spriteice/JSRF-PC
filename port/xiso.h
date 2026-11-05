@@ -31,8 +31,8 @@ int xiso_extract(const char *iso_path, const char *dest_dir,
 /* 1 if the file looks like an Xbox disc image (either kind), else 0. */
 int xiso_probe(const char *iso_path);
 
-/* The first n bytes of the file (a path or "fd:N", like the calls above),
- * whatever it is: how many were read, or -1. */
+/* The first n bytes of the file at path, whatever it is: how many were
+ * read, or -1. */
 long xiso_head(const char *path, unsigned char *buf, size_t n);
 
 /* One file in the image's top folder, by name (case does not matter, as on

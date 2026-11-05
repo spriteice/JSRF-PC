@@ -126,7 +126,7 @@ enum Library {
                    .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
     // A disc image is unpacked by the engine itself (--unpack-iso: the
-    // unpacker the iPhone, Android and Windows apps use, port/xiso.c).
+    // unpacker the iPhone and Windows apps use, port/xiso.c).
     // It used to be handed to extract-xiso, which is not part of macOS: a
     // player without Homebrew had no way to use an image at all.
 }

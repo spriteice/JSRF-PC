@@ -40,7 +40,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <emmintrin.h>
-#if (defined(__GNUC__) || defined(__clang__)) && ((defined(__linux__) && !defined(__ANDROID__)) || defined(_WIN32))
+#if (defined(__GNUC__) || defined(__clang__)) && (defined(__linux__) || defined(_WIN32))
 #define NV2A_HASH_AVX2 1
 #include <immintrin.h>
 #endif

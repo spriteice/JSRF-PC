@@ -1,9 +1,9 @@
 """The OpenGL backend's anti-aliasing (SMAA, multisampling) on a headless EGL
 context: test_main.c with nv2a_gfx_gl.c and nv2a_smaa.c as the engine builds
-them, once for OpenGL 3.3 core and once for OpenGL ES (NV2A_GLES).
+them, on OpenGL 3.3 core.
 
-Linux, with EGL and Mesa (llvmpipe is enough): libegl-dev, libgl-dev,
-libgles-dev. Skips where there is no EGL context to be had.
+Linux, with EGL and Mesa (llvmpipe is enough): libegl-dev and libgl-dev.
+Skips where there is no EGL context to be had.
 CC, when set, is the compiler instead of cc.
 """
 import os
@@ -21,14 +21,9 @@ root = pathlib.Path(__file__).resolve().parents[2]
 sources = ["tests/gl_aa/test_main.c", "src/nv2a_gl/nv2a_gfx_gl.c", "src/nv2a_gl/nv2a_smaa.c",
            "src/nv2a_gl/nv2a_shader_cache.c", "src/nv2a_gl/nv2a_uniforms.c"]
 cc = shlex.split(os.environ.get("CC", "cc"))
-failed = 0
 with tempfile.TemporaryDirectory(prefix="gl-aa-") as directory:
-    for name, flags, libs in (("OpenGL", [], ["-lGL"]),
-                              ("OpenGL ES", ["-DNV2A_GLES=1"], ["-lGLESv2"])):
-        exe = str(pathlib.Path(directory) / ("test-" + str(len(flags))))
-        subprocess.run(cc + ["-std=gnu11", "-O1", "-Wall", "-Wextra", "-Isrc/nv2a_gl"] + flags
-                       + sources + ["-o", exe, "-lEGL"] + libs + ["-lm"], cwd=root, check=True)
-        print("---", name)
-        r = subprocess.run([exe], timeout=300)
-        failed += r.returncode != 0
-sys.exit(1 if failed else 0)
+    exe = str(pathlib.Path(directory) / "test")
+    subprocess.run(cc + ["-std=gnu11", "-O1", "-Wall", "-Wextra", "-Isrc/nv2a_gl"]
+                   + sources + ["-o", exe, "-lEGL", "-lGL", "-lm"], cwd=root, check=True)
+    r = subprocess.run([exe], timeout=300)
+sys.exit(1 if r.returncode != 0 else 0)

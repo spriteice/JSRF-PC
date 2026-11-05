@@ -2,7 +2,7 @@
  * The OpenGL backend's anti-aliasing, on a headless EGL context (Mesa's
  * llvmpipe is enough): SMAA (target_smaa) and multisampling (samples), as
  * the engine builds them -- nv2a_gfx_gl.c and nv2a_smaa.c as they are. Run by
- * run.py, once for OpenGL 3.3 core and once for OpenGL ES (NV2A_GLES).
+ * run.py, on OpenGL 3.3 core.
  *
  * A white triangle with long, shallow edges on black: drawn without either,
  * every pixel is black or white; SMAA leaves values in between along its
@@ -13,13 +13,9 @@
  */
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
-#if defined(NV2A_GLES)
-#  include <GLES3/gl32.h>
-#else
-#  define GL_GLEXT_PROTOTYPES 1
-#  include <GL/gl.h>
-#  include <GL/glext.h>
-#endif
+#define GL_GLEXT_PROTOTYPES 1
+#include <GL/gl.h>
+#include <GL/glext.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,34 +35,22 @@ static int context(void)
 {
     static const EGLint cfga[] = {
         EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
-#if defined(NV2A_GLES)
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
-#else
         EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
-#endif
         EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
         EGL_NONE
     };
     static const EGLint pba[] = { EGL_WIDTH, 16, EGL_HEIGHT, 16, EGL_NONE };
-#if defined(NV2A_GLES)
-    static const EGLint ctxa[] = { EGL_CONTEXT_MAJOR_VERSION, 3, EGL_CONTEXT_MINOR_VERSION, 2, EGL_NONE };
-#else
     static const EGLint ctxa[] = {
         EGL_CONTEXT_MAJOR_VERSION, 3, EGL_CONTEXT_MINOR_VERSION, 3,
         EGL_CONTEXT_OPENGL_PROFILE_MASK, EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT, EGL_NONE
     };
-#endif
     EGLDisplay d = eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, NULL);
     EGLConfig cfg;
     EGLint n, maj, mnr;
     EGLSurface s;
     EGLContext c;
     if (d == EGL_NO_DISPLAY || !eglInitialize(d, &maj, &mnr)) return 0;
-#if defined(NV2A_GLES)
-    eglBindAPI(EGL_OPENGL_ES_API);
-#else
     eglBindAPI(EGL_OPENGL_API);
-#endif
     if (!eglChooseConfig(d, cfga, &cfg, 1, &n) || n < 1) return 0;
     s = eglCreatePbufferSurface(d, cfg, pba);
     c = eglCreateContext(d, cfg, EGL_NO_CONTEXT, ctxa);
@@ -207,9 +191,6 @@ int main(void)
     printf("samples: up to %d\n", max);
     if (max >= 4) {
         got = G->samples(4);
-#if defined(NV2A_GLES)
-        CHECK(got == 1, "OpenGL ES: no new count once there are targets (%d)", got);
-#else
         uint32_t rt2;
         CHECK(got == 4, "4 samples taken while running (%d)", got);
         triangle(rt, 1, 0);
@@ -246,7 +227,6 @@ int main(void)
             CHECK(between(tmp) > 20, "and its latest draw, resolved (%d)", between(tmp));
         }
         G->target_free(rt2);
-#endif
     } else {
         printf("SKIP: fewer than 4 samples here\n");
     }

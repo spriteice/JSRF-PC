@@ -314,14 +314,9 @@ static int mkdirs(const char *dir)
     free(p);
     return rc;
 }
-/* The image: a path, or "fd:N" for one the caller already has open -- an
- * Android app gets a descriptor from the system's file picker, not a path. A
- * duplicate, so it is closed like any other. */
+/* The image, read-only. */
 static int open_image(const char *iso_path)
 {
-#if !defined(_WIN32)
-    if (!strncmp(iso_path, "fd:", 3)) return dup(atoi(iso_path + 3));
-#endif
     return open(iso_path, O_RDONLY);
 }
 

@@ -27,8 +27,7 @@ target_compile_options(xbox_menu PRIVATE
     -fno-exceptions -fno-rtti -fno-threadsafe-statics -O2)
 target_compile_definitions(xbox_menu PRIVATE
     IMGUI_DISABLE_DEMO_WINDOWS IMGUI_DISABLE_DEBUG_TOOLS
-    IMGUI_DISABLE_DEFAULT_SHELL_FUNCTIONS
-    $<$<BOOL:${NV2A_GLES}>:IMGUI_IMPL_OPENGL_ES3>)
+    IMGUI_DISABLE_DEFAULT_SHELL_FUNCTIONS)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     # C++ compilers define _GNU_SOURCE, with which glibc 2.38's headers
     # turn sscanf into __isoc23_sscanf@GLIBC_2.38 -- past the 2.34 floor.

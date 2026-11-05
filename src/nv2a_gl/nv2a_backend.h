@@ -173,19 +173,9 @@ enum {
 /* The shading language a backend compiles. */
 enum { NV2A_LANG_GLSL = 0, NV2A_LANG_MSL = 1 };
 
-/* The first lines of every GLSL program: OpenGL 3.3 core, or OpenGL ES 3.2
- * (NV2A_GLES: Android), which wants its version line and then a precision for
- * floats and ints -- a fragment shader has no default for floats -- and for
- * the sampler types that have none. Spliced defines go after the first line
- * (nv2a_gl.c's splice_define), which is still the #version. */
-#if defined(NV2A_GLES)
-#  define NV2A_GLSL_VERSION "#version 320 es\n"                               \
-    "precision highp float;\nprecision highp int;\n"                        \
-    "precision highp sampler2D;\nprecision highp sampler3D;\n"              \
-    "precision highp samplerCube;\nprecision highp sampler2DShadow;\n"
-#else
-#  define NV2A_GLSL_VERSION "#version 330 core\n"
-#endif
+/* The first line of every GLSL program: OpenGL 3.3 core. Spliced defines go
+ * after it (nv2a_gl.c's splice_define). */
+#define NV2A_GLSL_VERSION "#version 330 core\n"
 
 /*
  * Every uniform the generated shaders read, by name.
@@ -405,7 +395,7 @@ typedef struct Nv2aGfx {
     /* Multisampling: the most samples a pixel a target can have here (1:
      * none), and every target drawn with `n` from now on, what each holds
      * carried across -- or, where the backend can only take a count before
-     * its first target (OpenGL ES, Metal), the count then and the one in use
+     * its first target (Metal), the count then and the one in use
      * after. Returns the count in use, fewer than asked where the device
      * refuses one. NULL where the backend has none. */
     int      (*samples_max)(void);

@@ -41,11 +41,7 @@
 #include <windows.h>
 #include <mmsystem.h>     /* timeBeginPeriod */
 #else
-#if defined(__ANDROID__)
-#include "platform/android_backtrace.h"   /* <execinfo.h> is API 33 and later */
-#else
 #include <execinfo.h>
-#endif
 /* <ucontext.h> on Darwin is the deprecated getcontext/makecontext header and
  * refuses to compile without _XOPEN_SOURCE, which would in turn hide the BSD
  * declarations the rest of this file needs. All that is wanted from it is the
@@ -217,12 +213,6 @@ static void restart_close_on_exec(void)
 void recomp_restart_self(void);
 void recomp_restart_self(void)
 {
-#if defined(__ANDROID__)
-    /* Android: the process is the app's, not a program that can exec itself.
-     * A choice made in game (F9) is stored, and applies at the next start. */
-    fprintf(stderr, "  [WIN] restart: not on Android -- the choice applies at the next start\n");
-    return;
-#endif
     if (!g_argv || !g_argv[0]) return;
     { extern void developer_restart(void); developer_restart(); }
     fflush(stdout); fflush(stderr);
@@ -1202,12 +1192,6 @@ static int unpack_progress(void *ctx, uint64_t done, uint64_t total)
     return 0;
 }
 
-#if defined(__ANDROID__)
-/* Android: SDL's Java side (SDLActivity) loads libmain.so and calls SDL_main
- * on a thread of its own, with the arguments JsrfActivity gives it. */
-#define main SDL_main
-int SDL_main(int argc, char **argv);
-#endif
 int main(int argc, char **argv)
 {
     /* --version: the version this engine was built as (port/CMakeLists.txt:
@@ -1240,7 +1224,7 @@ int main(int argc, char **argv)
         return r;
     }
     /* --unpack-iso <image> <folder>: the check above, then the image's files
-     * into folder, with the unpacker the iPhone, Android and Windows apps use
+     * into folder, with the unpacker the iPhone and Windows apps use
      * (xiso.c), so the Mac and Linux apps need no other program. Prints
      * "progress <bytes done> <bytes in all>" as it goes, then "ok" or why
      * not; exits 0, the check's code, or 1 if unpacking failed (what was
@@ -1274,15 +1258,6 @@ int main(int argc, char **argv)
     {
         extern int nv_ios_main(int argc, char **argv, int (*host)(void));
         return nv_ios_main(argc, argv, host_main);
-    }
-#endif
-#if defined(__ANDROID__)
-    /* Android: port/android/jsrf_android.c sets the environment the
-     * launchers would, opens the log, and runs host_main on a thread with a
-     * large stack (SDL's own thread has a Java thread's). */
-    {
-        extern int nv_android_main(int argc, char **argv, int (*host)(void));
-        return nv_android_main(argc, argv, host_main);
     }
 #endif
     if (argc > 1) g_game_dir_arg = argv[1];

@@ -7,7 +7,7 @@
 #ifndef NV2A_DISPLAY_CLOCK_H
 #define NV2A_DISPLAY_CLOCK_H
 
-#if defined(__linux__) && !defined(__ANDROID__) && defined(NV2A_GL_USE_SDL) && !defined(NV2A_GLES)
+#if defined(__linux__) && defined(NV2A_GL_USE_SDL)
 #define NV2A_DISPLAY_CLOCK 1
 #endif
 

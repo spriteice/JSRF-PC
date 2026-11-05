@@ -20,7 +20,7 @@
  * profile (port/cpuprof.c) says how much of each thread's time was on the P
  * cores, whether this is on or not.
  */
-#if defined(__linux__) && !defined(__ANDROID__)
+#if defined(__linux__)
 #define _GNU_SOURCE        /* sched_setaffinity, CPU_AND */
 #include <errno.h>
 #include <pthread.h>

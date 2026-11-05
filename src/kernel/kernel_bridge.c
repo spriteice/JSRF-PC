@@ -7261,8 +7261,6 @@ void xbox_kernel_bridge_init(void)
 #if defined(_WIN32)
 /* The call chain at a watched store: what <execinfo.h>'s backtrace() gives. */
 #define backtrace(buf, n) ((int)CaptureStackBackTrace(0, (DWORD)(n), (buf), NULL))
-#elif defined(__ANDROID__)
-#include "../platform/android_backtrace.h"   /* <execinfo.h> is API 33 and later */
 #else
 #include <execinfo.h>
 #endif

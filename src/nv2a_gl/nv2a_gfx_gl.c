@@ -18,16 +18,7 @@
 #include "nv2a_smaa.h"
 
 #define GL_GLEXT_PROTOTYPES 1
-#if defined(NV2A_GLES)
-   /* OpenGL ES 3.2 (Android; Linux/Mesa for testing): see nv2a_gl.c. */
-#  undef GL_GLEXT_PROTOTYPES
-#  include <GLES3/gl32.h>
-#  include <GLES2/gl2ext.h>
-   /* The NDK's gl2ext.h predates EXT_depth_clamp (Mesa's has it). */
-#  ifndef GL_DEPTH_CLAMP_EXT
-#    define GL_DEPTH_CLAMP_EXT 0x864F
-#  endif
-#elif defined(NV2A_GL_USE_CGL) || (defined(NV2A_GL_USE_SDL) && defined(__APPLE__))
+#if defined(NV2A_GL_USE_CGL) || (defined(NV2A_GL_USE_SDL) && defined(__APPLE__))
 #  include <OpenGL/gl3.h>
 #  include <OpenGL/gl3ext.h>
 #elif defined(_WIN32)
@@ -36,8 +27,8 @@
 #  include <GL/gl.h>
 #  include <GL/glext.h>
 #endif
-/* EXT_texture_filter_anisotropic's limit, core since GL 4.6: OpenGL ES has
- * only the extension's name, and some headers have neither. */
+/* EXT_texture_filter_anisotropic's limit, core since GL 4.6, which some
+ * headers lack. */
 #ifndef GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT
 #  define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT 0x84FF
 #endif
@@ -59,29 +50,6 @@
 #  include <time.h>
 #endif
 
-#if defined(NV2A_GLES)
-#include <string.h>
-/* Whether the context has an extension (asked once per name by the caller). */
-static int gles_has_ext(const char *name)
-{
-    GLint n = 0, i;
-    glGetIntegerv(GL_NUM_EXTENSIONS, &n);
-    for (i = 0; i < n; i++) {
-        const char *e = (const char *)glGetStringi(GL_EXTENSIONS, (GLuint)i);
-        if (e && !strcmp(e, name)) return 1;
-    }
-    return 0;
-}
-static int gles_has_depth_clamp(void)
-{
-    static int has = -1;
-    if (has < 0) {
-        has = gles_has_ext("GL_EXT_depth_clamp");
-        fprintf(stderr, "  [GL] GL_EXT_depth_clamp: %s\n", has ? "yes" : "no (draws are clipped)");
-    }
-    return has;
-}
-#endif
 #include <string.h>
 
 /* Reversed depth: nv2a_gl.c turns it on with clip control, before init.
@@ -369,16 +337,6 @@ static uint32_t glx_target_snapshot(uint32_t h)
     return g_copy_tex;
 }
 
-#if defined(NV2A_GLES)
-/* OpenGL ES reads back RGBA bytes and nothing else for certain: BGRA is
- * made here, in place. */
-static void rgba_to_bgra(uint8_t *p, size_t n)
-{
-    size_t i;
-    for (i = 0; i < n; i++, p += 4) { uint8_t t = p[0]; p[0] = p[2]; p[2] = t; }
-}
-#endif
-
 static int glx_target_read(uint32_t h, uint32_t x, uint32_t y, uint32_t w,
                            uint32_t ht, int bgra, void *out)
 {
@@ -386,14 +344,9 @@ static int glx_target_read(uint32_t h, uint32_t x, uint32_t y, uint32_t w,
     resolve(h);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, g_rt[h - 1].fbo);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
-#if defined(NV2A_GLES)
-    glReadPixels((GLint)x, (GLint)y, (GLsizei)w, (GLsizei)ht, GL_RGBA, GL_UNSIGNED_BYTE, out);
-    if (bgra) rgba_to_bgra((uint8_t *)out, (size_t)w * ht);
-#else
     glReadPixels((GLint)x, (GLint)y, (GLsizei)w, (GLsizei)ht,
                  bgra ? GL_BGRA : GL_RGBA,
                  bgra ? GL_UNSIGNED_INT_8_8_8_8_REV : GL_UNSIGNED_BYTE, out);
-#endif
     if (rt_ok(g_cur_rt))
         glBindFramebuffer(GL_READ_FRAMEBUFFER, draw_fbo(g_cur_rt));
     return 1;
@@ -401,11 +354,6 @@ static int glx_target_read(uint32_t h, uint32_t x, uint32_t y, uint32_t w,
 
 static int glx_target_read_depth(uint32_t h, uint32_t pw, uint32_t ph, float *out)
 {
-#if defined(NV2A_GLES)
-    /* OpenGL ES cannot read a depth buffer back (a debugging dump only). */
-    (void)h; (void)pw; (void)ph; (void)out;
-    return 0;
-#endif
     if (!rt_ok(h) || !out || g_rt[h - 1].flat) return 0;
     if (g_rt[h - 1].msfbo) {
         rb_need((int)h - 1);
@@ -428,16 +376,12 @@ static int glx_target_read_depth(uint32_t h, uint32_t pw, uint32_t ph, float *ou
 
 /* The most anisotropy a texture can be sampled with, for the in-game menu's
  * choices. Asked once: a driver without the extension flags the query as an
- * error, which would be pinned on the next draw the GL error check looks at.
- * OpenGL ES has it only as an extension, so there it is looked for first. */
+ * error, which would be pinned on the next draw the GL error check looks at. */
 static int glx_aniso_max(void)
 {
     static GLfloat cap = -1.0f;
     if (cap < 0.0f) {
         cap = 1.0f;
-#if defined(NV2A_GLES)
-        if (!gles_has_ext("GL_EXT_texture_filter_anisotropic")) return 1;
-#endif
         glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &cap);
     }
     return cap > 1.0f ? (int)cap : 1;
@@ -449,9 +393,6 @@ static int glx_s3tc(void)
 {
     static int has = -1;
     if (has < 0) {
-#if defined(NV2A_GLES)
-        has = gles_has_ext("GL_EXT_texture_compression_s3tc");
-#else
         GLint k, n = 0;
         has = 0;
         glGetIntegerv(GL_NUM_EXTENSIONS, &n);
@@ -459,7 +400,6 @@ static int glx_s3tc(void)
             const char *e = (const char *)glGetStringi(GL_EXTENSIONS, (GLuint)k);
             if (e && !strcmp(e, "GL_EXT_texture_compression_s3tc")) has = 1;
         }
-#endif
     }
     return has;
 }
@@ -562,27 +502,9 @@ static int glx_tex_read(uint32_t t, uint32_t w, uint32_t h, void *bgra)
 {
     (void)w; (void)h;
     if (!t || !bgra) return 0;
-#if defined(NV2A_GLES)
-    /* No glGetTexImage in OpenGL ES: read it through a framebuffer of its
-     * own, then put the read framebuffer back. */
-    {
-        static GLuint fb;
-        GLint prev = 0;
-        if (!fb) glGenFramebuffers(1, &fb);
-        glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prev);
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, fb);
-        glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, t, 0);
-        glPixelStorei(GL_PACK_ALIGNMENT, 1);
-        glReadPixels(0, 0, (GLsizei)w, (GLsizei)h, GL_RGBA, GL_UNSIGNED_BYTE, bgra);
-        glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)prev);
-        rgba_to_bgra((uint8_t *)bgra, (size_t)w * h);
-    }
-#else
     scratch_bind(t);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glGetTexImage(GL_TEXTURE_2D, 0, GL_BGRA, GL_UNSIGNED_BYTE, bgra);
-#endif
     return 1;
 }
 
@@ -602,43 +524,10 @@ static struct {
 } *g_prog;
 static uint32_t g_cur_prog;      /* handle in use, 0 none */
 
-#if defined(NV2A_GLES)
-/* The shading language the context takes: 300, 310 or 320 (ES 3.0 to 3.2).
- * The emitters write "#version 320 es" (NV2A_GLSL_VERSION) and use nothing
- * newer than ES 3.0 does, so an older context -- the Android emulator on a
- * Mac offers 3.0 -- gets the same source under its own version line.
- * RECOMP_GLSL_ES=300|310|320 overrides it, to test that on a newer one. */
-static int gles_glsl(void)
-{
-    static int v;
-    if (!v) {
-        const char *e = getenv("RECOMP_GLSL_ES");
-        GLint maj = 3, mnr = 0;
-        glGetIntegerv(GL_MAJOR_VERSION, &maj);
-        glGetIntegerv(GL_MINOR_VERSION, &mnr);
-        v = (maj > 3 || (maj == 3 && mnr >= 2)) ? 320 : (maj == 3 && mnr == 1) ? 310 : 300;
-        if (e && (atoi(e) == 300 || atoi(e) == 310 || atoi(e) == 320)) v = atoi(e);
-        fprintf(stderr, "  [GL] OpenGL ES %d.%d: shaders as GLSL ES %d\n", (int)maj, (int)mnr, v);
-    }
-    return v;
-}
-#endif
-
 static GLuint compile(GLenum stage, const char *src, const char *what)
 {
     GLuint s = glCreateShader(stage);
     GLint ok = 0;
-#if defined(NV2A_GLES)
-    char *own = NULL;
-    if (gles_glsl() != 320 && !strncmp(src, "#version 320 es", 15)) {
-        size_t n = strlen(src);
-        if ((own = (char *)malloc(n + 1)) != NULL) {
-            memcpy(own, src, n + 1);
-            own[10] = gles_glsl() == 310 ? '1' : '0';     /* "#version 3?0 es" */
-            src = own;
-        }
-    }
-#endif
     glShaderSource(s, 1, &src, NULL);
     glCompileShader(s);
     glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
@@ -650,14 +539,8 @@ static GLuint compile(GLenum stage, const char *src, const char *what)
         if (getenv("RECOMP_GL_DUMP_SHADER"))
             fprintf(stderr, "----- source -----\n%s\n------------------\n", src);
         glDeleteShader(s);
-#if defined(NV2A_GLES)
-        free(own);
-#endif
         return 0;
     }
-#if defined(NV2A_GLES)
-    free(own);
-#endif
     return s;
 }
 
@@ -852,9 +735,6 @@ static int glx_binaries_supported(void)
     int have = 0;
     glGetIntegerv(GL_MAJOR_VERSION, &maj);
     glGetIntegerv(GL_MINOR_VERSION, &mnr);
-#if defined(NV2A_GLES)
-    have = maj >= 3;
-#else
     have = maj > 4 || (maj == 4 && mnr >= 1);
     if (!have) {
         GLint k, ne = 0;
@@ -864,7 +744,6 @@ static int glx_binaries_supported(void)
             if (e && !strcmp(e, "GL_ARB_get_program_binary")) have = 1;
         }
     }
-#endif
     if (have) glGetIntegerv(GL_NUM_PROGRAM_BINARY_FORMATS, &n);
     return have && n > 0;
 }
@@ -1125,15 +1004,7 @@ static void glx_state(const Nv2aRenderState *rs)
       clamp = force >= 0 ? force
             : ((rs->zclamp & 0xF0u) || rs->w_buffer) ? 1 : 0;
       if (clamp != g_last_clamp) {
-#if defined(NV2A_GLES)
-          /* OpenGL ES has depth clamping only as GL_EXT_depth_clamp (same
-           * enum). Without it the draw is clipped as GL would anyway. */
-          if (gles_has_depth_clamp()) {
-              if (clamp) glEnable(GL_DEPTH_CLAMP_EXT); else glDisable(GL_DEPTH_CLAMP_EXT);
-          }
-#else
           if (clamp) glEnable(GL_DEPTH_CLAMP); else glDisable(GL_DEPTH_CLAMP);
-#endif
           g_last_clamp = clamp;
       } }
     { static uint32_t last_cm = 0xFFFFFFFFu;
@@ -1496,11 +1367,7 @@ static void glx_clear(unsigned mask, const float rgba[4], float depth,
     }
     if (mask & 2u) {
         if (g_revz) depth = 1.0f - depth;
-#if defined(NV2A_GLES)
-        glClearDepthf(depth);
-#else
         glClearDepth((double)depth);
-#endif
         glDepthMask(GL_TRUE);
         g_last.depth_mask = -1;   /* the clear forced it; re-apply next draw */
         bits |= GL_DEPTH_BUFFER_BIT;
@@ -1621,9 +1488,6 @@ static int glx_samples_max(void)
  * what they held is copied back into every sample: through the single-sampled
  * framebuffer, because GL will not blit between two counts. A count the
  * device refuses for any target gives way to half of it, down to none.
- *
- * OpenGL ES will not blit into a multisampled framebuffer at all, so there
- * the count is only taken while there are no targets (at start).
  */
 static int glx_samples(int n)
 {
@@ -1632,10 +1496,6 @@ static int glx_samples(int n)
     if (n > max) n = max;
     if (n < 1) n = 1;
     if (n == g_samples) return n;
-#if defined(NV2A_GLES)
-    for (i = 0; i < MAX_TARGETS; i++)
-        if (g_rt[i].used) return g_samples;
-#endif
     for (i = 0; i < MAX_TARGETS; i++)
         if (g_rt[i].msfbo) {
             rb_need(i);             /* to carry its depth and stencil across */

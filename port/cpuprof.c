@@ -38,7 +38,7 @@
  * Linux and Windows only for now; elsewhere the switch says so. Off, nothing
  * is set up. RECOMP_CPU_PROFILE_SECS=<n> sets another window (the tests use 1).
  */
-#if defined(__linux__) && !defined(__ANDROID__) && (defined(__x86_64__) || defined(__aarch64__))
+#if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__))
 #define _GNU_SOURCE        /* dl_iterate_phdr, dladdr, REG_RIP, sched_getcpu */
 #include <dirent.h>
 #include <dlfcn.h>

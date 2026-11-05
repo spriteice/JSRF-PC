@@ -67,14 +67,7 @@
 #    include "menu_sdl.h"        /* the in-game menu (F1), src/menu */
 #    include "menu.h"
 #  endif
-#  if defined(NV2A_GLES)
-     /* OpenGL ES 3.2: Android, and Linux (Mesa), where this path is tested.
-      * The core entry points are the library's own exports; extensions are
-      * not linked against, so no prototypes for them. */
-#    undef GL_GLEXT_PROTOTYPES
-#    include <GLES3/gl32.h>
-#    include <GLES2/gl2ext.h>
-#  elif defined(__APPLE__)
+#  if defined(__APPLE__)
 #    include <OpenGL/gl3.h>
 #    include <OpenGL/gl3ext.h>
 #  elif defined(_WIN32)
@@ -945,8 +938,8 @@ static void poly_offset_gl(float *factor, float *units)
  *   Multisampling: every target drawn with 2, 4 or 8 samples a pixel (the
  *   backend's samples), which smooths what is drawn rather than the picture
  *   afterwards. OpenGL takes a new count at the next flip, carrying every
- *   target across; OpenGL ES and Metal only at start, so there a change is
- *   kept for the next one.
+ *   target across; Metal only at start, so there a change is kept for the
+ *   next one.
  *
  * Nothing the title can observe changes with either -- its surfaces, their
  * sizes and the raster stay what they were. RECOMP_GL_SMAA=0|1 and
@@ -1243,7 +1236,7 @@ static int gl_init(uint32_t w, uint32_t h)
 
 #else
 
-#if defined(NV2A_GL_USE_SDL) && !defined(NV2A_GLES) && !defined(__APPLE__)
+#if defined(NV2A_GL_USE_SDL) && !defined(__APPLE__)
 #ifndef GL_LOWER_LEFT
 #  define GL_LOWER_LEFT      0x8CA1
 #endif
@@ -1301,7 +1294,7 @@ static int gl_init_common(uint32_t w, uint32_t h)
     (void)w; (void)h;
     G = nv2a_gfx_gl();
     g_is_gl = 1;
-#if defined(NV2A_GL_USE_SDL) && !defined(NV2A_GLES) && !defined(__APPLE__)
+#if defined(NV2A_GL_USE_SDL) && !defined(__APPLE__)
     revz_start();
 #endif
     return G->init();
@@ -1381,10 +1374,8 @@ static int gl_init(uint32_t w, uint32_t h)
 
 #elif defined(NV2A_GL_USE_SDL)
 
-#if !defined(NV2A_GLES)
 static void pres_start(void);        /* the presenter, below */
 static volatile int g_presenter;     /* ... and whether it runs */
-#endif
 static int  sdl_cfg_get(const char *key, int def); /* the settings file, below */
 #if defined(XBOXRECOMP_MENU)
 static void sdl_menu_display(void);  /* the in-game menu's rows, below */
@@ -1400,13 +1391,6 @@ static int gl_init(uint32_t w, uint32_t h)
         fprintf(stderr, "  [GL] SDL_Init failed: %s\n", SDL_GetError());
         return 0;
     }
-#if defined(NV2A_GLES)
-    /* OpenGL ES 3.0 is all the renderer uses; a driver gives the newest 3.x
-     * it has, and the shaders follow what that is (nv2a_gfx_gl.c). */
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
-#else
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
@@ -1416,7 +1400,6 @@ static int gl_init(uint32_t w, uint32_t h)
      * game fails to compile. */
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS,
                         SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
-#endif
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
@@ -1464,10 +1447,8 @@ static int gl_init(uint32_t w, uint32_t h)
      * thread that runs the GPU. RECOMP_VSYNC=1 asks for it anyway. */
     { const char *v = getenv("RECOMP_VSYNC");
       SDL_GL_SetSwapInterval(v && atoi(v) ? 1 : 0); }
-#if !defined(NV2A_GLES)
     /* Or, on Windows, a presenter thread swaps in step with the display. */
     pres_start();
-#endif
 #if defined(NV2A_DISPLAY_CLOCK)
     /* Or, on Linux, frame_pace hands frames over in step with the display's
      * refreshes as the kernel counts them (nv2a_display_clock.c). */
@@ -1678,7 +1659,7 @@ int nv_window_pref_widescreen(void) { return sdl_cfg_get("widescreen", 0) != 0; 
  *   Space, J   A        K  B            H  X     L  Y
  *   E          R trigger                Q  L trigger
  *   R          Black                    F  White
- *   Return     Start                    Esc  Back (and Android's Back)
+ *   Return     Start                    Esc  Back (and a keyboard's Back key)
  *   C / V      left / right stick click
  * F11 or Alt+Return: full screen. F10: widescreen. F9: resolution. And the
  * keys the game binds for itself (nv_window_hotkey). */
@@ -1695,7 +1676,7 @@ static void sdl_key(SDL_Scancode sc, int down)
     case SDL_SCANCODE_A:      bit = 1u << 2; break;
     case SDL_SCANCODE_D:      bit = 1u << 3; break;
     case SDL_SCANCODE_RETURN: case SDL_SCANCODE_KP_ENTER: bit = 1u << 4; break;
-    case SDL_SCANCODE_ESCAPE: case SDL_SCANCODE_AC_BACK: bit = 1u << 5; break;   /* AC_BACK: Android's Back */
+    case SDL_SCANCODE_ESCAPE: case SDL_SCANCODE_AC_BACK: bit = 1u << 5; break;   /* AC_BACK: a keyboard's Back key */
     case SDL_SCANCODE_UP:     bit = 1u << 6; break;
     case SDL_SCANCODE_DOWN:   bit = 1u << 7; break;
     case SDL_SCANCODE_LEFT:   bit = 1u << 8; break;
@@ -1788,30 +1769,15 @@ static void sdl_pad_hotkey(Uint8 b)
             g_sdl_hotkey[i].run();
 }
 
-#if defined(__ANDROID__)
-/* The Android app's on-screen controls (port/android/jsrf_android.c): what
- * they hold, in the same bits, and 1 while they are showing -- the pad then
- * counts as connected with nothing held, as on the iPhone. */
-int nv_touch_keys(unsigned short *buttons, unsigned char *analog);
-#endif
-
 /* Read by the input layer (xinput_device.c), with the Mac's signature. */
 int nv_window_keys(unsigned short *buttons, unsigned char *analog)
 {
     int i, any;
     unsigned short b = g_sdl_kb_buttons;
-    unsigned char ta[8] = { 0 };
-#if defined(__ANDROID__)
-    unsigned short tb = 0;
-    int touch = nv_touch_keys(&tb, ta);
-    b |= tb;
-#else
-    int touch = 0;
-#endif
     if (buttons) *buttons = b;
-    any = b != 0 || touch;
+    any = b != 0;
     for (i = 0; i < 8; i++) {
-        unsigned char v = g_sdl_kb_analog[i] > ta[i] ? g_sdl_kb_analog[i] : ta[i];
+        unsigned char v = g_sdl_kb_analog[i];
         if (analog) analog[i] = v;
         if (v) any = 1;
     }
@@ -1834,12 +1800,6 @@ static void sdl_choose_fullscreen(void)
     sdl_toggle_fullscreen();
     sdl_cfg_set("fullscreen", (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0);
 }
-
-/* Widescreen asked for from another thread (the Android app's settings): done
- * at the next sdl_pump, by the thread that owns the window, as F10 is. */
-static volatile int g_sdl_want_wide = -1;
-void nv_window_request_widescreen(int on);
-void nv_window_request_widescreen(int on) { g_sdl_want_wide = on ? 1 : 0; }
 
 static void sdl_toggle_widescreen(void)
 {
@@ -1915,9 +1875,6 @@ static void sdl_choose_scale(void)
      * looked hung until Alt+F4 closed the box it could not see. So full
      * screen is left while it is up, and put back if nothing is chosen. */
     was_fs = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
-#if defined(__ANDROID__)
-    was_fs = 0;     /* the app is always full screen, and the box shows over it */
-#endif
     if (was_fs) sdl_toggle_fullscreen();
     for (i = 0; i < 4; i++) {
         b[i].flags    = i + 1 == cur ? SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT : 0;
@@ -2147,10 +2104,8 @@ static void sdl_present(GLuint src_fbo, int sw, int sh)
  * half a refresh before the next one, so that each is shown exactly once.
  *
  * On by default on Windows. RECOMP_GL_PRESENTER=1 turns it on elsewhere
- * (Linux, with GLX), 0 off -- the swap at the flip, as before. Not on
- * Android: EGL lets a window surface be current on one thread only.
+ * (Linux, with GLX), 0 off -- the swap at the flip, as before.
  */
-#if !defined(NV2A_GLES)
 #define NV2A_SDL_PRESENTER 1
 
 typedef struct {
@@ -2502,16 +2457,10 @@ static double pres_lock(double base, double *ref, double *refresh)
     *refresh = p;
     return n * p;
 }
-#endif /* !NV2A_GLES */
 
 static void sdl_pump(void)
 {
     SDL_Event ev;
-    if (g_sdl_want_wide >= 0) {
-        int want = g_sdl_want_wide;
-        g_sdl_want_wide = -1;
-        if (want != nv2a_widescreen()) sdl_toggle_widescreen();
-    }
     while (SDL_PollEvent(&ev)) {
 #if defined(XBOXRECOMP_MENU)
         if (xbox_MenuEvent(&ev)) continue;      /* F1, a pad's Back, or the menu's */
@@ -4797,7 +4746,7 @@ static uint32_t vtx_bytes(const VtxLive *l)
  * those read the converted vertices back, and a kept draw has none.
  *
  * RECOMP_GL_VCACHE=0 turns it off; RECOMP_GL_VCACHE_MB sets how much it may
- * keep (128 MB, 64 on OpenGL ES), the least recently drawn going first.
+ * keep (128 MB), the least recently drawn going first.
  */
 #define VC_MAX     8192        /* entries, at most */
 #define VC_NHASH   16384       /* buckets: a power of two */
@@ -4929,11 +4878,7 @@ static int vc_on(void)
     g_vc_on = (v ? atoi(v) != 0 : 1)
            && G->vbuf_new && G->vbuf_free && G->vbuf_fill && G->vbuf_bind && G->draw_indexed;
     if (g_vc_on && !v && (why = vc_debug_switch()) != NULL) g_vc_on = 0;
-#if defined(NV2A_GLES)
-    g_vc_budget = (uint64_t)(mb && atoi(mb) > 0 ? atoi(mb) : 64) << 20;
-#else
     g_vc_budget = (uint64_t)(mb && atoi(mb) > 0 ? atoi(mb) : 128) << 20;
-#endif
     if (g_vc_on) {
         g_vc = (VcEntry *)calloc(VC_MAX, sizeof *g_vc);
         g_vc_stream = g_vc ? G->vbuf_new(1) : 0;
@@ -5431,9 +5376,8 @@ static void gl_error_check(int after_draw, uint32_t verts)
  * so they are made once a second and not each frame, and the line says how
  * long they took. It says how long after its hand-over the card finished each
  * frame -- next to nothing while it keeps up -- and how far apart it finished
- * them by its own clock. OpenGL 3.3's timer queries; OpenGL ES has them only
- * as an extension, and goes without. */
-#if defined(NV2A_GL_HAVE_GL) && !defined(NV2A_GLES)
+ * them by its own clock. OpenGL 3.3's timer queries. */
+#if defined(NV2A_GL_HAVE_GL)
 #define CARD_QUERIES 128                     /* two seconds of frames at 60 fps */
 static GLuint   g_card_q[CARD_QUERIES];
 static double   g_card_sent[CARD_QUERIES];   /* our clock at each hand-over */
@@ -7910,16 +7854,9 @@ static void do_draw_body(void)
                   glDepthFunc(depth_dir(dfn[pass]));
 
                   r[pass] = 0;
-#if defined(NV2A_GLES)
-                  /* OpenGL ES only says whether any passed: 0 or 1 here. */
-                  glBeginQuery(GL_ANY_SAMPLES_PASSED, qo);
-                  glDrawArrays(gl_mode_of(mode), 0, (GLsizei)out_n);
-                  glEndQuery(GL_ANY_SAMPLES_PASSED);
-#else
                   glBeginQuery(GL_SAMPLES_PASSED, qo);
                   glDrawArrays(gl_mode_of(mode), 0, (GLsizei)out_n);
                   glEndQuery(GL_SAMPLES_PASSED);
-#endif
                   glGetQueryObjectuiv(qo, GL_QUERY_RESULT, &r[pass]);
               }
               glDeleteQueries(1, &qo);
@@ -12202,7 +12139,7 @@ static int shader_cache_on(void)
 #if defined(XBOXRECOMP_MENU)
 /* Graphics > Shader cache, once its box has had OK: kept, and the game
  * started again for it, as for a new render scale. Where it cannot start
- * again (Android), from the next start. */
+ * again, from the next start. */
 static void shader_cache_toggle(void)
 {
     g_shaders = !shader_cache_on();
@@ -12217,8 +12154,8 @@ static void shader_cache_toggle(void)
 /* Developer > Purge shaders (Restart), once its box has had OK: asked for as
  * purge_shaders=1, and the game started again for it, as for Shader cache.
  * The start does it, before it opens the cache (shader_cache_purge): this run
- * has the cache's files open. Where it cannot start again (Android), at the
- * next start. */
+ * has the cache's files open. Where it cannot start again, at the next
+ * start. */
 static void shader_cache_purge_ask(void)
 {
     sdl_cfg_set("purge_shaders", 1);
@@ -12397,9 +12334,7 @@ static void aa_start(void)
     if (vs && *vs) smaa = atoi(vs) != 0;
     if (vm && *vm) msaa = atoi(vm);
     g_msaa_max = G->samples_max ? G->samples_max() : 1;
-#if !defined(NV2A_GLES)
     g_msaa_live = g_is_gl && G->samples != NULL;
-#endif
     if (G->samples) g_msaa_now = G->samples(msaa > 1 ? msaa : 1);
     else if (msaa > 1) fprintf(stderr, "  [GL] MSAA: not on the %s backend\n", G->name);
     g_msaa_want = g_msaa_now;

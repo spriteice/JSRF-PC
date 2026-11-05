@@ -38,9 +38,6 @@
 #include <mach/mach_host.h>
 #else
 #include <sys/sysinfo.h>
-#if defined(__ANDROID__)
-#include <sys/syscall.h>   /* memfd_create, by number (anon_map_fd) */
-#endif
 #endif
 
 /* ===================================================================== */
@@ -1203,12 +1200,7 @@ BOOL TerminateThread(HANDLE h, DWORD exitCode)
     w32_object *o = obj_any(h);
     if (!o || o->kind != K_THREAD) return FALSE;
     pthread_mutex_lock(&o->lock);
-#if defined(__ANDROID__)
-    /* Android has no pthread_cancel: the thread is marked ended and left to
-     * run to its own end. */
-#else
     if (!o->exited) pthread_cancel(o->thread);
-#endif
     o->exit_code = exitCode;
     o->exited    = 1;
     o->signaled  = 1;
@@ -1703,12 +1695,11 @@ VOID DebugBreak(void) {
 
 VOID SecureZeroMemory(PVOID ptr, SIZE_T cnt)
 {
-#if defined(__APPLE__) || defined(__ANDROID__)
+#if defined(__APPLE__)
     /* Darwin's memset_s is only declared when __STDC_WANT_LIB_EXT1__ is set
      * before every string.h in the translation unit, which is not something a
-     * compat header can promise; Android's bionic has no explicit_bzero (and
-     * memset_explicit only from API 34). A volatile store cannot be optimised
-     * away either, and needs no cooperation from libc. */
+     * compat header can promise. A volatile store cannot be optimised away
+     * either, and needs no cooperation from libc. */
     {
         volatile unsigned char *q = (volatile unsigned char *)ptr;
         while (cnt--) *q++ = 0;
@@ -1990,24 +1981,6 @@ static int anon_map_fd(const char *name)
             snprintf(path, sizeof path, "%s%sxbr.%d.%d.XXXXXX",
                      tmp ? tmp : "/tmp",
                      (tmp && tmp[0] && tmp[strlen(tmp) - 1] == '/') ? "" : "/",
-                     (int)getpid(), seq++);
-            fd = mkstemp(path);
-            if (fd >= 0) unlink(path);
-            return fd;
-        }
-    }
-#elif defined(__ANDROID__)
-    /* Android: bionic declares memfd_create from API 30 on; the system call
-     * itself is older than any phone this runs on. A temp file in TMPDIR (the
-     * app's cache folder) if it is refused. */
-    {
-        static int seq;
-        int fd = (int)syscall(__NR_memfd_create, name ? name : "xbox_map", 0);
-        if (fd >= 0) return fd;
-        {
-            const char *tmp = getenv("TMPDIR");
-            char path[512];
-            snprintf(path, sizeof path, "%s/xbr.%d.%d.XXXXXX", tmp ? tmp : "/data/local/tmp",
                      (int)getpid(), seq++);
             fd = mkstemp(path);
             if (fd >= 0) unlink(path);
