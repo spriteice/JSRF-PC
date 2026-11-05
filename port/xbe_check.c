@@ -27,7 +27,7 @@
  */
 #include "xbe_check.h"
 
-#include "ios/xiso.h"
+#include "xiso.h"
 
 #include <stdint.h>
 #include <stdio.h>

@@ -24,7 +24,7 @@ int jsrf_xbe_check_folder(const char *game_dir, char *why, size_t whyn);
 
 /* The same for a disc image, before unpacking it: whether it is an Xbox disc
  * image at all (or a zip, a compressed image...), then its default.xbe, read
- * from inside it (port/ios/xiso.c). */
+ * from inside it (port/xiso.c). */
 int jsrf_xbe_check_iso(const char *iso_path, char *why, size_t whyn);
 
 /* After a JSRF_XBE_OTHER: how that file's section table differs from the

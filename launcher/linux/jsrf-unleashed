@@ -112,7 +112,7 @@ relay() {
 
 # A disc image: unpacked once into ~/.local/share/jsrf-pc/<name> (in
 # portable mode, portable/games/<name>), by the engine (--unpack-iso: the
-# unpacker the other apps use, port/ios/xiso.c), so nothing else has to be
+# unpacker the other apps use, port/xiso.c), so nothing else has to be
 # installed. Checked first, so a zip, another game's
 # disc or another build of the game is named before anything is unpacked.
 # Prints the game folder; nothing if unpacking was cancelled.

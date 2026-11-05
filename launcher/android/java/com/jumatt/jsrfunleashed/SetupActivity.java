@@ -21,7 +21,7 @@ import java.io.File;
  * The first screen. If the game is in the app's folder (game/, with
  * default.xbe and Media/ in it), it starts it straight away. If not, it says
  * how to put it there: pick the disc image (.iso), which it unpacks
- * (port/ios/xiso.c, through port/android/jsrf_android.c), or copy the
+ * (port/xiso.c, through port/android/jsrf_android.c), or copy the
  * extracted folder in from a computer over USB.
  */
 public class SetupActivity extends Activity {

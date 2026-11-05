@@ -128,7 +128,7 @@ if(ANDROID)
         pcores.c
         xbe_check.c
         android/jsrf_android.c
-        ios/xiso.c
+        xiso.c
         ${JSRF_GEN_SOURCES}
     )
     set_target_properties(jsrf_recomp PROPERTIES OUTPUT_NAME main)
@@ -146,13 +146,13 @@ else()
         cpuprof.c
         pcores.c
         xbe_check.c
-        ios/xiso.c
+        xiso.c
         ${JSRF_GEN_SOURCES}
     )
 endif()
 if(IOS)
     # The iPhone / iPad app around the engine (ios/jsrf_ios.m: the window,
-    # the controls, the game in Documents; the disc-image unpacker, ios/xiso.c,
+    # the controls, the game in Documents; the disc-image unpacker, xiso.c,
     # is in every build -- the Mac and Linux apps use it through the engine). The
     # bundle -- Info.plist, icons, signature -- is put together by
     # launcher/ios/package_ios.sh from this executable.
@@ -211,7 +211,6 @@ elseif(WIN32)
     target_link_libraries(jsrf_recomp PRIVATE d3d11 dxgi dxguid xinput winmm dbghelp)
 elseif(ANDROID)
     # pthreads are in bionic's libc; log and android for the glue.
-    target_include_directories(jsrf_recomp PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/ios")
     target_link_libraries(jsrf_recomp PRIVATE m dl log android)
     # -Bsymbolic: the game's functions call one another directly rather than
     # through the PLT, as in an executable (nothing ever interposes on them);

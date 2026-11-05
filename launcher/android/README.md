@@ -8,7 +8,7 @@ for ES 3.0 and writes its shaders for whatever 3.x the driver gives).
 
 | | |
 |---|---|
-| `java/.../SetupActivity.java` | the first screen: finds the game in the app's folder, or unpacks a disc image there (`port/ios/xiso.c`, given the picked file as `fd:N`) |
+| `java/.../SetupActivity.java` | the first screen: finds the game in the app's folder, or unpacks a disc image there (`port/xiso.c`, given the picked file as `fd:N`) |
 | `java/.../JsrfActivity.java` | the game: SDL's activity, which calls the engine's `SDL_main`; the on-screen controls while no controller is connected, and the settings (⚙) |
 | `java/.../TouchPadView.java` | the on-screen controls, laid out as on the iPhone (`port/ios/jsrf_ios.m`, NvTouchPad) |
 | `java/.../Settings.java` | the settings file the engine shares (`scale`, `widescreen`, `touch`) |

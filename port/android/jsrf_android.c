@@ -16,7 +16,7 @@
  * thread's.
  *
  * The setup screen (SetupActivity) unpacks a disc image through
- * nativeProbe / nativeUnpack below, over port/ios/xiso.c.
+ * nativeProbe / nativeUnpack below, over port/xiso.c.
  */
 #include <jni.h>
 #include <pthread.h>

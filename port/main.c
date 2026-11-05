@@ -64,7 +64,7 @@
 #include "win32_compat.h"
 #include "recomp_icall_feedback.h"
 #include "xbe_check.h"
-#include "ios/xiso.h"
+#include "xiso.h"
 #include "apu.h"
 #include "apu_gpfx.h"
 #include <stdio.h>
@@ -1241,7 +1241,7 @@ int main(int argc, char **argv)
     }
     /* --unpack-iso <image> <folder>: the check above, then the image's files
      * into folder, with the unpacker the iPhone, Android and Windows apps use
-     * (ios/xiso.c), so the Mac and Linux apps need no other program. Prints
+     * (xiso.c), so the Mac and Linux apps need no other program. Prints
      * "progress <bytes done> <bytes in all>" as it goes, then "ok" or why
      * not; exits 0, the check's code, or 1 if unpacking failed (what was
      * written is left for the caller, which unpacks into a folder of its own,
