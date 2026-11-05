@@ -6,7 +6,6 @@ cmake_minimum_required(VERSION 3.20)
 
 set(KERNEL_SOURCES
     kernel_path.c
-    kernel_pool.c
     kernel_rtl.c
     kernel_memory.c
     kernel_file.c

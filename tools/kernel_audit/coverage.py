@@ -29,8 +29,8 @@ Two that bit, on Halo 2276, each crashing it earlier than the stub it replaced:
 
   IoCreateDevice  HeapAllocs from GetProcessHeap() and writes that native
                   pointer through an out-parameter -- into a 4-byte guest slot.
-  ExFreePool      calls HeapFree(GetProcessHeap(), P) on guest pool memory that
-                  was never on the host heap.
+  ExFreePool      called HeapFree(GetProcessHeap(), P) on guest pool memory that
+                  was never on the host heap (that xbox_ExFreePool has gone).
 
 Before routing one, check which side owns the allocation and whether any
 out-pointer has to carry a guest VA. Functions that only read or write bytes at

@@ -3452,9 +3452,8 @@ static void bridge_AvSendTVEncoderOption(void)
  * so the title was calling into kernel data. Even after that it was an
  * unbridged no-op, which leaks every pool block the title ever frees.
  *
- * Deliberately does NOT call xbox_ExFreePool: that one HeapFrees its argument
- * on the host heap, but every pool block reaches the title as a guest VA from
- * xbox_HeapAlloc, so only the guest heap can release it. xbox_HeapFree answers
+ * Every pool block reaches the title as a guest VA from xbox_HeapAlloc, so
+ * only the guest heap can release it, never the host's. xbox_HeapFree answers
  * through the block table and takes the raw 32-bit guest VA. */
 static void bridge_ExFreePool(void)
 {

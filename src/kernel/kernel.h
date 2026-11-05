@@ -514,12 +514,6 @@ BOOL xbox_translate_path(const char* xbox_path, xbox_host_char* host_path_buf, D
 ULONGLONG xbox_partition_length(HANDLE h);
 
 /* ============================================================================
- * Pool Allocator (kernel_pool.c)
- * ============================================================================ */
-
-VOID    __stdcall xbox_ExFreePool(PVOID P);
-
-/* ============================================================================
  * Runtime Library (kernel_rtl.c)
  * ============================================================================ */
 
@@ -910,7 +904,6 @@ void xbox_log(int level, const char* subsystem, const char* fmt, ...);
 #define XBOX_LOG_SYNC    "SYNC"
 #define XBOX_LOG_HAL     "HAL"
 #define XBOX_LOG_RTL     "RTL"
-#define XBOX_LOG_POOL    "POOL"
 #define XBOX_LOG_IO      "IO"
 #define XBOX_LOG_OB      "OB"
 #define XBOX_LOG_CRYPTO  "CRYPTO"
