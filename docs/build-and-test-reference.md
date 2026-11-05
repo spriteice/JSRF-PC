@@ -72,10 +72,14 @@ files move between them, and what the PC has installed.
   asked for first.
 - **The checkout:** `Building\src`, a clone of this repository that is only
   built from, with `core.autocrlf` off so the files are as the repository
-  has them. For each build it is put at the commit under test, detached,
-  with the diff under test applied, and its tree's hash (`git add -A`, then
-  `git write-tree`) must be the one the cloud had. It never has a branch of
-  its own, and nothing is ever committed or pushed from it.
+  has them. It is never reset or cleaned, as the PC's permission check
+  refuses that: each run makes its own detached worktree of it, in the
+  run's folder (`git worktree add --detach <folder>\src <commit>`), with
+  the diff under test applied by `git apply --index`, and that tree's hash
+  (`git write-tree`) must be the one the cloud had. `git apply --index`
+  gives each file the diff's mode; `git add -A` wouldn't, as
+  `core.filemode` is off there. Neither has a branch of its own, and
+  nothing is ever committed or pushed from either.
 - **Game files:** the generated code is made on the PC, from my own
   default.xbe there, and stays in `Building\`. It never leaves the PC, and
   generated code made in the cloud never goes there. default.xbe leaves
