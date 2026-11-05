@@ -309,7 +309,14 @@ between builds).
   tsan.supp, that it is there by design), which `tests/run_all.py` checks
   every line has. Such a failure is reported on the run and doesn't fail
   it. Anything else does. The fix for a bug takes its lines out, and each
-  release checks them (docs/release-checklist.md, step 4).
+  release checks them (docs/release-checklist.md, step 4). Each entry in
+  tsan.supp also says how many reports it may hide in each test ("hides at
+  most", about twice the most seen in 30 runs, as the count varies with
+  timing), and a test in which one hides more, or any in a test it doesn't
+  name, fails: so an entry can't quietly hide a new race in another test,
+  or many more of the same. An entry names the narrowest thing that covers
+  its bug: the register path's two (`recomp_mmio_read` and `_write`) are
+  `race_top:` entries, which hide only the game's own access in them.
 - **Warnings:** our code (all but `third_party/` and the generated code) is
   built with `-Wall -Wextra`, and each build job counts the warnings in it,
   once a place (`.github/ci/count_warnings.py`), against its line in

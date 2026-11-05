@@ -4,19 +4,31 @@
 # that fixes it, and the sanitizer must then find nothing there. Anything not
 # listed here fails CI.
 #
-# Entries name a function anywhere in either thread's stack, or a global
-# variable; ^ and $ make the match exact. Each group's comment names the
+# A race: entry names a function anywhere in either thread's stack, or a
+# global variable; a race_top: entry names the function that makes one of
+# the two accesses itself, at the top of its stack; ^ and $ make the match
+# exact. Under each entry, "hides at most" gives how many reports it may hide
+# in each test, about twice the most seen in 30 runs (the count varies with
+# timing); tests/run_all.py fails a test in which an entry hides more, or any
+# in a test its line doesn't name. Each group's comment names the
 # release that is to fix its bug ("Fixed by b3."), checked at that release's
 # step 4 (docs/release-checklist.md), or says it is there "By design";
 # tests/run_all.py stops if one does neither.
 
-# Known bug 20: the NV2A's registers are plain memory, which the game (through
-# recomp_mmio_read and _write, and tests/nv2a_queue's DMA_GET poll) and the
-# GPU thread read and write at once. Removed by the device register table
+# Known bug 20: the NV2A's registers are plain memory, which the game (in
+# recomp_mmio_read and _write, src/kernel/kernel_mmio.c, and tests/nv2a_queue's
+# DMA_GET poll) and the GPU thread (nv2a_ack_thread) read and write at once.
+# The two race_top entries hide only a race in which the game's own access is
+# made in those two functions, so a race below them on the register path
+# (the APU's registers, the NV2A's interrupt registers, the pushbuffer flush)
+# is still reported. Removed by the device register table
 # (broader-fixes/CODEBASE.md R1). Fixed by b3.
-race:^recomp_mmio_read$
-race:^recomp_mmio_write$
+race_top:^recomp_mmio_read$
+#   hides at most: nv2a_queue 3
+race_top:^recomp_mmio_write$
+#   hides at most: nv2a_queue 16
 race:^wait_get$
+#   hides at most: nv2a_queue 4
 
 # Known bug 20, and by design: the push buffer, in guest memory, written by
 # the game and read by the GPU thread's walk. On the console DMA_PUT orders
@@ -24,23 +36,28 @@ race:^wait_get$
 # just ahead of DMA_GET while the walk may be reading it, as on the console.
 # Fixed by b3, as far as known bug 20 goes; the patching is by design.
 race:^nv2a_pb_scan$
+#   hides at most: nv2a_queue 40000
 
 # Known bug 20: the GPU thread's kick (s_kick_on, a switch cached lazily, and
 # s_hurry), written by the game's thread and read by the GPU thread. Removed
 # with the kick itself (CODEBASE.md R3) and the switch registry (R10).
 # Fixed by b3.
 race:^s_kick_on$
+#   hides at most: nv2a_queue 8
 race:^s_hurry$
+#   hides at most: nv2a_queue 8
 
 # Known bug 20: switches cached lazily by whichever thread reads them first:
 # RECOMP_NV2A_QUEUE (nv2a_queue_on) and the software methods' mode
 # (swm_mode). Removed by the switch registry (CODEBASE.md R10). Fixed by b3.
 race:^nv2a_queue_on$
+#   hides at most: nv2a_queue 6
 race:^swm_mode$
 
 # Known bug 20: the GPU queue's counts, kept by the GPU thread and read for
 # the log by the game's thread. No change planned yet. Fixed by b3.
 race:^nv2a_queue_report$
+#   hides at most: nv2a_queue 8
 
 # Known bug 25: the USB controller's registers (s_hc) are plain memory, read
 # and written at once by the controller's thread and the game's USB driver
@@ -48,7 +65,9 @@ race:^nv2a_queue_report$
 # and a write on both sides (tests/usb_interrupt). Removed by the device
 # register table's USB part (broader-fixes/CODEBASE.md R1). Fixed by b3.
 race:^s_hc$
+#   hides at most: usb_interrupt 6
 
 # By design: tests/fence_wait's fence word, in guest memory, written by the
 # GPU side and polled by the game, as on the console.
 race:^g_guest$
+#   hides at most: fence_wait 4

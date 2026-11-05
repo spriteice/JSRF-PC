@@ -1,7 +1,8 @@
 """Tests for CI's own scripts, run with the tool tests in CI's GCC job
 (.github/ci/linux.sh): fetch.py's tries, how tests/run_all.py names a
-sanitizer's leak and checks that each known bug names its release, and how
-count_warnings.py counts a build's warnings."""
+sanitizer's leak, checks that each known bug names its release and counts
+what each tsan.supp entry hides, and how count_warnings.py counts a build's
+warnings."""
 
 import hashlib
 import http.server
@@ -210,3 +211,35 @@ def test_each_tsan_group_names_its_release_or_design():
     ])
     assert [p.split(":")[0] for p in run_all.supp_releases(supp)] == ["14", "17"]
     assert run_all.supp_releases((root / "tests" / "tsan.supp").read_text(encoding="utf-8")) == []
+
+
+def test_each_tsan_entry_hides_at_most_its_line():
+    supp = "\n".join([
+        "# Known bug 20. Fixed by b3.",
+        "race_top:^a$",
+        "#   hides at most: one 3, two 40000",
+        "race:^b$",
+        "",
+        "# hides at most: one 2",
+        "race:^c$",
+        "#   hides at most: one x",
+    ])
+    limits, problems = run_all.supp_limits(supp)
+    assert limits == {"race_top:^a$": {"one": 3, "two": 40000}, "race:^b$": {}, "race:^c$": {}}
+    assert [p.split(":")[0] for p in problems] == ["6", "8"]
+    limits, problems = run_all.supp_limits((root / "tests" / "tsan.supp").read_text(encoding="utf-8"))
+    assert problems == [] and limits["race_top:^recomp_mmio_write$"]
+
+
+def test_tsan_hidden_reports_summed_over_a_tests_programs():
+    reports = "\n".join([
+        "WARNING: ThreadSanitizer: data race (pid=1)",
+        "SUMMARY: ThreadSanitizer: data race x.c:1 in f",
+        "ThreadSanitizer: Matched 5 suppressions (pid=1):",
+        "2 race_top:^recomp_mmio_write$",
+        "3 race:^s_hc$",
+        "ThreadSanitizer: reported 1 warnings",
+        "ThreadSanitizer: Matched 4 suppressions (pid=2):",
+        "4 race_top:^recomp_mmio_write$",
+    ])
+    assert run_all.hidden(reports) == {"race_top:^recomp_mmio_write$": 6, "race:^s_hc$": 3}

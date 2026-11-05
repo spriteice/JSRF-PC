@@ -16,7 +16,9 @@ The release checks them at its step 4 (docs/release-checklist.md).
 --tsan runs the tests that start threads (those whose files mention
 pthread_create, CreateThread or std::thread) built with the thread
 sanitizer: CC, or clang, with -fsanitize=thread. A test fails if the
-sanitizer reports anything tests/tsan.supp doesn't list, or if it fails.
+sanitizer reports anything tests/tsan.supp doesn't list, if an entry there
+hides more of its reports than the entry's "hides at most" line allows (or
+any, in a test that line doesn't name), or if it fails.
 
 --asan runs every test built with the address and undefined-behaviour
 sanitizers: CC, or gcc, and CXX, or g++, with -fsanitize=address,undefined.
@@ -90,6 +92,49 @@ def supp_releases(text):
     return problems
 
 
+def supp_limits(text):
+    """How many reports each entry of tests/tsan.supp may hide in each test,
+    from the "hides at most" line under it: ({entry: {test: count}}, the
+    problems, each as 'line: what'). An entry with no such line may hide
+    none."""
+    limits, problems, entry = {}, [], None
+    for n, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if not line:
+            entry = None
+        elif not line.startswith("#"):
+            entry = line
+            limits.setdefault(entry, {})
+        else:
+            m = re.match(r"#\s*hides at most:\s*(.*)$", line)
+            if not m:
+                continue
+            pairs = [p.split() for p in m.group(1).split(",")]
+            if entry is None or not all(len(p) == 2 and p[1].isdigit() for p in pairs):
+                problems.append("%d: not \"# hides at most: <test> <count>, ...\" under an entry" % n)
+                continue
+            for test, count in pairs:
+                limits[entry][test] = int(count)
+    return limits, problems
+
+
+def hidden(reports):
+    """{entry: reports it hid} from the sanitizer's print_suppressions lines
+    ("ThreadSanitizer: Matched 3 suppressions", then "3 race:^s_hc$"), summed
+    over the test's programs."""
+    out, counting = {}, False
+    for line in reports.splitlines():
+        if line.startswith("ThreadSanitizer: Matched "):
+            counting = True
+            continue
+        m = re.match(r"(\d+) (\S+:\S.*)$", line) if counting else None
+        if m:
+            out[m.group(2)] = out.get(m.group(2), 0) + int(m.group(1))
+        else:
+            counting = False
+    return out
+
+
 def matching(lines, entries):
     """The why of each entry that one of lines matches."""
     return [why for line, why in entries if any(fnmatch.fnmatchcase(l, line) for l in lines)]
@@ -160,7 +205,9 @@ def main(argv):
     tests = sorted(pathlib.Path(p).parent for p in glob.glob(str(root / "tests/*/run.py")))
     failures = known("known-failures.txt")
     reported = known("asan-known.txt")
-    problems = supp_releases((root / "tests/tsan.supp").read_text(encoding="utf-8"))
+    supp_text = (root / "tests/tsan.supp").read_text(encoding="utf-8")
+    limits, problems = supp_limits(supp_text)
+    problems += supp_releases(supp_text)
     if problems:
         raise SystemExit("run_all: tests/tsan.supp:" + "\n  tests/tsan.supp:".join(problems))
     for name, entries in (("known-failures.txt", failures), ("asan-known.txt", reported)):
@@ -197,7 +244,7 @@ def main(argv):
             report = "log_path=" + os.path.join(logs, "report")
             if tsan:
                 env["TSAN_OPTIONS"] = " ".join([
-                    "suppressions=" + str(supp), report,
+                    "suppressions=" + str(supp), report, "print_suppressions=1",
                     "exitcode=0", "halt_on_error=0", "second_deadlock_stack=1"])
             if asan:
                 # Each report ends with a SUMMARY line, its paths from the
@@ -217,6 +264,16 @@ def main(argv):
         else:
             new = count = reports.count("WARNING: ThreadSanitizer")
             why_reported = []
+            # Each entry's hidden reports against its "hides at most" line.
+            # How many there are varies from run to run, so the lines allow
+            # about twice the most seen; a new race an entry hides adds to it.
+            hid = hidden(reports) if tsan else {}
+            for entry, n in sorted(hid.items()):
+                most = limits.get(entry, {}).get(test.name, 0)
+                if n > most:
+                    new += 1
+                    reports += ("run_all: tests/tsan.supp's %s hid %d reports in %s, and its "
+                                "\"hides at most\" line allows %d\n" % (entry, n, test.name, most))
         match = matching(out.splitlines(), failures.get(test.name, []))
         if new:
             verdict = "FAIL"
@@ -227,6 +284,8 @@ def main(argv):
         else:
             verdict = "FAIL"
         note = "%5.1f s" % secs
+        if tsan and hid:
+            note += ", %d hidden by tsan.supp" % sum(hid.values())
         if count:
             note += ", %d sanitizer report%s" % (count, "" if count == 1 else "s")
             if count != new:
