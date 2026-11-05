@@ -691,10 +691,8 @@ extern volatile ULONG xbox_KeTickCount;
  * Xbox Identity & Stubs (kernel_xbox.c)
  * ============================================================================ */
 
+/* The kernel version the game reads (ordinal 324) and the log reports. */
 extern XBOX_KRNL_VERSION       xbox_KrnlVersion;
-
-/* Override the reported kernel version (ordinal 324). */
-void xbox_kernel_set_version(USHORT major, USHORT minor, USHORT build, USHORT qfe);
 
 ULONG   __stdcall xbox_PhyGetLinkState(BOOLEAN Verify);
 NTSTATUS __stdcall xbox_PhyInitialize(BOOLEAN ForceReset, PVOID Param2);

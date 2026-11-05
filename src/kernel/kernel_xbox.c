@@ -1,10 +1,10 @@
 /*
  * kernel_xbox.c - Xbox Identity & Hardware Stubs
  *
- * Provides the kernel version the log reports, the EEPROM settings, and
- * the network PHY stubs. The kernel's data exports the game reads (hardware
- * info, the kernel version, keys, the image file name) are kernel_bridge.c's
- * kernel data area.
+ * Provides the kernel version, the EEPROM settings, and the network PHY
+ * stubs. The kernel's data exports the game reads (hardware info, the kernel
+ * version, keys, the image file name) are kernel_bridge.c's kernel data area,
+ * which takes the version from here.
  */
 
 #include "kernel.h"
@@ -14,24 +14,15 @@
  * Kernel Version
  * ============================================================================ */
 
-/* Kernel version - default is a stock retail value. Titles built against a
- * different XDK can report their own through xbox_kernel_set_version(). */
+/* The kernel version: the one the game reads at ordinal 324, which
+ * kernel_bridge.c's kernel data area copies from here, and the one the log
+ * reports (kernel_init.c). One value, so the two can't differ. */
 XBOX_KRNL_VERSION xbox_KrnlVersion = {
     .Major = 1,
     .Minor = 0,
     .Build = 5849,
-    .Qfe   = 1
+    .Qfe   = 0
 };
-
-/* Override the kernel version reported to game code (ordinal 324).
- * Match the XDK revision the target title was built with if it checks it. */
-void xbox_kernel_set_version(USHORT major, USHORT minor, USHORT build, USHORT qfe)
-{
-    xbox_KrnlVersion.Major = major;
-    xbox_KrnlVersion.Minor = minor;
-    xbox_KrnlVersion.Build = build;
-    xbox_KrnlVersion.Qfe   = qfe;
-}
 
 /* ============================================================================
  * EEPROM / Non-Volatile Settings

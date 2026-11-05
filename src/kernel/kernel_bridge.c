@@ -159,16 +159,17 @@ static void kernel_data_init(void)
     BRIDGE_MEM8(XBOX_KERNEL_DATA_BASE + KDATA_HARDWARE_INFO + 4) = 0xA1; /* NV2A A1 */
     BRIDGE_MEM8(XBOX_KERNEL_DATA_BASE + KDATA_HARDWARE_INFO + 5) = 0xB1; /* MCPX B1 */
 
-    /* XboxKrnlVersion (ordinal 324) - XBOX_KRNL_VERSION
-     *   +0: USHORT Major (1)
-     *   +2: USHORT Minor (0)
-     *   +4: USHORT Build (5849 = XDK version)
-     *   +6: USHORT Qfe (0)
+    /* XboxKrnlVersion (ordinal 324) - XBOX_KRNL_VERSION, kernel_xbox.c's,
+     * which the log reports too:
+     *   +0: USHORT Major
+     *   +2: USHORT Minor
+     *   +4: USHORT Build
+     *   +6: USHORT Qfe
      */
-    BRIDGE_MEM16(XBOX_KERNEL_DATA_BASE + KDATA_KRNL_VERSION + 0) = 1;
-    BRIDGE_MEM16(XBOX_KERNEL_DATA_BASE + KDATA_KRNL_VERSION + 2) = 0;
-    BRIDGE_MEM16(XBOX_KERNEL_DATA_BASE + KDATA_KRNL_VERSION + 4) = 5849;
-    BRIDGE_MEM16(XBOX_KERNEL_DATA_BASE + KDATA_KRNL_VERSION + 6) = 0;
+    BRIDGE_MEM16(XBOX_KERNEL_DATA_BASE + KDATA_KRNL_VERSION + 0) = xbox_KrnlVersion.Major;
+    BRIDGE_MEM16(XBOX_KERNEL_DATA_BASE + KDATA_KRNL_VERSION + 2) = xbox_KrnlVersion.Minor;
+    BRIDGE_MEM16(XBOX_KERNEL_DATA_BASE + KDATA_KRNL_VERSION + 4) = xbox_KrnlVersion.Build;
+    BRIDGE_MEM16(XBOX_KERNEL_DATA_BASE + KDATA_KRNL_VERSION + 6) = xbox_KrnlVersion.Qfe;
 
     /* KeTickCount (ordinal 156) - initialized to current tick count. The
      * kernel's timer thread moves it every millisecond from then on
