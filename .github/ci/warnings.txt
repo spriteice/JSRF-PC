@@ -1,0 +1,13 @@
+# The compilers' warnings in our code that each CI job's build gives today,
+# for .github/ci/count_warnings.py: each counted once per place, with -Wall -Wextra
+# on everything but third_party/ and the generated code.
+#
+#   <job> <count>
+#
+# A job fails if its count goes up. When it comes down, the job says so, and
+# a later change to CI lowers the line, so a code commit never has to change
+# .github/. At 0, any warning fails the job, as -Werror would.
+
+gcc 50
+clang 21
+windows 43

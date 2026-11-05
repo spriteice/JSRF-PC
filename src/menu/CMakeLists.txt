@@ -25,6 +25,8 @@ target_link_libraries(xbox_menu PRIVATE SDL2::SDL2 ${CMAKE_DL_LIBS})
 # against libc alone.
 target_compile_options(xbox_menu PRIVATE
     -fno-exceptions -fno-rtti -fno-threadsafe-statics -O2)
+# Our own files' warnings, not Dear ImGui's.
+set_source_files_properties(menu.cpp menu_sdl.cpp PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra")
 target_compile_definitions(xbox_menu PRIVATE
     IMGUI_DISABLE_DEMO_WINDOWS IMGUI_DISABLE_DEBUG_TOOLS
     IMGUI_DISABLE_DEFAULT_SHELL_FUNCTIONS)

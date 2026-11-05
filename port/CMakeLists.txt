@@ -88,7 +88,7 @@ add_subdirectory("${JSRF_REPO}" "${CMAKE_BINARY_DIR}/xboxrecomp")
 
 file(GLOB JSRF_GEN_SOURCES CONFIGURE_DEPENDS "${JSRF_GEN_DIR}/*.c")
 
-add_executable(jsrf_recomp
+set(JSRF_SOURCES
     main.c
     recomp_manual.c
     freecam.c
@@ -102,8 +102,10 @@ add_executable(jsrf_recomp
     pcores.c
     xbe_check.c
     xiso.c
-    ${JSRF_GEN_SOURCES}
 )
+add_executable(jsrf_recomp ${JSRF_SOURCES} ${JSRF_GEN_SOURCES})
+# The warnings of the engine's own files, not the generated code's.
+set_source_files_properties(${JSRF_SOURCES} PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra")
 target_compile_definitions(jsrf_recomp PRIVATE JSRF_VERSION="${JSRF_VERSION}")
 target_link_libraries(jsrf_recomp PRIVATE xboxrecomp)
 target_include_directories(jsrf_recomp PRIVATE

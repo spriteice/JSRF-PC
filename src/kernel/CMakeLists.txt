@@ -54,6 +54,6 @@ else()
     target_link_libraries(xbox_kernel PUBLIC platform OpenSSL::Crypto xbox_nv2a_gl)
 endif()
 
-target_compile_options(xbox_kernel PRIVATE -Wall -Wextra -Wno-unused-parameter -O2)
+target_compile_options(xbox_kernel PRIVATE -Wall -Wextra -O2)
 
 target_compile_definitions(xbox_kernel PRIVATE $<$<CONFIG:Debug>:_DEBUG>)

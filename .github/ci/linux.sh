@@ -8,6 +8,8 @@
 #   clang   the release package, made by launcher/linux/build.sh and checked
 #           by launcher/check_package.py; the engine tests built with clang
 #
+# Each then counts its build's warnings in our code (.github/ci/count_warnings.py).
+#
 # The generated code is the game's, so CI hasn't got it. The engine is built
 # against the toolkit's header alone, and .github/ci/link_check.py checks
 # that the link lacks only what the generated code defines, then stubs that
@@ -30,16 +32,18 @@ gcc)
         -DNV2A_GL_CONTEXT=sdl -DOpenGL_GL_PREFERENCE=LEGACY -DCMAKE_PREFIX_PATH="$work/sdl" \
         -DJSRF_GEN_DIR="$gen" -DJSRF_VERSION=ci > "$work/cmake.log" \
         || { cat "$work/cmake.log"; exit 1; }
-    python3 .github/ci/link_check.py "$gen" cmake --build "$work/build"
+    python3 .github/ci/link_check.py --log "$work/build.log" "$gen" cmake --build "$work/build"
     python3 tests/run_all.py
     python3 -m venv "$work/venv"
     "$work/venv/bin/pip" install --quiet --require-hashes -r .github/ci/tools-requirements.txt
     "$work/venv/bin/python" -m pytest -q -p no:cacheprovider tools .github/ci/test_ci.py
+    python3 .github/ci/count_warnings.py gcc "$work/build.log"
     ;;
 clang)
-    python3 .github/ci/link_check.py "$gen" \
+    python3 .github/ci/link_check.py --log "$work/build.log" "$gen" \
         launcher/linux/build.sh "$work" -DJSRF_GEN_DIR="$gen" -DJSRF_VERSION=ci
     CC=clang python3 tests/run_all.py
+    python3 .github/ci/count_warnings.py clang "$work/build.log"
     ;;
 *)
     echo "usage: .github/ci/linux.sh gcc|clang" >&2

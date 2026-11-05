@@ -210,15 +210,16 @@ In order:
    change affects (How it's written). When a fix can't be proven by reading
    the code, add logging or checks (`RECOMP_CHECK`) that would confirm or
    refute your hypothesis.
-4. **Verify** what you can: it builds, the repo's tests pass, and static
-   checks are clean. You don't play the game: on my PC you run only the
-   packaged engine's own checks and its runs with nobody at the pad, the
-   idle run and, once they exist, the smoke set's saved runs
-   (docs/build-and-test-reference.md, "On my PC"). So call every runtime
-   claim "unverified" until I test it, but for what those runs' logs show.
-   Never claim something is fixed without evidence. A change made for
-   timing or speed is measured before and after, and tuning is measured
-   again when a deeper cause in the same area is fixed.
+4. **Verify** what you can: it builds, the repo's tests pass, and the static
+   checks pass: CI's count of the compilers' warnings in our code
+   (docs/build-and-test-reference.md, CI, Warnings). You don't play the
+   game: on my PC you run only the packaged engine's own checks and its runs
+   with nobody at the pad, the idle run and, once they exist, the smoke
+   set's saved runs (docs/build-and-test-reference.md, "On my PC"). So call
+   every runtime claim "unverified" until I test it, but for what those
+   runs' logs show. Never claim something is fixed without evidence. A
+   change made for timing or speed is measured before and after, and tuning
+   is measured again when a deeper cause in the same area is fixed.
 5. **Track my testing.** Read every log I send in full, start to end, before
    reporting on it, using scripts for logs too long to read whole. Each time
    I send logs, check them against the build's test checklist and list

@@ -4,12 +4,14 @@
 # (.github/ci/docker.sh windows .github/ci/windows.sh): the release package,
 # made by launcher/windows/build.sh and checked by launcher/check_package.py,
 # with the engine linked as far as it can be without the game (see
-# .github/ci/linux.sh). lld stops listing what is missing at 20 unless told.
+# .github/ci/linux.sh), then its warnings in our code counted
+# (.github/ci/count_warnings.py). lld stops listing what is missing at 20 unless told.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 work=/work
 gen="$work/gen/recomp/gen"
 mkdir -p "$gen"
 cp templates/runtime/recomp_types.h "$gen/"
-python3 .github/ci/link_check.py "$gen" launcher/windows/build.sh "$work" ci \
+python3 .github/ci/link_check.py --log "$work/build.log" "$gen" launcher/windows/build.sh "$work" ci \
     -DJSRF_GEN_DIR="$gen" -DCMAKE_EXE_LINKER_FLAGS=-Wl,--error-limit=0
+python3 .github/ci/count_warnings.py windows "$work/build.log"

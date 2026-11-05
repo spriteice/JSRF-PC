@@ -33,3 +33,5 @@ target_link_libraries(xbox_apu PRIVATE platform SDL2::SDL2 m)
 if(WIN32)
     target_link_libraries(xbox_apu PRIVATE kernel32 winmm)
 endif()
+
+target_compile_options(xbox_apu PRIVATE -Wall -Wextra)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Link the engine without the generated code, which CI doesn't have.
 
-    python3 .github/ci/link_check.py <gen dir> <build command>...
+    python3 .github/ci/link_check.py [--log <file>] <gen dir> <build command>...
 
 <gen dir> is the folder the engine was configured with (-DJSRF_GEN_DIR=),
 holding only the toolkit's templates/runtime/recomp_types.h. The build
@@ -12,7 +12,8 @@ that aborts, and the build command is run again, and must link: the result
 is the engine with everything but the game's code, which package.sh can
 package and launcher/check_package.py can check. It never runs a game.
 That second build's output is printed; the first's only if it failed
-otherwise.
+otherwise. With --log, the first build's output, which has every compile's
+warnings, is also written to <file>, for .github/ci/count_warnings.py.
 
 Linkers stop listing undefined symbols at 20 by default (LLVM's lld), so the
 engine is configured with -Wl,--error-limit=0 where the linker is lld.
@@ -37,7 +38,10 @@ def build(cmd):
 
 
 def main(argv):
-    if len(argv) < 2:
+    log = None
+    if argv[:1] == ["--log"]:
+        log, argv = argv[1:2], argv[2:]
+    if len(argv) < 2 or log == []:
         print(__doc__.strip().split("\n\n")[1], file=sys.stderr)
         return 2
     gen, cmd = argv[0], argv[1:]
@@ -46,6 +50,9 @@ def main(argv):
         os.remove(stubs)
 
     code, out = build(cmd)
+    if log:
+        with open(log[0], "w") as f:
+            f.write(out)
     missing = sorted({a or b for a, b in UNDEFINED.findall(out)})
     other = [s for s in missing if not GENERATED.fullmatch(s)]
     if code == 0:
