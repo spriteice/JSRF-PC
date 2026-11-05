@@ -216,7 +216,7 @@ The kernel data area is a 4 KB block at `0x00740000` that holds all data exports
 
 ## Graphics
 
-JSRF links its own Direct3D 8, from the XDK, so it runs recompiled like the rest of the game's code: it builds NV2A commands in a push buffer in guest memory, as on the console. The runtime consumes that push buffer (src/kernel/nv2a_pb_exec.c, with the NV2A's registers modelled in src/nv2a), and [src/nv2a_gl](../../src/nv2a_gl) draws it with OpenGL: the register combiners become GLSL fragment shaders, and the vertex programs GLSL vertex shaders ([technical/nv2a-shaders.md](../technical/nv2a-shaders.md)). src/d3d holds only the D3D8 types and the NV2A's texture swizzling.
+JSRF links its own Direct3D 8, from the XDK, so it runs recompiled like the rest of the game's code: it builds NV2A commands in a push buffer in guest memory, as on the console. The runtime consumes that push buffer (src/kernel/nv2a_pb_exec.c, with the NV2A's interrupt registers modelled in src/kernel/nv2a_intr.c), and [src/nv2a_gl](../../src/nv2a_gl) draws it with OpenGL: the register combiners become GLSL fragment shaders, and the vertex programs GLSL vertex shaders ([technical/nv2a-shaders.md](../technical/nv2a-shaders.md)). src/d3d holds only the D3D8 types and the NV2A's texture swizzling.
 
 ## Input System
 
@@ -226,24 +226,29 @@ JSRF links its own Direct3D 8, from the XDK, so it runs recompiled like the rest
 
 ## Game-Specific: Manual Function Overrides
 
-Not all translated functions work correctly. The runtime supports **manual overrides** -- hand-written C functions that replace specific translated functions:
+Not all translated functions work correctly. The runtime supports **manual overrides** -- hand-written C functions that replace specific translated functions. The toolkit's Burnout 3 port chose them by address, in a switch in `recomp_lookup_manual()`, with about 33 overrides.
+
+JSRF-PC does it by name instead. `port/recomp_manual.c` defines the function under its generated name, or wraps it, calling the generated body by the same name with `_gen` on the end:
 
 ```c
-// recomp_manual.c
-recomp_func_t recomp_lookup_manual(uint32_t xbox_va) {
-    switch (xbox_va) {
-        case 0x000636D0: return manual_sub_000636D0;  // physics
-        case 0x000110E0: return manual_sub_000110E0;  // frame pump
-        case 0x00011240: return manual_sub_00011240;  // resource loader
-        // ... 30+ overrides ...
-        default: return NULL;
-    }
+// port/recomp_manual.c
+void sub_XXXXXXXX(void)           // replaces the generated function
+{
+    ...
+}
+
+extern void sub_YYYYYYYY_gen(void);
+void sub_YYYYYYYY(void)           // wraps it: the generated body runs inside
+{
+    ...
+    sub_YYYYYYYY_gen();
+    ...
 }
 ```
 
-In JSRF-PC an override is the right place only when the game function's own logic is the cause ([project-rules.md](../project-rules.md), Where code goes 6). It reimplements that logic, and is named for what it does. It never stubs a function to get past a crash, and a trace while looking for a cause comes from `--trace-functions` (tools/recomp), not an override.
+The recompiler's `--exclude-manual port/recomp_manual.c` (tools/recomp/manual_scan.py) reads those definitions and leaves the generated bodies out, or names them `_gen` for a wrap, so the game's calls reach the hand-written function. `recomp_lookup_manual()` is still in recomp_manual.c, and `RECOMP_ICALL` still asks it before the dispatch table, and the kernel after it for a callback, but it returns NULL for every address.
 
-For Burnout 3, approximately 33 functions have manual overrides, including the physics engine, frame pump, resource loader, and several RenderWare initialization functions.
+In JSRF-PC an override is the right place only when the game function's own logic is the cause ([project-rules.md](../project-rules.md), Where code goes 6). It reimplements that logic, and is named for what it does. It never stubs a function to get past a crash, and a trace while looking for a cause comes from `--trace-functions` (tools/recomp), not an override.
 
 ## Build System
 
@@ -251,11 +256,16 @@ JSRF-PC is built with CMake from `port/` ([building-on-linux.md](../building-on-
 
 ## Startup Sequence
 
-1. Load the XBE file from disk (keep in memory for .rdata string fallback)
+port/main.c's `host_main()`, in order:
+
+1. Load the XBE file from disk, keep it in memory for .rdata string fallback, and check it is the standalone US disc's `default.xbe`
 2. Call `xbox_MemoryLayoutInit()` to map sections to Xbox VAs
 3. Call `xbox_kernel_init()` to open the kernel log
-4. Call `xbox_kernel_bridge_init()` to wire synthetic VAs
-5. Initialize g_esp to XBOX_STACK_TOP
-6. Create the window and its OpenGL context, with SDL2 (src/nv2a_gl)
-7. Call the generated entry point, `xbe_entry_point()`
-8. The game runs from there, on that thread and the threads it starts
+4. Call `xbox_path_init()` to give the file layer the game's and the saves' folders
+5. Call `xbox_kernel_bridge_init()` to wire synthetic VAs
+6. Initialize g_esp to XBOX_STACK_TOP
+7. Build the flat dispatch table, `recomp_dispatch_init()`
+8. Start the audio processor's emulation, `mcpx_apu_init_standalone()` (src/apu), and route its register window to it, unless `JSRF_NO_APU` is set
+9. Start the USB host controllers, `xbox_OhciInit()`, which answer the game's own pad driver
+10. Call the generated entry point, `xbe_entry_point()`, on this thread, holding the guest lock
+11. The game runs from there, on that thread and the threads it starts. The renderer (src/nv2a_gl) opens the window and its OpenGL context, with SDL2, when the game first draws into a surface

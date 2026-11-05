@@ -202,7 +202,7 @@ Xbox file paths use device notation (`\Device\CdRom0\`, `D:\`, `T:\`) which must
 | KeEnterCriticalSection | No-op |
 | KeLeaveCriticalSection | No-op |
 
-That table is the toolkit's first answer, for Burnout 3, which ran single-threaded. In JSRF-PC the title's threads are host threads: each PsCreateSystemThreadEx starts one (src/kernel/kernel_thread.c), and the events, waits, DPCs and critical sections are real ones (src/kernel/kernel_sync.c and kernel_bridge.c).
+That table is the toolkit's first answer, for Burnout 3, which ran single-threaded. In JSRF-PC the title's threads are host threads: each PsCreateSystemThreadEx starts one (src/kernel/kernel_thread.c), and the events, waits and critical sections are real ones (src/kernel/kernel_sync.c and kernel_bridge.c). The DPCs are queued in src/kernel/kernel_interrupt.c and run by the kernel's timer thread (kernel_timer.c).
 
 ### Graphics (~10 ordinals)
 
