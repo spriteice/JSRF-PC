@@ -89,6 +89,8 @@ void kernel_apu_tick(void) { }
 void kernel_cvfs_watch(void) { }
 void kernel_drain_dpcs(void) { }
 void xbox_kernel_thread_report(void) { }
+/* KeCancelTimer's host half, kernel_sync.c's: a timer it never set. */
+BOOLEAN __stdcall xbox_KeCancelTimer(PXBOX_KTIMER Timer) { (void)Timer; return FALSE; }
 
 /* What a timer that fires does: its object signalled, its DPC run. */
 static volatile LONG s_signalled, s_dpc_runs;

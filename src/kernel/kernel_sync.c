@@ -329,7 +329,7 @@ NTSTATUS __stdcall xbox_KeWaitForMultipleObjects(
  * Xbox kernel timers are dispatcher objects that can be waited on and
  * optionally queue a DPC when they expire. The game's are kernel_timer.c's:
  * the bridge's KeInitializeTimerEx, KeSetTimer and KeSetTimerEx are there.
- * The bridge's KeCancelTimer calls kernel_timer.c's cancel and then this.
+ * kernel_timer.c's KeCancelTimer calls its own cancel and then this.
  * ============================================================================ */
 
 /* Nothing here creates a timer queue now, so this stays NULL, which is Win32's

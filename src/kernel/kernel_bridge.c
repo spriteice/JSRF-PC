@@ -3521,16 +3521,6 @@ static void bridge_IoCreateDevice(void)
     g_eax = 0;                                          /* STATUS_SUCCESS   */
 }
 
-/* ── KeCancelTimer (ordinal 97, 1 arg) */
-static void bridge_KeCancelTimer(void)
-{
-    /* Both halves: the shadow object this runtime keeps, and the firing
-     * table above, or a cancelled timer keeps calling its DPC. */
-    uint32_t timer_va = STACK_ARG(0);
-    int armed = xbox_kernel_cancel_timer(timer_va);
-    g_eax = (uint32_t)xbox_KeCancelTimer(XBOX_TO_NATIVE(timer_va)) || armed;
-}
-
 /* ── KeDisconnectInterrupt (ordinal 100, 1 arg) */
 static void bridge_KeDisconnectInterrupt(void)
 {

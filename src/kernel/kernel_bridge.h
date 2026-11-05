@@ -108,6 +108,7 @@ int  xbox_kernel_cancel_timer(uint32_t timer_va);
 void bridge_KeInitializeTimerEx(void);
 void bridge_KeSetTimer(void);
 void bridge_KeSetTimerEx(void);
+void bridge_KeCancelTimer(void);
 
 /* kernel_bridge.c, for the timer thread */
 

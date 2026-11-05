@@ -1,8 +1,8 @@
 /**
  * kernel_timer.c - The kernel's timers, and the thread that runs them
  *
- * Timer objects (KeInitializeTimerEx, KeSetTimer, KeSetTimerEx, and the
- * firing table KeCancelTimer drops a timer from), and the kernel's timer
+ * Timer objects (KeInitializeTimerEx, KeSetTimer, KeSetTimerEx and
+ * KeCancelTimer, and the firing table they keep), and the kernel's timer
  * thread, which starts with the kernel: every millisecond it moves
  * KeTickCount, fires the timers that are due and runs their DPCs, drains the
  * DPC queue, and does the devices' periodic work: the display interrupt and
@@ -295,4 +295,15 @@ int xbox_kernel_cancel_timer(uint32_t timer_va)
         }
     LeaveCriticalSection(&g_timer_lock);
     return was_set;
+}
+
+/* -- KeCancelTimer (ordinal 97, 1 arg) ---------------------
+ * BOOLEAN KeCancelTimer(PKTIMER Timer) */
+void bridge_KeCancelTimer(void)
+{
+    /* Both halves: the shadow object this runtime keeps, and the firing
+     * table above, or a cancelled timer keeps calling its DPC. */
+    uint32_t timer_va = STACK_ARG(0);
+    int armed = xbox_kernel_cancel_timer(timer_va);
+    g_eax = (uint32_t)xbox_KeCancelTimer(XBOX_TO_NATIVE(timer_va)) || armed;
 }
