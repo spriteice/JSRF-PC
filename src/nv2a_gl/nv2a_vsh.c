@@ -444,7 +444,7 @@ NV2A_GLSL_VERSION
 /*
  * Reversed depth: set by the OpenGL backend once clip control gives it the
  * console's 0..w depth range, before any program is emitted (nv2a_gl.c,
- * revz_start). Metal never sets it.
+ * revz_start).
  *
  * The title layers decals and its menus a step or two of the 24-bit range
  * apart, near the far end, with LEQUAL and no polygon offset. Converted to
@@ -726,15 +726,8 @@ static void emit_viewport_epilogue(SB *sb, int ff)
  * The translated program itself: local state, the instruction stream, and the
  * viewport epilogue.
  *
- * Shared verbatim by the GLSL and Metal emitters. The two languages differ in
- * how a shader declares its inputs, outputs and constants -- and in nothing
- * else that appears here, because both are C-like and agree on dot, clamp,
- * mix, floor, fract, exp2 and log2. Keeping one body generator is not tidiness:
- * a title with a thousand distinct programs cannot be checked by eye, so two
- * copies would differ silently and only on the programs nobody looked at.
- *
- * The caller supplies, in scope and by these names: v0..v15 for the inputs it
- * reads, `c` indexable to 191, vpScale, vpOff, vpSurface, posMode, the
+ * The caller supplies, in scope and by these names: v0..v15 for the inputs
+ * it reads, `c` indexable to 191, vpScale, vpOff, vpSurface, posMode, the
  * varyings oD0, oD1, oT0..oT3, oFogC, and gl_Position / gl_PointSize.
  */
 static void emit_program_body(SB *sb, const Nv2aVshProgram *p)
@@ -899,10 +892,7 @@ static void emit_program_body(SB *sb, const Nv2aVshProgram *p)
  * the scale a second time here multiplied y by -240, which is a vertical
  * flip, and the first textured frame came out upside down.
  */
-static void msl_vertex_head(SB *sb, uint16_t inputs_read);
-static void msl_vertex_tail(SB *sb);
-
-static int emit_ff(const Nv2aVshFixed *f, char *buf, int bufsize, int msl)
+int nv2a_vsh_emit_ff_glsl(const Nv2aVshFixed *f, char *buf, int bufsize)
 {
     SB sb = { buf, bufsize, 0, 0 };
     int i, j;
@@ -918,9 +908,6 @@ static int emit_ff(const Nv2aVshFixed *f, char *buf, int bufsize, int msl)
             default: break;
             }
 
-    if (msl) {
-        msl_vertex_head(&sb, f->inputs_read);
-    } else {
     sb_add(&sb, "%s", GLSL_PRELUDE);
     for (i = 0; i < NV2A_VSH_NUM_INPUTS; i++)
         if (f->inputs_read & (1u << i))
@@ -965,7 +952,6 @@ static int emit_ff(const Nv2aVshFixed *f, char *buf, int bufsize, int msl)
         "uniform float litAmbient;   // stand-in for the T&L unit's lighting\n"
         "uniform vec4 ffTexMat[16];  // NV097_SET_TEXTURE_MATRIX, 4 stages\n"
         "\nvoid main() {\n");
-    }
     sb_add(&sb,
         "    vec4 oPos, oFog = vec4(0.0), oPts = vec4(1.0);\n"
         "    // Composite matrix: model x view x projection.\n"
@@ -1234,23 +1220,8 @@ static int emit_ff(const Nv2aVshFixed *f, char *buf, int bufsize, int msl)
     }
     sb_add(&sb, "    oFogC = 1.0;\n");
     emit_viewport_epilogue(&sb, 1);
-    if (msl) msl_vertex_tail(&sb);
-    else     sb_add(&sb, "}\n");
+    sb_add(&sb, "}\n");
     return sb.overflow ? 0 : sb.pos;
-}
-
-int nv2a_vsh_emit_ff_glsl(const Nv2aVshFixed *f, char *buf, int bufsize)
-{
-    return emit_ff(f, buf, bufsize, 0);
-}
-
-/* The same transform as a Metal vertex function: the body above, word for
- * word, inside the Metal head and tail below. Its constants come through the
- * same Nv2aVU struct a translated program's do -- the matrices have their own
- * members there and never touch c[], for the reason given above. */
-int nv2a_vsh_emit_ff_msl(const Nv2aVshFixed *f, char *buf, int bufsize)
-{
-    return emit_ff(f, buf, bufsize, 1);
 }
 
 
@@ -1274,187 +1245,6 @@ int nv2a_vsh_emit_glsl(const Nv2aVshProgram *p, char *buf, int bufsize)
     return sb.overflow ? 0 : sb.pos;
 }
 
-
-/* ---- Metal ------------------------------------------------------------- */
-
-/*
- * The Metal Shading Language is C++, and the parts of it this translation
- * touches agree with GLSL on almost everything: dot, min, max, clamp, floor,
- * abs, exp2, log2, mix, fract, normalize, pow, and constructing a vector from
- * a scalar all spell and behave the same. What differs is the shape around
- * the code -- how a shader receives its inputs and constants, and how it
- * returns its outputs -- plus three function names.
- *
- * So a Metal vertex function here is the GLSL body, word for word, between a
- * head and a tail that make its names mean the same things:
- *
- *   - The uniforms are members of one struct (Nv2aVU, generated from the
- *     table in nv2a_uniforms.c) and a #define per member gives each one its
- *     bare GLSL name, so `ffMat[2]` in the body reads U.ffMat[2]. c[] is a
- *     buffer of its own, bound under the name c.
- *   - The inputs are fetched, not declared: vertex pulling from one buffer of
- *     packed floats through a table of offsets (Nv2aAttrTable), with one
- *     value for the whole draw for an attribute that has no array. That is
- *     exactly the OpenGL arrangement -- an enabled array or a generic
- *     attribute value -- without a pipeline per vertex layout.
- *   - The varyings are locals, gathered into Nv2aVshOut at the end.
- *
- * The alternative, a second copy of the emitters in the other dialect, was
- * tried: it fell behind the GLSL within a fortnight (no fog, no lighting, no
- * bump mapping) and nothing noticed, because nothing ran it. JSRF compiles
- * over a thousand distinct programs, no one reads them, and a divergence
- * surfaces as one wrong-looking object in one scene.
- */
-
-/*
- * What crosses from the vertex stage to the fragment stage.
- *
- * Metal matches the two by the shape of this struct, so both shaders have to
- * declare it identically -- and the fragment emitter lives in another file.
- * One definition, handed out, is what stops a member added on one side from
- * silently shifting every varying on the other.
- */
-static const char *MSL_VARYINGS =
-"struct Nv2aVshOut {\n"
-"    float4 gl_Position [[position]];\n"
-"    float  gl_PointSize [[point_size]];\n"
-"    float4 oD0;\n"
-"    float4 oD1;\n"
-"    float4 oT0;\n"
-"    float4 oT1;\n"
-"    float4 oT2;\n"
-"    float4 oT3;\n"
-"    float  oFogC;\n"
-"};\n";
-
-const char *nv2a_msl_varying_struct(void) { return MSL_VARYINGS; }
-
-static const char *MSL_PRELUDE =
-"#include <metal_stdlib>\n"
-"using namespace metal;\n"
-"// NV2A vertex program, translated.\n"
-"// Metal's clip volume puts z in [0, w], the same as the console's, so the\n"
-"// epilogue leaves depth alone -- a remap that is right for OpenGL halves\n"
-"// the depth range here and buries everything in the near half.\n"
-"#define NV2A_CLIP_Z01 1\n"
-"typedef float2 vec2;\n"
-"typedef float3 vec3;\n"
-"typedef float4 vec4;\n"
-"\n"
-"// GLSL spellings the body uses that Metal names differently.\n"
-"static inline float4 lessThan(float4 a, float4 b)         { return float4(a <  b); }\n"
-"static inline float4 greaterThanEqual(float4 a, float4 b) { return float4(a >= b); }\n"
-"static inline float  inversesqrt(float v)                 { return rsqrt(v); }\n"
-"static inline float4 inversesqrt(float4 v)                { return rsqrt(v); }\n"
-"\n"
-"// The NV2A's LIT, which differs from the fixed-function one in the clamping\n"
-"// of the specular exponent -- a program that relies on the clamp produces a\n"
-"// black highlight without it rather than a wrong one.\n"
-"static inline float4 nv_lit(float4 src) {\n"
-"    float d = src.x, s = src.y, p = clamp(src.w, -127.9961f, 127.9961f);\n"
-"    float spec = (d > 0.0f && s > 0.0f) ? exp2(p * log2(max(s, 1e-30f))) : 0.0f;\n"
-"    return float4(1.0f, max(d, 0.0f), spec, 1.0f);\n"
-"}\n"
-"\n"
-"// The NV2A's reciprocal range, sign kept: see the GLSL prelude.\n"
-"static inline float nv_away0(float t) {\n"
-"    if (t > 0.0f || as_type<uint>(t) == 0u) return clamp(t, 5.421010862e-20f, 1.844674407e19f);\n"
-"    return clamp(t, -1.844674407e19f, -5.421010862e-20f);\n"
-"}\n"
-"static inline float nv_rcc(float x) { return nv_away0(1.0f / x); }\n"
-"\n"
-"// The fog factor from a fog distance: see the GLSL prelude.\n"
-"static inline float nv_fog_factor(float d, int en, int mode, float2 p) {\n"
-"    if (en == 0) return 1.0f;\n"
-"    float f;\n"
-"    int m = mode & 3;\n"
-"    if (m == 0) {\n"
-"        if (isinf(d)) d = 0.0f;\n"
-"        f = p.x + d * p.y - 1.0f;\n"
-"    } else if (m == 1) {\n"
-"        if (mode < 4 && isinf(d)) d = 0.0f;\n"
-"        f = p.x + exp2(d * p.y * 16.0f) - 1.5f;\n"
-"    } else {\n"
-"        f = p.x + exp2(-d * d * p.y * p.y * 32.0f) - 1.5f;\n"
-"    }\n"
-"    return mode >= 4 ? abs(f) : f;\n"
-"}\n";
-
-/* Everything before the body: the prelude, the structs, the function's
- * signature, the uniforms' names, the inputs, and the varyings as locals. */
-static void msl_vertex_head(SB *sb, uint16_t inputs_read)
-{
-    char tmp[4096];
-    int i;
-
-    sb_add(sb, "%s\n%s\n", MSL_PRELUDE, MSL_VARYINGS);
-    if (nv2a_uniform_msl_struct(tmp, (int)sizeof tmp, 0)) sb_add(sb, "%s\n", tmp);
-    else sb->overflow = 1;
-    sb_add(sb,
-        "// Nv2aMslAttrTable on the host side (nv2a_backend.h).\n"
-        "struct Nv2aAttrTable {\n"
-        "    uint   stride;     // floats per vertex\n"
-        "    uint   mask;       // bit N: attribute N comes from the array\n"
-        "    uint   pad[2];\n"
-        "    uint   off[16];    // where each sits within a vertex, in floats\n"
-        "    float4 value[16];  // the rest: one value for the whole draw\n"
-        "};\n"
-        "\n"
-        "static inline float4 nv_attr(constant Nv2aAttrTable &A,\n"
-        "                             const device float *vb, uint vid, uint i)\n"
-        "{\n"
-        "    if (A.mask & (1u << i)) {\n"
-        "        const device float *p = vb + vid * A.stride + A.off[i];\n"
-        "        return float4(p[0], p[1], p[2], p[3]);\n"
-        "    }\n"
-        "    return A.value[i];\n"
-        "}\n"
-        "\n"
-        "vertex Nv2aVshOut nv2a_vsh_main(uint vid [[vertex_id]],\n"
-        "        const device float *nv_vb [[buffer(%d)]],\n"
-        "        constant float4 *c [[buffer(%d)]],\n"
-        "        constant Nv2aVU &U [[buffer(%d)]],\n"
-        "        constant Nv2aAttrTable &A [[buffer(%d)]])\n"
-        "{\n",
-        NV2A_MSL_BUF_VERTS, NV2A_MSL_BUF_CONSTS, NV2A_MSL_BUF_VU,
-        NV2A_MSL_BUF_ATTRS);
-    if (nv2a_uniform_msl_defines(tmp, (int)sizeof tmp, 0, "U")) sb_add(sb, "%s", tmp);
-    else sb->overflow = 1;
-    /* The GLSL prelude's nv_fog() reads the fog uniforms, which at file
-     * scope in Metal are not in sight; as a macro they are. */
-    sb_add(sb, "#define nv_fog(coord) nv_fog_factor((coord), fogEnable, fogMode, fogParam)\n");
-    for (i = 0; i < NV2A_VSH_NUM_INPUTS; i++)
-        if (inputs_read & (1u << i))
-            sb_add(sb, "    float4 v%d = nv_attr(A, nv_vb, vid, %d);\n", i, i);
-    sb_add(sb,
-        "    float4 oD0, oD1, oT0, oT1, oT2, oT3;\n"
-        "    float  oFogC;\n"
-        "    float4 gl_Position = float4(0.0);\n"
-        "    float  gl_PointSize = 1.0;\n"
-        "    // nv2a body\n");
-}
-
-static void msl_vertex_tail(SB *sb)
-{
-    sb_add(sb,
-        "    Nv2aVshOut o;\n"
-        "    o.gl_Position = gl_Position;\n"
-        "    o.gl_PointSize = gl_PointSize;\n"
-        "    o.oD0 = oD0; o.oD1 = oD1;\n"
-        "    o.oT0 = oT0; o.oT1 = oT1; o.oT2 = oT2; o.oT3 = oT3;\n"
-        "    o.oFogC = oFogC;\n"
-        "    return o;\n"
-        "}\n");
-}
-
-int nv2a_vsh_emit_msl(const Nv2aVshProgram *p, char *buf, int bufsize)
-{
-    SB sb = { buf, bufsize, 0, 0 };
-    msl_vertex_head(&sb, p->inputs_read);
-    emit_program_body(&sb, p);
-    msl_vertex_tail(&sb);
-    return sb.overflow ? 0 : sb.pos;
-}
 
 /* ---- disassembly -------------------------------------------------------- */
 

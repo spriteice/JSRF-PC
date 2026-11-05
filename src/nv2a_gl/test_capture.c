@@ -113,14 +113,6 @@ int main(int argc, char **argv)
     vsrc = (char *)malloc(96 * 1024);
     if (!nv2a_vsh_emit_glsl(&vp, vsrc, 96 * 1024)) { printf("emit failed\n"); return 1; }
     if (getenv("SHOW_GLSL")) printf("--- glsl ---\n%s\n", vsrc);
-    if (getenv("SHOW_MSL")) {
-        char *msl = (char *)malloc(96 * 1024);
-        if (nv2a_vsh_emit_msl(&vp, msl, 96 * 1024))
-            printf("--- msl ---\n%s\n", msl);
-        else
-            printf("msl emit failed\n");
-        free(msl);
-    }
 
     dpy = eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, NULL);
     eglInitialize(dpy, &maj, &min);

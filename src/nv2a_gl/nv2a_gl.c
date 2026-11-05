@@ -2574,7 +2574,7 @@ static char *frag_solid(void)
     static char *src;
     if (!src) {
         src = (char *)malloc(16 * 1024);
-        if (src && !nv2a_psh_emit_solid(src, 16 * 1024, G->lang == NV2A_LANG_MSL)) {
+        if (src && !nv2a_psh_emit_solid(src, 16 * 1024)) {
             free(src); src = NULL;
         }
     }
@@ -2869,7 +2869,7 @@ static void sc_state_note(uint32_t kind, const void *head, uint32_t hlen)
 
 /* A state's sources, as the draw that kept it made them: 1, or 0 for one
  * this translator cannot read. */
-static int sc_state_emit(uint32_t kind, const unsigned char *st, uint32_t len, int msl, char *v, char *f)
+static int sc_state_emit(uint32_t kind, const unsigned char *st, uint32_t len, char *v, char *f)
 {
     Nv2aPshState ps;
     uint32_t hlen = len - (uint32_t)sizeof ps;
@@ -2879,42 +2879,15 @@ static int sc_state_emit(uint32_t kind, const unsigned char *st, uint32_t len, i
     if (kind == SC_FIXED && hlen == sizeof(Nv2aVshFixed)) {
         Nv2aVshFixed ff;
         memcpy(&ff, st, sizeof ff);
-        ok = msl ? nv2a_vsh_emit_ff_msl(&ff, v, 96 * 1024) : nv2a_vsh_emit_ff_glsl(&ff, v, 96 * 1024);
+        ok = nv2a_vsh_emit_ff_glsl(&ff, v, 96 * 1024);
     } else if (kind == SC_PROGRAM && hlen && hlen % 16 == 0 && hlen <= NV2A_VSH_MAX_INSNS * 16) {
         uint32_t tok[NV2A_VSH_MAX_INSNS * 4];
         Nv2aVshProgram vp;
         memcpy(tok, st, hlen);
         ok = nv2a_vsh_decode(tok, (int)(hlen / 16), &vp) > 0
-          && (msl ? nv2a_vsh_emit_msl(&vp, v, 96 * 1024) : nv2a_vsh_emit_glsl(&vp, v, 96 * 1024));
+          && nv2a_vsh_emit_glsl(&vp, v, 96 * 1024);
     }
-    return ok && (msl ? nv2a_psh_emit_msl(&ps, f, 96 * 1024) : nv2a_psh_emit_glsl(&ps, f, 96 * 1024));
-}
-
-
-/*
- * RECOMP_GL_DUMP_MSL=<dir>: the Metal translation of every shader this title
- * uses, written out beside the GLSL one that is actually being run.
- *
- * The Metal backend has to be written blind -- Metal cannot be compiled on the
- * machine this is developed on -- so the translator's output cannot be checked
- * here at all. It can be checked on the target: emit the Metal for every
- * distinct program the title compiles, carry the files across, and hand them to
- * the real Metal compiler. That finds every translation error before a single
- * line of backend exists, and names the program that has it.
- */
-static void dump_msl_pair(uint32_t hash, const char *vsrc, const char *fsrc)
-{
-    static const char *dir = (const char *)1;
-    char nm[512];
-    FILE *f;
-    if (dir == (const char *)1) dir = getenv("RECOMP_GL_DUMP_MSL");
-    if (!dir || !vsrc || !fsrc) return;
-    snprintf(nm, sizeof nm, "%s/msl_%08X.vert.metal", dir, hash);
-    f = fopen(nm, "wb");
-    if (f) { fputs(vsrc, f); fclose(f); }
-    snprintf(nm, sizeof nm, "%s/msl_%08X.frag.metal", dir, hash);
-    f = fopen(nm, "wb");
-    if (f) { fputs(fsrc, f); fclose(f); }
+    return ok && nv2a_psh_emit_glsl(&ps, f, 96 * 1024);
 }
 
 static int ff_program_for_current(void)
@@ -2922,7 +2895,7 @@ static int ff_program_for_current(void)
     Nv2aVshFixed f;
     uint32_t hash, prog;
     char *vsrc, *fsrc;
-    int slot, msl = (G->lang == NV2A_LANG_MSL);
+    int slot;
 
     ff_describe(&f);
     psh_sync_textures();
@@ -2938,8 +2911,7 @@ static int ff_program_for_current(void)
 
     vsrc = (char *)malloc(96 * 1024);
     if (!vsrc) return -1;
-    if (!(msl ? nv2a_vsh_emit_ff_msl(&f, vsrc, 96 * 1024)
-              : nv2a_vsh_emit_ff_glsl(&f, vsrc, 96 * 1024))) {
+    if (!nv2a_vsh_emit_ff_glsl(&f, vsrc, 96 * 1024)) {
         free(vsrc); S.shader_fails++; return -1;
     }
     if (getenv("RECOMP_GL_DUMP_FF")) {
@@ -2951,11 +2923,9 @@ static int ff_program_for_current(void)
     }
     fsrc = (char *)malloc(96 * 1024);
     if (!fsrc) { free(vsrc); return -1; }
-    if (!(msl ? nv2a_psh_emit_msl(&S.psh, fsrc, 96 * 1024)
-              : nv2a_psh_emit_glsl(&S.psh, fsrc, 96 * 1024))) {
+    if (!nv2a_psh_emit_glsl(&S.psh, fsrc, 96 * 1024)) {
         free(fsrc); free(vsrc); S.shader_fails++; return -1;
     }
-    if (msl && getenv("RECOMP_GL_DUMP_MSL")) dump_msl_pair(hash, vsrc, fsrc);
     prog = build_program(vsrc, fsrc, "fixed-function transform + combiners");
     free(vsrc);
     free(fsrc);
@@ -2982,7 +2952,7 @@ static int program_for_current(void)
     Nv2aVshProgram vp;
     char *vsrc, *fsrc;
     uint32_t prog;
-    int slot, len, msl = (G->lang == NV2A_LANG_MSL);
+    int slot, len;
 
     /*
      * Programs run from where NV097_SET_TRANSFORM_PROGRAM_START points, not
@@ -3054,8 +3024,7 @@ static int program_for_current(void)
 
     vsrc = (char *)malloc(96 * 1024);
     if (!vsrc) return -1;
-    if (!(msl ? nv2a_vsh_emit_msl(&vp, vsrc, 96 * 1024)
-              : nv2a_vsh_emit_glsl(&vp, vsrc, 96 * 1024))) {
+    if (!nv2a_vsh_emit_glsl(&vp, vsrc, 96 * 1024)) {
         free(vsrc); S.shader_fails++; return -1;
     }
     if (getenv("RECOMP_GL_DUMP_RAW")) {
@@ -3084,26 +3053,13 @@ static int program_for_current(void)
         if (nv2a_vsh_disasm(&vp, dis, sizeof dis))
             fprintf(stderr, "----- NV2A program (%d slots, hash %08X) -----\n%s",
                     len, hash, dis);
-        fprintf(stderr, "----- %s -----\n%s\n", msl ? "MSL" : "GLSL", vsrc);
+        fprintf(stderr, "----- GLSL -----\n%s\n", vsrc);
     }
 
     fsrc = (char *)malloc(96 * 1024);
     if (!fsrc) { free(vsrc); return -1; }
-    if (!(msl ? nv2a_psh_emit_msl(&S.psh, fsrc, 96 * 1024)
-              : nv2a_psh_emit_glsl(&S.psh, fsrc, 96 * 1024))) {
+    if (!nv2a_psh_emit_glsl(&S.psh, fsrc, 96 * 1024)) {
         free(fsrc); free(vsrc); S.shader_fails++; return -1;
-    }
-    /* RECOMP_GL_DUMP_MSL=<dir>: every program's Metal translation, from
-     * either backend -- the OpenGL one translates it only to write it out. */
-    if (getenv("RECOMP_GL_DUMP_MSL")) {
-        if (msl) dump_msl_pair(hash, vsrc, fsrc);
-        else {
-            char *mv = (char *)malloc(96 * 1024), *mf = (char *)malloc(96 * 1024);
-            if (mv && mf && nv2a_vsh_emit_msl(&vp, mv, 96 * 1024)
-                         && nv2a_psh_emit_msl(&S.psh, mf, 96 * 1024))
-                dump_msl_pair(hash, mv, mf);
-            free(mv); free(mf);
-        }
     }
     { static int solid = -1;
       if (solid < 0) solid = (getenv("RECOMP_GL_SOLID")
@@ -12042,7 +11998,7 @@ static void sdl_shader_cache(void)
  * So is every state of another SC_LAYOUT, which this engine cannot read.
  * Without a states file, the programs stay as they are.
  */
-static void shader_cache_states(int msl)
+static void shader_cache_states(void)
 {
     int i, n = nv2a_sc_state_count(), made = 0, added = nv2a_sc_count(), gone, dropped;
     double t0 = mono_now();
@@ -12057,7 +12013,7 @@ static void shader_cache_states(int msl)
             uint32_t layout, kind, len;
             const void *st;
             if (!nv2a_sc_state(i, &layout, &kind, &st, &len) || layout != SC_LAYOUT
-                || !sc_state_emit(kind, (const unsigned char *)st, len, msl, v, f)) continue;
+                || !sc_state_emit(kind, (const unsigned char *)st, len, v, f)) continue;
             keys[made] = nv2a_sc_key(v, f);
             nv2a_sc_add(keys[made++], v, f);
         }
@@ -12093,7 +12049,6 @@ static void shader_cache_start(void)
     uint64_t fp = 0;
     Nv2aVshFixed f0;
     Nv2aPshState p0;
-    int msl;
 #if defined(XBOXRECOMP_MENU)
     if (G) sdl_menu_shaders();
 #endif
@@ -12103,19 +12058,17 @@ static void shader_cache_start(void)
     shader_cache_purge(dir);
 #endif
     if (!shader_cache_on()) return;
-    msl = (G->lang == NV2A_LANG_MSL);
     v = (char *)malloc(96 * 1024);
     f = (char *)malloc(96 * 1024);
     memset(&f0, 0, sizeof f0);
     f0.inputs_read = 1;
     memset(&p0, 0, sizeof p0);
-    if (v && f && (msl ? nv2a_vsh_emit_ff_msl(&f0, v, 96 * 1024) : nv2a_vsh_emit_ff_glsl(&f0, v, 96 * 1024))
-              && (msl ? nv2a_psh_emit_msl(&p0, f, 96 * 1024) : nv2a_psh_emit_glsl(&p0, f, 96 * 1024)))
+    if (v && f && nv2a_vsh_emit_ff_glsl(&f0, v, 96 * 1024) && nv2a_psh_emit_glsl(&p0, f, 96 * 1024))
         fp = nv2a_sc_key(v, f);
     free(v);
     free(f);
     snprintf(tag, sizeof tag, "%s-%08X", G->name, (unsigned)(fp ^ (fp >> 32)));
-    if (nv2a_sc_open(dir, tag)) shader_cache_states(msl);
+    if (nv2a_sc_open(dir, tag)) shader_cache_states();
     G->cache_open(dir, tag);
 }
 

@@ -42,9 +42,10 @@
  * Metal's and D3D's from 0 to w, and the console is D3D. Getting this backwards
  * does not produce a black screen: it produces a picture where everything is
  * in the right place with half the depth range collapsed, which reads as
- * z-fighting and bad sorting rather than as a coordinate bug. The shared
- * epilogue emits the remap under NV2A_CLIP_Z01, which the Metal prelude
- * defines to 1 and the GLSL one to 0.
+ * z-fighting and bad sorting rather than as a coordinate bug. The vertex
+ * epilogue keeps the remap under NV2A_CLIP_Z01, which the GLSL prelude
+ * defines to 0: the Metal prelude defined it to 1, and a backend whose clip
+ * volume runs from 0 to w would again.
  *
  * THE PICTURE IS NOT THE SAME WAY UP IN MEMORY. OpenGL keeps a render target
  * bottom row first and Metal top row first, while the shaders put the top of
@@ -170,8 +171,9 @@ enum {
     NV2A_PRIM_TRIANGLE_FAN
 };
 
-/* The shading language a backend compiles. */
-enum { NV2A_LANG_GLSL = 0, NV2A_LANG_MSL = 1 };
+/* The shading language a backend compiles: GLSL, the one the emitters
+ * write. */
+enum { NV2A_LANG_GLSL = 0 };
 
 /* The first line of every GLSL program: OpenGL 3.3 core. Spliced defines go
  * after it (nv2a_gl.c's splice_define). */
@@ -181,12 +183,8 @@ enum { NV2A_LANG_GLSL = 0, NV2A_LANG_MSL = 1 };
  * Every uniform the generated shaders read, by name.
  *
  * The GLSL emitters declare them as plain uniforms and the OpenGL backend
- * looks each one up per program, exactly as the renderer always did. The
- * Metal emitters declare one struct per stage (Nv2aVU, Nv2aFU), generated
- * from the table in nv2a_uniforms.c, and the Metal backend writes each value
- * at the offset the same table gives -- one definition, so the two sides of
- * the buffer cannot drift apart. c[] is the exception: 3 KB that changes far
- * less often than the rest, so on Metal it is a buffer of its own.
+ * looks each one up per program, by its name in the table in
+ * nv2a_uniforms.c.
  */
 typedef enum {
     /* vertex stage */
@@ -201,7 +199,7 @@ typedef enum {
     NV2A_U_FFREVZ,
     /* fragment stage */
     NV2A_U_DRAWTINT,   NV2A_U_FOGCOLOR,   NV2A_U_ALPHAFUNC,  NV2A_U_ALPHAREF,
-    NV2A_U_TEX0,                              /* ..3: sampler units, GL only */
+    NV2A_U_TEX0,                              /* ..3: sampler units */
     NV2A_U_TEXSCALE0 = NV2A_U_TEX0 + 4,       /* ..3 */
     NV2A_U_TEXOFF0   = NV2A_U_TEXSCALE0 + 4,  /* ..3 */
     NV2A_U_BUMPMAT0  = NV2A_U_TEXOFF0 + 4,    /* ..3 */
@@ -223,39 +221,6 @@ typedef struct {
 } Nv2aUniformDesc;
 
 extern const Nv2aUniformDesc nv2a_uniform_desc[NV2A_U_COUNT];
-
-/* Where a uniform sits in its stage's Metal struct, by the Metal Shading
- * Language's layout rules (float3 takes sixteen bytes, float2x2 sixteen with
- * eight-byte alignment). Returns 0 for one that is not in a struct (c[], the
- * samplers). `size` is the struct's whole size, for the stage. */
-int nv2a_uniform_msl_offset(int id, uint32_t *offset, uint32_t *stride);
-uint32_t nv2a_uniform_msl_struct_size(int frag);
-
-/* The two structs' declarations, for the emitters: "struct Nv2aVU {...};" or
- * "struct Nv2aFU {...};" and the #defines that let a shader body read the
- * members by their bare GLSL names through `prefix` (U or F). Return the
- * number of characters written, 0 if `cap` was too small. */
-int nv2a_uniform_msl_struct(char *buf, int cap, int frag);
-int nv2a_uniform_msl_defines(char *buf, int cap, int frag, const char *prefix);
-
-/* The vertex-fetch table a Metal vertex function reads its inputs through
- * (vertex pulling: one buffer of packed floats, an offset per attribute, and
- * the value of every attribute that has no array). Host twin of the MSL
- * struct nv2a_vsh.c emits. */
-typedef struct {
-    uint32_t stride;          /* floats per vertex */
-    uint32_t mask;            /* bit N: attribute N comes from the array */
-    uint32_t pad[2];
-    uint32_t off[16];         /* float offset of each, within a vertex */
-    float    value[16][4];    /* the others: one value for the whole draw */
-} Nv2aMslAttrTable;
-
-/* Metal buffer indices the emitted functions and the backend agree on. */
-#define NV2A_MSL_BUF_VERTS    0
-#define NV2A_MSL_BUF_CONSTS   1
-#define NV2A_MSL_BUF_VU       2
-#define NV2A_MSL_BUF_ATTRS    3
-#define NV2A_MSL_BUF_FU       0
 
 /*
  * The device.

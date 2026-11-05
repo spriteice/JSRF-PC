@@ -1,11 +1,11 @@
 /* Run with: python tests/gl_backend/run.py
  *
  * The combiner constants as uniforms (src/nv2a_gl/nv2a_psh_consts.h). A
- * combiner state's shader, GLSL and Metal, is the same text whatever its
- * constants and alpha reference; its key keeps every other byte of the
- * state; and one program, built once, draws each set of constants it is
- * given: every stage's C0 and C1 and the final combiner's pair, each read
- * from where it sits in pshC[], on a headless EGL context (context.h).
+ * combiner state's shader is the same text whatever its constants and
+ * alpha reference; its key keeps every other byte of the state; and one
+ * program, built once, draws each set of constants it is given: every
+ * stage's C0 and C1 and the final combiner's pair, each read from where it
+ * sits in pshC[], on a headless EGL context (context.h).
  */
 #include "context.h"
 #include <stddef.h>
@@ -63,28 +63,21 @@ static void constants(Nv2aPshState *ps, uint32_t c0_0, uint32_t c1_1, uint32_t f
     ps->final_c1 = fc1;
 }
 
-/* The same source for both states, in both dialects, reading pshC[] in its
- * body. */
+/* The same source for both states, reading pshC[] in its body. */
 static void same_source(const Nv2aPshState *a, const Nv2aPshState *b, const char *what)
 {
     char decl[64], msg[160];
-    int msl;
+    int na = nv2a_psh_emit_glsl(a, src_a, SRC_MAX);
+    int nb = nv2a_psh_emit_glsl(b, src_b, SRC_MAX);
+    const char *body = strstr(src_a, "void main()");
     snprintf(decl, sizeof decl, "uniform vec4 pshC[%d];", NV2A_PSH_NCONSTS);
-    for (msl = 0; msl < 2; msl++) {
-        int na = msl ? nv2a_psh_emit_msl(a, src_a, SRC_MAX) : nv2a_psh_emit_glsl(a, src_a, SRC_MAX);
-        int nb = msl ? nv2a_psh_emit_msl(b, src_b, SRC_MAX) : nv2a_psh_emit_glsl(b, src_b, SRC_MAX);
-        const char *body = strstr(src_a, msl ? "// nv2a body" : "void main()");
-        snprintf(msg, sizeof msg, "%s, %s: emitted", what, msl ? "Metal" : "GLSL");
-        check(na > 0 && nb > 0, msg);
-        snprintf(msg, sizeof msg, "%s, %s: the same source whatever the constants", what,
-                 msl ? "Metal" : "GLSL");
-        check(na == nb && !strcmp(src_a, src_b), msg);
-        /* The Metal backend finds the uniforms a program reads by name in its
-         * body (uniforms_used), so the body must name pshC itself. */
-        snprintf(msg, sizeof msg, "%s, %s: pshC read in the body", what, msl ? "Metal" : "GLSL");
-        check(body && strstr(body, "pshC[") != NULL, msg);
-        if (!msl) check(strstr(src_a, decl) != NULL, "GLSL: pshC declared");
-    }
+    snprintf(msg, sizeof msg, "%s, GLSL: emitted", what);
+    check(na > 0 && nb > 0, msg);
+    snprintf(msg, sizeof msg, "%s, GLSL: the same source whatever the constants", what);
+    check(na == nb && !strcmp(src_a, src_b), msg);
+    snprintf(msg, sizeof msg, "%s, GLSL: pshC read in the body", what);
+    check(body && strstr(body, "pshC[") != NULL, msg);
+    check(strstr(src_a, decl) != NULL, "GLSL: pshC declared");
 }
 
 /* Whether byte `at` of Nv2aPshState belongs to one of the fields the shader

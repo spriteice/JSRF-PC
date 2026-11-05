@@ -23,8 +23,8 @@
  * which is much harder to notice.
  */
 #include "nv2a_psh.h"
-#include "nv2a_vsh.h"   /* the varying struct both Metal stages share */
-#include "nv2a_backend.h"   /* the uniform table both dialects name */
+#include "nv2a_vsh.h"   /* nv2a_glsl_revz */
+#include "nv2a_backend.h"   /* NV2A_GLSL_VERSION */
 #include "nv2a_psh_consts.h"   /* where each constant sits in pshC[] */
 
 #include <stdarg.h>
@@ -56,8 +56,9 @@ static void sb(SB *s, const char *fmt, ...)
 /* NV097_SET_COMBINER_CONTROL bits 12 and 16: whether each stage has its own
  * C0 / C1 or every stage reads stage 0's (xemu: PS_COMBINERCOUNT_UNIQUE_C0/
  * _C1). The final combiner -- stage 8 here -- has a pair of its own,
- * NV097_SET_SPECULAR_FOG_FACTOR. Set by psh_emit for the shader being built.
- * All of them are read from the uniform pshC[] (nv2a_psh_consts.h). */
+ * NV097_SET_SPECULAR_FOG_FACTOR. Set by nv2a_psh_emit_glsl for the shader
+ * being built. All of them are read from the uniform pshC[]
+ * (nv2a_psh_consts.h). */
 static int s_c0_each = 1, s_c1_each = 1;
 #define PSH_FINAL_STAGE 8
 
@@ -190,7 +191,7 @@ static void emit_store(SB *s, unsigned reg, int stage, const char *value,
 
 /* ---- shader ------------------------------------------------------------- */
 
-static int psh_emit(const Nv2aPshState *ps, char *buf, int bufsize, int msl)
+int nv2a_psh_emit_glsl(const Nv2aPshState *ps, char *buf, int bufsize)
 {
     SB s = { buf, bufsize, 0, 0 };
     int stages = (int)(ps->control & 0xF);
@@ -213,121 +214,58 @@ static int psh_emit(const Nv2aPshState *ps, char *buf, int bufsize, int msl)
     s_c0_each = (int)((ps->control >> 12) & 1);
     s_c1_each = (int)((ps->control >> 16) & 1);
 
-    if (msl) {
-        char fu[2048];
-        sb(&s,
-           "#include <metal_stdlib>\n"
-           "using namespace metal;\n"
-           "// NV2A register combiners, translated (%d stage%s).\n"
-           "#ifdef NV2A_ZVIEW_ON\n#define NV2A_ZVIEW 1\n#endif\n"
-           "typedef float2 vec2;\n"
-           "typedef float3 vec3;\n"
-           "typedef float4 vec4;\n"
-           "typedef float2x2 mat2;\n"
-           "#define NV2A_DISCARD discard_fragment()\n"
-           /* A texture and its sampler are two arguments in Metal and one
-            * object in GLSL; the body names the texture and this finds the
-            * sampler beside it (tex1 -> tex1_s). */
-           "#define NV2A_TEX(t, uv) t.sample(t##_s, (uv))\n"
-           /* GLSL's mod floors; Metal's fmod truncates. They differ for a
-            * negative operand, so the GLSL one, spelled out. */
-           "static inline float  mod(float  x, float y) { return x - y * floor(x / y); }\n"
-           "static inline float2 mod(float2 x, float y) { return x - y * floor(x / y); }\n"
-           "static inline float3 mod(float3 x, float y) { return x - y * floor(x / y); }\n"
-           "static inline float4 mod(float4 x, float y) { return x - y * floor(x / y); }\n"
-           "\n%s\n",
-           stages, stages == 1 ? "" : "s", nv2a_msl_varying_struct());
-        if (nv2a_uniform_msl_struct(fu, (int)sizeof fu, 1)) sb(&s, "%s\n", fu);
-        else s.overflow = 1;
-        /* Depth is an output of its own when the shader writes it. */
-        if (ps->w_buffer)
-            sb(&s, "struct Nv2aFragOut {\n"
-                   "    float4 color [[color(0)]];\n"
-                   "    float  depth [[depth(any)]];\n"
-                   "};\n\n");
-    } else {
-        sb(&s,
-           NV2A_GLSL_VERSION
-           /* Set by the backend when RECOMP_GL_ZVIEW is on; see the epilogue
-            * at the foot of this emitter for why depth has to travel out
-            * through the colour buffer on this platform. */
-           "#ifdef NV2A_ZVIEW_ON\n#define NV2A_ZVIEW 1\n#endif\n"
-           "// NV2A register combiners, translated (%d stage%s).\n"
-           "#define NV2A_DISCARD discard\n"
-           "#define NV2A_TEX(t, uv) texture(t, uv)\n"
-           "in vec4 oD0;\n"
-           "in vec4 oD1;\n"
-           "in vec4 oT0;\n"
-           "in vec4 oT1;\n"
-           "in vec4 oT2;\n"
-           "in vec4 oT3;\n"
-           "in float oFogC;\n"
-           "uniform vec4 fogColor;\n"
-           "uniform int  alphaFunc;\n"
-           "uniform float alphaRef;\n"
-           "uniform vec4 pshC[%d];\n"
-           "out vec4 frag;\n",
-           stages, stages == 1 ? "" : "s", NV2A_PSH_NCONSTS);
+    sb(&s,
+       NV2A_GLSL_VERSION
+       /* Set by the backend when RECOMP_GL_ZVIEW is on; see the epilogue
+        * at the foot of this emitter for why depth travels out through the
+        * colour buffer. */
+       "#ifdef NV2A_ZVIEW_ON\n#define NV2A_ZVIEW 1\n#endif\n"
+       "// NV2A register combiners, translated (%d stage%s).\n"
+       "#define NV2A_DISCARD discard\n"
+       "#define NV2A_TEX(t, uv) texture(t, uv)\n"
+       "in vec4 oD0;\n"
+       "in vec4 oD1;\n"
+       "in vec4 oT0;\n"
+       "in vec4 oT1;\n"
+       "in vec4 oT2;\n"
+       "in vec4 oT3;\n"
+       "in float oFogC;\n"
+       "uniform vec4 fogColor;\n"
+       "uniform int  alphaFunc;\n"
+       "uniform float alphaRef;\n"
+       "uniform vec4 pshC[%d];\n"
+       "out vec4 frag;\n",
+       stages, stages == 1 ? "" : "s", NV2A_PSH_NCONSTS);
 
-        for (i = 0; i < 4; i++)
-            if (ps->tex_bound[i])
-                sb(&s, "uniform sampler2D tex%d;\nuniform vec2 texScale%d;\n"
-                       "uniform vec2 texOff%d;\n", i, i, i);
-        /* BUMPENVMAP stages: the stage's 2x2 matrix and luminance scale and
-         * offset, as uniforms because titles animate them. nv2a_s8 reads a
-         * channel the title marked signed as the two's complement byte it is. */
-        for (i = 1; i < 4; i++)
-            if (ps->tex_bound[i] && (ps->tex_mode[i] == 6 || ps->tex_mode[i] == 7))
-                sb(&s, "uniform mat2 bumpMat%d;\nuniform float bumpScale%d;\n"
-                       "uniform float bumpOffset%d;\n", i, i, i);
-        /* The polygon offset, for the variant that writes its own depth: GL
-         * offsets the depth it rasterised, and this one replaces that. */
-        if (ps->w_buffer)
-            sb(&s, "uniform vec2 polyOffset;\n");
-    }
+    for (i = 0; i < 4; i++)
+        if (ps->tex_bound[i])
+            sb(&s, "uniform sampler2D tex%d;\nuniform vec2 texScale%d;\n"
+                   "uniform vec2 texOff%d;\n", i, i, i);
+    /* BUMPENVMAP stages: the stage's 2x2 matrix and luminance scale and
+     * offset, as uniforms because titles animate them. nv2a_s8 reads a
+     * channel the title marked signed as the two's complement byte it is. */
+    for (i = 1; i < 4; i++)
+        if (ps->tex_bound[i] && (ps->tex_mode[i] == 6 || ps->tex_mode[i] == 7))
+            sb(&s, "uniform mat2 bumpMat%d;\nuniform float bumpScale%d;\n"
+                   "uniform float bumpOffset%d;\n", i, i, i);
+    /* The polygon offset, for the variant that writes its own depth: GL
+     * offsets the depth it rasterised, and this one replaces that. */
+    if (ps->w_buffer)
+        sb(&s, "uniform vec2 polyOffset;\n");
     { int any = 0;
       for (i = 1; i < 4; i++)
           if (ps->tex_bound[i] && (ps->tex_mode[i] == 6 || ps->tex_mode[i] == 7))
               any = 1;
       if (any)
-          sb(&s, "%sfloat nv2a_s8(float c) { float b = floor(c * 255.0 + 0.5);"
+          sb(&s, "float nv2a_s8(float c) { float b = floor(c * 255.0 + 0.5);"
                  " return (b > 127.5 ? b - 256.0 : b) / 127.0; }\n"
-                 "%sfloat nv2a_sb(float c) { return (c * 255.0 - 128.0) / 127.0; }\n",
-                 msl ? "static inline " : "", msl ? "static inline " : ""); }
+                 "float nv2a_sb(float c) { return (c * 255.0 - 128.0) / 127.0; }\n"); }
 
     /* The constants are uniforms, pshC[], as the alpha test's reference
      * is: titles fade colours through them, and a literal here made every
-     * shade a program of its own (nv2a_psh_consts.h). The Metal struct and
-     * its #defines come from the uniform table. */
+     * shade a program of its own (nv2a_psh_consts.h). */
 
-    if (msl) {
-        /* Textures and samplers are arguments in Metal, and only the bound
-         * stages get one: an unused texture2d argument still consumes an
-         * argument-table slot and still has to be bound to something. */
-        char defs[2048];
-        sb(&s,
-           "\nfragment %s nv2a_psh_main(Nv2aVshOut in [[stage_in]],\n"
-           "        constant Nv2aFU &F [[buffer(%d)]]",
-           ps->w_buffer ? "Nv2aFragOut" : "float4", NV2A_MSL_BUF_FU);
-        for (i = 0; i < 4; i++)
-            if (ps->tex_bound[i])
-                sb(&s, ",\n        texture2d<float> tex%d [[texture(%d)]],"
-                       "\n        sampler tex%d_s [[sampler(%d)]]", i, i, i, i);
-        sb(&s, ")\n{\n");
-        if (nv2a_uniform_msl_defines(defs, (int)sizeof defs, 1, "F")) sb(&s, "%s", defs);
-        else s.overflow = 1;
-        sb(&s,
-           "    float4 oD0 = in.oD0, oD1 = in.oD1;\n"
-           "    float4 oT0 = in.oT0, oT1 = in.oT1, oT2 = in.oT2, oT3 = in.oT3;\n"
-           "    float  oFogC = in.oFogC;\n"
-           /* Window x, y, depth and 1/w, as GLSL's gl_FragCoord (only z and
-            * w are read, so the two APIs' opposite y does not matter). */
-           "    float4 gl_FragCoord = in.gl_Position;\n"
-           "    float4 frag;\n"
-           "    // nv2a body\n");
-    } else {
-        sb(&s, "\nvoid main() {\n");
-    }
+    sb(&s, "\nvoid main() {\n");
     for (i = 0; i < 4; i++) {
         /* The texture shader for this stage (xemu psh.c, PS_TEXTUREMODES_*):
          * a stage set to NONE is never sampled and reads as (0,0,0,1);
@@ -645,23 +583,15 @@ static int psh_emit(const Nv2aPshState *ps, char *buf, int bufsize, int msl)
      * has the offset off.
      */
     /* Reversed depth (nv2a_glsl_revz): the same depth, stored as 1 - d. */
-    if (ps->w_buffer && !msl && nv2a_glsl_revz())
+    if (ps->w_buffer && nv2a_glsl_revz())
         sb(&s, "    { float d = (1.0 / gl_FragCoord.w) / 16777216.0;\n"
                "      gl_FragDepth = 1.0 - (d + polyOffset.x * max(abs(dFdx(d)), abs(dFdy(d)))"
                " + polyOffset.y); }\n");
-    else if (ps->w_buffer && !msl)
+    else if (ps->w_buffer)
         sb(&s, "    { float d = (1.0 / gl_FragCoord.w) / 16777216.0;\n"
                "      gl_FragDepth = d + polyOffset.x * max(abs(dFdx(d)), abs(dFdy(d)))"
                " + polyOffset.y; }\n");
-    if (!msl)
-        sb(&s, "}\n");
-    else if (ps->w_buffer)
-        sb(&s, "    Nv2aFragOut o;\n"
-               "    o.color = frag;\n"
-               "    o.depth = (1.0 / gl_FragCoord.w) / 16777216.0;\n"
-               "    return o;\n}\n");
-    else
-        sb(&s, "    return frag;\n}\n");
+    sb(&s, "}\n");
 
     return s.overflow ? 0 : s.pos;
 }
@@ -670,38 +600,17 @@ static int psh_emit(const Nv2aPshState *ps, char *buf, int bufsize, int msl)
  * switches that paint draws by identity (RECOMP_GL_SOLID, _DRAWID, _TINT_*)
  * draw with. Declares the same uniforms as a real combiner shader so that
  * nothing about binding it differs. */
-int nv2a_psh_emit_solid(char *buf, int bufsize, int msl)
+int nv2a_psh_emit_solid(char *buf, int bufsize)
 {
     SB s = { buf, bufsize, 0, 0 };
-    if (msl) {
-        char fu[2048];
-        sb(&s, "#include <metal_stdlib>\nusing namespace metal;\n%s\n",
-           nv2a_msl_varying_struct());
-        if (nv2a_uniform_msl_struct(fu, (int)sizeof fu, 1)) sb(&s, "%s\n", fu);
-        else s.overflow = 1;
-        sb(&s, "fragment float4 nv2a_psh_main(Nv2aVshOut in [[stage_in]],\n"
-               "        constant Nv2aFU &F [[buffer(%d)]])\n"
-               "{\n    // nv2a body\n    return F.drawTint;\n}\n", NV2A_MSL_BUF_FU);
-    } else {
-        sb(&s,
-           NV2A_GLSL_VERSION
-           "in vec4 oD0; in vec4 oD1; in vec4 oT0; in vec4 oT1; in vec4 oT2; in vec4 oT3;\n"
-           "in float oFogC;\n"
-           "uniform sampler2D tex0; uniform int texEnable; uniform vec2 texScale;\n"
-           "uniform int alphaFunc; uniform float alphaRef;\n"
-           "out vec4 frag;\n"
-           "uniform vec4 drawTint;\n"
-           "void main() { frag = drawTint; }\n");
-    }
+    sb(&s,
+       NV2A_GLSL_VERSION
+       "in vec4 oD0; in vec4 oD1; in vec4 oT0; in vec4 oT1; in vec4 oT2; in vec4 oT3;\n"
+       "in float oFogC;\n"
+       "uniform sampler2D tex0; uniform int texEnable; uniform vec2 texScale;\n"
+       "uniform int alphaFunc; uniform float alphaRef;\n"
+       "out vec4 frag;\n"
+       "uniform vec4 drawTint;\n"
+       "void main() { frag = drawTint; }\n");
     return s.overflow ? 0 : s.pos;
-}
-
-int nv2a_psh_emit_glsl(const Nv2aPshState *ps, char *buf, int bufsize)
-{
-    return psh_emit(ps, buf, bufsize, 0);
-}
-
-int nv2a_psh_emit_msl(const Nv2aPshState *ps, char *buf, int bufsize)
-{
-    return psh_emit(ps, buf, bufsize, 1);
 }

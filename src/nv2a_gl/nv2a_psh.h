@@ -12,8 +12,8 @@
  * and builds the colour in the combiners, so a modulate produces a black
  * frame with no error anywhere.
  *
- * Kept separate from the OpenGL backend so the same translation can serve a
- * Metal one: nothing here calls GL.
+ * Kept apart from the OpenGL backend, so that a backend for another API can
+ * use the same translation: nothing here calls GL.
  */
 #ifndef NV2A_PSH_H
 #define NV2A_PSH_H
@@ -105,21 +105,9 @@ typedef struct {
  */
 int nv2a_psh_emit_glsl(const Nv2aPshState *ps, char *buf, int bufsize);
 
-/*
- * The same combiner configuration as a Metal fragment shader, from the same
- * body generator.
- *
- * Entry point `nv2a_psh_main`. It takes the vertex stage's Nv2aVshOut as
- * stage_in, the Nv2aFU uniform struct at buffer NV2A_MSL_BUF_FU, and a
- * texture2d + sampler pair at index N for each bound stage -- only the bound
- * ones, so a backend binds exactly what the shader declares. With w_buffer
- * set it returns depth as well as colour.
- */
-int nv2a_psh_emit_msl(const Nv2aPshState *ps, char *buf, int bufsize);
-
 /* A shader that paints every fragment drawTint, for the diagnostics that
- * colour draws by identity. msl selects the dialect. */
-int nv2a_psh_emit_solid(char *buf, int bufsize, int msl);
+ * colour draws by identity. */
+int nv2a_psh_emit_solid(char *buf, int bufsize);
 
 #ifdef __cplusplus
 }

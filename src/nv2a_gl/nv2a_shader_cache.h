@@ -10,8 +10,9 @@
  *   programs-<tag>.dat   each distinct source text once, and each program as
  *                        the pair of texts it was built from, in the order the
  *                        game first asked for them;
- *   recipes-<tag>.dat    the pipeline states a program was drawn with (Metal
- *                        makes one per program and blend state);
+ *   recipes-<tag>.dat    the pipeline states a program was drawn with, for
+ *                        an API that makes one per program and blend state
+ *                        (Metal did, and Vulkan does; OpenGL keeps none);
  *   binaries-<tag>-<driver>.dat   compiled programs, for a backend that can
  *                        save them (OpenGL's program binaries), valid only for
  *                        the driver that made them;
@@ -23,7 +24,8 @@
  * append-only records; a run that stopped half-way through writing one leaves a
  * damaged tail, which the next open drops.
  *
- * Thread-safe: Metal builds programs on a thread of its own while the game runs.
+ * Thread-safe, for a backend that builds programs on a thread of its own while
+ * the game runs, as the Metal one did.
  */
 #ifndef NV2A_SHADER_CACHE_H
 #define NV2A_SHADER_CACHE_H
