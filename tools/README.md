@@ -7,7 +7,8 @@
 > [building-on-linux.md](../docs/building-on-linux.md) and
 > [project-rules.md](../docs/project-rules.md) are right, and this doc is out
 > of date there: say so. The generated code is never edited, and a bug is
-> fixed where it starts, not stubbed out or guarded around.
+> fixed where it starts, not stubbed out or guarded around. The sections
+> from "Reading a log: logsum" on are JSRF-PC's own.
 
 Python tools that transform an Xbox executable (XBE) into compilable C source code. Run them in sequence — each tool's output feeds the next.
 
@@ -261,3 +262,20 @@ making them again loses nothing. A function written by hand lives in `port/`
 (Where code goes 6), and `--exclude-manual port/recomp_manual.c` tells the
 recompiler which functions those are, so it leaves their bodies out. A bug in
 the generated code is fixed in the recompiler, and the code is made again.
+
+## Reading a log: logsum
+
+`tools/logsum.py` turns JSRF-PC's logs into tables of how the game ran, one
+row for each of the engine's reports, about every 10 s: frames, frames late
+and held, the worst frame, draws and pushbuffer words a frame, sounds
+started, the game and GPU threads' share of a core, and the presenter's and
+the display's counts where the log has them. Each run in a log gets its own
+table, its settings and Developer switches, and its frames over 50 ms.
+
+```bash
+python3 tools/logsum.py last-run.log [more.log ...] > summary.md
+```
+
+It needs only Python's standard library. Its test, `tools/test_logsum.py`,
+takes each line it reads from the engine's own source, so a log line changed
+in the engine fails that test until logsum is changed to match.
