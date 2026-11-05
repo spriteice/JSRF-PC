@@ -168,6 +168,18 @@ VOID WakeAllConditionVariable(PCONDITION_VARIABLE cv)
     pthread_cond_broadcast((pthread_cond_t *)cv->Ptr);
 }
 
+/* Win32 has no call to end a condition variable, as it holds nothing to
+ * give back; here it holds cv_lazy_init's pthread_cond_t, which this frees,
+ * as DeleteCriticalSection frees its mutex. Nothing may wait on it. */
+VOID w32_delete_condition_variable(PCONDITION_VARIABLE cv)
+{
+    if (cv->Ptr) {
+        pthread_cond_destroy((pthread_cond_t *)cv->Ptr);
+        free(cv->Ptr);
+        cv->Ptr = NULL;
+    }
+}
+
 /* ===================================================================== */
 /* Waitable kernel objects                                               */
 /* ===================================================================== */

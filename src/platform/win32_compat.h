@@ -118,6 +118,8 @@ VOID InitializeConditionVariable(PCONDITION_VARIABLE cv);
 BOOL SleepConditionVariableCS(PCONDITION_VARIABLE cv, PCRITICAL_SECTION cs, DWORD ms);
 VOID WakeConditionVariable(PCONDITION_VARIABLE cv);
 VOID WakeAllConditionVariable(PCONDITION_VARIABLE cv);
+/* Not Win32's: frees what the calls above allocate for one (see the .c). */
+VOID w32_delete_condition_variable(PCONDITION_VARIABLE cv);
 
 /* ---- Generic handle lifetime ------------------------------------------ */
 BOOL  CloseHandle(HANDLE h);

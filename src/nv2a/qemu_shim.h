@@ -130,7 +130,11 @@ static inline void qemu_cond_init(QemuCond *c) {
     InitializeConditionVariable(&c->cv);
 }
 static inline void qemu_cond_destroy(QemuCond *c) {
-    (void)c; /* no-op on Win32 */
+#ifdef _WIN32
+    (void)c; /* a Win32 condition variable holds nothing to free */
+#else
+    w32_delete_condition_variable(&c->cv);   /* win32_compat's pthread_cond_t */
+#endif
 }
 static inline void qemu_cond_signal(QemuCond *c) {
     WakeConditionVariable(&c->cv);

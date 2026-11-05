@@ -19,6 +19,3 @@
 # run but doesn't fail it; any other report does.
 # A bug's lines come out with the change that fixes it, and the sanitizers
 # must then find nothing there.
-
-apu_mix | SUMMARY: LeakSanitizer: leak from src/platform/win32_compat.c:* in cv_lazy_init | b2 | known bug 30: on Linux nothing frees a condition variable's pthread_cond_t, as qemu_cond_destroy is a no-op (the lock case frees d, which holds d->cond); removed by making qemu_cond_destroy free it
-apu_vp_checks | SUMMARY: LeakSanitizer: leak from src/platform/win32_compat.c:* in cv_lazy_init | b2 | known bug 30: on Linux nothing frees a condition variable's pthread_cond_t, as qemu_cond_destroy is a no-op (the test frees d, which holds d->cond); removed by making qemu_cond_destroy free it
