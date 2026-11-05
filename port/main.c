@@ -1,34 +1,24 @@
 #define _GNU_SOURCE 1
 /**
- * Jet Set Radio Future - Recompiled Game Entry Point
+ * Jet Set Radio Future, recompiled: the engine's entry point, on Linux and
+ * Windows.
  *
- * This is the Windows executable that hosts the recompiled game code.
- * It performs the following initialization sequence:
+ * main() answers --version, --check-game, --check-iso and --unpack-iso, and
+ * otherwise starts the game with host_main(), which, in order
+ * (docs/pipeline/05-runtime.md, Startup Sequence):
  *
- * 1. Load the original XBE file from disk
- * 2. Initialize the Xbox memory layout (map data sections to original VAs)
- * 3. Initialize the Xbox kernel replacement layer
- * 4. Initialize the kernel bridge (thunk table in Xbox memory)
- * 5. Set up game file paths for I/O redirection
- * 6. Initialize the stack pointer
- * 7. Install VEH crash handler for diagnostics
- * 8. Call the game's original entry point (recompiled)
+ * 1. Loads default.xbe from the game folder, and checks it is the standalone
+ *    US disc's (xbe_check.c)
+ * 2. Maps the Xbox memory layout (the sections at their own VAs)
+ * 3. Starts the kernel
+ * 4. Gives the file layer the game's and the saves' folders
+ * 5. Wires the kernel bridge (the thunk table in Xbox memory)
+ * 6. Sets the stack pointer; then builds the flat dispatch table, and starts
+ *    the audio processor's emulation and the USB host controllers
+ * 7. Calls the game's entry point, recompiled, on this thread
  *
- * Customize this file for your game:
- *   - Set YOUR_GAME_ENTRY_POINT to the XBE entry point address
- *   - Set YOUR_GAME_XBE_PATH to where the XBE file lives
- *   - Set YOUR_GAME_DIR to the game data directory
- *   - Add any CRT global pre-initialization your game needs
- *   - Customize the VEH handler for game-specific crash diagnosis
- *
- * XBE Details (fill in from xbe_parser output):
- *   Title:       Jet Set Radio Future
- *   Title ID:    0x00000000
- *   Base addr:   0x00010000
- *   Entry point: 0x00000000
- *   Code size:   ~??? KB (.text)
- *   Sections:    ?? (list them)
- *   Kernel imports: ??
+ * A crash is reported by signal handlers on Linux (segv_handler) and an
+ * unhandled-exception filter on Windows (win_crash_filter).
  */
 
 #include <stddef.h>
@@ -100,12 +90,10 @@ extern ptrdiff_t g_xbox_mem_offset;
 
 /* ── XBE Constants ─────────────────────────────────────────── */
 
-/*
- * TODO: Set these from your xbe_parser output.
- * Run: py -3 -m tools.xbe_parser game/default.xbe
- */
-#define YOUR_GAME_ENTRY_POINT   0x00148023  /* XBE entry point VA */
-#define YOUR_GAME_DIR_DEFAULT    "game"
+/* The XBE's entry point, which the startup lines print, and the game
+ * folder when nothing else names one (game_dir, below). */
+#define JSRF_ENTRY_POINT   0x00148023  /* XBE entry point VA */
+#define JSRF_GAME_DIR_DEFAULT    "game"
 
 /* ── Where the game's files are ─────────────────────────────────────────────
  *
@@ -237,7 +225,7 @@ static const char *game_dir(void)
     const char *e = getenv("JSRF_GAME_DIR");
     if (e && e[0]) return e;
     if (g_game_dir_arg && g_game_dir_arg[0]) return g_game_dir_arg;
-    return YOUR_GAME_DIR_DEFAULT;
+    return JSRF_GAME_DIR_DEFAULT;
 }
 
 static const char *game_xbe_path(void)
@@ -874,22 +862,8 @@ static int host_main(void)
     /* Step 6: Initialize stack */
     g_esp = XBOX_STACK_TOP;
 
-    /*
-     * TODO: Pre-initialize CRT globals if needed.
-     *
-     * Many Xbox games use the MSVC CRT. The CRT's __heap_init sets up a
-     * heap descriptor at a game-specific address. You may need to
-     * pre-initialize __active_heap to avoid small-block heap issues:
-     *
-     *   uint32_t *active_heap = (uint32_t *)((uint8_t *)g_xbox_mem_offset + ACTIVE_HEAP_VA);
-     *   *active_heap = 1;  // 1 = system heap (HeapAlloc), avoids SBH init
-     *
-     * Find ACTIVE_HEAP_VA by searching the disassembly for __heap_init
-     * or by looking for the CRT's __active_heap global in the data section.
-     */
-
     printf("\n=== Initialization complete ===\n");
-    printf("Entry point: 0x%08X\n", YOUR_GAME_ENTRY_POINT);
+    printf("Entry point: 0x%08X\n", JSRF_ENTRY_POINT);
     printf("ESP: 0x%08X\n", g_esp);
 
     /* Build the flat dispatch table before the guest runs.

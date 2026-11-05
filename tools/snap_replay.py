@@ -6,7 +6,7 @@ Usage:  JSRF_XBE=/path/to/default.xbe python3 snap_replay.py snap_in.bin[.gz] sn
         [--trace-calls] [--ring] [--fpcw 0x027F]
 Needs:  pip install unicorn capstone numpy
 
-How the snapshots are made: see jsrf-recomp/src/recomp_manual.c (JSRF_SNAP,
+How the snapshots are made: see port/recomp_manual.c (JSRF_SNAP,
 JSRF_SNAP_VA, JSRF_SNAP_ARG, JSRF_SNAP_DIR). A function is snapshotted by
 renaming its generated body to sub_XXXXXXXX_gen and wrapping it there.
 
