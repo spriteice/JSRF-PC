@@ -329,7 +329,6 @@ typedef enum _XBOX_EVENT_TYPE {
 
 /* Forward declarations for kernel objects */
 typedef struct _XBOX_KDPC         XBOX_KDPC, *PXBOX_KDPC;
-typedef struct _XBOX_KINTERRUPT   XBOX_KINTERRUPT, *PXBOX_KINTERRUPT;
 
 /* DPC routine prototype */
 typedef VOID (*PKDEFERRED_ROUTINE)(
@@ -345,15 +344,6 @@ struct _XBOX_KDPC {
     PVOID              DeferredContext;
     PVOID              SystemArgument1;
     PVOID              SystemArgument2;
-};
-
-/* Interrupt object */
-struct _XBOX_KINTERRUPT {
-    PVOID   ServiceRoutine;
-    PVOID   ServiceContext;
-    ULONG   BusInterruptLevel;
-    ULONG   Irql;
-    BOOLEAN Connected;
 };
 
 /* Thread start routine (Xbox uses __stdcall) */
@@ -780,7 +770,6 @@ NTSTATUS __stdcall xbox_HalWriteSMBusValue(UCHAR SlaveAddress, UCHAR CommandCode
 
 VOID       __stdcall xbox_DbgBreakPoint(void);
 ULONGLONG  __stdcall xbox_KeQueryInterruptTime(void);
-BOOLEAN __stdcall xbox_KeDisconnectInterrupt(PXBOX_KINTERRUPT Interrupt);
 
 /* EEPROM / Non-Volatile Settings */
 NTSTATUS __stdcall xbox_ExQueryNonVolatileSetting(ULONG ValueIndex, PULONG Type, PVOID Value, ULONG ValueLength, PULONG ResultLength);

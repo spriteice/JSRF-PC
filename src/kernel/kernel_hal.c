@@ -263,31 +263,6 @@ VOID __stdcall xbox_HalDisableSystemInterrupt(ULONG BusInterruptLevel, KIRQL Irq
 }
 
 /* ============================================================================
- * Interrupt Objects
- *
- * Used by DSOUND and other drivers for hardware interrupt handling.
- * Since we replace the audio/graphics subsystems entirely, these are stubs.
- * ============================================================================ */
-
-BOOLEAN __stdcall xbox_KeDisconnectInterrupt(PXBOX_KINTERRUPT Interrupt)
-{
-    BOOLEAN was_connected;
-
-    if (!Interrupt)
-        return FALSE;
-
-    /* Returns the PREVIOUS connected state, not success. */
-    was_connected = Interrupt->Connected;
-    Interrupt->Connected = FALSE;
-
-    xbox_log(XBOX_LOG_DEBUG, XBOX_LOG_HAL,
-        "KeDisconnectInterrupt: interrupt=%p was_connected=%d",
-        Interrupt, (int)was_connected);
-
-    return was_connected;
-}
-
-/* ============================================================================
  * Miscellaneous Port I/O Stubs
  * ============================================================================ */
 

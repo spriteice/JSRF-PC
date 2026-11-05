@@ -17,6 +17,12 @@
  * the lock, beside the title and the timer thread, and the first one fails
  * here. A DPC overwritten in the queue by the other thread's shows as one
  * that never ran, or ran with the other's arguments.
+ *
+ * Last, KeDisconnectInterrupt must take the display's object off its vector,
+ * so that its routine is no longer called, say it was connected, and leave
+ * the game's 44 bytes as they were: a host function took them for a host
+ * struct, cleared a byte of them, and left the routine connected
+ * (code/pass2's Q).
  */
 #include "kernel.h"
 #include <stdio.h>
@@ -108,8 +114,6 @@ int usb_gamepad_control(const UsbSetup *setup, uint8_t *out, int max)
     return -1;
 }
 int usb_gamepad_report(uint8_t *out, int max) { (void)out; (void)max; return 0; }
-/* KeDisconnectInterrupt's host half, kernel_hal.c's: an object never connected. */
-BOOLEAN __stdcall xbox_KeDisconnectInterrupt(PXBOX_KINTERRUPT Interrupt) { (void)Interrupt; return FALSE; }
 
 /* ---- what the routines check ------------------------------------------- */
 
@@ -338,6 +342,37 @@ int main(void)
         fail("too few interrupts to test anything");
     if (s_usb_run != s_usb_queued || s_vblank_run != s_vblank_queued || waiting)
         fail("a DPC queued did not run once: it was lost in the queue");
+
+    /* The display's interrupt disconnected, still holding the guest lock. The
+     * bytes past what KeInitializeInterrupt writes are the game's (on the
+     * console, the kernel's Connected flag is at +16): filled, so that a
+     * disconnect that writes them shows. */
+    {
+        const uint32_t disconnect[] = { VBLANK_INTERRUPT };
+        uint8_t before[44];
+        uint32_t first, second;
+        int i;
+
+        for (i = 12; i < 44; i++)
+            BRIDGE_MEM8(VBLANK_INTERRUPT + (uint32_t)i) = (uint8_t)(0xA0 + i);
+        memcpy(before, XBOX_TO_NATIVE(VBLANK_INTERRUPT), sizeof before);
+        call_bridge(bridge_KeDisconnectInterrupt, disconnect, 1);
+        first = g_eax;
+        call_bridge(bridge_KeDisconnectInterrupt, disconnect, 1);
+        second = g_eax;
+        printf("usb_interrupt: KeDisconnectInterrupt said %u for the display's "
+               "object, then %u; its vector now has %s\n", first, second,
+               xbox_GetConnectedInterrupt(VBLANK_VECTOR) ? "it still" : "nothing");
+        if (first != 1)
+            fail("KeDisconnectInterrupt did not say a connected object was connected");
+        if (second != 0)
+            fail("KeDisconnectInterrupt said a disconnected object was still connected");
+        if (xbox_GetConnectedInterrupt(VBLANK_VECTOR)
+                || kernel_raise_interrupt_locked(VBLANK_VECTOR) != -1)
+            fail("a disconnected object's routine is still called");
+        if (memcmp(before, XBOX_TO_NATIVE(VBLANK_INTERRUPT), sizeof before))
+            fail("KeDisconnectInterrupt changed the game's KINTERRUPT");
+    }
     if (s_failures) {
         printf("usb_interrupt: %ld failures\n", (long)s_failures);
         fflush(stdout);

@@ -397,9 +397,25 @@ uint32_t xbox_GetConnectedInterrupt(uint32_t vector)
 }
 
 /* -- KeDisconnectInterrupt (ordinal 100, 1 arg) ------------
- * BOOLEAN KeDisconnectInterrupt(PKINTERRUPT Interrupt) */
+ * BOOLEAN KeDisconnectInterrupt(PKINTERRUPT Interrupt)
+ *
+ * Takes the object off its vector, so its routine is no longer called, and
+ * says whether it was connected. The table above is where a connection is
+ * kept: the guest's 44 bytes are the game's, and nothing here writes them.
+ * (A host function once took them for a host struct of its own, so it read
+ * and cleared a byte of the game's, said the object was never connected,
+ * and left its routine called.) */
 void bridge_KeDisconnectInterrupt(void)
 {
-    g_eax = (uint32_t)xbox_KeDisconnectInterrupt(
-        (PXBOX_KINTERRUPT)XBOX_TO_NATIVE(STACK_ARG(0)));
+    uint32_t interrupt_va = STACK_ARG(0);
+    uint32_t vector;
+
+    g_eax = 0;
+    if (!interrupt_va)
+        return;
+    vector = BRIDGE_MEM32(interrupt_va + 8);
+    if (vector < XBOX_MAX_VECTORS && g_connected_isr[vector] == interrupt_va) {
+        g_connected_isr[vector] = 0;
+        g_eax = 1;
+    }
 }
