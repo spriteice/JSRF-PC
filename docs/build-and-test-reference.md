@@ -250,7 +250,9 @@ docs/building-on-linux.md's "Windows" says:
   `launcher/windows/llvm-mingw.cmake`, then `launcher/windows/package.sh`.
 
 Those versions are pinned, like the Linux image, and each download is
-checked by its SHA-256.
+checked by its SHA-256. A download is tried 5 times, with pauses of 10 to
+40 s, as GitHub's release downloads time out now and then; so are SDL's
+source and llvm-mingw for CI (`.github/ci/fetch.py`).
 
 ### The version
 
@@ -292,7 +294,7 @@ between builds).
 | Job | What it checks |
 |---|---|
 | Build image | Nothing: on a push to `main`, it publishes each build image not yet published (`launcher/images.sh publish`). |
-| Linux, GCC | The engine and the runtime built with GCC, and the link; the engine tests; the tool tests. |
+| Linux, GCC | The engine and the runtime built with GCC, and the link; the engine tests; the tool tests, and CI's own (`.github/ci/test_ci.py`). |
 | Linux, clang, and the package | The Linux package, made by `launcher/linux/build.sh` as the release is, and the package check; the engine tests built with clang. |
 | Thread sanitizer | The engine tests that start threads, built with clang's ThreadSanitizer (`tests/run_all.py --tsan`). |
 | Address and undefined-behaviour sanitizers | Every engine test, built with GCC's AddressSanitizer, its leak check included, and UndefinedBehaviorSanitizer (`tests/run_all.py --asan`). |

@@ -56,6 +56,15 @@ def matching(lines, entries):
     return [why for line, why in entries if any(fnmatch.fnmatchcase(l, line) for l in lines)]
 
 
+def in_repository(path):
+    """Whether a stack frame's path (strip_path_prefix makes the repository's
+    own relative), its line and column left off, is a file in the repository.
+    The sanitizer's own frames aren't, however its GCC names them
+    (libsanitizer/asan/... or ../../../../src/libsanitizer/asan/...)."""
+    f = (root / re.sub(r"(:\d+)+$", "", path)).resolve()
+    return root in f.parents and f.is_file()
+
+
 def report_lines(reports):
     """One line for each of the sanitizers' reports: an error's SUMMARY line,
     or, for a leak (LeakSanitizer's direct leaks, as an indirect one goes
@@ -71,7 +80,7 @@ def report_lines(reports):
             leak = True
         elif leak:
             frame = re.match(r"\s*#\d+ 0x[0-9a-f]+ in (\S+) ([^/(\s]\S*)$", line)
-            if frame and not frame.group(2).startswith("libsanitizer/"):
+            if frame and in_repository(frame.group(2)):
                 out.append("SUMMARY: LeakSanitizer: leak from %s in %s" % (frame.group(2), frame.group(1)))
                 leak = False
             elif not line.strip():

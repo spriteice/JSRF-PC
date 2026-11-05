@@ -16,10 +16,19 @@ set -euo pipefail
 dir="$(mkdir -p "${1:?the folder for the toolchain and libraries}" && cd "$1" && pwd)"
 
 llvm_mingw=llvm-mingw-20241217-ucrt-ubuntu-20.04-x86_64
+# Each is tried 5 times, with pauses of 10, 20, 30 and 40 s, as GitHub's
+# release downloads time out now and then (.github/ci/fetch.py does the same).
 fetch() {   # file, URL, SHA-256
     if [ ! -f "$dir/$1" ]; then
-        python3 -c 'import sys, urllib.request; urllib.request.urlretrieve(sys.argv[1], sys.argv[2])' \
-            "$2" "$dir/$1.part"
+        local try
+        for try in 1 2 3 4 5; do
+            python3 -c 'import sys, urllib.request; urllib.request.urlretrieve(sys.argv[1], sys.argv[2])' \
+                "$2" "$dir/$1.part" && break
+            rm -f "$dir/$1.part"
+            [ "$try" -lt 5 ] || { echo "deps.sh: $2: 5 tries failed" >&2; return 1; }
+            echo "deps.sh: $2: try $try of 5 failed, again in $((try * 10)) s" >&2
+            sleep $((try * 10))
+        done
         mv "$dir/$1.part" "$dir/$1"
     fi
     echo "$3  $dir/$1" | sha256sum -c --quiet -

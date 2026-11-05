@@ -4,16 +4,18 @@ toolchain (20241217, UCRT), built to run on Windows.
 
     python .github/ci/llvm_mingw.py <dir>
 
-Checks the download by its SHA-256, unpacks it into <dir>, and prints the
-folder to put on PATH, whose gcc.exe (clang, as MinGW's gcc is named) the
-engine tests compile with.
+Downloads it with fetch.py (tried again after a server's error, and checked
+by its SHA-256), unpacks it into <dir>, and prints the folder to put on
+PATH, whose gcc.exe (clang, as MinGW's gcc is named) the engine tests
+compile with.
 """
 
-import hashlib
 import os
 import sys
-import urllib.request
 import zipfile
+
+sys.dont_write_bytecode = True   # nothing left in the checkout
+from fetch import fetch  # noqa: E402
 
 NAME = "llvm-mingw-20241217-ucrt-x86_64"
 URL = "https://github.com/mstorsjo/llvm-mingw/releases/download/20241217/" + NAME + ".zip"
@@ -26,11 +28,10 @@ def main(argv):
         return 2
     os.makedirs(argv[0], exist_ok=True)
     zip_path = os.path.join(argv[0], NAME + ".zip")
-    urllib.request.urlretrieve(URL, zip_path)
-    with open(zip_path, "rb") as f:
-        got = hashlib.sha256(f.read()).hexdigest()
-    if got != SHA256:
-        print("llvm_mingw: %s has SHA-256 %s, not %s" % (zip_path, got, SHA256), file=sys.stderr)
+    try:
+        fetch(URL, zip_path, SHA256)
+    except ValueError as error:
+        print("llvm_mingw: %s" % error, file=sys.stderr)
         return 1
     with zipfile.ZipFile(zip_path) as z:
         z.extractall(argv[0])

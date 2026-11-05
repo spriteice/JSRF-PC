@@ -4,7 +4,7 @@
 # (.github/ci/docker.sh "linux tests" .github/ci/linux.sh gcc|clang):
 #
 #   gcc     the engine built with GCC, linked as far as it can be without the
-#           game; the engine tests; the tool tests
+#           game; the engine tests; the tool tests, and CI's own (test_ci.py)
 #   clang   the release package, made by launcher/linux/build.sh and checked
 #           by launcher/check_package.py; the engine tests built with clang
 #
@@ -18,10 +18,10 @@ work=/work
 gen="$work/gen/recomp/gen"
 mkdir -p "$gen"
 cp templates/runtime/recomp_types.h "$gen/"
-# SDL's source, which launcher/linux/sdl.sh checks by its SHA-256.
-python3 -c 'import sys, urllib.request; urllib.request.urlretrieve(sys.argv[1], sys.argv[2])' \
+# SDL's source, checked by the SHA-256 launcher/linux/sdl.sh checks it by.
+python3 .github/ci/fetch.py \
     https://github.com/libsdl-org/SDL/releases/download/release-2.30.12/SDL2-2.30.12.tar.gz \
-    "$work/SDL2-2.30.12.tar.gz"
+    "$work/SDL2-2.30.12.tar.gz" "$(sed -n 's/^sha256=//p' launcher/linux/sdl.sh)"
 
 case "${1:?gcc or clang}" in
 gcc)
@@ -34,7 +34,7 @@ gcc)
     python3 tests/run_all.py
     python3 -m venv "$work/venv"
     "$work/venv/bin/pip" install --quiet --require-hashes -r .github/ci/tools-requirements.txt
-    "$work/venv/bin/python" -m pytest -q -p no:cacheprovider tools
+    "$work/venv/bin/python" -m pytest -q -p no:cacheprovider tools .github/ci/test_ci.py
     ;;
 clang)
     python3 .github/ci/link_check.py "$gen" \
