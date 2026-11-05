@@ -8,6 +8,11 @@ listed in tests/known-failures.txt: a known bug, still open, whose failure is
 reported but doesn't fail the run. Any other failure of a listed test does.
 The exit status is 1 if any test failed.
 
+Every line of tests/known-failures.txt and tests/asan-known.txt, and every
+entry in tests/tsan.supp, names the release that is to fix its bug (or, in
+tsan.supp, says it is there by design), and the run stops if one doesn't.
+The release checks them at its step 4 (docs/release-checklist.md).
+
 --tsan runs the tests that start threads (those whose files mention
 pthread_create, CreateThread or std::thread) built with the thread
 sanitizer: CC, or clang, with -fsanitize=thread. A test fails if the
@@ -37,18 +42,52 @@ THREADS = re.compile(r"pthread_create|CreateThread|std::thread")
 TIMEOUT = 600   # seconds for one test's run.py, all its cases
 
 
+# A release's name, as docs/versioning.md gives them: b2, b2.1, 1.0.
+RELEASE = re.compile(r"(b\d+|\d+)(\.\d+)*")
+
+
 def known(name):
     """{test: [(line, why)]} from tests/<name>: known-failures.txt, or
-    asan-known.txt, whose lines are the reports' SUMMARY lines."""
+    asan-known.txt, whose lines are the reports' SUMMARY lines. Each names
+    the release that is to fix it."""
     out = {}
     for n, raw in enumerate((root / "tests" / name).read_text(encoding="utf-8").splitlines(), 1):
         if not raw.strip() or raw.lstrip().startswith("#"):
             continue
         parts = [p.strip() for p in raw.split(" | ")]
-        if len(parts) != 3 or not all(parts):
-            raise SystemExit("tests/%s:%d: not 'test | line | why'" % (name, n))
-        out.setdefault(parts[0], []).append((parts[1], parts[2]))
+        if len(parts) != 4 or not all(parts):
+            raise SystemExit("tests/%s:%d: not 'test | line | fixed by | why'" % (name, n))
+        if not RELEASE.fullmatch(parts[2]):
+            raise SystemExit("tests/%s:%d: %r is not a release, as b3 or 1.0" % (name, n, parts[2]))
+        out.setdefault(parts[0], []).append((parts[1], parts[3]))
     return out
+
+
+def supp_releases(text):
+    """Check that each group of entries in tests/tsan.supp (its lines between
+    blank lines) has a comment that names the release that is to fix it
+    ("Fixed by b3.") or says it is there by design ("By design"). Returns the
+    problems, each as 'line: what'."""
+    problems = []
+    lines = text.splitlines()
+    group = []
+    for n, raw in enumerate(lines + [""], 1):
+        if raw.strip():
+            group.append((n, raw.strip()))
+            continue
+        comment = " ".join(l.lstrip("#").strip() for _, l in group if l.startswith("#"))
+        entries = [(m, l) for m, l in group if not l.startswith("#")]
+        group = []
+        if not entries:
+            continue
+        fixed = re.search(r"\bFixed by (\S+?)[.,;:]", comment)
+        if fixed and RELEASE.fullmatch(fixed.group(1)):
+            continue
+        if not fixed and re.search(r"\bBy design\b", comment):
+            continue
+        problems.append("%d: %s has no \"Fixed by <release>.\" or \"By design\" in its comment"
+                        % (entries[0][0], entries[0][1]))
+    return problems
 
 
 def matching(lines, entries):
@@ -121,6 +160,9 @@ def main(argv):
     tests = sorted(pathlib.Path(p).parent for p in glob.glob(str(root / "tests/*/run.py")))
     failures = known("known-failures.txt")
     reported = known("asan-known.txt")
+    problems = supp_releases((root / "tests/tsan.supp").read_text(encoding="utf-8"))
+    if problems:
+        raise SystemExit("run_all: tests/tsan.supp:" + "\n  tests/tsan.supp:".join(problems))
     for name, entries in (("known-failures.txt", failures), ("asan-known.txt", reported)):
         stale = set(entries) - {t.name for t in tests}
         if stale:

@@ -1,6 +1,7 @@
 """Tests for CI's own scripts, run with the tool tests in CI's GCC job
 (.github/ci/linux.sh): fetch.py's tries, how tests/run_all.py names a
-sanitizer's leak, and how count_warnings.py counts a build's warnings."""
+sanitizer's leak and checks that each known bug names its release, and how
+count_warnings.py counts a build's warnings."""
 
 import hashlib
 import http.server
@@ -172,3 +173,40 @@ def test_warnings_at_zero_fails_on_any(tmp_path, monkeypatch):
 
 def test_warnings_txt_has_every_job():
     assert set(count_warnings.counts()) == {"gcc", "gcc-debug", "clang", "windows"}
+
+
+def test_each_known_line_names_its_release(tmp_path, monkeypatch):
+    (tmp_path / "tests").mkdir()
+    monkeypatch.setattr(run_all, "root", tmp_path)
+    known = tmp_path / "tests" / "known-failures.txt"
+    known.write_text("# a comment\n\napu_pacing | apu_pacing *: late | b3 | known bug 22\n")
+    assert run_all.known("known-failures.txt") == {"apu_pacing": [("apu_pacing *: late", "known bug 22")]}
+    for line in ("apu_pacing | apu_pacing *: late | known bug 22",
+                 "apu_pacing | apu_pacing *: late | later | known bug 22"):
+        known.write_text(line + "\n")
+        with pytest.raises(SystemExit):
+            run_all.known("known-failures.txt")
+
+
+def test_each_tsan_group_names_its_release_or_design():
+    supp = "\n".join([
+        "# The file's own comment, with no entries.",
+        "",
+        "# Known bug 20. Fixed by b3.",
+        "race:^a$",
+        "race:^b$",
+        "",
+        "# By design: a fence word.",
+        "race:^c$",
+        "",
+        "# Known bug 25. Fixed by 1.0, as far as it goes.",
+        "race:^d$",
+        "",
+        "# Known bug 26, no release.",
+        "race:^e$",
+        "",
+        "# Known bug 27. Fixed by someday.",
+        "race:^f$",
+    ])
+    assert [p.split(":")[0] for p in run_all.supp_releases(supp)] == ["14", "17"]
+    assert run_all.supp_releases((root / "tests" / "tsan.supp").read_text(encoding="utf-8")) == []

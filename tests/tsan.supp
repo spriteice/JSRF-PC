@@ -5,12 +5,15 @@
 # listed here fails CI.
 #
 # Entries name a function anywhere in either thread's stack, or a global
-# variable; ^ and $ make the match exact.
+# variable; ^ and $ make the match exact. Each group's comment names the
+# release that is to fix its bug ("Fixed by b3."), checked at that release's
+# step 4 (docs/release-checklist.md), or says it is there "By design";
+# tests/run_all.py stops if one does neither.
 
 # Known bug 20: the NV2A's registers are plain memory, which the game (through
 # recomp_mmio_read and _write, and tests/nv2a_queue's DMA_GET poll) and the
 # GPU thread read and write at once. Removed by the device register table
-# (broader-fixes/CODEBASE.md R1).
+# (broader-fixes/CODEBASE.md R1). Fixed by b3.
 race:^recomp_mmio_read$
 race:^recomp_mmio_write$
 race:^wait_get$
@@ -19,29 +22,31 @@ race:^wait_get$
 # the game and read by the GPU thread's walk. On the console DMA_PUT orders
 # the two, and here it is plain memory (above). D3D also patches the buffer
 # just ahead of DMA_GET while the walk may be reading it, as on the console.
+# Fixed by b3, as far as known bug 20 goes; the patching is by design.
 race:^nv2a_pb_scan$
 
 # Known bug 20: the GPU thread's kick (s_kick_on, a switch cached lazily, and
 # s_hurry), written by the game's thread and read by the GPU thread. Removed
 # with the kick itself (CODEBASE.md R3) and the switch registry (R10).
+# Fixed by b3.
 race:^s_kick_on$
 race:^s_hurry$
 
 # Known bug 20: switches cached lazily by whichever thread reads them first:
 # RECOMP_NV2A_QUEUE (nv2a_queue_on) and the software methods' mode
-# (swm_mode). Removed by the switch registry (CODEBASE.md R10).
+# (swm_mode). Removed by the switch registry (CODEBASE.md R10). Fixed by b3.
 race:^nv2a_queue_on$
 race:^swm_mode$
 
 # Known bug 20: the GPU queue's counts, kept by the GPU thread and read for
-# the log by the game's thread. No change planned yet.
+# the log by the game's thread. No change planned yet. Fixed by b3.
 race:^nv2a_queue_report$
 
 # Known bug 25: the USB controller's registers (s_hc) are plain memory, read
 # and written at once by the controller's thread and the game's USB driver
 # (xbox_OhciWrite), the status and command words each with a read, a change
 # and a write on both sides (tests/usb_interrupt). Removed by the device
-# register table's USB part (broader-fixes/CODEBASE.md R1).
+# register table's USB part (broader-fixes/CODEBASE.md R1). Fixed by b3.
 race:^s_hc$
 
 # By design: tests/fence_wait's fence word, in guest memory, written by the

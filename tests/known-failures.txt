@@ -1,11 +1,13 @@
 # Engine tests that fail today in a known way, for tests/run_all.py. Each line
 # is one known bug, still open, in the maintainer's known-bugs.md:
 #
-#   test | the line its known failure prints | the bug, and what removes it
+#   test | the line its known failure prints | fixed by | the bug, and what removes it
 #
-# In the line, * stands for any text. The failure is reported on the run but
+# In the line, * stands for any text. "Fixed by" is the release that is to
+# fix the bug (b3, 1.0), checked at that release's step 4
+# (docs/release-checklist.md). The failure is reported on the run but
 # doesn't fail it; any other failure of the same test does. A bug's lines
 # come out with the change that fixes it.
 
-apu_pacing | apu_pacing *: frames too far apart (*) | known bug 22, the APU's frames late after the machine stalls: about 1 run in 6 in CI's containers (10 of 60), each after a gap of 44 to 90 ms between frames. Cause not found yet.
-apu_pacing | apu_pacing *: * frames a second, not 1500 | known bug 22 (above).
+apu_pacing | apu_pacing *: frames too far apart (*) | b3 | known bug 22, the APU's frames late after the machine stalls: about 1 run in 6 in CI's containers (10 of 60), each after a gap of 44 to 90 ms between frames. Cause not found yet.
+apu_pacing | apu_pacing *: * frames a second, not 1500 | b3 | known bug 22 (above).

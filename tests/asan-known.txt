@@ -2,7 +2,7 @@
 # tests/run_all.py --asan. Each line is one known bug, still open, in the
 # maintainer's known-bugs.md:
 #
-#   test | the report's SUMMARY line | the bug, and what removes it
+#   test | the report's SUMMARY line | fixed by | the bug, and what removes it
 #
 # In the line, * stands for any text, and paths are from the repository's
 # root, as in
@@ -14,9 +14,11 @@
 #
 #   SUMMARY: LeakSanitizer: leak from src/platform/win32_compat.c:* in cv_lazy_init
 #
-# The report is shown on the run but doesn't fail it; any other report does.
+# "Fixed by" is the release that is to fix the bug (b3, 1.0), checked at that
+# release's step 4 (docs/release-checklist.md). The report is shown on the
+# run but doesn't fail it; any other report does.
 # A bug's lines come out with the change that fixes it, and the sanitizers
 # must then find nothing there.
 
-apu_mix | SUMMARY: LeakSanitizer: leak from src/platform/win32_compat.c:* in cv_lazy_init | known bug 30: on Linux nothing frees a condition variable's pthread_cond_t, as qemu_cond_destroy is a no-op (the lock case frees d, which holds d->cond); removed by making qemu_cond_destroy free it
-apu_vp_checks | SUMMARY: LeakSanitizer: leak from src/platform/win32_compat.c:* in cv_lazy_init | known bug 30: on Linux nothing frees a condition variable's pthread_cond_t, as qemu_cond_destroy is a no-op (the test frees d, which holds d->cond); removed by making qemu_cond_destroy free it
+apu_mix | SUMMARY: LeakSanitizer: leak from src/platform/win32_compat.c:* in cv_lazy_init | b2 | known bug 30: on Linux nothing frees a condition variable's pthread_cond_t, as qemu_cond_destroy is a no-op (the lock case frees d, which holds d->cond); removed by making qemu_cond_destroy free it
+apu_vp_checks | SUMMARY: LeakSanitizer: leak from src/platform/win32_compat.c:* in cv_lazy_init | b2 | known bug 30: on Linux nothing frees a condition variable's pthread_cond_t, as qemu_cond_destroy is a no-op (the test frees d, which holds d->cond); removed by making qemu_cond_destroy free it

@@ -304,10 +304,12 @@ between builds).
 - **Known bugs:** a test that fails today in a known way is listed in
   `tests/known-failures.txt`, a race the thread sanitizer finds today in
   `tests/tsan.supp`, and what the address and undefined-behaviour
-  sanitizers find today in `tests/asan-known.txt`, each with its known bug
-  and the change that removes it. Such a failure is reported on the run
-  and doesn't fail it. Anything else does. The fix for a bug takes its
-  lines out.
+  sanitizers find today in `tests/asan-known.txt`, each with its known bug,
+  the change that removes it, and the release that is to fix it (or, in
+  tsan.supp, that it is there by design), which `tests/run_all.py` checks
+  every line has. Such a failure is reported on the run and doesn't fail
+  it. Anything else does. The fix for a bug takes its lines out, and each
+  release checks them (docs/release-checklist.md, step 4).
 - **Warnings:** our code (all but `third_party/` and the generated code) is
   built with `-Wall -Wextra`, and each build job counts the warnings in it,
   once a place (`.github/ci/count_warnings.py`), against its line in

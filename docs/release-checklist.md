@@ -56,7 +56,11 @@ progressing, however rarely it happens.
 4. **Known bugs current:** known-bugs.md marks what this release fixed,
    adds anything new, and says whether each open bug is critical (The
    gate). Its open bugs become the release text's known issues. If one is
-   critical, the release stops here until it's fixed.
+   critical, the release stops here until it's fixed. Every line of
+   `tests/known-failures.txt`, `tests/asan-known.txt` and `tests/tsan.supp`
+   names the release that is to fix its bug: a line that names this release
+   or an earlier one is fixed now, its lines out, or moved to a later
+   release with the maintainer's OK.
 
 ## Review
 
