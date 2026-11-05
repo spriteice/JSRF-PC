@@ -8,49 +8,22 @@
  *   - Xbox Live authentication (RSA, RC4)
  *   - Content verification (SHA-1)
  *
- * Implementation uses Windows BCrypt API (available since Vista).
- * For save game compatibility, all crypto must produce identical outputs
- * to the original Xbox implementations.
- *
- * Note: RC4 is implemented manually since BCrypt deprecated it in newer
- * Windows versions. The Xbox RC4 is standard RC4 (ARC4).
+ * SHA-1, RC4 and HMAC-SHA1 are software implementations, the same on every
+ * platform, with no library behind them: for save game compatibility, all
+ * crypto must produce identical outputs to the original Xbox
+ * implementations. tests/kernel_crypto checks them against known answers.
+ * The Xbox RC4 is standard RC4 (ARC4).
  */
 
 #include "kernel.h"
 #include <string.h>
 
-/* SHA-1 / RC4 / HMAC below are portable software implementations, so the
- * only platform dependency is BCrypt's types in the (unused) SHA_INTERNAL
- * struct. Keep it Windows-only. */
-#if defined(_WIN32)
-#include <bcrypt.h>
-#pragma comment(lib, "bcrypt.lib")
-#endif
-
 /* ============================================================================
  * SHA-1
  *
- * Xbox SHA-1 is standard FIPS 180-1 SHA-1. We use BCrypt for correctness.
- * The XBOX_SHA_CONTEXT is our own structure (defined in kernel.h).
- * We store the BCrypt hash handle inside it.
+ * Xbox SHA-1 is standard FIPS 180-1 SHA-1, kept in the game's own
+ * XBOX_SHA_CONTEXT (kernel.h): State[5] + Count[2] + Buffer[64], 92 bytes.
  * ============================================================================ */
-
-/* We use a wrapper since XBOX_SHA_CONTEXT may not be large enough for
- * BCrypt's internal state. Store BCrypt handles in a separate mapping. */
-
-#if defined(_WIN32)
-typedef struct _SHA_INTERNAL {
-    BCRYPT_ALG_HANDLE  hAlg;
-    BCRYPT_HASH_HANDLE hHash;
-    UCHAR              hashObject[256]; /* BCrypt hash object buffer */
-} SHA_INTERNAL;
-#endif
-
-/*
- * Since XBOX_SHA_CONTEXT is only 92 bytes (State[5] + Count[2] + Buffer[64]),
- * we can't fit a BCrypt handle in it. We use a simple software SHA-1 instead.
- * This also ensures byte-exact compatibility with the Xbox implementation.
- */
 
 /* Software SHA-1 implementation - matches Xbox/FIPS exactly */
 
