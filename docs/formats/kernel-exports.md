@@ -11,7 +11,7 @@
 
 The Xbox kernel (`xboxkrnl.exe`) exports up to 366 functions and data objects. Games import a subset of these via the kernel thunk table in the XBE header. This document covers the most commonly imported exports (~147 that a typical game uses), organized by category.
 
-Each entry shows: **ordinal**, function prototype, description, and suggested Win32 replacement.
+Each entry shows: **ordinal**, function prototype and description, and each group says where JSRF-PC does it. Each export the game imports reaches its `bridge_*` function, in src/kernel/kernel_bridge.c unless a line says otherwise (src/kernel/README.md).
 
 ## Memory Management
 
@@ -24,7 +24,7 @@ Each entry shows: **ordinal**, function prototype, description, and suggested Wi
 | 171 | `VOID MmFreeContiguousMemory(PVOID BaseAddress)` | Free contiguous memory allocated by ordinals 165/166. |
 | 178 | `VOID MmPersistContiguousMemory(PVOID BaseAddress, ULONG NumberOfBytes, BOOLEAN Persist)` | Mark memory as persistent across quick reboot. |
 
-**Win32 replacement**: `VirtualAlloc(NULL, size, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE)` or `_aligned_malloc()` for alignment. Physical contiguity is irrelevant on PC, as the host's graphics API manages GPU resources (OpenGL, in JSRF-PC).
+**In JSRF-PC:** `bridge_MmAllocateContiguousMemory` and its `Ex`, `bridge_MmFreeContiguousMemory` and `bridge_MmGetPhysicalAddress` hand out and take back the guest's physical memory, in the window at `XBOX_CONTIG_BASE` (0x80000000, src/kernel/kernel.h), where the APU and the NV2A read it.
 
 ### Virtual Memory
 
@@ -34,7 +34,7 @@ Each entry shows: **ordinal**, function prototype, description, and suggested Wi
 | 199 | `NTSTATUS NtFreeVirtualMemory(PVOID* BaseAddress, PSIZE_T RegionSize, ULONG FreeType)` | Free virtual memory. |
 | 217 | `NTSTATUS NtQueryVirtualMemory(PVOID BaseAddress, PVOID MemoryInformation, ULONG Length, PULONG ReturnLength)` | Query virtual memory region info. |
 
-**Win32 replacement**: Direct mapping to `VirtualAlloc`, `VirtualFree`, `VirtualQuery`. The API is nearly identical.
+**In JSRF-PC:** `bridge_NtAllocateVirtualMemory`, `bridge_NtFreeVirtualMemory`, `bridge_NtQueryVirtualMemory` and `bridge_NtProtectVirtualMemory`, on the guest heap (src/kernel/xbox_heap.c).
 
 ### System/Pool Memory
 
@@ -55,7 +55,7 @@ Each entry shows: **ordinal**, function prototype, description, and suggested Wi
 | 175 | `VOID MmLockUnlockBufferPages(PVOID BaseAddress, ULONG NumberOfBytes, BOOLEAN UnlockPages)` | Lock/unlock physical pages. |
 | 176 | `VOID MmLockUnlockPhysicalPage(ULONG_PTR PhysicalAddress, BOOLEAN UnlockPage)` | Lock/unlock a single physical page. |
 
-**Win32 replacement**: `HeapAlloc`/`HeapFree` for pool, `VirtualAlloc` for system memory, `VirtualProtect` for protection changes. `MmMapIoSpace` for NV2A registers should return a stub buffer that absorbs GPU register writes.
+**In JSRF-PC:** the pool (`bridge_ExAllocatePool`, `bridge_ExAllocatePoolWithTag`, `bridge_ExFreePool`) and the Mm calls are on the guest heap (src/kernel/xbox_heap.c). `bridge_MmMapIoSpace` gives a block of it. The devices' registers themselves are reached by their addresses: each guest load and store there goes to the device that owns it (src/kernel/kernel_mmio.c).
 
 ## File I/O
 
@@ -76,13 +76,11 @@ Each entry shows: **ordinal**, function prototype, description, and suggested Wi
 | 200 | `NTSTATUS NtFsControlFile(...)` | File system control operations. |
 | 196 | `NTSTATUS NtDeviceIoControlFile(...)` | Device I/O control. |
 
-**Win32 replacement**: Xbox uses NT-style paths (`\Device\CdRom0\`, `\Device\Harddisk0\Partition1\`). Implement a path translation layer that maps:
-- `D:\` (DVD drive) to your game data directory
-- `T:\` (title persistent storage) to a save directory
-- `U:\` (user data) to a user save directory
-- `Z:\` (utility partition) to a cache directory
-
-Then use `CreateFileW`, `ReadFile`, `WriteFile`, `CloseHandle`, etc. Key difference: Xbox uses ANSI_STRING for paths (not UNICODE_STRING like Windows NT).
+**In JSRF-PC:** the `bridge_Nt*File` functions, with src/kernel/kernel_file.c. Xbox uses NT-style paths (`\Device\CdRom0\`, `\Device\Harddisk0\Partition1\`), in ANSI_STRINGs, not UNICODE_STRINGs as Windows NT does. src/kernel/kernel_path.c maps them to host paths:
+- `D:\` (DVD drive) and `\Device\CdRom0\` to the game's folder
+- `T:\` (title persistent storage) to the save folder's `TitleData`
+- `U:\` (user data) to the save folder's `UserData`
+- `Z:\` (utility partition) to the save folder's `Cache`
 
 ### I/O Manager
 
@@ -95,7 +93,7 @@ Then use `CreateFileW`, `ReadFile`, `WriteFile`, `CloseHandle`, etc. Key differe
 | 203 | `NTSTATUS NtOpenSymbolicLinkObject(PHANDLE LinkHandle, POBJECT_ATTRIBUTES ObjectAttributes)` | Open a symbolic link. |
 | 215 | `NTSTATUS NtQuerySymbolicLinkObject(HANDLE LinkHandle, PANSI_STRING LinkTarget, PULONG ReturnedLength)` | Read symbolic link target. Games use this to resolve drive letters. |
 
-**Win32 replacement**: Most I/O manager functions can be stubbed. Symbolic link queries should return the mapped paths for Xbox drive letters.
+**In JSRF-PC:** the `bridge_Io*` functions, with src/kernel/kernel_io.c: `bridge_IoCreateDevice` makes the Xbox's device object in guest memory. The symbolic links are `bridge_IoCreateSymbolicLink`, `bridge_IoDeleteSymbolicLink`, `bridge_NtOpenSymbolicLinkObject` and `bridge_NtQuerySymbolicLinkObject`.
 
 ## Threading
 
@@ -111,7 +109,7 @@ Then use `CreateFileW`, `ReadFile`, `WriteFile`, `CloseHandle`, etc. Key differe
 | 224 | `NTSTATUS NtResumeThread(HANDLE ThreadHandle, PULONG PreviousSuspendCount)` | Resume a suspended thread. Returns previous suspend count. |
 | 231 | `NTSTATUS NtSuspendThread(HANDLE ThreadHandle, PULONG PreviousSuspendCount)` | Suspend a thread. Returns previous suspend count. |
 
-**Win32 replacement**: `CreateThread` (note Xbox uses `__stdcall` for thread procs), `ExitThread`, `Sleep`, `SetThreadPriority`, `SwitchToThread`, `ResumeThread`, `SuspendThread`.
+**In JSRF-PC:** `bridge_PsCreateSystemThreadEx` and `bridge_PsTerminateSystemThread`, and the other thread calls with src/kernel/kernel_thread.c. The thread procs use `__stdcall`.
 
 ## Synchronization
 
@@ -126,7 +124,7 @@ Then use `CreateFileW`, `ReadFile`, `WriteFile`, `CloseHandle`, etc. Key differe
 | 233 | `NTSTATUS NtWaitForSingleObject(HANDLE Handle, BOOLEAN Alertable, PLARGE_INTEGER Timeout)` | Wait on a single sync object. |
 | 235 | `NTSTATUS NtWaitForMultipleObjectsEx(ULONG Count, HANDLE Handles[], ULONG WaitType, BOOLEAN Alertable, PLARGE_INTEGER Timeout)` | Wait on multiple sync objects. |
 
-**Win32 replacement**: `CreateEvent`, `SetEvent`, `CreateSemaphore`, `ReleaseSemaphore`, `WaitForSingleObject`, `WaitForMultipleObjects`. Nearly 1:1 mapping.
+**In JSRF-PC:** `bridge_NtCreateEvent`, `bridge_NtSetEvent`, `bridge_NtCreateSemaphore`, the `bridge_NtWait*` functions and the rest, with src/kernel/kernel_sync.c, on the host's events and semaphores (on Linux, src/platform's).
 
 ### Kernel-mode Sync (Dispatcher Objects)
 
@@ -136,7 +134,7 @@ Then use `CreateFileW`, `ReadFile`, `WriteFile`, `CloseHandle`, etc. Key differe
 | 159 | `NTSTATUS KeWaitForSingleObject(PVOID Object, ULONG WaitReason, KPROCESSOR_MODE WaitMode, BOOLEAN Alertable, PLARGE_INTEGER Timeout)` | Kernel-mode wait. |
 | 158 | `NTSTATUS KeWaitForMultipleObjects(ULONG Count, PVOID Objects[], ULONG WaitType, ULONG WaitReason, KPROCESSOR_MODE WaitMode, BOOLEAN Alertable, PLARGE_INTEGER Timeout, PVOID WaitBlockArray)` | Kernel-mode multi-wait. |
 
-**Win32 replacement**: Same as Nt* variants above. The kernel-mode API takes object pointers instead of handles; for recompilation purposes, wrap Win32 events and forward.
+**In JSRF-PC:** `bridge_KeWaitForSingleObject`, `bridge_KeWaitForMultipleObjects` and `bridge_KeSetEvent` which take a dispatcher object's guest address as well as a handle.
 
 ### Critical Sections
 
@@ -146,7 +144,7 @@ Then use `CreateFileW`, `ReadFile`, `WriteFile`, `CloseHandle`, etc. Key differe
 | 277 | `VOID RtlEnterCriticalSection(PRTL_CRITICAL_SECTION CriticalSection)` | Enter (lock) a critical section. |
 | 294 | `VOID RtlLeaveCriticalSection(PRTL_CRITICAL_SECTION CriticalSection)` | Leave (unlock) a critical section. |
 
-**Win32 replacement**: Direct 1:1 mapping to `InitializeCriticalSection`, `EnterCriticalSection`, `LeaveCriticalSection`. The structure layout is compatible.
+**In JSRF-PC:** `bridge_RtlInitializeCriticalSection`, `bridge_RtlEnterCriticalSection` and `bridge_RtlLeaveCriticalSection`, on the CRITICAL_SECTION at the guest's address.
 
 ### Timers and DPCs
 
@@ -160,7 +158,7 @@ Then use `CreateFileW`, `ReadFile`, `WriteFile`, `CloseHandle`, etc. Key differe
 | 119 | `BOOLEAN KeInsertQueueDpc(PKDPC Dpc, PVOID Arg1, PVOID Arg2)` | Queue a DPC for execution. |
 | 137 | `BOOLEAN KeRemoveQueueDpc(PKDPC Dpc)` | Remove a queued DPC. |
 
-**Win32 replacement**: Use `CreateTimerQueueTimer` / `DeleteTimerQueueTimer` for timers. DPCs can be implemented as thread pool work items or direct callbacks.
+**In JSRF-PC:** timers in src/kernel/kernel_timer.c (`bridge_KeInitializeTimerEx`, `bridge_KeSetTimer`, `bridge_KeSetTimerEx`), fired by the kernel's timer thread there, with `bridge_KeCancelTimer`; and DPCs in src/kernel/kernel_interrupt.c (`bridge_KeInitializeDpc`, `bridge_KeInsertQueueDpc`, `bridge_KeRemoveQueueDpc`), run by that thread.
 
 ## HAL & System
 
@@ -187,7 +185,7 @@ Then use `CreateFileW`, `ReadFile`, `WriteFile`, `CloseHandle`, etc. Key differe
 | 358 | `BOOLEAN HalIsResetOrShutdownPending(void)` | Check if reset/shutdown requested. |
 | 360 | `VOID HalInitiateShutdown(void)` | Initiate system shutdown. |
 
-**Win32 replacement**: `QueryPerformanceCounter`, `QueryPerformanceFrequency`, `GetSystemTimeAsFileTime`. IRQL functions should be no-ops (PC has no IRQL concept). `KeBugCheck` should log and `exit(1)`. FPU state save/restore is unnecessary on PC (each thread has its own FPU context).
+**In JSRF-PC:** the performance counter and the time (`bridge_KeQueryPerformanceCounter`, `bridge_KeQuerySystemTime` and the rest) from the host's. Each thread's IRQL is kept (`bridge_KfRaiseIrql`, `bridge_KfLowerIrql`), as the guest lock's hand-over depends on it. `bridge_KeBugCheck` and `bridge_KeBugCheckEx` log the code. `bridge_KeSaveFloatingPointState` and its restore leave the FPU as it is, as each host thread keeps its own.
 
 ### Data Exports
 
@@ -208,7 +206,7 @@ Then use `CreateFileW`, `ReadFile`, `WriteFile`, `CloseHandle`, etc. Key differe
 | 64 | `IoCompletionObjectType` | I/O completion object type. |
 | 70 | `IoDeviceObjectType` | I/O device object type. |
 
-**Win32 replacement**: Allocate static structures with plausible values. `KeTickCount` should be updated from `GetTickCount()`. Hardware info flags = 0x20000000 (no HDD, has DVD). Kernel version = 1.0.5849.1 (or match your target XDK).
+**In JSRF-PC:** in the kernel data area at `XBOX_KERNEL_DATA_BASE` (src/kernel/xbox_memory_layout.h), each at its `KDATA_*` offset, set up by `xbox_kernel_bridge_init`, and found by `kernel_data_va_for_ordinal`. The kernel's timer thread moves `KeTickCount` (src/kernel/kernel_timer.c).
 
 ## Runtime Library (Rtl*)
 
@@ -226,7 +224,7 @@ Then use `CreateFileW`, `ReadFile`, `WriteFile`, `CloseHandle`, etc. Key differe
 | 302 | `VOID RtlRaiseException(PVOID ExceptionRecord)` | Raise an exception. |
 | 352 | `VOID RtlRip(PCHAR ApiName, PCHAR Expression, PCHAR Message)` | Debug assertion failure (debug builds). |
 
-**Win32 replacement**: Most Rtl functions have direct Win32 equivalents or can be reimplemented trivially. String functions use ANSI_STRING (Length + MaximumLength + Buffer). SEH unwinding (`RtlUnwind`) is complex but rarely exercised in normal gameplay.
+**In JSRF-PC:** the `bridge_Rtl*` functions, with src/kernel/kernel_rtl.c, on the guest's own strings and structures. `bridge_RtlUnwind` walks the guest's SEH chain and runs each handler's unwind.
 
 ## Object Manager
 
@@ -236,7 +234,7 @@ Then use `CreateFileW`, `ReadFile`, `WriteFile`, `CloseHandle`, etc. Key differe
 | 247 | `NTSTATUS ObReferenceObjectByName(PANSI_STRING Name, ULONG Attributes, PVOID ObjectType, PVOID ParseContext, PVOID* Object)` | Get object by name lookup. |
 | 250 | `VOID ObfDereferenceObject(PVOID Object)` | Decrement object reference count. |
 
-**Win32 replacement**: Reference counting can be no-ops for most games. Handle-to-object resolution needs a simple mapping table.
+**In JSRF-PC:** `bridge_ObReferenceObjectByHandle` gives the handle back as the object, which the bridges that take an object resolve as they do a handle. `bridge_ObReferenceObjectByName`, `bridge_ObfReferenceObject` and `bridge_ObfDereferenceObject`, with src/kernel/kernel_ob.c.
 
 ## XBE Section Loading
 
@@ -245,7 +243,7 @@ Then use `CreateFileW`, `ReadFile`, `WriteFile`, `CloseHandle`, etc. Key differe
 | (varies) | `NTSTATUS XeLoadSection(PXBE_SECTION_HEADER Section)` | Demand-load an XBE section. |
 | (varies) | `NTSTATUS XeUnloadSection(PXBE_SECTION_HEADER Section)` | Unload a demand-loaded section. |
 
-**Win32 replacement**: Read the section data from the XBE file and copy to the section's VA. Increment/decrement the reference count.
+**In JSRF-PC:** `bridge_XeLoadSection` and `bridge_XeUnloadSection` keep the section's reference count, its data being mapped at its VA with the rest of the XBE (src/kernel/xbox_memory_layout.c).
 
 ## Crypto
 
@@ -256,7 +254,7 @@ Then use `CreateFileW`, `ReadFile`, `WriteFile`, `CloseHandle`, etc. Key differe
 | 337 | `VOID XcSHAFinal(PSHA_CONTEXT Context, UCHAR* Digest)` | Finalize SHA-1 hash. |
 | 338 | `VOID XcRC4Key(PRC4_CONTEXT Context, ULONG KeyLength, const UCHAR* Key)` | Initialize RC4 key schedule. |
 
-**Win32 replacement**: Use Windows CNG (`BCryptCreateHash` etc.) or a lightweight SHA-1/RC4 implementation. Most games only use crypto for save game signing and Xbox Live authentication, both of which can be stubbed.
+**In JSRF-PC:** the `bridge_Xc*` functions, with SHA-1, RC4 and HMAC in software (src/kernel/kernel_crypto.c), on Linux and Windows.
 
 ## Debug
 
@@ -264,9 +262,9 @@ Then use `CreateFileW`, `ReadFile`, `WriteFile`, `CloseHandle`, etc. Key differe
 |-----|----------|-------------|
 | 8 | `ULONG DbgPrint(const char* Format, ...)` | Debug printf (__cdecl, variadic). On real hardware, outputs to kernel debugger serial port. |
 | 89 | `BOOLEAN KdDebuggerNotPresent` | Data export: TRUE on retail (no debugger attached). Game code checks this to skip debug output. |
-| 8 | (unknown) | Unknown ordinal 8. Appears in some games' thunk tables. Stub as no-op. |
+| 8 | (unknown) | Unknown ordinal 8. Appears in some games' thunk tables. |
 
-**Win32 replacement**: `DbgPrint` maps to `fprintf(stderr, ...)` or your logging system. Note __cdecl calling convention (caller cleans stack), unlike most kernel functions which use __stdcall. `KdDebuggerNotPresent` should be a static `BOOLEAN = TRUE`.
+**In JSRF-PC:** `bridge_DbgBreakPoint`. `DbgPrint` uses the __cdecl calling convention (caller cleans stack), unlike most kernel functions, which use __stdcall.
 
 ## Network (Xbox Live)
 
@@ -275,7 +273,7 @@ Then use `CreateFileW`, `ReadFile`, `WriteFile`, `CloseHandle`, etc. Key differe
 | 252 | `ULONG PhyGetLinkState(BOOLEAN Verify)` | Get Ethernet link state. |
 | 253 | `NTSTATUS PhyInitialize(BOOLEAN ForceReset, PVOID Param2)` | Initialize network PHY. |
 
-**Win32 replacement**: Return "link down" (0) for offline play. Full Xbox Live replacement requires significant networking infrastructure.
+**In JSRF-PC:** `bridge_PhyInitialize` and `bridge_PhyGetLinkState` (src/kernel/kernel_xbox.c) give the network PHY's state.
 
 ## Display / AV
 
@@ -286,7 +284,7 @@ Then use `CreateFileW`, `ReadFile`, `WriteFile`, `CloseHandle`, etc. Key differe
 | 3 | `VOID AvSetDisplayMode(PVOID RegisterBase, ULONG Step, ULONG Mode, ULONG Format, ULONG Pitch, ULONG FrameBuffer)` | Set display mode. |
 | 4 | `VOID AvSetSavedDataAddress(ULONG Address)` | Save display configuration. |
 
-**Win32 replacement**: All display/AV functions should be no-ops. Display mode is handled by the renderer's window (in JSRF-PC, src/nv2a_gl, with SDL2 and OpenGL).
+**In JSRF-PC:** the `bridge_Av*` functions. `bridge_AvSetDisplayMode` takes the framebuffer the title asks the display to show, and its format. The window is the renderer's (src/nv2a_gl, with SDL2 and OpenGL).
 
 ## Port I/O
 
@@ -295,4 +293,4 @@ Then use `CreateFileW`, `ReadFile`, `WriteFile`, `CloseHandle`, etc. Key differe
 | 333 | `VOID WRITE_PORT_BUFFER_USHORT(PUSHORT Port, PUSHORT Buffer, ULONG Count)` | Write to I/O port (16-bit). |
 | 334 | `VOID WRITE_PORT_BUFFER_ULONG(PULONG Port, PULONG Buffer, ULONG Count)` | Write to I/O port (32-bit). |
 
-**Win32 replacement**: No-ops. Port I/O is for direct hardware access (SMBus, GPU, etc.) which is irrelevant on PC.
+**In JSRF-PC:** `bridge_WRITE_PORT_BUFFER_USHORT` and `bridge_WRITE_PORT_BUFFER_ULONG` take the call and write nothing: no device on those ports is modelled.

@@ -1,121 +1,44 @@
-# Runtime Libraries
+# src/: the engine's libraries
 
-The `src/` directory contains 5 static libraries that provide the Xbox hardware and OS abstraction layer for statically recompiled games. Your recompiled game links against these at build time — no emulator needed at runtime.
+The engine, `jsrf_recomp`, is the game's own code recompiled to C (made from
+the player's disc, and never in this repository), the game's own logic in
+`port/`, and the libraries here: the console's kernel and devices, the
+renderer, and the host layer under them. The root CMakeLists.txt builds each
+folder as a library, and port/CMakeLists.txt links them into the engine
+through the root's `xboxrecomp` target.
 
-## Architecture
+Most of this began as the runtime of the
+[xboxrecomp](https://github.com/sp00nznet/xboxrecomp) toolkit by Ned Heller
+(sp00nznet), with the sound chip's code from
+[xemu](https://github.com/xemu-project/xemu). JSRF-PC has changed it since
+(docs/upstream.md, and NOTICE for each file's origin).
 
-```
-┌──────────────────────────────────────────────────────────┐
-│                   Your Recompiled Game                    │
-│  ┌──────────────┐  ┌──────────────┐  ┌────────────────┐ │
-│  │ gen/recomp_*  │  │   manual     │  │  game-specific │ │
-│  │ (auto-gen C)  │  │  overrides   │  │  loaders/fmt   │ │
-│  └──────┬───────┘  └──────┬───────┘  └───────┬────────┘ │
-│         └─────────┬───────┘──────────────────┘           │
-│                   │                                       │
-│         recomp_lookup() / recomp_lookup_manual()          │
-│         (dispatch table — YOU provide these)              │
-├───────────────────┼───────────────────────────────────────┤
-│                   │     xboxrecomp libraries              │
-│         ┌─────────┴─────────┐                             │
-│         │   xbox_kernel     │  Memory, files, threads,    │
-│         │  (kernel_bridge)  │  sync, crypto, HAL          │
-│         └─────────┬─────────┘                             │
-│                   │                                       │
-│  ┌────────┐ ┌─────┴────┐ ┌───────┐ ┌──────┐            │
-│  │xbox_   │ │xbox_     │ │xbox_  │ │xbox_ │            │
-│  │d3d8    │ │apu       │ │nv2a_gl│ │input │            │
-│  │        │ │          │ │       │ │      │            │
-│  │D3D8    │ │MCPX APU │ │NV2A → │ │XPP→  │            │
-│  │headers │ │(xemu)   │ │OpenGL │ │SDL2  │            │
-│  └────────┘ └──────────┘ └───────┘ └──────┘            │
-├──────────────────────────────────────────────────────────┤
-│    SDL2, OpenGL, Win32 API (POSIX on Linux)              │
-└──────────────────────────────────────────────────────────┘
-```
+## Each folder, and its layer
 
-## Libraries
+A fix goes in the layer that owns the behaviour (docs/project-rules.md,
+Where code goes 2).
 
-| Library | Dir | LOC | Origin | Description |
-|---------|-----|-----|--------|-------------|
-| **xbox_kernel** | `kernel/` | 7,935 | Custom | Xbox kernel → Win32 replacement (147 imports) |
-| **xbox_d3d8** | `d3d/` | 1,709 | Custom | Headers only: the D3D8 types, and the NV2A's texture swizzling |
-| **xbox_apu** | `apu/` | 3,918 | xemu | MCPX APU audio emulation (256 voices) |
-| **xbox_input** | `input/` | 212 | Custom | Xbox gamepad → SDL2 GameController mapping |
+| Folder | Library | Layer | What it holds | Linked by |
+|---|---|---|---|---|
+| `platform/` | `platform` | The platform layer | The Win32 and NT types the kernel is written in. On Linux, the Win32 primitives it uses (threads, events, mutexes, atomics, file mappings, timers) on POSIX (`win32_compat.c`); on Windows, `<windows.h>` itself. Also `recomp_check.h`, the check that stays in release builds. | `xbox_kernel`, `xbox_apu`, `xbox_usb`, `xbox_input`, `xbox_d3d8` |
+| `kernel/` | `xbox_kernel` | The kernel | The console kernel's exports the game imports, each routed from the game's thunk table to its `bridge_*` function (`kernel_bridge.c`), the guest's memory and heap, and the timer thread. Also where the game's loads and stores to device registers go (`kernel_mmio.c`), and the NV2A's interrupts and pushbuffer (`nv2a_intr.c`, `nv2a_pb_scan.c`, `nv2a_pb_exec.c`). Its [README](kernel/README.md). | `xboxrecomp` |
+| `apu/` | `xbox_apu` | The device models | The MCPX APU, the console's sound chip: xemu's voice processor, JSRF-PC's own effects where the console's DSP would run them, and the output through SDL2's audio. Its [README](apu/README.md). | `xboxrecomp` |
+| `usb/` | `xbox_usb` | The device models | The MCPX's OHCI USB host controllers, and a controller on them, for the game's own USB driver to find. | `xboxrecomp` |
+| `input/` | `xbox_input` | The platform layer | The host's pads, through SDL2's GameController, as the Xbox gamepad's state, which `usb/`'s controller reports. Its [README](input/README.md). | `xbox_usb`, `xboxrecomp` |
+| `nv2a_gl/` | `xbox_nv2a_gl` | The renderer | What the game sends the NV2A, the console's GPU, drawn with OpenGL: its methods, shaders and textures, and the window. | `xbox_kernel`, `xboxrecomp` |
+| `menu/` | `xbox_menu` | The in-game menu | The menu (F1, or Back on a pad), with Dear ImGui over the renderer's window. Any part of the engine adds rows to it (`menu.h`). | `xbox_nv2a_gl` |
+| `d3d/` | `xbox_d3d8`, headers only | The renderer | The Xbox's D3D8 types, and the NV2A's texture swizzling. | `xboxrecomp` |
+| `nv2a/` | none, a header | The device models | `qemu_shim.h`, the QEMU types xemu's APU code is written against. Its [README](nv2a/README.md). | `apu/`'s include path |
 
-## Building
+## Outside src/
 
-```bash
-cd xboxrecomp
-cmake -S . -B build
-cmake --build build --config Release
-```
-
-Output: 5 `.lib` files in `build/src/*/Release/`.
-
-## Linking to Your Game
-
-In your game's CMakeLists.txt:
-
-```cmake
-# Point to xboxrecomp
-add_subdirectory(path/to/xboxrecomp)
-
-# Link the umbrella target (all 5 libs)
-target_link_libraries(my_game PRIVATE xboxrecomp)
-
-# Or link individual modules
-target_link_libraries(my_game PRIVATE xbox_kernel xbox_d3d8)
-```
-
-## Integration Contract
-
-Your game project **must** provide two functions that the kernel bridge calls:
-
-```c
-typedef void (*recomp_func_t)(void);
-
-// Auto-generated dispatch table (from tools/recomp output)
-recomp_func_t recomp_lookup(uint32_t xbox_va);
-
-// Hand-written function overrides
-recomp_func_t recomp_lookup_manual(uint32_t xbox_va);
-```
-
-These resolve Xbox virtual addresses to native function pointers. The recompiler tool generates `recomp_dispatch.c` with a binary-search lookup table.
-
-## Initialization Order
-
-```c
-#include "kernel.h"
-#include "xbox_memory_layout.h"
-
-int main() {
-    // 1. Map Xbox 64MB address space (sections, stack, heap, mirrors)
-    xbox_MemoryLayoutInit(xbe_data, xbe_size);
-
-    // 2. The kernel layer: its log, then the game's kernel imports
-    //    routed to the bridge
-    xbox_kernel_init();
-    xbox_kernel_bridge_init();
-
-    // 3. Graphics: the title's own D3D writes the NV2A's pushbuffer, and
-    //    nv2a_gl draws it (nothing to call here)
-
-    // 4. Initialize audio (optional)
-    MCPXAPUState *apu = mcpx_apu_init_standalone(ram_ptr);
-
-    // 5. Jump to game entry point
-    void (*entry)(void) = recomp_lookup(ENTRY_POINT_VA);
-    entry();
-}
-```
-
-## Per-Module Documentation
-
-Each subdirectory has its own README with API reference:
-
-- [kernel/README.md](kernel/README.md) — Memory layout, file I/O, threading, sync, crypto
-- [apu/README.md](apu/README.md) — MCPX APU voice processor, mixer, MMIO
-- [nv2a/README.md](nv2a/README.md) — the QEMU shim the APU's xemu code builds against
-- [input/README.md](input/README.md) — Gamepad state, vibration, button mapping
+- **`port/`:** the game's own logic, in the engine: its entry point, the
+  game function overrides and hooks, and JSRF-PC's features
+  ([README](../port/README.md)).
+- **`templates/runtime/`:** `recomp_types.h`, the header the generated code
+  is built with: the guest's registers and memory, and the calls and checks
+  the recompiler emits.
+- **`tools/`:** the pipeline that makes the generated code from the game's
+  XBE, the recompiler among it ([README](../tools/README.md)).
+- **`launcher/`:** the launchers, and the scripts that build and package
+  each platform's release (docs/building-on-linux.md).

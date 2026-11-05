@@ -171,9 +171,9 @@ linked on its own, split it into a unit that can (2, its own commit).
 before the commit that adds or changes it (docs/build-and-test-reference.md,
 Repeated runs).
 
-**Docs change with the code.** A commit that changes what a player or a
-builder sees or does updates the docs that describe it, in the same commit:
-the README, docs/, and the packages' README.txt. known-bugs.md and the
+**Docs change with the code.** A commit updates the docs that describe what
+it changes, in the same commit: the README, docs/, the READMEs in src/,
+port/ and tools/, and the packages' README.txt. known-bugs.md and the
 release's backlog are kept current as the work happens, not at release.
 
 ## Never do

@@ -702,8 +702,9 @@ folder for that commit in the work's folder in the shared folder, with
 what it links to beside it. In this order:
 
 - **What I'm asking:** the commit, and the `origin/main` it goes on,
-  checked just before writing. The ask itself goes on a card in the
-  thread (project rules, at the top).
+  checked against GitHub (`git ls-remote origin main`) just before
+  writing. The ask itself goes on a card in the thread (project rules, at
+  the top).
 - **Testing:** each step of the test list, with its device and my result,
   and every step still untested, with the device it needs (project rules,
   Workflow 5).

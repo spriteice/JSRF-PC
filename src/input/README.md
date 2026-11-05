@@ -1,13 +1,22 @@
-# xbox_input — Xbox Gamepad to XInput
+# xbox_input — the Xbox gamepad, from the host's pads
 
-Maps the Xbox controller API to the host's pads, through SDL2's GameController API on Linux and Windows. The original Xbox used `XInputGetState` with a slightly different structure layout than the XInput API on Windows; this layer keeps the Xbox's layout and fills it from SDL2.
+> **From the xboxrecomp toolkit,** by Ned Heller (sp00nznet), written for
+> the toolkit's own work, much of it on Burnout 3: Takedown, on Windows with
+> Direct3D 11. JSRF-PC keeps it for how the gamepad layer works. Where it
+> differs from how JSRF-PC is built or changed,
+> [building-on-linux.md](../../docs/building-on-linux.md) and
+> [project-rules.md](../../docs/project-rules.md) are right, and this doc is
+> out of date there: say so. The generated code is never edited, and a bug
+> is fixed where it starts, not stubbed out or guarded around.
+
+Maps the Xbox controller API to the host's pads, through SDL2's GameController API on Linux and Windows. The original Xbox used `XInputGetState` with a slightly different structure layout than the XInput API on Windows; this layer keeps the Xbox's layout and fills it from SDL2, with the window's keyboard merged in. src/usb's controller (`usb_gamepad.c`) reports that state to the game's own USB driver. While the in-game menu is open it has the pad, and the game sees nothing pressed.
 
 ## Files
 
-| File | LOC | Purpose |
-|------|-----|---------|
-| `xinput_xbox.h` | 189 | Public header — types, button constants, function prototypes |
-| `xinput_device.c` | 23 | Implementation (maps Xbox calls to SDL2's GameController API) |
+| File | Purpose |
+|------|---------|
+| `xinput_xbox.h` | Public header — types, button constants, function prototypes |
+| `xinput_device.c` | Implementation: SDL2's GameController and the window's keyboard, as the Xbox gamepad's state |
 
 ## Quick Start
 
@@ -112,18 +121,18 @@ XBOX_ANALOG_BUTTON_THRESHOLD  30   // Recommended press threshold
 
 ### Xbox → Modern Controller Mapping
 
-| Xbox Button | XInput Equivalent | Notes |
+| Xbox Button | Host Pad (SDL2) | Notes |
 |-------------|------------------|-------|
-| A | A | Green button |
-| B | B | Red button |
-| X | X | Blue button |
-| Y | Y | Yellow button |
-| Black | Right Bumper | Mapped to RB |
-| White | Left Bumper | Mapped to LB |
+| A | A | Green button; 0 or 255, as the host's has no pressure |
+| B | B | Red button; 0 or 255 |
+| X | X | Blue button; 0 or 255 |
+| Y | Y | Yellow button; 0 or 255 |
+| Black | Left Bumper | Mapped to LB; 0 or 255 |
+| White | Right Bumper | Mapped to RB; 0 or 255 |
 | L Trigger | Left Trigger | Analog 0-255 |
 | R Trigger | Right Trigger | Analog 0-255 |
 | Start | Start/Menu | |
-| Back | Back/View | |
+| Back | Back/View | The in-game menu's button whenever there is a menu, so the game never sees a pad's Back then. The keyboard's Back (Esc) is the game's: F1 opens the menu |
 | D-pad | D-pad | Digital only |
 | L Stick | L Stick | Click = L3 |
 | R Stick | R Stick | Click = R3 |

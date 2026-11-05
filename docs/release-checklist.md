@@ -79,8 +79,8 @@ progressing, however rarely it happens.
    changed with their code (docs/project-rules.md, How it's written).
 
    The rule changes gathered under Rule changes in the release's backlog
-   are made here too, each in its own commit with the maintainer's
-   approval (docs/project-rules.md, Changing the rules).
+   are made here too, in one commit with the maintainer's approval
+   (docs/project-rules.md, Changing the rules).
 
    Code findings are fixed now, each in its own commit, and doc findings in
    step 6. The review comes before the docs, as its fixes can change what
