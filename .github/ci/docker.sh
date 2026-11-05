@@ -17,7 +17,10 @@ repo="$(cd "$(dirname "$0")/../.." && pwd)"
 groups="${1:?the launcher/image.sh groups}"
 shift
 image="$("$repo/launcher/images.sh" get "$groups")"
-echo "image: $(docker image inspect -f '{{if .RepoDigests}}{{index .RepoDigests 0}}{{else}}{{.Id}}, made here{{end}}' "$image")"
+# Which image ran: the registry's digest for a published one, pulled now or
+# before; or, for one made here (images.sh's jsrf-pc.made-here label, as a
+# Docker may give a local image a digest too), its ID.
+echo "image: $(docker image inspect -f '{{if index .Config.Labels "jsrf-pc.made-here"}}{{.Id}}, made here{{else if .RepoDigests}}{{index .RepoDigests 0}}, published{{else}}{{.Id}}, made here{{end}}' "$image")"
 # shellcheck disable=SC2086
 exec docker run --rm --platform "$(docker image inspect -f '{{.Os}}/{{.Architecture}}' "$image")" \
     ${CI_DOCKER_ARGS:-} -v "$repo:/src:ro" -w /src \

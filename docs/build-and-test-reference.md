@@ -152,7 +152,10 @@ changed:
   `launcher/images.sh get` uses the image Docker has, or pulls it, or,
   while it isn't published yet, makes it: from Ubuntu's snapshot archive,
   or the same versions from Ubuntu's own archive when the snapshot fails,
-  while that archive still has them. So a new image.sh names new images;
+  while that archive still has them, its log giving image.sh's own lines
+  with the seconds each came at. So a new image.sh names new images. Each
+  CI job's log says which image it ran in: the published one, by the
+  registry's digest, or one made here;
 - the conformance image, for CI only: `launcher/image-386.sh` makes it
   from Alpine for i386 (linux/386), and it is published and got the same
   way, named for that file's SHA-256. Alpine's archive keeps only each

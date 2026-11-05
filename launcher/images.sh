@@ -59,24 +59,34 @@ check() {
     fi
 }
 
-# Make the image: image.sh in a fresh container of the base, committed with
-# its labels. Its output goes to stderr, and its last line says what it
-# installed.
+# Make the image: the recipe in a fresh container of the base, committed
+# with its labels, and with jsrf-pc.made-here too when get makes it here
+# (make_image here), which docker.sh's "image:" line reads. The recipe's own
+# lines (image.sh: ..., the last of which says what it installed) go to
+# stderr as they come, each with the seconds since it started, so a slow or
+# failed archive shows where the time went; the rest of its output only if
+# it fails.
 make_image() {
-    local from="${ci_base:-$base}" cid log
+    local from="${ci_base:-$base}" cid log start here=()
+    [ "${1:-}" = here ] && here=(--change "LABEL jsrf-pc.made-here=1")
     log="$(mktemp)"
     # shellcheck disable=SC2086
     cid="$(docker create "${platform[@]}" ${CI_DOCKER_ARGS:-} -v "$recipe:/image.sh:ro" "$from" /image.sh $groups)"
-    if ! docker start -a "$cid" > "$log" 2>&1; then
+    start=$SECONDS
+    if ! docker start -a "$cid" 2>&1 | while IFS= read -r line; do
+            printf '%s\n' "$line" >> "$log"
+            case "$line" in
+                image.sh:*|image-386.sh:*) echo "$line ($((SECONDS - start)) s in)" >&2 ;;
+            esac
+        done; then
         cat "$log" >&2
         docker rm "$cid" > /dev/null
         rm -f "$log"
         echo "images.sh: ${recipe##*/} $groups failed in $from" >&2
         exit 1
     fi
-    tail -n 1 "$log" >&2
     rm -f "$log"
-    docker commit \
+    docker commit "${here[@]}" \
         --change "LABEL jsrf-pc.image-sh=$sha" \
         --change "LABEL jsrf-pc.groups=\"$groups\"" \
         --change "LABEL org.opencontainers.image.source=https://github.com/spriteice/JSRF-PC" \
@@ -96,7 +106,7 @@ get)
         echo "images.sh: $name, pulled" >&2
     else
         echo "images.sh: $name isn't published, or the registry can't be reached: making it" >&2
-        make_image
+        make_image here
     fi
     check
     echo "$name"
