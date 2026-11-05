@@ -127,11 +127,15 @@ int mcpx_apu_irq_pending(MCPXAPUState *d)
     return 1;
 }
 /* One line of APU state for whoever is diagnosing a stall, in a form that
- * needs none of this file's types. IEN and ISTS say whether the hardware is
- * asking for its interrupt and whether the title has enabled the source; the
- * two counters say whether there was ever anything to ask about. */
-void mcpx_apu_debug_line(char *buf, unsigned long n);
-void mcpx_apu_debug_line(char *buf, unsigned long n)
+ * needs none of this file's types: written whole to f, after prefix, by one
+ * fprintf, so no caller's buffer can cut it short (the reports' 256 and 320
+ * bytes once cut every one at 255 or 319 characters, losing the voice counts
+ * at its end) and another thread's line can't land inside it. IEN and ISTS
+ * say whether the hardware is asking for its interrupt and whether the title
+ * has enabled the source; the two counters say whether there was ever
+ * anything to ask about. */
+void mcpx_apu_debug_print(FILE *f, const char *prefix);
+void mcpx_apu_debug_print(FILE *f, const char *prefix)
 {
     extern MCPXAPUState *g_apu_state;
     extern unsigned long g_apu_notifies, g_apu_voice_offs;
@@ -139,34 +143,35 @@ void mcpx_apu_debug_line(char *buf, unsigned long n)
     extern unsigned long g_apu_seg_done, g_apu_notify_ssl, g_apu_notify_persist;
     extern unsigned long g_apu_voices_seen, g_apu_stream_voices, g_apu_voices_paused;
     MCPXAPUState *d = g_apu_state;
-    if (!d) { snprintf(buf, (size_t)n, "no APU"); return; }
-    snprintf(buf, (size_t)n,
-             "SECTL=0x%08X(xcnt=%u) FECTL=0x%08X%s%s -> pipeline %s; "
-             "IEN=0x%08X ISTS=0x%08X -- %lu notifications raised, %lu voices "
-             "turned off; the title has sent %u methods (%u VOICE_ON, "
-             "%u VOICE_OFF); streaming: %lu segments finished, %lu SSL "
-             "notifications, %lu persist notifications; voices processed "
-             "%lu (%lu in stream format, %lu paused)",
-             (unsigned)qatomic_read(&d->regs[NV_PAPU_SECTL]),
-             (unsigned)GET_MASK(qatomic_read(&d->regs[NV_PAPU_SECTL]),
-                                NV_PAPU_SECTL_XCNTMODE),
-             (unsigned)qatomic_read(&d->regs[NV_PAPU_FECTL]),
-             (qatomic_read(&d->regs[NV_PAPU_FECTL])
-              & NV_PAPU_FECTL_FEMETHMODE_TRAPPED) ? " TRAPPED" : "",
-             (qatomic_read(&d->regs[NV_PAPU_FECTL])
-              & NV_PAPU_FECTL_FEMETHMODE_HALTED) ? " HALTED" : "",
-             ((GET_MASK(qatomic_read(&d->regs[NV_PAPU_SECTL]),
-                        NV_PAPU_SECTL_XCNTMODE) != NV_PAPU_SECTL_XCNTMODE_OFF)
-              && !(qatomic_read(&d->regs[NV_PAPU_FECTL])
-                   & NV_PAPU_FECTL_FEMETHMODE_TRAPPED)
-              && !(qatomic_read(&d->regs[NV_PAPU_FECTL])
-                   & NV_PAPU_FECTL_FEMETHMODE_HALTED)) ? "RUNNING" : "STOPPED",
-             (unsigned)qatomic_read(&d->regs[NV_PAPU_IEN]),
-             (unsigned)qatomic_read(&d->regs[NV_PAPU_ISTS]),
-             g_apu_notifies, g_apu_voice_offs,
-             g_apu_fe_total, g_apu_fe_on, g_apu_fe_off,
-             g_apu_seg_done, g_apu_notify_ssl, g_apu_notify_persist,
-             g_apu_voices_seen, g_apu_stream_voices, g_apu_voices_paused);
+    if (!d) { fprintf(f, "%sno APU\n", prefix); return; }
+    fprintf(f,
+            "%sSECTL=0x%08X(xcnt=%u) FECTL=0x%08X%s%s -> pipeline %s; "
+            "IEN=0x%08X ISTS=0x%08X -- %lu notifications raised, %lu voices "
+            "turned off; the title has sent %u methods (%u VOICE_ON, "
+            "%u VOICE_OFF); streaming: %lu segments finished, %lu SSL "
+            "notifications, %lu persist notifications; voices processed "
+            "%lu (%lu in stream format, %lu paused)\n",
+            prefix,
+            (unsigned)qatomic_read(&d->regs[NV_PAPU_SECTL]),
+            (unsigned)GET_MASK(qatomic_read(&d->regs[NV_PAPU_SECTL]),
+                               NV_PAPU_SECTL_XCNTMODE),
+            (unsigned)qatomic_read(&d->regs[NV_PAPU_FECTL]),
+            (qatomic_read(&d->regs[NV_PAPU_FECTL])
+             & NV_PAPU_FECTL_FEMETHMODE_TRAPPED) ? " TRAPPED" : "",
+            (qatomic_read(&d->regs[NV_PAPU_FECTL])
+             & NV_PAPU_FECTL_FEMETHMODE_HALTED) ? " HALTED" : "",
+            ((GET_MASK(qatomic_read(&d->regs[NV_PAPU_SECTL]),
+                       NV_PAPU_SECTL_XCNTMODE) != NV_PAPU_SECTL_XCNTMODE_OFF)
+             && !(qatomic_read(&d->regs[NV_PAPU_FECTL])
+                  & NV_PAPU_FECTL_FEMETHMODE_TRAPPED)
+             && !(qatomic_read(&d->regs[NV_PAPU_FECTL])
+                  & NV_PAPU_FECTL_FEMETHMODE_HALTED)) ? "RUNNING" : "STOPPED",
+            (unsigned)qatomic_read(&d->regs[NV_PAPU_IEN]),
+            (unsigned)qatomic_read(&d->regs[NV_PAPU_ISTS]),
+            g_apu_notifies, g_apu_voice_offs,
+            g_apu_fe_total, g_apu_fe_on, g_apu_fe_off,
+            g_apu_seg_done, g_apu_notify_ssl, g_apu_notify_persist,
+            g_apu_voices_seen, g_apu_stream_voices, g_apu_voices_paused);
 }
 
 /* The kernel does not know the APU's types: a plain query on the global. */

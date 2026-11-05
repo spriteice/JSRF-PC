@@ -2158,12 +2158,10 @@ void kernel_apu_tick(void)
      * run as informative as a bad one. */
     { static long long said;
       long long now2 = (long long)GetTickCount64();
-      extern void mcpx_apu_debug_line(char *, unsigned long) __attribute__((weak));
-      if (mcpx_apu_debug_line && now2 - said >= 10000) {
-          char line[320];
+      extern void mcpx_apu_debug_print(FILE *, const char *) __attribute__((weak));
+      if (mcpx_apu_debug_print && now2 - said >= 10000) {
           said = now2;
-          mcpx_apu_debug_line(line, sizeof line);
-          fprintf(stderr, "  [APU] %s\n", line);
+          mcpx_apu_debug_print(stderr, "  [APU] ");
           fflush(stderr);
       } }
 
@@ -5518,16 +5516,13 @@ void xbox_guest_lock_report(void)
                     " (critical-section handoffs %lu, free releases %lu)\n",
             owner, now - since, g_cs_handoffs, g_cs_free_releases);
     if (g_lock_owner_edge) {
-        extern void mcpx_apu_debug_line(char *, unsigned long) __attribute__((weak));
+        extern void mcpx_apu_debug_print(FILE *, const char *) __attribute__((weak));
         fprintf(stderr, "  [LOCK] its latest loop back edge: guest 0x%08X at "
                         "IRQL %u; APU interrupts taken on a spinning thread: "
                         "%lu\n", g_lock_owner_edge, g_lock_owner_irql,
                 g_spin_isrs);
-        if (mcpx_apu_debug_line) {
-            char line[320];
-            mcpx_apu_debug_line(line, sizeof line);
-            fprintf(stderr, "  [LOCK] APU: %s\n", line);
-        }
+        if (mcpx_apu_debug_print)
+            mcpx_apu_debug_print(stderr, "  [LOCK] APU: ");
     }
     { extern void xbox_kernel_thread_report(void);
       xbox_kernel_thread_report(); }
@@ -6256,12 +6251,9 @@ void kernel_freeze_watch(void)
     fprintf(stderr, "\n  [FROZEN] nothing has been presented for %lld ms "
                     "(still at frame %lu). Every guest thread:\n",
             now - since, frames);
-    {   extern void mcpx_apu_debug_line(char *, unsigned long) __attribute__((weak));
-        char line[256];
-        if (mcpx_apu_debug_line) {
-            mcpx_apu_debug_line(line, sizeof line);
-            fprintf(stderr, "  [FROZEN] APU: %s\n", line);
-        }
+    {   extern void mcpx_apu_debug_print(FILE *, const char *) __attribute__((weak));
+        if (mcpx_apu_debug_print)
+            mcpx_apu_debug_print(stderr, "  [FROZEN] APU: ");
         fprintf(stderr, "  [FROZEN] APU interrupts: %u raised, %u claimed by "
                         "the title's ISR\n", g_apu_raised, g_apu_claimed);
     }

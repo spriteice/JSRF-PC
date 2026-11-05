@@ -116,9 +116,10 @@ FENCE = ("src/kernel/nv2a_pb_exec.c", "[NV2A] waits for a fence: ", 7, 1500.0, 1
 TMAKE = (GL, "[GL] %u textures made in ", 120, 900.0, 600.0, 300.0, 7.5, 33.0, 40, 50.0, 80, 550.0)
 GL_DRAWS = (GL, "  [GL] %u draws, %u triangles", 30000, *([0] * 23), *([""] * 8), *([0] * 6))
 QUEUE = ("src/kernel/xbox_memory_layout.c", "[NV2A] queue: %lu flushes", 900, 600, 64.0, 512.0, 2)
-APU_LINE = ("src/apu/apu_core.c", "VOICE_ON, ", 0, 1, 0, "", "", "running", 0, 0, 5, 6, 70, 41, 29,
-            3, 4, 5, 6, 7, 8)
-APU = ("src/kernel/kernel_bridge.c", "  [APU] %s\\n")
+APU_LINE = ("src/apu/apu_core.c", "VOICE_ON, ")
+APU_VALUES = (0, 1, 0, "", "", "running", 0, 0, 5, 6, 70, 41, 29, 3, 4, 5, 6, 7, 8)
+# The prefix the 10 s report gives the APU's line (its mcpx_apu_debug_print).
+APU = ("src/kernel/kernel_bridge.c", '"  [APU] ")')
 CPU_HEAD = ("port/cpuprof.c", "[CPUPROF] the last %.1f s", 10.0, "")
 CPU_THREAD = ("port/cpuprof.c", "[CPUPROF]   thread %d (%s) %.0f%% of a core", 4242, "jsrf_recomp", 93.0, 9100)
 CPU_THREAD_BARE = ("port/cpuprof.c", "[CPUPROF]   thread %d (%s) %lu samples:", 4343, "exited", 800)
@@ -141,7 +142,7 @@ PRESENT_NO_HZ = (GL, "on screen under 14 ms %llu", PRESENT_WINDOW, 590, 10, 5, 5
 
 
 def apu_line():
-    return render(*APU, render(*APU_LINE))
+    return render(*APU_LINE, render(*APU), *APU_VALUES)
 
 
 def display_line(paced):
