@@ -109,7 +109,6 @@ target and the most tested. Windows comes second.
   and effects are still 4:3 or stretched.
 - **Known issues:** Each is described in the
   [latest release's notes](https://github.com/spriteice/JSRF-PC/releases/latest).
-  - The jet boost effect in widescreen.
   - Some menus in widescreen.
   - Occasional crashes from bugs not yet found.
   - Some elements half a pixel out of place.

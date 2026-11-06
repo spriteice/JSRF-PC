@@ -4110,6 +4110,54 @@ void sub_00154420(void)
         for (i = 0; i < 4; i++) mf[i * 4] = keep[i];
 }
 
+/* ---- the boost's heat haze, widened with the camera (known bug 2) --------
+ * While a jet boost lasts, the world is drawn into a copy, and
+ * sub_000A2960 (the camera class's draw, vtable 0x1CD518 slot +0xC) lays a
+ * haze over the frame that samples it: a quad of 4 vertices at 0x215458
+ * (stride 0x1C, x y z first, 6 indices at 0x215528). It and the camera's
+ * constructor, sub_000A4D80, place the quad under a camera of their own
+ * (SetCamera 0x2AAA, 1.0, 20.0) by taking the screen's four corners back
+ * into view space at depth 2.45 with the device's unproject (slot +0x94,
+ * sub_00154180), which knows nothing of the widening above. So through m00
+ * = s the quad covers only the middle 4:3, and the sides show the black the
+ * world wasn't drawn on. The functions are right on the console, and the
+ * lifted code does what they do (the same constants, the same unproject);
+ * only our widening makes them wrong, so the recompiler, the runtime and the
+ * renderer aren't the cause. No other full-screen 3D effect is placed this
+ * way: SetCamera(0x2AAA, 1.0, 20.0) and 0x215458 are used by these two
+ * functions only. So once either has written the corners, their x is
+ * divided by s, and set back when s changes or widescreen goes off.
+ * The game writes them on a boost's first frame, whose haze it doesn't draw,
+ * and builds the mesh from them on every frame after, so its next frame
+ * draws the wider quad. The texture coordinates span the copy, which holds
+ * the whole widened view, so they stay. Every placing it changes is logged,
+ * "[WIDE] ... boost haze". tests/boost_haze checks the corners, cut from
+ * here by text (from HAZE_VERTS to the graffiti section's heading); that
+ * the game places them, and that the haze then fills the screen, needs the
+ * game and the whole renderer, which is the test build's boost step. */
+#define HAZE_VERTS  0x215458u
+#define HAZE_STRIDE 0x1Cu
+static void wide_haze_corners(const char *who)
+{
+    static float base[4], put[4];
+    static int have;
+    float *x[4], s = wide_proj() ? nv2a_wide_squeeze() : 1.0f, was[4];
+    int i, moved = 0;
+    if (!(s > 0.0f)) s = 1.0f;
+    for (i = 0; i < 4; i++) {
+        x[i] = (float *)((uint8_t *)g_xbox_mem_offset + HAZE_VERTS + (uint32_t)i * HAZE_STRIDE);
+        if (!have || *x[i] != put[i]) base[i] = *x[i];   /* the game placed it again */
+        was[i] = *x[i];
+        put[i] = base[i] / s;
+        if (*x[i] != put[i]) { *x[i] = put[i]; moved = 1; }
+    }
+    have = 1;
+    if (moved)
+        fprintf(stderr, "[WIDE] t=%.1f flip %u boost haze (%s): corners x %.4f %.4f %.4f %.4f"
+                " -> %.4f %.4f %.4f %.4f (squeeze %.3f)\n", pad_now(), nv2a_gl_flips(), who,
+                was[0], was[1], was[2], was[3], put[0], put[1], put[2], put[3], s);
+}
+
 
 /* ---- a graffiti mesh's draw ---------------------------------------------------
  * sub_00042EE0 (ecx = the spot's mesh, spot +0x90) draws a sprayed spot: the
@@ -4586,7 +4634,7 @@ static const uint32_t jsrf_camva[18] = { 0x000A28B0u, 0x000A2960u, 0x000A3A70u, 
 extern void sub_000A28B0_gen(void);
 void sub_000A28B0(void) { jsrf_camcnt[0]++; freecam_ran(g_ecx); sub_000A28B0_gen(); }
 extern void sub_000A2960_gen(void);
-void sub_000A2960(void) { jsrf_camcnt[1]++; sub_000A2960_gen(); }
+void sub_000A2960(void) { jsrf_camcnt[1]++; sub_000A2960_gen(); wide_haze_corners("sub_000A2960"); }
 extern void sub_000A3A70_gen(void);
 void sub_000A3A70(void) { jsrf_camcnt[2]++; sub_000A3A70_gen(); }
 extern void sub_000A3BD0_gen(void);
@@ -4616,7 +4664,7 @@ void sub_000A5AF0(void) { jsrf_camcnt[14]++; sub_000A5AF0_gen(); }
 extern void sub_000A4890_gen(void);
 void sub_000A4890(void) { jsrf_camcnt[15]++; sub_000A4890_gen(); }
 extern void sub_000A4D80_gen(void);
-void sub_000A4D80(void) { jsrf_camcnt[16]++; sub_000A4D80_gen(); }
+void sub_000A4D80(void) { jsrf_camcnt[16]++; sub_000A4D80_gen(); wide_haze_corners("sub_000A4D80"); }
 extern void sub_000A4C30_gen(void);
 void sub_000A4C30(void) { jsrf_camcnt[17]++; sub_000A4C30_gen(); }
 static void jsrf_cam_counts(void)
