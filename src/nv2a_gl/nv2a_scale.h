@@ -16,19 +16,22 @@
 extern "C" {
 #endif
 
-/* The scales F9's box and the menu offer: 1x to this. */
-#define NV2A_SCALE_OFFERED 4
+/* The scales there are, 1x to this, on every system: F9's box and the menu
+ * offer them all, the launchers take them all, and RECOMP_GL_SCALE is
+ * taken at most at this. 6x makes 3840x2880 of the Xbox's 640x480: a 4K
+ * screen's width, one pixel for one. */
+#define NV2A_SCALE_MAX 6
 
-/* The most RECOMP_GL_SCALE is taken at; a larger value is taken as this. */
-#define NV2A_SCALE_ENV_MAX 8
+/* The Xbox's frame, which the names count from. */
+#define NV2A_SCALE_FRAME_W 640
+#define NV2A_SCALE_FRAME_H 480
 
-/* Each offered scale's name, 1x first, as F9's buttons and the menu's
- * choices show it: the scale, and the raster it makes of the Xbox's
- * 640x480. */
-extern const char *const nv2a_scale_names[NV2A_SCALE_OFFERED];
+/* Each scale's name, 1x first, as F9's buttons and the menu's choices show
+ * it: the scale, and the raster it makes of the Xbox's 640x480. */
+extern const char *const nv2a_scale_names[NV2A_SCALE_MAX];
 
 /* RECOMP_GL_SCALE's value as the renderer takes it: 1 when it is unset or
- * not a number, and otherwise clamped to 1..NV2A_SCALE_ENV_MAX. */
+ * not a number, and otherwise clamped to 1..NV2A_SCALE_MAX. */
 uint32_t nv2a_scale_parse(const char *v);
 
 #ifdef __cplusplus

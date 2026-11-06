@@ -2,10 +2,10 @@
  *
  * The internal resolution, src/nv2a_gl/nv2a_scale.c, as the engine builds it:
  *
- *   1. Each offered scale's name is the scale and the raster it makes of the
- *      Xbox's 640x480, 1x first.
+ *   1. There are six scales, and each one's name is the scale and the raster
+ *      it makes of the Xbox's 640x480, 1x first.
  *   2. RECOMP_GL_SCALE's value is 1 when unset or not a number, a number as
- *      strtol reads it otherwise, and clamped to 1..NV2A_SCALE_ENV_MAX.
+ *      strtol reads it otherwise, and clamped to 1..NV2A_SCALE_MAX: 1x to 6x.
  */
 #include <stdio.h>
 #include <string.h>
@@ -19,7 +19,10 @@ static int s_failures;
 static void names(void)
 {
     int i;
-    for (i = 0; i < NV2A_SCALE_OFFERED; i++) {
+    CHECK(NV2A_SCALE_MAX == 6);
+    CHECK(sizeof nv2a_scale_names / sizeof nv2a_scale_names[0] == NV2A_SCALE_MAX);
+    CHECK(NV2A_SCALE_FRAME_W == 640 && NV2A_SCALE_FRAME_H == 480);
+    for (i = 0; i < NV2A_SCALE_MAX; i++) {
         char want[32];
         snprintf(want, sizeof want, "%dx  %dx%d", i + 1, 640 * (i + 1), 480 * (i + 1));
         CHECK(nv2a_scale_names[i] && !strcmp(nv2a_scale_names[i], want));
@@ -38,9 +41,11 @@ static void parse(void)
     CHECK(nv2a_scale_parse(" 2") == 2);
     CHECK(nv2a_scale_parse("0x4") == 4);
     CHECK(nv2a_scale_parse("4x") == 4);
-    CHECK(nv2a_scale_parse("8") == NV2A_SCALE_ENV_MAX);
-    CHECK(nv2a_scale_parse("9") == NV2A_SCALE_ENV_MAX);
-    CHECK(nv2a_scale_parse("99999999999999999999") == NV2A_SCALE_ENV_MAX);
+    CHECK(nv2a_scale_parse("5") == 5);
+    CHECK(nv2a_scale_parse("6") == 6);
+    CHECK(nv2a_scale_parse("7") == 6);
+    CHECK(nv2a_scale_parse("8") == 6);
+    CHECK(nv2a_scale_parse("99999999999999999999") == 6);
 }
 
 int main(void)
@@ -51,7 +56,6 @@ int main(void)
         printf("render_scale: %d failed\n", s_failures);
         return 1;
     }
-    printf("render_scale: all cases pass (%d scales offered, RECOMP_GL_SCALE up to %d)\n",
-           NV2A_SCALE_OFFERED, NV2A_SCALE_ENV_MAX);
+    printf("render_scale: all cases pass (1x to %dx)\n", NV2A_SCALE_MAX);
     return 0;
 }

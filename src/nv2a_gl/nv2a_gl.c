@@ -1695,12 +1695,12 @@ static void sdl_toggle_widescreen(void)
     fprintf(stderr, "[WIN] widescreen %s\n", on ? "on (16:9)" : "off (4:3)");
 }
 
-/* F9: the internal resolution, 1x to 4x the Xbox's 640x480. The renderer
- * sizes its targets once, at start-up, so a new one means starting again:
- * after asking, the choice is stored under the launchers' own "scale" key
- * (they pass it on as RECOMP_GL_SCALE), put in the environment and the engine
- * relaunches itself (port/main.c) -- in full screen again if that is where it
- * was. */
+/* F9: the internal resolution, 1x to 6x the Xbox's 640x480 (NV2A_SCALE_MAX),
+ * every one of them on every system. The renderer sizes its targets once, at
+ * start-up, so a new one means starting again: after asking, the choice is
+ * stored under the launchers' own "scale" key (they pass it on as
+ * RECOMP_GL_SCALE), put in the environment and the engine relaunches itself
+ * (port/main.c) -- in full screen again if that is where it was. */
 extern void recomp_restart_self(void) __attribute__((weak));
 
 /* The engine started again, in full screen again if that is where it was:
@@ -1739,7 +1739,7 @@ static void sdl_keys_release(void)
 
 static void sdl_choose_scale(void)
 {
-    SDL_MessageBoxButtonData b[NV2A_SCALE_OFFERED + 1];
+    SDL_MessageBoxButtonData b[NV2A_SCALE_MAX + 1];
     SDL_MessageBoxData box;
     char msg[512];
     int cur = (int)gl_scale(), pick = -1, i, was_fs;
@@ -1750,31 +1750,32 @@ static void sdl_choose_scale(void)
      * screen is left while it is up, and put back if nothing is chosen. */
     was_fs = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
     if (was_fs) sdl_toggle_fullscreen();
-    for (i = 0; i < NV2A_SCALE_OFFERED; i++) {
+    for (i = 0; i < NV2A_SCALE_MAX; i++) {
         b[i].flags    = i + 1 == cur ? SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT : 0;
         b[i].buttonid = i + 1;
         b[i].text     = nv2a_scale_names[i];
     }
-    b[NV2A_SCALE_OFFERED].flags    = SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
-    b[NV2A_SCALE_OFFERED].buttonid = 0;
-    b[NV2A_SCALE_OFFERED].text     = "Cancel";
+    b[NV2A_SCALE_MAX].flags    = SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
+    b[NV2A_SCALE_MAX].buttonid = 0;
+    b[NV2A_SCALE_MAX].text     = "Cancel";
     /* Short lines: SDL's own X11 message box does not wrap, and cut the
      * first line off at its width. */
     snprintf(msg, sizeof msg,
              "The game is drawn at a multiple of the Xbox's 640x480,\n"
              "then fitted to the window. Higher is sharper and asks\n"
-             "more of the graphics card. Now: %dx (%dx%d).\n\n"
+             "more of the graphics card; 6x suits a 4K screen.\n"
+             "Now: %dx (%dx%d).\n\n"
              "Changing it restarts the game: anything since\n"
              "your last save is lost.",
-             cur, 640 * cur, 480 * cur);
+             cur, NV2A_SCALE_FRAME_W * cur, NV2A_SCALE_FRAME_H * cur);
     memset(&box, 0, sizeof box);
     box.flags      = SDL_MESSAGEBOX_INFORMATION | SDL_MESSAGEBOX_BUTTONS_LEFT_TO_RIGHT;
     box.window     = g_window;
     box.title      = "Resolution";
     box.message    = msg;
-    box.numbuttons = NV2A_SCALE_OFFERED + 1;
+    box.numbuttons = NV2A_SCALE_MAX + 1;
     box.buttons    = b;
-    if (SDL_ShowMessageBox(&box, &pick) != 0 || pick < 1 || pick > NV2A_SCALE_OFFERED || pick == cur) {
+    if (SDL_ShowMessageBox(&box, &pick) != 0 || pick < 1 || pick > NV2A_SCALE_MAX || pick == cur) {
         if (was_fs) sdl_toggle_fullscreen();
         sdl_keys_release();
         return;
@@ -1808,7 +1809,7 @@ static void sdl_menu_display(void)
           .state = nv2a_widescreen, .run = sdl_toggle_widescreen },
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Render scale (Restart)",
           .state = sdl_scale_now, .pick = sdl_scale_pick,
-          .choices = nv2a_scale_names, .nchoices = NV2A_SCALE_OFFERED,
+          .choices = nv2a_scale_names, .nchoices = NV2A_SCALE_MAX,
           .confirm = "The game restarts at the new scale, losing unsaved progress." },
     };
     int n = (int)(sizeof rows / sizeof rows[0]);

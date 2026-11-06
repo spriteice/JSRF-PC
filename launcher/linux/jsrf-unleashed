@@ -8,7 +8,7 @@
 #   ./jsrf-pc                  play (asks where the game is, the first time)
 #   ./jsrf-pc /path/to/game    use that folder (or a disc image -- see below), and remember it
 #   ./jsrf-pc --choose         ask where the game is again
-#   ./jsrf-pc --scale N        internal resolution, 1 to 4 times 640x480 (default 2); remembered
+#   ./jsrf-pc --scale N        internal resolution, 1 to 6 times 640x480 (default 2); remembered
 #   ./jsrf-pc --fullscreen     start full screen
 #   ./jsrf-pc --install        add JSRF-PC to your applications menu
 #   ./jsrf-pc --version        which version this is
@@ -186,13 +186,18 @@ EOF
     echo "Added JSRF-PC to your applications menu ($apps/jsrf-pc.desktop)."
 }
 
+# The scales the engine draws at, 1x to this: its NV2A_SCALE_MAX
+# (src/nv2a_gl/nv2a_scale.h), one digit.
+SCALE_MAX=6
+scale_ok() { case "$1" in [1-9]) [ "$1" -le "$SCALE_MAX" ] ;; *) return 1 ;; esac; }
+
 GAME=""; CHOOSE=0; FULLSCREEN=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --choose)     CHOOSE=1 ;;
         --scale)      shift
-                      case "${1:-}" in [1-4]) cfg_set scale "$1" ;;
-                                       *) fail "--scale takes 1, 2, 3 or 4." ;; esac ;;
+                      if scale_ok "${1:-}"; then cfg_set scale "$1"
+                      else fail "--scale takes 1 to $SCALE_MAX."; fi ;;
         --fullscreen) FULLSCREEN=1 ;;
         --install)    install_desktop; exit 0 ;;
         --version)    cat "$HERE/VERSION" 2>/dev/null || "$HERE/bin/jsrf_recomp" --version; exit 0 ;;
@@ -244,7 +249,7 @@ if [ -n "$PORTABLE" ]; then
     done
 fi
 
-SCALE="$(cfg_get scale)"; case "$SCALE" in [1-4]) ;; *) SCALE=2 ;; esac
+SCALE="$(cfg_get scale)"; scale_ok "$SCALE" || SCALE=2
 
 # The previous run's log is kept (five of them), then a fresh one.
 LOG="$STATE/last-run.log"

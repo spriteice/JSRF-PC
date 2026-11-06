@@ -37,7 +37,7 @@ Playing
    game's disc, a zip), it says what they are.
 
    ./jsrf-pc --install     adds JSRF-PC to your applications menu
-   ./jsrf-pc --scale N     internal resolution, 1 to 4 (default 2); remembered
+   ./jsrf-pc --scale N     internal resolution, 1 to 6 (default 2); remembered
    ./jsrf-pc --fullscreen  always starts full screen
    ./jsrf-pc --choose      asks where the game is again
    ./jsrf-pc --version     which version this is
@@ -64,8 +64,8 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
   F11 or Alt+Return   full screen; remembered
   F10                 widescreen 16:9 (a wider view, not a stretch; the HUD
                       keeps its shape, the title screen stays 4:3); remembered
-  F9                  resolution: the game is drawn at 1x to 4x the Xbox's
-                      640x480 (2x by default), up to 2560x1920; remembered.
+  F9                  resolution: the game is drawn at 1x to 6x the Xbox's
+                      640x480 (2x by default), up to 3840x2880; remembered.
                       The game restarts to apply it, so save first.
   F8                  free camera: the right stick turns the camera around
                       the player; remembered (see Free camera below). R3 on

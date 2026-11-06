@@ -25,7 +25,7 @@ contains no game files.
 
 - **In-game menu:** F1, or Back on a controller, for the display, graphics,
   audio, controller, and developer settings.
-- **Resolution scaling:** 1× to 4×. _(JuMatt)_
+- **Resolution scaling:** 1× to 6×.
 - **Widescreen:** 16:9, in gameplay only. _(JuMatt)_
 - **Free camera:** Modern right-stick camera controls and options, with the
   graffiti camera turned off. Turn it on and off with R3, reset it with the left

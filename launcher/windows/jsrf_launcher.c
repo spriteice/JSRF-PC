@@ -10,7 +10,7 @@
  *   JSRF-PC.exe <folder or .iso>   use that, and remember it (dropping a
  *                                  folder or an image on the .exe does this)
  *   JSRF-PC.exe --choose           ask where the game is again
- *   JSRF-PC.exe --scale N          internal resolution, 1 to 4 times 640x480
+ *   JSRF-PC.exe --scale N          internal resolution, 1 to 6 times 640x480
  *                                  (default 2); remembered
  *   JSRF-PC.exe --fullscreen       start full screen
  *   JSRF-PC.exe --version          which version this is
@@ -43,6 +43,9 @@
 #include "xbe_check.h"
 
 #define APP L"JSRF-PC"
+/* The scales the engine draws at, 1x to this: its NV2A_SCALE_MAX
+ * (src/nv2a_gl/nv2a_scale.h). */
+#define SCALE_MAX 6
 
 static wchar_t g_here[MAX_PATH];       /* the launcher's folder */
 static wchar_t g_portable[MAX_PATH];   /* its "portable" folder, or "" when there is none */
@@ -644,7 +647,11 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
         else if (!wcscmp(argv[i], L"--fullscreen")) fullscreen = 1;
         else if (!wcscmp(argv[i], L"--scale") && i + 1 < argc) {
             int s = _wtoi(argv[++i]);
-            if (s < 1 || s > 4) return fail(L"--scale takes 1, 2, 3 or 4.");
+            if (s < 1 || s > SCALE_MAX) {
+                wchar_t msg[64];
+                _snwprintf(msg, 64, L"--scale takes 1 to %d.", SCALE_MAX);
+                return fail(msg);
+            }
             snprintf(val, sizeof val, "%d", s);
             cfg_set("scale", val);
         } else if (!wcscmp(argv[i], L"--version")) {
@@ -721,7 +728,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
     if (g_portable[0] && copy_saves(game)) return 1;
     if (cfg_get("scale", val, sizeof val)) {
         int s = atoi(val);
-        if (s >= 1 && s <= 4) scale = s;
+        if (s >= 1 && s <= SCALE_MAX) scale = s;
     }
     return run(game, scale, fullscreen);
 }

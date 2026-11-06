@@ -8,7 +8,9 @@ player's settings (RECOMP_GL_SCALE, RECOMP_FULLSCREEN) and no other
 RECOMP_ switch: what the game needs to work is the engine's own default
 (docs/project-rules.md, Where code goes 5). Up to b1.3 the launcher set
 twelve of them. Played with, as given, with a scale and full screen, and
-in portable mode. The Windows launcher can't run here (it is a windowed
+in portable mode; with each end of the scales, 1 to 6, given and saved,
+and one past them, which --scale refuses and a saved one drops to the
+default 2. The Windows launcher can't run here (it is a windowed
 program, and CI builds it), so the switches it names in
 launcher/windows/jsrf_launcher.c are checked instead: only those two.
 
@@ -62,21 +64,31 @@ def package(work, portable):
     return pkg
 
 
-def run(name, args, portable=False):
+def launch(work, args, portable, saved):
+    """The launcher run in a package in `work`, with the scale `saved` in its
+    settings, if any: the run, the package and the game folder."""
+    pkg = package(work, portable)
+    game = work / "game"
+    (game / "Media").mkdir(parents=True)
+    (game / "default.xbe").write_bytes(b"")
+    (work / "home").mkdir()
+    if saved is not None:
+        cfg = work / "home/.config/jsrf-pc/settings"
+        cfg.parent.mkdir(parents=True)
+        cfg.write_text("scale=%s\n" % saved)
+    # Nothing from this environment: no desktop to show a dialog on,
+    # and no RECOMP_ switch already set.
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(work / "home"),
+           "LANG": "C"}
+    p = subprocess.run(["bash", str(pkg / "jsrf-pc"), str(game)] + args, env=env,
+                       stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+    return p, pkg, game
+
+
+def run(name, args, portable=False, saved=None):
     """What the engine was handed: {variable: value} and its arguments."""
     with tempfile.TemporaryDirectory(prefix="launcher-env-") as directory:
-        work = pathlib.Path(directory)
-        pkg = package(work, portable)
-        game = work / "game"
-        (game / "Media").mkdir(parents=True)
-        (game / "default.xbe").write_bytes(b"")
-        (work / "home").mkdir()
-        # Nothing from this environment: no desktop to show a dialog on,
-        # and no RECOMP_ switch already set.
-        env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(work / "home"),
-               "LANG": "C"}
-        p = subprocess.run(["bash", str(pkg / "jsrf-pc"), str(game)] + args, env=env,
-                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+        p, pkg, game = launch(pathlib.Path(directory), args, portable, saved)
         if p.returncode != 0 or not (pkg / "env.txt").exists():
             raise SystemExit("launcher_env %s: the launcher didn't start the engine (exit %d)\n%s"
                              % (name, p.returncode, p.stdout + p.stderr))
@@ -86,11 +98,13 @@ def run(name, args, portable=False):
 
 
 failed = 0
+runs = 0
 
 
-def check(name, args, scale, fullscreen, portable=False):
-    global failed
-    env, argv, game = run(name, args, portable)
+def check(name, args, scale, fullscreen, portable=False, saved=None):
+    global failed, runs
+    runs += 1
+    env, argv, game = run(name, args, portable, saved)
     switches = sorted(k for k in env if k.startswith("RECOMP_"))
     extra = [k + "=" + env[k] for k in switches if k not in SETTINGS]
     want = {"RECOMP_GL_SCALE": str(scale)}
@@ -118,8 +132,30 @@ def check(name, args, scale, fullscreen, portable=False):
             name, ", ".join(k + "=" + v for k, v in sorted(want.items()))))
 
 
+def refused(name, args, says):
+    """A run the launcher must stop, saying `says`, before the engine."""
+    global failed, runs
+    runs += 1
+    with tempfile.TemporaryDirectory(prefix="launcher-env-") as directory:
+        p, pkg, _ = launch(pathlib.Path(directory), args, False, None)
+        if p.returncode == 0 or (pkg / "env.txt").exists() or says not in p.stderr:
+            failed += 1
+            print("launcher_env %s: exit %d, the engine %s, and %r, not %r" % (
+                name, p.returncode, "started" if (pkg / "env.txt").exists() else "not started",
+                p.stderr.strip(), says))
+        else:
+            print("launcher_env %s: refused, %r" % (name, says))
+
+
 check("as given", [], 2, False)
 check("with a scale and full screen", ["--scale", "3", "--fullscreen"], 3, True)
 check("portable", [], 2, False, portable=True)
+check("the largest scale", ["--scale", "6"], 6, False)
+check("the smallest scale", ["--scale", "1"], 1, False)
+refused("one scale too many", ["--scale", "7"], "--scale takes 1 to 6.")
+refused("no scale at all", ["--scale", "0"], "--scale takes 1 to 6.")
+check("the largest scale, saved", [], 6, False, saved=6)
+check("one scale too many, saved", [], 2, False, saved=7)
 if failed:
-    raise SystemExit("launcher_env: %d of 3 runs handed the engine more than it should" % failed)
+    raise SystemExit("launcher_env: %d of %d runs handed the engine more than it should, "
+                     "or a scale it shouldn't" % (failed, runs))
