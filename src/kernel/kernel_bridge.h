@@ -54,6 +54,9 @@ extern ULONG g_slot_ordinals[];
 
 /* Translate Xbox VA to native pointer (NULL-safe: 0 → NULL) */
 #define XBOX_TO_NATIVE(va) ((va) ? (void*)((uintptr_t)(va) + g_xbox_mem_offset) : NULL)
+/* The same for an address that isn't 0, made here or checked first: with no
+ * NULL arm, as memset and memcpy are never to be handed NULL (-Wnonnull). */
+#define XBOX_TO_NATIVE_NONNULL(va) ((void *)((uintptr_t)(va) + g_xbox_mem_offset))
 
 #define BRIDGE_MEM16(addr) (*(volatile uint16_t *)((uintptr_t)(addr) + g_xbox_mem_offset))
 #define BRIDGE_MEM8(addr)  (*(volatile uint8_t  *)((uintptr_t)(addr) + g_xbox_mem_offset))

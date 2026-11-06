@@ -122,6 +122,11 @@ Xbox pointers (32-bit VAs in Xbox memory) must be translated to native pointers:
 #define XBOX_TO_NATIVE(va) ((va) ? (void*)((uintptr_t)(va) + g_xbox_mem_offset) : NULL)
 ```
 
+An address that isn't 0, made in the bridge or checked first, uses
+`XBOX_TO_NATIVE_NONNULL` (kernel_bridge.h), the same with no NULL arm:
+`memset` and `memcpy` are never to be handed NULL, and GCC's `-Wnonnull`
+warns where one might be.
+
 ### Example: NtCreateFile Bridge
 
 ```c

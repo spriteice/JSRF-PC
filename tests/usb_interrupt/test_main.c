@@ -22,7 +22,9 @@
  * so that its routine is no longer called, say it was connected, and leave
  * the game's 44 bytes as they were: a host function took them for a host
  * struct, cleared a byte of them, and left the routine connected
- * (code/pass2's Q).
+ * (code/pass2's Q). And KeInitializeInterrupt and KeInitializeDpc given an
+ * object at guest address 0 each say so once ([CHECK]) and write nothing:
+ * memset was handed NULL, and the test stopped there.
  */
 #include "kernel.h"
 #include <stdio.h>
@@ -372,6 +374,22 @@ int main(void)
             fail("a disconnected object's routine is still called");
         if (memcmp(before, XBOX_TO_NATIVE(VBLANK_INTERRUPT), sizeof before))
             fail("KeDisconnectInterrupt changed the game's KINTERRUPT");
+    }
+    {
+        /* Objects at guest address 0, pointers gone wrong in the game, are
+         * turned away, and nothing is written there. run.py looks for the
+         * [CHECK] lines. */
+        const uint32_t null_int[] = { 0, USB_ISR_VA, 0, USB_VECTOR };
+        const uint32_t null_dpc[] = { 0, USB_DPC_VA, 0 };
+        uint8_t before[44];
+        int i;
+
+        for (i = 0; i < 44; i++) s_guest[i] = (uint8_t)(0x50 + i);
+        memcpy(before, s_guest, sizeof before);
+        call_bridge(bridge_KeInitializeInterrupt, null_int, 4);
+        call_bridge(bridge_KeInitializeDpc, null_dpc, 3);
+        if (memcmp(before, s_guest, sizeof before))
+            fail("an interrupt object or DPC was written at guest address 0");
     }
     if (s_failures) {
         printf("usb_interrupt: %ld failures\n", (long)s_failures);

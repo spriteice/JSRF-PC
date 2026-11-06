@@ -1,9 +1,10 @@
 """Compile src/usb/ohci.c and src/kernel/kernel_interrupt.c, and deliver the
 USB controller's interrupt beside the display's (test_main.c): every
 interrupt routine and DPC must run holding the guest lock, one at a time,
-and every DPC queued must run once (known bug 16). On Linux the threads are
-src/platform/win32_compat.c's, on Windows the system's. Requires GCC on
-PATH, including MinGW on Windows.
+and every DPC queued must run once (known bug 16); an interrupt object or
+DPC at guest address 0 is turned away with a [CHECK] line. On Linux the
+threads are src/platform/win32_compat.c's, on Windows the system's. Requires
+GCC on PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
 """
 import os
@@ -34,3 +35,6 @@ with tempfile.TemporaryDirectory(prefix="usb_interrupt-") as directory:
     print(text, end="")
     if run.returncode != 0 or "usb_interrupt: all cases pass" not in text:
         sys.exit(f"usb_interrupt: exit {run.returncode}")
+    for what in ("a KINTERRUPT at guest address 0", "a KDPC at guest address 0"):
+        if what not in text:
+            sys.exit(f"usb_interrupt: no [CHECK] line for {what}")

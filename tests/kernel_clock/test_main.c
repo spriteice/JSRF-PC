@@ -15,7 +15,9 @@
  * Windows, at every start. Last, KeCancelTimer must stop a timer that is set
  * and say so, and leave the game's 40 bytes of KTIMER as they were: a host
  * function took them for a host timer of its own, and on Linux read through
- * whatever its handle's bytes held (code/pass2's F).
+ * whatever its handle's bytes held (code/pass2's F). And KeInitializeTimerEx
+ * given a timer at guest address 0 says so once ([CHECK]) and writes
+ * nothing: memset was handed NULL, and the test stopped there.
  *
  * The thread's per-pass device work (the display and APU interrupts, the
  * GPU's software methods, the watches) and the DPCs are kernel_bridge.c's and
@@ -270,6 +272,22 @@ static void a_timer_is_cancelled(void)
         fail("KeCancelTimer changed the game's KTIMER");
 }
 
+/* 4: a timer at guest address 0, a pointer gone wrong in the game, is
+ * turned away, and nothing is written there. run.py looks for the [CHECK]
+ * line. */
+static void a_null_timer_is_turned_away(void)
+{
+    const uint32_t init[] = { 0, 0 };
+    uint8_t before[40];
+    int i;
+
+    for (i = 0; i < 40; i++) s_guest[i] = (uint8_t)(0x50 + i);
+    memcpy(before, s_guest, sizeof before);
+    call_bridge(bridge_KeInitializeTimerEx, init, 2);
+    if (memcmp(before, s_guest, sizeof before))
+        fail("KeInitializeTimerEx wrote a timer at guest address 0");
+}
+
 int main(void)
 {
     /* Under the thread sanitizer (tests/run_all.py --tsan) the checks of
@@ -287,6 +305,7 @@ int main(void)
     the_clock_moves(!(sanitizer && *sanitizer));
     a_timer_fires();
     a_timer_is_cancelled();
+    a_null_timer_is_turned_away();
     if (__atomic_load_n(&s_taken_elsewhere, __ATOMIC_RELAXED))
         fail("the timer thread took its own stack or TIB: kernel_timer_start "
              "must, before it starts, so its lines in the log come in order");

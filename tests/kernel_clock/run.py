@@ -1,7 +1,8 @@
 """Compile src/kernel/kernel_timer.c and start the kernel's timer thread
 alone, as xbox_kernel_bridge_init does (test_main.c): KeTickCount must keep
-up with the host's millisecond clock with no GPU thread running, and a timer
-set with KeSetTimer must fire its DPC once. On Linux the thread is
+up with the host's millisecond clock with no GPU thread running, a timer
+set with KeSetTimer must fire its DPC once, and a timer at guest address 0
+is turned away with a [CHECK] line. On Linux the thread is
 src/platform/win32_compat.c's, on Windows the system's. Requires GCC on PATH,
 including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
@@ -35,3 +36,5 @@ with tempfile.TemporaryDirectory(prefix="kernel_clock-") as directory:
     print(text, end="")
     if run.returncode != 0 or "kernel_clock: all cases pass" not in text:
         sys.exit(f"kernel_clock: exit {run.returncode}")
+    if "[CHECK] kernel_timer.c:" not in text or "a KTIMER at guest address 0" not in text:
+        sys.exit("kernel_clock: no [CHECK] line for the timer at guest address 0")

@@ -19,6 +19,7 @@
 #include <string.h>
 #include "xbox_memory_layout.h"
 #include "kernel_bridge.h"
+#include "platform/recomp_check.h"
 
 /* ── KeInitializeTimerEx (ordinal 113) ────────────────────
  * VOID KeInitializeTimerEx(PKTIMER Timer, TIMER_TYPE Type)
@@ -30,8 +31,13 @@ void bridge_KeInitializeTimerEx(void)
     uint32_t timer_va = STACK_ARG(0);
     uint32_t type = STACK_ARG(1);
 
+    /* A timer at guest address 0 is a pointer gone wrong in the caller: said
+     * once, and nothing is written (the console would fault). */
+    if (!RECOMP_CHECK(timer_va != 0, "a KTIMER at guest address 0"))
+        return;
+
     /* Zero the structure (40 bytes) */
-    memset(XBOX_TO_NATIVE(timer_va), 0, 40);
+    memset(XBOX_TO_NATIVE_NONNULL(timer_va), 0, 40);
 
     /* Set Type (0x08 = TimerNotificationObject, 0x09 = TimerSynchronizationObject) */
     BRIDGE_MEM16(timer_va + 0) = (uint16_t)(0x08 + (type & 1));

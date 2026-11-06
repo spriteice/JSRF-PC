@@ -295,7 +295,7 @@ static void kernel_data_init(void)
             uint32_t str_va = XBOX_KERNEL_DATA_BASE + d[k].str_off;
             uint32_t buf_va = XBOX_KERNEL_DATA_BASE + d[k].buf_off;
             size_t len = strlen(d[k].text);
-            memcpy(XBOX_TO_NATIVE(buf_va), d[k].text, len + 1);
+            memcpy(XBOX_TO_NATIVE_NONNULL(buf_va), d[k].text, len + 1);
             BRIDGE_MEM16(str_va + 0) = (uint16_t)len;        /* Length */
             BRIDGE_MEM16(str_va + 2) = (uint16_t)(len + 1);  /* MaximumLength */
             BRIDGE_MEM32(str_va + 4) = buf_va;               /* Buffer (Xbox VA) */
@@ -2845,7 +2845,7 @@ static void bridge_RtlUnwind(void)
     if (!exc_record) {
         g_esp -= 0x50;
         scratch = g_esp;
-        memset((uint8_t *)XBOX_TO_NATIVE(scratch), 0, 0x50);
+        memset(XBOX_TO_NATIVE_NONNULL(scratch), 0, 0x50);
         BRIDGE_MEM32(scratch) = 0xC0000027u;   /* STATUS_UNWIND */
         exc_record = scratch;
     }
@@ -3153,7 +3153,7 @@ static void bridge_NtQuerySymbolicLinkObject(void)
             g_eax = 0xC0000023u;         /* STATUS_BUFFER_TOO_SMALL */
             return;
         }
-        memcpy(XBOX_TO_NATIVE(buf_va), target, len + 1);
+        memcpy(XBOX_TO_NATIVE_NONNULL(buf_va), target, len + 1);
         BRIDGE_MEM16(target_va) = len;
     }
     g_eax = STATUS_SUCCESS;
@@ -3507,7 +3507,7 @@ static void bridge_IoCreateDevice(void)
         return;
     }
 
-    memset(XBOX_TO_NATIVE(object_va), 0,
+    memset(XBOX_TO_NATIVE_NONNULL(object_va), 0,
            XBOX_DEVICE_OBJECT_SIZE + extension_size);
     BRIDGE_MEM16(object_va + 0x02) = (uint16_t)XBOX_DEVICE_OBJECT_SIZE;
     BRIDGE_MEM32(object_va + 0x04) = 1;                 /* ReferenceCount   */

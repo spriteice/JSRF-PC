@@ -19,6 +19,7 @@
 #include <string.h>
 #include "xbox_memory_layout.h"
 #include "kernel_bridge.h"
+#include "platform/recomp_check.h"
 
 /* -- KeInsertQueueDpc (ordinal 119) ------------------------
  * BOOLEAN KeInsertQueueDpc(PKDPC Dpc, PVOID SystemArgument1,
@@ -300,8 +301,13 @@ void bridge_KeInitializeDpc(void)
     uint32_t routine = STACK_ARG(1);
     uint32_t context = STACK_ARG(2);
 
+    /* A DPC at guest address 0 is a pointer gone wrong in the caller: said
+     * once, and nothing is written (the console would fault). */
+    if (!RECOMP_CHECK(dpc_va != 0, "a KDPC at guest address 0"))
+        return;
+
     /* Zero the structure (32 bytes) */
-    memset(XBOX_TO_NATIVE(dpc_va), 0, 32);
+    memset(XBOX_TO_NATIVE_NONNULL(dpc_va), 0, 32);
 
     /* Set Type (0x13 = DpcObject) and fields */
     BRIDGE_MEM16(dpc_va + 0) = 0x13;   /* Type */
@@ -348,8 +354,13 @@ void bridge_KeInitializeInterrupt(void)
     uint32_t context      = STACK_ARG(2);
     uint32_t vector       = STACK_ARG(3);
 
+    /* An interrupt object at guest address 0 is a pointer gone wrong in the
+     * caller: said once, and nothing is written (the console would fault). */
+    if (!RECOMP_CHECK(interrupt_va != 0, "a KINTERRUPT at guest address 0"))
+        return;
+
     /* Xbox KINTERRUPT is 44 bytes. */
-    memset(XBOX_TO_NATIVE(interrupt_va), 0, 44);
+    memset(XBOX_TO_NATIVE_NONNULL(interrupt_va), 0, 44);
     BRIDGE_MEM32(interrupt_va + 0)  = routine;
     BRIDGE_MEM32(interrupt_va + 4)  = context;
     BRIDGE_MEM32(interrupt_va + 8)  = vector;
