@@ -8436,11 +8436,11 @@ static void do_draw_body(void)
                                    S.tex[i].offset, S.tex[i].color, w, h);
                           f = fopen(nm, "wb");
                           if (f) { uint32_t p; fprintf(f, "P6\n%u %u\n255\n", w, h);
-                                   for (p = 0; p < w * h; p++) fwrite(rgba + p * 4, 1, 3, f); fclose(f); }
+                                   for (p = 0; p < w * h; p++) { fwrite(rgba + p * 4, 1, 3, f); } fclose(f); }
                           snprintf(nm, sizeof nm, "%s/char%02d_t%u_%08X_alpha.pgm", dir, nseen - 1, i, S.tex[i].offset);
                           f = fopen(nm, "wb");
                           if (f) { uint32_t p; fprintf(f, "P5\n%u %u\n255\n", w, h);
-                                   for (p = 0; p < w * h; p++) fputc(rgba[p * 4 + 3], f); fclose(f); }
+                                   for (p = 0; p < w * h; p++) { fputc(rgba[p * 4 + 3], f); } fclose(f); }
                       }
                       free(rgba);
                   }
@@ -8586,9 +8586,9 @@ static void do_draw_body(void)
                   if (!vtx) memcpy(v0first, vin[0], 16);
                   if (!nv2a_vsh_interp(&vp, vin, S.u.c, op)) continue;
                   ok++;
-                  if (op[0] < lo[0]) lo[0] = op[0]; if (op[0] > hi[0]) hi[0] = op[0];
-                  if (op[1] < lo[1]) lo[1] = op[1]; if (op[1] > hi[1]) hi[1] = op[1];
-                  if (op[3] < wlo) wlo = op[3]; if (op[3] > whi) whi = op[3];
+                  if (op[0] < lo[0]) { lo[0] = op[0]; } if (op[0] > hi[0]) { hi[0] = op[0]; }
+                  if (op[1] < lo[1]) { lo[1] = op[1]; } if (op[1] > hi[1]) { hi[1] = op[1]; }
+                  if (op[3] < wlo) { wlo = op[3]; } if (op[3] > whi) { whi = op[3]; }
               }
               if (ok && S.draws > 30000 && (hi[0] - lo[0] > 2700.0f || hi[1] - lo[1] > 2000.0f
                          || lo[0] < -2000.0f || hi[0] > 3000.0f || lo[1] < -2000.0f || hi[1] > 3000.0f)) {
@@ -9422,8 +9422,8 @@ static void do_draw_body(void)
         for (v = 0; v < out_n; v++) {
             float x = vbuf[(size_t)v * stride_floats + 0];
             float y = vbuf[(size_t)v * stride_floats + 1];
-            if (x < mnx) mnx = x; if (x > mxx) mxx = x;
-            if (y < mny) mny = y; if (y > mxy) mxy = y;
+            if (x < mnx) { mnx = x; } if (x > mxx) { mxx = x; }
+            if (y < mny) { mny = y; } if (y > mxy) { mxy = y; }
         }
         g_ring[k].draw = S.draws;   g_ring[k].verts = out_n;
         g_ring[k].prim = S.prim;
