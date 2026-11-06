@@ -8,7 +8,7 @@
 # a later change to CI lowers the line, so a code commit never has to change
 # .github/. At 0, any warning fails the job, as -Werror would.
 
-gcc 50
-gcc-debug 42
+gcc 27
+gcc-debug 19
 clang 21
-windows 43
+windows 40
