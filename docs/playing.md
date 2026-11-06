@@ -35,8 +35,9 @@ These work in a window or full screen, and each one is remembered.
 
 - **F1, or Back on a controller:** The in-game menu.
 - **F11 or Alt+Return:** Full screen.
-- **F10:** Widescreen 16:9. It widens the view rather than stretching it: the
-  HUD and text keep their shape, and the title screen stays 4:3.
+- **F10:** Widescreen on and off, at the shape Display > Aspect ratio last
+  chose (16:9 until one is chosen). It widens the view rather than stretching
+  it: the HUD and text keep their shape, and the title screen stays 4:3.
 - **F9:** Resolution, 1× to 6× the Xbox's 640×480 (2× by default). The game
   restarts to apply it, so save first.
 - **F8, or R3 on a controller:** The free camera.
@@ -86,8 +87,11 @@ the bar. The game keeps running while it is open, but your input goes to the
 menu.
 
 - **File:** About (the version and system details), Restart, and Exit.
-- **Display:** Full screen, widescreen 16:9, the render scale (1× to 6×), and
-  Skip intro. Skip intro leaves out the logos and the graffiti disclaimer the
+- **Display:** Full screen, the aspect ratio, the render scale (1× to 6×), and
+  Skip intro. The aspect ratio is 4:3 (the Xbox's own, widescreen off), 16:10,
+  16:9, 21:9, or Match screen, the shape of the display the window is on. It
+  changes at once, and is kept as `aspect=` (with `widescreen=` for on or off)
+  in the settings file. Skip intro leaves out the logos and the graffiti disclaimer the
   game opens with, and starts at the title screen's loading. Off by default,
   so the intro plays as on the Xbox. It is kept as `skipintro=` in the
   settings file.

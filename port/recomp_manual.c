@@ -1563,13 +1563,16 @@ static void mission_at_step(void)
 /* JSRF_OPEN_SAVE="t[:mode]" (test only): open the save menu at t seconds;
  * mode 1 opens it to LOAD, which is how a test gets a player's saved
  * progress into a run that started with New Game. */
-/* Video > Widescreen toggled in play: the title sets its camera once, at
- * startup, so the projection and the culling planes are recomputed here --
- * the same two calls SetCamera makes, on the device it made them on -- the
- * frame after the switch changes. */
+/* Display > Aspect ratio changed in play (widescreen on or off, or another
+ * wide shape): the title sets its camera once, at startup, so the
+ * projection and the culling planes are recomputed here -- the same two
+ * calls SetCamera makes, on the device it made them on -- the frame after
+ * the choice changes. */
 static uint32_t s_cam_dev;      /* the device the camera was last set on */
 static int s_wide_applied = -1; /* the mode it was set for */
+static float s_wide_squeeze_applied;   /* and the squeeze, when widened */
 extern int nv2a_widescreen(void);
+extern float nv2a_wide_squeeze(void);
 extern int nv2a_wide_scene(void);
 extern void nv2a_set_wide_scene(int on);
 extern void sub_00153A90(void);
@@ -1589,7 +1592,9 @@ static void wide_reapply_step(void)
           fprintf(stderr, "[WIDE] t=%.1f JSRF_WIDE_AT: widescreen %s\n", pad_now(),
                   nv2a_widescreen() ? "on" : "off");
       } }
-    if (!s_cam_dev || s_wide_applied < 0 || s_wide_applied == nv2a_wide_scene()) return;
+    if (!s_cam_dev || s_wide_applied < 0) return;
+    if (s_wide_applied == nv2a_wide_scene()
+     && (!s_wide_applied || s_wide_squeeze_applied == nv2a_wide_squeeze())) return;
     /* Only on the device the camera was set on, and only while it is still
      * one: the graphics device class, vtable 0x1E0F00. */
     if (s_cam_dev < 0x10000u || s_cam_dev + 0x60u >= (64u << 20)
@@ -1602,8 +1607,11 @@ static void wide_reapply_step(void)
     g_ecx = s_cam_dev;
     sub_00153EC0();
     g_eax = sv_eax; g_ecx = sv_ecx; g_edx = sv_edx;
-    fprintf(stderr, "[WIDE] t=%.1f camera re-set for %s\n", pad_now(),
-            nv2a_wide_scene() ? "16:9" : "4:3");
+    if (nv2a_wide_scene())
+        fprintf(stderr, "[WIDE] t=%.1f camera re-set for widescreen (squeeze %.3f)\n",
+                pad_now(), (double)nv2a_wide_squeeze());
+    else
+        fprintf(stderr, "[WIDE] t=%.1f camera re-set for 4:3\n", pad_now());
 }
 
 /* JSRF_FIND_PROJ=<t> (test only): at time t, scan guest RAM for projection
@@ -1884,7 +1892,7 @@ static int wide_log_on(void)
 }
 /* The boot logos (SEGA, Smilebit, Dolby) are widened like the game: each is
  * an overlay on a cleared screen, so the logo keeps its shape and its
- * background fills the 16:9 screen, where kept 4:3 it sat between black bars.
+ * background fills the wide screen, where kept 4:3 it sat between black bars.
  * JSRF_WIDE_BOOT=0 keeps them 4:3. */
 __attribute__((constructor)) static void jsrf_wide_boot(void)
 {
@@ -3993,16 +4001,14 @@ void sub_0003FEC0(void)
  *   +0x6C SetTransform(state, matrix) (sub_00154420): any other matrix the
  *         title sets explicitly.
  *
- * Widescreen (nv2a_widescreen(): RECOMP_WIDESCREEN, or Video > Widescreen)
- * keeps the vertical field of view and widens the horizontal one to 16:9 --
- * or to another shape where RECOMP_WIDE_ASPECT asks for it
- * (nv2a_set_wide_aspect): m00 = s = (4/3) / that shape
+ * Widescreen (nv2a_widescreen(): RECOMP_WIDESCREEN, or Display > Aspect
+ * ratio) keeps the vertical field of view and widens the horizontal one to
+ * the shape chosen there (nv2a_wide_aspect): m00 = s = (4/3) / that shape
  * (0.75 at 16:9) for every perspective projection, and the side planes'
  * slope / s so the title culls against what is now on screen. The 640x480
  * frame then holds the wide view squeezed, and the window shows it at its
  * shape; the renderer squeezes the 2D overlays (nv2a_gl.c) so they keep
  * their shape. JSRF_WIDE_LOG=1 logs the projections the title sets. */
-extern float nv2a_wide_squeeze(void);
 static int wide_log(void)
 {
     static int on = -1;
@@ -4032,6 +4038,7 @@ void sub_00153EC0(void)
     }
     s_cam_dev = g_ecx;
     s_wide_applied = nv2a_wide_scene();
+    s_wide_squeeze_applied = nv2a_wide_squeeze();
     float want = wide_proj() ? nv2a_wide_squeeze() : 1.0f;
     /* Only over what was there: the title's 1.0, or what this last put. */
     static float put = 0.75f;

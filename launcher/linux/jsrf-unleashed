@@ -17,7 +17,7 @@
 # Portable: with a folder named "portable" beside this script, the settings,
 # saves, and logs are kept in it, and nothing in your home folder.
 # In game: F1 the in-game menu, F11 (or Alt+Return) full screen, F10 widescreen
-# 16:9, F9 resolution, and F8 the free camera.
+# (its shape in Display > Aspect ratio), F9 resolution, and F8 the free camera.
 #
 set -u
 HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"

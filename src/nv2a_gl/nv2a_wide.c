@@ -1,24 +1,61 @@
 /*
- * Widescreen's maths: the squeeze, the title's 2D overlays, their clip, and
- * a framed 3D view (nv2a_wide.h).
+ * Widescreen's maths: the shapes, the squeeze, the title's 2D overlays,
+ * their clip, and a framed 3D view (nv2a_wide.h).
  */
 #include "nv2a_wide.h"
 #include "nv2a_scale.h"
 
 #include <math.h>
+#include <string.h>
 
 /* A viewport scale smaller than this is taken as none. */
 #define WIDE_VP_SCALE_MIN 1e-6f
 
+const char *const nv2a_wide_shape_names[NV2A_WIDE_SHAPES] = {
+    "4:3", "16:10", "16:9", "21:9", "Match screen" };
+
+/* Each wide shape's aspect= key, by shape; 4:3 has none. */
+static const char *const k_shape_keys[NV2A_WIDE_SHAPES] = {
+    NULL, "16:10", "16:9", "21:9", "match" };
+
+const char *nv2a_wide_shape_key(int shape)
+{
+    return shape >= 0 && shape < NV2A_WIDE_SHAPES ? k_shape_keys[shape] : NULL;
+}
+
+int nv2a_wide_shape_parse(const char *v)
+{
+    int i;
+    size_t n;
+    if (!v) return -1;
+    n = strcspn(v, "\r\n");
+    for (i = 0; i < NV2A_WIDE_SHAPES; i++)
+        if (k_shape_keys[i] && strlen(k_shape_keys[i]) == n && !strncmp(v, k_shape_keys[i], n))
+            return i;
+    return -1;
+}
+
+float nv2a_wide_shape_aspect(int shape, int disp_w, int disp_h)
+{
+    switch (shape) {
+    case NV2A_WIDE_SHAPE_16_10: return 16.0f / 10.0f;
+    case NV2A_WIDE_SHAPE_16_9:  return NV2A_WIDE_16_9;
+    case NV2A_WIDE_SHAPE_21_9:  return 64.0f / 27.0f;
+    case NV2A_WIDE_SHAPE_MATCH:
+        if (disp_w < 1 || disp_h < 1) return NV2A_WIDE_16_9;
+        return nv2a_wide_clamp((float)disp_w / (float)disp_h);
+    default:                    return NV2A_WIDE_4_3;
+    }
+}
+
 float nv2a_wide_clamp(float a)
 {
-    if (!(a >= NV2A_WIDE_16_9)) a = NV2A_WIDE_16_9;     /* NaN too */
-    if (a > NV2A_WIDE_MAX) a = NV2A_WIDE_MAX;
-    return a;
+    return a >= NV2A_WIDE_4_3 ? a : NV2A_WIDE_4_3;      /* NaN too */
 }
 
 float nv2a_wide_squeeze_of(float a)
 {
+    if (!(a > NV2A_WIDE_4_3)) return 1.0f;
     return (a == NV2A_WIDE_16_9) ? 0.75f : 4.0f / (3.0f * a);
 }
 

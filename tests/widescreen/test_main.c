@@ -2,9 +2,13 @@
  *
  * Widescreen's maths, src/nv2a_gl/nv2a_wide.c, as the engine builds it:
  *
- *   1. A shape is taken between 16:9 and 2.4:1, and NaN as 16:9.
- *   2. The 4:3 frame squeezes a view of shape a by (4/3) / a, and by exactly
- *      0.75 at 16:9.
+ *   1. A shape is taken as 4:3 at the least, NaN as 4:3, and as wide as it
+ *      is otherwise.
+ *   2. The 4:3 frame squeezes a view of shape a by (4/3) / a, by exactly
+ *      0.75 at 16:9, and not at all at 4:3.
+ *   2a. Display > Aspect ratio's shapes: their names in the menu's order,
+ *      their aspect= keys, which read back (line end and all) and nothing
+ *      else does, and their width over height, Match screen's the display's.
  *   3. Only the Xbox's 640x480 frame is widened.
  *   4. A screen-space draw's extent is put in NDC through its viewport,
  *      whether that is in the frame's pixels or another surface's, and with
@@ -18,6 +22,7 @@
  */
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 #include "nv2a_wide.h"
 
 static int s_failures;
@@ -31,22 +36,66 @@ static void shapes(void)
 {
     CHECK(nv2a_wide_clamp(NV2A_WIDE_16_9) == NV2A_WIDE_16_9);
     CHECK(nv2a_wide_clamp(2.0f) == 2.0f);
-    CHECK(nv2a_wide_clamp(1.6f) == NV2A_WIDE_16_9);         /* below 16:9 */
-    CHECK(nv2a_wide_clamp(4.0f / 3.0f) == NV2A_WIDE_16_9);
-    CHECK(nv2a_wide_clamp(0.0f) == NV2A_WIDE_16_9);
-    CHECK(nv2a_wide_clamp(-2.0f) == NV2A_WIDE_16_9);
-    CHECK(nv2a_wide_clamp(NAN) == NV2A_WIDE_16_9);
+    CHECK(nv2a_wide_clamp(1.6f) == 1.6f);                    /* 16:10 */
+    CHECK(nv2a_wide_clamp(NV2A_WIDE_4_3) == NV2A_WIDE_4_3);
+    CHECK(nv2a_wide_clamp(1.25f) == NV2A_WIDE_4_3);          /* 5:4, below 4:3 */
+    CHECK(nv2a_wide_clamp(0.0f) == NV2A_WIDE_4_3);
+    CHECK(nv2a_wide_clamp(-2.0f) == NV2A_WIDE_4_3);
+    CHECK(nv2a_wide_clamp(NAN) == NV2A_WIDE_4_3);
     CHECK(nv2a_wide_clamp(2.4f) == 2.4f);
-    CHECK(nv2a_wide_clamp(32.0f / 9.0f) == 2.4f);            /* above 2.4:1 */
-    CHECK(nv2a_wide_clamp(INFINITY) == 2.4f);
+    CHECK(nv2a_wide_clamp(32.0f / 9.0f) == 32.0f / 9.0f);    /* no ceiling */
 }
 
 static void squeeze(void)
 {
     CHECK(nv2a_wide_squeeze_of(NV2A_WIDE_16_9) == 0.75f);    /* exactly */
+    CHECK(near(nv2a_wide_squeeze_of(1.6f), 4.0f / 4.8f));
     CHECK(near(nv2a_wide_squeeze_of(2.0f), 2.0f / 3.0f));
-    CHECK(near(nv2a_wide_squeeze_of(2.4f), 4.0f / 7.2f));
-    CHECK(near(nv2a_wide_squeeze_of(4.0f / 3.0f), 1.0f));
+    CHECK(near(nv2a_wide_squeeze_of(64.0f / 27.0f), 0.5625f)); /* 21:9 */
+    CHECK(near(nv2a_wide_squeeze_of(32.0f / 9.0f), 0.375f));
+    CHECK(nv2a_wide_squeeze_of(NV2A_WIDE_4_3) == 1.0f);      /* no squeeze */
+    CHECK(nv2a_wide_squeeze_of(1.25f) == 1.0f);
+    CHECK(nv2a_wide_squeeze_of(NAN) == 1.0f);
+}
+
+static int same(const char *a, const char *b) { return a && b && !strcmp(a, b); }
+
+static void menu_shapes(void)
+{
+    int i;
+    CHECK(same(nv2a_wide_shape_names[NV2A_WIDE_SHAPE_4_3], "4:3"));
+    CHECK(same(nv2a_wide_shape_names[NV2A_WIDE_SHAPE_16_10], "16:10"));
+    CHECK(same(nv2a_wide_shape_names[NV2A_WIDE_SHAPE_16_9], "16:9"));
+    CHECK(same(nv2a_wide_shape_names[NV2A_WIDE_SHAPE_21_9], "21:9"));
+    CHECK(same(nv2a_wide_shape_names[NV2A_WIDE_SHAPE_MATCH], "Match screen"));
+
+    CHECK(nv2a_wide_shape_key(NV2A_WIDE_SHAPE_4_3) == NULL);   /* that's widescreen=0 */
+    CHECK(same(nv2a_wide_shape_key(NV2A_WIDE_SHAPE_MATCH), "match"));
+    CHECK(nv2a_wide_shape_key(-1) == NULL);
+    CHECK(nv2a_wide_shape_key(NV2A_WIDE_SHAPES) == NULL);
+    for (i = NV2A_WIDE_SHAPE_16_10; i < NV2A_WIDE_SHAPES; i++)
+        CHECK(nv2a_wide_shape_parse(nv2a_wide_shape_key(i)) == i);
+
+    CHECK(nv2a_wide_shape_parse("21:9\n") == NV2A_WIDE_SHAPE_21_9);
+    CHECK(nv2a_wide_shape_parse("16:10\r\n") == NV2A_WIDE_SHAPE_16_10);
+    CHECK(nv2a_wide_shape_parse("4:3") == -1);
+    CHECK(nv2a_wide_shape_parse("16:9x") == -1);
+    CHECK(nv2a_wide_shape_parse("16:") == -1);
+    CHECK(nv2a_wide_shape_parse("Match screen") == -1);
+    CHECK(nv2a_wide_shape_parse("") == -1);
+    CHECK(nv2a_wide_shape_parse(NULL) == -1);
+
+    CHECK(nv2a_wide_shape_aspect(NV2A_WIDE_SHAPE_4_3, 1920, 1080) == NV2A_WIDE_4_3);
+    CHECK(nv2a_wide_shape_aspect(NV2A_WIDE_SHAPE_16_10, 0, 0) == 1.6f);
+    CHECK(nv2a_wide_shape_aspect(NV2A_WIDE_SHAPE_16_9, 0, 0) == NV2A_WIDE_16_9);
+    CHECK(nv2a_wide_shape_aspect(NV2A_WIDE_SHAPE_21_9, 0, 0) == 64.0f / 27.0f);
+    CHECK(near(nv2a_wide_shape_aspect(NV2A_WIDE_SHAPE_MATCH, 1920, 1080), NV2A_WIDE_16_9));
+    CHECK(near(nv2a_wide_shape_aspect(NV2A_WIDE_SHAPE_MATCH, 1280, 800), 1.6f));    /* 16:10 */
+    CHECK(near(nv2a_wide_shape_aspect(NV2A_WIDE_SHAPE_MATCH, 3440, 1440), 3440.0f / 1440.0f));
+    CHECK(near(nv2a_wide_shape_aspect(NV2A_WIDE_SHAPE_MATCH, 5120, 1440), 32.0f / 9.0f));
+    CHECK(nv2a_wide_shape_aspect(NV2A_WIDE_SHAPE_MATCH, 1280, 1024) == NV2A_WIDE_4_3); /* 5:4 */
+    CHECK(nv2a_wide_shape_aspect(NV2A_WIDE_SHAPE_MATCH, 0, 0) == NV2A_WIDE_16_9);  /* not known */
+    CHECK(nv2a_wide_shape_aspect(NV2A_WIDE_SHAPE_MATCH, 1920, 0) == NV2A_WIDE_16_9);
 }
 
 static void frame(void)
@@ -136,6 +185,7 @@ int main(void)
 {
     shapes();
     squeeze();
+    menu_shapes();
     frame();
     ndc();
     overlay();

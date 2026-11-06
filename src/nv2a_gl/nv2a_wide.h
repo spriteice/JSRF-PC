@@ -1,5 +1,6 @@
 /*
- * Widescreen's maths (nv2a_wide.c): how much the Xbox's 4:3 frame squeezes a
+ * Widescreen's maths (nv2a_wide.c): the shapes Display > Aspect ratio
+ * offers and how they are saved, how much the Xbox's 4:3 frame squeezes a
  * wider view, which draws are the title's 2D overlays and are squeezed with
  * it, and where their window clip and a framed 3D view go then. The state
  * (whether widescreen is on, the shape, the scene the game side widened)
@@ -17,10 +18,39 @@
 extern "C" {
 #endif
 
-/* 16:9, the shape widescreen has by default, width over height. */
+/* Shapes, width over height: the Xbox's own, and 16:9, widescreen's
+ * shape when nothing else is chosen. */
+#define NV2A_WIDE_4_3  (4.0f / 3.0f)
 #define NV2A_WIDE_16_9 (16.0f / 9.0f)
-/* The widest shape taken. */
-#define NV2A_WIDE_MAX 2.4f
+
+/* The shapes Display > Aspect ratio offers, in its order. 4:3 is widescreen
+ * off; each of the others is a shape widescreen can be on at. 21:9 is 64:27,
+ * the shape of 2560x1080 and 5120x2160 screens, as HDMI has it. Match screen
+ * is the shape of the display the window is on. */
+enum {
+    NV2A_WIDE_SHAPE_4_3,
+    NV2A_WIDE_SHAPE_16_10,
+    NV2A_WIDE_SHAPE_16_9,
+    NV2A_WIDE_SHAPE_21_9,
+    NV2A_WIDE_SHAPE_MATCH,
+    NV2A_WIDE_SHAPES
+};
+
+/* Each shape's name, as the menu's choices show it. */
+extern const char *const nv2a_wide_shape_names[NV2A_WIDE_SHAPES];
+
+/* A wide shape as the settings file keeps it, aspect= ("16:10", "16:9",
+ * "21:9", "match"), and NULL for 4:3 and anything not a shape. */
+const char *nv2a_wide_shape_key(int shape);
+
+/* aspect='s value (its line end left out or not) as a wide shape, and -1
+ * for anything else, 4:3 among them: widescreen on or off is widescreen=. */
+int nv2a_wide_shape_parse(const char *v);
+
+/* A shape's width over height. Match screen's is the display's, w x h,
+ * taken as nv2a_wide_clamp does, and 16:9 when the display's size isn't
+ * known (either is below 1). */
+float nv2a_wide_shape_aspect(int shape, int disp_w, int disp_h);
 
 /* The inputs D3D's screen-space (XYZRHW) pass-through program reads: the
  * title's 2D -- the HUD, text, menus, and its copies of whole frames --
@@ -35,12 +65,14 @@ extern "C" {
  * inside a 2D frame; one as wide is the scene. */
 #define NV2A_WIDE_FRAMED_MAX_W 600u
 
-/* The shape a = width / height as widescreen takes it: between 16:9 and
- * NV2A_WIDE_MAX, and 16:9 for NaN. */
+/* The shape a = width / height as widescreen takes it: 4:3 at the least,
+ * and 4:3 for NaN. As wide as it is otherwise, on every system: a 32:9
+ * screen's Match screen is 32:9. */
 float nv2a_wide_clamp(float a);
 
-/* s, how much the 4:3 frame squeezes a view of shape a: (4/3) / a, and
- * exactly 0.75 at 16:9, so that 16:9's picture is what it always was. */
+/* s, how much the 4:3 frame squeezes a view of shape a: (4/3) / a, exactly
+ * 0.75 at 16:9, so that 16:9's picture is what it always was, and 1 (no
+ * squeeze) at 4:3 and below. */
 float nv2a_wide_squeeze_of(float a);
 
 /* Whether a surface w x h is the Xbox's 640x480 frame, the one widescreen

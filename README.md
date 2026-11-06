@@ -26,7 +26,8 @@ contains no game files.
 - **In-game menu:** F1, or Back on a controller, for the display, graphics,
   audio, controller, and developer settings.
 - **Resolution scaling:** 1× to 6×.
-- **Widescreen:** 16:9, in gameplay only. _(JuMatt)_
+- **True widescreen:** 16:9, 16:10, 21:9, Match screen. The picture is drawn
+  as wide as the shape, so neither axis is stretched.
 - **Free camera:** Modern right-stick camera controls and options, with the
   graffiti camera turned off. Turn it on and off with R3, reset it with the left
   trigger, with optional auto centring.
@@ -104,7 +105,7 @@ target and the most tested. Windows comes second.
   skating, grinding, tricks, graffiti, music, sound, and voices. The tutorial,
   The Garage, Dogenzaka Hill, Shibuya Terminal, and 99th Street are tested the
   most.
-- **Partly works:** Widescreen 16:9. The game view mostly works, but some menus
+- **Partly works:** Widescreen. The game view mostly works, but some menus
   and effects are still 4:3 or stretched.
 - **Known issues:** Each is described in the
   [latest release's notes](https://github.com/spriteice/JSRF-PC/releases/latest).

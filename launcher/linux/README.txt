@@ -62,8 +62,10 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
                       then the menu's alone): File, Display, Graphics,
                       Audio, Controller, and Developer
   F11 or Alt+Return   full screen; remembered
-  F10                 widescreen 16:9 (a wider view, not a stretch; the HUD
-                      keeps its shape, the title screen stays 4:3); remembered
+  F10                 widescreen on and off, at the shape Display > Aspect
+                      ratio last chose (16:9 at first; 16:10, 21:9, or your
+                      screen's own): a wider view, not a stretch; the HUD
+                      keeps its shape, the title screen stays 4:3; remembered
   F9                  resolution: the game is drawn at 1x to 6x the Xbox's
                       640x480 (2x by default), up to 3840x2880; remembered.
                       The game restarts to apply it, so save first.

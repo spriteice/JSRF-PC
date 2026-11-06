@@ -18,7 +18,7 @@
  *     #include "menu.h"
  *     static const XBOX_MENU_ITEM rows[] = {
  *         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE,
- *           .label = "Widescreen (16:9)", .state = is_wide, .run = toggle_wide },
+ *           .label = "Fullscreen", .state = is_fullscreen, .run = toggle_fullscreen },
  *     };
  *     xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
  *     #endif

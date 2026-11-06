@@ -713,6 +713,9 @@ unsigned nv2a_gfx_gl_fbo(uint32_t rt);   /* nv2a_gfx_gl.c */
 static SDL_Window   *g_window;
 static SDL_GLContext g_sdl_ctx;
 int  nv2a_widescreen(void);   /* below; the window opens in its shape */
+int  nv2a_wide_shape(void);
+float nv2a_wide_aspect(void);
+void nv2a_set_wide_display(int w, int h);
 #else
 static EGLDisplay g_dpy;
 static EGLContext g_ctx;
@@ -1288,15 +1291,18 @@ static int gl_init(uint32_t w, uint32_t h)
     /* The window is not the game's resolution: the game draws 640x480, the
      * renderer works at a multiple of that (RECOMP_GL_SCALE), and the window
      * is whatever size the player makes it -- each frame is fitted into it
-     * (sdl_present). It opens at 1280x960, or 16:9 at that height when
-     * widescreen is on, shrunk to fit the screen. */
+     * (sdl_present). It opens at 1280x960, or the wide shape at that height
+     * when widescreen is on, shrunk to fit the screen. Match screen's shape
+     * is the first display's until the window is on one (sdl_wide_display). */
     {
         int ww = 1280, wh = 960;
         Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE;
         SDL_Rect usable;
         const char *e;
+        SDL_DisplayMode dm;
         (void)w; (void)h;
-        if (nv2a_widescreen()) ww = wh * 16 / 9;
+        if (SDL_GetDesktopDisplayMode(0, &dm) == 0) nv2a_set_wide_display(dm.w, dm.h);
+        if (nv2a_widescreen()) ww = (int)((float)wh * nv2a_wide_aspect() + 0.5f);
         if (SDL_GetDisplayUsableBounds(0, &usable) == 0 && usable.h > 0 && usable.w > 0) {
             int maxh = usable.h * 9 / 10, maxw = usable.w * 9 / 10;
             if (wh > maxh) { ww = ww * maxh / wh; wh = maxh; }
@@ -1341,9 +1347,14 @@ static int gl_init(uint32_t w, uint32_t h)
 #endif
     if (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP)
         SDL_ShowCursor(SDL_DISABLE);
-    fprintf(stderr, "  [WIN] SDL window (%s video), %s%s\n", SDL_GetCurrentVideoDriver(),
-            nv2a_widescreen() ? "16:9" : "4:3",
-            (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) ? ", full screen" : "");
+    { char shape[48];
+      if (nv2a_widescreen())
+          snprintf(shape, sizeof shape, "%s (%.3f:1)", nv2a_wide_shape_names[nv2a_wide_shape()],
+                   (double)nv2a_wide_aspect());
+      else
+          snprintf(shape, sizeof shape, "4:3");
+      fprintf(stderr, "  [WIN] SDL window (%s video), %s%s\n", SDL_GetCurrentVideoDriver(), shape,
+              (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) ? ", full screen" : ""); }
 
     fprintf(stderr, "  [GL] %s | %s | GLSL %s\n",
             (const char *)glGetString(GL_VERSION),
@@ -1371,6 +1382,7 @@ int  nv2a_widescreen(void);
 void nv2a_set_widescreen(int on);
 int  nv2a_wide_scene(void);
 float nv2a_wide_aspect(void);
+void nv2a_set_wide_shape(int shape);
 
 /* $XDG_CONFIG_HOME/jsrf-pc/settings (or JSRF_SETTINGS_FILE): lines of
  * key=value, shared with the launcher script, which keeps game_dir and
@@ -1534,6 +1546,27 @@ void nv_window_file_set(const char *file, const char *key, int val)
 /* nv2a_widescreen() asks this when RECOMP_WIDESCREEN is not set. */
 int nv_window_pref_widescreen(void) { return sdl_cfg_get("widescreen", 0) != 0; }
 
+/* And this, for the shape it is on at: aspect='s last line as a wide shape
+ * (nv2a_wide_shape_parse), or -1 when there is none. widescreen= stays
+ * whether it is on, so a settings file from before aspect= reads as it did
+ * (16:9), and a build from before it still finds widescreen=. */
+#define SDL_CFG_ASPECT "aspect"
+int nv_window_pref_shape(void);
+int nv_window_pref_shape(void)
+{
+    char path[1024], line[1200];
+    size_t kl = strlen(SDL_CFG_ASPECT);
+    int shape = -1;
+    FILE *f;
+    sdl_cfg_path(path, sizeof path);
+    if (!path[0] || !(f = fopen(path, "r"))) return -1;
+    while (fgets(line, sizeof line, f))
+        if (!strncmp(line, SDL_CFG_ASPECT, kl) && line[kl] == '=')
+            shape = nv2a_wide_shape_parse(line + kl + 1);
+    fclose(f);
+    return shape;
+}
+
 /* The keyboard as a gamepad, by key POSITION
  * (scancodes), so W A S D on QWERTY is Z Q S D on AZERTY:
  *   W A S D    left stick + d-pad       arrows   right stick
@@ -1682,19 +1715,38 @@ static void sdl_choose_fullscreen(void)
     sdl_cfg_set("fullscreen", (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0);
 }
 
+/* Match screen's shape: the display the window is on, at its desktop size
+ * -- under gamescope, gamescope's output. */
+static void sdl_wide_display(void)
+{
+    SDL_DisplayMode m;
+    int d = SDL_GetWindowDisplayIndex(g_window);
+    if (SDL_GetDesktopDisplayMode(d < 0 ? 0 : d, &m) == 0) nv2a_set_wide_display(m.w, m.h);
+}
+
+/* A window (not full screen, not maximised) takes the shape widescreen is
+ * on at, or 4:3, at the same height; and the log says which. */
+static void sdl_wide_window(void)
+{
+    int on = nv2a_widescreen();
+    float a = on ? nv2a_wide_aspect() : NV2A_WIDE_4_3;
+    if (!(SDL_GetWindowFlags(g_window) & (SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_MAXIMIZED))) {
+        int ww, wh;
+        SDL_GetWindowSize(g_window, &ww, &wh);
+        SDL_SetWindowSize(g_window, (int)((float)wh * a + 0.5f), wh);
+    }
+    fprintf(stderr, "[WIN] widescreen %s (%s, %.3f:1)\n", on ? "on" : "off",
+            on ? nv2a_wide_shape_names[nv2a_wide_shape()] : "4:3", (double)a);
+}
+
+/* F10: widescreen on and off, kept as widescreen=: 4:3, and back to the
+ * shape it was on at. */
 static void sdl_toggle_widescreen(void)
 {
     int on = !nv2a_widescreen();
     nv2a_set_widescreen(on);
     sdl_cfg_set("widescreen", on);
-    /* A window (not full screen, not maximised) takes the new shape at the
-     * same height. */
-    if (!(SDL_GetWindowFlags(g_window) & (SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_MAXIMIZED))) {
-        int ww, wh;
-        SDL_GetWindowSize(g_window, &ww, &wh);
-        SDL_SetWindowSize(g_window, on ? wh * 16 / 9 : wh * 4 / 3, wh);
-    }
-    fprintf(stderr, "[WIN] widescreen %s\n", on ? "on (16:9)" : "off (4:3)");
+    sdl_wide_window();
 }
 
 /* F9: the internal resolution, 1x to 6x the Xbox's 640x480 (NV2A_SCALE_MAX),
@@ -1792,6 +1844,27 @@ static int  sdl_is_fullscreen(void) { return (SDL_GetWindowFlags(g_window) & SDL
 static int  sdl_scale_now(void)     { return (int)gl_scale() - 1; }
 static void sdl_scale_pick(int i)   { sdl_restart_at(i + 1, sdl_is_fullscreen()); }
 
+/* Display > Aspect ratio: 4:3 is widescreen off, as F10 turns it off; any
+ * other is widescreen on at that shape, kept as aspect= (with widescreen=,
+ * as F10 keeps it). At once, the window taking the shape. */
+static int sdl_aspect_now(void)
+{
+    return nv2a_widescreen() ? nv2a_wide_shape() : NV2A_WIDE_SHAPE_4_3;
+}
+static void sdl_aspect_pick(int i)
+{
+    int on = i != NV2A_WIDE_SHAPE_4_3;
+    if (i < 0 || i >= NV2A_WIDE_SHAPES) return;
+    if (on) {
+        if (i == NV2A_WIDE_SHAPE_MATCH) sdl_wide_display();
+        nv2a_set_wide_shape(i);
+        sdl_cfg_put(SDL_CFG_ASPECT, nv2a_wide_shape_key(i));
+    }
+    nv2a_set_widescreen(on);
+    sdl_cfg_set("widescreen", on);
+    sdl_wide_window();
+}
+
 /* File > Restart (src/menu/menu_sdl.cpp): the game started again as it is,
  * for what waits for the next start, such as Developer's switches. */
 void nv_window_restart(void);
@@ -1807,8 +1880,9 @@ static void sdl_menu_display(void)
     const XBOX_MENU_ITEM rows[] = {
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Fullscreen",
           .state = sdl_is_fullscreen, .run = sdl_choose_fullscreen },
-        { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Widescreen (16:9)",
-          .state = nv2a_widescreen, .run = sdl_toggle_widescreen },
+        { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Aspect ratio",
+          .state = sdl_aspect_now, .pick = sdl_aspect_pick,
+          .choices = nv2a_wide_shape_names, .nchoices = NV2A_WIDE_SHAPES },
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Render scale (Restart)",
           .state = sdl_scale_now, .pick = sdl_scale_pick,
           .choices = nv2a_scale_names, .nchoices = NV2A_SCALE_MAX,
@@ -2369,6 +2443,8 @@ static void sdl_pump(void)
                 g_sdl_kb_buttons = 0;
                 for (i = 0; i < 8; i++) g_sdl_kb_analog[i] = 0;
             }
+            /* Onto another display: Match screen takes its shape. */
+            if (ev.window.event == SDL_WINDOWEVENT_DISPLAY_CHANGED) sdl_wide_display();
             break;
         default:
             break;
@@ -4415,19 +4491,20 @@ static void surface_sync(void)
 /* ---- widescreen ---------------------------------------------------------
  *
  * The title only ever draws 4:3. In widescreen mode the port widens its
- * camera (jsrf-recomp recomp_manual.c: m00 = 0.75 for every perspective
- * projection, culling widened to match), so the 640x480 frame holds a 16:9
- * view squeezed horizontally and the window shows it stretched back to
- * 16:9. Everything 3D comes out right that way; what does not is 2D drawn
- * in screen pixels -- the HUD, text, menus -- which would be stretched. Those
- * draws come through D3D's XYZRHW pass-through program (inputs 0x1F9B), and
- * this squeezes them by the same 3/4 about the centre, so they keep their
- * shape and sit in the middle 4:3. A pass-through draw that spans (nearly)
+ * camera (jsrf-recomp recomp_manual.c: m00 = s, 0.75 at 16:9, for every
+ * perspective projection, culling widened to match), so the 640x480 frame
+ * holds a wider view squeezed horizontally and the window shows it
+ * stretched back to its shape. Everything 3D comes out right that way; what
+ * does not is 2D drawn in screen pixels -- the HUD, text, menus -- which
+ * would be stretched. Those draws come through D3D's XYZRHW pass-through
+ * program (inputs 0x1F9B), and this squeezes them by the same s about the
+ * centre, so they keep their shape and sit in the middle 4:3. A pass-through draw that spans (nearly)
  * the whole width -- a backdrop, a fade, the copy of the scene to the
- * display -- is left to fill the screen. RECOMP_WIDESCREEN=1/0 overrides the
- * window's Video > Widescreen choice. */
+ * display -- is left to fill the screen. RECOMP_WIDESCREEN=1/0 overrides
+ * whether the window's Display > Aspect ratio choice has it on. */
 static int g_wide = -1;
 void nv2a_set_wide_aspect(float a);
+static void wide_shape_init(void);
 int nv2a_widescreen(void)
 {
     if (g_wide < 0) {
@@ -4439,14 +4516,46 @@ int nv2a_widescreen(void)
             g_wide = ((w ? atoi(w) != 0 : 1) && nv_window_pref_widescreen)
                    ? (nv_window_pref_widescreen() != 0) : 0;
         }
-        /* RECOMP_WIDE_ASPECT=<width/height>, e.g. 2.17: widen to that shape
-         * instead of 16:9. */
-        if ((v = getenv("RECOMP_WIDE_ASPECT")) != NULL && atof(v) > 0.0)
-            nv2a_set_wide_aspect((float)atof(v));
+        wide_shape_init();
     }
     return g_wide;
 }
 void nv2a_set_widescreen(int on) { g_wide = on ? 1 : 0; }
+/* The shape widescreen is on at (nv2a_wide.h's shapes, never 4:3), as
+ * Display > Aspect ratio chose it and the window's settings keep it, and
+ * 16:9 when nothing has chosen one. Match screen's follows the display the
+ * window is on, which the window says (nv2a_set_wide_display). */
+static int g_wide_shape = -1;
+static int g_wide_disp_w, g_wide_disp_h;
+int  nv2a_wide_shape(void);
+void nv2a_set_wide_shape(int shape);
+void nv2a_set_wide_display(int w, int h);
+static void wide_shape_init(void)
+{
+    int shape = -1;
+    if (g_wide_shape >= 0) return;
+#if defined(NV2A_GL_USE_SDL)
+    shape = nv_window_pref_shape();
+#endif
+    nv2a_set_wide_shape(shape > NV2A_WIDE_SHAPE_4_3 ? shape : NV2A_WIDE_SHAPE_16_9);
+}
+int nv2a_wide_shape(void)
+{
+    wide_shape_init();
+    return g_wide_shape;
+}
+void nv2a_set_wide_shape(int shape)
+{
+    if (shape <= NV2A_WIDE_SHAPE_4_3 || shape >= NV2A_WIDE_SHAPES) return;
+    g_wide_shape = shape;
+    nv2a_set_wide_aspect(nv2a_wide_shape_aspect(shape, g_wide_disp_w, g_wide_disp_h));
+}
+void nv2a_set_wide_display(int w, int h)
+{
+    g_wide_disp_w = w; g_wide_disp_h = h;
+    if (g_wide_shape == NV2A_WIDE_SHAPE_MATCH)
+        nv2a_set_wide_aspect(nv2a_wide_shape_aspect(g_wide_shape, w, h));
+}
 /* Whether the scene on screen is one the game side widened. A title can
  * keep a screen 4:3 -- JSRF keeps its title and the boot logos that way,
  * since their overlays put things just past the 4:3 edges that a 16:9 view
@@ -4456,12 +4565,13 @@ void nv2a_set_widescreen(int on) { g_wide = on ? 1 : 0; }
 static volatile int g_wide_scene = 1;
 void nv2a_set_wide_scene(int on) { g_wide_scene = on ? 1 : 0; }
 int nv2a_wide_scene(void) { return nv2a_widescreen() && g_wide_scene; }
-/* The shape a widened scene is shown at, width over height: 16:9 unless
- * RECOMP_WIDE_ASPECT asks for another. The camera and its culling (recomp_manual.c), the 2D squeeze and
- * the framed-3D move below and the presenter all follow it, through s, how
- * much the 640x480 frame squeezes the wider view: (4/3) / aspect, 0.75 at
- * 16:9 -- exactly, so that the 16:9 picture is what it always was. Kept
- * between 16:9 and 2.4:1. */
+/* The shape a widened scene is shown at, width over height: the wide
+ * shape's (nv2a_wide_shape). The camera and its culling (recomp_manual.c),
+ * the 2D squeeze and the framed-3D move below and the presenter all follow
+ * it, through s, how much the 640x480 frame squeezes the wider view:
+ * (4/3) / aspect, 0.75 at 16:9 -- exactly, so that the 16:9 picture is what
+ * it always was. 4:3 at the least, and as wide as it is otherwise
+ * (nv2a_wide_clamp). */
 static volatile float g_wide_aspect = 16.0f / 9.0f, g_wide_s = 0.75f;
 void  nv2a_set_wide_aspect(float a);
 float nv2a_wide_aspect(void);
@@ -4475,8 +4585,8 @@ void nv2a_set_wide_aspect(float a)
     fprintf(stderr, "[WIN] widescreen shape %.3f:1 (the 4:3 frame squeezes it by %.3f)\n",
             (double)a, (double)g_wide_s);
 }
-float nv2a_wide_aspect(void) { return g_wide_aspect; }
-float nv2a_wide_squeeze(void) { return g_wide_s; }
+float nv2a_wide_aspect(void)  { wide_shape_init(); return g_wide_aspect; }
+float nv2a_wide_squeeze(void) { wide_shape_init(); return g_wide_s; }
 static int g_wide_squeeze;   /* this draw's 2D squeeze, set in do_draw */
 static float g_wide_shift;   /* this draw's framed-3D move, title pixels, ditto */
 static Nv2aRenderState g_draw_rs;   /* the state this draw was given */
