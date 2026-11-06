@@ -35,6 +35,7 @@
 #include "nv2a_display_clock.h"
 #include "nv2a_scale.h"
 #include "nv2a_fit.h"
+#include "nv2a_wide.h"
 #include "nv2a_hash.h"
 #include "nv2a_psh_consts.h"
 
@@ -4467,10 +4468,9 @@ float nv2a_wide_aspect(void);
 float nv2a_wide_squeeze(void);
 void nv2a_set_wide_aspect(float a)
 {
-    if (!(a >= 16.0f / 9.0f)) a = 16.0f / 9.0f;     /* NaN too */
-    if (a > 2.4f) a = 2.4f;
+    a = nv2a_wide_clamp(a);
     if (a == g_wide_aspect) return;
-    g_wide_s = (a == 16.0f / 9.0f) ? 0.75f : 4.0f / (3.0f * a);
+    g_wide_s = nv2a_wide_squeeze_of(a);
     g_wide_aspect = a;
     fprintf(stderr, "[WIN] widescreen shape %.3f:1 (the 4:3 frame squeezes it by %.3f)\n",
             (double)a, (double)g_wide_s);
@@ -5651,8 +5651,8 @@ static void do_draw_body(void)
     /* The 2D draws the widescreen squeeze measures (below): it reads their
      * converted positions back, so they take the old path. */
     wide2d = nv2a_wide_scene() && S.xf_mode != NV2A_XF_MODE_FIXED
-          && g_pcache[slot].inputs == 0x1F9B && attr_at[0] >= 0
-          && S.clip_w == 640 && S.clip_h == 480;
+          && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS && attr_at[0] >= 0
+          && nv2a_wide_frame_sized(S.clip_w, S.clip_h);
 
     { double vbo0 = g_prof.vbo;   /* vc_prepare's uploads count as vbo */
       PROF_T0();
@@ -5818,8 +5818,8 @@ static void do_draw_body(void)
     g_wide_squeeze = 0;
     memset(g_wide_ext, 0, sizeof g_wide_ext);
     if (nv2a_wide_scene() && S.xf_mode != NV2A_XF_MODE_FIXED
-        && g_pcache[slot].inputs == 0x1F9B && attr_at[0] >= 0
-        && S.clip_w == 640 && S.clip_h == 480) {
+        && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS && attr_at[0] >= 0
+        && nv2a_wide_frame_sized(S.clip_w, S.clip_h)) {
         float lo = 1e30f, hi = -1e30f, ylo = 1e30f, yhi = -1e30f;
         uint32_t k3;
         for (k3 = 0; k3 < out_n; k3++) {
@@ -5832,15 +5832,12 @@ static void do_draw_body(void)
         /* In NDC, through the viewport the epilogue divides by: D3D's own
          * copy of the scene to the display works in the surface's scaled
          * pixels (0..2560 at 4x), the title's overlays in 640x480 ones. */
-        { float sx = fabsf(S.u.vp_scale[0]) > 1e-6f ? fabsf(S.u.vp_scale[0]) : 320.0f;
-          float sy = fabsf(S.u.vp_scale[1]) > 1e-6f ? fabsf(S.u.vp_scale[1]) : 240.0f;
-          lo = (lo - S.u.vp_off[0]) / sx; hi = (hi - S.u.vp_off[0]) / sx;
-          ylo = (ylo - S.u.vp_off[1]) / sy; yhi = (yhi - S.u.vp_off[1]) / sy; }
         g_wide_ext[0] = lo; g_wide_ext[1] = hi; g_wide_ext[2] = ylo; g_wide_ext[3] = yhi;
+        nv2a_wide_extent_ndc(g_wide_ext, S.u.vp_off, S.u.vp_scale);
         /* Spanning (nearly) the whole width or the whole height: a backdrop,
          * a fade, a frame -- left to fill the 16:9 screen. Anything smaller
          * is an overlay and keeps its shape. */
-        if (hi - lo < 1.8f && yhi - ylo < 1.8f) g_wide_squeeze = 1;
+        if (nv2a_wide_overlay(g_wide_ext)) g_wide_squeeze = 1;
         /* RECOMP_WIDE_NOSQUEEZE=1 (test only): measure, never squeeze. */
         { static int nosq = -1;
           if (nosq < 0) nosq = getenv("RECOMP_WIDE_NOSQUEEZE") ? 1 : 0;
@@ -5862,15 +5859,14 @@ static void do_draw_body(void)
      * width is the scene itself and is left alone.
      */
     g_wide_shift = 0.0f;
-    if (nv2a_wide_scene() && !g_wide_squeeze && S.clip_w == 640 && S.clip_h == 480
-        && !(S.xf_mode != NV2A_XF_MODE_FIXED && g_pcache[slot].inputs == 0x1F9B)
+    if (nv2a_wide_scene() && !g_wide_squeeze && nv2a_wide_frame_sized(S.clip_w, S.clip_h)
+        && !(S.xf_mode != NV2A_XF_MODE_FIXED && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS)
         && S.wclip_valid && S.wclip_type == 0) {
         uint32_t x0 =  S.wclip_h[0]        & 0xFFFu;
         uint32_t x1 = (S.wclip_h[0] >> 16) & 0xFFFu;
         uint32_t y0 =  S.wclip_v[0]        & 0xFFFu;
         uint32_t y1 = (S.wclip_v[0] >> 16) & 0xFFFu;
-        if (x1 > x0 && y1 > y0 && x1 - x0 + 1 < 600u)
-            g_wide_shift = (1.0f - g_wide_s) * (0.5f * (float)(x0 + x1 + 1) - 320.0f);
+        g_wide_shift = nv2a_wide_shift(x0, x1, y0, y1, g_wide_s);
     }
 
     /* The vertices, where each attribute sits in them, and the value of
@@ -6628,10 +6624,7 @@ static void do_draw_body(void)
            * drawn for -- the title parks some just past its edges, out of
            * sight on the console and in plain view once squeezed. */
           if (g_wide_squeeze || g_wide_shift != 0.0f) {
-              float c = 0.5f * (float)g_fbo_w;
-              float a = c + g_wide_s * ((float)cx0 - c), b = c + g_wide_s * ((float)cx1 - c);
-              cx0 = a > 0.0f ? (uint32_t)floorf(a) : 0u;
-              cx1 = b > 0.0f ? (uint32_t)ceilf(b) : 0u;
+              nv2a_wide_clip_x(g_fbo_w, g_wide_s, &cx0, &cx1);
               clip = 1;
           }
           if (clip) {
@@ -9352,7 +9345,7 @@ static void do_draw_body(void)
                 plo[0], phi[0], plo[1], phi[1], plo[2], phi[2],
                 g_imm_drawing ? " | IMMEDIATE" : "",
                 g_wide_squeeze ? " | WIDE-SQUEEZED" : "");
-        if (nv2a_wide_scene() && g_pcache[slot].inputs == 0x1F9B)
+        if (nv2a_wide_scene() && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS)
             fprintf(stderr, "[DRAW] f%ld %4u   2D ndc x[%.2f..%.2f] y[%.2f..%.2f]%s\n",
                     (long)S.flips, S.since_present, g_wide_ext[0], g_wide_ext[1],
                     g_wide_ext[2], g_wide_ext[3], g_wide_squeeze ? " squeezed" : "");
