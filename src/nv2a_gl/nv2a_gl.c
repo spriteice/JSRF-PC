@@ -742,6 +742,7 @@ static EGLSurface g_egl_surf;
 #define SURF_CACHE 16
 static struct {
     uint32_t offset, w, h;
+    uint32_t pw, ph;      /* its raster's size, in the device's pixels */
     uint32_t rt;          /* the device's render target */
     int      used;
     uint32_t last_use;    /* bind order, for eviction */
@@ -779,9 +780,10 @@ static uint32_t g_slot_prev[SLOTCENSUS_MAX];
 /* Which frame the per-draw hunt should examine. Set either from the env at
  * the hunt itself, or by the end-of-frame brightness watcher below. */
 int g_darkhunt_at = -1;
-/* The raster's real size. Equal to the logical size unless RECOMP_GL_SCALE
- * asks for more -- see gl_scale(). Everything the title can observe uses the
- * logical size; only the pixels use this one. */
+/* The current surface's raster, its real size (g_surf[].pw, ph). Equal to
+ * the logical size unless RECOMP_GL_SCALE asks for more -- see gl_scale().
+ * Everything the title can observe uses the logical size; only the pixels
+ * use this one. */
 static uint32_t g_fbo_pw, g_fbo_ph;
 static uint8_t *g_readback;
 static uint32_t g_readback_bytes;
@@ -898,18 +900,42 @@ static uint32_t gl_scale(void)
     return sc;
 }
 
+/* A column or row v of the current surface, which is `logical` of the
+ * title's pixels across, in its raster's (`raster` across), to the nearest:
+ * the render scale's multiple of it. */
+static uint32_t raster_px(uint32_t v, uint32_t logical, uint32_t raster)
+{
+    if (!logical || !raster) return v * gl_scale();
+    return (uint32_t)(((uint64_t)v * raster + logical / 2) / logical);
+}
+static uint32_t raster_x(uint32_t x) { return raster_px(x, g_fbo_w, g_fbo_pw); }
+static uint32_t raster_y(uint32_t y) { return raster_px(y, g_fbo_h, g_fbo_ph); }
+
+/* How many of the raster's pixels one of the current surface's is across,
+ * on the axis that has more of them: the render scale. */
+static float raster_scale(void)
+{
+    float sx, sy;
+    if (!g_fbo_w || !g_fbo_h || !g_fbo_pw || !g_fbo_ph) return (float)gl_scale();
+    sx = (float)g_fbo_pw / (float)g_fbo_w;
+    sy = (float)g_fbo_ph / (float)g_fbo_h;
+    return sx > sy ? sx : sy;
+}
+
 /* The title's polygon offset (NV097_SET_POLYGON_OFFSET_SCALE_FACTOR / _BIAS)
  * as glPolygonOffset takes it for the 24-bit depth buffer every backend draws
  * into, or zeros when the title has it off. The bias counts steps of the
  * title's own depth buffer, and a step of a 16-bit one is 2^8 steps of a
  * 24-bit one. The factor
  * multiplies a depth slope per pixel of the title's surface, and across a
- * pixel of this raster the slope is 1/scale of that. */
+ * pixel of this raster the slope is 1/scale of that: of the axis with the
+ * more, where the two differ, so that no offset comes out smaller than the
+ * title's. */
 static void poly_offset_gl(float *factor, float *units)
 {
     int z16 = SURFACE_FORMAT_ZETA(S.surf_format) == SURFACE_FORMAT_ZETA_Z16;
     if (!S.poly_fill_en) { *factor = *units = 0.0f; return; }
-    *factor = S.poly_factor * (float)gl_scale();
+    *factor = S.poly_factor * raster_scale();
     *units  = S.poly_bias * (z16 ? (float)(1u << (DEPTH_BITS - DEPTH_BITS_Z16)) : 1.0f);
 }
 
@@ -2561,14 +2587,14 @@ static void surface_bind(uint32_t offset, uint32_t w, uint32_t h)
      || g_surf[slot].w != w || g_surf[slot].h != h) {
         /* A colour buffer and a depth/stencil one -- with a stencil: the
          * title keeps its shadow counts there -- at the raster's size. */
-        uint32_t rt;
+        uint32_t rt, pw = w * gl_scale(), ph = h * gl_scale();
         if (g_surf[slot].rt) {
             G->target_free(g_surf[slot].rt);
             g_surf[slot].rt = 0;
             g_surf[slot].used = 0;
             if (g_cur_surf == slot) { g_cur_surf = -1; g_cur_rt = 0; }
         }
-        rt = G->target_new(w * gl_scale(), h * gl_scale());
+        rt = G->target_new(pw, ph);
         if (!rt) {
             fprintf(stderr, "  [GL] no render target at %ux%u\n", w, h);
             g_surf_lost = 1;
@@ -2578,6 +2604,7 @@ static void surface_bind(uint32_t offset, uint32_t w, uint32_t h)
         g_surf[slot].used = 1;
         g_surf[slot].offset = offset;
         g_surf[slot].w = w; g_surf[slot].h = h;
+        g_surf[slot].pw = pw; g_surf[slot].ph = ph;
         g_surf[slot].dtest = g_surf[slot].dother = 0;
         fprintf(stderr, "  [GL] surface %08X: new %ux%u render target\n",
                 offset, w, h);
@@ -2590,7 +2617,7 @@ static void surface_bind(uint32_t offset, uint32_t w, uint32_t h)
     g_cur_rt = g_surf[slot].rt;
     g_surf_lost = 0;
     g_fbo_w = w; g_fbo_h = h;
-    g_fbo_pw = w * gl_scale(); g_fbo_ph = h * gl_scale();
+    g_fbo_pw = g_surf[slot].pw; g_fbo_ph = g_surf[slot].ph;
 
     if (g_readback_bytes < w * h * 4) {
         free(g_readback);
@@ -6739,10 +6766,9 @@ static void do_draw_body(void)
           }
           if (clip) {
               /* The device takes raster pixels. */
-              uint32_t sc = gl_scale();
               rs.scissor_enable = 1;
-              rs.scissor[0] = cx0 * sc; rs.scissor[1] = cy0 * sc;
-              rs.scissor[2] = cx1 * sc; rs.scissor[3] = cy1 * sc;
+              rs.scissor[0] = raster_x(cx0); rs.scissor[1] = raster_y(cy0);
+              rs.scissor[2] = raster_x(cx1); rs.scissor[3] = raster_y(cy1);
           } }
         g_draw_rs = rs;
         G->state(&rs);
@@ -9810,7 +9836,7 @@ static void do_clear(uint32_t param)
     /* A clear is bounded by the clear rectangle, not by the surface -- the
      * device applies it. An empty rectangle means the whole surface, which
      * the interface spells as no rectangle at all. In raster pixels: the
-     * title's own, times the internal resolution.
+     * title's own, times the internal resolution (raster_x, raster_y).
      *
      * The rectangle's far corner is INCLUSIVE, as the console has it (xemu
      * clears xmax - xmin + 1 pixels): this title clears 0..639 x 0..479.
@@ -9818,9 +9844,8 @@ static void do_clear(uint32_t param)
      * cleared and kept whatever the target was made with -- the "1-pixel
      * dark line along the right edge" (and the bottom one, less seen). */
     if (S.clear_x1 > S.clear_x0 && S.clear_y1 > S.clear_y0) {
-        uint32_t sc = gl_scale();
-        rect[0] = S.clear_x0 * sc;       rect[1] = S.clear_y0 * sc;
-        rect[2] = (S.clear_x1 + 1) * sc; rect[3] = (S.clear_y1 + 1) * sc;
+        rect[0] = raster_x(S.clear_x0);     rect[1] = raster_y(S.clear_y0);
+        rect[2] = raster_x(S.clear_x1 + 1); rect[3] = raster_y(S.clear_y1 + 1);
         rectp = rect;
     }
     if (!g_surf_lost)
@@ -10238,8 +10263,8 @@ static void present(int is_frame)
         uint32_t ph = g_fbo_ph ? g_fbo_ph : g_fbo_h;
         if (g_present_slot >= 0 && g_present_slot < SURF_CACHE && g_surf[g_present_slot].used) {
             prt = g_surf[g_present_slot].rt;
-            pw = g_surf[g_present_slot].w * gl_scale();
-            ph = g_surf[g_present_slot].h * gl_scale();
+            pw = g_surf[g_present_slot].pw;
+            ph = g_surf[g_present_slot].ph;
         }
         /* With SMAA, what is shown is the copy of it with its edges smoothed. */
         if (g_smaa_now && G->target_smaa) prt = G->target_smaa(prt);
@@ -10403,7 +10428,7 @@ static void present(int is_frame)
                 snprintf(pf, sizeof pf, "%s_s%d_", pfx, k);
                 { uint32_t sw = g_fbo_w, sh = g_fbo_h, spw = g_fbo_pw, sph = g_fbo_ph;
                   g_fbo_w = g_surf[k].w; g_fbo_h = g_surf[k].h;
-                  g_fbo_pw = g_surf[k].w * gl_scale(); g_fbo_ph = g_surf[k].h * gl_scale();
+                  g_fbo_pw = g_surf[k].pw; g_fbo_ph = g_surf[k].ph;
                   dump_fbo(g_surf[k].rt, pf, &per_surf[k], 72);
                   g_fbo_w = sw; g_fbo_h = sh; g_fbo_pw = spw; g_fbo_ph = sph; }
             }
@@ -10416,7 +10441,7 @@ static void present(int is_frame)
                 uint32_t sw = g_fbo_w, sh = g_fbo_h, spw = g_fbo_pw, sph = g_fbo_ph;
                 snprintf(pf, sizeof pf, "%s_shown_", pfx);
                 g_fbo_w = g_surf[k2].w; g_fbo_h = g_surf[k2].h;
-                g_fbo_pw = g_surf[k2].w * gl_scale(); g_fbo_ph = g_surf[k2].h * gl_scale();
+                g_fbo_pw = g_surf[k2].pw; g_fbo_ph = g_surf[k2].ph;
                 dump_fbo(g_surf[k2].rt, pf, &shown_n, 72);
                 /* And the picture the window was given, where anti-aliasing
                  * made it another one: the same frame, before and after. */
