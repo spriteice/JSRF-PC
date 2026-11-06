@@ -33,6 +33,7 @@
 #include "nv2a_backend.h"
 #include "nv2a_shader_cache.h"
 #include "nv2a_display_clock.h"
+#include "nv2a_scale.h"
 #include "nv2a_hash.h"
 #include "nv2a_psh_consts.h"
 
@@ -885,9 +886,7 @@ static uint32_t gl_scale(void)
 {
     static uint32_t sc;
     if (!sc) {
-        const char *v = getenv("RECOMP_GL_SCALE");
-        long n = v ? strtol(v, NULL, 0) : 1;
-        sc = (uint32_t)(n < 1 ? 1 : n > 8 ? 8 : n);
+        sc = nv2a_scale_parse(getenv("RECOMP_GL_SCALE"));
         if (sc > 1)
             fprintf(stderr, "  [GL] internal resolution x%u\n", sc);
     }
@@ -1738,13 +1737,9 @@ static void sdl_keys_release(void)
     memset((void *)g_sdl_kb_analog, 0, sizeof g_sdl_kb_analog);
 }
 
-/* The scales, as F9's box and the in-game menu name them. */
-static const char *const sdl_scale_names[4] = {
-    "1x  640x480", "2x  1280x960", "3x  1920x1440", "4x  2560x1920" };
-
 static void sdl_choose_scale(void)
 {
-    SDL_MessageBoxButtonData b[5];
+    SDL_MessageBoxButtonData b[NV2A_SCALE_OFFERED + 1];
     SDL_MessageBoxData box;
     char msg[512];
     int cur = (int)gl_scale(), pick = -1, i, was_fs;
@@ -1755,14 +1750,14 @@ static void sdl_choose_scale(void)
      * screen is left while it is up, and put back if nothing is chosen. */
     was_fs = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
     if (was_fs) sdl_toggle_fullscreen();
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < NV2A_SCALE_OFFERED; i++) {
         b[i].flags    = i + 1 == cur ? SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT : 0;
         b[i].buttonid = i + 1;
-        b[i].text     = sdl_scale_names[i];
+        b[i].text     = nv2a_scale_names[i];
     }
-    b[4].flags    = SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
-    b[4].buttonid = 0;
-    b[4].text     = "Cancel";
+    b[NV2A_SCALE_OFFERED].flags    = SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
+    b[NV2A_SCALE_OFFERED].buttonid = 0;
+    b[NV2A_SCALE_OFFERED].text     = "Cancel";
     /* Short lines: SDL's own X11 message box does not wrap, and cut the
      * first line off at its width. */
     snprintf(msg, sizeof msg,
@@ -1777,9 +1772,9 @@ static void sdl_choose_scale(void)
     box.window     = g_window;
     box.title      = "Resolution";
     box.message    = msg;
-    box.numbuttons = 5;
+    box.numbuttons = NV2A_SCALE_OFFERED + 1;
     box.buttons    = b;
-    if (SDL_ShowMessageBox(&box, &pick) != 0 || pick < 1 || pick > 4 || pick == cur) {
+    if (SDL_ShowMessageBox(&box, &pick) != 0 || pick < 1 || pick > NV2A_SCALE_OFFERED || pick == cur) {
         if (was_fs) sdl_toggle_fullscreen();
         sdl_keys_release();
         return;
@@ -1813,7 +1808,7 @@ static void sdl_menu_display(void)
           .state = nv2a_widescreen, .run = sdl_toggle_widescreen },
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Render scale (Restart)",
           .state = sdl_scale_now, .pick = sdl_scale_pick,
-          .choices = sdl_scale_names, .nchoices = (int)(sizeof sdl_scale_names / sizeof sdl_scale_names[0]),
+          .choices = nv2a_scale_names, .nchoices = NV2A_SCALE_OFFERED,
           .confirm = "The game restarts at the new scale, losing unsaved progress." },
     };
     int n = (int)(sizeof rows / sizeof rows[0]);
