@@ -3966,15 +3966,17 @@ static uint32_t upload_texture_inner(const TexStage *t)
                     if (back[x*4] | back[x*4+1] | back[x*4+2]) nz++;
                 snprintf(nm, sizeof nm, "%s%02d_%08X_f%02X_%ux%u.bmp",
                          pfx, shots++, t->offset, t->color, w, h);
+                /* One header for both files: the alpha file's below is
+                 * written even when this one couldn't be opened. */
+                row = (w * 3 + 3) & ~3u; sz = 54 + row * h;
+                memset(hdr, 0, sizeof hdr);
+                hdr[0]='B'; hdr[1]='M'; memcpy(hdr+2,&sz,4);
+                { uint32_t o=54; memcpy(hdr+10,&o,4); }
+                { uint32_t n=40; memcpy(hdr+14,&n,4); }
+                memcpy(hdr+18,&w,4); memcpy(hdr+22,&h,4);
+                hdr[26]=1; hdr[28]=24;
                 f = fopen(nm, "wb");
                 if (f) {
-                    row = (w * 3 + 3) & ~3u; sz = 54 + row * h;
-                    memset(hdr, 0, sizeof hdr);
-                    hdr[0]='B'; hdr[1]='M'; memcpy(hdr+2,&sz,4);
-                    { uint32_t o=54; memcpy(hdr+10,&o,4); }
-                    { uint32_t n=40; memcpy(hdr+14,&n,4); }
-                    memcpy(hdr+18,&w,4); memcpy(hdr+22,&h,4);
-                    hdr[26]=1; hdr[28]=24;
                     fwrite(hdr,1,sizeof hdr,f);
                     for (y = 0; y < h; y++) {
                         const uint8_t *r = back + (size_t)(h-1-y) * w * 4;
