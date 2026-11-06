@@ -1,6 +1,11 @@
 """Compile the GPU thread and the game's side of the pushbuffer handshake, and
 drive them without the game.
 
+Cut by text: from src/kernel/xbox_memory_layout.c, src/kernel/kernel_mmio.c
+and templates/runtime/recomp_types.h. xbox_memory_layout.c doesn't link on
+its own. One change: Sleep is sched_yield, which is what the GPU thread's
+Sleep(0) does on Windows.
+
 Takes nv2a_ack_thread, its wake (xbox_nv2a_kick and _hurry), the busy-bit
 tables and the queue (RECOMP_NV2A_QUEUE) from src/kernel/xbox_memory_layout.c,
 recomp_mmio_read and _write from src/kernel/kernel_mmio.c, and the device

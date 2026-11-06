@@ -1,5 +1,8 @@
 """The renderer's timeline probe, off unless RECOMP_GL_TIMELINE asks for it.
 
+Cut by text: from src/nv2a_gl/nv2a_gl.c, unchanged. nv2a_gl.c doesn't
+link on its own.
+
 Takes the [TIMELINE] probe from do_draw_body in src/nv2a_gl/nv2a_gl.c, and
 vc_debug_switch, verbatim, and has test_main.c play 30 seconds of frames
 through the probe: 300 draws a frame, with skinned batches, small quads and

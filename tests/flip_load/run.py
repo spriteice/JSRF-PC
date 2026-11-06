@@ -1,5 +1,8 @@
 """A frame the title spends loading is shown at its flip, not held.
 
+Cut by text: the M_FLIP_STALL case and its define from
+src/nv2a_gl/nv2a_gl.c, unchanged. nv2a_gl.c doesn't link on its own.
+
 Takes the M_FLIP_STALL case from src/nv2a_gl/nv2a_gl.c verbatim and has
 test_main.c flip it through JSRF's frames: two display buffers it alternates
 and an off-screen surface it draws into. On a normal frame the title copies

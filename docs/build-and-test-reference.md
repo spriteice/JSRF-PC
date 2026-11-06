@@ -340,8 +340,9 @@ between builds).
   line counts (`tests/run_all.py --coverage`), and its log ends with each
   file's lines reached, the files of `src/` and `port/` no test builds,
   and the totals (`.github/ci/coverage.py`). It is for information only:
-  it fails nothing, and nothing keeps it. A test that builds a copy of a
-  file's text, as `tests/nv2a_queue` does, counts towards the copy.
+  it fails nothing, and nothing keeps it. A test that builds a piece cut
+  out of a file by text (project rules, How it's written, "Tests link the
+  code they test") counts towards the piece, not the file.
 - **Before a commit,** every job runs on the commit's exact tree, except
   for a commit that changes only Markdown files, whose CI is GitHub's run
   on its push, and for one moved since its run onto commits that change
@@ -492,6 +493,10 @@ up:
   checks in TESTING.md.
 - **If it fails,** the build isn't delivered until it's fixed, or until
   I've seen why and said to go on.
+- **Its pacing,** for information only: `tools/logsum.py`'s totals and
+  finish line for the run go in TESTING.md beside the last tested build's
+  idle run. The title plays the same way each time, so a build that drops
+  frames shows there. They fail nothing.
 
 ### Linux and Windows: package contents
 

@@ -1,5 +1,8 @@
 """Compile the intro's setting and the settings file code, and drive them without the game.
 
+Cut by text: the settings file code from src/nv2a_gl/nv2a_gl.c,
+unchanged. nv2a_gl.c doesn't link on its own.
+
 Takes port/intro.c as it is, built with the in-game menu, and the settings
 file code from src/nv2a_gl/nv2a_gl.c verbatim (sdl_cfg_path through
 sdl_cfg_set, with nv_window_pref_num between them), as tests/freecam does;

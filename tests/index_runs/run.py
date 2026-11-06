@@ -1,5 +1,9 @@
 """Runs of index words handed over whole, against the same words one at a time.
 
+Cut by text: not a piece but all of src/nv2a_gl/nv2a_gl.c, with
+MAX_INDICES and MAX_INLINE set to OLD_BATCH_MAX (below), linked with its GL
+and the rest of the engine left unresolved. It doesn't link on its own.
+
 The walk: src/kernel/nv2a_pb_scan.c as it is, over random commands
 (test_walk.c), once with RECOMP_PB_SCAN, where it hands over each word on its
 own, and once without, where it hands over runs of index words whole: the

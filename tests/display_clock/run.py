@@ -1,6 +1,10 @@
 """Frame pacing in step with the display's refreshes as the kernel counts
 them, without a display.
 
+Cut by text: frame_pace's block that sets the next deadline, from
+src/nv2a_gl/nv2a_gl.c, unchanged, put in test_main.c at its
+/* FRAME_PACE_LOCK */ line. nv2a_gl.c doesn't link on its own.
+
 src/nv2a_gl/nv2a_display_clock.c as it is, with the kernel's side of it
 (open, ioctl, close and the clock) played by test_main.c: cards, the displays
 on them and when they refresh. With it, the part of frame_pace that paces by

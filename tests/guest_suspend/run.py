@@ -1,5 +1,8 @@
 """Compile the guest lock's handling of suspend and resume and drive it.
 
+Cut by text: from src/kernel/kernel_bridge.c, kernel_bridge.h and
+kernel_thread.c, unchanged. kernel_bridge.c doesn't link on its own.
+
 Takes bridge_resolve_handle, bridge_NtSuspendThread, bridge_NtResumeThread,
 guest_lock_hand_over_to_resumed and kernel_call_blocks from
 src/kernel/kernel_bridge.c, and xbox_thread_guest_priority,

@@ -1,5 +1,9 @@
 """Compile the actual free camera and settings code, and drive it without the game.
 
+Cut by text: the settings file code from src/nv2a_gl/nv2a_gl.c,
+unchanged. nv2a_gl.c doesn't link on its own; port/freecam.c is built
+whole.
+
 Takes port/freecam.c as it is, and the settings file code from
 src/nv2a_gl/nv2a_gl.c verbatim (sdl_cfg_path through sdl_cfg_set, with
 nv_window_pref_num between them); test_main.c stands in for the window's key

@@ -1,5 +1,8 @@
 """Compile the Developer menu's start-up and restart steps, and drive them without the game.
 
+Cut by text: the settings file code from src/nv2a_gl/nv2a_gl.c,
+unchanged. nv2a_gl.c doesn't link on its own.
+
 Takes port/developer.c as it is, and the settings file code from
 src/nv2a_gl/nv2a_gl.c verbatim, as tests/freecam does. Each case gets its own
 folder with a settings file, passed as JSRF_SETTINGS_FILE, and developer.cfg

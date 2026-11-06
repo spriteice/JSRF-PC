@@ -1,5 +1,8 @@
 """Pace the APU's frame thread against a device, without the APU.
 
+Cut by text: from src/apu/apu_core.c and src/apu/apu_sdl.c, with two
+defines from src/apu/apu_regs.h, unchanged. Neither file links on its own.
+
 Takes ring_target_frames, ring_ahead and throttle from src/apu/apu_core.c,
 and the SDL output ring with its fake sink (a thread that pulls 512 frames
 every 10.7 ms, as the device does) from src/apu/apu_sdl.c, verbatim, and

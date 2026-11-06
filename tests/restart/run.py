@@ -1,5 +1,8 @@
 """Compile the game's restart, and see what the new run is handed.
 
+Cut by text: from port/main.c, unchanged, which doesn't link without the
+generated code.
+
 Takes recomp_restart_self from port/main.c verbatim, with the helpers before
 it (from "A restart hands the new run" to game_dir). The first run opens files
 as the engine does and restarts; the second checks that none of them came

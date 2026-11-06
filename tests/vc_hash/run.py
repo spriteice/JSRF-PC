@@ -1,5 +1,9 @@
 """The renderer's content hash, without the game.
 
+Cut by text: from src/nv2a_gl/nv2a_gl.c, which doesn't link on its own.
+vc_hash as it is, and its loop alone (the same text without the hand-over
+to the wider hash), to compare.
+
 Takes vc_hash from src/nv2a_gl/nv2a_gl.c, verbatim, with the wider hash it
 hands 256 bytes and more to (src/nv2a_gl/nv2a_hash.h), and checks the wider
 hash's SSE2 and AVX2 ways against the same steps in plain C, that vc_hash's

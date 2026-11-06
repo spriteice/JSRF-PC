@@ -7,7 +7,10 @@ settings, which every thread is given. A session on my PC isn't given them,
 so its brief says what it needs from them. docs/build-and-test-reference.md
 covers building, testing, and the change report. Every choice or approval
 these rules leave to me is asked for on a card in the thread (the project
-instructions, section 1), never only in a reply's text.
+instructions, section 1), never only in a reply's text. A path these docs
+name that isn't in the repository (known-bugs.md, `release-prep/`,
+`test-builds/`, `building-on-pc/` and the work's folders) is in the
+project's shared folder, which isn't published with it.
 
 ## At a glance: a commit
 
@@ -47,7 +50,11 @@ pack"), then wait for my approval. A pre-approved thread doesn't wait
 
 1. Run `git status` and `git diff --cached --stat`, and confirm that nothing
    on the project rules' "never in the repo" list is staged. If .gitignore
-   doesn't cover it, tell me.
+   doesn't cover it, tell me. The list is for what is committed: the
+   history already holds Claude session links in 131 commit messages, 124
+   of them the toolkit's own from August and September and 7 of ours from
+   21 and 22 October, none since. Every tag from b1 on holds them, so they
+   stay.
 2. Show me the full diff.
 3. Show me the proposed commit message.
 4. For a fix: the root cause and the model behind it (Where code goes, 1),
@@ -164,8 +171,15 @@ tests/freecam do. Once saved runs exist, it also gets one in the smoke set
 reached from a test, say why.
 
 **Tests link the code they test.** A test builds the real source file,
-never a copy or a piece cut out of a file by text. If the code can't be
-linked on its own, split it into a unit that can (2, its own commit).
+never a copy. If the code can't be linked on its own, split it into a unit
+that can (2, its own commit). The one exception, until the big files are
+split by job (the model rewrites' first step): a test may build a piece cut
+out by text of a file that can't be linked on its own, when the split is
+bigger than its change. Its run.py says so in its first lines, with a line
+that starts `Cut by text:` naming each file it cuts from and anything it
+changes in what it cuts (a stand-in, or a second version to compare), and
+why. `grep -l "Cut by text:" tests/*/run.py` lists them (19 today, most
+from nv2a_gl.c). Once a file is split, its tests link the unit instead.
 
 **A test that starts threads or measures time** passes 20 runs in a row
 before the commit that adds or changes it (docs/build-and-test-reference.md,
@@ -521,7 +535,8 @@ JSRF-PC is for Linux and Windows only. No other platform is built, tested,
 or considered. In priority order:
 
 1. **Linux:** primary. Compatibility is critical. It must run on SteamOS: no
-   glibc symbol newer than 2.43, and within the README's minimum (2.34).
+   glibc symbol newer than 2.43, and within the floor the package's
+   README.txt publishes (2.34).
 2. **Windows:** secondary. Compatibility is critical.
 
 - Put platform-specific code behind the repo's existing abstractions.

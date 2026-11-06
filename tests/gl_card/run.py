@@ -1,5 +1,8 @@
 """The GPU time profile's line for the graphics card on a headless EGL context.
 
+Cut by text: the profile's clock and the card's queries from
+src/nv2a_gl/nv2a_gl.c, unchanged. nv2a_gl.c doesn't link on its own.
+
 Takes card_mark and card_report, and the profile's clock, from
 src/nv2a_gl/nv2a_gl.c verbatim, and drives them from test_main.c with
 tests/gl_backend's context: OpenGL 3.3 core (Mesa's llvmpipe will do). Every

@@ -1,5 +1,8 @@
 """Compile the game thread's wait for a fence and drive it without the game.
 
+Cut by text: from src/kernel/nv2a_pb_exec.c and port/recomp_manual.c,
+with recomp_manual.c's GARG, unchanged. Neither links on its own.
+
 Takes nv2a_pb_wait_fence and fence_written from src/kernel/nv2a_pb_exec.c,
 verbatim, and builds them with src/platform/win32_compat.c's events, against
 a GPU thread that writes fences the way the executor does (test_main.c). Run

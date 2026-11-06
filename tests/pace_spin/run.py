@@ -1,6 +1,9 @@
 """Compile frame pacing's spin margin and its absolute sleep, and drive them
 without the game.
 
+Cut by text: from src/nv2a_gl/nv2a_gl.c, unchanged. nv2a_gl.c doesn't
+link on its own.
+
 Takes pace_margin, pace_margin_learn and pace_sleep_until from
 src/nv2a_gl/nv2a_gl.c, verbatim, with the pacing report's counters. Linux
 only, as they are. Requires GCC on PATH.

@@ -1,5 +1,8 @@
 """The in-game menu, without a window, GPU or SDL.
 
+Cut by text: the input layer's gate from src/input/xinput_device.c,
+unchanged, as that file doesn't link without the rest of the input layer.
+
 1. The menu's own drawing (src/menu/menu.cpp), driven with a pad:
    compiled with Dear ImGui's core and its null backends (third_party/imgui)
    as the engine builds them -- no exceptions, no RTTI -- and test_main.cpp.

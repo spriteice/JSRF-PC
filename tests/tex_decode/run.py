@@ -1,5 +1,8 @@
 """Compile the texture decode and check it texel for texel, without the game.
 
+Cut by text: from src/nv2a_gl/nv2a_gl.c, unchanged. nv2a_gl.c doesn't
+link on its own.
+
 Takes decode_texel, decode_level and the loops it uses from
 src/nv2a_gl/nv2a_gl.c, verbatim, and compares every format they decode,
 swizzled and linear, against one texel at a time as they were decoded

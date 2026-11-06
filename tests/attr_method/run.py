@@ -1,5 +1,8 @@
 """Check that attr_method turns away only methods imm_method would turn away.
 
+Cut by text: from src/nv2a_gl/nv2a_gl.c, which doesn't link on its own.
+Built twice: as it is, and without attr_method's test, to compare.
+
 imm_method (src/nv2a_gl/nv2a_gl.c, from upstream 0.5.6) handles the per-vertex
 attribute methods. It asks attr_method first, so that every other method, the
 index words among them, leaves at once. This takes the code from
