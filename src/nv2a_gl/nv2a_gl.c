@@ -709,12 +709,15 @@ static const Nv2aGfx *G;
 static int g_is_gl;        /* G is OpenGL: the GL-only diagnostics may run */
 static int g_revz;         /* depth is reversed (revz_start) */
 unsigned nv2a_gfx_gl_fbo(uint32_t rt);   /* nv2a_gfx_gl.c */
+/* Widescreen, below: the window opens in its shape, and the frame's raster
+ * follows it. */
+int   nv2a_widescreen(void);
+int   nv2a_wide_scene(void);
+float nv2a_wide_aspect(void);
 #if defined(NV2A_GL_USE_SDL)
 static SDL_Window   *g_window;
 static SDL_GLContext g_sdl_ctx;
-int  nv2a_widescreen(void);   /* below; the window opens in its shape */
 int  nv2a_wide_shape(void);
-float nv2a_wide_aspect(void);
 void nv2a_set_wide_display(int w, int h);
 #else
 static EGLDisplay g_dpy;
@@ -743,6 +746,7 @@ static EGLSurface g_egl_surf;
 static struct {
     uint32_t offset, w, h;
     uint32_t pw, ph;      /* its raster's size, in the device's pixels */
+    float    shape;       /* what it is shown at, width over height: 0 for pw:ph */
     uint32_t rt;          /* the device's render target */
     int      used;
     uint32_t last_use;    /* bind order, for eviction */
@@ -1817,13 +1821,38 @@ static void sdl_keys_release(void)
     memset((void *)g_sdl_kb_analog, 0, sizeof g_sdl_kb_analog);
 }
 
+/* Render scale's names as F9's box and the menu's row show them: each
+ * scale's raster of the frame at the shape it is drawn at now, widescreen's
+ * while it is on (nv2a_wide_scale_name): "3x  2560x1440" at 16:9. Made
+ * again when the shape changes, on this thread, which builds the menu. */
+static char        g_scale_name_buf[NV2A_SCALE_MAX][32];
+static const char *g_scale_names[NV2A_SCALE_MAX];
+static float sdl_scale_shape(void) { return nv2a_widescreen() ? nv2a_wide_aspect() : NV2A_WIDE_4_3; }
+static void sdl_scale_names(void)
+{
+    static float made = -1.0f;
+    float a = sdl_scale_shape();
+    int i;
+    if (a == made) return;
+    made = a;
+    for (i = 0; i < NV2A_SCALE_MAX; i++) {
+        nv2a_wide_scale_name(g_scale_name_buf[i], sizeof g_scale_name_buf[i], (uint32_t)(i + 1), a);
+        g_scale_names[i] = g_scale_name_buf[i];
+    }
+}
+
 static void sdl_choose_scale(void)
 {
     SDL_MessageBoxButtonData b[NV2A_SCALE_MAX + 1];
     SDL_MessageBoxData box;
     char msg[512];
     int cur = (int)gl_scale(), pick = -1, i, was_fs;
+    uint32_t cw, ch;
+    float cshape;
     if (!recomp_restart_self) return;
+    sdl_scale_names();
+    nv2a_wide_raster(NV2A_SCALE_FRAME_W, NV2A_SCALE_FRAME_H, (uint32_t)cur, sdl_scale_shape(),
+                     &cw, &ch, &cshape);
     /* The box is modal: the game waits for an answer. Over a full-screen
      * window it was hidden behind the game on Windows, so the game simply
      * looked hung until Alt+F4 closed the box it could not see. So full
@@ -1833,7 +1862,7 @@ static void sdl_choose_scale(void)
     for (i = 0; i < NV2A_SCALE_MAX; i++) {
         b[i].flags    = i + 1 == cur ? SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT : 0;
         b[i].buttonid = i + 1;
-        b[i].text     = nv2a_scale_names[i];
+        b[i].text     = g_scale_names[i];
     }
     b[NV2A_SCALE_MAX].flags    = SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
     b[NV2A_SCALE_MAX].buttonid = 0;
@@ -1847,7 +1876,7 @@ static void sdl_choose_scale(void)
              "Now: %dx (%dx%d).\n\n"
              "Changing it restarts the game: anything since\n"
              "your last save is lost.",
-             cur, NV2A_SCALE_FRAME_W * cur, NV2A_SCALE_FRAME_H * cur);
+             cur, (int)cw, (int)ch);
     memset(&box, 0, sizeof box);
     box.flags      = SDL_MESSAGEBOX_INFORMATION | SDL_MESSAGEBOX_BUTTONS_LEFT_TO_RIGHT;
     box.window     = g_window;
@@ -1911,12 +1940,13 @@ static void sdl_menu_display(void)
           .choices = nv2a_wide_shape_names, .nchoices = NV2A_WIDE_SHAPES },
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Render scale (Restart)",
           .state = sdl_scale_now, .pick = sdl_scale_pick,
-          .choices = nv2a_scale_names, .nchoices = NV2A_SCALE_MAX,
+          .choices = g_scale_names, .nchoices = NV2A_SCALE_MAX,
           .confirm = "The game restarts at the new scale, losing unsaved progress." },
     };
     int n = (int)(sizeof rows / sizeof rows[0]);
     /* A new scale is a restart, which not every port can do (F9 asks the same). */
     if (!recomp_restart_self) n--;          /* Render scale, the last row */
+    sdl_scale_names();                      /* its names, for the shape now */
     xbox_MenuAdd(rows, n);
 }
 
@@ -2010,17 +2040,25 @@ int nv_window_menu_open(void)
 #endif
 }
 
-/* The frame, fitted into the window between black bars: a widened scene at
- * 16:9 (the 640x480 surface holds a 16:9 view squeezed), anything else at its
- * own shape. One blit, after halving the frame where it is more than twice
- * the size it is shown at (nv2a_fit.h); every piece of GL state the renderer
- * caches is put back the way it was. */
-static void sdl_present(GLuint src_fbo, int sw, int sh)
+/* Where a frame goes in a ww x wh window: a widened one (shape, from the
+ * raster it was drawn at: nv2a_wide_raster) at that shape, so it fills a
+ * window of that shape exactly, and any other at its own (sw x sh). */
+static void sdl_fit(int sw, int sh, float shape, int ww, int wh, int *dw, int *dh)
+{
+    if (shape > 0.0f) nv2a_wide_fit(shape, ww, wh, dw, dh);
+    else              nv2a_scale_fit(sw, sh, ww, wh, dw, dh);
+}
+
+/* The frame, fitted into the window between black bars (sdl_fit). One
+ * blit, after halving the frame where it is more than twice the size it is
+ * shown at (nv2a_fit.h); every piece of GL state the renderer caches is put
+ * back the way it was. */
+static void sdl_present(GLuint src_fbo, int sw, int sh, float shape)
 {
     static Nv2aFit fit;                 /* this context's: the GPU thread's */
     GLint vp[4], sbox[4], rfb = 0, dfb = 0;
     GLboolean sc = glIsEnabled(GL_SCISSOR_TEST), cm[4];
-    int ww = 0, wh = 0, fw = sw, fh = sh, dw, dh;
+    int ww = 0, wh = 0, dw, dh;
     if (sw <= 0 || sh <= 0) return;
     glGetIntegerv(GL_VIEWPORT, vp);
     glGetIntegerv(GL_SCISSOR_BOX, sbox);
@@ -2029,8 +2067,7 @@ static void sdl_present(GLuint src_fbo, int sw, int sh)
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &dfb);
     SDL_GL_GetDrawableSize(g_window, &ww, &wh);
     if (ww <= 0 || wh <= 0) return;
-    if (nv2a_wide_scene()) { fw = (int)(nv2a_wide_aspect() * 900.0f + 0.5f); fh = 900; }   /* 16:9 = 1600:900 */
-    nv2a_scale_fit(fw, fh, ww, wh, &dw, &dh);
+    sdl_fit(sw, sh, shape, ww, wh, &dw, &dh);
     glDisable(GL_SCISSOR_TEST);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
@@ -2084,7 +2121,8 @@ static void sdl_present(GLuint src_fbo, int sw, int sh)
 
 typedef struct {
     GLuint   tex, fbo;       /* the GL thread's: the copy, and a framebuffer on it */
-    int      w, h, wide;     /* the frame's size; a 16:9 scene (nv2a_wide_scene) */
+    int      w, h;           /* the frame's size */
+    float    shape;          /* and what it is shown at (sdl_fit) */
     unsigned gen;            /* changes when the texture is given new storage */
     GLsync   fence;          /* signalled when the copy is done */
 } GlShown;
@@ -2257,7 +2295,8 @@ static int SDLCALL pres_main(void *arg)
     SDL_UnlockMutex(g_gs_mu);
     report = mono_now() + 10.0;
     for (;;) {
-        int slot, w, h, wide, ww = 0, wh = 0, fw, fh, dw, dh;
+        int slot, w, h, ww = 0, wh = 0, dw, dh;
+        float shape;
         GLuint tex;
         GLsync fence;
         uint64_t serial;
@@ -2267,7 +2306,7 @@ static int SDLCALL pres_main(void *arg)
         slot = g_gs_new;
         serial = g_gs_serial;
         g_gs_busy = slot;
-        tex = g_gs[slot].tex; w = g_gs[slot].w; h = g_gs[slot].h; wide = g_gs[slot].wide;
+        tex = g_gs[slot].tex; w = g_gs[slot].w; h = g_gs[slot].h; shape = g_gs[slot].shape;
         fence = g_gs[slot].fence;
         SDL_UnlockMutex(g_gs_mu);
         if (serial - seen > 1) g_ps.dropped += serial - seen - 1;
@@ -2281,9 +2320,7 @@ static int SDLCALL pres_main(void *arg)
         SDL_GL_GetDrawableSize(g_window, &ww, &wh);
         pres_clear();
         if (ww > 0 && wh > 0 && w > 0 && h > 0) {
-            fw = w; fh = h;
-            if (wide) { fw = (int)(nv2a_wide_aspect() * 900.0f + 0.5f); fh = 900; }
-            nv2a_scale_fit(fw, fh, ww, wh, &dw, &dh);
+            sdl_fit(w, h, shape, ww, wh, &dw, &dh);
             nv2a_fit_blit(&fit, fbo[slot], w, h, 0, (ww - dw) / 2, (wh - dh) / 2, dw, dh);
             if (told < 3) {
                 told++;
@@ -2354,7 +2391,7 @@ static void pres_start(void)
 }
 
 /* The flip's half: copy the finished frame into a free slot and say so. */
-static void sdl_hand_over(GLuint src_fbo, int sw, int sh)
+static void sdl_hand_over(GLuint src_fbo, int sw, int sh, float shape)
 {
     GLint rfb = 0, dfb = 0;
     GLboolean sc = glIsEnabled(GL_SCISSOR_TEST), cm[4];
@@ -2403,7 +2440,7 @@ static void sdl_hand_over(GLuint src_fbo, int sw, int sh)
     if (sc) glEnable(GL_SCISSOR_TEST);
     glColorMask(cm[0], cm[1], cm[2], cm[3]);
     SDL_LockMutex(g_gs_mu);
-    s->wide = nv2a_wide_scene();
+    s->shape = shape;
     g_gs_new = slot;
     g_gs_serial++;
     SDL_CondSignal(g_gs_cv);
@@ -2477,19 +2514,20 @@ static void sdl_pump(void)
         }
     }
 #if defined(XBOXRECOMP_MENU)
+    sdl_scale_names();                          /* the shape may have changed */
     xbox_MenuFrame();                           /* nothing while it is shut */
 #endif
 }
 
 /* A finished frame to the window, the way frames go -- handed to the
  * presenter, or presented here -- and then the window's events. */
-static void sdl_show(GLuint fbo, int w, int h)
+static void sdl_show(GLuint fbo, int w, int h, float shape)
 {
 #if defined(NV2A_SDL_PRESENTER)
-    if (g_presenter == 1) sdl_hand_over(fbo, w, h);
+    if (g_presenter == 1) sdl_hand_over(fbo, w, h, shape);
     else
 #endif
-    sdl_present(fbo, w, h);
+    sdl_present(fbo, w, h, shape);
     sdl_pump();
 }
 
@@ -2561,8 +2599,14 @@ static uint32_t surf_serial(uint32_t offset)
 static void surface_bind(uint32_t offset, uint32_t w, uint32_t h)
 {
     int i, slot = -1;
+    uint32_t pw, ph;
+    float shape;
 
     if (!w || !h || w > 4096 || h > 4096) return;
+    /* The raster: the render scale's multiple of the surface, and the
+     * frame of a widened scene as wide as its shape (nv2a_wide_raster). */
+    nv2a_wide_raster(w, h, gl_scale(), nv2a_wide_scene() ? nv2a_wide_aspect() : 0.0f,
+                     &pw, &ph, &shape);
 
     for (i = 0; i < SURF_CACHE; i++) {
         if (g_surf[i].used && g_surf[i].offset == offset
@@ -2583,11 +2627,15 @@ static void surface_bind(uint32_t offset, uint32_t w, uint32_t h)
     g_surf[slot].last_use = ++g_surf_clock;
     g_surf[slot].serial = surf_serial(offset);
 
+    /* Made again when the raster it wants has changed too: the frame, when
+     * widescreen or its shape changes, or the scene goes from 4:3 to
+     * widened. What it held is lost; the title draws it again. */
     if (!g_surf[slot].used || g_surf[slot].offset != offset
-     || g_surf[slot].w != w || g_surf[slot].h != h) {
+     || g_surf[slot].w != w || g_surf[slot].h != h
+     || g_surf[slot].pw != pw || g_surf[slot].ph != ph) {
         /* A colour buffer and a depth/stencil one -- with a stencil: the
          * title keeps its shadow counts there -- at the raster's size. */
-        uint32_t rt, pw = w * gl_scale(), ph = h * gl_scale();
+        uint32_t rt;
         if (g_surf[slot].rt) {
             G->target_free(g_surf[slot].rt);
             g_surf[slot].rt = 0;
@@ -2604,10 +2652,15 @@ static void surface_bind(uint32_t offset, uint32_t w, uint32_t h)
         g_surf[slot].used = 1;
         g_surf[slot].offset = offset;
         g_surf[slot].w = w; g_surf[slot].h = h;
+        g_surf[slot].shape = shape;
         g_surf[slot].pw = pw; g_surf[slot].ph = ph;
         g_surf[slot].dtest = g_surf[slot].dother = 0;
-        fprintf(stderr, "  [GL] surface %08X: new %ux%u render target\n",
-                offset, w, h);
+        if (shape > 0.0f)
+            fprintf(stderr, "  [GL] surface %08X: new %ux%u render target, a %ux%u raster "
+                    "for %.3f:1\n", offset, w, h, pw, ph, (double)shape);
+        else
+            fprintf(stderr, "  [GL] surface %08X: new %ux%u render target\n",
+                    offset, w, h);
     }
 
     if (g_cur_surf != slot) {
@@ -4520,8 +4573,9 @@ static void surface_sync(void)
  * The title only ever draws 4:3. In widescreen mode the port widens its
  * camera (jsrf-recomp recomp_manual.c: m00 = s, 0.75 at 16:9, for every
  * perspective projection, culling widened to match), so the 640x480 frame
- * holds a wider view squeezed horizontally and the window shows it
- * stretched back to its shape. Everything 3D comes out right that way; what
+ * holds a wider view squeezed horizontally. Its raster is as much wider
+ * (nv2a_wide_raster: 1707x960 at 2x and 16:9), so the window shows it at its
+ * shape with no axis stretched. Everything 3D comes out right that way; what
  * does not is 2D drawn in screen pixels -- the HUD, text, menus -- which
  * would be stretched. Those draws come through D3D's XYZRHW pass-through
  * program (inputs 0x1F9B), and this squeezes them by the same s about the
@@ -10261,10 +10315,12 @@ static void present(int is_frame)
         uint32_t prt = g_cur_rt;
         uint32_t pw = g_fbo_pw ? g_fbo_pw : g_fbo_w;
         uint32_t ph = g_fbo_ph ? g_fbo_ph : g_fbo_h;
+        float shape = g_cur_surf >= 0 ? g_surf[g_cur_surf].shape : 0.0f;
         if (g_present_slot >= 0 && g_present_slot < SURF_CACHE && g_surf[g_present_slot].used) {
             prt = g_surf[g_present_slot].rt;
             pw = g_surf[g_present_slot].pw;
             ph = g_surf[g_present_slot].ph;
+            shape = g_surf[g_present_slot].shape;
         }
         /* With SMAA, what is shown is the copy of it with its edges smoothed. */
         if (g_smaa_now && G->target_smaa) prt = G->target_smaa(prt);
@@ -10272,9 +10328,10 @@ static void present(int is_frame)
         card_mark();
 #if defined(NV2A_GL_USE_SDL)
         if (g_window) {
-            sdl_show(nv2a_gfx_gl_fbo(prt), (int)pw, (int)ph);
+            sdl_show(nv2a_gfx_gl_fbo(prt), (int)pw, (int)ph, shape);
         }
 #endif
+        (void)shape;                    /* only a window asks */
         /* The device's end of the frame: its work is handed to the GPU. */
         G->present(prt, pw, ph);
         PROF_ADD(present);
@@ -12099,7 +12156,7 @@ static void sdl_shader_cache(void)
     for (left = total; left > 0; left = G->cache_idle(0.0)) {       /* one program a call */
         if (shown > 0.0 && mono_now() - shown < period) continue;
         xbox_MenuBusy("Building shaders", total - left, total);
-        sdl_show(nv2a_gfx_gl_fbo(rt), 640, 480);
+        sdl_show(nv2a_gfx_gl_fbo(rt), 640, 480, 0.0f);
         shown = mono_now();
     }
     xbox_MenuBusy(NULL, 0, 0);

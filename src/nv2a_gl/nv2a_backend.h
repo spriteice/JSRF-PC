@@ -62,7 +62,9 @@
  * rectangles, its screen-space passes. The raster does not have to: the
  * transform ends in normalised coordinates. So targets are created at the
  * raster's size and only rectangles (scissor, clear) are multiplied by the
- * scale, in the front half, before they cross this line.
+ * scale, in the front half, before they cross this line -- each axis by its
+ * own, since a widened frame's raster is wider than the scale's multiple of
+ * 640x480 (nv2a_wide.h).
  *
  * A PROGRAM CACHE SIZED FOR A MENU IS NOT SIZED FOR A LEVEL. 128 entries had
  * the driver's shader compiler taking a fifth of every frame, forever, because

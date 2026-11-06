@@ -38,7 +38,8 @@ These work in a window or full screen, and each one is remembered.
 - **F10:** Widescreen on and off, at the shape Display > Aspect ratio last
   chose (16:9 until one is chosen). It widens the view rather than stretching
   it: the HUD and text keep their shape, and the title screen stays 4:3.
-- **F9:** Resolution, 1× to 6× the Xbox's 640×480 (2× by default). The game
+- **F9:** Resolution, 1× to 6× the Xbox's 640×480 (2× by default), and as
+  much wider as the shape in widescreen (3× at 16:9 is 2560×1440). The game
   restarts to apply it, so save first.
 - **F8, or R3 on a controller:** The free camera.
 

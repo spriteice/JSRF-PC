@@ -1,5 +1,6 @@
 """Widescreen's maths (src/nv2a_gl/nv2a_wide.c), as the engine builds it:
-optimised, NDEBUG, with the warnings CI counts, driven by test_main.c.
+optimised, NDEBUG, with the warnings CI counts, driven by test_main.c, and
+linked with nv2a_scale.c, whose names it is checked against.
 Requires GCC on PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
 """
@@ -17,7 +18,7 @@ with tempfile.TemporaryDirectory(prefix="widescreen-") as directory:
     exe = str(pathlib.Path(directory) / "widescreen.exe")
     subprocess.run(cc + ["-std=gnu11", "-O2", "-DNDEBUG", "-Wall", "-Wextra", "-Werror",
                          "-Isrc/nv2a_gl", "tests/widescreen/test_main.c",
-                         "src/nv2a_gl/nv2a_wide.c", "-lm", "-o", exe],
+                         "src/nv2a_gl/nv2a_wide.c", "src/nv2a_gl/nv2a_scale.c", "-lm", "-o", exe],
                    cwd=root, check=True)
     try:
         run = subprocess.run([exe], capture_output=True, text=True, timeout=60)

@@ -19,11 +19,19 @@
  *      down to a whole pixel and its far one up.
  *   7. A 3D view in a frame narrower than 600 pixels moves toward the centre
  *      with its frame, and an empty clip or one as wide as the scene doesn't.
+ *   8. The frame of a widened scene is drawn as wide as its shape at the
+ *      scale's height, to the nearest pixel, at every scale and shape, and
+ *      shown at that shape; at 4:3 and on any other surface, the scale's
+ *      multiple of it and its own shape.
+ *   9. A frame of the window's own shape fills it, whatever its raster was
+ *      rounded to; others sit between bars, never past the window.
+ *  10. Render scale's names follow the shape, and are nv2a_scale_names' at 4:3.
  */
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include "nv2a_wide.h"
+#include "nv2a_scale.h"
 
 static int s_failures;
 
@@ -181,6 +189,106 @@ static void shift(void)
     CHECK(nv2a_wide_shift(40, 299, 100, 379, 1.0f) == 0.0f);  /* no squeeze, no move */
 }
 
+static void raster_is(uint32_t w, uint32_t h, uint32_t sc, float a,
+                      uint32_t ww, uint32_t wh, float wshape)
+{
+    uint32_t pw = 0, ph = 0;
+    float shape = -1.0f;
+    nv2a_wide_raster(w, h, sc, a, &pw, &ph, &shape);
+    if (pw != ww || ph != wh || shape != wshape) {
+        printf("widescreen: FAIL raster %ux%u at %ux and %.4f: %ux%u at %.4f, not %ux%u at %.4f\n",
+               w, h, sc, (double)a, pw, ph, (double)shape, ww, wh, (double)wshape);
+        s_failures++;
+    }
+}
+
+static void raster(void)
+{
+    const float r16_10 = 1.6f, r21_9 = 64.0f / 27.0f, r32_9 = 32.0f / 9.0f;
+    uint32_t sc;
+    raster_is(640, 480, 2, NV2A_WIDE_16_9, 1707, 960, NV2A_WIDE_16_9);   /* 1706.67 */
+    raster_is(640, 480, 1, NV2A_WIDE_16_9, 853, 480, NV2A_WIDE_16_9);
+    raster_is(640, 480, 3, NV2A_WIDE_16_9, 2560, 1440, NV2A_WIDE_16_9);  /* exact */
+    raster_is(640, 480, 6, NV2A_WIDE_16_9, 5120, 2880, NV2A_WIDE_16_9);
+    raster_is(640, 480, 2, r16_10, 1536, 960, r16_10);
+    raster_is(640, 480, 2, r21_9, 2276, 960, r21_9);                     /* 2275.56 */
+    raster_is(640, 480, 6, r21_9, 6827, 2880, r21_9);
+    raster_is(640, 480, 6, r32_9, 10240, 2880, r32_9);                   /* no cap */
+    raster_is(640, 480, 2, NV2A_WIDE_4_3, 1280, 960, 0.0f);              /* 4:3: as before */
+    raster_is(640, 480, 2, 0.0f, 1280, 960, 0.0f);                       /* not widened */
+    raster_is(640, 480, 2, 1.25f, 1280, 960, 0.0f);
+    raster_is(512, 512, 2, NV2A_WIDE_16_9, 1024, 1024, 0.0f);            /* the boost's copy */
+    raster_is(128, 128, 3, NV2A_WIDE_16_9, 384, 384, 0.0f);
+    raster_is(1024, 1024, 1, r21_9, 1024, 1024, 0.0f);                   /* graffiti */
+    raster_is(640, 448, 2, NV2A_WIDE_16_9, 1280, 896, 0.0f);
+    raster_is(640, 480, 0, NV2A_WIDE_16_9, 853, 480, NV2A_WIDE_16_9);    /* no scale is 1x */
+    /* Every scale and shape: the height is the scale's, and the width the
+     * shape's of it to the nearest pixel. */
+    for (sc = 1; sc <= NV2A_SCALE_MAX; sc++) {
+        const float shapes[] = { r16_10, NV2A_WIDE_16_9, r21_9, r32_9, 2.0f };
+        unsigned k;
+        for (k = 0; k < sizeof shapes / sizeof shapes[0]; k++) {
+            uint32_t pw, ph;
+            float shape;
+            double want = 480.0 * sc * shapes[k];
+            nv2a_wide_raster(640, 480, sc, shapes[k], &pw, &ph, &shape);
+            CHECK(ph == 480 * sc);
+            CHECK(fabs((double)pw - want) <= 0.5);
+            CHECK(shape == shapes[k]);
+        }
+    }
+}
+
+static void fit_is(float a, int ww, int wh, int w_dw, int w_dh)
+{
+    int dw = -1, dh = -1;
+    nv2a_wide_fit(a, ww, wh, &dw, &dh);
+    if (dw != w_dw || dh != w_dh) {
+        printf("widescreen: FAIL fit %.4f into %dx%d: %dx%d, not %dx%d\n",
+               (double)a, ww, wh, dw, dh, w_dw, w_dh);
+        s_failures++;
+    }
+}
+
+static void fit(void)
+{
+    fit_is(NV2A_WIDE_16_9, 1920, 1080, 1920, 1080);     /* fills it */
+    fit_is(NV2A_WIDE_16_9, 3840, 2160, 3840, 2160);
+    fit_is(NV2A_WIDE_16_9, 1280, 720, 1280, 720);
+    fit_is(1.6f, 1280, 800, 1280, 800);                 /* 16:10 on a 16:10 screen */
+    fit_is(64.0f / 27.0f, 2560, 1080, 2560, 1080);      /* 21:9 */
+    fit_is(64.0f / 27.0f, 5120, 2160, 5120, 2160);
+    fit_is(3440.0f / 1440.0f, 3440, 1440, 3440, 1440);  /* Match screen */
+    fit_is(32.0f / 9.0f, 5120, 1440, 5120, 1440);
+    fit_is(NV2A_WIDE_16_9, 1280, 800, 1280, 720);       /* bars above and below */
+    fit_is(NV2A_WIDE_16_9, 1920, 1200, 1920, 1080);
+    fit_is(64.0f / 27.0f, 1920, 1080, 1920, 810);
+    fit_is(1.6f, 1920, 1080, 1728, 1080);               /* bars at the sides */
+    fit_is(NV2A_WIDE_16_9, 2560, 1080, 1920, 1080);
+    fit_is(NV2A_WIDE_4_3, 1920, 1080, 1440, 1080);
+    fit_is(NV2A_WIDE_16_9, 1, 1, 1, 1);                 /* never 0, never past */
+    fit_is(NV2A_WIDE_16_9, 1000, 1, 2, 1);               /* 1.78 to the nearest */
+    fit_is(0.0f, 640, 480, 640, 480);                   /* no shape: the window */
+}
+
+static void scale_names(void)
+{
+    char b[32];
+    int i;
+    for (i = 0; i < NV2A_SCALE_MAX; i++) {
+        nv2a_wide_scale_name(b, sizeof b, (uint32_t)(i + 1), NV2A_WIDE_4_3);
+        CHECK(!strcmp(b, nv2a_scale_names[i]));
+    }
+    nv2a_wide_scale_name(b, sizeof b, 3, NV2A_WIDE_16_9);
+    CHECK(!strcmp(b, "3x  2560x1440"));
+    nv2a_wide_scale_name(b, sizeof b, 2, NV2A_WIDE_16_9);
+    CHECK(!strcmp(b, "2x  1707x960"));
+    nv2a_wide_scale_name(b, sizeof b, 2, 64.0f / 27.0f);
+    CHECK(!strcmp(b, "2x  2276x960"));
+    nv2a_wide_scale_name(b, sizeof b, 6, 1.6f);
+    CHECK(!strcmp(b, "6x  4608x2880"));
+}
+
 int main(void)
 {
     shapes();
@@ -191,6 +299,9 @@ int main(void)
     overlay();
     clip();
     shift();
+    raster();
+    fit();
+    scale_names();
     if (s_failures) {
         printf("widescreen: %d failed\n", s_failures);
         return 1;

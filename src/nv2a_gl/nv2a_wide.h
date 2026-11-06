@@ -2,7 +2,9 @@
  * Widescreen's maths (nv2a_wide.c): the shapes Display > Aspect ratio
  * offers and how they are saved, how much the Xbox's 4:3 frame squeezes a
  * wider view, which draws are the title's 2D overlays and are squeezed with
- * it, and where their window clip and a framed 3D view go then. The state
+ * it, and where their window clip and a framed 3D view go then; and the
+ * raster a widened frame is drawn at, so that neither axis is stretched
+ * when it is shown, and where it goes in the window. The state
  * (whether widescreen is on, the shape, the scene the game side widened)
  * stays in nv2a_gl.c, which asks this.
  *
@@ -12,6 +14,7 @@
 #ifndef NV2A_WIDE_H
 #define NV2A_WIDE_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -101,6 +104,29 @@ void nv2a_wide_clip_x(uint32_t surf_w, float s, uint32_t *x0, uint32_t *x1);
  * with its squeezed frame: how far, in the title's pixels. 0 for a clip that
  * is empty or as wide as the scene. */
 float nv2a_wide_shift(uint32_t x0, uint32_t x1, uint32_t y0, uint32_t y1, float s);
+
+/* The raster a surface w x h is drawn at, at render scale sc, in the
+ * device's pixels (*pw x *ph), and the shape it is shown at (*shape, width
+ * over height, or 0 for pw:ph). The Xbox's frame in a scene widened to
+ * shape a (wider than 4:3) is as many pixels across as a makes of sc times
+ * its height, to the nearest -- 1707x960 at 2x and 16:9 -- so that a pixel
+ * of it is as wide as it is tall once shown, and is shown at a itself.
+ * Anything else, and the frame when a is 4:3 or less (or 0), is sc times
+ * its size and its own shape. The title sees none of it: everything it
+ * can observe stays w x h. */
+void nv2a_wide_raster(uint32_t w, uint32_t h, uint32_t sc, float a,
+                      uint32_t *pw, uint32_t *ph, float *shape);
+
+/* Where a frame of shape a (width over height, above 0) goes in a ww x wh
+ * window: as large as it fits whole, between black bars, the side the bars
+ * are on to the nearest pixel and never past the window -- so a frame of
+ * the window's own shape fills it, whatever its raster's width was rounded
+ * to. *dw x *dh is its size there; it is centred. */
+void nv2a_wide_fit(float a, int ww, int wh, int *dw, int *dh);
+
+/* Render scale sc's name for the frame it makes at shape a: "3x  2560x1440"
+ * at 16:9, and as nv2a_scale_names has it ("3x  1920x1440") at 4:3. */
+void nv2a_wide_scale_name(char *buf, size_t n, uint32_t sc, float a);
 
 #ifdef __cplusplus
 }

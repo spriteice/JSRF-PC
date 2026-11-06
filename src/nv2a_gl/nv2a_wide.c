@@ -1,11 +1,13 @@
 /*
  * Widescreen's maths: the shapes, the squeeze, the title's 2D overlays,
- * their clip, and a framed 3D view (nv2a_wide.h).
+ * their clip, a framed 3D view, and a widened frame's raster and place in
+ * the window (nv2a_wide.h).
  */
 #include "nv2a_wide.h"
 #include "nv2a_scale.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 /* A viewport scale smaller than this is taken as none. */
@@ -92,4 +94,36 @@ float nv2a_wide_shift(uint32_t x0, uint32_t x1, uint32_t y0, uint32_t y1, float 
     if (x1 > x0 && y1 > y0 && x1 - x0 + 1 < NV2A_WIDE_FRAMED_MAX_W)
         return (1.0f - s) * (0.5f * (float)(x0 + x1 + 1) - 0.5f * (float)NV2A_SCALE_FRAME_W);
     return 0.0f;
+}
+
+void nv2a_wide_raster(uint32_t w, uint32_t h, uint32_t sc, float a,
+                      uint32_t *pw, uint32_t *ph, float *shape)
+{
+    if (sc < 1) sc = 1;
+    *pw = w * sc; *ph = h * sc; *shape = 0.0f;
+    if (!nv2a_wide_frame_sized(w, h) || !(a > NV2A_WIDE_4_3)) return;
+    *pw = (uint32_t)floor((double)*ph * (double)a + 0.5);
+    *shape = a;
+}
+
+void nv2a_wide_fit(float a, int ww, int wh, int *dw, int *dh)
+{
+    double d;
+    *dw = ww; *dh = wh;
+    if (!(a > 0.0f) || ww < 1 || wh < 1) return;
+    if ((double)ww > (double)wh * (double)a) {
+        d = floor((double)wh * (double)a + 0.5);
+        if (d < (double)ww) *dw = d < 1.0 ? 1 : (int)d;
+    } else {
+        d = floor((double)ww / (double)a + 0.5);
+        if (d < (double)wh) *dh = d < 1.0 ? 1 : (int)d;
+    }
+}
+
+void nv2a_wide_scale_name(char *buf, size_t n, uint32_t sc, float a)
+{
+    uint32_t pw, ph;
+    float shape;
+    nv2a_wide_raster(NV2A_SCALE_FRAME_W, NV2A_SCALE_FRAME_H, sc, a, &pw, &ph, &shape);
+    snprintf(buf, n, "%ux  %ux%u", (unsigned)(sc < 1 ? 1 : sc), (unsigned)pw, (unsigned)ph);
 }

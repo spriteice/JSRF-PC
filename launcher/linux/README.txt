@@ -67,8 +67,10 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
                       screen's own): a wider view, not a stretch; the HUD
                       keeps its shape, the title screen stays 4:3; remembered
   F9                  resolution: the game is drawn at 1x to 6x the Xbox's
-                      640x480 (2x by default), up to 3840x2880; remembered.
-                      The game restarts to apply it, so save first.
+                      640x480 (2x by default), up to 3840x2880, and as much
+                      wider as the shape in widescreen (5120x2880 at 16:9);
+                      remembered. The game restarts to apply it, so save
+                      first.
   F8                  free camera: the right stick turns the camera around
                       the player; remembered (see Free camera below). R3 on
                       a controller does the same
