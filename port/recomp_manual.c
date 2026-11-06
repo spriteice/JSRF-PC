@@ -25,6 +25,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <math.h>
+#include "platform/recomp_check.h"
 static double jsrf_now(void);   /* defined further down */
 
 #if defined(_WIN32)
@@ -332,22 +333,21 @@ void sub_001497DC(void) { /* RtlAllocateHeap(heap, flags, size) */
     if (heap_trace_on()) fprintf(stderr, "[HEAPX]   (alloc from %08X)\n", ra);
     if (heap_trace_on()) fprintf(stderr, "[HEAPX] alloc(h=%08X f=%X size=%X) = %08X\n", h, f, sz, g_eax);
 }
+/* The block freed last, freed again with nothing handed out between, is a
+ * double free: said once, with the caller, and the game's own RtlFreeHeap
+ * then runs, as it would on the console. A check, not a stop: the game goes
+ * on (src/platform/recomp_check.h). */
 void sub_00149F5E(void) { /* RtlFreeHeap(heap, flags, ptr) */
     uint32_t h=GARG(1), f=GARG(2), p=GARG(3);
     if (heap_trace_on()) fprintf(stderr, "[HEAPX] free(h=%08X f=%X ptr=%08X) from %08X\n", h, f, p, GARG(0));
-    if (p && p == g_last_freed) {
-        const uint32_t *sp = (const uint32_t *)((uint8_t *)g_xbox_mem_offset + g_esp);
-        fprintf(stderr, "[HEAPX] DOUBLE FREE of %08X -- guest stack code refs:\n", p);
-        for (int i = 0; i < 300; i++)
-            if (sp[i] > 0x11000 && sp[i] < 0x18CB30) fprintf(stderr, "    [esp+%03X] %08X\n", i*4, sp[i]);
-        fflush(stderr); _exit(3);
-    }
+    RECOMP_CHECK(!p || p != g_last_freed, "the block at %08X freed again, from %08X", p, GARG(0));
     g_last_freed = p;
     sub_00149F5E_gen();
 }
 void sub_0014A12E(void) { /* RtlReAllocateHeap(heap, flags, ptr, size) */
     uint32_t h=GARG(1), f=GARG(2), p=GARG(3), sz=GARG(4);
     sub_0014A12E_gen();
+    if (g_eax == g_last_freed) g_last_freed = 0;   /* handed out again */
     if (heap_trace_on()) fprintf(stderr, "[HEAPX] realloc(h=%08X f=%X ptr=%08X size=%X) = %08X\n", h, f, p, sz, g_eax);
 }
 
@@ -1124,24 +1124,25 @@ void sub_00143EB0(void) { jsrf_adx_dec_report("stereo"); sub_00143EB0_gen(); }
 extern void sub_00143FD0_gen(void);
 void sub_00143FD0(void) { jsrf_adx_dec_report("mono"); sub_00143FD0_gen(); }
 
-/* ---- sub_00144F60: ADX block decode core -- print args (out pointers) */
+/* ---- sub_00144F60: ADX block decode core -- print args (out pointers)
+ *
+ * An output pointer in the title's .data (port/xbe_check.c's section, from
+ * JSRF_DATA_START to JSRF_DATA_END) is never a sound buffer: it is a pointer
+ * gone wrong before this call. Said once, with the caller, and the decode
+ * then runs, as it would on the console. A check, not a stop. */
+#define JSRF_DATA_START 0x001EB760u
+#define JSRF_DATA_END   0x0027E074u
 extern void sub_00144F60_gen(void);
 void sub_00144F60(void)
 {
     static int n;
     uint32_t a3 = GARG(3), a5 = GARG(5);
-    int in_data = (a3 >= 0x1EB760 && a3 < 0x27E074) || (a5 >= 0x1EB760 && a5 < 0x27E074);
-    if (n++ < 6 || in_data) {
-        fprintf(stderr, "[ADXCORE] src=%08X a2=%08X outL=%08X a4=%08X outR=%08X a6=%08X a7=%08X a8=%08X esp=%08X%s\n",
-                GARG(1), GARG(2), a3, GARG(4), a5, GARG(6), GARG(7), GARG(8), g_esp, in_data ? "  <-- .data!" : "");
-        if (in_data) {
-            uint8_t *m = (uint8_t *)g_xbox_mem_offset;
-            const uint32_t *sp = (const uint32_t *)(m + g_esp);
-            for (int i = 0; i < 120; i++)
-                if (sp[i] > 0x11000 && sp[i] < 0x1C3F60) fprintf(stderr, "    [esp+%03X] %08X\n", i*4, sp[i]);
-            fflush(stderr); abort();
-        }
-    }
+    int in_data = (a3 >= JSRF_DATA_START && a3 < JSRF_DATA_END) ||
+                  (a5 >= JSRF_DATA_START && a5 < JSRF_DATA_END);
+    if (n++ < 6)
+        fprintf(stderr, "[ADXCORE] src=%08X a2=%08X outL=%08X a4=%08X outR=%08X a6=%08X a7=%08X a8=%08X esp=%08X\n",
+                GARG(1), GARG(2), a3, GARG(4), a5, GARG(6), GARG(7), GARG(8), g_esp);
+    RECOMP_CHECK(!in_data, "an output in .data, outL=%08X outR=%08X, from %08X", a3, a5, GARG(0));
     /*
      * JSRF_ADX_DUMP=<prefix>: the encoded blocks this call is given and the
      * PCM it produces from them, for the first few calls.
