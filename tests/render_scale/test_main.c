@@ -6,6 +6,9 @@
  *      it makes of the Xbox's 640x480, 1x first.
  *   2. RECOMP_GL_SCALE's value is 1 when unset or not a number, a number as
  *      strtol reads it otherwise, and clamped to 1..NV2A_SCALE_MAX: 1x to 6x.
+ *   3. A frame is fitted into the window whole, its shape kept: a 4:3 frame
+ *      in a wide window and in a tall one, the 16:9 and 21:9 shapes a
+ *      widened scene is shown at, and a frame already the window's shape.
  */
 #include <stdio.h>
 #include <string.h>
@@ -48,10 +51,34 @@ static void parse(void)
     CHECK(nv2a_scale_parse("99999999999999999999") == 6);
 }
 
+static void fit_is(int fw, int fh, int ww, int wh, int want_w, int want_h)
+{
+    int dw = -1, dh = -1;
+    nv2a_scale_fit(fw, fh, ww, wh, &dw, &dh);
+    if (dw != want_w || dh != want_h) {
+        printf("render_scale: FAIL %dx%d into %dx%d: %dx%d, not %dx%d\n",
+               fw, fh, ww, wh, dw, dh, want_w, want_h);
+        s_failures++;
+    }
+}
+
+static void fit(void)
+{
+    fit_is(640, 480, 1920, 1080, 1440, 1080);       /* the Ally X's screen */
+    fit_is(2560, 1920, 2560, 1440, 1920, 1440);     /* 4x on a 1440-line screen */
+    fit_is(3840, 2880, 1920, 1080, 1440, 1080);     /* 6x on a 1080-line one */
+    fit_is(640, 480, 800, 1200, 800, 600);          /* a tall window */
+    fit_is(1280, 960, 1280, 960, 1280, 960);        /* the window the game opens */
+    fit_is(1600, 900, 1920, 1080, 1920, 1080);      /* a widened scene at 16:9 */
+    fit_is(1600, 900, 1280, 960, 1280, 720);
+    fit_is(2100, 900, 1920, 1080, 1920, 822);       /* at 21:9 */
+}
+
 int main(void)
 {
     names();
     parse();
+    fit();
     if (s_failures) {
         printf("render_scale: %d failed\n", s_failures);
         return 1;

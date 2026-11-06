@@ -1,6 +1,7 @@
-"""The internal resolution's names and range (src/nv2a_gl/nv2a_scale.c), as
-the engine builds it: optimised, NDEBUG, with the warnings CI counts, driven
-by test_main.c. Requires GCC on PATH, including MinGW on Windows.
+"""The internal resolution and where its frame goes in the window
+(src/nv2a_gl/nv2a_scale.c), as the engine builds it: optimised, NDEBUG, with
+the warnings CI counts, driven by test_main.c. Requires GCC on PATH,
+including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
 """
 import os

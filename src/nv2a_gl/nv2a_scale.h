@@ -2,7 +2,8 @@
  * The internal resolution (nv2a_scale.c): how many times the title's own
  * surface size the renderer draws at, as RECOMP_GL_SCALE, F9's box and the
  * in-game menu's Display > Render scale have it. gl_scale() in nv2a_gl.c
- * reads it once, at start-up.
+ * reads it once, at start-up. And where the frame it makes goes in the
+ * window.
  *
  * Plain C, with nothing of GL's or SDL's, so a test links it
  * (tests/render_scale).
@@ -33,6 +34,11 @@ extern const char *const nv2a_scale_names[NV2A_SCALE_MAX];
 /* RECOMP_GL_SCALE's value as the renderer takes it: 1 when it is unset or
  * not a number, and otherwise clamped to 1..NV2A_SCALE_MAX. */
 uint32_t nv2a_scale_parse(const char *v);
+
+/* Where a frame of shape fw x fh (both above 0) goes in a ww x wh window: as
+ * large as it fits whole, its shape kept, between black bars. *dw x *dh is
+ * its size there; it is centred. */
+void nv2a_scale_fit(int fw, int fh, int ww, int wh, int *dw, int *dh);
 
 #ifdef __cplusplus
 }

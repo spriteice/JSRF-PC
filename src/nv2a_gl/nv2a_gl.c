@@ -1926,9 +1926,7 @@ static void sdl_present(GLuint src_fbo, int sw, int sh)
     SDL_GL_GetDrawableSize(g_window, &ww, &wh);
     if (ww <= 0 || wh <= 0) return;
     if (nv2a_wide_scene()) { fw = (int)(nv2a_wide_aspect() * 900.0f + 0.5f); fh = 900; }   /* 16:9 = 1600:900 */
-    dw = ww; dh = wh;
-    if ((long)ww * fh > (long)wh * fw) dw = (int)((long)wh * fw / fh);
-    else                               dh = (int)((long)ww * fh / fw);
+    nv2a_scale_fit(fw, fh, ww, wh, &dw, &dh);
     glDisable(GL_SCISSOR_TEST);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
@@ -2183,9 +2181,7 @@ static int SDLCALL pres_main(void *arg)
         if (ww > 0 && wh > 0 && w > 0 && h > 0) {
             fw = w; fh = h;
             if (wide) { fw = (int)(nv2a_wide_aspect() * 900.0f + 0.5f); fh = 900; }
-            dw = ww; dh = wh;
-            if ((long)ww * fh > (long)wh * fw) dw = (int)((long)wh * fw / fh);
-            else                               dh = (int)((long)ww * fh / fw);
+            nv2a_scale_fit(fw, fh, ww, wh, &dw, &dh);
             glBlitFramebuffer(0, 0, w, h,
                               (ww - dw) / 2, (wh - dh) / 2, (ww - dw) / 2 + dw, (wh - dh) / 2 + dh,
                               GL_COLOR_BUFFER_BIT, GL_LINEAR);
