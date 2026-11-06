@@ -40,6 +40,11 @@ uint32_t nv2a_scale_parse(const char *v);
  * its size there; it is centred. */
 void nv2a_scale_fit(int fw, int fh, int ww, int wh, int *dw, int *dh);
 
+/* How many times a frame `from` pixels long is halved along one axis before
+ * it is shown `to` pixels long: while it is more than twice that, as
+ * nv2a_fit.c does. 0 when `to` is below 1. */
+int nv2a_scale_halvings(int from, int to);
+
 #ifdef __cplusplus
 }
 #endif

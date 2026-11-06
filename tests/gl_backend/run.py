@@ -3,7 +3,9 @@
 Compiled as the engine builds it, with SMAA, the uniform table and the shader
 cache it links against, and the vertex and combiner emitters for the tests
 that draw their programs, and driven through its device interface by each test_*.c here on a
-headless EGL context (context.h): OpenGL 3.3 core (Mesa's llvmpipe will do). Requires a C compiler on PATH (cc, or CC) and the EGL and
+headless EGL context (context.h). With them, the frame's fit into the window
+(nv2a_fit.c, with nv2a_scale.c), which test_fit.c calls itself on the same
+context: OpenGL 3.3 core (Mesa's llvmpipe will do). Requires a C compiler on PATH (cc, or CC) and the EGL and
 GL headers and libraries: Linux.
 """
 import os
@@ -28,6 +30,7 @@ with tempfile.TemporaryDirectory(prefix="gl-backend-") as tmp:
                              "-I" + str(gl), "-o", exe,
                              str(test), str(gl / "nv2a_gfx_gl.c"), str(gl / "nv2a_smaa.c"),
                              str(gl / "nv2a_uniforms.c"), str(gl / "nv2a_shader_cache.c"),
-                             str(gl / "nv2a_vsh.c"), str(gl / "nv2a_psh.c"), "-lEGL", "-lGL", "-lm"],
+                             str(gl / "nv2a_vsh.c"), str(gl / "nv2a_psh.c"),
+                             str(gl / "nv2a_fit.c"), str(gl / "nv2a_scale.c"), "-lEGL", "-lGL", "-lm"],
                        check=True)
         subprocess.run([exe], check=True, timeout=60)

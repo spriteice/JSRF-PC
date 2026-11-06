@@ -22,3 +22,11 @@ void nv2a_scale_fit(int fw, int fh, int ww, int wh, int *dw, int *dh)
     if ((long)ww * fh > (long)wh * fw) *dw = (int)((long)wh * fw / fh);
     else                               *dh = (int)((long)ww * fh / fw);
 }
+
+int nv2a_scale_halvings(int from, int to)
+{
+    int n = 0;
+    if (to < 1) return 0;
+    while (from > 2 * to) { from /= 2; n++; }
+    return n;
+}

@@ -34,6 +34,7 @@
 #include "nv2a_shader_cache.h"
 #include "nv2a_display_clock.h"
 #include "nv2a_scale.h"
+#include "nv2a_fit.h"
 #include "nv2a_hash.h"
 #include "nv2a_psh_consts.h"
 
@@ -1910,10 +1911,12 @@ int nv_window_menu_open(void)
 
 /* The frame, fitted into the window between black bars: a widened scene at
  * 16:9 (the 640x480 surface holds a 16:9 view squeezed), anything else at its
- * own shape. One blit; every piece of GL state the renderer caches is put
- * back the way it was. */
+ * own shape. One blit, after halving the frame where it is more than twice
+ * the size it is shown at (nv2a_fit.h); every piece of GL state the renderer
+ * caches is put back the way it was. */
 static void sdl_present(GLuint src_fbo, int sw, int sh)
 {
+    static Nv2aFit fit;                 /* this context's: the GPU thread's */
     GLint vp[4], sbox[4], rfb = 0, dfb = 0;
     GLboolean sc = glIsEnabled(GL_SCISSOR_TEST), cm[4];
     int ww = 0, wh = 0, fw = sw, fh = sh, dw, dh;
@@ -1933,10 +1936,7 @@ static void sdl_present(GLuint src_fbo, int sw, int sh)
     glViewport(0, 0, ww, wh);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, src_fbo);
-    glBlitFramebuffer(0, 0, sw, sh,
-                      (ww - dw) / 2, (wh - dh) / 2, (ww - dw) / 2 + dw, (wh - dh) / 2 + dh,
-                      GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    nv2a_fit_blit(&fit, src_fbo, sw, sh, 0, (ww - dw) / 2, (wh - dh) / 2, dw, dh);
 #if defined(XBOXRECOMP_MENU)
     xbox_MenuDraw();
 #endif
@@ -2123,6 +2123,7 @@ static void pres_calibrate(void)
 static int SDLCALL pres_main(void *arg)
 {
     GLuint fbo[3] = { 0, 0, 0 };
+    Nv2aFit fit = { { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 }, 0, 0, 0 };   /* this context's */
     uint64_t seen = 0, shown0 = 0, dropped0 = 0, on0[5] = { 0, 0, 0, 0, 0 };
     double report = 0.0;
     int told = 0;
@@ -2182,9 +2183,7 @@ static int SDLCALL pres_main(void *arg)
             fw = w; fh = h;
             if (wide) { fw = (int)(nv2a_wide_aspect() * 900.0f + 0.5f); fh = 900; }
             nv2a_scale_fit(fw, fh, ww, wh, &dw, &dh);
-            glBlitFramebuffer(0, 0, w, h,
-                              (ww - dw) / 2, (wh - dh) / 2, (ww - dw) / 2 + dw, (wh - dh) / 2 + dh,
-                              GL_COLOR_BUFFER_BIT, GL_LINEAR);
+            nv2a_fit_blit(&fit, fbo[slot], w, h, 0, (ww - dw) / 2, (wh - dh) / 2, dw, dh);
             if (told < 3) {
                 told++;
                 fprintf(stderr, "[WIN] presented #%d: %dx%d frame into %dx%d (%dx%d), from the "
