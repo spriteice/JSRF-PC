@@ -12,8 +12,9 @@ launcher/windows/package.sh) disagree, stop and tell me. Don't pick one.
 
 In order, with where each step is said in full:
 
-1. **Where:** claim the PC in building-on-pc/PC-IN-USE.md, or build in the
-   sandbox while another thread has it (Where the work runs).
+1. **Where:** claim the PC in PC-IN-USE.md, in my Claude folder's
+   `building-on-pc\`, or build in the sandbox while another thread has it
+   (Where the work runs).
 2. **The tree:** the commit under test with its diff, and the same tree
    hash on both machines (On my PC).
 3. **Build:** the generated code with 0 failed, then both packages in
@@ -104,11 +105,18 @@ files move between them, and what the PC has installed.
 
 ### When the PC is busy
 
-One thread has the PC at a time. It claims it in the shared folder's
-building-on-pc/PC-IN-USE.md before its Remote Control session starts, and
-clears the claim when the session ends, moving its entry to the top of
-building-on-pc/PC-HISTORY.md. While another thread has it, a
-test build doesn't wait: it is made in the cloud, in the thread's sandbox.
+One thread has the PC at a time, from this project or another that uses
+it. The claim is kept on the PC, in `building-on-pc\PC-IN-USE.md` in my
+Claude folder, so every project reads the same one, and there is no other
+copy. A thread reads it and claims the PC there, through folder access,
+before its Remote Control session starts, naming its project and thread.
+It writes the claim with the guard on the file's time
+(`device_commit_files`' `expectedMtimeMs`, from the copy it read), so a
+claim made in between is never overwritten: if the write is refused, it
+reads the file again. It clears the claim when the session ends, moving
+its entry to the top of `PC-HISTORY.md` beside it. While another thread has
+the PC, or the thread can't reach the folder, a test build doesn't wait: it
+is made in the cloud, in the thread's sandbox.
 A release build still waits for the PC, as it checks its generated code
 against the kept copy (What is kept between builds).
 
@@ -560,7 +568,8 @@ Never include game files, generated code, or logs in what you send me,
 except inside the packaged build.
 
 My Claude folder, on the Windows PC, has `Building\` for builds (Where the
-work runs), `Testing\` for test lists, with their results in
+work runs), `building-on-pc\` for the PC's claim (When the PC is busy),
+`Testing\` for test lists, with their results in
 `Testing\Results\`, and `Source\` for source backups
 (docs/release-checklist.md, step 12). The shared folder's
 test-lists/README.md has its path.

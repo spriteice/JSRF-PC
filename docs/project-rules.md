@@ -10,7 +10,11 @@ these rules leave to me is asked for on a card in the thread (the project
 instructions, section 1), never only in a reply's text. A path these docs
 name that isn't in the repository (known-bugs.md, `release-prep/`,
 `test-builds/`, `building-on-pc/` and the work's folders) is in the
-project's shared folder, which isn't published with it.
+project's shared folder, which isn't published with it. The PC's claim,
+PC-IN-USE.md and PC-HISTORY.md, is the exception: it is in
+`building-on-pc\` in my Claude folder on the PC, where other projects that
+use the PC read it too (docs/build-and-test-reference.md, When the PC is
+busy).
 
 ## At a glance: a commit
 
