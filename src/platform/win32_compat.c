@@ -324,6 +324,37 @@ static void obj_set_add(void *p)
     pthread_mutex_unlock(&g_obj_set_lock);
 }
 
+/* Take an object out of the set as it is freed, so a handle used after its
+ * close finds nothing and fails, as the comment above says it should, and
+ * the slot can be used again. The set is probed in a line, and a lookup
+ * stops at the first empty slot, so the slot can't just be emptied: each
+ * entry after it in the same run that may sit in the gap (its own slot is
+ * the gap's or before it, going round) moves back into it, and leaves the
+ * gap where it was. */
+static void obj_set_remove(void *p)
+{
+    size_t i, h = obj_hash(p), mask = W32_OBJ_SET - 1;
+    pthread_mutex_lock(&g_obj_set_lock);
+    for (i = 0; i < W32_OBJ_SET; i++) {
+        size_t gap = (h + i) & mask, j = gap, n;
+        if (!g_obj_set[gap]) break;              /* not in the set */
+        if (g_obj_set[gap] != p) continue;
+        for (n = 1; n < W32_OBJ_SET; n++) {
+            size_t home;
+            j = (j + 1) & mask;
+            if (!g_obj_set[j]) break;
+            home = obj_hash(g_obj_set[j]);
+            if (((j - home) & mask) >= ((j - gap) & mask)) {
+                g_obj_set[gap] = g_obj_set[j];
+                gap = j;
+            }
+        }
+        g_obj_set[gap] = NULL;
+        break;
+    }
+    pthread_mutex_unlock(&g_obj_set_lock);
+}
+
 /* Is this handle one of ours at all? NULL if not. */
 static w32_object *obj_any(HANDLE h)
 {
@@ -382,6 +413,7 @@ static void obj_release(w32_object *o)
     } else if (o->kind == K_FILEMAP) {
         if (o->fd >= 0) close(o->fd);
     }
+    obj_set_remove(o);
     pthread_mutex_destroy(&o->lock);
     pthread_cond_destroy(&o->cond);
     pthread_cond_destroy(&o->gate);
