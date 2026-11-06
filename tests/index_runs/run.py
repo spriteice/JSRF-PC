@@ -33,7 +33,7 @@ import tempfile
 
 if not sys.platform.startswith("linux"):
     print("index_runs: skipped, Linux only")
-    sys.exit(0)
+    sys.exit(77)   # skipped (tests/run_all.py)
 
 root = pathlib.Path(__file__).resolve().parents[2]
 cc = shlex.split(os.environ.get("CC", "gcc"))

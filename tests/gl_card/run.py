@@ -21,7 +21,7 @@ import tempfile
 
 if os.name == "nt":
     print("gl_card: skipped, Linux only (EGL)")
-    sys.exit(0)
+    sys.exit(77)   # skipped (tests/run_all.py)
 
 root = pathlib.Path(__file__).resolve().parents[2]
 gl = (root / "src/nv2a_gl/nv2a_gl.c").read_text(encoding="utf-8")

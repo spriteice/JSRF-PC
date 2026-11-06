@@ -23,7 +23,7 @@ import tempfile
 
 if not sys.platform.startswith("linux") or platform.machine() not in ("x86_64", "AMD64"):
     print("vc_hash: skipped, x86-64 Linux only")
-    sys.exit(0)
+    sys.exit(77)   # skipped (tests/run_all.py)
 
 root = pathlib.Path(__file__).resolve().parents[2]
 cc = shlex.split(os.environ.get("CC", "gcc"))

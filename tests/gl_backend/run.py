@@ -15,7 +15,7 @@ import tempfile
 
 if os.name == "nt":
     print("gl_backend: skipped, Linux only (EGL)")
-    sys.exit(0)
+    sys.exit(77)   # skipped (tests/run_all.py)
 
 root = pathlib.Path(__file__).resolve().parents[2]
 gl = root / "src/nv2a_gl"

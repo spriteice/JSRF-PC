@@ -194,6 +194,20 @@ def test_each_known_line_names_its_release(tmp_path, monkeypatch):
             run_all.known("known-failures.txt")
 
 
+def test_a_skipped_test_is_counted_apart(tmp_path, monkeypatch, capsys):
+    tests = tmp_path / "tests"
+    for name, code in (("passes", 0), ("skips", run_all.SKIPPED)):
+        (tests / name).mkdir(parents=True)
+        (tests / name / "run.py").write_text("import sys\nprint('%s: here')\nsys.exit(%d)\n" % (name, code))
+    for name in ("known-failures.txt", "asan-known.txt", "tsan.supp"):
+        (tests / name).write_text("")
+    monkeypatch.setattr(run_all, "root", tmp_path)
+    assert run_all.main([]) == 0
+    out = capsys.readouterr().out
+    assert "skip  skips" in out
+    assert "run_all: 1 passed, 1 skipped, 0 known failures, 0 failed" in out
+
+
 def test_each_tsan_group_names_its_release_or_design():
     supp = "\n".join([
         "# The file's own comment, with no entries.",

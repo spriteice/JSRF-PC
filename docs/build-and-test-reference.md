@@ -287,7 +287,9 @@ source and llvm-mingw for CI (`.github/ci/fetch.py`).
   the tests named. gl_backend, gl_aa, gl_card, index_runs, psh_consts and
   big_batch need EGL and OpenGL headers, and run only on Linux. The last
   three also need GCC.
-- Report what passed, and what didn't run and why.
+- Report what passed, and what didn't run and why. `tests/run_all.py`
+  counts a test that can't run on the machine as skipped, apart from those
+  that passed: its run.py says why and exits with 77.
 
 ## CI
 

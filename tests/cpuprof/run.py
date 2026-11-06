@@ -25,7 +25,7 @@ import tempfile
 
 if not sys.platform.startswith("linux"):
     print("cpuprof: Linux only, skipped")
-    raise SystemExit(0)
+    raise SystemExit(77)   # skipped (tests/run_all.py)
 
 root = pathlib.Path(__file__).resolve().parents[2]
 cc = shlex.split(os.environ.get("CC", "gcc"))

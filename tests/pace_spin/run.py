@@ -22,7 +22,7 @@ gl = (root / "src/nv2a_gl/nv2a_gl.c").read_text(encoding="utf-8")
 
 if not sys.platform.startswith("linux"):
     print("pace_spin: skipped (Linux only)")
-    raise SystemExit(0)
+    raise SystemExit(77)   # skipped (tests/run_all.py)
 
 stats = gl[gl.index("static struct {\n    uint64_t frames, late, restarts"):]
 stats = stats[:stats.index("} g_pace_st;") + len("} g_pace_st;")]

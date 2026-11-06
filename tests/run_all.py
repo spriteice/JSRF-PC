@@ -3,9 +3,11 @@
 
     python3 tests/run_all.py [--tsan | --asan | --coverage <dir>] [name...]
 
-With names, only those tests. Each test passes, fails, or fails in a way
-listed in tests/known-failures.txt: a known bug, still open, whose failure is
-reported but doesn't fail the run. Any other failure of a listed test does.
+With names, only those tests. Each test passes, fails, fails in a way
+listed in tests/known-failures.txt (a known bug, still open, whose failure is
+reported but doesn't fail the run; any other failure of a listed test does),
+or is skipped: it can't run on this machine, says why, and exits with
+SKIPPED (77), and the summary counts it apart from those that passed.
 The exit status is 1 if any test failed.
 
 Every line of tests/known-failures.txt and tests/asan-known.txt, and every
@@ -47,6 +49,7 @@ import time
 root = pathlib.Path(__file__).resolve().parents[1]
 THREADS = re.compile(r"pthread_create|CreateThread|std::thread")
 TIMEOUT = 600   # seconds for one test's run.py, all its cases
+SKIPPED = 77    # a run.py's exit status when its test can't run here
 
 
 # A release's name, as docs/versioning.md gives them: b2, b2.1, 1.0.
@@ -249,7 +252,7 @@ def main(argv):
         env["TEST_SANITIZER"] = "address"
     if coverage is not None:
         cc, cxx = env.get("CC", "gcc"), env.get("CXX", "g++")
-    passed, failed, known_seen = [], [], []
+    passed, failed, known_seen, skipped = [], [], [], []
     for test in tests:
         if coverage is not None:
             # Each test's counts in a folder of its own, as its programs'
@@ -300,6 +303,8 @@ def main(argv):
             verdict = "FAIL"
         elif code == 0:
             verdict = "known" if why_reported else "ok"
+        elif code == SKIPPED:
+            verdict = "skip"
         elif match:
             verdict = "known"
         else:
@@ -311,7 +316,7 @@ def main(argv):
             note += ", %d sanitizer report%s" % (count, "" if count == 1 else "s")
             if count != new:
                 note += ", %d known" % (count - new)
-        if code != 0:
+        if code not in (0, SKIPPED):
             note += ", no result" if code is None else ", exit %d" % code
         print("%-6s%-18s%s" % (verdict, test.name, note))
         if verdict == "known":
@@ -319,11 +324,12 @@ def main(argv):
         if verdict != "ok":
             for l in (out + reports).rstrip().splitlines():
                 print("      | " + l)
-        {"ok": passed, "known": known_seen, "FAIL": failed}[verdict].append(test.name)
+        {"ok": passed, "known": known_seen, "FAIL": failed, "skip": skipped}[verdict].append(test.name)
 
-    print("run_all%s: %d passed, %d known failures, %d failed%s" % (
+    print("run_all%s: %d passed, %d skipped, %d known failures, %d failed%s" % (
         " --tsan" if tsan else " --asan" if asan else " --coverage" if coverage else "",
-        len(passed), len(known_seen), len(failed), ": " + ", ".join(failed) if failed else ""))
+        len(passed), len(skipped), len(known_seen), len(failed),
+        ": " + ", ".join(failed) if failed else ""))
     if coverage is not None:
         return 0
     return 1 if failed else 0

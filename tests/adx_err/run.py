@@ -28,7 +28,7 @@ root = pathlib.Path(__file__).resolve().parents[2]
 cc = shlex.split(os.environ.get("CC", "gcc"))
 if not sys.platform.startswith("linux"):
     print("adx_err: skipped (Linux only)")
-    raise SystemExit(0)
+    raise SystemExit(77)   # skipped (tests/run_all.py)
 
 UPDATE = "[ADXREC] the sound manager's update runs on tid 2"
 LINE = ("[ADXREC] t=535.92 handle 0027D1C8 code -1: restart on tid 7, from 0013D41A,"

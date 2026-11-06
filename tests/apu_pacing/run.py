@@ -24,7 +24,7 @@ import tempfile
 
 if os.name == "nt":
     print("apu_pacing: skipped, POSIX only")
-    sys.exit(0)
+    sys.exit(77)   # skipped (tests/run_all.py)
 
 root = pathlib.Path(__file__).resolve().parents[2]
 cc = shlex.split(os.environ.get("CC", "gcc"))
