@@ -58,6 +58,7 @@ line for is "-". Standard library only.
 import re
 import sys
 
+XBOX_LINES = 480        # the Xbox's frame is 480 lines at 1x, at every shape
 HEADER = re.compile(r"^=== JSRF-PC (\S+)")
 DEV = re.compile(r"^\[DEV\] (\S+=\S*) from developer\.cfg$")
 PACE = re.compile(r"\[PACE\] (\d+) frames paced at the flip: (\d+) reached it late .*?flip to flip: "
@@ -199,7 +200,8 @@ def parse(path):
             elif s.startswith("[GL] ") and " render targets, " in s and not any(i.startswith("render scale") for i in run["info"]):
                 m = re.search(r" 1:(\d+)x(\d+)", s)
                 if m:
-                    run["info"].append(f"render scale {int(m.group(1)) / 640:g}x (target 1: {m.group(1)}x{m.group(2)})")
+                    # From the height: a widened frame is wider than 640 times the scale.
+                    run["info"].append(f"render scale {int(m.group(2)) / XBOX_LINES:g}x (target 1: {m.group(1)}x{m.group(2)})")
             if (s.startswith("[WIN] counting the display's refreshes") or s.startswith("[WIN] frames are paced by")
                     or s.startswith("[WIN] the display")) and len(run["display"]) < 12:
                 run["display"].append(s[6:])

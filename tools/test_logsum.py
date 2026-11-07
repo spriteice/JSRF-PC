@@ -276,6 +276,20 @@ def windows_run():
     ])
 
 
+def test_scale_at_a_wide_shape(tmp_path):
+    """A widened frame is as wide as its shape: the scale is its height's."""
+    rt = "src/nv2a_gl/nv2a_gfx_gl.c"
+    target = " %d:%ux%u%s%s %.1f MB"
+    log = tmp_path / "last-run.log"
+    log.write_text("".join([
+        render("port/main.c", "=== JSRF-PC %s", "c5d2b19-aspect"),
+        render(rt, "[GL] %d render targets, ", 1, 0, 1, 13.1, render(rt, target, 1, 3413, 1440, "", " +depth", 13.1)),
+        pace(300, 0, 0, 0, 0),
+    ]), encoding="utf-8")
+    run, = logsum.parse(str(log))
+    assert "render scale 3x (target 1: 3413x1440)" in run["info"]
+
+
 def test_a_log(tmp_path):
     log = tmp_path / "last-run.log"
     log.write_text(linux_run() + windows_run(), encoding="utf-8")
