@@ -1,7 +1,8 @@
 /*
  * Widescreen's maths: the shapes, the squeeze, the title's 2D overlays,
- * their clip, a framed 3D view, and a widened frame's raster and place in
- * the window (nv2a_wide.h).
+ * their clip, a framed 3D view, the HUD's marks and its move to the
+ * screen's edges, and a widened frame's raster and place in the window
+ * (nv2a_wide.h).
  */
 #include "nv2a_wide.h"
 #include "nv2a_scale.h"
@@ -99,6 +100,52 @@ float nv2a_wide_shift(uint32_t x0, uint32_t x1, uint32_t y0, uint32_t y1, float 
     if (x1 > x0 && y1 > y0 && x1 - x0 + 1 < NV2A_WIDE_FRAMED_MAX_W)
         return (1.0f - s) * (0.5f * (float)(x0 + x1 + 1) - 0.5f * (float)NV2A_SCALE_FRAME_W);
     return 0.0f;
+}
+
+/* A mark's side in its value's low byte. */
+enum { WIDE_HUD_CODE_NONE, WIDE_HUD_CODE_LEFT, WIDE_HUD_CODE_RIGHT };
+
+uint32_t nv2a_wide_hud_mark(unsigned piece, int side)
+{
+    uint32_t code = side < 0 ? WIDE_HUD_CODE_LEFT : side > 0 ? WIDE_HUD_CODE_RIGHT
+                                                             : WIDE_HUD_CODE_NONE;
+    return NV2A_WIDE_HUD_TAG | ((uint32_t)(piece & 0xFFu) << 8) | code;
+}
+
+int nv2a_wide_hud_read(uint32_t value, unsigned *piece, int *side)
+{
+    uint32_t code = value & 0xFFu;
+    if ((value & 0xFFFF0000u) != NV2A_WIDE_HUD_TAG || code > WIDE_HUD_CODE_RIGHT) return 0;
+    *piece = (value >> 8) & 0xFFu;
+    *side = code == WIDE_HUD_CODE_LEFT ? NV2A_WIDE_HUD_LEFT
+          : code == WIDE_HUD_CODE_RIGHT ? NV2A_WIDE_HUD_RIGHT : NV2A_WIDE_HUD_NONE;
+    return 1;
+}
+
+float nv2a_wide_hud_shift(int side, float s, int squeezed)
+{
+    float move;
+    if (side == NV2A_WIDE_HUD_NONE || !(s > 0.0f) || !(s < 1.0f)) return 0.0f;
+    move = (1.0f - s) * 0.5f * (float)NV2A_SCALE_FRAME_W;
+    if (squeezed) move /= s;
+    return side < 0 ? move : -move;     /* the shader takes it off x */
+}
+
+void nv2a_wide_hud_clip_x(uint32_t surf_w, float s, int side, uint32_t *x0, uint32_t *x1)
+{
+    float c = 0.5f * (float)surf_w, m, a, b;
+    if (!(s > 0.0f) || s > 1.0f) s = 1.0f;
+    m = side < 0 ? -(1.0f - s) * c : side > 0 ? (1.0f - s) * c : 0.0f;
+    a = floorf(c + s * ((float)*x0 - c) + m);
+    b = ceilf(c + s * ((float)*x1 - c) + m);
+    *x0 = a > 0.0f ? (a < (float)surf_w ? (uint32_t)a : surf_w) : 0u;
+    *x1 = b > 0.0f ? (b < (float)surf_w ? (uint32_t)b : surf_w) : 0u;
+}
+
+int nv2a_wide_hud_whole_view(float vp_scale_x)
+{
+    float w = fabsf(vp_scale_x);
+    return !(w > WIDE_VP_SCALE_MIN) || 2.0f * w >= (float)NV2A_WIDE_FRAMED_MAX_W;
 }
 
 void nv2a_wide_raster(uint32_t w, uint32_t h, uint32_t sc, float a,

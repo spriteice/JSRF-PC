@@ -4242,6 +4242,54 @@ void sub_00042EE0(void)
 }
 
 
+/* ---- the HUD at the screen's edges (widescreen_hud.h) ------------------------
+ * In widescreen the renderer squeezes the title's 2D into the middle 4:3 of
+ * the screen, the HUD with it, since the game places the HUD for a 4:3
+ * screen. Each HUD piece is drawn by one function, the slot +0xC of its
+ * class, which the frame calls once for each child of the HUD manager after
+ * the world is drawn; it fills its piece's own quad batch and draws it, and
+ * its model if it has one, before it returns. These functions are right for
+ * the console's screen, and the lifted code does what they do: nothing is
+ * wrong in them or in the recompiler, the runtime or the renderer, only
+ * widescreen gives the HUD a wider screen to be at the edges of. So these
+ * overrides mark the start and the end of a piece's draws in D3D's push
+ * buffer (widescreen_hud_begin and _end), and the renderer moves what is
+ * drawn between the marks to the piece's side (nv2a_wide.h). The marks are
+ * written as D3D writes a method (sub_0018EC80): at its device's put
+ * pointer, after its make-space call sub_001916B0 when the pointer is at the
+ * limit, which takes no arguments and returns the new put pointer. In 4:3,
+ * and on the screens the game keeps 4:3, nothing is marked.
+ * tests/widescreen_hud checks the marks and how they are written; that the
+ * piece then sits at the edge needs the game and the whole renderer, which
+ * is the test build's HUD step. */
+#include "widescreen_hud.h"
+#define D3D_MAKE_SPACE 0x001916B0u      /* D3D's make-space call (no arguments) */
+extern void sub_001916B0(void);
+static uint32_t d3d_make_space(void)
+{
+    return guest_call_cdecl(sub_001916B0, D3D_MAKE_SPACE, 0, NULL);
+}
+static int wide_hud_begin(int piece)
+{
+    return widescreen_hud_begin((uint8_t *)g_xbox_mem_offset, MEM32(D3D_DEVICE), piece,
+                                nv2a_wide_scene(), d3d_make_space);
+}
+static void wide_hud_end(int piece, int marked)
+{
+    widescreen_hud_end((uint8_t *)g_xbox_mem_offset, MEM32(D3D_DEVICE), piece, marked,
+                       d3d_make_space);
+}
+/* sub_001060B0: the health bar and its border (class 0x1D1F98), at the top
+ * right. */
+extern void sub_001060B0_gen(void);
+void sub_001060B0(void)
+{
+    int marked = wide_hud_begin(WIDE_HUD_HEALTH);
+    sub_001060B0_gen();
+    wide_hud_end(WIDE_HUD_HEALTH, marked);
+}
+
+
 /* ---- the camera -------------------------------------------------------------
  * Object 0x4C (class 0x1CD518) is the camera; sub_000A5070 its per-frame
  * update. It picks a mode from its target character's state (+0xE58, with

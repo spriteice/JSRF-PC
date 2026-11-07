@@ -2,11 +2,12 @@
  * Widescreen's maths (nv2a_wide.c): the shapes Display > Aspect ratio
  * offers and how they are saved, how much the Xbox's 4:3 frame squeezes a
  * wider view, which draws are the title's 2D overlays and are squeezed with
- * it, and where their window clip and a framed 3D view go then; and the
- * raster a widened frame is drawn at, so that neither axis is stretched
- * when it is shown, and where it goes in the window. The state
- * (whether widescreen is on, the shape, the scene the game side widened)
- * stays in nv2a_gl.c, which asks this.
+ * it, and where their window clip, a framed 3D view and the HUD (moved to
+ * the screen's edges) go then; and the raster a widened frame is drawn at,
+ * so that neither axis is stretched when it is shown, and where it goes in
+ * the window. The state (whether widescreen is on, the shape, the scene
+ * the game side widened, the HUD piece being drawn) stays in nv2a_gl.c,
+ * which asks this.
  *
  * Plain C, with nothing of GL's or SDL's, so a test links it
  * (tests/widescreen).
@@ -109,6 +110,51 @@ void nv2a_wide_clip_x(uint32_t surf_w, float s, uint32_t *x0, uint32_t *x1);
  * with its squeezed frame: how far, in the title's pixels. 0 for a clip that
  * is empty or as wide as the scene. */
 float nv2a_wide_shift(uint32_t x0, uint32_t x1, uint32_t y0, uint32_t y1, float s);
+
+/* The HUD at the screen's edges. The title places each HUD piece for its
+ * 4:3 screen, so squeezed it sits in the middle 4:3 with the rest of the 2D.
+ * The game side (port/widescreen_hud.c) marks the draws of each HUD piece,
+ * in the command stream and so in order with them, with the side of the
+ * screen the piece is on, and the renderer moves every draw between the
+ * marks, 2D and 3D, to that side's edge, with its clip. The mark is this
+ * method, past the highest the title's D3D writes (0x1EA4) and outside
+ * every range it works one out in. Its value is NV2A_WIDE_HUD_TAG with the
+ * piece and the side, so that anything else that arrives on the method is
+ * told apart and left alone. */
+#define NV2A_WIDE_HUD_METHOD 0x1FF0u
+#define NV2A_WIDE_HUD_TAG    0x48550000u   /* "HU" */
+
+/* A HUD piece's side; NONE is the end of its draws. */
+enum { NV2A_WIDE_HUD_LEFT = -1, NV2A_WIDE_HUD_NONE = 0, NV2A_WIDE_HUD_RIGHT = 1 };
+
+/* The mark's value for piece (0 to 255, which the log names) and side. */
+uint32_t nv2a_wide_hud_mark(unsigned piece, int side);
+
+/* A value read on NV2A_WIDE_HUD_METHOD as a mark: 1, with its piece and
+ * side, or 0 for a value that isn't one. */
+int nv2a_wide_hud_read(uint32_t value, unsigned *piece, int *side);
+
+/* How far a draw between the marks of a piece on side moves to that side's
+ * edge, as the wideShift the shader takes off its x (the title's pixels): a
+ * squeezed overlay (squeezed 1) by (1 - s) / s of the half width in its own
+ * pixels, and a 3D piece by (1 - s) of it, so either moves (1 - s) of the
+ * half width on screen, where the squeeze left that much between the 4:3
+ * edge and the screen's. 0 for no side and at s 1 (4:3). */
+float nv2a_wide_hud_shift(int side, float s, int squeezed);
+
+/* That draw's window clip, columns *x0 to *x1 (the far one exclusive) on a
+ * surface surf_w wide: squeezed about the centre as nv2a_wide_clip_x does,
+ * then moved with the piece, so the screen's own edge takes the 4:3 edge's
+ * place. The near edge down to a whole pixel, the far one up, and both
+ * inside 0 to surf_w. */
+void nv2a_wide_hud_clip_x(uint32_t surf_w, float s, int side, uint32_t *x0, uint32_t *x1);
+
+/* Whether a screen-space draw's viewport, of scale vp_scale_x (half its
+ * width), spans the whole frame, as one player's HUD does: as wide as
+ * NV2A_WIDE_FRAMED_MAX_W at least, or with no scale (the whole surface). A
+ * split screen's HUD is drawn in its player's narrower viewport, and isn't
+ * moved. */
+int nv2a_wide_hud_whole_view(float vp_scale_x);
 
 /* The raster a surface w x h is drawn at, at render scale sc, in the
  * device's pixels (*pw x *ph), and the shape it is shown at (*shape, width

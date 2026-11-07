@@ -4639,7 +4639,9 @@ static void surface_sync(void)
  * program (inputs 0x1F9B), and this squeezes them by the same s about the
  * centre, so they keep their shape and sit in the middle 4:3. A pass-through draw that spans (nearly)
  * the whole width -- a backdrop, a fade, the copy of the scene to the
- * display -- is left to fill the screen. RECOMP_WIDESCREEN=1/0 overrides
+ * display -- is left to fill the screen. The HUD's pieces, which the game
+ * side marks in the command stream, move from there to the screen's edges
+ * (nv2a_wide.h, NV2A_WIDE_HUD_METHOD). RECOMP_WIDESCREEN=1/0 overrides
  * whether the window's Display > Aspect ratio choice has it on. */
 static int g_wide = -1;
 void nv2a_set_wide_aspect(float a);
@@ -4727,7 +4729,25 @@ void nv2a_set_wide_aspect(float a)
 float nv2a_wide_aspect(void)  { wide_shape_init(); return g_wide_aspect; }
 float nv2a_wide_squeeze(void) { wide_shape_init(); return g_wide_s; }
 static int g_wide_squeeze;   /* this draw's 2D squeeze, set in do_draw */
-static float g_wide_shift;   /* this draw's framed-3D move, title pixels, ditto */
+static float g_wide_shift;   /* this draw's framed-3D or HUD move, title pixels, ditto */
+static int g_wide_hud;       /* the side its HUD piece moved it to, or none, ditto */
+/* The HUD piece being drawn, from the game side's marks (nv2a_wide.h,
+ * NV2A_WIDE_HUD_METHOD): its side, NV2A_WIDE_HUD_NONE between pieces, and
+ * which one, for the log. */
+static int g_hud_side = NV2A_WIDE_HUD_NONE;
+static unsigned g_hud_piece;
+/* The end of a displayed frame (present): a HUD piece's draws end there at
+ * the latest. One still open (the game side lost its end mark) ends, and
+ * says so once. */
+static void wide_hud_frame_end(void)
+{
+    static int told;
+    if (g_hud_side == NV2A_WIDE_HUD_NONE) return;
+    if (!told++)
+        fprintf(stderr, "[WIDE] HUD piece %u's draws hadn't ended by the frame's end: "
+                "ended there\n", g_hud_piece);
+    g_hud_side = NV2A_WIDE_HUD_NONE;
+}
 static Nv2aRenderState g_draw_rs;   /* the state this draw was given */
 static float g_wide_ext[4];  /* its x and y extent, for the draw log */
 
@@ -6117,6 +6137,26 @@ static void do_draw_body(void)
         uint32_t y1 = (S.wclip_v[0] >> 16) & 0xFFFu;
         g_wide_shift = nv2a_wide_shift(x0, x1, y0, y1, g_wide_s);
     }
+    /*
+     * The HUD at the screen's edges (nv2a_wide.h): between a HUD piece's
+     * marks, its draws -- its squeezed 2D and its 3D alike -- move to the
+     * edge of its side, by what the squeeze left between the 4:3 edge and
+     * the screen's, and their clip moves with them (the window clip, below).
+     * Only on the frame of a widened scene, and only where the piece has the
+     * whole view: a screen-space draw that isn't squeezed (a backdrop) stays,
+     * and so does a split screen's HUD, in its player's narrower viewport or
+     * framed view.
+     */
+    g_wide_hud = NV2A_WIDE_HUD_NONE;
+    if (g_hud_side != NV2A_WIDE_HUD_NONE && nv2a_wide_scene()
+        && nv2a_wide_frame_sized(S.clip_w, S.clip_h) && g_wide_shift == 0.0f) {
+        int screen = S.xf_mode != NV2A_XF_MODE_FIXED
+                  && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS;
+        if (!screen || (g_wide_squeeze && nv2a_wide_hud_whole_view(S.u.vp_scale[0]))) {
+            g_wide_hud = g_hud_side;
+            g_wide_shift = nv2a_wide_hud_shift(g_hud_side, g_wide_s, g_wide_squeeze);
+        }
+    }
 
     /* The vertices, where each attribute sits in them, and the value of
      * each one the program reads that has no array (see the device). */
@@ -6872,7 +6912,23 @@ static void do_draw_body(void)
            * with it, and an overlay stays inside the 4:3 screen it was
            * drawn for -- the title parks some just past its edges, out of
            * sight on the console and in plain view once squeezed. */
-          if (g_wide_squeeze || g_wide_shift != 0.0f) {
+          if (g_wide_hud != NV2A_WIDE_HUD_NONE) {
+              /* A HUD piece's: squeezed, then moved with it to its edge,
+               * where the screen's edge does what the 4:3 edge did. Its
+               * first draw is logged, once a piece. */
+              static unsigned char told[256];
+              uint32_t was0 = cx0, was1 = cx1;
+              nv2a_wide_hud_clip_x(g_fbo_w, g_wide_s, g_wide_hud, &cx0, &cx1);
+              clip = 1;
+              if (!told[g_hud_piece & 0xFFu]) {
+                  told[g_hud_piece & 0xFFu] = 1;
+                  fprintf(stderr, "[WIDE] HUD piece %u: drawn at the %s edge, %s, moved %.1f "
+                          "title pixels; clip x %u..%u -> %u..%u\n", g_hud_piece,
+                          g_wide_hud < 0 ? "left" : "right",
+                          g_wide_squeeze ? "2D squeezed" : "3D", (double)fabsf(g_wide_shift),
+                          was0, was1, cx0, cx1);
+              }
+          } else if (g_wide_squeeze || g_wide_shift != 0.0f) {
               nv2a_wide_clip_x(g_fbo_w, g_wide_s, &cx0, &cx1);
               clip = 1;
           }
@@ -9573,7 +9629,7 @@ static void do_draw_body(void)
                 "blend %d %04X/%04X depth %d/%d ctl %08X final %08X/%08X "
                 "| xf%u a9 off=%08X t%u s%u st%u u[%.3f..%.3f] v[%.3f..%.3f] "
                 "in%04X | sten %u f%X r%X m%X w%X op%X/%X/%X dfunc %X cm %08X | cull %d %X %X zc %X"
-                " | a0 off=%08X st%u p0 %.3f %.3f %.3f box %.3f..%.3f %.3f..%.3f %.3f..%.3f%s%s\n",
+                " | a0 off=%08X st%u p0 %.3f %.3f %.3f box %.3f..%.3f %.3f..%.3f %.3f..%.3f%s%s%s\n",
                 (long)S.flips, S.since_present, out_n, S.prim, slot,
                 S.u.vp_off[0] > 100.0f ? "3D" : "2D",
                 S.tex[0].offset, S.tex[0].width, S.tex[0].height,
@@ -9592,7 +9648,8 @@ static void do_draw_body(void)
                 S.attr[0].offset, S.attr[0].stride, p0[0], p0[1], p0[2],
                 plo[0], phi[0], plo[1], phi[1], plo[2], phi[2],
                 g_imm_drawing ? " | IMMEDIATE" : "",
-                g_wide_squeeze ? " | WIDE-SQUEEZED" : "");
+                g_wide_squeeze ? " | WIDE-SQUEEZED" : "",
+                g_wide_hud < 0 ? " | HUD-LEFT" : g_wide_hud > 0 ? " | HUD-RIGHT" : "");
         if (nv2a_wide_scene() && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS)
             fprintf(stderr, "[DRAW] f%ld %4u   2D ndc x[%.2f..%.2f] y[%.2f..%.2f]%s\n",
                     (long)S.flips, S.since_present, g_wide_ext[0], g_wide_ext[1],
@@ -10303,6 +10360,7 @@ static void present(int is_frame)
     uint32_t va, bpp, x, y;
     uint8_t *dst;
 
+    if (is_frame) wide_hud_frame_end();
     if (!g_ready || !g_fbo_w || !g_fbo_h || !S.color_offset) return;
     g_probe_now = mono_now();
     if (is_frame) { S.frames++; prof_report(); tcache_sweep(); tcache_verify(); aniso_take();
@@ -11880,6 +11938,20 @@ static void gl_method(uint32_t method, uint32_t param)
     case M_SET_CULL_FACE_ENABLE:  S.cull_enable = (int)param; break;
     case M_SET_CULL_FACE:         S.cull_face = (int)param; break;
     case M_SET_FRONT_FACE:        S.front_face = (int)param; break;
+
+    case NV2A_WIDE_HUD_METHOD:
+        /* A HUD piece's mark (nv2a_wide.h): the draws up to the next are
+         * its, on its side, or none. Any other value is left alone. */
+        { unsigned piece; int side;
+          if (nv2a_wide_hud_read(param, &piece, &side)) {
+              g_hud_side = side; g_hud_piece = piece;
+          } else {
+              static int told;
+              if (!told++)
+                  fprintf(stderr, "[WIDE] method 0x%04X came with 0x%08X, not a HUD mark: "
+                          "left alone\n", method, param);
+          } }
+        break;
 
     case M_FLIP_STALL:
         /*

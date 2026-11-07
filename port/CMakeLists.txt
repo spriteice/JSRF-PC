@@ -97,6 +97,7 @@ set(JSRF_SOURCES
     developer.c
     adx_err.c
     voice_follow.c
+    widescreen_hud.c
     resource_load.c
     cpuprof.c
     pcores.c

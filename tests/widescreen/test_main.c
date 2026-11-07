@@ -28,6 +28,16 @@
  *  10. Render scale's names follow the shape, and are nv2a_scale_names' at 4:3.
  *  11. F10 goes to 4:3 from every wide shape, and to Match screen from 4:3,
  *      so two presses come back to Match screen.
+ *  12. A HUD mark reads back as its piece and side, and a value that isn't
+ *      one (D3D's own no-operation values among them) doesn't.
+ *  13. Between a HUD piece's marks, a draw moves to its side's edge: a piece
+ *      at the 4:3 edge lands on the screen's edge at every wide shape,
+ *      squeezed 2D and widened 3D alike, and keeps its distance from it
+ *      squeezed; nothing moves at 4:3 or outside the marks.
+ *  14. Its clip is the middle 4:3 moved with it, so the screen's edge takes
+ *      the 4:3 edge's place, and a clip of its own moves the same way.
+ *  15. Only a view as wide as the frame (or with no scale) is one player's:
+ *      a split screen's half isn't.
  */
 #include <math.h>
 #include <stdio.h>
@@ -301,6 +311,105 @@ static void f10(void)
     }
 }
 
+static void hud_marks(void)
+{
+    static const unsigned pieces[] = { 0, 7, 255 };
+    static const int sides[] = { NV2A_WIDE_HUD_LEFT, NV2A_WIDE_HUD_NONE, NV2A_WIDE_HUD_RIGHT };
+    static const uint32_t others[] = { 0u, 1u, 2u, 5u, 8u, 9u, 0x48550003u, 0x48560001u,
+                                       0x00000102u, 0xFFFFFFFFu };
+    unsigned i, j, piece;
+    int side;
+    for (i = 0; i < sizeof pieces / sizeof pieces[0]; i++)
+        for (j = 0; j < sizeof sides / sizeof sides[0]; j++) {
+            piece = 999; side = 9;
+            CHECK(nv2a_wide_hud_read(nv2a_wide_hud_mark(pieces[i], sides[j]), &piece, &side));
+            CHECK(piece == pieces[i] && side == sides[j]);
+        }
+    CHECK(nv2a_wide_hud_mark(0, NV2A_WIDE_HUD_RIGHT) != nv2a_wide_hud_mark(0, NV2A_WIDE_HUD_LEFT));
+    for (i = 0; i < sizeof others / sizeof others[0]; i++)
+        CHECK(!nv2a_wide_hud_read(others[i], &piece, &side));
+    CHECK(NV2A_WIDE_HUD_METHOD > 0x1EA4u && (NV2A_WIDE_HUD_METHOD & 3u) == 0
+          && NV2A_WIDE_HUD_METHOD <= 0x1FFCu);
+}
+
+/* Where a draw at the title's x lands on the 640-wide screen once moved:
+ * the shader takes the move off x, and squeezes a 2D overlay about the
+ * centre after; a 3D piece comes out of the widened projection already at
+ * its squeezed place, and only moves. */
+static float hud_lands(float x, int side, float s, int squeezed)
+{
+    float w = nv2a_wide_hud_shift(side, s, squeezed);
+    if (squeezed) return 320.0f + s * (x - w - 320.0f);
+    return 320.0f + s * (x - 320.0f) - w;
+}
+
+static int near_px(float a, float b) { return fabsf(a - b) < 1e-3f; }
+
+static void hud_move(void)
+{
+    static const float shapes[] = { 1.6f, NV2A_WIDE_16_9, 64.0f / 27.0f, 32.0f / 9.0f };
+    unsigned i;
+    for (i = 0; i < sizeof shapes / sizeof shapes[0]; i++) {
+        float s = nv2a_wide_squeeze_of(shapes[i]);
+        /* the 4:3 edges to the screen's, 2D and 3D */
+        CHECK(near_px(hud_lands(640.0f, NV2A_WIDE_HUD_RIGHT, s, 1), 640.0f));
+        CHECK(near_px(hud_lands(0.0f, NV2A_WIDE_HUD_LEFT, s, 1), 0.0f));
+        CHECK(near_px(hud_lands(640.0f, NV2A_WIDE_HUD_RIGHT, s, 0), 640.0f));
+        CHECK(near_px(hud_lands(0.0f, NV2A_WIDE_HUD_LEFT, s, 0), 0.0f));
+        /* a piece 52 pixels in from the right (the health bar's end) keeps
+         * 52 squeezed pixels from it */
+        CHECK(near_px(hud_lands(588.0f, NV2A_WIDE_HUD_RIGHT, s, 1), 640.0f - 52.0f * s));
+        /* outside the marks, the squeeze alone */
+        CHECK(near_px(hud_lands(588.0f, NV2A_WIDE_HUD_NONE, s, 1), 320.0f + s * 268.0f));
+    }
+    CHECK(near_px(nv2a_wide_hud_shift(NV2A_WIDE_HUD_RIGHT, 0.75f, 1), -320.0f / 3.0f)); /* 106.67 */
+    CHECK(near_px(nv2a_wide_hud_shift(NV2A_WIDE_HUD_LEFT, 0.75f, 1), 320.0f / 3.0f));
+    CHECK(nv2a_wide_hud_shift(NV2A_WIDE_HUD_RIGHT, 0.75f, 0) == -80.0f);
+    CHECK(nv2a_wide_hud_shift(NV2A_WIDE_HUD_LEFT, 0.75f, 0) == 80.0f);
+    CHECK(nv2a_wide_hud_shift(NV2A_WIDE_HUD_RIGHT, 1.0f, 1) == 0.0f);    /* 4:3 */
+    CHECK(nv2a_wide_hud_shift(NV2A_WIDE_HUD_LEFT, 1.0f, 0) == 0.0f);
+    CHECK(nv2a_wide_hud_shift(NV2A_WIDE_HUD_NONE, 0.75f, 1) == 0.0f);    /* no piece */
+    CHECK(nv2a_wide_hud_shift(NV2A_WIDE_HUD_RIGHT, 0.0f, 1) == 0.0f);
+    CHECK(nv2a_wide_hud_shift(NV2A_WIDE_HUD_RIGHT, NAN, 1) == 0.0f);
+}
+
+static void hud_clip_is(uint32_t x0, uint32_t x1, float s, int side, uint32_t w0, uint32_t w1)
+{
+    uint32_t a = x0, b = x1;
+    nv2a_wide_hud_clip_x(640, s, side, &a, &b);
+    if (a != w0 || b != w1) {
+        printf("widescreen: FAIL HUD clip %u..%u by %.4f to side %d: %u..%u, not %u..%u\n",
+               x0, x1, (double)s, side, a, b, w0, w1);
+        s_failures++;
+    }
+}
+
+static void hud_clip(void)
+{
+    const float s16_10 = nv2a_wide_squeeze_of(1.6f), s21_9 = nv2a_wide_squeeze_of(64.0f / 27.0f);
+    hud_clip_is(0, 640, 0.75f, NV2A_WIDE_HUD_RIGHT, 160, 640);   /* the middle 4:3, moved */
+    hud_clip_is(0, 640, 0.75f, NV2A_WIDE_HUD_LEFT, 0, 480);
+    hud_clip_is(0, 640, 0.75f, NV2A_WIDE_HUD_NONE, 80, 560);     /* nv2a_wide_clip_x's */
+    hud_clip_is(0, 640, s21_9, NV2A_WIDE_HUD_RIGHT, 280, 640);
+    hud_clip_is(0, 640, s21_9, NV2A_WIDE_HUD_LEFT, 0, 360);
+    hud_clip_is(0, 640, s16_10, NV2A_WIDE_HUD_RIGHT, 106, 640);
+    hud_clip_is(0, 640, s16_10, NV2A_WIDE_HUD_LEFT, 0, 534);
+    hud_clip_is(393, 589, 0.75f, NV2A_WIDE_HUD_RIGHT, 454, 602); /* its own clip, moved */
+    hud_clip_is(0, 640, 1.0f, NV2A_WIDE_HUD_RIGHT, 0, 640);      /* 4:3 */
+    hud_clip_is(0, 640, NAN, NV2A_WIDE_HUD_LEFT, 0, 640);
+}
+
+static void hud_view(void)
+{
+    CHECK(nv2a_wide_hud_whole_view(320.0f));       /* one player */
+    CHECK(nv2a_wide_hud_whole_view(-320.0f));
+    CHECK(nv2a_wide_hud_whole_view(300.0f));       /* 600 wide */
+    CHECK(!nv2a_wide_hud_whole_view(299.0f));
+    CHECK(!nv2a_wide_hud_whole_view(160.0f));      /* a split screen's half */
+    CHECK(nv2a_wide_hud_whole_view(0.0f));         /* no scale: the whole surface */
+    CHECK(nv2a_wide_hud_whole_view(NAN));
+}
+
 int main(void)
 {
     shapes();
@@ -315,6 +424,10 @@ int main(void)
     fit();
     scale_names();
     f10();
+    hud_marks();
+    hud_move();
+    hud_clip();
+    hud_view();
     if (s_failures) {
         printf("widescreen: %d failed\n", s_failures);
         return 1;
