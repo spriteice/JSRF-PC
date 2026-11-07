@@ -50,6 +50,10 @@ extern "C" void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count)
     if (!q) fprintf(stderr, "[MENU] out of memory: %d rows not added\n", count);
 }
 
+/* For each row, whether the log has said its row to go under (menu.h,
+ * under) isn't there. */
+static ImVector<unsigned char> g_under_told;
+
 static void take_queued(void)
 {
     queue_lock();
@@ -57,6 +61,7 @@ static void take_queued(void)
         g_items.push_back(g_queued[i]);
     g_nqueued = 0;
     queue_unlock();
+    g_under_told.resize(g_items.Size, 0);
 }
 
 static void apply(const XBOX_MENU_ITEM *it, int pick)
@@ -176,6 +181,36 @@ static void draw_item(const XBOX_MENU_ITEM *it, const number_cols *cols)
     }
 }
 
+/* The row a row goes under (menu.h, under): the first of its menu with
+ * that label that isn't under another itself. NULL: none. */
+static const XBOX_MENU_ITEM *under_row(const XBOX_MENU_ITEM *it)
+{
+    for (const XBOX_MENU_ITEM &o : g_items)
+        if (o.menu == it->menu && !o.under && o.label && !strcmp(o.label, it->under)) return &o;
+    return NULL;
+}
+
+/* A row, then the rows under it, in the order they were added. */
+static void draw_row(const XBOX_MENU_ITEM *it, const number_cols *cols)
+{
+    draw_item(it, cols);
+    for (const XBOX_MENU_ITEM &u : g_items)
+        if (u.under && u.menu == it->menu && under_row(&u) == it) draw_item(&u, cols);
+}
+
+/* A row whose row to go under isn't there: drawn below the others, and said
+ * once. */
+static void draw_unplaced(const XBOX_MENU_ITEM *it, const number_cols *cols)
+{
+    int i = g_items.index_from_ptr(it);
+    if (!g_under_told[i]) {
+        g_under_told[i] = 1;
+        fprintf(stderr, "[MENU] %s: no row \"%s\" to go under; drawn below the others\n",
+                it->label ? it->label : "a row", it->under);
+    }
+    draw_item(it, cols);
+}
+
 static int menu_has_items(int m)
 {
     for (const XBOX_MENU_ITEM &it : g_items)
@@ -265,9 +300,15 @@ extern "C" void menu_build(int just_opened)
             g_last_menu = m;
             if (m == g_reopen) g_reopen = -1;
             number_cols cols = number_columns(m);
-            for (int pass = 0; pass < 2; pass++)       /* the rows marked last, below the rest */
-                for (const XBOX_MENU_ITEM &it : g_items)
-                    if (it.menu == m && (it.last != 0) == (pass == 1)) draw_item(&it, &cols);
+            /* The rows in the order added, each with those under it; then
+             * any whose row to go under isn't there; then the rows marked
+             * last, below the rest. */
+            for (const XBOX_MENU_ITEM &it : g_items)
+                if (it.menu == m && !it.under && !it.last) draw_row(&it, &cols);
+            for (const XBOX_MENU_ITEM &it : g_items)
+                if (it.menu == m && it.under && !under_row(&it)) draw_unplaced(&it, &cols);
+            for (const XBOX_MENU_ITEM &it : g_items)
+                if (it.menu == m && !it.under && it.last) draw_row(&it, &cols);
             ImGui::EndMenu();
         }
         /* The pad to the title it left, as ImGui does when Left / Right run

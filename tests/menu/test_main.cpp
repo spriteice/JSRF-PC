@@ -7,7 +7,10 @@
  * its owner's function -- through the confirmation box when it has one. Then
  * rows that arrive once the menu is up: from one of its own rows, and from
  * another thread while a box is open over the rows it was asked from -- all
- * above a row marked last, which arrived before any of them. Then
+ * above a row marked last, which arrived before any of them. Rows placed
+ * under another (under): two added before the row they name, drawn right
+ * below it in the order they were added; and one naming a row that isn't
+ * there, drawn below the late rows and above the last. Then
  * that nothing but the window (F1, Back) shuts it: B and Esc go back a level
  * at a time, to the bar and no further; a click outside the menus, in the
  * game or on the bar past its titles, shuts them all, back to the bar -- and
@@ -32,9 +35,13 @@ static int g_fail;
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); g_fail = 1; } } while (0)
 
 static int s_full, s_wide, s_scale = 1, s_exit, s_full_runs, s_wide_runs, s_picks = -1;
+/* Each row drawn that counts takes the next number, so the order they are
+ * drawn in can be told; Widescreen counts, to place the rows under it. */
+static int s_drawn_seq, s_wide_at;
+static float s_wide_y, s_under_y[2];
 static int  full_state(void)   { return s_full; }
 static void full_run(void)     { s_full = !s_full; s_full_runs++; }
-static int  wide_state(void)   { return s_wide; }
+static int  wide_state(void)   { s_wide_at = ++s_drawn_seq; s_wide_y = ImGui::GetCursorScreenPos().y; return s_wide; }
 static void wide_run(void);
 static int  scale_state(void)  { return s_scale; }
 static void scale_pick(int i)  { s_picks = i; }
@@ -43,20 +50,42 @@ static const char *about_text(void) { return "JSRF-PC test"; }
 static const char *const k_scales[] = { "1x  (640 x 480)", "2x  (1280 x 960)",
                                         "3x  (1920 x 1440)", "4x  (2560 x 1920)" };
 
-/* Late rows: toggles that count how often they are drawn. Each row drawn
- * takes the next number, so the order they are drawn in can be told. */
-static int s_late_drawn, s_drawn_seq, s_late_at, s_last_at;
-static int  late_state(void) { s_late_drawn++; s_late_at = ++s_drawn_seq; return 0; }
+/* Late rows: toggles that count how often they are drawn. */
+static int s_late_drawn, s_late_at, s_late_first_at, s_last_at;
+static int  late_state(void)
+{
+    s_late_at = ++s_drawn_seq;
+    if (s_late_drawn++ == 0) s_late_first_at = s_late_at;
+    return 0;
+}
 static void late_run(void)   { }
 static const XBOX_MENU_ITEM k_late = {
-    XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Late", late_state, late_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0 };
+    XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Late", late_state, late_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL };
 
 /* A row marked last, as Display's Skip intro: added before the others, and
  * drawn below them all. */
 static int  last_state(void) { s_last_at = ++s_drawn_seq; return 0; }
 static void last_run(void)   { }
 static const XBOX_MENU_ITEM k_last = {
-    XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Skip intro", last_state, last_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 1 };
+    XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Skip intro", last_state, last_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 1, NULL };
+
+/* Rows placed under another, as Display's Draw distance under Render scale:
+ * added in one call before the row they name, and one naming a row that
+ * isn't there. Render scale, a submenu, asks its state only when open, so
+ * where it is drawn is told by where the rows either side are. */
+static int s_under_at[2], s_unplaced_at;
+static int  under0_state(void)   { s_under_at[0] = ++s_drawn_seq; s_under_y[0] = ImGui::GetCursorScreenPos().y; return 0; }
+static int  under1_state(void)   { s_under_at[1] = ++s_drawn_seq; s_under_y[1] = ImGui::GetCursorScreenPos().y; return 0; }
+static int  unplaced_state(void) { s_unplaced_at = ++s_drawn_seq; return 0; }
+static void under_run(void)      { }
+static const XBOX_MENU_ITEM k_under[] = {
+    { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Under one", under0_state, under_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
+      0, 0, 0, NULL, 0, "Render scale" },
+    { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Under two", under1_state, under_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
+      0, 0, 0, NULL, 0, "Render scale" },
+    { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Unplaced", unplaced_state, under_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
+      0, 0, 0, NULL, 0, "No such row" },
+};
 
 /* Numbers, as the Controller menu's: a sensitivity in whole steps, and a
  * deadzone in 5% steps that starts between two (as the settings file may). */
@@ -186,31 +215,32 @@ int main(void)
      * on screen is the enum's, not the order rows arrive in. Before them
      * all, Display's last row. */
     const XBOX_MENU_ITEM developer[] = {
-        { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLE, "Log to file", log_state, log_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0 },
+        { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLE, "Log to file", log_state, log_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL },
         { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLES, "Logging", switches_state, NULL, switch_pick, k_switches, 3, NULL, NULL,
-          NULL, NULL, 0, 0, 0, NULL, 0 },
+          NULL, NULL, 0, 0, 0, NULL, 0, NULL },
         { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLE, "Asks (Restart)", asked_state, asked_run, NULL, NULL, 0, NULL,
-          "The game restarts to apply it.", NULL, NULL, 0, 0, 0, NULL, 0 },
+          "The game restarts to apply it.", NULL, NULL, 0, 0, 0, NULL, 0, NULL },
     };
     const XBOX_MENU_ITEM controller[] = {
         { XBOX_MENU_CONTROLLER, XBOX_ITEM_NUMBER, "Sensitivity", NULL, NULL, NULL, NULL, 0, NULL, NULL,
-          sens_value, sens_set, 1, 10, 1, "%g", 0 },
+          sens_value, sens_set, 1, 10, 1, "%g", 0, NULL },
         { XBOX_MENU_CONTROLLER, XBOX_ITEM_NUMBER, "Deadzone", NULL, NULL, NULL, NULL, 0, NULL, NULL,
-          dead_value, dead_set, 0, 100, 5, "%g%%", 0 },
+          dead_value, dead_set, 0, 100, 5, "%g%%", 0, NULL },
     };
     const XBOX_MENU_ITEM display[] = {
-        { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Fullscreen", full_state, full_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0 },
-        { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Widescreen (16:9)", wide_state, wide_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0 },
+        { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Fullscreen", full_state, full_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL },
+        { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Widescreen (16:9)", wide_state, wide_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL },
         { XBOX_MENU_DISPLAY, XBOX_ITEM_CHOICE, "Render scale", scale_state, NULL, scale_pick, k_scales, 4, NULL,
-          "The game restarts at the new scale, losing unsaved progress.", NULL, NULL, 0, 0, 0, NULL, 0 },
+          "The game restarts at the new scale, losing unsaved progress.", NULL, NULL, 0, 0, 0, NULL, 0, NULL },
     };
     const XBOX_MENU_ITEM file[] = {
-        { XBOX_MENU_FILE, XBOX_ITEM_INFO, "About", NULL, NULL, NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL, 0 },
-        { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0 },
+        { XBOX_MENU_FILE, XBOX_ITEM_INFO, "About", NULL, NULL, NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL },
+        { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL },
         { XBOX_MENU_FILE, XBOX_ITEM_ACTION, "Exit", NULL, exit_run, NULL, NULL, 0, NULL,
-          "Unsaved progress is lost.", NULL, NULL, 0, 0, 0, NULL, 0 },
+          "Unsaved progress is lost.", NULL, NULL, 0, 0, 0, NULL, 0, NULL },
     };
     xbox_MenuAdd(&k_last, 1);
+    xbox_MenuAdd(k_under, 3);
     xbox_MenuAdd(developer, 3);
     xbox_MenuAdd(controller, 2);
     xbox_MenuAdd(display, 3);
@@ -302,6 +332,18 @@ int main(void)
     CHECK(strstr(open_menu(), "Display") != NULL);
     CHECK(s_late_drawn == 1 + LATE_ROWS);
     CHECK(s_last_at > s_late_at);
+    /* The rows under Render scale: right after it, in their order, before
+     * the late rows -- after Widescreen with one row's height between, which
+     * is Render scale's; the one whose row isn't there after the late rows,
+     * above the last. */
+    fprintf(stderr, "widescreen #%d at y %.1f, under #%d and #%d at y %.1f and %.1f, first late #%d, "
+            "unplaced #%d, last #%d\n", s_wide_at, s_wide_y, s_under_at[0], s_under_at[1], s_under_y[0],
+            s_under_y[1], s_late_first_at, s_unplaced_at, s_last_at);
+    CHECK(s_under_at[0] == s_wide_at + 1 && s_under_at[1] == s_under_at[0] + 1);
+    CHECK(s_under_y[1] > s_under_y[0] && s_under_y[0] > s_wide_y);
+    CHECK(fabsf((s_under_y[0] - s_wide_y) - 2.0f * (s_under_y[1] - s_under_y[0])) < 0.5f);
+    CHECK(s_late_first_at == s_under_at[1] + 1);
+    CHECK(s_unplaced_at == s_late_at + 1 && s_last_at == s_unplaced_at + 1);
 
     /* About: Left walks the bar back to File, A opens it, A on About: a box.
      * OK brings File back. */
