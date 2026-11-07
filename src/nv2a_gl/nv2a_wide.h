@@ -111,6 +111,21 @@ void nv2a_wide_clip_x(uint32_t surf_w, float s, uint32_t *x0, uint32_t *x1);
  * is empty or as wide as the scene. */
 float nv2a_wide_shift(uint32_t x0, uint32_t x1, uint32_t y0, uint32_t y1, float s);
 
+/* A squeezed overlay in a viewport that isn't the whole frame -- a split
+ * screen's HUD, in its player's viewport -- lined up with the rest of the
+ * frame. Its x are the frame's pixels whatever its viewport, and its window
+ * clip is squeezed about the frame's centre (nv2a_wide_clip_x), but the
+ * shader squeezes it about its viewport's centre: one centred at 160 left
+ * its draws 40 title pixels outward of their clip at 16:9, and cut there.
+ * This is the wideShift (the title's pixels) that squeezes it about the
+ * frame's centre instead, for a viewport centred at centre and half wide
+ * (the title's pixels): (1 - s) times its centre's distance from the
+ * frame's, over s. 0 for one centred on the frame, at s 1 (4:3), for a
+ * centre that isn't a number, for a half width that isn't above 0 (a
+ * mirrored view), and for a viewport that isn't inside the frame (one in
+ * another surface's pixels). */
+float nv2a_wide_overlay_shift(float centre, float half, float s);
+
 /* The HUD at the screen's edges. The title places each HUD piece for its
  * 4:3 screen, so squeezed it sits in the middle 4:3 with the rest of the 2D.
  * The game side (port/widescreen_hud.c) marks the draws of each HUD piece,
@@ -163,7 +178,8 @@ void nv2a_wide_hud_clip_x(uint32_t surf_w, float s, int side, uint32_t *x0, uint
  * width), spans the whole frame, as one player's HUD does: as wide as
  * NV2A_WIDE_FRAMED_MAX_W at least, or with no scale (the whole surface). A
  * split screen's HUD is drawn in its player's narrower viewport, and isn't
- * moved; a piece with a viewport of its own (NV2A_WIDE_HUD_OWN_VIEW) is. */
+ * moved to the edge, only lined up with its view (nv2a_wide_overlay_shift);
+ * a piece with a viewport of its own (NV2A_WIDE_HUD_OWN_VIEW) is moved. */
 int nv2a_wide_hud_whole_view(float vp_scale_x);
 
 /* The raster a surface w x h is drawn at, at render scale sc, in the

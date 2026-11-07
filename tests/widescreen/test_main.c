@@ -41,6 +41,12 @@
  *      the 4:3 edge's place, and a clip of its own moves the same way.
  *  15. Only a view as wide as the frame (or with no scale) is one player's:
  *      a split screen's half isn't.
+ *  16. A squeezed overlay in a viewport narrower than the frame, a split
+ *      screen's HUD, is squeezed about the frame's centre and lands inside
+ *      its view's squeezed clip, at every wide shape: the left half's 0 to
+ *      320 at 80 to 320 at 16:9, the right half's at 320 to 560. A viewport
+ *      centred on the frame moves nothing, and nor does 4:3, a viewport
+ *      outside the frame, a mirrored one or NaN.
  */
 #include <math.h>
 #include <stdio.h>
@@ -441,6 +447,63 @@ static void hud_view(void)
     CHECK(nv2a_wide_hud_whole_view(NAN));
 }
 
+/* Where a squeezed overlay at the title's x, in a viewport centred at c
+ * and half wide, lands on the 640-wide screen: lined up, then squeezed
+ * about the viewport's centre, as the shader does. */
+static float overlay_lands(float x, float c, float half, float s)
+{
+    return c + s * (x - nv2a_wide_overlay_shift(c, half, s) - c);
+}
+
+/* Whether x is in the pixel that starts at p. */
+static int in_px(float x, float p) { return x > p - 1e-3f && x < p + 1.0f + 1e-3f; }
+
+static void split(void)
+{
+    static const float shapes[] = { 1.6f, NV2A_WIDE_16_9, 64.0f / 27.0f, 32.0f / 9.0f };
+    unsigned i;
+    for (i = 0; i < sizeof shapes / sizeof shapes[0]; i++) {
+        float s = nv2a_wide_squeeze_of(shapes[i]);
+        uint32_t a = 0, b = 320;
+        /* each half's edges where its clip goes (nv2a_wide_clip_x), and a
+         * point between where the whole frame's squeeze puts it */
+        nv2a_wide_clip_x(640, s, &a, &b);
+        CHECK(near_px(overlay_lands(0.0f, 160.0f, 160.0f, s), 320.0f - 320.0f * s));
+        CHECK(in_px(overlay_lands(0.0f, 160.0f, 160.0f, s), (float)a));
+        CHECK(in_px(overlay_lands(320.0f, 160.0f, 160.0f, s), (float)b - 1.0f));
+        CHECK(near_px(overlay_lands(640.0f, 480.0f, 160.0f, s), 320.0f + 320.0f * s));
+        CHECK(near_px(overlay_lands(320.0f, 480.0f, 160.0f, s), 320.0f));
+        CHECK(near_px(overlay_lands(100.0f, 160.0f, 160.0f, s), 320.0f + s * (100.0f - 320.0f)));
+        CHECK(near_px(overlay_lands(500.0f, 480.0f, 160.0f, s), 320.0f + s * 180.0f));
+        /* a quarter's view, and the frame's own */
+        CHECK(near_px(overlay_lands(50.0f, 160.0f, 160.0f, s),
+                      overlay_lands(50.0f, 320.0f, 320.0f, s)));
+        CHECK(nv2a_wide_overlay_shift(320.0f, 320.0f, s) == 0.0f);
+        CHECK(nv2a_wide_overlay_shift(320.0f, 160.0f, s) == 0.0f);   /* a top or bottom half */
+    }
+    /* at 16:9: the left half's 0 to 320 at 80 to 320, 53.3 title pixels */
+    CHECK(near_px(nv2a_wide_overlay_shift(160.0f, 160.0f, 0.75f), -160.0f / 3.0f));
+    CHECK(near_px(nv2a_wide_overlay_shift(480.0f, 160.0f, 0.75f), 160.0f / 3.0f));
+    CHECK(near_px(overlay_lands(0.0f, 160.0f, 160.0f, 0.75f), 80.0f));
+    CHECK(near_px(overlay_lands(320.0f, 160.0f, 160.0f, 0.75f), 320.0f));
+    CHECK(near_px(overlay_lands(640.0f, 480.0f, 160.0f, 0.75f), 560.0f));
+    clip_is(0, 320, 0.75f, 80, 320);
+    clip_is(320, 640, 0.75f, 320, 560);
+    CHECK(nv2a_wide_overlay_shift(160.0f, 160.0f, 1.0f) == 0.0f);     /* 4:3 */
+    CHECK(nv2a_wide_overlay_shift(160.0f, 160.0f, NAN) == 0.0f);
+    CHECK(nv2a_wide_overlay_shift(160.0f, 160.0f, 0.0f) == 0.0f);
+    CHECK(nv2a_wide_overlay_shift(NAN, 160.0f, 0.75f) == 0.0f);
+    CHECK(nv2a_wide_overlay_shift(160.0f, NAN, 0.75f) == 0.0f);
+    CHECK(nv2a_wide_overlay_shift(160.0f, -160.0f, 0.75f) == 0.0f);   /* mirrored */
+    CHECK(nv2a_wide_overlay_shift(160.0f, 0.0f, 0.75f) == 0.0f);      /* no scale */
+    CHECK(nv2a_wide_overlay_shift(1280.0f, 160.0f, 0.75f) == 0.0f);   /* another surface's */
+    CHECK(nv2a_wide_overlay_shift(500.0f, 160.0f, 0.75f) == 0.0f);    /* past the frame */
+    CHECK(nv2a_wide_overlay_shift(150.0f, 160.0f, 0.75f) == 0.0f);
+    CHECK(nv2a_wide_overlay_shift(160.5f, 160.0f, 0.75f) != 0.0f);    /* a pixel's slack */
+    CHECK(nv2a_wide_overlay_shift(159.5f, 160.0f, 0.75f) != 0.0f);
+    CHECK(nv2a_wide_overlay_shift(160.0f, INFINITY, 0.75f) == 0.0f);
+}
+
 int main(void)
 {
     shapes();
@@ -459,6 +522,7 @@ int main(void)
     hud_move();
     hud_clip();
     hud_view();
+    split();
     if (s_failures) {
         printf("widescreen: %d failed\n", s_failures);
         return 1;

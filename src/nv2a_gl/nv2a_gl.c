@@ -6139,6 +6139,34 @@ static void do_draw_body(void)
         uint32_t y1 = (S.wclip_v[0] >> 16) & 0xFFFu;
         g_wide_shift = nv2a_wide_shift(x0, x1, y0, y1, g_wide_s);
     }
+    float framed = g_wide_shift;   /* the framed rule's move, before any other */
+    /*
+     * A squeezed overlay in a viewport narrower than the frame -- a split
+     * screen's HUD, in its player's viewport -- squeezed about the frame's
+     * centre, not its viewport's (nv2a_wide_overlay_shift): its x are the
+     * frame's pixels, and its clip, below, is squeezed about the frame's
+     * centre. Squeezed about its viewport's, each player's HUD sat 40 title
+     * pixels outward of its view at 16:9, and was cut at the view's edge.
+     * One player's viewport is the frame, and moves nothing. A HUD piece
+     * moved to its edge, below, takes the place of this.
+     */
+    if (g_wide_squeeze) {
+        float centre = S.u.vp_off[0] - NV2A_D3D_NUDGE;
+        g_wide_shift = nv2a_wide_overlay_shift(centre, S.u.vp_scale[0], g_wide_s);
+        if (g_wide_shift != 0.0f) {
+            /* Each viewport's first, up to eight of them. */
+            static float told[8];
+            static unsigned n_told;
+            unsigned k = 0;
+            while (k < n_told && told[k] != centre) k++;
+            if (k == n_told && n_told < 8) {
+                told[n_told++] = centre;
+                fprintf(stderr, "[WIDE] 2D in a viewport centred at %.1f, %.1f wide: squeezed "
+                        "about the frame's centre, moved %.1f title pixels\n",
+                        (double)centre, 2.0 * (double)S.u.vp_scale[0], (double)g_wide_shift);
+            }
+        }
+    }
     /*
      * The HUD at the screen's edges (nv2a_wide.h): between a HUD piece's
      * marks, its draws -- its squeezed 2D and its 3D alike -- move to the
@@ -6146,15 +6174,16 @@ static void do_draw_body(void)
      * the screen's, and their clip moves with them (the window clip, below).
      * Only on the frame of a widened scene, and only where the piece has the
      * whole view: a screen-space draw that isn't squeezed (a backdrop) stays,
-     * and so does a split screen's HUD, in its player's narrower viewport or
-     * framed view. A piece in a viewport of its own (NV2A_WIDE_HUD_OWN_VIEW,
-     * a strip its digits roll through) fills that viewport, so its 2D is
-     * squeezed whatever its span, and moves from that viewport's centre: its
-     * x is the frame's, but the shader squeezes it about the viewport's.
+     * and so does a split screen's HUD, in its player's narrower viewport
+     * (lined up with it, above) or framed view. A piece in a viewport of its
+     * own (NV2A_WIDE_HUD_OWN_VIEW, a strip its digits roll through) fills
+     * that viewport, so its 2D is squeezed whatever its span, and moves from
+     * that viewport's centre: its x is the frame's, but the shader squeezes
+     * it about the viewport's.
      */
     g_wide_hud = NV2A_WIDE_HUD_NONE;
     if (g_hud_side != NV2A_WIDE_HUD_NONE && nv2a_wide_scene()
-        && nv2a_wide_frame_sized(S.clip_w, S.clip_h) && g_wide_shift == 0.0f) {
+        && nv2a_wide_frame_sized(S.clip_w, S.clip_h) && framed == 0.0f) {
         int screen = S.xf_mode != NV2A_XF_MODE_FIXED
                   && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS;
         int own = screen && (g_hud_flags & NV2A_WIDE_HUD_OWN_VIEW)

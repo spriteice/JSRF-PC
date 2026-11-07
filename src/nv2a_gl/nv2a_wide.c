@@ -102,6 +102,17 @@ float nv2a_wide_shift(uint32_t x0, uint32_t x1, uint32_t y0, uint32_t y1, float 
     return 0.0f;
 }
 
+float nv2a_wide_overlay_shift(float centre, float half, float s)
+{
+    const float w = (float)NV2A_SCALE_FRAME_W;
+    /* A pixel's slack at each side of the frame; every comparison false for
+     * NaN. */
+    if (!(s > 0.0f) || !(s < 1.0f) || !(half > WIDE_VP_SCALE_MIN)
+        || !(centre - half >= -1.0f) || !(centre + half <= w + 1.0f))
+        return 0.0f;
+    return (1.0f - s) * (centre - 0.5f * w) / s;
+}
+
 /* A mark's side in its value's low byte, with the own-viewport flag in the
  * byte's top bit. */
 enum { WIDE_HUD_CODE_NONE, WIDE_HUD_CODE_LEFT, WIDE_HUD_CODE_RIGHT };
