@@ -66,22 +66,6 @@ cases = {
     "centre_60_30": ("freecam=1\nautocentre=3\n", ["auto centre High"]),
     "centre_30_12": ("freecam=1\nautocentre=4\n", ["auto centre Aggressive"]),
     "centre_0_0_bad": ("freecam=1\nautocentre=5\n", ["autocentre=5 is outside 0 to 4; using 0", "auto centre Off"]),
-    "wall": ("freecam=1\n", ["as the game put it back behind the player"]),
-    "across": ("freecam=1\n", ["as the game put it back behind the player"]),
-    # freecam_clear against a made-up world (test_main.c): by 0 nothing, 1 the
-    # eye's line, 2 coming in, 3 no room, 4 moving across, 5 as near as it goes
-    "clear_open": (None, ["clear_open: share 1.0000, 0.00 across, by 0, 5 lines"]),
-    "clear_back": (None, ["clear_back: share 0.6000, 0.00 across, by 1"]),
-    "clear_floor": (None, ["clear_floor: share 1.0000", "by 4"]),
-    "clear_room_corner": (None, ["clear_room_corner: share 1.0000", "by 4"]),
-    "clear_alongside": (None, ["clear_alongside: share 1.0000", "by 4"]),
-    "clear_block_edge": (None, ["clear_block_edge: share 1.0000", "by 4"]),
-    "clear_corridor": (None, ["clear_corridor: share 0.58", "by 4"]),
-    "clear_beside_player": (None, ["clear_beside_player: share 1.0000, 0.00 across, by 0, 5 lines"]),
-    "clear_pole": (None, ["clear_pole: share 1.0000, 0.00 across, by 0, 5 lines"]),
-    "clear_gap_behind": (None, ["clear_gap_behind: share 0.", "by 2"]),
-    "clear_narrow": (None, ["clear_narrow: share 1.0000, 0.00 across, by 3"]),
-    "clear_hugging": (None, ["clear_hugging: share 0.2", "by 5"]),
 }
 
 with tempfile.TemporaryDirectory(prefix="freecam-") as directory:

@@ -1276,6 +1276,7 @@ void sub_0017CAB0(void)
  * ====================================================================== */
 #include "xinput_xbox.h"
 #include "freecam.h"
+#include "camera_walls.h"
 #include "intro.h"
 #define XPP_TYPE_GAMEPAD 0x001BC860u
 #define XPP_HANDLE_BASE  0x58580000u
@@ -4649,7 +4650,7 @@ void sub_000A5070(void)
  * camera sets it. So a surface that runs along the view -- a half pipe's
  * curve, a bump in the ground -- can cut into it while the line stays clear,
  * or meet it where the eye sits on the surface, as it does wherever the
- * eye's line meets a wall. freecam_clear (port/freecam.c) tests the eye's
+ * eye's line meets a wall. camwall_clear (port/camera_walls.c) tests the eye's
  * line and lines across the view where it starts, and when a surface cuts
  * across it, moves the eye across, away from it, or else brings it in to
  * where lines from the target to the view's corners are clear. It keeps the
@@ -4658,7 +4659,7 @@ void sub_000A5070(void)
 extern void sub_00018260(void);
 extern void sub_000194B0(void);
 /* How much of the line from a to b is open, 0 to 1: up to the nearest hit. */
-static double freecam_wall_line(uint32_t cam, uint32_t scr, const double a[3], const double b[3])
+static double camwall_game_line(uint32_t cam, uint32_t scr, const double a[3], const double b[3])
 {
     uint8_t *m = (uint8_t *)g_xbox_mem_offset;
     const uint32_t lim = 64u << 20;
@@ -4693,16 +4694,19 @@ static double freecam_wall_line(uint32_t cam, uint32_t scr, const double a[3], c
     along /= len2;
     return along < 0 ? 0 : along > 1 ? 1 : along;
 }
-/* freecam_clear's line test: the scratch on the guest stack, for this camera. */
-struct freecam_line_at { uint32_t cam, scr; };
-static double freecam_line(void *ctx, const double a[3], const double b[3])
+/* camwall_clear's line test: the scratch on the guest stack, for this camera. */
+struct camwall_line_at { uint32_t cam, scr; };
+static double camwall_line(void *ctx, const double a[3], const double b[3])
 {
-    const struct freecam_line_at *at = (const struct freecam_line_at *)ctx;
-    return freecam_wall_line(at->cam, at->scr, a, b);
+    const struct camwall_line_at *at = (const struct camwall_line_at *)ctx;
+    return camwall_game_line(at->cam, at->scr, a, b);
 }
-static void freecam_walls(uint32_t cam)
+/* The free camera's eye after walls, kept from one frame to the next, and
+ * started again when the free camera starts again (FREECAM_STARTED). */
+static struct camwall s_freecam_walls = CAMWALL_START;
+static void freecam_walls(uint32_t cam, struct camwall *w)
 {
-    static const char *const by_text[] = {           /* freecam.h's FREECAM_WALL_ */
+    static const char *const by_text[] = {           /* camera_walls.h's CAMWALL_ */
         "with nothing in the way", "by the eye's line", "by a corner of the view",
         "by the eye's line (the corners have no room)", "for a corner of the view",
         "as near as it goes (the eye's line meets a wall by the player)" };
@@ -4711,7 +4715,7 @@ static void freecam_walls(uint32_t cam)
     const float *tgt = cf + CAM_TARGET / 4;
     float *eye = cf + CAM_EYE / 4;
     uint32_t sv_ecx = g_ecx;
-    struct freecam_line_at at;
+    struct camwall_line_at at;
     double u[3], need[3], push[3], d, half, ahead, hw, hh, open, eased;
     int k, by;
     /* The camera device, as the widescreen re-set checks it: not set yet,
@@ -4740,16 +4744,16 @@ static void freecam_walls(uint32_t cam)
     at.scr = g_esp;
     /* How far out it can be, and how far across there; then where it goes
      * this frame -- in at once, back out by degrees after a moment
-     * (port/freecam.c) -- and, when that is short of it, its view there
+     * (port/camera_walls.c) -- and, when that is short of it, its view there
      * tested too, with how far across it moves there; then how far across
      * this frame, the same way. */
-    open = freecam_clear(tgt, eye, 1.0, ahead, hw, hh, freecam_line, &at, need, &by);
-    eased = freecam_wall(open);
+    open = camwall_clear(tgt, eye, 1.0, ahead, hw, hh, camwall_line, &at, need, &by);
+    eased = camwall_share(w, open);
     if (eased < open) {
-        double there = freecam_clear(tgt, eye, eased, ahead, hw, hh, freecam_line, &at, need, &by);
-        if (there < eased) eased = freecam_wall(there);
+        double there = camwall_clear(tgt, eye, eased, ahead, hw, hh, camwall_line, &at, need, &by);
+        if (there < eased) eased = camwall_share(w, there);
     }
-    freecam_across(tgt, eye, eased, need, ahead, hw, hh, freecam_line, &at, push);
+    camwall_across(w, tgt, eye, eased, need, ahead, hw, hh, camwall_line, &at, push);
     g_ecx = sv_ecx;
     g_esp += CAM_WALL_LOCALS + CAM_WALL_ENDS;
     if (!(eased < 1) && push[0] == 0 && push[1] == 0 && push[2] == 0) return;
@@ -4762,7 +4766,7 @@ static void freecam_walls(uint32_t cam)
                     pad_now(), eased * 100, d,
                     sqrt(push[0] * push[0] + push[1] * push[1] + push[2] * push[2]),
                     (eased < open || push[0] != need[0] || push[1] != need[1] || push[2] != need[2])
-                        && by == FREECAM_WALL_CLEAR ? "waiting or easing back out" : by_text[by],
+                        && by == CAMWALL_CLEAR ? "waiting or easing back out" : by_text[by],
                     eye[0], eye[1], eye[2]);
         }
     }
@@ -4774,6 +4778,7 @@ void sub_000A6100(void)
     const uint32_t lim = 64u << 20;
     uint32_t cam = g_ecx, who = 0, asked = 0;
     float *cf, eye[3];
+    int placed;
     if (cam >= 0x10000u && cam + 0x240u < lim) {
         who = *(uint32_t *)(m + cam + CAM_FOLLOWS);
         if (who >= 0x10000u && who + 0x1000u < lim) asked = *(uint32_t *)(m + who + CHR_CAM_BEHIND);
@@ -4781,12 +4786,13 @@ void sub_000A6100(void)
     sub_000A6100_gen();
     if (cam < 0x10000u || cam + 0x240u >= lim || !cam_pad_steered(m, cam, 1)) return;
     cf = (float *)(m + cam);
-    if (!freecam_orbit(cam, ((const uint32_t *)cf)[CAM_MODE / 4], cf + CAM_TARGET / 4,
-                       cf + CAM_SMOOTH_EYE / 4, asked && !*(uint32_t *)(m + who + CHR_CAM_BEHIND),
-                       eye))
-        return;
+    placed = freecam_orbit(cam, ((const uint32_t *)cf)[CAM_MODE / 4], cf + CAM_TARGET / 4,
+                           cf + CAM_SMOOTH_EYE / 4, asked && !*(uint32_t *)(m + who + CHR_CAM_BEHIND),
+                           eye);
+    if (placed == FREECAM_OFF) return;
+    if (placed == FREECAM_STARTED) camwall_reset(&s_freecam_walls);
     memcpy(cf + CAM_EYE / 4, eye, sizeof eye);
-    freecam_walls(cam);
+    freecam_walls(cam, &s_freecam_walls);
 }
 
 /* ---- camera call counters (JSRF_CAM_LOG=1): which camera methods and mode

@@ -92,6 +92,7 @@ set(JSRF_SOURCES
     main.c
     recomp_manual.c
     freecam.c
+    camera_walls.c
     intro.c
     audio.c
     developer.c

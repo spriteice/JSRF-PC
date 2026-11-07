@@ -74,19 +74,6 @@ static const struct { int wait; double ease; } k_centre[] = {
 #define FREECAM_CENTRE_LEVELS ((int)(sizeof k_centre / sizeof k_centre[0]))
 _Static_assert(sizeof k_centre_names / sizeof k_centre_names[0] == FREECAM_CENTRE_LEVELS,
                "a name for each level");
-/* After a wall (freecam_wall): game frames the eye stays where the wall put
- * it, once nothing brings it further in, before it goes back out -- a third
- * of a second, so a wall that comes and goes, as in a tight space, does not
- * shake it in and out -- and then the share of the way back out it closes
- * each frame. 1/10 brings it two thirds of the way in 11 frames, about a
- * fifth of a second, and nearly all of it in half a second. */
-#define FREECAM_WALL_HOLD 20
-#define FREECAM_WALL_EASE 10.0
-/* How many times freecam_clear moves the eye across, and then brings it
- * in, for the corners of the view before it takes it that neither clears
- * them (a space narrower than the view). Each time costs four or five line
- * tests. */
-#define FREECAM_WALL_TRIES 3
 
 static const double k_rad = 3.14159265358979323846 / 180.0;
 
@@ -117,10 +104,6 @@ static int s_follow_ran;        /* the follow camera ran since freecam_frame */
 static int s_cam_ran;           /* and s_cam's update did */
 static int s_held;              /* s_cam's update did not run last frame */
 static int s_idle;              /* frames the stick has been let go, up to the level's wait */
-static double s_wall = 1.0;     /* the share of its distance the eye had last frame, after walls */
-static int s_wall_wait = FREECAM_WALL_HOLD; /* frames since a wall last brought it in, up to the hold */
-static double s_across[3];      /* how far across the eye moved last frame, after walls */
-static int s_across_wait = FREECAM_WALL_HOLD; /* frames since a wall last moved it across, up to the hold */
 static short s_stick[4][2];     /* each port's right stick, as last read */
 static uint32_t s_cam;          /* the camera yaw and pitch are for; 0: start them again */
 static double s_yaw, s_pitch;   /* radians */
@@ -226,11 +209,12 @@ int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float s
 {
     const double pmax = FREECAM_PITCH_MAX_DEG * k_rad, step = FREECAM_STEP_DEG * k_rad;
     double v[3], d, x, y, cp, gyaw, gpitch;
+    int again = 0;
     s_follow_ran = 1;
-    if (!s_on) return 0;
+    if (!s_on) return FREECAM_OFF;
     v[0] = seye[0] - tgt[0]; v[1] = seye[1] - tgt[1]; v[2] = seye[2] - tgt[2];
     d = sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-    if (!(d > 0)) return 0;
+    if (!(d > 0)) return FREECAM_OFF;
     /* The game's own view. Left-handed, y up (as auto_step steers): the view
      * faces from the eye to the target, heading atan2(x, z). */
     gyaw = atan2(-v[0], -v[2]);
@@ -239,10 +223,7 @@ int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float s
         s_yaw = gyaw;
         s_pitch = gpitch;
         s_idle = 0;
-        s_wall = 1.0;
-        s_wall_wait = FREECAM_WALL_HOLD;
-        s_across[0] = s_across[1] = s_across[2] = 0;
-        s_across_wait = FREECAM_WALL_HOLD;
+        again = 1;
         fprintf(stderr, "[FREECAM] following camera %08X (mode %u) from heading %.0f, pitch %.0f%s\n",
                 cam, mode, s_yaw / k_rad, s_pitch / k_rad,
                 cam == s_cam ? ", as the game put it back behind the player" : "");
@@ -266,219 +247,7 @@ int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float s
     eye[0] = (float)(tgt[0] - d * cp * sin(s_yaw));
     eye[1] = (float)(tgt[1] + d * sin(s_pitch));
     eye[2] = (float)(tgt[2] - d * cp * cos(s_yaw));
-    return 1;
-}
-
-/* Where the view starts for an eye at share s of u from tgt, moved across
- * by p: ahead of the eye, toward the target (f), and its corner on side
- * (sx, sy) there. */
-static void view_corner(const float tgt[3], const double u[3], double s, const double p[3],
-                        double ahead, const double f[3], double sx, const double rt[3],
-                        double sy, const double up[3], double c[3])
-{
-    int k;
-    for (k = 0; k < 3; k++)
-        c[k] = tgt[k] + s * u[k] + p[k] + ahead * f[k] + sx * rt[k] + sy * up[k];
-}
-
-/* Whether a surface cuts across the view where it starts, for an eye at
- * share s moved across by p: a line from its middle, on the eye's line, to
- * each corner (i: bit 0 right, bit 1 up). t[i] is how much of that line is
- * open; returns the least. */
-static double view_cuts(const float tgt[3], const double u[3], double s, const double p[3],
-                        double ahead, const double f[3], double half_w, const double rt[3],
-                        double half_h, const double up[3], freecam_line_fn line, void *ctx,
-                        double t[4])
-{
-    double m[3], c[3], least = 1.0;
-    int i;
-    view_corner(tgt, u, s, p, ahead, f, 0, rt, 0, up, m);
-    for (i = 0; i < 4; i++) {
-        view_corner(tgt, u, s, p, ahead, f, (i & 1) ? half_w : -half_w, rt,
-                    (i & 2) ? half_h : -half_h, up, c);
-        t[i] = line(ctx, m, c);
-        least = fmin(least, t[i]);
-    }
-    return least;
-}
-
-/* The view, for an eye at eye looking at tgt: u from tgt to the eye and d
- * its length; it faces f, from the eye to the target; left-handed, y up:
- * right of it rt (as auto_step), and up, square to both. 0 when there is
- * none. freecam keeps the pitch short of straight up or down, so right is
- * never nothing. */
-static int view_frame(const float tgt[3], const float eye[3], double u[3], double *d,
-                      double f[3], double rt[3], double up[3])
-{
-    double rl;
-    int k;
-    for (k = 0; k < 3; k++) u[k] = eye[k] - tgt[k];
-    *d = sqrt(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]);
-    if (!(*d > 0)) return 0;
-    for (k = 0; k < 3; k++) f[k] = -u[k] / *d;
-    rl = sqrt(f[2] * f[2] + f[0] * f[0]);
-    if (!(rl > 0)) return 0;
-    rt[0] = f[2] / rl; rt[1] = 0; rt[2] = -f[0] / rl;
-    up[0] = f[1] * rt[2] - f[2] * rt[1];
-    up[1] = f[2] * rt[0] - f[0] * rt[2];
-    up[2] = f[0] * rt[1] - f[1] * rt[0];
-    return 1;
-}
-
-double freecam_clear(const float tgt[3], const float eye[3], double most, double ahead,
-                     double half_w, double half_h, freecam_line_fn line, void *ctx,
-                     double push[3], int *by)
-{
-    static const double none[3] = { 0, 0, 0 };
-    double a[3], b[3], u[3], f[3], rt[3], up[3], p[3], t[4], d, wl, nearest, s0, s;
-    int i, k, n, framed = view_frame(tgt, eye, u, &d, f, rt, up);
-    for (k = 0; k < 3; k++) {
-        a[k] = tgt[k];
-        b[k] = a[k] + most * u[k];
-        push[k] = p[k] = 0;
-    }
-    *by = FREECAM_WALL_CLEAR;
-    if (!(d > 0 && most > 0)) return most;
-    /* The eye's line, as the game tests it, out to most. */
-    s0 = most * line(ctx, a, b);
-    if (s0 < most) *by = FREECAM_WALL_EYE;
-    if (!(half_w > 0 && half_h > 0 && ahead >= 0 && framed)) return s0;
-    /* The eye no nearer the target than where its view starts a view's
-     * reach (wl, from the eye to a corner of where the view starts) in
-     * front of the target. Nearer, the view starts at or past the player:
-     * it shows them from inside, and the game's view of a point so close
-     * turns over. That is when the player is right against the wall the
-     * eye's line meets: the eye stays this far out, and that wall, which
-     * no eye on that side clears, is seen through, as the game's camera
-     * would see through it with its eye on the player. */
-    wl = sqrt(ahead * ahead + half_w * half_w + half_h * half_h);
-    nearest = (ahead + wl) / d;
-    if (s0 < nearest) {
-        *by = FREECAM_WALL_NEAREST;
-        return most < nearest ? most : nearest;
-    }
-    /* When nothing cuts across the view where it starts, it stands: a pole,
-     * a rail or the edge of a wall between the player and the eye that only
-     * hides a corner of the picture hides it, as it would the game's, and
-     * does not bring the eye in. */
-    if (view_cuts(tgt, u, s0, none, ahead, f, half_w, rt, half_h, up, line, ctx, t) >= 1)
-        return s0;
-    /* Something does. First the eye moves across, away from what cuts it:
-     * a wall along the view, the ground under it, the edge of a block. A
-     * corner whose line from the middle is open for a share t of it has the
-     * surface (1 - t) of its way short of it, so the eye moves back that
-     * much from each corner cut. Two corners cut on one side, by a wall
-     * along that side, take it twice that, which leaves the corners clear
-     * of the wall rather than on it. A unit or two across, at the eye's
-     * distance, turns the view a few degrees, where coming in would bring
-     * it right up to the player. The line from the target to the middle of
-     * where the view starts must be clear there as well: to that, not to
-     * the eye, which sits on the wall where the eye's line met one, and
-     * which the view does not show. */
-    for (n = 0; n < FREECAM_WALL_TRIES; n++) {
-        double step[3] = { 0, 0, 0 }, mid[3];
-        for (i = 0; i < 4; i++) {
-            double sx = (i & 1) ? half_w : -half_w, sy = (i & 2) ? half_h : -half_h;
-            if (t[i] < 1)
-                for (k = 0; k < 3; k++) step[k] -= (1 - t[i]) * (sx * rt[k] + sy * up[k]);
-        }
-        if (!(step[0] != 0 || step[1] != 0 || step[2] != 0)) break;   /* cut either side alike */
-        for (k = 0; k < 3; k++) {
-            p[k] += step[k];
-            mid[k] = a[k] + s0 * u[k] + p[k] + ahead * f[k];
-        }
-        if (line(ctx, a, mid) < 1) break;
-        if (view_cuts(tgt, u, s0, p, ahead, f, half_w, rt, half_h, up, line, ctx, t) >= 1) {
-            for (k = 0; k < 3; k++) push[k] = p[k];
-            *by = FREECAM_WALL_ACROSS;
-            return s0;
-        }
-    }
-    /* Moving across does not clear it -- a space narrower than the view, or
-     * a wall the move meets -- so the eye comes in until the corners of the
-     * view where it starts are clear, each by a line from the target. The
-     * player stands in the open, so a wall or the ground beside them is not
-     * in the way of a view that starts a unit off its line, as it was when
-     * the lines ran beside it from the player. A corner wl from the eye's
-     * line whose line is open for a share t of it, with the eye brought in
-     * by t, sits (1 - t) wl past where that line stopped; so the eye comes
-     * in that much further as well, and the corners are tested again where
-     * it is then. */
-    for (s = s0, n = 0; n < FREECAM_WALL_TRIES; n++) {
-        double open = 1.0, c[3];
-        if (!(s >= nearest)) break;
-        for (i = 0; i < 4; i++) {
-            view_corner(tgt, u, s, none, ahead, f, (i & 1) ? half_w : -half_w, rt,
-                        (i & 2) ? half_h : -half_h, up, c);
-            open = fmin(open, line(ctx, a, c));
-        }
-        if (open >= 1) {
-            if (n) *by = FREECAM_WALL_CORNER;
-            return s;
-        }
-        s = s * open - (1 - open) * wl / d;
-    }
-    /* Neither clears it -- a space narrower than the view all the way in --
-     * so the eye stays where its own line puts it, as the game's camera
-     * would. */
-    *by = FREECAM_WALL_NO_ROOM;
-    return s0;
-}
-
-double freecam_wall(double open)
-{
-    if (open < s_wall) {                                /* in at once, and wait */
-        s_wall = open;
-        s_wall_wait = 0;
-    } else if (s_wall_wait < FREECAM_WALL_HOLD) {
-        s_wall_wait++;
-    } else {                                            /* then out by degrees */
-        s_wall += (open - s_wall) / FREECAM_WALL_EASE;
-        if ((float)s_wall == (float)open) s_wall = open;    /* as near as the eye's floats go */
-    }
-    return s_wall;
-}
-
-void freecam_across(const float tgt[3], const float eye[3], double s, const double need[3],
-                    double ahead, double half_w, double half_h, freecam_line_fn line, void *ctx,
-                    double out[3])
-{
-    double u[3], f[3], rt[3], up[3], t[4], mid[3], d;
-    int k, moved = s_across[0] != 0 || s_across[1] != 0 || s_across[2] != 0, clear;
-    if (!moved) {
-        /* Not moved: freecam_clear found the view clear unless it moves it. */
-        clear = !(need[0] != 0 || need[1] != 0 || need[2] != 0);
-    } else if (!(half_w > 0 && half_h > 0 && ahead >= 0)
-            || !view_frame(tgt, eye, u, &d, f, rt, up)) {
-        clear = 1;                      /* no view to test: back by degrees */
-    } else {
-        /* Last frame's move, where the eye is now: the line from the target
-         * to the middle of where the view starts open, and nothing across
-         * it, as freecam_clear tests a move. */
-        for (k = 0; k < 3; k++) mid[k] = tgt[k] + s * u[k] + s_across[k] + ahead * f[k];
-        {
-            const double a[3] = { tgt[0], tgt[1], tgt[2] };
-            clear = line(ctx, a, mid) >= 1
-                 && view_cuts(tgt, u, s, s_across, ahead, f, half_w, rt, half_h, up, line, ctx, t) >= 1;
-        }
-    }
-    if (!clear) {                                       /* to it at once, and wait */
-        for (k = 0; k < 3; k++) s_across[k] = need[k];
-        s_across_wait = 0;
-    } else if (s_across_wait < FREECAM_WALL_HOLD) {
-        s_across_wait++;
-    } else {                                            /* then toward it by degrees */
-        double gap = 0, far = 0;
-        for (k = 0; k < 3; k++) {
-            s_across[k] += (need[k] - s_across[k]) / FREECAM_WALL_EASE;
-            gap = fmax(gap, fabs(need[k] - s_across[k]));
-            far += (eye[k] - tgt[k]) * (eye[k] - tgt[k]);
-        }
-        far = s * sqrt(far);                            /* the eye from the target */
-        if ((float)(far + gap) == (float)far)           /* as near as the eye's floats go there */
-            for (k = 0; k < 3; k++) s_across[k] = need[k];
-    }
-    for (k = 0; k < 3; k++) out[k] = s_across[k];
+    return again ? FREECAM_STARTED : FREECAM_PLACED;
 }
 
 int freecam_on(void)
