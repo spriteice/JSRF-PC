@@ -1,4 +1,5 @@
-/* Draw distance: how far the game draws the objects in its world.
+/* Draw distance: how far the game draws the objects in its world, and its
+ * buildings.
  *
  * Display > Draw distance, kept as drawdistance= in the settings file: 1x (0,
  * the default) is the game's own distances, 2x, 3x and 4x (1 to 3) twice to
@@ -7,16 +8,27 @@
  * few gates, each comparing the object's depth in front of the eye with
  * distances of its own: crowds, the pickups (spray cans), the race's
  * checkpoints, props and traffic, the Enemy bank's kinds (police, tanks), and
- * one attached part. The hooks are in recomp_manual.c, under "draw distance";
- * the steps' maths, the setting and the [DRAW] log are here. */
+ * one attached part.
+ *
+ * Display > Far buildings, kept as farbuildings= (0, off, the default, or 1):
+ * the buildings aren't cut by distance but by area. Each frame the camera
+ * makes the set of the map's areas to draw, the ones the visible list of the
+ * area it is in names, and nothing outside the set is drawn: neither the
+ * area's buildings nor the objects in it. On, the set also has every area some
+ * other area's list names; never one no list names. It changes at once.
+ *
+ * The hooks are in recomp_manual.c, under "draw distance"; the steps' maths,
+ * the settings, the areas added and the [DRAW] log are here. */
 #ifndef JSRF_DRAW_DISTANCE_H
 #define JSRF_DRAW_DISTANCE_H
+
+#include <stdint.h>
 
 #define DRAW_DISTANCE_STEPS     5   /* 1x, 2x, 3x, 4x, Unlimited */
 #define DRAW_DISTANCE_UNLIMITED 4
 
-/* At start, before the game runs: reads the setting and adds the in-game
- * menu's Display row. */
+/* At start, before the game runs: reads the settings and adds the in-game
+ * menu's two Display rows. */
 void draw_distance_start(void);
 
 /* The step: 0 (1x, the game's own) to DRAW_DISTANCE_UNLIMITED. */
@@ -53,5 +65,40 @@ enum {
  * every 5 seconds the log says how many each gate let through a frame, and
  * how many of them past the game's distance. */
 void draw_distance_drawn(int gate, int past, double now, unsigned frame);
+
+/* Far buildings: nonzero while on. */
+int draw_far_buildings(void);
+
+#define DRAW_AREAS_MAX 256                      /* the game's set: a bit an area */
+#define DRAW_SET_WORDS (DRAW_AREAS_MAX / 32)
+
+/* An area of the map, as the game keeps it: its volume, 6 planes, the 6
+ * points first and then the 6 normals, x, y and z each; its cells, smaller
+ * volumes of the same shape inside it, one after another; the areas its
+ * visible list names, by number; and its fog. */
+typedef struct {
+    const float    *volume;
+    const float    *cells;
+    unsigned        ncells;
+    const uint32_t *list;
+    unsigned        nlist;
+    float           fog_start, fog_end, fog_density;
+} DrawArea;
+
+/* Nonzero when b is a copy of a: its volume and each of its cells are a's
+ * moved by one offset, at least 1 long, which goes in d. */
+int draw_area_copy(const DrawArea *a, const DrawArea *b, float d[3]);
+
+/* With Far buildings on, after the game has made set (bit i for area i) from
+ * the eye: adds every area some list names, nearest the eye first, but not a
+ * copy of one the set has by then, where a copy is an area of the same shape
+ * moved (draw_area_copy) that no list names together with it. That is a
+ * safeguard: the game builds some stretches of a map twice and draws only
+ * one, and on the maps seen the copy is an area no list names (Dogenzaka
+ * Hill's far end), which is never added anyway. With JSRF_DRAW_COPIES set,
+ * the copies too. Never takes an area out. The first call on a map logs its
+ * areas; now and frame are for the [DRAW] line, as draw_distance_drawn's. */
+void draw_buildings_widen(const DrawArea *areas, int n, const float eye[3],
+                          uint32_t set[DRAW_SET_WORDS], double now, unsigned frame);
 
 #endif

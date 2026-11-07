@@ -1,4 +1,4 @@
-"""Compile draw distance's setting, steps and log and the settings file code, and drive them without the game.
+"""Compile draw distance's and Far buildings' settings, steps, areas and log and the settings file code, and drive them without the game.
 
 Cut by text: the settings file code from src/nv2a_gl/nv2a_gl.c,
 unchanged. nv2a_gl.c doesn't link on its own.
@@ -9,7 +9,8 @@ through sdl_cfg_set, with nv_window_pref_num between them), as tests/intro
 does; test_main.c stands in for the menu. Each case gets its own settings
 file, passed as JSRF_SETTINGS_FILE, and its own run, since the setting is
 read once. The gates are the game's code: test_main.c's stand-ins read
-their constants as the game's do (recomp_manual.c, "draw distance").
+their constants as the game's do (recomp_manual.c, "draw distance"); the
+areas are a made-up map's.
 Requires GCC on PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
 """
@@ -36,8 +37,13 @@ source = """
 """ + settings + (root / "tests/draw_distance/test_main.c").read_text(encoding="utf-8")
 
 LOG = "[DRAW] t=5.1 2x, a frame's objects (past 1x's distance): crowds 3.0 (1.0), pickups 0.0 (0.0)"
+AREAS = "Far buildings, a set's areas: the game's 2.0, added 3.0, copies left out 1.0"
+MAP = ["[DRAW] Far buildings: the map has 7 areas; lists name 6 of them, 1 a copy of another; no list names 5 (a copy of area 0, (0, 500, 0) away)",
+       "[DRAW] area 0: fog 100 to 1000, density 1",
+       "[DRAW] area 4: fog 500 to 5000, density 1, a copy of area 0, (400, 0, 0) away",
+       "[DRAW] area 6: fog 700 to 7000, density 1"]
 
-# case: (settings file or None for none, log lines it must print)
+# case: (settings file or None for none, log lines it must print[, environment])
 cases = {
     "off": (None, ["[DRAW] objects at 1x (settings)"]),
     "2x": ("drawdistance=1\n", ["[DRAW] objects at 2x (settings)"]),
@@ -54,6 +60,25 @@ cases = {
              ["[DRAW] objects at 1x (settings)", "[DRAW] objects at 4x (the menu)"]),
     "log": ("drawdistance=1\n", [LOG, "props and traffic 2.0 (0.0), enemies 0.0 (0.0), "
                                       "attached part 0.0 (0.0)"]),
+    "far_off": (None, ["[DRAW] Far buildings off (settings)"]),
+    "far_on": ("farbuildings=1\n", ["[DRAW] Far buildings on (settings)", *MAP,
+                                    "[DRAW] Far buildings: the map has 6 areas; lists name 5 of them, "
+                                    "1 a copy of another; no list names 5 (a copy of area 0, (0, 500, 0) away)"]),
+    "far_copies": ("farbuildings=1\n", ["[DRAW] JSRF_DRAW_COPIES: an area's copies drawn too", *MAP],
+                   {"JSRF_DRAW_COPIES": "1"}),
+    "far_flip": ("game_dir=/games/jsrf\nfarbuildings=0\n",
+                 ["[DRAW] Far buildings off (settings)", "[DRAW] Far buildings on (the menu)", MAP[0]]),
+    "far_log": ("farbuildings=1\n", ["[DRAW] t=5.1 1x, " + AREAS]),
+    "far_log_2x": ("drawdistance=1\nfarbuildings=1\n",
+                   ["[DRAW] t=5.1 2x, a frame's objects (past 1x's distance): crowds 1.0 (0.0), pickups 0.0 (0.0)",
+                    "attached part 0.0 (0.0); " + AREAS]),
+}
+# Cases that must not print a line: none of the map's for Far buildings off,
+# and no copies drawn without JSRF_DRAW_COPIES.
+unwanted = {
+    "far_off": ["[DRAW] Far buildings:", "[DRAW] area"],
+    "far_on": ["JSRF_DRAW_COPIES"],
+    "off": ["[DRAW] Far buildings:"],
 }
 
 with tempfile.TemporaryDirectory(prefix="draw-distance-") as directory:
@@ -62,22 +87,32 @@ with tempfile.TemporaryDirectory(prefix="draw-distance-") as directory:
     command = cc + ["-std=c11", "-DNV2A_GL_USE_SDL=1", "-DXBOXRECOMP_MENU=1",
                     "-Iport", "-Isrc/menu", "-x", "c", "-", "port/draw_distance.c", "-lm", "-o", exe]
     subprocess.run(command, cwd=root, input=source, text=True, check=True)
-    for name, (text, logs) in cases.items():
+    for name, (text, logs, *extra) in cases.items():
         path = work / (name + ".cfg")
         if text is not None:
             path.write_bytes(text.encode())
-        env = dict(os.environ, JSRF_SETTINGS_FILE=str(path))
+        env = {k: v for k, v in os.environ.items() if k != "JSRF_DRAW_COPIES"}
+        env.update(*extra, JSRF_SETTINGS_FILE=str(path))
         run = subprocess.run([exe, name], env=env, capture_output=True, text=True, timeout=10)
         if run.returncode != 0:
             raise SystemExit(f"{name}: exit {run.returncode}\n{run.stdout}{run.stderr}")
         for line in logs:
             if line not in run.stderr:
                 raise SystemExit(f"{name}: no '{line}' in the log:\n{run.stderr}")
-        if name == "log" and run.stderr.count("[DRAW] t=") != 1:
-            raise SystemExit("log: not one [DRAW] line in five seconds:\n" + run.stderr)
+        for line in unwanted.get(name, []):
+            if line in run.stderr:
+                raise SystemExit(f"{name}: '{line}' in the log:\n{run.stderr}")
+        if name in ("log", "far_log", "far_log_2x") and run.stderr.count("[DRAW] t=") != 1:
+            raise SystemExit(f"{name}: not one [DRAW] line in five seconds:\n" + run.stderr)
+        if name == "far_on" and run.stderr.count("[DRAW] Far buildings: the map") != 2:
+            raise SystemExit("far_on: the map not logged once each:\n" + run.stderr)
         if name == "pick":
             kept = path.read_text()
             if "drawdistance=3\n" not in kept or "game_dir=/games/jsrf\n" not in kept:
                 raise SystemExit("pick: the row did not keep drawdistance=3 alone:\n" + kept)
+        if name == "far_flip":
+            kept = path.read_text()
+            if "farbuildings=1\n" not in kept or "game_dir=/games/jsrf\n" not in kept:
+                raise SystemExit("far_flip: the row did not keep farbuildings=1 alone:\n" + kept)
         print(run.stdout.strip())
 print("draw distance: all", len(cases), "cases pass")

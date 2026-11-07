@@ -5214,3 +5214,178 @@ void sub_000E3BB0(void)
     if (!draw_distance_step()) { sub_000E3BB0_gen(); return; }
     dd_part(sub_000E3BB0_gen);
 }
+
+/* Far buildings (port/draw_distance.c): the map's buildings aren't cut by
+ * distance but by area. Each camera's draw makes the set of areas to draw
+ * from the eye (sub_0006A970: the first area holding the eye, then the areas
+ * its visible list names, a bit each in 8 words at 0x20C6C8), and the map's
+ * passes, and the objects that test their area, draw only what is in it. On,
+ * the override adds every area some list names (draw_buildings_widen) after
+ * the game's own set is made, and the frame's draw (sub_00012C80) puts the
+ * game's set back after it, so the next frame's updates see the game's own.
+ * The game draws its backdrop first, centred on the eye, and it writes depth
+ * at its own size, which would hide the areas added beyond it: on, its loop
+ * in sub_0006B6A0 draws without depth writes, between the matrix calls before
+ * and after it (sub_001BA8F0, sub_001BAA50), known by their return
+ * addresses. Off, all of them run the game's body and nothing else. Nothing
+ * is wrong in these functions: the set is the game's design, made from its
+ * map's data, and only the drawing is widened. */
+#define AREA_SET        0x20C6C0u   /* the set's maker: +4 the map, +8 the set */
+#define AREA_SET_MAP    0x04u
+#define AREA_SET_BITS   0x08u
+#define MAP_AREAS       0x04u       /* the map: its areas, and how many */
+#define MAP_COUNT       0x08u
+#define AREA_SIZE       0x154u
+#define AREA_CELLS      0x90u       /* volumes of 0x90 bytes, as the area's own at +0 */
+#define AREA_NCELLS     0x94u
+#define AREA_CELLS_MAX  4096u       /* more is not a count */
+#define AREA_LIST       0x98u       /* the areas it shows, a dword each */
+#define AREA_NLIST      0x9Cu
+#define AREA_FOG_START  0xDCu       /* floats, to device +0x140 (sub_0006BBA0) */
+#define AREA_FOG_END    0xE0u
+#define AREA_FOG_DENSITY 0xE4u
+#define VOLUME_SIZE     0x90u
+#define DD_DEVICE       0x251D6Cu   /* -> the game's device (vtable 0x1E0F00) */
+#define DD_ZWRITE_SLOT  0x130u      /* (device, on): NV2A SET_DEPTH_MASK */
+#define DD_ZWRITE_NOW   0x19E1E0u   /* what it was set to last */
+#define BACKDROP_IN_RET  0x0006B721u   /* sub_0006B6A0's sub_001BA8F0, before the backdrop */
+#define BACKDROP_OUT_RET 0x0006B75Bu   /* its sub_001BAA50, after it */
+/* The Misc group's objects (vtable 0x1CA558), the best candidate for the
+ * birds: one model drawn at many places, in one area. */
+#define MISC_MODEL      0x58u
+#define MISC_PLACES     0x184u
+#define MISC_AREA       0x188u
+
+static uint32_t s_game_set[DRAW_SET_WORDS];
+static int s_set_widened;       /* s_game_set is the game's, to put back */
+
+/* The map's areas, as draw_buildings_widen takes them: 0 when the map isn't
+ * there. */
+static int dd_areas(DrawArea *out)
+{
+    uint32_t map = dd_u32(AREA_SET + AREA_SET_MAP), table, n, i;
+    if (!dd_guest(map, MAP_COUNT + 4)) return 0;
+    table = dd_u32(map + MAP_AREAS);
+    n = dd_u32(map + MAP_COUNT);
+    if (n > DRAW_AREAS_MAX) n = DRAW_AREAS_MAX;
+    if (!n || !dd_guest(table, n * AREA_SIZE)) return 0;
+    for (i = 0; i < n; i++) {
+        uint32_t a = table + i * AREA_SIZE;
+        uint32_t cells = dd_u32(a + AREA_CELLS), ncells = dd_u32(a + AREA_NCELLS);
+        uint32_t list = dd_u32(a + AREA_LIST), nlist = dd_u32(a + AREA_NLIST);
+        DrawArea *o = &out[i];
+        o->volume = dd_float(a);
+        o->ncells = ncells <= AREA_CELLS_MAX && dd_guest(cells, ncells * VOLUME_SIZE) ? ncells : 0;
+        o->cells = o->ncells ? dd_float(cells) : NULL;
+        o->nlist = nlist <= DRAW_AREAS_MAX && dd_guest(list, nlist * 4) ? nlist : 0;
+        o->list = o->nlist ? (const uint32_t *)((const uint8_t *)g_xbox_mem_offset + list) : NULL;
+        o->fog_start = *dd_float(a + AREA_FOG_START);
+        o->fog_end = *dd_float(a + AREA_FOG_END);
+        o->fog_density = *dd_float(a + AREA_FOG_DENSITY);
+    }
+    return (int)n;
+}
+
+/* sub_0006A970(eye), thiscall on AREA_SET: the game's set, then, with Far
+ * buildings on, the areas added to it. */
+extern void sub_0006A970_gen(void);
+void sub_0006A970(void)
+{
+    static DrawArea areas[DRAW_AREAS_MAX];
+    uint32_t self = g_ecx, eye = dd_u32(g_esp + 4);
+    uint32_t *set = (uint32_t *)((uint8_t *)g_xbox_mem_offset + AREA_SET + AREA_SET_BITS);
+    int n;
+    sub_0006A970_gen();
+    if (!draw_far_buildings() || self != AREA_SET) return;
+    n = dd_areas(areas);
+    if (!n) return;
+    memcpy(s_game_set, set, sizeof s_game_set);
+    s_set_widened = 1;
+    draw_buildings_widen(areas, n, dd_guest(eye, 0xC) ? dd_float(eye) : NULL, set,
+                         pad_now(), nv2a_gl_flips());
+}
+
+/* sub_00012C80, the frame's draw: the game's set back after it. */
+extern void sub_00012C80_gen(void);
+void sub_00012C80(void)
+{
+    sub_00012C80_gen();
+    if (s_set_widened) {
+        memcpy((uint8_t *)g_xbox_mem_offset + AREA_SET + AREA_SET_BITS, s_game_set, sizeof s_game_set);
+        s_set_widened = 0;
+    }
+}
+
+/* The device's depth writes on or off, as the game sets them. */
+static void dd_zwrite(uint32_t on, uint32_t ra)
+{
+    uint32_t dev = dd_u32(DD_DEVICE), va, a[2];
+    recomp_func_t fn;
+    if (!dd_guest(dev, 4) || !dd_guest(dd_u32(dev), DD_ZWRITE_SLOT + 4)) return;
+    va = dd_u32(dd_u32(dev) + DD_ZWRITE_SLOT);
+    fn = recomp_lookup_manual(va);
+    if (!fn) fn = recomp_lookup(va);
+    if (!fn) {
+        static int said;
+        if (!said++) fprintf(stderr, "[DRAW] the device's depth writes are %08X, not the game's code\n", va);
+        return;
+    }
+    a[0] = dev;
+    a[1] = on;
+    guest_call_cdecl(fn, ra, 2, a);
+}
+
+static int s_backdrop_zwrite = -1;  /* the depth writes to put back after the backdrop */
+
+extern void sub_001BA8F0_gen(void);
+void sub_001BA8F0(void)
+{
+    uint32_t ra = dd_u32(g_esp);
+    sub_001BA8F0_gen();
+    if (ra == BACKDROP_IN_RET && draw_far_buildings() && s_backdrop_zwrite < 0) {
+        s_backdrop_zwrite = (int)(dd_u32(DD_ZWRITE_NOW) != 0);
+        dd_zwrite(0, ra);
+    }
+}
+
+extern void sub_001BAA50_gen(void);
+void sub_001BAA50(void)
+{
+    uint32_t ra = dd_u32(g_esp);
+    sub_001BAA50_gen();
+    if (ra == BACKDROP_OUT_RET && s_backdrop_zwrite >= 0) {
+        dd_zwrite((uint32_t)s_backdrop_zwrite, ra);
+        s_backdrop_zwrite = -1;
+    }
+}
+
+/* sub_000402C0 and sub_00040300, the Misc group's draws: with Far buildings
+ * on, the log names each object's model once, to tell which are the birds. */
+static void dd_misc(uint32_t self)
+{
+    static uint32_t seen[64][2];
+    static unsigned next;
+    uint32_t model;
+    unsigned i;
+    if (!draw_far_buildings() || !dd_guest(self, MISC_AREA + 4)) return;
+    model = dd_u32(self + MISC_MODEL);
+    for (i = 0; i < 64; i++)
+        if (seen[i][0] == self && seen[i][1] == model) return;
+    seen[next][0] = self;
+    seen[next][1] = model;
+    next = (next + 1) % 64;
+    fprintf(stderr, "[DRAW] Misc group %08X: model %X, in area %u, at %u places\n",
+            self, model, dd_u32(self + MISC_AREA), dd_u32(self + MISC_PLACES));
+}
+extern void sub_000402C0_gen(void);
+void sub_000402C0(void)
+{
+    dd_misc(g_ecx);
+    sub_000402C0_gen();
+}
+extern void sub_00040300_gen(void);
+void sub_00040300(void)
+{
+    dd_misc(g_ecx);
+    sub_00040300_gen();
+}

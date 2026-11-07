@@ -83,6 +83,13 @@ as the camera sees. It changes straight away, asks more of the computer the
 further it goes, and is remembered as drawdistance= in the settings file (0
 for 1x to 4 for Unlimited). Above 2x it will struggle on weak hardware.
 
+Display > Far buildings in the in-game menu draws every part of the map the
+game ever shows, with the things in it, not only the part it shows from where
+the camera is. A part it never shows stays hidden, such as the second copy of
+Dogenzaka Hill's street. Off by default. It changes straight away, asks more
+of the computer, and is remembered as farbuildings= in the settings file
+(1 or 0).
+
 Display > Skip intro in the in-game menu leaves out the logos and the
 graffiti disclaimer the game opens with: it starts at the title screen's
 loading. Off by default, so the intro plays as on the Xbox. It is remembered

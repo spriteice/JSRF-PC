@@ -14,6 +14,11 @@
  * and a prop, near to 400, faded to 500 by 1 - (d - 400) * 0.01. Their
  * answers at each step are what the game's gates give with the same
  * constants.
+ *
+ * Far buildings works on the map's areas, which are the game's data: a
+ * made-up map here has their shape (a street of five areas, the last a copy
+ * of the first, with a copy of the first no list names and an area the shape
+ * of the second elsewhere), and the sets the game would make from three eyes.
  */
 #include <float.h>
 #include <math.h>
@@ -25,11 +30,12 @@
 
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); exit(1); } } while (0)
 
-static XBOX_MENU_ITEM s_row;
+static XBOX_MENU_ITEM s_row, s_far_row;
 static int s_rows;
 void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count)
 {
     if (count > 0) s_row = items[0];
+    if (count > 1) s_far_row = items[1];
     s_rows += count;
 }
 
@@ -124,13 +130,147 @@ static void check_step(int step)
     printf("step %d: person to %g, prop to %g\n", step, 400.0 * k, 500.0 * k);
 }
 
+/* ---- Far buildings ------------------------------------------------------ */
+
+/* An area's volume, or a cell, as the game keeps it: a box from lo to hi, its
+ * 6 planes' points first and then their normals. */
+static void box(float *v, float x0, float y0, float z0, float x1, float y1, float z1)
+{
+    const float lo[3] = { x0, y0, z0 }, hi[3] = { x1, y1, z1 };
+    int i, k;
+    for (i = 0; i < 3; i++)
+        for (k = 0; k < 3; k++) {
+            float mid = (lo[k] + hi[k]) / 2;
+            v[3 * (2 * i) + k] = k == i ? lo[k] : mid;
+            v[3 * (2 * i + 1) + k] = k == i ? hi[k] : mid;
+            v[18 + 3 * (2 * i) + k] = k == i ? 1.0f : 0.0f;       /* inwards */
+            v[18 + 3 * (2 * i + 1) + k] = k == i ? -1.0f : 0.0f;
+        }
+}
+
+/* The made-up map: areas 0 to 4 a street along x, 100 long each, area 4 a
+ * copy of area 0 at the street's other end (both cut in two cells). Area 5 is
+ * area 0's shape too, above it, and no list names it. Area 6 has area 1's
+ * volume, moved, but a cell of its own. Areas 1, 2 and 3 are the same box
+ * moved, and lists name them together, so they aren't copies to leave out. */
+#define AREAS 7
+static float s_vol[AREAS][36], s_cell[AREAS][2][36];
+static const uint32_t k_list0[] = { 0, 1 }, k_list1[] = { 0, 1, 2 }, k_list2[] = { 1, 2, 3 },
+                      k_list3[] = { 2, 3, 4, 6 }, k_list4[] = { 3, 4 }, k_list5[] = { 0 },
+                      k_list6[] = { 3, 6 };
+static DrawArea s_areas[AREAS];
+
+static void map_make(void)
+{
+    static const uint32_t *const lists[AREAS] = { k_list0, k_list1, k_list2, k_list3, k_list4, k_list5, k_list6 };
+    static const unsigned nlists[AREAS] = { 2, 3, 3, 4, 2, 1, 2 };
+    int i;
+    for (i = 0; i < 5; i++) {
+        float x = 100.0f * i;
+        int halves = i == 0 || i == 4;
+        box(s_vol[i], x, 0, 0, x + 100, 50, 100);
+        if (halves) {
+            box(s_cell[i][0], x, 0, 0, x + 50, 50, 100);
+            box(s_cell[i][1], x + 50, 0, 0, x + 100, 50, 100);
+        } else {
+            box(s_cell[i][0], x, 0, 0, x + 100, 50, 100);
+        }
+        s_areas[i].ncells = halves ? 2 : 1;
+    }
+    box(s_vol[5], 0, 500, 0, 100, 550, 100);
+    box(s_cell[5][0], 0, 500, 0, 50, 550, 100);
+    box(s_cell[5][1], 50, 500, 0, 100, 550, 100);
+    s_areas[5].ncells = 2;
+    box(s_vol[6], 100, 0, 500, 200, 50, 600);
+    box(s_cell[6][0], 100, 0, 500, 150, 50, 600);
+    s_areas[6].ncells = 1;
+    for (i = 0; i < AREAS; i++) {
+        s_areas[i].volume = s_vol[i];
+        s_areas[i].cells = s_cell[i][0];
+        s_areas[i].list = lists[i];
+        s_areas[i].nlist = nlists[i];
+        s_areas[i].fog_start = 100.0f * (float)(i + 1);
+        s_areas[i].fog_end = 1000.0f * (float)(i + 1);
+        s_areas[i].fog_density = 1.0f;
+    }
+}
+
+/* The set the game makes from an eye in area `in`: that area's list. */
+static void game_set(uint32_t set[DRAW_SET_WORDS], int in)
+{
+    unsigned e;
+    memset(set, 0, DRAW_SET_WORDS * sizeof set[0]);
+    for (e = 0; e < s_areas[in].nlist; e++) set[s_areas[in].list[e] >> 5] |= 1u << (s_areas[in].list[e] & 31);
+}
+
+/* The set as a mask of areas 0 to 31 (the map has 7). */
+static uint32_t widened(int in, float x, int with_eye)
+{
+    uint32_t set[DRAW_SET_WORDS];
+    const float eye[3] = { x, 25, 50 };
+    int w;
+    game_set(set, in);
+    draw_buildings_widen(s_areas, AREAS, with_eye ? eye : NULL, set, 0.0, 0);
+    for (w = 1; w < DRAW_SET_WORDS; w++) CHECK(!set[w]);
+    return set[0];
+}
+#define AREA(i) (1u << (i))
+
+static void check_copies(void)
+{
+    float d[3];
+    /* Area 4 is area 0 moved 400 along x, each cell too; area 5 is area 0
+     * moved 500 up. */
+    CHECK(draw_area_copy(&s_areas[0], &s_areas[4], d) && d[0] == 400.0f && d[1] == 0 && d[2] == 0);
+    CHECK(draw_area_copy(&s_areas[4], &s_areas[0], d) && d[0] == -400.0f);
+    CHECK(draw_area_copy(&s_areas[0], &s_areas[5], d) && d[1] == 500.0f);
+    /* The same box moved, as copies go, but lists name them together. */
+    CHECK(draw_area_copy(&s_areas[1], &s_areas[3], d) && d[0] == 200.0f);
+    /* Not copies: an area and itself, a cell of another shape, two cells
+     * against one. */
+    CHECK(!draw_area_copy(&s_areas[0], &s_areas[0], d));
+    CHECK(!draw_area_copy(&s_areas[1], &s_areas[6], d));
+    CHECK(!draw_area_copy(&s_areas[0], &s_areas[1], d));
+    printf("copies: area 4 of area 0, (400, 0, 0) away\n");
+}
+
+static void check_far(void)
+{
+    CHECK(draw_far_buildings());
+    map_make();
+    check_copies();
+    /* From area 0: the game's 0 and 1; added 2, 3 and 6, never 5, which no
+     * list names; and not 4, a copy of 0, which the set has. */
+    CHECK(widened(0, 50, 1) == (AREA(0) | AREA(1) | AREA(2) | AREA(3) | AREA(6)));
+    /* From area 3: the game's 2, 3, 4 and 6; added 1, and not 0, a copy of 4. */
+    CHECK(widened(3, 350, 1) == (AREA(1) | AREA(2) | AREA(3) | AREA(4) | AREA(6)));
+    /* From area 2, nearer 4 than 0: of the two copies, the nearer, 4. */
+    CHECK(widened(2, 260, 1) == (AREA(1) | AREA(2) | AREA(3) | AREA(4) | AREA(6)));
+    /* From area 2, nearer 0: 0. */
+    CHECK(widened(2, 240, 1) == (AREA(0) | AREA(1) | AREA(2) | AREA(3) | AREA(6)));
+    /* No eye: in the areas' order. */
+    CHECK(widened(2, 0, 0) == (AREA(0) | AREA(1) | AREA(2) | AREA(3) | AREA(6)));
+    /* Another map, without area 6: worked out again, and logged again. */
+    {
+        uint32_t set[DRAW_SET_WORDS];
+        game_set(set, 0);
+        draw_buildings_widen(s_areas, AREAS - 1, NULL, set, 0.0, 0);
+        CHECK(set[0] == (AREA(0) | AREA(1) | AREA(2) | AREA(3)));
+    }
+    printf("far buildings: every listed area, the nearer of two copies\n");
+}
+
 int main(int argc, char **argv)
 {
     const char *c = argc > 1 ? argv[1] : "";
     draw_distance_start();
-    /* One row: a choice under Render scale on the Display page, showing the
-     * setting. */
-    CHECK(s_rows == 1);
+    /* Two rows, in one call: a choice under Render scale on the Display
+     * page, showing the setting, then a toggle. */
+    CHECK(s_rows == 2);
+    CHECK(s_far_row.menu == XBOX_MENU_DISPLAY && s_far_row.kind == XBOX_ITEM_TOGGLE && !s_far_row.last);
+    CHECK(!strcmp(s_far_row.label, "Far buildings") && !s_far_row.confirm && s_far_row.run);
+    CHECK(s_far_row.under && !strcmp(s_far_row.under, "Render scale (Restart)"));
+    CHECK(s_far_row.state() == draw_far_buildings());
     CHECK(s_row.menu == XBOX_MENU_DISPLAY && s_row.kind == XBOX_ITEM_CHOICE && !s_row.last);
     CHECK(!strcmp(s_row.label, "Draw distance") && !s_row.confirm);
     CHECK(s_row.under && !strcmp(s_row.under, "Render scale (Restart)"));
@@ -170,6 +310,51 @@ int main(int argc, char **argv)
         draw_distance_drawn(DRAW_PICKUPS, 1, 5.1, 50);   /* the line, its counts first */
         draw_distance_drawn(DRAW_PICKUPS, 1, 6.0, 60);   /* none: under 5 s since */
         draw_distance_drawn(DRAW_GATES, 1, 99.0, 99);    /* not a gate: nothing */
+    }
+    if (!strcmp(c, "far_off")) {
+        /* Off by default: the game's set as it is. */
+        uint32_t set[DRAW_SET_WORDS];
+        CHECK(!draw_far_buildings() && !s_far_row.state());
+        map_make();
+        game_set(set, 0);
+        draw_buildings_widen(s_areas, AREAS, NULL, set, 0.0, 0);
+        CHECK(set[0] == (AREA(0) | AREA(1)));
+    }
+    if (!strcmp(c, "far_on")) check_far();
+    if (!strcmp(c, "far_copies")) {
+        /* JSRF_DRAW_COPIES: from area 0, 4 too. */
+        CHECK(draw_far_buildings());
+        map_make();
+        CHECK(widened(0, 50, 1) == (AREA(0) | AREA(1) | AREA(2) | AREA(3) | AREA(4) | AREA(6)));
+    }
+    if (!strcmp(c, "far_flip")) {
+        /* Off, then the row: on at once (and kept, which run.py checks). */
+        CHECK(!draw_far_buildings());
+        s_far_row.run();
+        CHECK(draw_far_buildings() && s_far_row.state());
+        map_make();
+        CHECK(widened(0, 50, 1) == (AREA(0) | AREA(1) | AREA(2) | AREA(3) | AREA(6)));
+    }
+    if (!strncmp(c, "far_log", 7)) {
+        /* Far buildings from the settings, at whatever step they give: five
+         * seconds of 10 frames a second, a set from area 0 each, the gates
+         * counting only at 2x; then the line. */
+        int f;
+        CHECK(draw_far_buildings());
+        map_make();
+        for (f = 0; f < 50; f++) {
+            uint32_t set[DRAW_SET_WORDS];
+            game_set(set, 0);
+            draw_buildings_widen(s_areas, AREAS, NULL, set, 0.05 + f * 0.1, (unsigned)f);
+            if (draw_distance_step()) draw_distance_drawn(DRAW_CROWDS, 0, 0.05 + f * 0.1, (unsigned)f);
+        }
+        fflush(stderr);
+        draw_distance_drawn(DRAW_GATES, 0, 5.1, 50);     /* not a gate: no line */
+        {
+            uint32_t set[DRAW_SET_WORDS];
+            game_set(set, 0);
+            draw_buildings_widen(s_areas, AREAS, NULL, set, 5.1, 50);   /* the line */
+        }
     }
     printf("draw distance: %s\n", c);
     return 0;

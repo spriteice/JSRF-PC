@@ -165,7 +165,7 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
         env = {k: v for k, v in os.environ.items()
                if k not in (*switches, "RECOMP_CPU_PROFILE", "RECOMP_NV2A_QUEUE", "RECOMP_P_CORES",
                             "RECOMP_PACE_DISPLAY", "RECOMP_FENCE_WAIT", "RECOMP_GL_DXT",
-                            "JSRF_CAM_LOG", "JSRF_ADX_ERR_LOG", "RECOMP_APU_GPFX")}
+                            "JSRF_CAM_LOG", "JSRF_ADX_ERR_LOG", "JSRF_DRAW_COPIES", "RECOMP_APU_GPFX")}
         env.update(extra, JSRF_SETTINGS_FILE=str(folder / "settings.cfg"))
         log = folder / "last-run.log"
         with open(log, "w") as out:
