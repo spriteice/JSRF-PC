@@ -10,22 +10,54 @@
  * is drawn between the marks to that side's edge (nv2a_wide.h,
  * NV2A_WIDE_HUD_METHOD). The marks go in as D3D's own methods do, at its
  * push buffer's put pointer, so they reach the renderer in order with the
- * piece's draws. */
+ * piece's draws.
+ *
+ * The exception is text: the game's font call queues it, and one draw
+ * later in the frame holds all the text there is, the menus' with the
+ * HUD's. A piece with text (WIDE_HUD_TEXT) has the font call's override
+ * draw it at once instead, through the font's own call that does
+ * (widescreen_hud_text_now), so it is drawn between the piece's marks and
+ * moves with it.
+ *
+ * The markers the HUD draws at points in the world (sub_00100D80,
+ * sub_00105070, sub_001068E0) aren't marked: they are 3D models under the
+ * HUD's camera, placed from the 4:3 projection of the point, and the
+ * widened camera brings them onto the widened scene's point by itself. Nor
+ * are the HUD's signs (sub_000FC370), such as the stop sign: their models
+ * put them in the middle of the screen, where they stay. */
 #ifndef JSRF_WIDESCREEN_HUD_H
 #define JSRF_WIDESCREEN_HUD_H
 
 #include <stdint.h>
 
-/* The HUD pieces that move, each by the game function that draws it. */
+/* The HUD pieces that move, each by the game function that draws it. The
+ * order is the marks' piece numbers, which the log shows: new pieces go on
+ * the end. */
 enum {
     WIDE_HUD_HEALTH,    /* the health bar and its border, at the top right */
+    WIDE_HUD_GAUGE,     /* the gauge and its numbers, at the bottom right */
+    WIDE_HUD_CAN,       /* the spray can (3D) and its count, on the right */
+    WIDE_HUD_BOOST,     /* the boost icon (3D), on the right */
+    WIDE_HUD_DIGIT,     /* a digit and the icon it picks, on the right */
+    WIDE_HUD_DIGITS,    /* two digits and an icon, on the right */
+    WIDE_HUD_NUMBERS,   /* two two-digit numbers, on the right, for two seconds */
+    WIDE_HUD_SCORE,     /* the score and trick count, and its label, on the left */
+    WIDE_HUD_TRICK,     /* the trick's name, on the left */
+    WIDE_HUD_ROLLING,   /* a seven-digit number that rolls, at the top left */
+    WIDE_HUD_MESSAGE,   /* a message that slides in from the left */
     WIDE_HUD_PIECES
 };
+
+/* A piece's flags: NV2A_WIDE_HUD_OWN_VIEW (nv2a_wide.h), which its marks
+ * carry to the renderer, and WIDE_HUD_TEXT, for one that writes text
+ * through the font call (see above). */
+#define WIDE_HUD_TEXT 0x100u
 
 typedef struct {
     uint32_t va;        /* the function that draws it */
     const char *name;   /* for the log */
     int side;           /* NV2A_WIDE_HUD_LEFT or _RIGHT */
+    unsigned flags;     /* NV2A_WIDE_HUD_OWN_VIEW, WIDE_HUD_TEXT */
 } WideHudPiece;
 
 extern const WideHudPiece widescreen_hud_pieces[WIDE_HUD_PIECES];
@@ -57,5 +89,11 @@ int widescreen_hud_begin(uint8_t *mem, uint32_t device, int piece, int on,
 /* After it: its end mark, when widescreen_hud_begin marked its start. */
 void widescreen_hud_end(uint8_t *mem, uint32_t device, int piece, int marked,
                         widescreen_hud_space_fn make_space);
+
+/* For the font call's override: whether the text it is given now should be
+ * drawn at once, between the marks of the piece that is running, rather than
+ * queued with the rest: while a piece with WIDE_HUD_TEXT runs, marked. The
+ * first time for each piece, a line in the log says so. */
+int widescreen_hud_text_now(void);
 
 #endif

@@ -17,6 +17,8 @@ import tempfile
 root = pathlib.Path(__file__).resolve().parents[2]
 cc = shlex.split(os.environ.get("CC", "gcc"))
 LOG = "[WIDE] HUD piece 0, the health bar (sub_001060B0): marked for the right edge"
+TEXT = ("[WIDE] HUD piece 7, the score: its text drawn with it",
+        "[WIDE] HUD piece 10, the sliding message: its text drawn with it")
 
 with tempfile.TemporaryDirectory(prefix="widescreen_hud-") as directory:
     exe = str(pathlib.Path(directory) / "widescreen_hud.exe")
@@ -37,5 +39,10 @@ with tempfile.TemporaryDirectory(prefix="widescreen_hud-") as directory:
     # on make-space says once that it left no room.
     if text.count(LOG) != 1:
         sys.exit(f"widescreen_hud: the piece's log line came {text.count(LOG)} times, not once")
+    for line in TEXT:
+        if text.count(line) != 1:
+            sys.exit(f"widescreen_hud: {line!r} came {text.count(line)} times, not once")
+    if "its text drawn with it" in text.replace(TEXT[0], "").replace(TEXT[1], ""):
+        sys.exit("widescreen_hud: a piece without text had its text drawn with it")
     if text.count("[CHECK]") != 1 or "no mark" not in text:
         sys.exit(f"widescreen_hud: the make-space check said {text.count('[CHECK]')} lines, not one")

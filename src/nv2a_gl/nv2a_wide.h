@@ -127,20 +127,30 @@ float nv2a_wide_shift(uint32_t x0, uint32_t x1, uint32_t y0, uint32_t y1, float 
 /* A HUD piece's side; NONE is the end of its draws. */
 enum { NV2A_WIDE_HUD_LEFT = -1, NV2A_WIDE_HUD_NONE = 0, NV2A_WIDE_HUD_RIGHT = 1 };
 
-/* The mark's value for piece (0 to 255, which the log names) and side. */
-uint32_t nv2a_wide_hud_mark(unsigned piece, int side);
+/* A mark's flag: the piece draws in a viewport of its own, a strip that cuts
+ * off what rolls past its edges. Its 2D fills that viewport, so measured
+ * there it would be a backdrop and left unsqueezed: it is squeezed whatever
+ * its span, and moved from that viewport's centre, not the frame's. */
+#define NV2A_WIDE_HUD_OWN_VIEW 1u
 
-/* A value read on NV2A_WIDE_HUD_METHOD as a mark: 1, with its piece and
- * side, or 0 for a value that isn't one. */
-int nv2a_wide_hud_read(uint32_t value, unsigned *piece, int *side);
+/* The mark's value for piece (0 to 255, which the log names), side and
+ * flags (NV2A_WIDE_HUD_OWN_VIEW, or 0). */
+uint32_t nv2a_wide_hud_mark(unsigned piece, int side, unsigned flags);
+
+/* A value read on NV2A_WIDE_HUD_METHOD as a mark: 1, with its piece, side
+ * and flags, or 0 for a value that isn't one. */
+int nv2a_wide_hud_read(uint32_t value, unsigned *piece, int *side, unsigned *flags);
 
 /* How far a draw between the marks of a piece on side moves to that side's
- * edge, as the wideShift the shader takes off its x (the title's pixels): a
- * squeezed overlay (squeezed 1) by (1 - s) / s of the half width in its own
- * pixels, and a 3D piece by (1 - s) of it, so either moves (1 - s) of the
- * half width on screen, where the squeeze left that much between the 4:3
- * edge and the screen's. 0 for no side and at s 1 (4:3). */
-float nv2a_wide_hud_shift(int side, float s, int squeezed);
+ * edge, as the wideShift the shader takes off its x (the title's pixels),
+ * for a draw whose viewport is centred at centre (the title's pixels: the
+ * frame's 320 for one player's HUD). The squeeze brings x toward that
+ * centre by s, so it left (1 - s) of the distance from there to the edge
+ * between the piece and the screen's edge: a squeezed overlay (squeezed 1)
+ * moves by that over s in its own pixels, and a 3D piece by that itself.
+ * One player's HUD moves 106.7 and 80 title pixels at 16:9. 0 for no side,
+ * at s 1 (4:3), and for a centre that isn't a number. */
+float nv2a_wide_hud_shift(int side, float s, int squeezed, float centre);
 
 /* That draw's window clip, columns *x0 to *x1 (the far one exclusive) on a
  * surface surf_w wide: squeezed about the centre as nv2a_wide_clip_x does,
@@ -153,7 +163,7 @@ void nv2a_wide_hud_clip_x(uint32_t surf_w, float s, int side, uint32_t *x0, uint
  * width), spans the whole frame, as one player's HUD does: as wide as
  * NV2A_WIDE_FRAMED_MAX_W at least, or with no scale (the whole surface). A
  * split screen's HUD is drawn in its player's narrower viewport, and isn't
- * moved. */
+ * moved; a piece with a viewport of its own (NV2A_WIDE_HUD_OWN_VIEW) is. */
 int nv2a_wide_hud_whole_view(float vp_scale_x);
 
 /* The raster a surface w x h is drawn at, at render scale sc, in the

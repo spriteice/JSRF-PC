@@ -4732,10 +4732,11 @@ static int g_wide_squeeze;   /* this draw's 2D squeeze, set in do_draw */
 static float g_wide_shift;   /* this draw's framed-3D or HUD move, title pixels, ditto */
 static int g_wide_hud;       /* the side its HUD piece moved it to, or none, ditto */
 /* The HUD piece being drawn, from the game side's marks (nv2a_wide.h,
- * NV2A_WIDE_HUD_METHOD): its side, NV2A_WIDE_HUD_NONE between pieces, and
- * which one, for the log. */
+ * NV2A_WIDE_HUD_METHOD): its side, NV2A_WIDE_HUD_NONE between pieces, which
+ * one, for the log, and its flags (NV2A_WIDE_HUD_OWN_VIEW). */
 static int g_hud_side = NV2A_WIDE_HUD_NONE;
 static unsigned g_hud_piece;
+static unsigned g_hud_flags;
 /* The end of a displayed frame (present): a HUD piece's draws end there at
  * the latest. One still open (the game side lost its end mark) ends, and
  * says so once. */
@@ -4747,6 +4748,7 @@ static void wide_hud_frame_end(void)
         fprintf(stderr, "[WIDE] HUD piece %u's draws hadn't ended by the frame's end: "
                 "ended there\n", g_hud_piece);
     g_hud_side = NV2A_WIDE_HUD_NONE;
+    g_hud_flags = 0;
 }
 static Nv2aRenderState g_draw_rs;   /* the state this draw was given */
 static float g_wide_ext[4];  /* its x and y extent, for the draw log */
@@ -6145,16 +6147,23 @@ static void do_draw_body(void)
      * Only on the frame of a widened scene, and only where the piece has the
      * whole view: a screen-space draw that isn't squeezed (a backdrop) stays,
      * and so does a split screen's HUD, in its player's narrower viewport or
-     * framed view.
+     * framed view. A piece in a viewport of its own (NV2A_WIDE_HUD_OWN_VIEW,
+     * a strip its digits roll through) fills that viewport, so its 2D is
+     * squeezed whatever its span, and moves from that viewport's centre: its
+     * x is the frame's, but the shader squeezes it about the viewport's.
      */
     g_wide_hud = NV2A_WIDE_HUD_NONE;
     if (g_hud_side != NV2A_WIDE_HUD_NONE && nv2a_wide_scene()
         && nv2a_wide_frame_sized(S.clip_w, S.clip_h) && g_wide_shift == 0.0f) {
         int screen = S.xf_mode != NV2A_XF_MODE_FIXED
                   && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS;
-        if (!screen || (g_wide_squeeze && nv2a_wide_hud_whole_view(S.u.vp_scale[0]))) {
+        int own = screen && (g_hud_flags & NV2A_WIDE_HUD_OWN_VIEW)
+               && fabsf(S.u.vp_scale[0]) > 1e-6f;
+        if (own) g_wide_squeeze = 1;
+        if (!screen || (g_wide_squeeze && (own || nv2a_wide_hud_whole_view(S.u.vp_scale[0])))) {
+            float centre = own ? S.u.vp_off[0] - NV2A_D3D_NUDGE : 0.5f * (float)NV2A_SCALE_FRAME_W;
             g_wide_hud = g_hud_side;
-            g_wide_shift = nv2a_wide_hud_shift(g_hud_side, g_wide_s, g_wide_squeeze);
+            g_wide_shift = nv2a_wide_hud_shift(g_hud_side, g_wide_s, g_wide_squeeze, centre);
         }
     }
 
@@ -6925,8 +6934,9 @@ static void do_draw_body(void)
                   fprintf(stderr, "[WIDE] HUD piece %u: drawn at the %s edge, %s, moved %.1f "
                           "title pixels; clip x %u..%u -> %u..%u\n", g_hud_piece,
                           g_wide_hud < 0 ? "left" : "right",
-                          g_wide_squeeze ? "2D squeezed" : "3D", (double)fabsf(g_wide_shift),
-                          was0, was1, cx0, cx1);
+                          !g_wide_squeeze ? "3D" : (g_hud_flags & NV2A_WIDE_HUD_OWN_VIEW)
+                              ? "2D squeezed in its own viewport" : "2D squeezed",
+                          (double)fabsf(g_wide_shift), was0, was1, cx0, cx1);
               }
           } else if (g_wide_squeeze || g_wide_shift != 0.0f) {
               nv2a_wide_clip_x(g_fbo_w, g_wide_s, &cx0, &cx1);
@@ -11942,9 +11952,9 @@ static void gl_method(uint32_t method, uint32_t param)
     case NV2A_WIDE_HUD_METHOD:
         /* A HUD piece's mark (nv2a_wide.h): the draws up to the next are
          * its, on its side, or none. Any other value is left alone. */
-        { unsigned piece; int side;
-          if (nv2a_wide_hud_read(param, &piece, &side)) {
-              g_hud_side = side; g_hud_piece = piece;
+        { unsigned piece, flags; int side;
+          if (nv2a_wide_hud_read(param, &piece, &side, &flags)) {
+              g_hud_side = side; g_hud_piece = piece; g_hud_flags = flags;
           } else {
               static int told;
               if (!told++)

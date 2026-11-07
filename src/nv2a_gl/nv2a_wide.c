@@ -102,33 +102,39 @@ float nv2a_wide_shift(uint32_t x0, uint32_t x1, uint32_t y0, uint32_t y1, float 
     return 0.0f;
 }
 
-/* A mark's side in its value's low byte. */
+/* A mark's side in its value's low byte, with the own-viewport flag in the
+ * byte's top bit. */
 enum { WIDE_HUD_CODE_NONE, WIDE_HUD_CODE_LEFT, WIDE_HUD_CODE_RIGHT };
+#define WIDE_HUD_CODE_OWN_VIEW 0x80u
 
-uint32_t nv2a_wide_hud_mark(unsigned piece, int side)
+uint32_t nv2a_wide_hud_mark(unsigned piece, int side, unsigned flags)
 {
     uint32_t code = side < 0 ? WIDE_HUD_CODE_LEFT : side > 0 ? WIDE_HUD_CODE_RIGHT
                                                              : WIDE_HUD_CODE_NONE;
+    if (flags & NV2A_WIDE_HUD_OWN_VIEW) code |= WIDE_HUD_CODE_OWN_VIEW;
     return NV2A_WIDE_HUD_TAG | ((uint32_t)(piece & 0xFFu) << 8) | code;
 }
 
-int nv2a_wide_hud_read(uint32_t value, unsigned *piece, int *side)
+int nv2a_wide_hud_read(uint32_t value, unsigned *piece, int *side, unsigned *flags)
 {
-    uint32_t code = value & 0xFFu;
+    uint32_t code = value & 0x7Fu;
     if ((value & 0xFFFF0000u) != NV2A_WIDE_HUD_TAG || code > WIDE_HUD_CODE_RIGHT) return 0;
     *piece = (value >> 8) & 0xFFu;
     *side = code == WIDE_HUD_CODE_LEFT ? NV2A_WIDE_HUD_LEFT
           : code == WIDE_HUD_CODE_RIGHT ? NV2A_WIDE_HUD_RIGHT : NV2A_WIDE_HUD_NONE;
+    *flags = (value & WIDE_HUD_CODE_OWN_VIEW) ? NV2A_WIDE_HUD_OWN_VIEW : 0u;
     return 1;
 }
 
-float nv2a_wide_hud_shift(int side, float s, int squeezed)
+float nv2a_wide_hud_shift(int side, float s, int squeezed, float centre)
 {
-    float move;
-    if (side == NV2A_WIDE_HUD_NONE || !(s > 0.0f) || !(s < 1.0f)) return 0.0f;
-    move = (1.0f - s) * 0.5f * (float)NV2A_SCALE_FRAME_W;
+    float edge, move;
+    if (side == NV2A_WIDE_HUD_NONE || !(s > 0.0f) || !(s < 1.0f) || centre != centre)
+        return 0.0f;
+    edge = side < 0 ? 0.0f : (float)NV2A_SCALE_FRAME_W;
+    move = (1.0f - s) * (centre - edge);    /* the shader takes it off x */
     if (squeezed) move /= s;
-    return side < 0 ? move : -move;     /* the shader takes it off x */
+    return move;
 }
 
 void nv2a_wide_hud_clip_x(uint32_t surf_w, float s, int side, uint32_t *x0, uint32_t *x1)

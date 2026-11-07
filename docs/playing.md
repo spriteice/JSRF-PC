@@ -37,8 +37,8 @@ These work in a window or full screen, and each one is remembered.
 - **F11 or Alt+Return:** Full screen.
 - **F10:** 4:3, and back to widescreen at Match screen, your screen's own
   shape. Display > Aspect ratio has the other shapes. Widescreen widens the
-  view rather than stretching it: the HUD and text keep their shape, and the
-  title screen stays 4:3.
+  view rather than stretching it: the HUD and text keep their shape, the HUD
+  sits at the screen's edges, and the title screen stays 4:3.
 - **F9:** Resolution, 1× to 6× the Xbox's 640×480 (2× by default), and as
   much wider as the shape in widescreen (3× at 16:9 is 2560×1440). The game
   restarts to apply it, so save first.

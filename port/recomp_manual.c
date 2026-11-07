@@ -4258,10 +4258,12 @@ void sub_00042EE0(void)
  * written as D3D writes a method (sub_0018EC80): at its device's put
  * pointer, after its make-space call sub_001916B0 when the pointer is at the
  * limit, which takes no arguments and returns the new put pointer. In 4:3,
- * and on the screens the game keeps 4:3, nothing is marked.
- * tests/widescreen_hud checks the marks and how they are written; that the
- * piece then sits at the edge needs the game and the whole renderer, which
- * is the test build's HUD step. */
+ * and on the screens the game keeps 4:3, nothing is marked. The font call's
+ * override, after them, has a piece's text drawn with the piece rather than
+ * later with all the text (widescreen_hud.h). tests/widescreen_hud checks
+ * the pieces, the marks and how they are written, and the text's way; that
+ * each piece then sits at the edge needs the game and the whole renderer,
+ * which is the test build's HUD step. */
 #include "widescreen_hud.h"
 #define D3D_MAKE_SPACE 0x001916B0u      /* D3D's make-space call (no arguments) */
 extern void sub_001916B0(void);
@@ -4279,6 +4281,11 @@ static void wide_hud_end(int piece, int marked)
     widescreen_hud_end((uint8_t *)g_xbox_mem_offset, MEM32(D3D_DEVICE), piece, marked,
                        d3d_make_space);
 }
+/* Each piece's function, as the HUD manager's walk calls it (its class's
+ * slot +0xC, with this in ecx): its draws between its marks. The classes
+ * are the HUD's own, made only by the HUD manager (sub_00108870 and
+ * sub_001077D0). The HUD's signs, such as the stop sign, aren't marked:
+ * their models put them in the middle of the screen, where they stay. */
 /* sub_001060B0: the health bar and its border (class 0x1D1F98), at the top
  * right. */
 extern void sub_001060B0_gen(void);
@@ -4287,6 +4294,113 @@ void sub_001060B0(void)
     int marked = wide_hud_begin(WIDE_HUD_HEALTH);
     sub_001060B0_gen();
     wide_hud_end(WIDE_HUD_HEALTH, marked);
+}
+/* sub_0010D480: the gauge and its numbers (class 0x1D2328), at the bottom
+ * right, in two draws. */
+extern void sub_0010D480_gen(void);
+void sub_0010D480(void)
+{
+    int marked = wide_hud_begin(WIDE_HUD_GAUGE);
+    sub_0010D480_gen();
+    wide_hud_end(WIDE_HUD_GAUGE, marked);
+}
+/* sub_0010DC60: the spray can's model and its count's digits (class
+ * 0x1D2370), on the right. */
+extern void sub_0010DC60_gen(void);
+void sub_0010DC60(void)
+{
+    int marked = wide_hud_begin(WIDE_HUD_CAN);
+    sub_0010DC60_gen();
+    wide_hud_end(WIDE_HUD_CAN, marked);
+}
+/* sub_00109B70: the boost icon (class 0x1D2060), a model, on the right. */
+extern void sub_00109B70_gen(void);
+void sub_00109B70(void)
+{
+    int marked = wide_hud_begin(WIDE_HUD_BOOST);
+    sub_00109B70_gen();
+    wide_hud_end(WIDE_HUD_BOOST, marked);
+}
+/* sub_00102DB0: a digit and the icon it picks (class 0x1D1E18), 530 to 585. */
+extern void sub_00102DB0_gen(void);
+void sub_00102DB0(void)
+{
+    int marked = wide_hud_begin(WIDE_HUD_DIGIT);
+    sub_00102DB0_gen();
+    wide_hud_end(WIDE_HUD_DIGIT, marked);
+}
+/* sub_00103AE0: two digits and an icon (class 0x1D1E58), 472 to 585. */
+extern void sub_00103AE0_gen(void);
+void sub_00103AE0(void)
+{
+    int marked = wide_hud_begin(WIDE_HUD_DIGITS);
+    sub_00103AE0_gen();
+    wide_hud_end(WIDE_HUD_DIGITS, marked);
+}
+/* sub_001040B0: two two-digit numbers (class 0x1D1E98), 500 to 604, made on
+ * demand and shown for two seconds. */
+extern void sub_001040B0_gen(void);
+void sub_001040B0(void)
+{
+    int marked = wide_hud_begin(WIDE_HUD_NUMBERS);
+    sub_001040B0_gen();
+    wide_hud_end(WIDE_HUD_NUMBERS, marked);
+}
+/* sub_000FFFD0: the score and trick count (class 0x1D1CB0), on the left,
+ * whose digits slide in from past the screen's edge, and its label, which
+ * it writes with the font call (WIDE_HUD_TEXT). */
+extern void sub_000FFFD0_gen(void);
+void sub_000FFFD0(void)
+{
+    int marked = wide_hud_begin(WIDE_HUD_SCORE);
+    sub_000FFFD0_gen();
+    wide_hud_end(WIDE_HUD_SCORE, marked);
+}
+/* sub_00101F20: the trick's name (class 0x1D1D90), on the left. */
+extern void sub_00101F20_gen(void);
+void sub_00101F20(void)
+{
+    int marked = wide_hud_begin(WIDE_HUD_TRICK);
+    sub_00101F20_gen();
+    wide_hud_end(WIDE_HUD_TRICK, marked);
+}
+/* sub_0010A750: a seven-digit number that rolls upward when it changes
+ * (class 0x1D20A0), at the top left. It sets a viewport of its own, 159 by
+ * 19, which cuts off the roll, and puts the player's back after
+ * (NV2A_WIDE_HUD_OWN_VIEW). */
+extern void sub_0010A750_gen(void);
+void sub_0010A750(void)
+{
+    int marked = wide_hud_begin(WIDE_HUD_ROLLING);
+    sub_0010A750_gen();
+    wide_hud_end(WIDE_HUD_ROLLING, marked);
+}
+/* sub_001045D0: a message that slides in from past the left edge (class
+ * 0x1D1ED8), drawn with the font call alone (WIDE_HUD_TEXT). */
+extern void sub_001045D0_gen(void);
+void sub_001045D0(void)
+{
+    int marked = wide_hud_begin(WIDE_HUD_MESSAGE);
+    sub_001045D0_gen();
+    wide_hud_end(WIDE_HUD_MESSAGE, marked);
+}
+/* sub_0003D5D0: the game's font call (x, y, depth, colour, x scale, y scale,
+ * text; cdecl), which queues the text for the font's one draw late in the
+ * frame, with every other piece of text. While a piece with text runs,
+ * marked, its text goes instead through sub_0003D610, the font's call that
+ * takes the same arguments and draws at once, through the font's own
+ * batch: so it is drawn between the piece's marks, and moves and is clipped
+ * with it, as the piece's digits are. Called in its place, with the stack
+ * as the caller left it, it returns to the caller as sub_0003D5D0 would. */
+extern void sub_0003D5D0_gen(void);
+extern void sub_0003D610(void);
+void sub_0003D5D0(void)
+{
+    if (widescreen_hud_text_now()) {
+        sub_0003D610();
+        return;
+    }
+    sub_0003D5D0_gen();
 }
 
 

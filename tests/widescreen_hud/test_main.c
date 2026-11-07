@@ -4,7 +4,11 @@
  * guest memory that holds D3D's device (its put pointer and limit) and its
  * push buffer. space() plays D3D's make-space call.
  *
- *   1. The pieces: the health bar is sub_001060B0's, on the right.
+ *   1. The pieces: each is its function's, on its side, named, and only one
+ *      function's; the health bar is still piece 0, sub_001060B0's, on the
+ *      right. Only the rolling number has a viewport of its own, and only
+ *      the score and the sliding message have text. No piece is the signs'
+ *      draw, sub_000FC370: the HUD's signs stay in the middle.
  *   2. In 4:3 (or with no device yet, or no such piece), nothing is written
  *      and nothing is logged, and the end writes nothing either.
  *   3. Widened, the start mark goes where the put pointer is, as one method
@@ -15,6 +19,12 @@
  *      says; below it, it isn't called.
  *   5. Make-space that leaves no room below the limit gets no mark, and no
  *      end mark follows; the check says so once (run.py counts).
+ *   6. The rolling number's marks carry its own-viewport flag, and the end
+ *      mark no flag.
+ *   7. The font's text goes with a piece only while a piece with text runs,
+ *      marked: not before its start, not after its end, not when it wasn't
+ *      marked (4:3), and not for a piece without text. The first time for a
+ *      piece the log says so, and no other time (run.py counts).
  */
 #include <stdio.h>
 #include <string.h>
@@ -58,19 +68,51 @@ static int nothing_written(uint32_t put)
     return word(DEVICE + WIDE_HUD_D3D_PUT) == put;
 }
 
-static int mark_at(uint32_t va, unsigned piece, int side)
+static int mark_flags_at(uint32_t va, unsigned piece, int side, unsigned flags)
 {
-    unsigned p = 999;
+    unsigned p = 999, f = 99;
     int sd = 9;
     return word(va) == ((1u << 18) | NV2A_WIDE_HUD_METHOD)
-        && nv2a_wide_hud_read(word(va + 4), &p, &sd) && p == piece && sd == side;
+        && nv2a_wide_hud_read(word(va + 4), &p, &sd, &f) && p == piece && sd == side
+        && f == flags;
+}
+
+static int mark_at(uint32_t va, unsigned piece, int side)
+{
+    return mark_flags_at(va, piece, side, 0);
 }
 
 static void pieces(void)
 {
-    CHECK(widescreen_hud_pieces[WIDE_HUD_HEALTH].va == 0x001060B0u);
-    CHECK(widescreen_hud_pieces[WIDE_HUD_HEALTH].side == NV2A_WIDE_HUD_RIGHT);
-    CHECK(widescreen_hud_pieces[WIDE_HUD_HEALTH].name != NULL);
+    static const struct { int piece; uint32_t va; int side; } want[] = {
+        { WIDE_HUD_HEALTH,  0x001060B0u, NV2A_WIDE_HUD_RIGHT },
+        { WIDE_HUD_GAUGE,   0x0010D480u, NV2A_WIDE_HUD_RIGHT },
+        { WIDE_HUD_CAN,     0x0010DC60u, NV2A_WIDE_HUD_RIGHT },
+        { WIDE_HUD_BOOST,   0x00109B70u, NV2A_WIDE_HUD_RIGHT },
+        { WIDE_HUD_DIGIT,   0x00102DB0u, NV2A_WIDE_HUD_RIGHT },
+        { WIDE_HUD_DIGITS,  0x00103AE0u, NV2A_WIDE_HUD_RIGHT },
+        { WIDE_HUD_NUMBERS, 0x001040B0u, NV2A_WIDE_HUD_RIGHT },
+        { WIDE_HUD_SCORE,   0x000FFFD0u, NV2A_WIDE_HUD_LEFT },
+        { WIDE_HUD_TRICK,   0x00101F20u, NV2A_WIDE_HUD_LEFT },
+        { WIDE_HUD_ROLLING, 0x0010A750u, NV2A_WIDE_HUD_LEFT },
+        { WIDE_HUD_MESSAGE, 0x001045D0u, NV2A_WIDE_HUD_LEFT },
+    };
+    unsigned i, j;
+    CHECK(WIDE_HUD_HEALTH == 0);
+    CHECK(sizeof want / sizeof want[0] == WIDE_HUD_PIECES);
+    for (i = 0; i < sizeof want / sizeof want[0]; i++) {
+        const WideHudPiece *p = &widescreen_hud_pieces[want[i].piece];
+        unsigned own = want[i].piece == WIDE_HUD_ROLLING ? NV2A_WIDE_HUD_OWN_VIEW : 0u;
+        unsigned text = want[i].piece == WIDE_HUD_SCORE || want[i].piece == WIDE_HUD_MESSAGE
+                      ? WIDE_HUD_TEXT : 0u;
+        CHECK(p->va == want[i].va && p->side == want[i].side);
+        CHECK(p->name != NULL && p->name[0] != '\0');
+        CHECK(p->flags == (own | text));
+        CHECK(p->va != 0x000FC370u);                    /* the signs' draw */
+        for (j = 0; j < i; j++)
+            CHECK(widescreen_hud_pieces[want[j].piece].va != p->va);
+    }
+    CHECK((WIDE_HUD_TEXT & NV2A_WIDE_HUD_OWN_VIEW) == 0);
 }
 
 static void off(void)
@@ -149,6 +191,45 @@ static void no_room(void)
     CHECK(word(0) == 0 && word(4) == 0);
 }
 
+static void own_view(void)
+{
+    int marked;
+    fresh(BUFFER);
+    marked = widescreen_hud_begin(mem(), DEVICE, WIDE_HUD_ROLLING, 1, space);
+    CHECK(marked);
+    CHECK(mark_flags_at(BUFFER, WIDE_HUD_ROLLING, NV2A_WIDE_HUD_LEFT, NV2A_WIDE_HUD_OWN_VIEW));
+    widescreen_hud_end(mem(), DEVICE, WIDE_HUD_ROLLING, marked, space);
+    CHECK(mark_flags_at(BUFFER + 8, WIDE_HUD_ROLLING, NV2A_WIDE_HUD_NONE, 0));
+    CHECK(!widescreen_hud_text_now());
+}
+
+static void text(void)
+{
+    int marked;
+    fresh(BUFFER);
+    CHECK(!widescreen_hud_text_now());                  /* nothing running */
+    marked = widescreen_hud_begin(mem(), DEVICE, WIDE_HUD_SCORE, 1, space);
+    CHECK(marked);
+    CHECK(widescreen_hud_text_now());                   /* the score's label */
+    CHECK(widescreen_hud_text_now());                   /* and its next, unlogged */
+    widescreen_hud_end(mem(), DEVICE, WIDE_HUD_SCORE, marked, space);
+    CHECK(!widescreen_hud_text_now());                  /* after the score */
+    marked = widescreen_hud_begin(mem(), DEVICE, WIDE_HUD_TRICK, 1, space);
+    CHECK(!widescreen_hud_text_now());                  /* a piece without text */
+    widescreen_hud_end(mem(), DEVICE, WIDE_HUD_TRICK, marked, space);
+    marked = widescreen_hud_begin(mem(), DEVICE, WIDE_HUD_SCORE, 0, space);
+    CHECK(!marked && !widescreen_hud_text_now());       /* 4:3: not marked */
+    widescreen_hud_end(mem(), DEVICE, WIDE_HUD_SCORE, marked, space);
+    marked = widescreen_hud_begin(mem(), DEVICE, WIDE_HUD_MESSAGE, 1, space);
+    CHECK(widescreen_hud_text_now());                   /* the sliding message's */
+    widescreen_hud_end(mem(), DEVICE, WIDE_HUD_MESSAGE, marked, space);
+    CHECK(!widescreen_hud_text_now());
+    fresh(LIMIT);                                       /* a start mark with no room */
+    s_room = 0;
+    marked = widescreen_hud_begin(mem(), DEVICE, WIDE_HUD_SCORE, 1, space);
+    CHECK(!marked && !widescreen_hud_text_now());
+}
+
 int main(void)
 {
     pieces();
@@ -156,6 +237,8 @@ int main(void)
     marks();
     full();
     no_room();
+    own_view();
+    text();
     fflush(stderr);
     if (s_failures) {
         printf("widescreen_hud: %d failed\n", s_failures);
