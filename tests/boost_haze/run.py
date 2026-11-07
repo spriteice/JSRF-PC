@@ -1,6 +1,6 @@
 """The boost's heat haze, widened with the camera (known bug 2), without the game.
 
-Cut by text from port/recomp_manual.c, which doesn't link on its own:
+Cut by text: from port/recomp_manual.c, which doesn't link on its own:
 wide_haze_corners and its two constants, verbatim, built with the warnings
 CI counts against stand-ins for the guest memory and the widening
 (test_main.c), which play the game's part: placing the quad's corners, and
