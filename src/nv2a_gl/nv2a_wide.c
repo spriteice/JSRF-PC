@@ -50,6 +50,11 @@ float nv2a_wide_shape_aspect(int shape, int disp_w, int disp_h)
     }
 }
 
+int nv2a_wide_f10(int shape)
+{
+    return shape == NV2A_WIDE_SHAPE_4_3 ? NV2A_WIDE_SHAPE_MATCH : NV2A_WIDE_SHAPE_4_3;
+}
+
 float nv2a_wide_clamp(float a)
 {
     return a >= NV2A_WIDE_4_3 ? a : NV2A_WIDE_4_3;      /* NaN too */

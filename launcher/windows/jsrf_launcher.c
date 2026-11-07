@@ -18,8 +18,8 @@
  * Settings, saves, logs, and unpacked disc images live in
  * %LOCALAPPDATA%\JSRF-PC -- or, with a folder named "portable" beside
  * the launcher, in that folder, as on Linux. In game: F1 the in-game menu,
- * F11 (or Alt+Enter) full screen, F10 widescreen (its shape in Display >
- * Aspect ratio), F9 resolution, and F8 the free camera.
+ * F11 (or Alt+Enter) full screen, F10 4:3 or your screen's shape (the
+ * others in Display > Aspect ratio), F9 resolution, and F8 the free camera.
  */
 #define WIN32_LEAN_AND_MEAN
 #ifndef UNICODE

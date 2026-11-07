@@ -55,6 +55,11 @@ int nv2a_wide_shape_parse(const char *v);
  * known (either is below 1). */
 float nv2a_wide_shape_aspect(int shape, int disp_w, int disp_h);
 
+/* The shape F10 goes to from shape (4:3 when widescreen is off): 4:3 from
+ * any other, and Match screen from 4:3, so the one key goes between the
+ * Xbox's shape and the screen's own. */
+int nv2a_wide_f10(int shape);
+
 /* The inputs D3D's screen-space (XYZRHW) pass-through program reads: the
  * title's 2D -- the HUD, text, menus, and its copies of whole frames --
  * comes through it. */

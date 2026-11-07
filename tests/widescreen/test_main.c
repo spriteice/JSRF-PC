@@ -26,6 +26,8 @@
  *   9. A frame of the window's own shape fills it, whatever its raster was
  *      rounded to; others sit between bars, never past the window.
  *  10. Render scale's names follow the shape, and are nv2a_scale_names' at 4:3.
+ *  11. F10 goes to 4:3 from every wide shape, and to Match screen from 4:3,
+ *      so two presses come back to Match screen.
  */
 #include <math.h>
 #include <stdio.h>
@@ -289,6 +291,16 @@ static void scale_names(void)
     CHECK(!strcmp(b, "6x  4608x2880"));
 }
 
+static void f10(void)
+{
+    int i;
+    CHECK(nv2a_wide_f10(NV2A_WIDE_SHAPE_4_3) == NV2A_WIDE_SHAPE_MATCH);
+    for (i = NV2A_WIDE_SHAPE_16_10; i < NV2A_WIDE_SHAPES; i++) {
+        CHECK(nv2a_wide_f10(i) == NV2A_WIDE_SHAPE_4_3);
+        CHECK(nv2a_wide_f10(nv2a_wide_f10(i)) == NV2A_WIDE_SHAPE_MATCH);
+    }
+}
+
 int main(void)
 {
     shapes();
@@ -302,6 +314,7 @@ int main(void)
     raster();
     fit();
     scale_names();
+    f10();
     if (s_failures) {
         printf("widescreen: %d failed\n", s_failures);
         return 1;

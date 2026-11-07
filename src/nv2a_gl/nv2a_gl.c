@@ -1605,8 +1605,8 @@ int nv_window_pref_shape(void)
  *   R          Black                    F  White
  *   Return     Start                    Esc  Back (and a keyboard's Back key)
  *   C / V      left / right stick click
- * F11 or Alt+Return: full screen. F10: widescreen. F9: resolution. And the
- * keys the game binds for itself (nv_window_hotkey). */
+ * F11 or Alt+Return: full screen. F10: 4:3 or Match screen. F9: resolution.
+ * And the keys the game binds for itself (nv_window_hotkey). */
 static volatile unsigned short g_sdl_kb_buttons;
 static volatile unsigned char  g_sdl_kb_analog[8];
 
@@ -1769,16 +1769,6 @@ static void sdl_wide_window(void)
             on ? nv2a_wide_shape_names[nv2a_wide_shape()] : "4:3", (double)a);
 }
 
-/* F10: widescreen on and off, kept as widescreen=: 4:3, and back to the
- * shape it was on at. */
-static void sdl_toggle_widescreen(void)
-{
-    int on = !nv2a_widescreen();
-    nv2a_set_widescreen(on);
-    sdl_cfg_set("widescreen", on);
-    sdl_wide_window();
-}
-
 /* F9: the internal resolution, 1x to 6x the Xbox's 640x480 (NV2A_SCALE_MAX),
  * every one of them on every system. The renderer sizes its targets once, at
  * start-up, so a new one means starting again: after asking, the choice is
@@ -1918,6 +1908,13 @@ static void sdl_aspect_pick(int i)
     nv2a_set_widescreen(on);
     sdl_cfg_set("widescreen", on);
     sdl_wide_window();
+}
+
+/* F10: 4:3, and Match screen from 4:3 (nv2a_wide_f10), each as Display >
+ * Aspect ratio picks it, and kept as it keeps it. */
+static void sdl_toggle_widescreen(void)
+{
+    sdl_aspect_pick(nv2a_wide_f10(sdl_aspect_now()));
 }
 
 /* File > Restart (src/menu/menu_sdl.cpp): the game started again as it is,
