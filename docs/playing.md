@@ -68,16 +68,28 @@ coming back quickly.
 The free camera only steers the camera of the skater you control. When the
 game moves a skater by itself, as when a scene follows Beat or another
 skater heads off, the game's own camera shows it. Pausing keeps the view
-where you left it. Near a wall, the view keeps the wall out of it: it shifts a
-little to the side, or up, away from a wall or the ground at its edge, and
-comes in towards the player only when that isn't enough. Once a wall has been
-out of the way for a moment, the view eases back out, and back across, so
-walls that come and go, as in a tight space, don't shake it, and the end of a
-wall you skate past doesn't jerk it. Something that only hides a corner of the
-picture, such as a pole between you and the camera, doesn't move it. The view
-never comes closer to the player than just in front of them: right up against
-a wall with the camera turned into it, you see through that wall rather than
-the view turning over.
+where you left it. Near a wall, it keeps the wall out of the view as the
+game's camera does (Near walls, below).
+
+## Near walls
+
+The camera keeps walls out of the view, the game's own and the free camera
+alike. On the Xbox, the game's camera stops at a wall it moves into. But it
+tests a single point, and the picture is wider than that point, more so in
+widescreen, so the edge of the picture could cut into a wall beside the camera,
+or one it meets at an angle, and show what is behind it. And it tests only when
+the camera itself moves through a surface, so when a half pipe's curve or a
+wall came between as the player moved, the camera stayed behind it. Now, near a
+wall, the view shifts a little to the side, or up, away from a wall or the
+ground at its edge, and comes in towards the player only when that isn't
+enough. Behind a wall or a half pipe's curve, it comes in to the near side of
+it. Once a wall has been out of the way for a moment, the view eases back out,
+and back across, so walls that come and go, as in a tight space, don't shake
+it, and the end of a wall you skate past doesn't jerk it. Something narrower
+than the picture, such as a pole or a rail between you and the camera, doesn't
+move it. The view never comes closer to the player than just in front of them:
+right up against a wall with the camera turned into it, you see through that
+wall rather than the view turning over.
 
 ## In-game menu
 

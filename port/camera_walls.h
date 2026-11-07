@@ -3,13 +3,20 @@
  * The game's follow camera tests one line, from what it looks at to its eye,
  * and puts the eye on the wall that line meets. But the view is not a point:
  * it starts at the near plane, ahead of the eye, as wide as the projection's
- * angle. This tests that view with the game's own line test and moves the
- * eye across, or in, until nothing cuts across it, and holds and eases what
- * it moved so a wall going by does not shake the view. The free camera
- * (freecam.h) uses it for the eye it places. The hooks are in
- * recomp_manual.c: sub_000A6100, the follow camera's post-update. */
+ * angle, which widescreen widens. This tests that view with the game's own
+ * line test and moves the eye across, or in, until nothing cuts across it,
+ * and holds and eases what it moved so a wall going by does not shake the
+ * view. It does so for the game's own eye, where the game's wall test put
+ * it, and for the eye the free camera (freecam.h) places, whose own line it
+ * tests as well; for the game's, the eye's line counts only when what it
+ * meets is wider than the view, as a wall or a half pipe's curve the eye
+ * has gone behind is, where the game's test runs only when the eye's move
+ * crosses a surface. The hooks are in recomp_manual.c: sub_000A6100, the
+ * follow camera's post-update. */
 #ifndef JSRF_CAMERA_WALLS_H
 #define JSRF_CAMERA_WALLS_H
+
+#include <stdint.h>
 
 /* A line test against the world, as the follow camera's wall test makes it:
  * how much of the line from a to b is open, 0 to 1, up to the nearest hit.
@@ -50,17 +57,34 @@ struct camwall {
 /* CAMWALL_START: as a camera that starts again. */
 void camwall_reset(struct camwall *w);
 
+/* Each camera's: CAMWALL_CAMERAS at once, as many as split screen's
+ * players' and a scene's besides. */
+#define CAMWALL_CAMERAS 8
+
+/* The state of camera cam (its guest address), for key: what places its eye
+ * and how, as the caller tells them apart. A camera not seen before, or one
+ * whose key changed since, starts again (CAMWALL_START); with more cameras
+ * than CAMWALL_CAMERAS, a new one takes the place of the one seen longest
+ * ago. Each camera keeps its own, so one player's walls don't move
+ * another's view. */
+struct camwall *camwall_for(uint32_t cam, uint32_t key);
+
 /* How far from the target tgt the eye eye can be, as a share of its
- * distance, up to most (1 for all of it), and push, how far it moves
- * across there: its own line clear, and no surface across the view where
- * it starts, ahead of it (ahead, and half_w and half_h either side there;
- * 0s test the eye's line alone). When one cuts across it, the eye moves
- * across, away from it, or else comes in until lines from tgt to the
+ * distance, up to most (1 for all of it), and push, how far it moves across
+ * there: its own line clear, with eye_line, and no surface across the view
+ * where it starts, ahead of it (ahead, and half_w and half_h either side
+ * there; 0s test the free camera's line alone, and leave the game's eye
+ * where it is). Without eye_line, for the game's own eye, where the game's
+ * wall test put it, what the eye's line meets brings it in only when it
+ * hides the whole of where the view starts from beside tgt, as a surface
+ * the eye has gone behind does: a pole between, narrower than the view, is
+ * let be, as the game lets it. When a surface cuts across the view, the eye
+ * moves across, away from it, or else comes in until lines from tgt to the
  * view's corners are clear, if either clears them. Never nearer tgt than
  * where the view starts in front of it. by says what set it. */
-double camwall_clear(const float tgt[3], const float eye[3], double most, double ahead,
-                     double half_w, double half_h, camwall_line_fn line, void *ctx,
-                     double push[3], int *by);
+double camwall_clear(const float tgt[3], const float eye[3], double most, int eye_line,
+                     double ahead, double half_w, double half_h, camwall_line_fn line,
+                     void *ctx, double push[3], int *by);
 
 /* After camwall_clear, each frame: open is the share it gave. Returns the
  * share to put the eye at: in at once when open is less than last frame's,

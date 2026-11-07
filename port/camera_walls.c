@@ -1,8 +1,7 @@
 /* The follow camera's view kept out of walls (camera_walls.h).
  *
- * The free camera (port/freecam.c) places its eye with it. What a camera
- * keeps from one frame to the next, the share and the move across, is the
- * caller's (struct camwall). */
+ * What a camera keeps from one frame to the next, the share and the move
+ * across, is each camera's own (camwall_for), or the caller's. */
 #include <math.h>
 #include "camera_walls.h"
 
@@ -16,6 +15,27 @@ void camwall_reset(struct camwall *w)
 {
     const struct camwall start = CAMWALL_START;
     *w = start;
+}
+
+struct camwall *camwall_for(uint32_t cam, uint32_t key)
+{
+    static struct { uint32_t cam, key; unsigned seen; struct camwall w; } kept[CAMWALL_CAMERAS];
+    static unsigned now;                /* calls so far: when each camera was last seen */
+    int i, old = 0;
+    now++;
+    for (i = 0; i < CAMWALL_CAMERAS && !(kept[i].seen && kept[i].cam == cam); i++)
+        if (kept[i].seen < kept[old].seen) old = i;
+    if (i == CAMWALL_CAMERAS) {         /* not seen: the slot seen longest ago, or never */
+        i = old;
+        kept[i].cam = cam;
+        kept[i].key = ~key;             /* so that it starts again, below */
+    }
+    kept[i].seen = now;
+    if (kept[i].key != key) {
+        kept[i].key = key;
+        camwall_reset(&kept[i].w);
+    }
+    return &kept[i].w;
 }
 
 /* Where the view starts for an eye at share s of u from tgt, moved across
@@ -74,13 +94,13 @@ static int view_frame(const float tgt[3], const float eye[3], double u[3], doubl
     return 1;
 }
 
-double camwall_clear(const float tgt[3], const float eye[3], double most, double ahead,
-                     double half_w, double half_h, camwall_line_fn line, void *ctx,
-                     double push[3], int *by)
+double camwall_clear(const float tgt[3], const float eye[3], double most, int eye_line,
+                     double ahead, double half_w, double half_h, camwall_line_fn line,
+                     void *ctx, double push[3], int *by)
 {
     static const double none[3] = { 0, 0, 0 };
     double a[3], b[3], u[3], f[3], rt[3], up[3], p[3], t[4], d, wl, nearest, s0, s;
-    int i, k, n, framed = view_frame(tgt, eye, u, &d, f, rt, up);
+    int i, k, n, viewed, framed = view_frame(tgt, eye, u, &d, f, rt, up);
     for (k = 0; k < 3; k++) {
         a[k] = tgt[k];
         b[k] = a[k] + most * u[k];
@@ -90,8 +110,31 @@ double camwall_clear(const float tgt[3], const float eye[3], double most, double
     if (!(d > 0 && most > 0)) return most;
     /* The eye's line, as the game tests it, out to most. */
     s0 = most * line(ctx, a, b);
+    viewed = half_w > 0 && half_h > 0 && ahead >= 0 && framed;
+    /* The game's own eye stands where the game's test left it, unless what
+     * its line meets hides the whole of where the view starts from beside
+     * the target: four lines, each as long as the eye's and beside it, from
+     * a corner of the view's size at the target to the same corner where
+     * the view starts. A pole, a rail or a sign between the player and the
+     * eye, narrower than the view, leaves some of them open, and stands, as
+     * the game lets it. A surface wider than the view hides them all: the
+     * eye has gone behind it, as when a half pipe's curve or a wall comes
+     * between as the player moves, which the game's own test, run only when
+     * the eye's move crosses a surface, never sees. Then the eye comes in to
+     * it, as the game's test would have put it. With no view to test by,
+     * it stands. */
+    if (!eye_line && s0 < most) {
+        double c0[3], c1[3];
+        if (!viewed) s0 = most;
+        for (i = 0; i < 4 && s0 < most; i++) {
+            double sx = (i & 1) ? half_w : -half_w, sy = (i & 2) ? half_h : -half_h;
+            view_corner(tgt, u, 0, none, 0, f, sx, rt, sy, up, c0);
+            view_corner(tgt, u, most, none, ahead, f, sx, rt, sy, up, c1);
+            if (line(ctx, c0, c1) >= 1) s0 = most;
+        }
+    }
     if (s0 < most) *by = CAMWALL_EYE;
-    if (!(half_w > 0 && half_h > 0 && ahead >= 0 && framed)) return s0;
+    if (!viewed) return s0;
     /* The eye no nearer the target than where its view starts a view's
      * reach (wl, from the eye to a corner of where the view starts) in
      * front of the target. Nearer, the view starts at or past the player:

@@ -21,19 +21,28 @@ static void near(double got, double want, const char *what)
 }
 
 /* A made-up world for camwall_clear: half-spaces (the side of a plane where
- * n.p < c) and boxes, each solid. world_line is the line test: the share of
- * the line from a to b before it enters one, 0 when a is in one. */
-static struct { int box; double n[3], c, lo[3], hi[3]; } s_solid[4];
+ * n.p < c) and boxes, each solid, and surfaces, planes that a line meets
+ * only where it crosses them, as the game's collision is: from behind one,
+ * a line that doesn't cross it meets nothing. world_line is the line test:
+ * the share of the line from a to b before it enters a solid or crosses a
+ * surface, 0 when a is in a solid. */
+/* kind: 0 a half-space, 1 a box, 2 a surface */
+static struct { int kind; double n[3], c, lo[3], hi[3]; } s_solid[4];
 static int s_solids, s_lines;
 static void add_plane(double nx, double ny, double nz, double c)
 {
-    s_solid[s_solids].box = 0;
+    s_solid[s_solids].kind = 0;
     s_solid[s_solids].n[0] = nx; s_solid[s_solids].n[1] = ny; s_solid[s_solids].n[2] = nz;
     s_solid[s_solids++].c = c;
 }
+static void add_surface(double nx, double ny, double nz, double c)
+{
+    add_plane(nx, ny, nz, c);
+    s_solid[s_solids - 1].kind = 2;
+}
 static void add_box(double x0, double y0, double z0, double x1, double y1, double z1)
 {
-    s_solid[s_solids].box = 1;
+    s_solid[s_solids].kind = 1;
     s_solid[s_solids].lo[0] = x0; s_solid[s_solids].lo[1] = y0; s_solid[s_solids].lo[2] = z0;
     s_solid[s_solids].hi[0] = x1; s_solid[s_solids].hi[1] = y1; s_solid[s_solids++].hi[2] = z1;
 }
@@ -45,9 +54,13 @@ static double world_line(void *ctx, const double a[3], const double b[3])
     s_lines++;
     for (i = 0; i < s_solids; i++) {
         double t0 = 0, t1 = 1;
-        if (!s_solid[i].box) {
+        if (s_solid[i].kind != 1) {
             double ga = -s_solid[i].c, gb = -s_solid[i].c;
             for (k = 0; k < 3; k++) { ga += s_solid[i].n[k] * a[k]; gb += s_solid[i].n[k] * b[k]; }
+            if (s_solid[i].kind == 2) {
+                if ((ga < 0) != (gb < 0)) open = fmin(open, ga / (ga - gb));
+                continue;
+            }
             if (ga < 0) return 0;
             if (gb < 0) open = fmin(open, ga / (ga - gb));
             continue;
@@ -67,8 +80,8 @@ static double world_line(void *ctx, const double a[3], const double b[3])
     return open;
 }
 /* Whether the view's start, for the eye at share s moved across by p, is
- * outside every solid: its middle and four corners, worked out as
- * camwall_clear does. */
+ * outside every solid and in front of every surface: its middle and four
+ * corners, worked out as camwall_clear does. */
 static int view_clear(const float t[3], const float e[3], double s, const double p[3],
                       double ahead, double hw, double hh)
 {
@@ -88,7 +101,7 @@ static int view_clear(const float t[3], const float e[3], double s, const double
         for (k = 0; k < 3; k++)
             c[k] = t[k] + s * u[k] + p[k] + ahead * f[k] + sx * rt[k] + sy * up[k];
         for (j = 0; j < s_solids; j++) {
-            if (!s_solid[j].box) {
+            if (s_solid[j].kind != 1) {
                 double g = -s_solid[j].c;
                 for (k = 0; k < 3; k++) g += s_solid[j].n[k] * c[k];
                 if (g < -1e-9) return 0;
@@ -148,13 +161,13 @@ int main(int argc, char **argv)
         int by, i;
         s_solids = 0;
         add_plane(-1, 0, 0, -0.5);              /* a wall along the view, half a unit to the right */
-        camwall_clear(t3, e3, 1.0, 1.0, 1.0, 0.57, world_line, NULL, need, &by);
+        camwall_clear(t3, e3, 1.0, 1, 1.0, 1.0, 0.57, world_line, NULL, need, &by);
         assert(by == CAMWALL_ACROSS && need[0] < 0);
         camwall_across(&w, t3, e3, 1.0, need, 1.0, 1.0, 0.57, world_line, NULL, out);
         near(out[0], need[0], "a wall: across at once");
         first = out[0];
         s_solids = 0;                           /* skated past its end */
-        camwall_clear(t3, e3, 1.0, 1.0, 1.0, 0.57, world_line, NULL, need, &by);
+        camwall_clear(t3, e3, 1.0, 1, 1.0, 1.0, 0.57, world_line, NULL, need, &by);
         assert(by == CAMWALL_CLEAR && need[0] == 0);
         for (i = 0; i < 20; i++) {
             camwall_across(&w, t3, e3, 1.0, need, 1.0, 1.0, 0.57, world_line, NULL, out);
@@ -165,7 +178,7 @@ int main(int argc, char **argv)
         for (i = 0; i < 10; i++) camwall_across(&w, t3, e3, 1.0, need, 1.0, 1.0, 0.57, world_line, NULL, out);
         near(out[0], first * pow(0.9, 11), "two thirds of the way back in 11 frames");
         add_plane(-1, 0, 0, -0.5);              /* the wall again */
-        camwall_clear(t3, e3, 1.0, 1.0, 1.0, 0.57, world_line, NULL, need, &by);
+        camwall_clear(t3, e3, 1.0, 1, 1.0, 1.0, 0.57, world_line, NULL, need, &by);
         camwall_across(&w, t3, e3, 1.0, need, 1.0, 1.0, 0.57, world_line, NULL, out);
         near(out[0], first, "the wall again, the view cut where it was: across at once");
         assert(view_clear(t3, e3, 1.0, out, 1.0, 1.0, 0.57));
@@ -175,7 +188,7 @@ int main(int argc, char **argv)
             camwall_across(&w, t3, e3, 1.0, need, 1.0, 1.0, 0.57, world_line, NULL, out);
         assert(out[0] == 0 && out[1] == 0 && out[2] == 0);
         add_plane(-1, 0, 0, -0.5);
-        camwall_clear(t3, e3, 1.0, 1.0, 1.0, 0.57, world_line, NULL, need, &by);
+        camwall_clear(t3, e3, 1.0, 1, 1.0, 1.0, 0.57, world_line, NULL, need, &by);
         camwall_across(&w, t3, e3, 1.0, need, 1.0, 1.0, 0.57, world_line, NULL, out);
         camwall_reset(&w);
         s_solids = 0;
@@ -237,7 +250,7 @@ int main(int argc, char **argv)
             fprintf(stderr, "no case %s\n", c);
             return 2;
         }
-        got = camwall_clear(t3, e3, 1.0, 1.0, 1.0, 0.57, world_line, NULL, push, &by);
+        got = camwall_clear(t3, e3, 1.0, 1, 1.0, 1.0, 0.57, world_line, NULL, push, &by);
         moved = sqrt(push[0] * push[0] + push[1] * push[1] + push[2] * push[2]);
         fprintf(stderr, "%s: share %.4f, %.2f across, by %d, %d lines\n", c, got, moved, by, s_lines);
         if (by != want_by) {
@@ -292,9 +305,127 @@ int main(int argc, char **argv)
         /* And the held eye's view, tested where it is (camwall_clear up to
          * it), with the eye moved across there. */
         if (!strcmp(c, "clear_floor")) {
-            double held = camwall_clear(t3, e3, 0.6, 1.0, 1.0, 0.57, world_line, NULL, push, &by);
+            double held = camwall_clear(t3, e3, 0.6, 1, 1.0, 1.0, 0.57, world_line, NULL, push, &by);
             assert(held <= 0.6 && view_clear(t3, e3, held, push, 1.0, 1.0, 0.57));
         }
+    } else if (!strncmp(c, "game_", 5)) {
+        /* The game's own eye, where its wall test put it (eye_line 0): the
+         * player at (0, 3, 0), the eye 10 behind, the view starting 1 ahead
+         * of it, 0.575 above and below, and as wide either side as each
+         * shape makes the game's 75 degrees at 4:3 (tan 0.767): 4:3, 16:9
+         * and 21:9. Where nothing cuts the view, the eye stands, as the
+         * game left it, and so it does for a pole between, near the eye or
+         * right by the player. Where something does cut it, or the eye is
+         * behind a surface wider than the view, the game's view is cut and
+         * this one isn't. */
+        static const double none[3] = { 0, 0, 0 };
+        static const double shape[3] = { 4.0 / 3, 16.0 / 9, 21.0 / 9 };
+        const float t3[3] = { 0, 3, 0 }, e3[3] = { 0, 3, -10 };
+        double push[3], got, a = 0, share = 1;
+        int by, want[3], k;
+        s_solids = 0;
+        if (!strcmp(c, "game_wall_50") || !strcmp(c, "game_wall_70")) {
+            /* A wall the game's line met, the eye on it, turned 50 or 70
+             * degrees from square-on to the view: 50 cuts the view only
+             * once widescreen widens it, 70 at 4:3 too. */
+            double r;
+            a = !strcmp(c, "game_wall_50") ? 50 : 70;
+            r = a * 3.14159265358979323846 / 180;
+            add_plane(sin(r), 0, cos(r), sin(r) * e3[0] + cos(r) * e3[2]);
+            want[0] = a == 50 ? CAMWALL_CLEAR : CAMWALL_ACROSS;
+            want[1] = want[2] = CAMWALL_ACROSS;
+        } else if (!strcmp(c, "game_alongside")) {
+            add_plane(-1, 0, 0, -0.9);          /* a wall along the view, 0.9 to the right */
+            want[0] = CAMWALL_CLEAR;
+            want[1] = want[2] = CAMWALL_ACROSS;
+        } else if (!strcmp(c, "game_pole") || !strcmp(c, "game_pole_near")
+                || !strcmp(c, "game_open")) {
+            if (!strcmp(c, "game_pole"))
+                add_box(-0.3, -10, -5.3, 0.3, 10, -4.7); /* a pole between the player and the eye */
+            if (!strcmp(c, "game_pole_near"))
+                add_box(-0.3, -10, -1.3, 0.3, 10, -0.7); /* a pole right behind the player */
+            want[0] = want[1] = want[2] = CAMWALL_CLEAR;
+        } else if (!strcmp(c, "game_half_pipe")) {
+            /* A half pipe's wall rising behind the player at 40 degrees,
+             * the eye under it, as when the player skates down into the
+             * half pipe with the eye following: the game's own test, which
+             * runs only when the eye's move crosses a surface, leaves it
+             * there, and from under it, the lines across the view meet
+             * nothing. The eye comes in to the surface, half way, and its
+             * view there is clear. */
+            const double k40 = tan(40 * 3.14159265358979323846 / 180);
+            add_surface(0, 1, k40, 0.5 - 2 * k40);
+            share = (3 - (0.5 - 2 * k40)) / (10 * k40);
+            want[0] = want[1] = want[2] = CAMWALL_EYE;
+        } else if (!strcmp(c, "game_wall_between")) {
+            /* A wall that came between as the player turned a corner, wider
+             * than the view, the eye behind it: in to the wall, as the
+             * game's own test puts it when the eye's move crosses one. */
+            add_box(-6, -10, -6, 6, 10, -5);
+            share = 0.5;
+            want[0] = want[1] = want[2] = CAMWALL_EYE;
+        } else {
+            fprintf(stderr, "no case %s\n", c);
+            return 2;
+        }
+        for (k = 0; k < 3; k++) {
+            const double hw = 0.767 * shape[k] / (4.0 / 3), hh = 0.575;
+            double moved;
+            s_lines = 0;
+            got = camwall_clear(t3, e3, 1.0, 0, 1.0, hw, hh, world_line, NULL, push, &by);
+            moved = sqrt(push[0] * push[0] + push[1] * push[1] + push[2] * push[2]);
+            fprintf(stderr, "%s %d: share %.4f, %.2f across, by %d, %d lines\n",
+                    c, k, got, moved, by, s_lines);
+            if (by != want[k]) {
+                fprintf(stderr, "FAIL %s %d: by %d, not %d\n", c, k, by, want[k]);
+                return 1;
+            }
+            near(got, share, "the game's eye: in along its line only behind a surface");
+            assert(view_clear(t3, e3, got, push, 1.0, hw, hh));
+            if (by == CAMWALL_CLEAR) {
+                /* Nothing cuts the view: the eye stands, as the game left
+                 * it. A pole between meets the eye's line, but the lines
+                 * beside it, a view's size apart, pass it: it is let be. */
+                assert(moved == 0);
+            } else if (by == CAMWALL_EYE) {
+                /* Behind a surface: in to it, with nothing across. Under
+                 * the half pipe, the game's eye, where it was, had its
+                 * view's start in the half pipe's wall. */
+                assert(moved == 0);
+                if (!strcmp(c, "game_half_pipe")) assert(!view_clear(t3, e3, 1.0, none, 1.0, hw, hh));
+            } else {
+                /* The game's view is cut; moved across, by less than the
+                 * view's reach for each corner, it isn't. */
+                assert(!view_clear(t3, e3, 1.0, none, 1.0, hw, hh));
+                assert(moved > 0 && moved <= 4 * sqrt(1 + hw * hw + hh * hh));
+            }
+        }
+        if (!strcmp(c, "game_pole")) {
+            /* The free camera's eye, whose own line is tested (eye_line 1),
+             * comes in to the pole; the game's own camera never did. */
+            got = camwall_clear(t3, e3, 1.0, 1, 1.0, 0.767, 0.575, world_line, NULL, push, &by);
+            assert(by == CAMWALL_EYE && got < 0.53);
+        }
+    } else if (!strcmp(c, "cameras")) {
+        /* Each camera its own: one camera brought in leaves another out;
+         * the same key goes on, another starts again; with more cameras
+         * than are kept, the one seen longest ago goes, and the rest stay. */
+        struct camwall *a, *b;
+        uint32_t i;
+        a = camwall_for(0x01000000u, 3);
+        near(camwall_share(a, 0.4), 0.4, "camera A: in at once");
+        b = camwall_for(0x01001000u, 3);
+        assert(b != a);
+        near(camwall_share(b, 1), 1, "camera B: all the way out");
+        assert(camwall_for(0x01000000u, 3) == a);
+        near(camwall_share(a, 1), 0.4, "camera A again: it waits where it was");
+        a = camwall_for(0x01000000u, 4);
+        near(camwall_share(a, 1), 1, "camera A in another mode: started again");
+        near(camwall_share(camwall_for(0x01001000u, 3), 0.7), 0.7, "camera B: in at once");
+        for (i = 0; i < CAMWALL_CAMERAS - 1; i++)      /* fills the rest, and then one more */
+            camwall_share(camwall_for(0x02000000u + i * 0x1000u, 3), 0.5);
+        near(camwall_share(camwall_for(0x01001000u, 3), 1), 0.7, "camera B, seen since: kept");
+        near(camwall_share(camwall_for(0x01000000u, 4), 1), 1, "camera A, seen longest ago: gone");
     } else {
         fprintf(stderr, "no case %s\n", c);
         return 2;

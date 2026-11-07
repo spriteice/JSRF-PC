@@ -4607,12 +4607,17 @@ void sub_000A5070(void)
     }
 }
 
-/* ---- the free camera (port/freecam.c) ----------------------------------
+/* ---- the follow camera's walls, and the free camera (port/camera_walls.c,
+ * port/freecam.c) -------------------------------------------------------
  * sub_000A6100 is the follow camera's post-update: the one the table at
  * 0x2155AC gives modes 3, 4, 5, 9 and 13, which jumps to sub_000A5B60. When
  * it returns, the working eye (+0x20C) is final for the frame; sub_000A28B0
  * then copies it to the camera's eye (+0x44) and takes the heading the
- * controls follow from it. freecam_orbit moves it around the working target
+ * controls follow from it (+0x228). sub_000A5B60 works the working eye out
+ * again each frame from its smoothed eye (+0x1E4), and nothing in the
+ * follow modes reads it back: only that heading is kept, when a mode is
+ * switched to (+0x234, sub_000A58E0 and the like) or the camera is put back
+ * behind the player. freecam_orbit moves it around the working target
  * (+0x218), at the distance of the game's smoothed eye (+0x1E4), and the
  * game's own wall test runs again on it. The game's working eye is that
  * smoothed eye raised by the camera's lift (+0xE4, added at 0xA5F56), which
@@ -4650,12 +4655,24 @@ void sub_000A5070(void)
  * camera sets it. So a surface that runs along the view -- a half pipe's
  * curve, a bump in the ground -- can cut into it while the line stays clear,
  * or meet it where the eye sits on the surface, as it does wherever the
- * eye's line meets a wall. camwall_clear (port/camera_walls.c) tests the eye's
- * line and lines across the view where it starts, and when a surface cuts
- * across it, moves the eye across, away from it, or else brings it in to
- * where lines from the target to the view's corners are clear. It keeps the
- * eye from coming nearer the player than where the view starts in front of
- * them. This supplies the line test, the game's own. */
+ * eye's line meets a wall; widescreen widens the view, and so how far it
+ * reaches across. camwall_clear (port/camera_walls.c) tests lines across
+ * the view where it starts, and when a surface cuts across it, moves the eye
+ * across, away from it, or else brings it in to where lines from the target
+ * to the view's corners are clear. It keeps the eye from coming nearer the
+ * player than where the view starts in front of them. For the free camera's
+ * eye it tests the eye's line first. The game's own eye, every camera's but
+ * the one the free camera places, gets the same test of its view, and of its
+ * line only where what the line meets hides the whole of where the view
+ * starts: a half pipe's curve, or a wall that came between, the eye behind
+ * it, which the game's own test misses, as it runs only when the smoothed
+ * eye's move crosses a surface. A pole or a rail the game lets pass between
+ * the player and the eye still passes, and the camera moves only then or
+ * while a surface cuts across its view. It changes only the working eye,
+ * so the game's smoothing and following go on as before.
+ * Each camera keeps its own state (camwall_for): split screen's players',
+ * and a scene's shown through another skater's camera. This supplies the
+ * line test, the game's own. */
 extern void sub_00018260(void);
 extern void sub_000194B0(void);
 /* How much of the line from a to b is open, 0 to 1: up to the nearest hit. */
@@ -4680,7 +4697,7 @@ static double camwall_game_line(uint32_t cam, uint32_t scr, const double a[3], c
     res = *(uint32_t *)(m + scr);
     if (res < 0x10000u || res + CAM_WALL_POINT_2 + 3 * sizeof(float) >= lim) {
         static int once;
-        if (res && !once++) fprintf(stderr, "[FREECAM] wall test gave %08X; no wall test\n", res);
+        if (res && !once++) fprintf(stderr, "[CAMWALL] wall test gave %08X; no wall test\n", res);
         return 1.0;
     }
     {
@@ -4701,10 +4718,13 @@ static double camwall_line(void *ctx, const double a[3], const double b[3])
     const struct camwall_line_at *at = (const struct camwall_line_at *)ctx;
     return camwall_game_line(at->cam, at->scr, a, b);
 }
-/* The free camera's eye after walls, kept from one frame to the next, and
- * started again when the free camera starts again (FREECAM_STARTED). */
-static struct camwall s_freecam_walls = CAMWALL_START;
-static void freecam_walls(uint32_t cam, struct camwall *w)
+/* camwall_for's key for the free camera's eye: no mode's, so the game's own
+ * eye and the free camera's never share a camera's state. */
+#define CAM_WALLS_FREECAM 0xFFFFFFFFu
+/* The eye of camera cam after walls, w its state: the free camera's
+ * (freecam 1), whose own line is tested too, or the game's own, where the
+ * game's wall test put it. */
+static void camera_walls(uint32_t cam, struct camwall *w, int freecam)
 {
     static const char *const by_text[] = {           /* camera_walls.h's CAMWALL_ */
         "with nothing in the way", "by the eye's line", "by a corner of the view",
@@ -4735,7 +4755,7 @@ static void freecam_walls(uint32_t cam, struct camwall *w)
     { static double said_w = -1, said_h = -1;
       if (hw != said_w || hh != said_h) {
           said_w = hw; said_h = hh;
-          fprintf(stderr, "[FREECAM] t=%.2f view: %.0f degrees across (4:3), starting %.2f ahead of the eye, %.2f by %.2f either side\n",
+          fprintf(stderr, "[CAMWALL] t=%.2f view: %.0f degrees across (4:3), starting %.2f ahead of the eye, %.2f by %.2f either side\n",
                   pad_now(), 2 * atan(half) * 180 / 3.14159265358979323846, ahead, hw, hh);
       } }
     if (!(hw >= 0 && hw < HUGE_VAL && hh >= 0 && hh < HUGE_VAL)) hw = hh = 0;
@@ -4747,10 +4767,11 @@ static void freecam_walls(uint32_t cam, struct camwall *w)
      * (port/camera_walls.c) -- and, when that is short of it, its view there
      * tested too, with how far across it moves there; then how far across
      * this frame, the same way. */
-    open = camwall_clear(tgt, eye, 1.0, ahead, hw, hh, camwall_line, &at, need, &by);
+    open = camwall_clear(tgt, eye, 1.0, freecam, ahead, hw, hh, camwall_line, &at, need, &by);
     eased = camwall_share(w, open);
     if (eased < open) {
-        double there = camwall_clear(tgt, eye, eased, ahead, hw, hh, camwall_line, &at, need, &by);
+        double there = camwall_clear(tgt, eye, eased, freecam, ahead, hw, hh, camwall_line, &at,
+                                     need, &by);
         if (there < eased) eased = camwall_share(w, there);
     }
     camwall_across(w, tgt, eye, eased, need, ahead, hw, hh, camwall_line, &at, push);
@@ -4759,11 +4780,16 @@ static void freecam_walls(uint32_t cam, struct camwall *w)
     if (!(eased < 1) && push[0] == 0 && push[1] == 0 && push[2] == 0) return;
     for (k = 0; k < 3; k++) eye[k] = (float)(tgt[k] + u[k] * eased + push[k]);
     {
-        static double next;
-        if (pad_now() >= next) {
-            next = pad_now() + 1.0;
-            fprintf(stderr, "[FREECAM] t=%.2f wall: eye pulled in to %.0f%% of %.1f and %.1f across, %s, at (%.1f %.1f %.1f)\n",
-                    pad_now(), eased * 100, d,
+        static double next[2];
+        if (pad_now() >= next[freecam]) {
+            next[freecam] = pad_now() + 1.0;
+            if (freecam)
+                fprintf(stderr, "[FREECAM] t=%.2f wall: ", pad_now());
+            else
+                fprintf(stderr, "[CAMWALL] t=%.2f camera %08X mode %u: ", pad_now(), cam,
+                        ((const uint32_t *)cf)[CAM_MODE / 4]);
+            fprintf(stderr, "eye pulled in to %.0f%% of %.1f and %.1f across, %s, at (%.1f %.1f %.1f)\n",
+                    eased * 100, d,
                     sqrt(push[0] * push[0] + push[1] * push[1] + push[2] * push[2]),
                     (eased < open || push[0] != need[0] || push[1] != need[1] || push[2] != need[2])
                         && by == CAMWALL_CLEAR ? "waiting or easing back out" : by_text[by],
@@ -4776,23 +4802,33 @@ void sub_000A6100(void)
 {
     uint8_t *m = (uint8_t *)g_xbox_mem_offset;
     const uint32_t lim = 64u << 20;
-    uint32_t cam = g_ecx, who = 0, asked = 0;
+    uint32_t cam = g_ecx, who = 0, asked = 0, mode;
     float *cf, eye[3];
-    int placed;
+    int placed = FREECAM_OFF, behind;
+    struct camwall *w;
     if (cam >= 0x10000u && cam + 0x240u < lim) {
         who = *(uint32_t *)(m + cam + CAM_FOLLOWS);
         if (who >= 0x10000u && who + 0x1000u < lim) asked = *(uint32_t *)(m + who + CHR_CAM_BEHIND);
     }
     sub_000A6100_gen();
-    if (cam < 0x10000u || cam + 0x240u >= lim || !cam_pad_steered(m, cam, 1)) return;
+    if (cam < 0x10000u || cam + 0x240u >= lim) return;
     cf = (float *)(m + cam);
-    placed = freecam_orbit(cam, ((const uint32_t *)cf)[CAM_MODE / 4], cf + CAM_TARGET / 4,
-                           cf + CAM_SMOOTH_EYE / 4, asked && !*(uint32_t *)(m + who + CHR_CAM_BEHIND),
-                           eye);
-    if (placed == FREECAM_OFF) return;
-    if (placed == FREECAM_STARTED) camwall_reset(&s_freecam_walls);
-    memcpy(cf + CAM_EYE / 4, eye, sizeof eye);
-    freecam_walls(cam, &s_freecam_walls);
+    mode = ((const uint32_t *)cf)[CAM_MODE / 4];
+    behind = asked && !*(uint32_t *)(m + who + CHR_CAM_BEHIND);
+    if (cam_pad_steered(m, cam, 1))
+        placed = freecam_orbit(cam, mode, cf + CAM_TARGET / 4, cf + CAM_SMOOTH_EYE / 4, behind, eye);
+    if (placed != FREECAM_OFF) {
+        w = camwall_for(cam, CAM_WALLS_FREECAM);
+        if (placed == FREECAM_STARTED) camwall_reset(w);
+        memcpy(cf + CAM_EYE / 4, eye, sizeof eye);
+        camera_walls(cam, w, 1);
+        return;
+    }
+    /* The game's own eye: its state goes with its mode, and starts again
+     * when the game puts the camera back behind the player. */
+    w = camwall_for(cam, mode);
+    if (behind) camwall_reset(w);
+    camera_walls(cam, w, 0);
 }
 
 /* ---- camera call counters (JSRF_CAM_LOG=1): which camera methods and mode
