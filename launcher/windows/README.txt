@@ -75,6 +75,14 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
                      the player; remembered (see Free camera below). R3 on
                      a controller does the same
 
+Display > Draw distance in the in-game menu is how far away the game draws
+the things in its world: crowds, spray cans, props you can knock over,
+traffic, the police and the race's checkpoints. 1x (the default) is the
+game's own distances, 2x to 4x twice to four times them, and Unlimited as far
+as the camera sees. It changes straight away, asks more of the computer the
+further it goes, and is remembered as drawdistance= in the settings file (0
+for 1x to 4 for Unlimited). Above 2x it will struggle on weak hardware.
+
 Display > Skip intro in the in-game menu leaves out the logos and the
 graffiti disclaimer the game opens with: it starts at the title screen's
 loading. Off by default, so the intro plays as on the Xbox. It is remembered

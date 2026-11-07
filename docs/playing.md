@@ -101,11 +101,18 @@ the bar. The game keeps running while it is open, but your input goes to the
 menu.
 
 - **File:** About (the version and system details), Restart, and Exit.
-- **Display:** Full screen, the aspect ratio, the render scale (1× to 6×), and
-  Skip intro. The aspect ratio is 4:3 (the Xbox's own, widescreen off), 16:10,
-  16:9, 21:9, or Match screen, the shape of the display the window is on. It
-  changes at once, and is kept as `aspect=` (with `widescreen=` for on or off)
-  in the settings file. Skip intro leaves out the logos and the graffiti disclaimer the
+- **Display:** Full screen, the aspect ratio, the render scale (1× to 6×), the
+  draw distance, and Skip intro. The aspect ratio is 4:3 (the Xbox's own,
+  widescreen off), 16:10, 16:9, 21:9, or Match screen, the shape of the
+  display the window is on. It changes at once, and is kept as `aspect=`
+  (with `widescreen=` for on or off) in the settings file. Draw distance is
+  how far away the game draws the things in its world: crowds, spray cans,
+  props you can knock over, traffic, the police and the race's checkpoints.
+  1x is the game's own distances, 2x to 4x twice to four times them, and
+  Unlimited as far as the camera sees. It changes at once, costs more the
+  further it goes, and is kept as `drawdistance=` (0 for 1x to 4 for
+  Unlimited) in the settings file. Above 2x it will struggle on weak
+  hardware. Skip intro leaves out the logos and the graffiti disclaimer the
   game opens with, and starts at the title screen's loading. Off by default,
   so the intro plays as on the Xbox. It is kept as `skipintro=` in the
   settings file.

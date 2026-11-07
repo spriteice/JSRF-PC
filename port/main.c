@@ -743,6 +743,9 @@ static int host_main(void)
     /* Whether the intro is skipped, and its row on the Display page
      * (port/intro.c). */
     { extern void intro_start(void); intro_start(); }
+    /* How far the world's objects are drawn, and its row on the Display page
+     * (port/draw_distance.c). */
+    { extern void draw_distance_start(void); draw_distance_start(); }
     /* Whether the audio effects run, before the APU starts, and their row on
      * the Audio page (port/audio.c). */
     { extern void audio_start(void); audio_start(); }

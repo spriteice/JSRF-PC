@@ -4884,3 +4884,333 @@ static void jsrf_cam_counts(void)
             len += snprintf(line + len, sizeof line - len, " %05X:%lu", jsrf_camva[i], jsrf_camcnt[i]);
     fprintf(stderr, "%s\n", line); fflush(stderr);
 }
+
+
+/* ---- draw distance ------------------------------------------------------------
+ * Display > Draw distance (port/draw_distance.c) draws the world's objects
+ * further than the game does: 2x, 3x or 4x its own distances, or Unlimited,
+ * up to the camera's far plane. The game decides whether to draw each object
+ * in a few gates. Each moves the object's centre into view space with the
+ * matrix on top of the stack (sub_001BAB20), compares its depth there with
+ * distances of the game's own, before or after the device's on-screen test
+ * (vtable 0x1E0F00 +0x9C), and fades it out over the last stretch
+ * (draw-distance/SEARCH-FINDINGS.md has how each was found):
+ *
+ *   sub_000C29C0  a person in a crowd: drawn to 400, faded from 300 by its
+ *                 caller sub_000C2FE0 (the person's draw); the crowd's two
+ *                 updates, sub_000C39E0 and sub_000C3A20, move only the
+ *                 people within the same 400
+ *   sub_000435B0  the pickups (the spray cans): drawn to 500, faded from 450
+ *   sub_0003BCD0  the race's checkpoints: drawn to 400, faded from 300
+ *   sub_000B9B50  every prop and car set's object: near to 400, then faded
+ *                 by its callers through sub_000B9C70 to 500, then not drawn
+ *   sub_000C1340  the Enemy bank's kinds (police, tanks and the rest): three
+ *                 distances each, as arguments, a < b < c: faded from b to c
+ *   sub_000E3930, sub_000E3BB0  a part attached to one of those: shown to 600
+ *
+ * A step multiplies every distance an object is cut or faded at, so each
+ * kind keeps its own in proportion; Unlimited sets them to the largest float,
+ * which no depth reaches, so nothing is cut or faded, and the on-screen test
+ * and the far plane are what is left. What only picks a model's detail and
+ * hides nothing stays the game's: sub_000C1340's a, a crowd's 15 (nearer, the
+ * person isn't drawn). So does what else hides an object -- its area not
+ * being drawn, a mission not having made it -- which is not a distance.
+ *
+ * Nothing is wrong in these functions: their distances are the game's
+ * design, and the lifted code reads them from the game's constants at run
+ * time as the console's does, so the recompiler, the runtime and the device
+ * models aren't involved. Drawing further is a change to the game's own
+ * logic, made here. At 1x every override runs the game's body and nothing
+ * else.
+ *
+ * Most gates run as they are, with their constants set to the step's for the
+ * length of the call (draw_distance_with). The constants are shared -- the
+ * 400.0 at 0x1CA43C is read by twelve functions, the 0.01 at 0x1CA434 by
+ * dozens -- but nothing these gates call reads them: they call the
+ * transform, fabs (sub_0014C7F0) and the on-screen test (sub_00153C50, which
+ * reads only its planes), or nothing; sub_000E3930 and sub_000E3BB0 call more,
+ * and none of the 73 functions they reach is another reader of their 600
+ * (the calls through vtables, to models and the device, aren't followed by
+ * that count). Three that call further are written again instead, at 2x and
+ * up: the person's draw, whose fade is followed by the model's draw, which may
+ * read the shared 0.01; and the crowd's two updates, which run each person's
+ * update. Each override counts what it lets through for the [DRAW] line. */
+#include "draw_distance.h"
+
+#define DD_K400         0x1CA43Cu   /* 400.0: crowds', checkpoints' and props' */
+#define DD_K300         0x1CA438u   /* 300.0: crowds' and checkpoints' fade start */
+#define DD_K1_100       0x1CA434u   /* 0.01 = 1 / (400 - 300), and props' 1 / (500 - 400) */
+#define DD_K500         0x1CA6C0u   /* 500.0: pickups' and props' */
+#define DD_K450         0x1CA6BCu   /* 450.0: pickups' fade start */
+#define DD_K1_50        0x1CA6B8u   /* 0.02 = 1 / (500 - 450) */
+#define DD_K600         0x1CED60u   /* 600.0: the attached part's */
+#define MATRIX_TOP      0x264C04u   /* -> the matrix stack's top, -> its matrix */
+#define MATRIX_ORIGIN_Z 0x38u       /* the matrix's translation z: the origin's depth */
+#define DD_GUEST_LO     0x10000u
+#define DD_GUEST_HI     (64u << 20)
+
+/* A crowd's person (vtables 0x1CDC60, 0x1CDCB0, 0x1CDCF8) and its group
+ * (vtable 0x1CDD60, people in a list from +0x44). */
+#define PERSON_MATRIX   0x04u       /* where it stands and faces */
+#define PERSON_FLAGS    0x30u
+#define PERSON_SHOWN    0x01u       /*   once it has been in range and on screen */
+#define PERSON_HIDDEN   0x02u
+#define PERSON_TURN     0x40u       /* its heading (0x10000 a turn) */
+#define PERSON_DEPTH    0x48u       /* fabs(view z) at its last draw */
+#define PERSON_STATE    0x4Cu       /* sub_000C29C0's answer at its last draw */
+#define PERSON_MODEL    0x60u       /* its model's number in the People bank */
+#define PERSON_LOOK     0x6Cu       /* handed to the model's +0x5C (not traced) */
+#define PERSON_DRAW_A   0x7Cu       /* the model's draw's two arguments */
+#define PERSON_DRAW_B   0x80u
+#define PERSON_NEXT     0xC8u
+#define PERSON_UPDATE_A 0x28u       /* vtable slots 10 and 11: its updates */
+#define PERSON_UPDATE_B 0x2Cu
+#define GROUP_PEOPLE    0x44u
+#define CROWD_NEAR      1u          /* sub_000C29C0: within 15, not drawn */
+#define CROWD_FADING    3u          /*   past the fade's start */
+#define TURN_HALF       0x8000u
+#define PEOPLE_BANK     0x257CECu   /* -> the People bank, whose +0xC0 lists its models */
+#define BANK_MODELS     0xC0u
+#define MODEL_ALPHA     0x58u
+#define MODEL_LOOK      0x5Cu
+#define MODEL_DRAW      0x14u       /* vtable slot */
+/* The return addresses of the calls the person's draw and the updates make,
+ * as the game's. */
+#define CROWD_PLACE_RET 0x000C2FEBu
+#define CROWD_GATE_RET  0x000C3005u
+#define CROWD_TURN_RET  0x000C3040u
+#define CROWD_DRAW_RET  0x000C306Au
+#define CROWD_WALK_RET  0x000C3A07u
+#define CROWD_STEP_RET  0x000C3A52u
+
+/* sub_000E3930 and sub_000E3BB0's object: the part's centre in view space
+ * from +0x14C, its depth +0x154; bit 24 of +0x90 hides the part. They test it
+ * on their layer-8 call. */
+#define PART_DEPTH      0x154u
+#define PART_FLAGS      0x90u
+#define PART_HIDDEN     0x01000000u
+#define PART_TEST_LAYER 8u
+
+static int dd_guest(uint32_t a, uint32_t n) { return a >= DD_GUEST_LO && a < DD_GUEST_HI - n; }
+static float *dd_float(uint32_t a) { return (float *)((uint8_t *)g_xbox_mem_offset + a); }
+static uint32_t dd_u32(uint32_t a) { return *(uint32_t *)((uint8_t *)g_xbox_mem_offset + a); }
+
+static void dd_drawn(int gate, int past)
+{
+    draw_distance_drawn(gate, past, pad_now(), nv2a_gl_flips());
+}
+
+/* The game's gate run with each constant at the step's (draw_distance_with). */
+static void dd_run(void (*gen)(void), const uint32_t *at, const unsigned char *per, int n)
+{
+    float *f[4];
+    int i;
+    for (i = 0; i < n && i < 4; i++) f[i] = dd_float(at[i]);
+    draw_distance_with(f, per, i, gen);
+}
+
+/* A call through slot `slot` of self's vtable, thiscall, as the game makes
+ * it: g_eax after it, or 0 when the slot isn't the game's code. */
+static uint32_t dd_vcall(uint32_t self, uint32_t slot, uint32_t ra, int nargs, const uint32_t *args)
+{
+    uint32_t va, sv = g_ecx, r;
+    recomp_func_t fn;
+    va = dd_u32(dd_u32(self) + slot);
+    fn = recomp_lookup_manual(va);
+    if (!fn) fn = recomp_lookup(va);
+    if (!fn) {
+        static int said;
+        if (!said++) fprintf(stderr, "[DRAW] %08X's slot +%X is %08X, not the game's code\n", self, slot, va);
+        return 0;
+    }
+    g_ecx = self;
+    r = guest_call_cdecl(fn, ra, nargs, args);
+    g_ecx = sv;
+    return r;
+}
+
+extern void sub_000C29C0_gen(void);
+void sub_000C29C0(void)
+{
+    static const uint32_t at[] = { DD_K400, DD_K300 };
+    static const unsigned char per[] = { 0, 0 };
+    uint32_t self = g_ecx;
+    if (!draw_distance_step() || !dd_guest(self, PERSON_NEXT + 4)) { sub_000C29C0_gen(); return; }
+    dd_run(sub_000C29C0_gen, at, per, 2);
+    if (g_eax > CROWD_NEAR) dd_drawn(DRAW_CROWDS, *dd_float(self + PERSON_DEPTH) >= *dd_float(DD_K400));
+}
+
+/* The person's model in the People bank. */
+static uint32_t crowd_model(uint32_t self)
+{
+    return dd_u32(dd_u32(dd_u32(PEOPLE_BANK) + BANK_MODELS) + dd_u32(self + PERSON_MODEL) * 4);
+}
+
+/* sub_000C2FE0, the person's draw, at 2x and up: the game's, with its fade
+ * (400 - d) * 0.01 taken at the step's distances. */
+extern void sub_000C2FE0_gen(void);
+extern void sub_001BAAA0(void);
+extern void sub_001BB330(void);
+void sub_000C2FE0(void)
+{
+    uint32_t self = g_ecx, model, state, a[2];
+    if (!draw_distance_step() || !dd_guest(self, PERSON_NEXT + 4) || !dd_guest(dd_u32(PEOPLE_BANK), BANK_MODELS + 4)) {
+        sub_000C2FE0_gen();
+        return;
+    }
+    g_ecx = self + PERSON_MATRIX;
+    guest_call_cdecl(sub_001BAAA0, CROWD_PLACE_RET, 0, NULL);
+    model = crowd_model(self);
+    g_ecx = self;
+    state = guest_call_cdecl(sub_000C29C0, CROWD_GATE_RET, 1, &model);
+    *(uint32_t *)((uint8_t *)g_xbox_mem_offset + self + PERSON_STATE) = state;
+    if (state && state != CROWD_NEAR && !(dd_u32(self + PERSON_FLAGS) & PERSON_HIDDEN)) {
+        model = crowd_model(self);
+        if (dd_guest(model, MODEL_LOOK + 4)) {
+            g_ecx = dd_u32(self + PERSON_TURN) + TURN_HALF;
+            guest_call_cdecl(sub_001BB330, CROWD_TURN_RET, 0, NULL);
+            *(uint32_t *)((uint8_t *)g_xbox_mem_offset + model + MODEL_LOOK) = dd_u32(self + PERSON_LOOK);
+            *dd_float(model + MODEL_ALPHA) = state == CROWD_FADING
+                ? draw_distance_fade(*dd_float(self + PERSON_DEPTH), *dd_float(DD_K400), *dd_float(DD_K1_100))
+                : 1.0f;
+            a[0] = dd_u32(self + PERSON_DRAW_A);
+            a[1] = dd_u32(self + PERSON_DRAW_B);
+            dd_vcall(model, MODEL_DRAW, CROWD_DRAW_RET, 2, a);
+        }
+    }
+    g_esp += 4;   /* ret */
+}
+
+/* sub_000C39E0 and sub_000C3A20, the crowd's two updates, at 2x and up: the
+ * game's, for each person within the step's distance. The second also leaves
+ * out people hidden, and those never yet in range and on screen. */
+static void crowd_update(uint32_t group, uint32_t slot, uint32_t ra, int to_edge)
+{
+    float edge = draw_distance_far(*dd_float(DD_K400));   /* not `far`: <windows.h> empties it */
+    uint32_t p, n = 0;
+    for (p = dd_u32(group + GROUP_PEOPLE); p && n < 0x10000u; p = dd_u32(p + PERSON_NEXT), n++) {
+        float d;
+        uint32_t fl;
+        if (!dd_guest(p, PERSON_NEXT + 4)) break;
+        d = *dd_float(p + PERSON_DEPTH);
+        fl = dd_u32(p + PERSON_FLAGS);
+        if (to_edge ? !(d <= edge) || (fl & PERSON_HIDDEN) || !(fl & PERSON_SHOWN) : !(d < edge)) continue;
+        dd_vcall(p, slot, ra, 0, NULL);
+    }
+}
+extern void sub_000C39E0_gen(void);
+void sub_000C39E0(void)
+{
+    uint32_t self = g_ecx;
+    if (!draw_distance_step() || !dd_guest(self, GROUP_PEOPLE + 4)) { sub_000C39E0_gen(); return; }
+    crowd_update(self, PERSON_UPDATE_A, CROWD_WALK_RET, 0);
+    g_esp += 4;   /* ret */
+}
+extern void sub_000C3A20_gen(void);
+void sub_000C3A20(void)
+{
+    uint32_t self = g_ecx;
+    if (!draw_distance_step() || !dd_guest(self, GROUP_PEOPLE + 4)) { sub_000C3A20_gen(); return; }
+    crowd_update(self, PERSON_UPDATE_B, CROWD_STEP_RET, 1);
+    g_esp += 4;   /* ret */
+}
+
+/* The depth sub_000435B0 and sub_0003BCD0 test: they move the origin, so it
+ * is the top matrix's translation z. */
+static float dd_origin_depth(void)
+{
+    uint32_t top = dd_u32(MATRIX_TOP);
+    if (!dd_guest(top, 4) || !dd_guest(dd_u32(top), MATRIX_ORIGIN_Z + 4)) return 0.0f;
+    return *dd_float(dd_u32(top) + MATRIX_ORIGIN_Z);
+}
+
+extern void sub_000435B0_gen(void);
+void sub_000435B0(void)
+{
+    static const uint32_t at[] = { DD_K500, DD_K450, DD_K1_50 };
+    static const unsigned char per[] = { 0, 0, 1 };
+    float d;
+    if (!draw_distance_step()) { sub_000435B0_gen(); return; }
+    d = dd_origin_depth();
+    dd_run(sub_000435B0_gen, at, per, 3);
+    if (g_eax) dd_drawn(DRAW_PICKUPS, d > *dd_float(DD_K500));
+}
+
+extern void sub_0003BCD0_gen(void);
+void sub_0003BCD0(void)
+{
+    static const uint32_t at[] = { DD_K400, DD_K300, DD_K1_100 };
+    static const unsigned char per[] = { 0, 0, 1 };
+    float d;
+    if (!draw_distance_step()) { sub_0003BCD0_gen(); return; }
+    d = dd_origin_depth();
+    dd_run(sub_0003BCD0_gen, at, per, 3);
+    if (g_eax) dd_drawn(DRAW_CHECKPOINTS, d > *dd_float(DD_K400));
+}
+
+/* sub_000B9B50(object, float *depth): 0 the near model, 1 fading (its caller
+ * takes the alpha from sub_000B9C70(depth)), 2 too far, 3 off screen. */
+extern void sub_000B9B50_gen(void);
+void sub_000B9B50(void)
+{
+    static const uint32_t at[] = { DD_K400, DD_K500 };
+    static const unsigned char per[] = { 0, 0 };
+    uint32_t depth = dd_u32(g_esp + 8);
+    if (!draw_distance_step()) { sub_000B9B50_gen(); return; }
+    dd_run(sub_000B9B50_gen, at, per, 2);
+    if (g_eax <= 1 && dd_guest(depth, 4)) dd_drawn(DRAW_PROPS, *dd_float(depth) >= *dd_float(DD_K500));
+}
+
+/* sub_000B9C70(depth): 1 - (depth - 400) * 0.01, from 0 to 1. */
+extern void sub_000B9C70_gen(void);
+void sub_000B9C70(void)
+{
+    static const uint32_t at[] = { DD_K400, DD_K1_100 };
+    static const unsigned char per[] = { 0, 1 };
+    if (!draw_distance_step()) { sub_000B9C70_gen(); return; }
+    dd_run(sub_000B9C70_gen, at, per, 2);
+}
+
+/* sub_000C1340(model, sphere, a, b, c), stdcall: within a the near model,
+ * within b the middle one, faded to c by (c - d) / (c - b), past c not drawn.
+ * b and c are the step's; a kind whose distances aren't in that order is left
+ * as it is. The arguments are the caller's pushes, which it doesn't read
+ * again. */
+extern void sub_000C1340_gen(void);
+void sub_000C1340(void)
+{
+    float *a, *b, *c, c_game, d = 0;
+    uint32_t sphere = dd_u32(g_esp + 8);
+    if (!draw_distance_step()) { sub_000C1340_gen(); return; }
+    a = dd_float(g_esp + 0xC); b = dd_float(g_esp + 0x10); c = dd_float(g_esp + 0x14);
+    c_game = *c;
+    if (dd_guest(sphere, 0xC)) d = dd_float(sphere)[2];
+    if (*a <= *b && *b < *c) {
+        *b = draw_distance_far(*b);
+        *c = draw_distance_far(*c);
+    }
+    sub_000C1340_gen();
+    if (g_eax) dd_drawn(DRAW_ENEMIES, d > c_game);
+}
+
+static void dd_part(void (*gen)(void))
+{
+    static const uint32_t at[] = { DD_K600 };
+    static const unsigned char per[] = { 0 };
+    uint32_t self = g_ecx, layer = dd_u32(g_esp + 4);
+    dd_run(gen, at, per, 1);
+    if (layer == PART_TEST_LAYER && dd_guest(self, PART_DEPTH + 4) && !(dd_u32(self + PART_FLAGS) & PART_HIDDEN))
+        dd_drawn(DRAW_PART, *dd_float(self + PART_DEPTH) > *dd_float(DD_K600));
+}
+extern void sub_000E3930_gen(void);
+void sub_000E3930(void)
+{
+    if (!draw_distance_step()) { sub_000E3930_gen(); return; }
+    dd_part(sub_000E3930_gen);
+}
+extern void sub_000E3BB0_gen(void);
+void sub_000E3BB0(void)
+{
+    if (!draw_distance_step()) { sub_000E3BB0_gen(); return; }
+    dd_part(sub_000E3BB0_gen);
+}
