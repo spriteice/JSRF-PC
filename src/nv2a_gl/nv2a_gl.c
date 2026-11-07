@@ -2133,8 +2133,8 @@ static SDL_GLContext g_pres_ctx;
 static volatile int  g_presenter;       /* 0 not used, 1 running, -1 failed */
 
 /* The display as the presenter measured it, for frame_pace: seconds per
- * refresh (0: unknown, the swap does not wait for it), and when the last
- * swap ended (mono_now). */
+ * refresh (0: unknown, as when the swap does not wait for it), and when the
+ * last swap ended (mono_now). */
 static volatile double g_vs_period, g_vs_last;
 static volatile int    g_vs_hz;         /* what SDL says the display runs at */
 
@@ -2208,7 +2208,7 @@ static void ps_line(const char *what, const uint64_t *on, uint64_t shown, uint64
     else
         fprintf(stderr, "[PRESENT] %s: %llu frames shown, %llu replaced before they could be; "
                 "on screen under 14 ms %llu, a 60th of a second %llu, 19-30 ms %llu, "
-                "30-45 ms %llu, longer %llu (the swap does not wait for the display)\n", what,
+                "30-45 ms %llu, longer %llu (the display's refresh not measured)\n", what,
                 (unsigned long long)shown, (unsigned long long)dropped,
                 (unsigned long long)on[0], (unsigned long long)on[1], (unsigned long long)on[2],
                 (unsigned long long)on[3], (unsigned long long)on[4]);
@@ -2224,35 +2224,96 @@ static void pres_clear(void)
     glClear(GL_COLOR_BUFFER_BIT);
 }
 
+/* The display check (pres_calibrate): PRES_SWAPS cleared swaps a try, the
+ * first PRES_SWAPS_SKIP dropped while the driver settles, the gaps within
+ * PRES_ALIKE of their median counted as alike, and a refresh taken when at
+ * least PRES_ALIKE_N of PRES_ALIKE_D are. A median between PRES_REFRESH_MIN
+ * and PRES_REFRESH_MAX seconds is a display's refresh. Up to PRES_TRIES
+ * tries: the GPU thread makes the game's first render targets while it
+ * runs, and a try they hold up is measured again. */
+enum { PRES_SWAPS = 40, PRES_SWAPS_SKIP = 8, PRES_TRIES = 3,
+       PRES_ALIKE_N = 3, PRES_ALIKE_D = 4 };
+#define PRES_ALIKE       0.1
+#define PRES_REFRESH_MIN 0.004
+#define PRES_REFRESH_MAX 0.05
+
+/* What one try found. */
+enum { PRES_PACED,      /* the swap waits for the display: *period is its refresh */
+       PRES_UNEVEN,     /* the median is a refresh, but too few gaps are alike */
+       PRES_NO_WAIT,    /* the median is under a refresh: the swap doesn't wait */
+       PRES_SLOW };     /* the median is longer than any refresh */
+
+/* One try, from the times t[0..PRES_SWAPS) its swaps ended: *med the
+ * median gap after the first PRES_SWAPS_SKIP, *kept of *gaps alike, and for
+ * PRES_PACED their mean, *period. */
+static int pres_measure(const double *t, double *period, double *med, int *kept, int *gaps)
+{
+    double iv[PRES_SWAPS], sum = 0.0;
+    int i, j, m = 0, k = 0;
+    for (i = PRES_SWAPS_SKIP + 1; i < PRES_SWAPS; i++) iv[m++] = t[i] - t[i - 1];
+    for (i = 1; i < m; i++)                         /* sort, for the median */
+        for (j = i; j > 0 && iv[j - 1] > iv[j]; j--) { double x = iv[j]; iv[j] = iv[j - 1]; iv[j - 1] = x; }
+    *med = iv[m / 2];
+    for (i = 0; i < m; i++)
+        if (iv[i] > *med * (1.0 - PRES_ALIKE) && iv[i] < *med * (1.0 + PRES_ALIKE)) { sum += iv[i]; k++; }
+    *kept = k;
+    *gaps = m;
+    if (*med < PRES_REFRESH_MIN) return PRES_NO_WAIT;
+    if (*med > PRES_REFRESH_MAX) return PRES_SLOW;
+    if (k < m * PRES_ALIKE_N / PRES_ALIKE_D) return PRES_UNEVEN;
+    *period = sum / k;
+    return PRES_PACED;
+}
+
+/* The display check's tries, each of PRES_SWAPS calls of swap(), which
+ * returns when its swap ended, until one isn't uneven or PRES_TRIES are
+ * made (*tries): what the last one found, as pres_measure says it. */
+static int pres_check(double (*swap)(void), double *period, double *med,
+                      int *kept, int *gaps, int *tries)
+{
+    double t[PRES_SWAPS];
+    int i, v;
+    for (*tries = 1; ; ++*tries) {
+        for (i = 0; i < PRES_SWAPS; i++) t[i] = swap();
+        v = pres_measure(t, period, med, kept, gaps);
+        if (v != PRES_UNEVEN || *tries == PRES_TRIES) return v;
+        fprintf(stderr, "[WIN] the swaps were uneven (%d of %d alike, around %.2f ms): "
+                "measuring again\n", *kept, *gaps, *med * 1000.0);
+    }
+}
+
+/* One of the check's swaps: the window cleared and swapped, and when that
+ * ended. */
+static double pres_swap(void)
+{
+    pres_clear();
+    SDL_GL_SwapWindow(g_window);
+    glFinish();
+    return mono_now();
+}
+
 /* How long a synchronised swap takes, with nothing else going on: the
  * display's refresh -- or next to nothing, when the driver does not wait
  * (vsync turned off in its control panel, a remote desktop, a VM). */
 static void pres_calibrate(void)
 {
-    enum { N = 40, SKIP = 8 };
-    double t[N], iv[N], sum = 0.0, med;
-    int i, j, n = 0, kept = 0;
-    for (i = 0; i < N; i++) {
-        pres_clear();
-        SDL_GL_SwapWindow(g_window);
-        glFinish();
-        t[i] = mono_now();
-    }
-    for (i = SKIP + 1; i < N; i++) iv[n++] = t[i] - t[i - 1];
-    for (i = 1; i < n; i++)                         /* sort, for the median */
-        for (j = i; j > 0 && iv[j - 1] > iv[j]; j--) { double x = iv[j]; iv[j] = iv[j - 1]; iv[j - 1] = x; }
-    med = iv[n / 2];
-    for (i = 0; i < n; i++)
-        if (iv[i] > med * 0.9 && iv[i] < med * 1.1) { sum += iv[i]; kept++; }
-    if (med >= 0.004 && med <= 0.05 && kept >= n * 3 / 4) {
-        g_vs_period = sum / kept;
+    double period = 0.0, med = 0.0;
+    int kept = 0, gaps = 0, tries = 0;
+    int v = pres_check(pres_swap, &period, &med, &kept, &gaps, &tries);
+    g_vs_period = v == PRES_PACED ? period : 0.0;
+    if (v == PRES_PACED)
         fprintf(stderr, "[WIN] display: %.3f Hz, measured over %d swaps (%d Hz reported)\n",
                 1.0 / g_vs_period, kept, g_vs_hz);
-    } else {
-        g_vs_period = 0.0;
+    else if (v == PRES_UNEVEN)
+        fprintf(stderr, "[WIN] the swaps stayed too uneven to measure the display (%d of %d "
+                "alike, around %.2f ms, %d tries; %d Hz reported): frames are paced by the "
+                "game's clock\n", kept, gaps, med * 1000.0, tries, g_vs_hz);
+    else if (v == PRES_SLOW)
+        fprintf(stderr, "[WIN] a swap takes %.2f ms, longer than a display's refresh (%d Hz "
+                "reported): frames are paced by the game's clock\n", med * 1000.0, g_vs_hz);
+    else
         fprintf(stderr, "[WIN] the swap does not wait for the display (a swap takes %.2f ms; "
                 "%d Hz reported): frames are paced by the game's clock\n", med * 1000.0, g_vs_hz);
-    }
     g_vs_last = mono_now();
 }
 
