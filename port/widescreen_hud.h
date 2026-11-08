@@ -25,8 +25,9 @@
  * widened camera brings them onto the widened scene's point by itself. Nor
  * are the HUD's signs (sub_000FC370), such as the stop sign: their models
  * put them in the middle of the screen, where they stay. The one sign that
- * moves is the street pause menu's area name, which the map makes, and it
- * goes with that menu (widescreen_menus.h). */
+ * moves is an area's name, which the map makes, for the street pause menu
+ * and for the banner as the player nears another area: it goes to the left
+ * edge (widescreen_menus.h). */
 #ifndef JSRF_WIDESCREEN_HUD_H
 #define JSRF_WIDESCREEN_HUD_H
 

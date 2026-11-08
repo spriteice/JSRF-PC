@@ -67,6 +67,17 @@
  *      it, or for an s that isn't between 0 and 1. A 3D copy moves s times
  *      that in the frame's pixels (90 at 16:9), a squeezed one that itself,
  *      the left copy left and the right right, and no other side moves.
+ *  20. The side fill: on a filled frame a screen-space draw is squeezed when
+ *      it is an overlay, or full-screen art (textured, sampling no surface);
+ *      an untextured layer and a copy of the frame stay full width. Its
+ *      columns: the 4:3 screen's whole columns are kept, 214 to 1493 of
+ *      1707 at 2x and 16:9 (its edges at 213.375 and 1493.625), and the
+ *      column a title pixel inside each edge, 216 and 1490, is copied out;
+ *      16:10's edge at 2x, column 128 itself, is kept. At every wide shape
+ *      and scale the kept columns hold the 4:3 screen's whole columns and
+ *      no more, both sides are filled, the two sources sit as far inside
+ *      their edges, and inside the kept columns. Nothing is filled at 4:3,
+ *      for an s that isn't between 0 and 1, or on a raster too narrow.
  */
 #include <math.h>
 #include <stdio.h>
@@ -345,10 +356,16 @@ static void hud_marks(void)
     static const unsigned pieces[] = { 0, 7, 255 };
     static const int sides[] = { NV2A_WIDE_HUD_LEFT, NV2A_WIDE_HUD_NONE, NV2A_WIDE_HUD_RIGHT,
                                  NV2A_WIDE_HUD_ACROSS, NV2A_WIDE_HUD_WHOLE,
-                                 NV2A_WIDE_HUD_LEFT_HALF, NV2A_WIDE_HUD_RIGHT_HALF };
-    static const unsigned flags[] = { 0u, NV2A_WIDE_HUD_OWN_VIEW };
-    static const uint32_t others[] = { 0u, 1u, 2u, 5u, 8u, 9u, 0x48550007u, 0x48550087u,
-                                       0x48550043u, 0x48560001u, 0x00000102u, 0xFFFFFFFFu };
+                                 NV2A_WIDE_HUD_LEFT_HALF, NV2A_WIDE_HUD_RIGHT_HALF,
+                                 NV2A_WIDE_HUD_FILL, NV2A_WIDE_HUD_OVER, NV2A_WIDE_HUD_BARS,
+                                 NV2A_WIDE_HUD_STRIP, NV2A_WIDE_HUD_LINES };
+    static const unsigned flags[] = { 0u, NV2A_WIDE_HUD_OWN_VIEW, NV2A_WIDE_HUD_ON_GRID,
+                                      NV2A_WIDE_HUD_OWN_VIEW | NV2A_WIDE_HUD_ON_GRID };
+    /* past the last side, with each flag and both; sides with a bit the
+     * flags don't use */
+    static const uint32_t others[] = { 0u, 1u, 2u, 5u, 8u, 9u, 0x4855000Cu, 0x4855008Cu,
+                                       0x4855004Cu, 0x485500CCu, 0x48550013u, 0x48550023u,
+                                       0x48560001u, 0x00000102u, 0xFFFFFFFFu };
     unsigned i, j, k, piece, fl;
     int side;
     for (i = 0; i < sizeof pieces / sizeof pieces[0]; i++)
@@ -369,6 +386,13 @@ static void hud_marks(void)
     CHECK(nv2a_wide_hud_mark(0xC4, NV2A_WIDE_HUD_WHOLE, 0) == 0x4855C404u);
     CHECK(nv2a_wide_hud_mark(0x40, NV2A_WIDE_HUD_LEFT_HALF, 0) == 0x48554005u);
     CHECK(nv2a_wide_hud_mark(0x40, NV2A_WIDE_HUD_RIGHT_HALF, 0) == 0x48554006u);
+    CHECK(nv2a_wide_hud_mark(0xC5, NV2A_WIDE_HUD_FILL, 0) == 0x4855C507u);
+    CHECK(nv2a_wide_hud_mark(0xC6, NV2A_WIDE_HUD_OVER, 0) == 0x4855C608u);
+    CHECK(nv2a_wide_hud_mark(0xC8, NV2A_WIDE_HUD_BARS, 0) == 0x4855C809u);
+    CHECK(nv2a_wide_hud_mark(8, NV2A_WIDE_HUD_STRIP, 0) == 0x4855080Au);
+    CHECK(nv2a_wide_hud_mark(0x44, NV2A_WIDE_HUD_RIGHT, NV2A_WIDE_HUD_ON_GRID) == 0x48554442u);
+    CHECK(nv2a_wide_hud_mark(0xC9, NV2A_WIDE_HUD_LINES, 0) == 0x4855C90Bu);
+    CHECK(nv2a_wide_hud_mark(0xC0, NV2A_WIDE_HUD_LEFT, NV2A_WIDE_HUD_ON_GRID) == 0x4855C041u);
     for (i = 0; i < sizeof others / sizeof others[0]; i++)
         CHECK(!nv2a_wide_hud_read(others[i], &piece, &side, &fl));
     CHECK(NV2A_WIDE_HUD_METHOD > 0x1EA4u && (NV2A_WIDE_HUD_METHOD & 3u) == 0
@@ -567,28 +591,77 @@ static void across(void)
     CHECK(nv2a_wide_across_stretch(NAN) == 1.0f);
 }
 
-static void half_is(uint32_t w, int side, uint32_t x0, uint32_t x1, uint32_t w0, uint32_t w1)
+static void half_is(uint32_t w, float s, int side, uint32_t x0, uint32_t x1, uint32_t w0, uint32_t w1)
 {
     uint32_t a = x0, b = x1;
-    nv2a_wide_half_clip_x(w, side, &a, &b);
+    nv2a_wide_half_clip_x(w, s, side, &a, &b);
     if (a != w0 || b != w1)
-        printf("widescreen: half %d of %u: %u..%u gave %u..%u, not %u..%u\n",
-               side, w, x0, x1, a, b, w0, w1);
+        printf("widescreen: half %d of %u at %.3f: %u..%u gave %u..%u, not %u..%u\n",
+               side, w, (double)s, x0, x1, a, b, w0, w1);
     CHECK(a == w0 && b == w1);
 }
 
 static void halves(void)
 {
-    half_is(640, NV2A_WIDE_HUD_LEFT_HALF, 0, 640, 0, 320);
-    half_is(640, NV2A_WIDE_HUD_RIGHT_HALF, 0, 640, 320, 640);
-    half_is(641, NV2A_WIDE_HUD_LEFT_HALF, 0, 641, 0, 320);        /* odd: meet at 320 */
-    half_is(641, NV2A_WIDE_HUD_RIGHT_HALF, 0, 641, 320, 641);
-    half_is(640, NV2A_WIDE_HUD_LEFT_HALF, 100, 500, 100, 320);    /* a clip of its own */
-    half_is(640, NV2A_WIDE_HUD_RIGHT_HALF, 100, 500, 320, 500);
-    half_is(640, NV2A_WIDE_HUD_LEFT_HALF, 400, 600, 320, 320);    /* wholly right: empty */
-    half_is(640, NV2A_WIDE_HUD_RIGHT_HALF, 10, 200, 320, 320);    /* wholly left: empty */
-    half_is(640, NV2A_WIDE_HUD_NONE, 10, 200, 10, 200);           /* no half */
-    half_is(640, NV2A_WIDE_HUD_ACROSS, 0, 640, 0, 640);
+    /* At 4:3 (and any s not between 0 and 1) the seam is the middle. */
+    half_is(640, 1.0f, NV2A_WIDE_HUD_LEFT_HALF, 0, 640, 0, 320);
+    half_is(640, 1.0f, NV2A_WIDE_HUD_RIGHT_HALF, 0, 640, 320, 640);
+    half_is(641, 1.0f, NV2A_WIDE_HUD_LEFT_HALF, 0, 641, 0, 320);  /* odd: meet at 320 */
+    half_is(641, 1.0f, NV2A_WIDE_HUD_RIGHT_HALF, 0, 641, 320, 641);
+    half_is(640, 1.0f, NV2A_WIDE_HUD_LEFT_HALF, 100, 500, 100, 320);  /* a clip of its own */
+    half_is(640, 1.0f, NV2A_WIDE_HUD_RIGHT_HALF, 100, 500, 320, 500);
+    half_is(640, 1.0f, NV2A_WIDE_HUD_LEFT_HALF, 400, 600, 320, 320);  /* wholly right: empty */
+    half_is(640, 1.0f, NV2A_WIDE_HUD_RIGHT_HALF, 10, 200, 320, 320);  /* wholly left: empty */
+    half_is(640, 1.0f, NV2A_WIDE_HUD_NONE, 10, 200, 10, 200);     /* no half */
+    half_is(640, 1.0f, NV2A_WIDE_HUD_ACROSS, 0, 640, 0, 640);
+    CHECK(nv2a_wide_half_seam(640, 0.0f) == 320 && nv2a_wide_half_seam(640, NAN) == 320);
+    /* Widened, half a cell left of the middle: 10.06 of the game's title
+     * pixels, s as wide in the frame, 7.5 at 16:9 and 5.7 at 21:9 on a
+     * 640-wide surface, to the nearest column; a wider surface by as much
+     * more. */
+    CHECK(nv2a_wide_half_seam(640, 0.75f) == 312);
+    CHECK(nv2a_wide_half_seam(640, 0.5625f) == 314);
+    CHECK(nv2a_wide_half_seam(1280, 0.75f) == 625);
+    half_is(640, 0.75f, NV2A_WIDE_HUD_LEFT_HALF, 0, 640, 0, 312);
+    half_is(640, 0.75f, NV2A_WIDE_HUD_RIGHT_HALF, 0, 640, 312, 640);
+    half_is(640, 0.75f, NV2A_WIDE_HUD_RIGHT_HALF, 10, 200, 312, 312); /* wholly left: empty */
+    half_is(640, 0.75f, NV2A_WIDE_HUD_NONE, 10, 200, 10, 200);
+    {
+        /* The seam in the middle of a cell, both ways from the grid's line
+         * at the centre: a quarter of a step, give or take a column. */
+        static const float ss[] = { 0.75f, (4.0f / 3.0f) / 1.6f, 0.5625f, 0.375f };
+        unsigned i;
+        for (i = 0; i < sizeof ss / sizeof ss[0]; i++) {
+            float cell = 0.5f * NV2A_WIDE_HALF_STEP * ss[i];          /* in the frame */
+            float off = (float)nv2a_wide_half_seam(640, ss[i]) - 320.0f;
+            CHECK(fabsf(off + 0.5f * cell) <= 0.5f);
+        }
+    }
+    {
+        /* Each copy shows only the light grid at the seam, at each shape the
+         * menu offers. The left copy shows the backdrop as far right as the
+         * seam (in the game's pixels, about the centre) plus its move, and
+         * the dark column down the backdrop's right-hand side starts DARK
+         * steps right of the centre: a seam right of the middle showed half
+         * a cell of it at 21:9, whose move is those six steps (Aden, 8
+         * November 2026). The right copy shows the backdrop from the seam
+         * less its move, which must still be on the 4:3 screen, its light
+         * grid running to the left edge. */
+        enum { DARK = 6 };
+        static const float ss[] = { (4.0f / 3.0f) / 1.6f, 0.75f, 0.5625f };
+        unsigned i;
+        for (i = 0; i < sizeof ss / sizeof ss[0]; i++) {
+            const uint32_t w = 2560u;                                  /* a 4x raster's width */
+            float seam = ((float)nv2a_wide_half_seam(w, ss[i]) - 0.5f * (float)w)
+                       * (float)NV2A_SCALE_FRAME_W / (float)w / ss[i];  /* the game's pixels */
+            float move = nv2a_wide_half_move(ss[i]);
+            if (seam + move >= (float)DARK * NV2A_WIDE_HALF_STEP)
+                printf("widescreen: at %.4f the left copy shows the dark column: seam %.2f, "
+                       "move %.2f\n", (double)ss[i], (double)seam, (double)move);
+            CHECK(seam + move < (float)DARK * NV2A_WIDE_HALF_STEP);
+            CHECK(0.5f * (float)NV2A_SCALE_FRAME_W + seam - move > 0.0f);
+        }
+    }
     CHECK(nv2a_wide_hud_shift(NV2A_WIDE_HUD_LEFT_HALF, 0.75f, 0, 320.0f) == 0.0f);
     CHECK(nv2a_wide_hud_shift(NV2A_WIDE_HUD_RIGHT_HALF, 0.75f, 1, 320.0f) == 0.0f);
 }
@@ -601,16 +674,17 @@ static void half_moves(void)
                                   NV2A_WIDE_HUD_ACROSS, NV2A_WIDE_HUD_WHOLE };
     const float s169 = 0.75f, s1610 = (4.0f / 3.0f) / 1.6f, s219 = 0.5625f;
     unsigned i;
-    CHECK(nv2a_wide_half_move(s169) == 120.0f);                    /* 16:9 */
-    CHECK(nv2a_wide_half_move(s1610) == 80.0f);                    /* 16:10 */
-    CHECK(nv2a_wide_half_move(s219) == 240.0f);                    /* 21:9 */
+    CHECK(NV2A_WIDE_HALF_STEP > 40.2f && NV2A_WIDE_HALF_STEP < 40.25f); /* 2 x 20.115 */
+    CHECK(near(nv2a_wide_half_move(s169), 3.0f * NV2A_WIDE_HALF_STEP));  /* 16:9 */
+    CHECK(near(nv2a_wide_half_move(s1610), 2.0f * NV2A_WIDE_HALF_STEP)); /* 16:10 */
+    CHECK(near(nv2a_wide_half_move(s219), 6.0f * NV2A_WIDE_HALF_STEP));  /* 21:9 */
     for (i = 0; i < sizeof shapes / sizeof shapes[0]; i++) {
         float s = (4.0f / 3.0f) / shapes[i];
         float n = nv2a_wide_half_move(s);
         float steps = n / NV2A_WIDE_HALF_STEP;
         float parts = (1.0f / s - 1.0f) * 320.0f;
         float shift = nv2a_wide_half_shift(NV2A_WIDE_HUD_LEFT_HALF, s, 0);
-        CHECK(steps == floorf(steps));                             /* whole steps */
+        CHECK(fabsf(steps - floorf(steps + 0.5f)) < 1e-5f);        /* whole steps */
         CHECK(fabsf(n - parts) <= NV2A_WIDE_HALF_STEP / 2.0f);
         /* the left copy's 4:3 edge, 0, in the frame: squeezed about the
          * centre by the widened projection, then moved */
@@ -622,12 +696,13 @@ static void half_moves(void)
     CHECK(nv2a_wide_half_move(0.0f) == 0.0f);
     CHECK(nv2a_wide_half_move(1.5f) == 0.0f);
     CHECK(nv2a_wide_half_move(NAN) == 0.0f);
-    CHECK(near(nv2a_wide_half_shift(NV2A_WIDE_HUD_LEFT_HALF, s169, 0), 90.0f));     /* 3D */
-    CHECK(near(nv2a_wide_half_shift(NV2A_WIDE_HUD_RIGHT_HALF, s169, 0), -90.0f));
-    CHECK(nv2a_wide_half_shift(NV2A_WIDE_HUD_LEFT_HALF, s169, 1) == 120.0f);        /* 2D */
-    CHECK(nv2a_wide_half_shift(NV2A_WIDE_HUD_RIGHT_HALF, s169, 1) == -120.0f);
-    CHECK(fabsf(nv2a_wide_half_shift(NV2A_WIDE_HUD_LEFT_HALF, s1610, 0) - 80.0f * s1610) < 1e-4f);
-    CHECK(near(nv2a_wide_half_shift(NV2A_WIDE_HUD_LEFT_HALF, s219, 0), 135.0f));
+    CHECK(fabsf(nv2a_wide_half_shift(NV2A_WIDE_HUD_LEFT_HALF, s169, 0) - 90.5175f) < 1e-3f); /* 3D */
+    CHECK(fabsf(nv2a_wide_half_shift(NV2A_WIDE_HUD_RIGHT_HALF, s169, 0) + 90.5175f) < 1e-3f);
+    CHECK(near(nv2a_wide_half_shift(NV2A_WIDE_HUD_LEFT_HALF, s169, 1), 3.0f * NV2A_WIDE_HALF_STEP)); /* 2D */
+    CHECK(near(nv2a_wide_half_shift(NV2A_WIDE_HUD_RIGHT_HALF, s169, 1), -3.0f * NV2A_WIDE_HALF_STEP));
+    CHECK(fabsf(nv2a_wide_half_shift(NV2A_WIDE_HUD_LEFT_HALF, s1610, 0)
+                - 2.0f * NV2A_WIDE_HALF_STEP * s1610) < 1e-4f);
+    CHECK(fabsf(nv2a_wide_half_shift(NV2A_WIDE_HUD_LEFT_HALF, s219, 0) - 135.7763f) < 1e-3f);
     CHECK(nv2a_wide_half_shift(NV2A_WIDE_HUD_LEFT_HALF, 1.0f, 0) == 0.0f);          /* 4:3 */
     CHECK(nv2a_wide_half_shift(NV2A_WIDE_HUD_RIGHT_HALF, 1.0f, 1) == 0.0f);
     CHECK(nv2a_wide_half_shift(NV2A_WIDE_HUD_LEFT_HALF, NAN, 0) == 0.0f);
@@ -635,6 +710,260 @@ static void half_moves(void)
         CHECK(nv2a_wide_half_shift(others[i], s169, 0) == 0.0f);
         CHECK(nv2a_wide_half_shift(others[i], s169, 1) == 0.0f);
     }
+}
+
+/* A part's grid drawn as the backdrop's two copies, and the pieces at the
+ * sides moved with them (Aden, 8 November 2026: "Move them with the grid"). */
+static void grid_slabs_and_pieces(void)
+{
+    static const float shapes[] = { 1.5f, 1.6f, 16.0f / 9.0f, 2.0f, 64.0f / 27.0f, 32.0f / 9.0f };
+    const float s169 = 0.75f, s219 = 0.5625f, s14 = (4.0f / 3.0f) / 1.4f;
+    unsigned i;
+    /* the bands model's grid, 522 vertices; its bands and marks, 4 and 6 */
+    CHECK(nv2a_wide_slab(522u, s169) && nv2a_wide_slab(522u, s219));
+    CHECK(nv2a_wide_slab(NV2A_WIDE_SLAB_VERTS, s169));
+    CHECK(!nv2a_wide_slab(NV2A_WIDE_SLAB_VERTS - 1u, s169));
+    CHECK(!nv2a_wide_slab(6u, s169) && !nv2a_wide_slab(4u, s169) && !nv2a_wide_slab(0u, s169));
+    CHECK(!nv2a_wide_slab(522u, 1.0f));                 /* 4:3 */
+    CHECK(!nv2a_wide_slab(522u, s14));                  /* no whole step: the backdrop once */
+    CHECK(!nv2a_wide_slab(522u, NAN) && !nv2a_wide_slab(522u, 0.0f));
+    /* a piece on the grid moves as its side's copy does: 3D and squeezed */
+    CHECK(fabsf(nv2a_wide_hud_grid_shift(NV2A_WIDE_HUD_LEFT, s169, 0, 320.0f)
+                - nv2a_wide_half_shift(NV2A_WIDE_HUD_LEFT_HALF, s169, 0)) < 1e-3f);   /* 90.5 */
+    CHECK(fabsf(nv2a_wide_hud_grid_shift(NV2A_WIDE_HUD_RIGHT, s169, 0, 320.0f)
+                - nv2a_wide_half_shift(NV2A_WIDE_HUD_RIGHT_HALF, s169, 0)) < 1e-3f);
+    CHECK(fabsf(nv2a_wide_hud_grid_shift(NV2A_WIDE_HUD_LEFT, s169, 1, 320.0f)
+                - 3.0f * NV2A_WIDE_HALF_STEP) < 1e-3f);                               /* 120.7 */
+    CHECK(fabsf(nv2a_wide_hud_grid_shift(NV2A_WIDE_HUD_RIGHT, s219, 1, 320.0f)
+                + 6.0f * NV2A_WIDE_HALF_STEP) < 1e-3f);                               /* 241.4 */
+    for (i = 0; i < sizeof shapes / sizeof shapes[0]; i++) {
+        float s = (4.0f / 3.0f) / shapes[i];
+        int sq;
+        for (sq = 0; sq <= 1; sq++) {
+            float hl = nv2a_wide_half_shift(NV2A_WIDE_HUD_LEFT_HALF, s, sq);
+            float hr = nv2a_wide_half_shift(NV2A_WIDE_HUD_RIGHT_HALF, s, sq);
+            CHECK(fabsf(nv2a_wide_hud_grid_shift(NV2A_WIDE_HUD_LEFT, s, sq, 320.0f) - hl)
+                  < 1e-3f);
+            CHECK(fabsf(nv2a_wide_hud_grid_shift(NV2A_WIDE_HUD_RIGHT, s, sq, 320.0f) - hr)
+                  < 1e-3f);
+            /* never more than half a step from where the margin takes it */
+            CHECK(fabsf(nv2a_wide_hud_grid_shift(NV2A_WIDE_HUD_LEFT, s, sq, 320.0f)
+                        - nv2a_wide_hud_shift(NV2A_WIDE_HUD_LEFT, s, sq, 320.0f))
+                  <= (sq ? 1.0f : s) * NV2A_WIDE_HALF_STEP / 2.0f + 1e-3f);
+        }
+        /* a viewport of its own: the same scale from the margin's move */
+        CHECK(fabsf(nv2a_wide_hud_grid_shift(NV2A_WIDE_HUD_LEFT, s, 1, 200.0f)
+                    - nv2a_wide_hud_shift(NV2A_WIDE_HUD_LEFT, s, 1, 200.0f)
+                      * nv2a_wide_half_move(s) / ((1.0f / s - 1.0f) * 320.0f)) < 1e-3f);
+    }
+    /* where the backdrop is drawn once, the margin's move; none at 4:3 or
+     * across */
+    CHECK(nv2a_wide_hud_grid_shift(NV2A_WIDE_HUD_LEFT, s14, 0, 320.0f)
+          == nv2a_wide_hud_shift(NV2A_WIDE_HUD_LEFT, s14, 0, 320.0f));
+    CHECK(nv2a_wide_hud_grid_shift(NV2A_WIDE_HUD_LEFT, s14, 0, 320.0f) != 0.0f);
+    CHECK(nv2a_wide_hud_grid_shift(NV2A_WIDE_HUD_LEFT, 1.0f, 0, 320.0f) == 0.0f);
+    CHECK(nv2a_wide_hud_grid_shift(NV2A_WIDE_HUD_ACROSS, s169, 0, 320.0f) == 0.0f);
+    CHECK(nv2a_wide_hud_grid_shift(NV2A_WIDE_HUD_LEFT, NAN, 0, 320.0f) == 0.0f);
+}
+
+/* The pause map's yellow lines (capture-5: 108 vertices, x and z -213.3 to
+ * 213.3, y -70.4 to 77.3 as they come in; the map's own models under 70). */
+static void map_lines(void)
+{
+    const float span = 426.564f;
+    CHECK(nv2a_wide_lines(span));
+    CHECK(nv2a_wide_lines(NV2A_WIDE_LINES_SPAN));
+    CHECK(!nv2a_wide_lines(67.6f) && !nv2a_wide_lines(17.7f) && !nv2a_wide_lines(0.0f));
+    CHECK(!nv2a_wide_lines(NAN) && !nv2a_wide_lines(INFINITY) && !nv2a_wide_lines(-500.0f));
+    /* the lengths go out 8 times as far; the thickness stays */
+    CHECK(nv2a_wide_lines_coord(213.282f, span) == 213.282f * NV2A_WIDE_LINES_LONGER);
+    CHECK(nv2a_wide_lines_coord(-213.282f, span) == -213.282f * NV2A_WIDE_LINES_LONGER);
+    CHECK(nv2a_wide_lines_coord(77.304f, span) == 77.304f * NV2A_WIDE_LINES_LONGER);
+    CHECK(nv2a_wide_lines_coord(-70.429f, span) == -70.429f * NV2A_WIDE_LINES_LONGER);
+    CHECK(nv2a_wide_lines_coord(0.164f, span) == 0.164f);
+    CHECK(nv2a_wide_lines_coord(-0.5f, span) == -0.5f);
+    CHECK(nv2a_wide_lines_coord(0.0f, span) == 0.0f);
+    /* not the lines: nothing changes */
+    CHECK(nv2a_wide_lines_coord(8.8f, 17.7f) == 8.8f);
+    CHECK(nv2a_wide_lines_coord(33.7f, 64.3f) == 33.7f);
+    CHECK(nv2a_wide_lines_coord(213.282f, NAN) == 213.282f);
+    /* the top of the pause menus' grey bar, model 3 at y -4.689 of the
+     * menu's units (10 title pixels each) */
+    CHECK(NV2A_WIDE_LINES_TOP == 47u);
+    CHECK(NV2A_WIDE_LINES_LONGER > 4.0f);  /* 213 out reaches past 21:9's edges turned */
+}
+
+static void fill_is(uint32_t pw, float s, uint32_t x0, uint32_t x1, uint32_t l, uint32_t r)
+{
+    uint32_t a = 1, b = 2, c = 3, d = 4;
+    int ok = nv2a_wide_fill_cols(pw, s, &a, &b, &c, &d);
+    if (!ok || a != x0 || b != x1 || c != l || d != r)
+        printf("widescreen: fill of %u at %.4f gave %d %u..%u from %u and %u, not %u..%u "
+               "from %u and %u\n", pw, (double)s, ok, a, b, c, d, x0, x1, l, r);
+    CHECK(ok && a == x0 && b == x1 && c == l && d == r);
+}
+
+static void fill(void)
+{
+    static const float art[4] = { -1.0f, 1.0f, -1.0f, 1.0f };   /* the whole screen */
+    static const float tall[4] = { 0.2f, 0.6f, -1.0f, 1.0f };   /* as tall, narrow */
+    static const float small[4] = { -0.5f, 0.5f, -0.5f, 0.5f }; /* an overlay */
+    static const float shapes[] = { 1.4f, 1.5f, 1.6f, 16.0f / 9.0f, 2.0f, 64.0f / 27.0f,
+                                     32.0f / 9.0f };
+    uint32_t a = 7, b = 8, c = 9, d = 10, sc;
+    unsigned i;
+    CHECK(nv2a_wide_fill_fits(art, 1, 0));          /* art: fitted */
+    CHECK(nv2a_wide_fill_fits(tall, 1, 0));
+    CHECK(!nv2a_wide_fill_fits(art, 0, 0));         /* a fade, a bar: full width */
+    CHECK(!nv2a_wide_fill_fits(art, 1, 1));         /* a copy of the frame */
+    CHECK(!nv2a_wide_fill_fits(tall, 0, 0));
+    CHECK(nv2a_wide_fill_fits(small, 0, 0));        /* an overlay is, as ever */
+    CHECK(nv2a_wide_fill_fits(small, 1, 1));
+    fill_is(1707, 0.75f, 214, 1493, 216, 1490);     /* 2x, 16:9 */
+    fill_is(853, 0.75f, 107, 746, 108, 744);        /* 1x */
+    fill_is(1536, (4.0f / 3.0f) / 1.6f, 128, 1408, 130, 1405);   /* 2x, 16:10 */
+    fill_is(2276, 0.5625f, 498, 1778, 500, 1775);   /* 2x, 21:9 */
+    for (i = 0; i < sizeof shapes / sizeof shapes[0]; i++)
+        for (sc = 1; sc <= 8; sc++) {
+            float s = nv2a_wide_squeeze_of(shapes[i]);
+            uint32_t pw, ph, x0, x1, l, r;
+            float shape;
+            double e0, e1, in;
+            nv2a_wide_raster(640, 480, sc, shapes[i], &pw, &ph, &shape);
+            CHECK(nv2a_wide_fill_cols(pw, s, &x0, &x1, &l, &r));
+            e0 = 0.5 * pw * (1.0 - s); e1 = 0.5 * pw * (1.0 + s);   /* the 4:3 edges */
+            CHECK(x0 >= e0 - 1e-3 && x0 < e0 + 1.0);   /* the first whole column */
+            CHECK(x1 <= e1 + 1e-3 && x1 > e1 - 1.0);   /* one past the last */
+            CHECK(x0 > 0 && x1 < pw);                   /* both sides filled */
+            in = floor(pw * (double)s / 640.0 + 0.5);
+            CHECK(l - x0 == (uint32_t)(in < 1.0 ? 1.0 : in));
+            CHECK(x1 - 1u - r == l - x0);
+            CHECK(l < r && r < x1);
+        }
+    CHECK(!nv2a_wide_fill_cols(1280, 1.0f, &a, &b, &c, &d));      /* 4:3 */
+    CHECK(!nv2a_wide_fill_cols(1707, 0.0f, &a, &b, &c, &d));
+    CHECK(!nv2a_wide_fill_cols(1707, 1.5f, &a, &b, &c, &d));
+    CHECK(!nv2a_wide_fill_cols(1707, NAN, &a, &b, &c, &d));
+    CHECK(!nv2a_wide_fill_cols(3, 0.75f, &a, &b, &c, &d));        /* too narrow */
+    CHECK(!nv2a_wide_fill_cols(0, 0.75f, &a, &b, &c, &d));
+    CHECK(a == 7 && b == 8 && c == 9 && d == 10);                  /* untouched */
+}
+
+/* A strip hidden at the top of the picture: its columns from the screen's
+ * left edge to width title pixels into the 4:3 picture, every one it
+ * touches, and the picture's top six title rows, the row under them their
+ * colour. */
+static void fill_strips(void)
+{
+    static const float shapes[] = { 1.4f, 1.6f, 16.0f / 9.0f, 64.0f / 27.0f, 32.0f / 9.0f };
+    uint32_t x1 = 1, r0 = 2, r1 = 3, sc;
+    unsigned i;
+    /* 1x, 16:9: the 4:3 screen from 107 (fill_is, above); rows 0 to 6 */
+    CHECK(nv2a_wide_fill_strip(853, 480, 0.75f, 8, &x1, &r0, &r1));
+    CHECK(x1 == 115 && r0 == 0 && r1 == 6);
+    CHECK(nv2a_wide_fill_strip(853, 480, 0.75f, 0, &x1, &r0, &r1) && x1 == 107);  /* the side */
+    /* 2x: from 214, two raster pixels a title pixel; rows 0 to 12 */
+    CHECK(nv2a_wide_fill_strip(1707, 960, 0.75f, 8, &x1, &r0, &r1));
+    CHECK(x1 == 230 && r0 == 0 && r1 == 12);
+    CHECK(nv2a_wide_fill_strip(1707, 960, 0.75f, 121, &x1, &r0, &r1) && x1 == 456);
+    /* 21:9 at 2.25 raster pixels a title pixel (a 2559x1080 window): every
+     * one it touches */
+    CHECK(nv2a_wide_fill_strip(2559, 1080, nv2a_wide_squeeze_of(2559.0f / 1080.0f), 121,
+                               &x1, &r0, &r1));
+    CHECK(x1 == 560 + 273 && r0 == 0 && r1 == 14);
+    for (i = 0; i < sizeof shapes / sizeof shapes[0]; i++)
+        for (sc = 1; sc <= 8; sc++) {
+            float s = nv2a_wide_squeeze_of(shapes[i]), shape;
+            uint32_t pw, ph, a, b, l, r;
+            nv2a_wide_raster(640, 480, sc, shapes[i], &pw, &ph, &shape);
+            CHECK(nv2a_wide_fill_cols(pw, s, &a, &b, &l, &r));
+            CHECK(nv2a_wide_fill_strip(pw, ph, s, 8, &x1, &r0, &r1));
+            CHECK(x1 == a + 8u * sc && r0 == 0 && r1 == 6u * sc && r1 < ph);
+            CHECK(nv2a_wide_fill_strip(pw, ph, s, 0, &x1, &r0, &r1) && x1 == a);
+            CHECK(nv2a_wide_fill_strip(pw, ph, s, 255, &x1, &r0, &r1) && x1 == a + 255u * sc);
+        }
+    x1 = 1; r0 = 2; r1 = 3;
+    CHECK(!nv2a_wide_fill_strip(1280, 960, 1.0f, 8, &x1, &r0, &r1));       /* 4:3 */
+    CHECK(!nv2a_wide_fill_strip(1707, 960, NAN, 8, &x1, &r0, &r1));
+    CHECK(!nv2a_wide_fill_strip(3, 960, 0.75f, 8, &x1, &r0, &r1));
+    CHECK(!nv2a_wide_fill_strip(1707, 0, 0.75f, 8, &x1, &r0, &r1));
+    CHECK(!nv2a_wide_fill_strip(853, 480, 0.75f, 640, &x1, &r0, &r1));     /* the whole 4:3 */
+    CHECK(!nv2a_wide_fill_strip(853, 1, 0.75f, 8, &x1, &r0, &r1));         /* no row under */
+    CHECK(x1 == 1 && r0 == 2 && r1 == 3);                                   /* untouched */
+}
+
+/* A bar of a part whose bars go across: a plain rectangle much taller than
+ * wide, and nothing else. */
+static void bars(void)
+{
+    CHECK(nv2a_wide_bar(6, 0.112f, 59.0f));         /* the title's bars, as they come in */
+    CHECK(nv2a_wide_bar(6, 4.028f, 59.0f));
+    CHECK(nv2a_wide_bar(4, 1.0f, 8.0f));            /* just tall enough */
+    CHECK(nv2a_wide_bar(6, 0.0f, 1.0f));            /* no width at all */
+    CHECK(!nv2a_wide_bar(6, 1.0f, 7.9f));           /* not tall enough */
+    CHECK(!nv2a_wide_bar(6, 1.324f, 1.244f));       /* a piece of the logo */
+    CHECK(!nv2a_wide_bar(6, 13.874f, 1.244f));      /* wide, not tall */
+    CHECK(!nv2a_wide_bar(7, 0.1f, 59.0f));          /* more than a rectangle */
+    CHECK(!nv2a_wide_bar(243, 5.766f, 1.258f));     /* a letter */
+    CHECK(!nv2a_wide_bar(2, 0.1f, 59.0f));          /* not a polygon */
+    CHECK(!nv2a_wide_bar(6, 0.1f, 0.0f));           /* no height */
+    CHECK(!nv2a_wide_bar(6, -1.0f, 59.0f));
+    CHECK(!nv2a_wide_bar(6, NAN, 59.0f));
+    CHECK(!nv2a_wide_bar(6, 0.1f, NAN));
+    CHECK(!nv2a_wide_bar(6, 0.1f, INFINITY));
+}
+
+/* The side fill drawn draw by draw: the middle and each side's columns, the
+ * source a side's copy shows, and the map that holds that source's centre
+ * still and brings the whole side to within half a pixel of it. */
+static void fill_copies(void)
+{
+    static const float shapes[] = { 1.4f, 1.6f, 16.0f / 9.0f, 64.0f / 27.0f, 32.0f / 9.0f };
+    static const int others[] = { NV2A_WIDE_HUD_ACROSS, NV2A_WIDE_HUD_WHOLE,
+                                  NV2A_WIDE_HUD_LEFT_HALF, NV2A_WIDE_HUD_RIGHT_HALF,
+                                  NV2A_WIDE_HUD_FILL, NV2A_WIDE_HUD_OVER, NV2A_WIDE_HUD_BARS,
+                                  NV2A_WIDE_HUD_STRIP, 10 };
+    uint32_t x0 = 1, x1 = 2, src = 3, sc;
+    float k = 4.0f, off = 5.0f;
+    unsigned i;
+    /* 2x, 16:9: the sources 216 and 1490 (fill_is, above). */
+    CHECK(nv2a_wide_fill_copy(1707, 0.75f, NV2A_WIDE_HUD_NONE, &x0, &x1, &src, &k, &off));
+    CHECK(x0 == 216 && x1 == 1491 && src == 1491 && k == 1.0f && off == 0.0f);
+    CHECK(nv2a_wide_fill_copy(1707, 0.75f, NV2A_WIDE_HUD_LEFT, &x0, &x1, &src, &k, &off));
+    CHECK(x0 == 0 && x1 == 216 && src == 216 && k == 3414.0f);
+    CHECK(nv2a_wide_fill_copy(1707, 0.75f, NV2A_WIDE_HUD_RIGHT, &x0, &x1, &src, &k, &off));
+    CHECK(x0 == 1491 && x1 == 1707 && src == 1490 && k == 3414.0f);
+    for (i = 0; i < sizeof shapes / sizeof shapes[0]; i++)
+        for (sc = 1; sc <= 8; sc++) {
+            float s = nv2a_wide_squeeze_of(shapes[i]), shape;
+            uint32_t pw, ph, a, b, l, r;
+            int side;
+            nv2a_wide_raster(640, 480, sc, shapes[i], &pw, &ph, &shape);
+            CHECK(nv2a_wide_fill_cols(pw, s, &a, &b, &l, &r));
+            CHECK(nv2a_wide_fill_copy(pw, s, NV2A_WIDE_HUD_NONE, &x0, &x1, &src, &k, &off));
+            CHECK(x0 == l && x1 == r + 1u);             /* source to source */
+            for (side = NV2A_WIDE_HUD_LEFT; side <= NV2A_WIDE_HUD_RIGHT; side += 2) {
+                double c, e0, e1;
+                CHECK(nv2a_wide_fill_copy(pw, s, side, &x0, &x1, &src, &k, &off));
+                CHECK(side < 0 ? x0 == 0 && x1 == l && src == l
+                               : x0 == r + 1u && x1 == pw && src == r);
+                /* The source's centre, in NDC, stays where it is... */
+                c = ((double)src + 0.5) * 2.0 / pw - 1.0;
+                CHECK(fabs(k * c + off - c) < 1e-6 * k);
+                /* ...and the side's far pixels show what is within half a
+                 * pixel of it: x = (x' - off) / k. */
+                e0 = ((double)x0 * 2.0 / pw - 1.0 - off) / k;
+                e1 = ((double)x1 * 2.0 / pw - 1.0 - off) / k;
+                CHECK(fabs(e0 - c) <= 1.0 / pw && fabs(e1 - c) <= 1.0 / pw);
+            }
+        }
+    x0 = 1; x1 = 2; src = 3; k = 4.0f; off = 5.0f;
+    for (i = 0; i < sizeof others / sizeof others[0]; i++)
+        CHECK(!nv2a_wide_fill_copy(1707, 0.75f, others[i], &x0, &x1, &src, &k, &off));
+    CHECK(!nv2a_wide_fill_copy(1280, 1.0f, NV2A_WIDE_HUD_LEFT, &x0, &x1, &src, &k, &off));
+    CHECK(!nv2a_wide_fill_copy(1707, NAN, NV2A_WIDE_HUD_NONE, &x0, &x1, &src, &k, &off));
+    CHECK(!nv2a_wide_fill_copy(3, 0.75f, NV2A_WIDE_HUD_RIGHT, &x0, &x1, &src, &k, &off));
+    CHECK(x0 == 1 && x1 == 2 && src == 3 && k == 4.0f && off == 5.0f);    /* untouched */
 }
 
 int main(void)
@@ -659,6 +988,12 @@ int main(void)
     across();
     halves();
     half_moves();
+    grid_slabs_and_pieces();
+    map_lines();
+    fill();
+    fill_copies();
+    fill_strips();
+    bars();
     if (s_failures) {
         printf("widescreen: %d failed\n", s_failures);
         return 1;

@@ -4735,12 +4735,42 @@ static int g_wide_hud;       /* the side its HUD piece moved it to, or none, dit
 static float g_wide_across;  /* how much wider a menu part drawn across comes out, less one, ditto */
 static int g_wide_whole;     /* whether its text runs the whole width, unclipped, ditto */
 static int g_wide_half;      /* the half of the screen a backdrop's copy is shown on, or none, ditto */
+static int g_wide_bar;       /* whether it is a bar that goes across (NV2A_WIDE_HUD_BARS), ditto */
+static int g_wide_slab;      /* whether it is a part's grid, drawn as a backdrop's two copies, ditto */
+static int g_wide_lines;     /* whether it is the pause map's yellow lines (nv2a_wide_lines), ditto */
+static int g_wide_map;       /* whether it is a menu's 3D map's (NV2A_WIDE_HUD_LINES), shown from NV2A_WIDE_LINES_TOP down, ditto */
+static uint32_t g_wide_slab_clip[4];  /* the right-hand copy's clip, raster pixels (wide_slab_right) */
 /* The HUD piece being drawn, from the game side's marks (nv2a_wide.h,
  * NV2A_WIDE_HUD_METHOD): its side, NV2A_WIDE_HUD_NONE between pieces, which
- * one, for the log, and its flags (NV2A_WIDE_HUD_OWN_VIEW). */
+ * one, for the log, and its flags (NV2A_WIDE_HUD_OWN_VIEW,
+ * NV2A_WIDE_HUD_ON_GRID). */
 static int g_hud_side = NV2A_WIDE_HUD_NONE;
 static unsigned g_hud_piece;
 static unsigned g_hud_flags;
+/* Whether a plain menu has drawn in this frame so far, from the game side's
+ * mark (NV2A_WIDE_HUD_FILL), and which, for the log: from the mark on, its
+ * full-screen art is fitted into the 4:3 screen (do_draw), and at the flip
+ * its sides are filled (present). The flip ends it. The frame before was
+ * filled (g_wide_fill_last): the art is fitted from the frame's start, as
+ * it may be drawn before the menu, by another object. A part moved to an
+ * edge in the frame (g_wide_moved: the HUD's, or a laid-out menu's) keeps
+ * its sides from being filled, so the fill never paints over it. */
+static int g_wide_fill, g_wide_fill_last, g_wide_moved;
+static unsigned g_wide_fill_piece;
+/* A part over a filled frame's sides (NV2A_WIDE_HUD_OVER, the moving
+ * rectangles) drawn in the frame so far: its sides were filled draw by draw
+ * (nv2a_wide_fill_copy), and the flip leaves them as they are, rather than
+ * copying columns over the part. */
+static int g_wide_over;
+/* A strip of the filled frame's menu's art to hide at the top of the
+ * picture (NV2A_WIDE_HUD_STRIP): how far into the 4:3 picture it runs, in
+ * title pixels, plus one, or 0 for none. The flip ends it. */
+static unsigned g_wide_strip;
+/* This draw's copies on the sides (the side fill drawn draw by draw), set in
+ * do_draw: whether it has them, and the clip it has of its own, x0, y0, x1,
+ * y1 in raster pixels, the far edges exclusive, which they keep. */
+static int g_wide_copy;
+static uint32_t g_wide_copy_clip[4];
 /* The end of a displayed frame (present): a HUD piece's draws end there at
  * the latest. One still open (the game side lost its end mark) ends, and
  * says so once. */
@@ -5542,6 +5572,64 @@ static void card_report(void)
 }
 
 static void do_draw_body(void);
+
+/* The side fill drawn draw by draw (nv2a_wide_fill_copy): the draw just made
+ * in the middle, made again on each side whose source column its own clip
+ * holds (g_wide_copy_clip), in that side's columns and its own rows,
+ * magnified about the source, then the state and uniforms it had put back.
+ * The first frame with copies is logged. */
+static void wide_fill_copies(int mode, uint32_t n, int indexed, int i32)
+{
+    static int told;
+    float s = nv2a_wide_squeeze_of(g_surf[g_cur_surf].shape);
+    int side, drew = 0;
+    for (side = NV2A_WIDE_HUD_LEFT; side <= NV2A_WIDE_HUD_RIGHT; side += 2) {
+        uint32_t x0, x1, src;
+        float k, off;
+        Nv2aRenderState rs;
+        if (!nv2a_wide_fill_copy(g_fbo_pw, s, side, &x0, &x1, &src, &k, &off)) continue;
+        if (x0 >= x1 || src < g_wide_copy_clip[0] || src >= g_wide_copy_clip[2]
+         || g_wide_copy_clip[1] >= g_wide_copy_clip[3]) continue;
+        rs = g_draw_rs;
+        rs.scissor_enable = 1;
+        rs.scissor[0] = x0; rs.scissor[1] = g_wide_copy_clip[1];
+        rs.scissor[2] = x1; rs.scissor[3] = g_wide_copy_clip[3];
+        G->state(&rs);
+        uni1f(NV2A_U_WIDEACROSS, k * (1.0f + g_wide_across) - 1.0f);
+        uni1f(NV2A_U_WIDEOFF, off);
+        if (indexed) G->draw_indexed(mode, n, i32);
+        else         G->draw(mode, n);
+        if (!told) {
+            told = 1;
+            fprintf(stderr, "[WIDE] piece %u: the side fill drawn draw by draw, on a raster %u "
+                    "wide: column %u magnified %.0f times across %u..%u\n", g_wide_fill_piece,
+                    g_fbo_pw, src, (double)k, x0, x1);
+        }
+        drew = 1;
+    }
+    if (drew) {
+        uni1f(NV2A_U_WIDEACROSS, g_wide_across);
+        uni1f(NV2A_U_WIDEOFF, 0.0f);
+        G->state(&g_draw_rs);
+    }
+}
+/* A part's grid (nv2a_wide_slab), whose left-hand copy was just drawn: its
+ * right-hand copy, moved right by the backdrop's move and shown on the right
+ * half (g_wide_slab_clip), then the state and the move it had put back. */
+static void wide_slab_right(int mode, uint32_t n, int indexed, int i32)
+{
+    Nv2aRenderState rs = g_draw_rs;
+    if (g_wide_slab_clip[0] >= g_wide_slab_clip[2] || g_wide_slab_clip[1] >= g_wide_slab_clip[3])
+        return;
+    rs.scissor_enable = 1;
+    memcpy(rs.scissor, g_wide_slab_clip, sizeof rs.scissor);
+    G->state(&rs);
+    uni1f(NV2A_U_WIDESHIFT, nv2a_wide_half_shift(NV2A_WIDE_HUD_RIGHT_HALF, g_wide_s, 0));
+    if (indexed) G->draw_indexed(mode, n, i32);
+    else         G->draw(mode, n);
+    uni1f(NV2A_U_WIDESHIFT, g_wide_shift);
+    G->state(&g_draw_rs);
+}
 /* A draw, timed whole for the profile (it has a great many ways out), and
  * every DRAW_STEP_EVERY-th one step by step. */
 static void do_draw(void)
@@ -5931,7 +6019,9 @@ static void do_draw_body(void)
 
     { double vbo0 = g_prof.vbo;   /* vc_prepare's uploads count as vbo */
       PROF_T0();
-    if (!inl && out_n >= VC_MIN_N && !wide2d && vc_on())
+    /* The pause map's (NV2A_WIDE_HUD_LINES) too, whose lines' positions are
+     * made longer in place (below). */
+    if (!inl && out_n >= VC_MIN_N && !wide2d && g_hud_side != NV2A_WIDE_HUD_LINES && vc_on())
         vc_vb = vc_prepare(live, nlive, stride_floats, n, fan_expand, out_n,
                            &vc_i32, &vc_seq);
     if (!vc_vb) {
@@ -6113,6 +6203,45 @@ static void do_draw_body(void)
          * a fade, a frame -- left to fill the 16:9 screen. Anything smaller
          * is an overlay and keeps its shape. */
         if (nv2a_wide_overlay(g_wide_ext)) g_wide_squeeze = 1;
+        /* On a frame a plain menu draws in (the side fill, nv2a_wide.h), from
+         * its mark on, or from the start of the frame after a filled one:
+         * its full-screen art, textured and no copy of the frame, is fitted
+         * into the 4:3 screen with the rest of the menu, keeping its shape;
+         * the fill carries its edges out to the screen's at the flip. */
+        if ((g_wide_fill || g_wide_fill_last || g_hud_side == NV2A_WIDE_HUD_BARS)
+            && !g_wide_squeeze) {
+            int st, textured = 0, copy = 0, tst = -1;
+            for (st = 0; st < 4; st++) {
+                if (!S.psh.tex_bound[st]) continue;
+                textured = 1;
+                if (tst < 0) tst = st;
+                if (surface_find(S.tex[st].offset, 0, 0, 1) >= 0) copy = 1;
+            }
+            if (nv2a_wide_fill_fits(g_wide_ext, textured, copy)) g_wide_squeeze = 1;
+            /* A part whose bars go across (NV2A_WIDE_HUD_BARS, the title's
+             * own draws) is fitted the same way: its full-screen art
+             * squeezed, keeping its shape; an untextured layer (a fade, a
+             * flash) or a copy of the frame left full width. */
+            /* The first few full-screen draws on filled frames, each kind
+             * once, with what decided it: what each plain menu's frames
+             * hold is known from the game's log, not the code. */
+            if (g_wide_fill || g_wide_fill_last) { static unsigned told[8]; static int lines;
+              unsigned kind = (unsigned)(g_wide_squeeze ? 1 : 0) | (copy ? 2u : textured ? 4u : 0u);
+              if (lines < 12 && !(told[kind] & (1u << (g_wide_fill ? 1 : 0)))) {
+                  told[kind] |= 1u << (g_wide_fill ? 1 : 0);
+                  lines++;
+                  fprintf(stderr, "[WIDE] piece %u: full-screen %s (x %.2f..%.2f, y %.2f..%.2f in "
+                          "NDC, texture %ux%u, stencil %s) %s, %s\n", g_wide_fill_piece,
+                          copy ? "copy of the frame" : textured ? "art" : "layer, untextured",
+                          (double)g_wide_ext[0], (double)g_wide_ext[1], (double)g_wide_ext[2],
+                          (double)g_wide_ext[3], tst >= 0 ? (unsigned)S.tex[tst].width : 0u,
+                          tst >= 0 ? (unsigned)S.tex[tst].height : 0u, S.stencil_en ? "on" : "off",
+                          g_wide_squeeze ? "fitted into the 4:3 screen for the side fill"
+                                         : "left full width",
+                          g_wide_fill ? "after the menu's mark"
+                                      : "before the menu's mark, on the frame after a filled one");
+              } }
+        }
         /* RECOMP_WIDE_NOSQUEEZE=1 (test only): measure, never squeeze. */
         { static int nosq = -1;
           if (nosq < 0) nosq = getenv("RECOMP_WIDE_NOSQUEEZE") ? 1 : 0;
@@ -6138,7 +6267,7 @@ static void do_draw_body(void)
      * as its 3D is below. Text that runs the whole width (_WHOLE), a
      * ticker, is squeezed whatever its span: a long line spans more than an
      * overlay does, and would be stretched. */
-    if (g_hud_side == NV2A_WIDE_HUD_ACROSS) g_wide_squeeze = 0;
+    if (g_hud_side == NV2A_WIDE_HUD_ACROSS || g_hud_side == NV2A_WIDE_HUD_OVER) g_wide_squeeze = 0;
     if (g_hud_side == NV2A_WIDE_HUD_WHOLE && nv2a_wide_scene() && S.xf_mode != NV2A_XF_MODE_FIXED
         && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS
         && nv2a_wide_frame_sized(S.clip_w, S.clip_h))
@@ -6193,7 +6322,9 @@ static void do_draw_body(void)
      * own (NV2A_WIDE_HUD_OWN_VIEW, a strip its digits roll through) fills
      * that viewport, so its 2D is squeezed whatever its span, and moves from
      * that viewport's centre: its x is the frame's, but the shader squeezes
-     * it about the viewport's.
+     * it about the viewport's. A menu's part on a backdrop drawn in two
+     * copies (NV2A_WIDE_HUD_ON_GRID) moves with its side's copy, by whole
+     * steps of the grid (nv2a_wide_hud_grid_shift), so it keeps its cell.
      *
      * A menu part drawn across the width (NV2A_WIDE_HUD_ACROSS), a
      * background grid or bar the game laid out for the 4:3 screen, isn't
@@ -6201,7 +6332,9 @@ static void do_draw_body(void)
      * the middle 4:3 at its shape, is stretched about the screen's centre
      * until that 4:3 fills the screen (nv2a_wide_across_stretch), and its 2D
      * was left unsqueezed (above), which does the same. Neither is clipped
-     * to the 4:3 screen. The first draw of each part is logged. Text that
+     * to the 4:3 screen. The first draw of each part is logged. Its grid, a
+     * 3D mesh of many vertices (nv2a_wide_slab), isn't stretched but drawn
+     * as the backdrop's two copies, so its cells keep the backdrop's lines. Text that
      * runs the whole width (NV2A_WIDE_HUD_WHOLE) is squeezed (above) and
      * neither moved nor clipped to the 4:3 screen: the game side spread it
      * out from the centre, so it shows across the whole screen. A copy of a
@@ -6210,22 +6343,50 @@ static void do_draw_body(void)
      * left copy left and the right one right (nv2a_wide_half_shift), and
      * clipped to its half of the screen (the window clip, below), not to
      * the 4:3 screen; a screen-space draw in it that isn't squeezed (a
-     * backdrop of its own) is only clipped, as the HUD's stays.
+     * backdrop of its own) is only clipped, as the HUD's stays. A part
+     * whose bars go across (NV2A_WIDE_HUD_BARS) is drawn as it is, not
+     * clipped to the 4:3 screen, but a bar in its 3D (nv2a_wide_bar, from
+     * the positions as they come in) is stretched about the screen's centre
+     * as a part drawn across is: one the game parks just past a 4:3 edge is
+     * parked past the screen's edge, and sweeps in from there.
      */
     g_wide_hud = NV2A_WIDE_HUD_NONE;
     g_wide_across = 0.0f;
     g_wide_whole = 0;
     g_wide_half = NV2A_WIDE_HUD_NONE;
-    if (g_hud_side == NV2A_WIDE_HUD_ACROSS && nv2a_wide_scene()
-        && nv2a_wide_frame_sized(S.clip_w, S.clip_h) && framed == 0.0f) {
+    g_wide_bar = 0;
+    g_wide_slab = 0;
+    g_wide_lines = 0;
+    g_wide_map = 0;
+    if ((g_hud_side == NV2A_WIDE_HUD_ACROSS || g_hud_side == NV2A_WIDE_HUD_OVER)
+        && nv2a_wide_scene() && nv2a_wide_frame_sized(S.clip_w, S.clip_h) && framed == 0.0f) {
         static unsigned char told[256];
         int screen = S.xf_mode != NV2A_XF_MODE_FIXED
                   && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS;
-        if (!screen) g_wide_across = nv2a_wide_across_stretch(g_wide_s) - 1.0f;
-        if (!told[g_hud_piece & 0xFFu]) {
+        int over = g_hud_side == NV2A_WIDE_HUD_OVER;
+        if (!screen && !over && nv2a_wide_slab(out_n, g_wide_s)) {
+            /* The part's grid: not stretched, but drawn as a backdrop's two
+             * copies are, the left one here and the right one after it
+             * (wide_slab_right), each on its half of the screen. */
+            static unsigned char slab_told[256];
+            g_wide_slab = 1;
+            g_wide_half = NV2A_WIDE_HUD_LEFT_HALF;
+            g_wide_shift = nv2a_wide_half_shift(NV2A_WIDE_HUD_LEFT_HALF, g_wide_s, 0);
+            if (!slab_told[g_hud_piece & 0xFFu]) {
+                slab_told[g_hud_piece & 0xFFu] = 1;
+                fprintf(stderr, "[WIDE] piece %u: its grid (%u vertices) drawn as the backdrop's "
+                        "two copies, each moved %.1f title pixels out, not stretched\n",
+                        g_hud_piece, out_n, (double)nv2a_wide_half_move(g_wide_s));
+            }
+        } else if (!screen) g_wide_across = nv2a_wide_across_stretch(g_wide_s) - 1.0f;
+        /* Over a filled frame's sides: they're filled draw by draw, under it. */
+        if (over && g_wide_fill && !g_wide_moved) g_wide_over = 1;
+        if (!g_wide_slab && !told[g_hud_piece & 0xFFu]) {
             told[g_hud_piece & 0xFFu] = 1;
-            fprintf(stderr, "[WIDE] piece %u: drawn across the width, %s, %.3f times as wide\n",
-                    g_hud_piece, screen ? "2D unsqueezed" : "3D stretched",
+            fprintf(stderr, "[WIDE] piece %u: drawn across the width%s, %s, %.3f times as wide\n",
+                    g_hud_piece, !over ? "" : g_wide_fill ? ", over the filled sides"
+                                                           : ", over the sides (no fill this frame)",
+                    screen ? "2D unsqueezed" : "3D stretched",
                     (double)nv2a_wide_across_stretch(g_wide_s));
         }
     } else if (g_hud_side == NV2A_WIDE_HUD_LEFT_HALF || g_hud_side == NV2A_WIDE_HUD_RIGHT_HALF) {
@@ -6255,6 +6416,85 @@ static void do_draw_body(void)
                         "not clipped to 4:3\n", g_hud_piece);
             }
         }
+    } else if (g_hud_side == NV2A_WIDE_HUD_LINES) {
+        /* A menu's 3D map (the pause menus', the race preview's): drawn as
+         * it is, widened with the scene, but shown only from the grey bar's
+         * top down, in the light grid (the clip, below), and its yellow
+         * lines made longer, as thin, to run past the screen's edges. */
+        if (nv2a_wide_scene() && nv2a_wide_frame_sized(S.clip_w, S.clip_h) && framed == 0.0f) {
+            static unsigned char map_told[256];
+            g_wide_map = 1;
+            if (!map_told[g_hud_piece & 0xFFu]) {
+                map_told[g_hud_piece & 0xFFu] = 1;
+                fprintf(stderr, "[WIDE] piece %u: a menu's map, shown from row %u down, in the "
+                        "light grid\n", g_hud_piece, NV2A_WIDE_LINES_TOP);
+            }
+        }
+        if (g_wide_map && !vc_vb && attr_at[0] >= 0 && out_n) {
+            float lo[3] = { 1e30f, 1e30f, 1e30f }, hi[3] = { -1e30f, -1e30f, -1e30f }, span = 0.0f;
+            uint32_t k3;
+            int c3;
+            for (k3 = 0; k3 < out_n; k3++) {
+                const float *p3 = &vbuf[(size_t)k3 * stride_floats + (uint32_t)attr_at[0]];
+                for (c3 = 0; c3 < 3; c3++) {
+                    if (p3[c3] < lo[c3]) lo[c3] = p3[c3];
+                    if (p3[c3] > hi[c3]) hi[c3] = p3[c3];
+                }
+            }
+            for (c3 = 0; c3 < 3; c3++) if (hi[c3] - lo[c3] > span) span = hi[c3] - lo[c3];
+            if (nv2a_wide_lines(span)) {
+                static unsigned lines_told;
+                g_wide_lines = 1;
+                for (k3 = 0; k3 < out_n; k3++) {
+                    float *p3 = &vbuf[(size_t)k3 * stride_floats + (uint32_t)attr_at[0]];
+                    for (c3 = 0; c3 < 3; c3++) p3[c3] = nv2a_wide_lines_coord(p3[c3], span);
+                }
+                if (lines_told < 2) {
+                    lines_told++;
+                    fprintf(stderr, "[WIDE] piece %u: the map's yellow lines (%u vertices, %.1f "
+                            "long as they come in): %.0f times as long, shown from row %u down\n",
+                            g_hud_piece, out_n, (double)span, (double)NV2A_WIDE_LINES_LONGER,
+                            NV2A_WIDE_LINES_TOP);
+                }
+            }
+        }
+    } else if (g_hud_side == NV2A_WIDE_HUD_BARS) {
+        if (nv2a_wide_scene() && nv2a_wide_frame_sized(S.clip_w, S.clip_h) && framed == 0.0f) {
+            static unsigned char told[2][256];
+            static unsigned bars_told;
+            int screen = S.xf_mode != NV2A_XF_MODE_FIXED
+                      && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS;
+            float bw = 0.0f, bh = 0.0f;
+            if (!screen && attr_at[0] >= 0 && out_n && out_n <= NV2A_WIDE_BAR_VERTS) {
+                float lo = 1e30f, hi = -1e30f, ylo = 1e30f, yhi = -1e30f;
+                uint32_t k3;
+                for (k3 = 0; k3 < out_n; k3++) {
+                    const float *p3 = &vbuf[(size_t)k3 * stride_floats + (uint32_t)attr_at[0]];
+                    if (p3[0] < lo) lo = p3[0];
+                    if (p3[0] > hi) hi = p3[0];
+                    if (p3[1] < ylo) ylo = p3[1];
+                    if (p3[1] > yhi) yhi = p3[1];
+                }
+                bw = hi - lo; bh = yhi - ylo;
+                g_wide_bar = nv2a_wide_bar(out_n, bw, bh);
+            }
+            if (g_wide_bar) {
+                g_wide_across = nv2a_wide_across_stretch(g_wide_s) - 1.0f;
+                /* The first few bars, with their sizes. */
+                if (bars_told < 6) {
+                    bars_told++;
+                    fprintf(stderr, "[WIDE] piece %u: a bar (%u vertices, %.3f wide, %.3f tall as "
+                            "they come in), 3D stretched across, %.3f times as wide\n",
+                            g_hud_piece, out_n, (double)bw, (double)bh,
+                            (double)nv2a_wide_across_stretch(g_wide_s));
+                }
+            } else if (!told[screen][g_hud_piece & 0xFFu]) {
+                told[screen][g_hud_piece & 0xFFu] = 1;
+                fprintf(stderr, "[WIDE] piece %u: %s, not clipped to the 4:3 screen\n",
+                        g_hud_piece, screen ? (g_wide_squeeze ? "2D squeezed" : "2D left full width")
+                                            : "3D drawn as it is");
+            }
+        }
     } else if (g_hud_side != NV2A_WIDE_HUD_NONE && nv2a_wide_scene()
         && nv2a_wide_frame_sized(S.clip_w, S.clip_h) && framed == 0.0f) {
         int screen = S.xf_mode != NV2A_XF_MODE_FIXED
@@ -6265,8 +6505,30 @@ static void do_draw_body(void)
         if (!screen || (g_wide_squeeze && (own || nv2a_wide_hud_whole_view(S.u.vp_scale[0])))) {
             float centre = own ? S.u.vp_off[0] - NV2A_D3D_NUDGE : 0.5f * (float)NV2A_SCALE_FRAME_W;
             g_wide_hud = g_hud_side;
-            g_wide_shift = nv2a_wide_hud_shift(g_hud_side, g_wide_s, g_wide_squeeze, centre);
+            g_wide_shift = (g_hud_flags & NV2A_WIDE_HUD_ON_GRID)
+                ? nv2a_wide_hud_grid_shift(g_hud_side, g_wide_s, g_wide_squeeze, centre)
+                : nv2a_wide_hud_shift(g_hud_side, g_wide_s, g_wide_squeeze, centre);
         }
+    }
+    /*
+     * The side fill drawn draw by draw (nv2a_wide_fill_copy): on a filled
+     * frame, from the menu's mark on, each draw on the widened frame that
+     * isn't a part with a side of its own is drawn in the middle, between
+     * the source columns, and again on each side, magnified about its source
+     * (wide_fill_copies), so that a part drawn over the sides (the moving
+     * rectangles) is kept there and the sides show what is under it. A copy
+     * of the frame (a draw that samples one of the title's surfaces) carries
+     * the sides as they are. Until the frame has such a part, the flip still
+     * copies the columns over all of it (present), as it did before.
+     */
+    g_wide_copy = 0;
+    if (g_wide_fill && !g_wide_moved && g_hud_side == NV2A_WIDE_HUD_NONE && nv2a_wide_scene()
+        && nv2a_wide_frame_sized(S.clip_w, S.clip_h) && g_cur_surf >= 0
+        && g_surf[g_cur_surf].shape > NV2A_WIDE_4_3 && g_fbo_pw && g_fbo_ph) {
+        int st, copy = 0;
+        for (st = 0; st < 4; st++)
+            if (S.psh.tex_bound[st] && surface_find(S.tex[st].offset, 0, 0, 1) >= 0) copy = 1;
+        g_wide_copy = !copy;
     }
 
     /* The vertices, where each attribute sits in them, and the value of
@@ -7048,10 +7310,24 @@ static void do_draw_body(void)
               nv2a_wide_clip_x(g_fbo_w, g_wide_s, &cx0, &cx1);
               clip = 1;
           }
+          /* A menu's 3D map, its yellow lines with it: from the grey bar's
+           * top down, in the light grid, not over the dark grid above it. */
+          if (g_wide_map) {
+              if (cy0 < NV2A_WIDE_LINES_TOP) cy0 = NV2A_WIDE_LINES_TOP;
+              if (cy1 < cy0) cy1 = cy0;
+              clip = 1;
+          }
           /* A copy of a menu's backdrop, moved out: its half of the screen,
-           * to the screen's edge. */
+           * to the screen's edge. A part's grid is drawn as both copies, the
+           * right one after (wide_slab_right), with the right half's clip. */
           if (g_wide_half != NV2A_WIDE_HUD_NONE) {
-              nv2a_wide_half_clip_x(g_fbo_w, g_wide_half, &cx0, &cx1);
+              if (g_wide_slab) {
+                  uint32_t rx0 = cx0, rx1 = cx1;
+                  nv2a_wide_half_clip_x(g_fbo_w, g_wide_s, NV2A_WIDE_HUD_RIGHT_HALF, &rx0, &rx1);
+                  g_wide_slab_clip[0] = raster_x(rx0); g_wide_slab_clip[1] = raster_y(cy0);
+                  g_wide_slab_clip[2] = raster_x(rx1); g_wide_slab_clip[3] = raster_y(cy1);
+              }
+              nv2a_wide_half_clip_x(g_fbo_w, g_wide_s, g_wide_half, &cx0, &cx1);
               clip = 1;
           }
           if (clip) {
@@ -7059,6 +7335,29 @@ static void do_draw_body(void)
               rs.scissor_enable = 1;
               rs.scissor[0] = raster_x(cx0); rs.scissor[1] = raster_y(cy0);
               rs.scissor[2] = raster_x(cx1); rs.scissor[3] = raster_y(cy1);
+          }
+          /* The side fill drawn draw by draw: the draw itself in the middle,
+           * from source column to source column, inside its own clip, which
+           * its copies on the sides keep (wide_fill_copies). */
+          if (g_wide_copy) {
+              uint32_t mx0, mx1, src;
+              float k, off;
+              if (clip) memcpy(g_wide_copy_clip, rs.scissor, sizeof g_wide_copy_clip);
+              else {
+                  g_wide_copy_clip[0] = 0; g_wide_copy_clip[1] = 0;
+                  g_wide_copy_clip[2] = g_fbo_pw; g_wide_copy_clip[3] = g_fbo_ph;
+              }
+              if (nv2a_wide_fill_copy(g_fbo_pw, nv2a_wide_squeeze_of(g_surf[g_cur_surf].shape),
+                                      NV2A_WIDE_HUD_NONE, &mx0, &mx1, &src, &k, &off)) {
+                  if (mx0 < g_wide_copy_clip[0]) mx0 = g_wide_copy_clip[0];
+                  if (mx1 > g_wide_copy_clip[2]) mx1 = g_wide_copy_clip[2];
+                  if (mx1 < mx0) mx1 = mx0;
+                  rs.scissor_enable = 1;
+                  rs.scissor[0] = mx0; rs.scissor[1] = g_wide_copy_clip[1];
+                  rs.scissor[2] = mx1; rs.scissor[3] = g_wide_copy_clip[3];
+              } else {
+                  g_wide_copy = 0;
+              }
           } }
         g_draw_rs = rs;
         G->state(&rs);
@@ -8206,6 +8505,8 @@ static void do_draw_body(void)
         PROF_T0();
         if (vc_vb && !vc_seq) G->draw_indexed(mode, out_n, vc_i32);
         else                  G->draw(mode, out_n);
+        if (g_wide_copy) wide_fill_copies(mode, out_n, vc_vb && !vc_seq, vc_i32);
+        if (g_wide_slab) wide_slab_right(mode, out_n, vc_vb && !vc_seq, vc_i32);
         PROF_ADD(draw);
     }
     xray_done: ;
@@ -9772,7 +10073,11 @@ static void do_draw_body(void)
                 g_imm_drawing ? " | IMMEDIATE" : "",
                 g_wide_squeeze ? " | WIDE-SQUEEZED" : "",
                 g_wide_hud < 0 ? " | HUD-LEFT" : g_wide_hud > 0 ? " | HUD-RIGHT" : "",
-                g_hud_side == NV2A_WIDE_HUD_ACROSS ? " | ACROSS"
+                g_wide_slab ? " | SLAB-HALVES" : g_wide_lines ? " | LINES" : g_wide_map ? " | MAP"
+                : g_hud_side == NV2A_WIDE_HUD_ACROSS ? " | ACROSS"
+                : g_hud_side == NV2A_WIDE_HUD_OVER ? " | OVER"
+                : g_wide_bar ? " | BAR"
+                : g_wide_copy ? " | FILL-COPIES"
                 : g_wide_whole ? " | WHOLE" : g_wide_half == NV2A_WIDE_HUD_LEFT_HALF ? " | HALF-LEFT"
                 : g_wide_half == NV2A_WIDE_HUD_RIGHT_HALF ? " | HALF-RIGHT" : "");
         if (nv2a_wide_scene() && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS)
@@ -10480,12 +10785,74 @@ static void cache_idle_frame(void)
     }
 }
 
+/* The side fill (nv2a_wide.h) on target rt, pw of the raster's pixels
+ * across and shown at shape (0 for its own, a frame that isn't widened): the
+ * column just inside each 4:3 edge out across that side, the columns
+ * between it and the edge included, by the device. The first frame filled,
+ * and each shape's columns, are logged. */
+static void wide_fill_sides(uint32_t rt, uint32_t pw, float shape)
+{
+    static float told_shape;
+    uint32_t x0, x1, l, r;
+    if (!nv2a_wide_scene() || !(shape > NV2A_WIDE_4_3) || !G->fill_sides) return;
+    if (!nv2a_wide_fill_cols(pw, nv2a_wide_squeeze_of(shape), &x0, &x1, &l, &r)) return;
+    G->fill_sides(rt, l, r);
+    if (told_shape != shape) {
+        told_shape = shape;
+        fprintf(stderr, "[WIDE] piece %u: the side fill, at %.3f:1 on a raster %u wide, the 4:3 "
+                "screen %u..%u: column %u across 0..%u, column %u across %u..%u\n",
+                g_wide_fill_piece, (double)shape, pw, x0, x1, l, l, r, r + 1u, pw);
+    }
+}
+
+/* The strip at the top of the picture (NV2A_WIDE_HUD_STRIP,
+ * nv2a_wide_fill_strip) on target rt, pw x ph and shown at shape, running
+ * width title pixels into the 4:3 picture, after the side fill, whichever
+ * way the frame was filled: its rows, from the screen's left edge to there,
+ * take the colour of the row under it. Each shape and width is logged the
+ * first time, up to eight. */
+static void wide_fill_strip(uint32_t rt, uint32_t pw, uint32_t ph, float shape, unsigned width)
+{
+    static float told_shape[8];
+    static unsigned told_width[8], n_told;
+    uint32_t x1, r0, r1;
+    unsigned k;
+    if (!nv2a_wide_scene() || !(shape > NV2A_WIDE_4_3) || !G->fill_strip) return;
+    if (!nv2a_wide_fill_strip(pw, ph, nv2a_wide_squeeze_of(shape), width, &x1, &r0, &r1)) return;
+    G->fill_strip(rt, x1, r1, r0, r1);
+    for (k = 0; k < n_told; k++)
+        if (told_shape[k] == shape && told_width[k] == width) break;
+    if (k == n_told && n_told < 8) {
+        told_shape[n_told] = shape;
+        told_width[n_told++] = width;
+        fprintf(stderr, "[WIDE] piece %u: its strip at the top, %u title pixels into the 4:3 "
+                "picture, hidden, at %.3f:1 on a raster %ux%u: rows %u..%u of columns 0..%u "
+                "take row %u's colour\n",
+                g_wide_fill_piece, width, (double)shape, pw, ph, r0, r1, x1, r1);
+    }
+}
+
 static void present(int is_frame)
 {
     uint32_t va, bpp, x, y;
     uint8_t *dst;
+    /* A plain menu drew in it, and no part was moved to an edge: the side
+     * fill, unless it was drawn draw by draw, under a part over the sides
+     * (wide_fill_copies), which copying the columns would paint over. */
+    int fill = is_frame && g_wide_fill && !g_wide_moved && !g_wide_over;
+    /* Its strip at the top hidden, either way it was filled. */
+    unsigned strip = is_frame && g_wide_fill && !g_wide_moved ? g_wide_strip : 0u;
 
-    if (is_frame) wide_hud_frame_end();
+    if (is_frame) {
+        static int told_moved;
+        if (g_wide_fill && g_wide_moved && !told_moved++)
+            fprintf(stderr, "[WIDE] piece %u: the side fill left out, on a frame with parts at "
+                    "the screen's edges\n", g_wide_fill_piece);
+        wide_hud_frame_end();
+        g_wide_fill_last = g_wide_fill && !g_wide_moved;
+        g_wide_fill = g_wide_moved = g_wide_over = 0;
+        g_wide_strip = 0;
+    }
     if (!g_ready || !g_fbo_w || !g_fbo_h || !S.color_offset) return;
     g_probe_now = mono_now();
     if (is_frame) { S.frames++; prof_report(); tcache_sweep(); tcache_verify(); aniso_take();
@@ -10565,6 +10932,11 @@ static void present(int is_frame)
         }
         /* With SMAA, what is shown is the copy of it with its edges smoothed. */
         if (g_smaa_now && G->target_smaa) prt = G->target_smaa(prt);
+        /* A frame a plain menu drew in (the side fill, nv2a_wide.h): the
+         * column just inside each 4:3 edge is copied out across that side,
+         * when what is shown is a widened frame. */
+        if (fill) wide_fill_sides(prt, pw, shape);
+        if (strip) wide_fill_strip(prt, pw, ph, shape, strip - 1u);
         g_shown_rt = prt;
         card_mark();
 #if defined(NV2A_GL_USE_SDL)
@@ -12069,7 +12441,21 @@ static void gl_method(uint32_t method, uint32_t param)
          * its, on its side, or none. Any other value is left alone. */
         { unsigned piece, flags; int side;
           if (nv2a_wide_hud_read(param, &piece, &side, &flags)) {
-              g_hud_side = side; g_hud_piece = piece; g_hud_flags = flags;
+              /* A plain menu's: the frame's, not a piece's (the side fill). */
+              if (side == NV2A_WIDE_HUD_FILL) {
+                  g_wide_fill = 1;
+                  g_wide_fill_piece = piece;
+              } else if (side == NV2A_WIDE_HUD_STRIP) {
+                  g_wide_strip = piece + 1u;
+              } else {
+                  g_hud_side = side; g_hud_piece = piece; g_hud_flags = flags;
+                  /* A part over a filled frame's sides moves nothing to an
+                   * edge: the frame is still filled, under it. Nor does a
+                   * part whose bars go across, or the pause map. */
+                  if (side != NV2A_WIDE_HUD_NONE && side != NV2A_WIDE_HUD_OVER
+                      && side != NV2A_WIDE_HUD_BARS && side != NV2A_WIDE_HUD_LINES)
+                      g_wide_moved = 1;
+              }
           } else {
               static int told;
               if (!told++)

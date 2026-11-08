@@ -1415,6 +1415,60 @@ static void glx_present(uint32_t rt, uint32_t pw, uint32_t ph)
     (void)rt; (void)pw; (void)ph;
 }
 
+/* Widescreen's side fill: blits within the target's single-sampled picture,
+ * resolved first, which is what is shown; each source column lies inside
+ * the columns it is copied away from, so no blit reads what it writes. The
+ * scissor is the one fragment operation that applies to a blit, and a draw
+ * may have set it. */
+static void glx_fill_sides(uint32_t rt, uint32_t src_l, uint32_t src_r)
+{
+    GLboolean sc;
+    GLint w, h;
+    if (!rt_ok(rt)) return;
+    w = (GLint)g_rt[rt - 1].pw; h = (GLint)g_rt[rt - 1].ph;
+    if (!(0 < src_l && src_l < src_r && (GLint)src_r + 1 < w)) return;
+    resolve(rt);
+    sc = glIsEnabled(GL_SCISSOR_TEST);
+    glDisable(GL_SCISSOR_TEST);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, g_rt[rt - 1].fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_rt[rt - 1].fbo);
+    glBlitFramebuffer((GLint)src_l, 0, (GLint)src_l + 1, h, 0, 0, (GLint)src_l, h,
+                      GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glBlitFramebuffer((GLint)src_r, 0, (GLint)src_r + 1, h, (GLint)src_r + 1, 0, w, h,
+                      GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    if (sc) glEnable(GL_SCISSOR_TEST);
+    if (rt_ok(g_cur_rt))
+        glBindFramebuffer(GL_FRAMEBUFFER, draw_fbo(g_cur_rt));
+    else
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+/* Widescreen's strip on the left side: a blit within the target's
+ * single-sampled picture, as glx_fill_sides's are, after them; the source
+ * row is outside the rows it is copied to. GL counts rows from the bottom. */
+static void glx_fill_strip(uint32_t rt, uint32_t x1, uint32_t src, uint32_t r0, uint32_t r1)
+{
+    GLboolean sc;
+    GLint w, h;
+    if (!rt_ok(rt)) return;
+    w = (GLint)g_rt[rt - 1].pw; h = (GLint)g_rt[rt - 1].ph;
+    if (!(0 < x1 && (GLint)x1 < w && r0 < r1 && (GLint)r1 <= h && (GLint)src < h
+          && (src < r0 || src >= r1))) return;
+    resolve(rt);
+    sc = glIsEnabled(GL_SCISSOR_TEST);
+    glDisable(GL_SCISSOR_TEST);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, g_rt[rt - 1].fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_rt[rt - 1].fbo);
+    glBlitFramebuffer(0, h - 1 - (GLint)src, (GLint)x1, h - (GLint)src,
+                      0, h - (GLint)r1, (GLint)x1, h - (GLint)r0,
+                      GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    if (sc) glEnable(GL_SCISSOR_TEST);
+    if (rt_ok(g_cur_rt))
+        glBindFramebuffer(GL_FRAMEBUFFER, draw_fbo(g_cur_rt));
+    else
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
 static void glx_report(void)
 {
     /* What the render targets hold: each one's colour, the depth/stencil
@@ -1721,6 +1775,8 @@ static const Nv2aGfx g_gl = {
     glx_cache_rebuild,
     glx_texture_opaque,
     glx_tex_new_dxt,
+    glx_fill_sides,
+    glx_fill_strip,
 };
 
 const Nv2aGfx *nv2a_gfx_gl(void) { return &g_gl; }

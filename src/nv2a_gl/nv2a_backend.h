@@ -198,7 +198,7 @@ typedef enum {
     NV2A_U_LTHALF,     NV2A_U_LTPOS,      NV2A_U_LTATT,      NV2A_U_LTRANGE,
     NV2A_U_LTSPOTDIR,  NV2A_U_LTEYE,      NV2A_U_LTSPECPOW,  NV2A_U_WIDESHIFT,
     NV2A_U_FOGMODE,    NV2A_U_FOGPARAM,   NV2A_U_FOGPLANE,  NV2A_U_VPRECT,
-    NV2A_U_FFREVZ,     NV2A_U_WIDEACROSS,
+    NV2A_U_FFREVZ,     NV2A_U_WIDEACROSS, NV2A_U_WIDEOFF,
     /* fragment stage */
     NV2A_U_DRAWTINT,   NV2A_U_FOGCOLOR,   NV2A_U_ALPHAFUNC,  NV2A_U_ALPHAREF,
     NV2A_U_TEX0,                              /* ..3: sampler units */
@@ -392,6 +392,20 @@ typedef struct Nv2aGfx {
      * decodes them for tex_new instead. NULL where the backend has none. */
     uint32_t (*tex_new_dxt)(uint32_t w, uint32_t h, int dxt, const void *blocks,
                             const Nv2aSampler *s);
+
+    /* Widescreen's side fill (nv2a_wide.h, nv2a_wide_fill_cols), on target
+     * `rt` as it is to be shown: column `src_l` copied across columns 0 to
+     * src_l (exclusive), and column `src_r` across src_r + 1 to the target's
+     * width, every row, each pixel as it is. Raster pixels. NULL where the
+     * backend has none. */
+    void     (*fill_sides)(uint32_t rt, uint32_t src_l, uint32_t src_r);
+
+    /* Widescreen's strip on the left side (nv2a_wide.h, nv2a_wide_fill_strip),
+     * on target `rt` as it is to be shown: rows `r0` to `r1` (exclusive,
+     * counted from the top) of columns 0 to `x1` (exclusive) take row `src`'s
+     * colour, each column its own. Raster pixels. NULL where the backend has
+     * none. */
+    void     (*fill_strip)(uint32_t rt, uint32_t x1, uint32_t src, uint32_t r0, uint32_t r1);
 } Nv2aGfx;
 
 /* The implementation: OpenGL's. */

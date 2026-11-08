@@ -1705,6 +1705,7 @@ void sub_00067E90(void)
 #define VOICE_PLAYING_RET  0x0008039Du /* where sub_00080340's sub_00118710 returns to */
 #define VOICE_MOVE_RET     0x000803B7u /* and its sub_00118BD0 */
 #include "voice_follow.h"
+#include "widescreen_menus.h"   /* the title's widened states, for the scene below */
 extern size_t xbox_GetMappedSize(void);   /* the heap runs to its end */
 extern void sub_00119540_gen(void);
 extern void sub_001185B0_gen(void);
@@ -1960,20 +1961,27 @@ void sub_00051FC0(void)
                   mscript_dump(flow, st);
               }
           } }
-        /* Widescreen by scene: the title (mission 0x5A, the opening, the
-         * attract demo and its menu) stays 4:3, pillarboxed -- its opening
-         * is a composition drawn for a 4:3 screen: widened, its bars and its
-         * giant logo come apart (some are overlays and are squeezed, some
-         * are not, and black stripes open between them), and its overlays
-         * park things just past the 4:3 edges. JSRF_WIDE_TITLE=1 widens it
-         * anyway, to look. Every mission after it is widened. A flow
-         * handing over to the next one (states 93/94) has no say. */
+        /* Widescreen by scene: every mission is widened, the title (mission
+         * 0x5A, the opening, the attract demo and its menu) from its first
+         * frame. The title object's own draws -- its opening's giant logo and
+         * bars, its logo and menus -- are a composition for a 4:3 screen that
+         * parks its bars just past the 4:3 edges, so its bars go across
+         * (widescreen_menus_title_bars, in every state but the city's) and
+         * come in from the screen's edges, as the rest does with the widened
+         * view, and the city behind them fills the sides.
+         * JSRF_WIDE_TITLE=0 keeps the title 4:3, pillarboxed, until the title
+         * object's first "please press start" (widescreen_menus_title_wide),
+         * as test build menus5 had it. A flow handing over to the next one
+         * (states 93/94) has no say. */
         { uint32_t mi = *(uint32_t *)(m + flow + 0x58), st = *(uint32_t *)(m + flow + 0x5C);
           if (st != 93 && st != 94) {
               static int title_wide = -1;
               int want;
-              if (title_wide < 0) title_wide = getenv("JSRF_WIDE_TITLE") ? 1 : 0;
-              want = (mi != 0x5Au) || title_wide;
+              if (title_wide < 0) {
+                  const char *v = getenv("JSRF_WIDE_TITLE");
+                  title_wide = v && v[0] == '0' ? 0 : 1;
+              }
+              want = (mi != 0x5Au) || title_wide || widescreen_menus_title_wide(jsrf_now());
               if (want != s_wide_scene_said) {
                   s_wide_scene_said = want;
                   nv2a_set_wide_scene(want);
@@ -4440,6 +4448,76 @@ void sub_001133A0(void)
     sub_001133A0_gen();
     widescreen_menus_end(began);
 }
+/* sub_00115030: the GG notebook's draw (class 0x1D2B68, slot +0x24, this in
+ * ecx; one argument, the pass, ret 4), from the street pause menu. Its area
+ * name, the map's sign, is drawn after it (sub_000FC370). */
+extern void sub_00115030_gen(void);
+void sub_00115030(void)
+{
+    int began = widescreen_menus_begin((uint8_t *)g_xbox_mem_offset, WIDE_MENU_NOTEBOOK,
+                                       g_ecx, nv2a_wide_scene(), jsrf_now());
+    sub_00115030_gen();
+    widescreen_menus_end(began);
+}
+/* sub_00115A40: the draw of the character select that saving a graffiti
+ * opens (class 0x1D2BB0, slot +0x24, this in ecx; one argument, the pass,
+ * ret 4), which draws on its passes 0 and 8, laid out as the notebook. */
+extern void sub_00115A40_gen(void);
+void sub_00115A40(void)
+{
+    int began = widescreen_menus_begin((uint8_t *)g_xbox_mem_offset, WIDE_MENU_CHARACTERS,
+                                       g_ecx, nv2a_wide_scene(), jsrf_now());
+    sub_00115A40_gen();
+    widescreen_menus_end(began);
+}
+/* sub_00111320: the race preview's draw (class 0x1D2788, slot +0xC, this in
+ * ecx; one argument, the pass, ret 4; its +0x24 comes back here), shown
+ * before every race and chase mission, with its course map, its race's
+ * name (a header), its area's name and its ticker drawn after it. */
+extern void sub_00111320_gen(void);
+void sub_00111320(void)
+{
+    int began = widescreen_menus_begin((uint8_t *)g_xbox_mem_offset, WIDE_MENU_RACE_PREVIEW,
+                                       g_ecx, nv2a_wide_scene(), jsrf_now());
+    sub_00111320_gen();
+    widescreen_menus_end(began);
+}
+/* sub_00114A80 and sub_001137B0: the pause menus' 3D map's draws, modes 0
+ * and 1 (classes 0x1D2B28 and 0x1D2AE8, slot +0x24, this in ecx), in their
+ * own viewport and camera, before the menu (widescreen-3b/menus/search-1,
+ * section 5). The whole draw goes between marks of its own
+ * (widescreen_menus_map), so that the renderer can keep the map off the
+ * dark grid at the top and carry its yellow lines out to the wide screen's
+ * edges (nv2a_wide_lines); the rest of the map is drawn as it was. */
+extern void sub_00114A80_gen(void);
+void sub_00114A80(void)
+{
+    int marked = widescreen_menus_map(0, nv2a_wide_scene())
+              && wide_menu_mark(WIDE_MENU_PIECE_MAP, NV2A_WIDE_HUD_LINES);
+    sub_00114A80_gen();
+    wide_menu_unmark(WIDE_MENU_PIECE_MAP, marked);
+}
+extern void sub_001137B0_gen(void);
+void sub_001137B0(void)
+{
+    int marked = widescreen_menus_map(1, nv2a_wide_scene())
+              && wide_menu_mark(WIDE_MENU_PIECE_MAP, NV2A_WIDE_HUD_LINES);
+    sub_001137B0_gen();
+    wide_menu_unmark(WIDE_MENU_PIECE_MAP, marked);
+}
+/* sub_00112470: the race preview's course map's draw (class 0x1D27C8, slot
+ * +0xC, this in ecx; it calls sub_00112150, which draws the course, its
+ * route, arrow and flag), a child of the race preview drawn after it
+ * (widescreen-3b/menus/search-6). Between marks of its own, as the pause
+ * map's are, so that the renderer keeps it off the dark grid at the top. */
+extern void sub_00112470_gen(void);
+void sub_00112470(void)
+{
+    int marked = widescreen_menus_map(2, nv2a_wide_scene())
+              && wide_menu_mark(WIDE_MENU_PIECE_COURSE, NV2A_WIDE_HUD_LINES);
+    sub_00112470_gen();
+    wide_menu_unmark(WIDE_MENU_PIECE_COURSE, marked);
+}
 /* sub_00047690: the models' draw (class 0x1CAA8C, slot +0x14, the model in
  * ecx, two arguments it passes on; it pops them), which every 3D model in
  * the game goes through. While a menu draws, a model that is one of its
@@ -4474,7 +4552,15 @@ void sub_00047690(void)
     int side, marked;
     if (open) { sub_00047690_gen(); return; }
     side = widescreen_menus_part((uint8_t *)g_xbox_mem_offset, g_ecx, &piece);
-    if (side == NV2A_WIDE_HUD_NONE) { sub_00047690_gen(); return; }
+    if (side == NV2A_WIDE_HUD_NONE) {
+        /* A plain menu's animated model: its moving rectangles, marked node
+         * by node in sub_0005BD80. The animation is the first argument. */
+        int sliders = widescreen_menus_sliders_begin((const uint8_t *)g_xbox_mem_offset,
+                                                     ADX_GUEST_RAM, g_ecx, MEM32(g_esp + 4));
+        sub_00047690_gen();
+        widescreen_menus_sliders_end(sliders);
+        return;
+    }
     open = 1;
     if (side == WIDE_MENU_EXTEND) {
         wide_menu_extend(piece);
@@ -4485,23 +4571,64 @@ void sub_00047690(void)
     }
     open = 0;
 }
+/* The node functions, one for each way the models' draw can draw a node
+ * (the table at 0x1FA1B0, by the model's mode: sub_0005BE50 for 0,
+ * sub_0005BD80 for 1, the fixed-function pass, sub_0005BF00 for 3,
+ * sub_0005C840 for 4, sub_0005C990 for 5, a vertex program's, and
+ * sub_0005CB90 for 6; 2's is empty), all cdecl, ret, with the model at +4
+ * and the node at +8, which the pose's walk calls for each node with a
+ * mesh, its matrix on top, nothing drawn between. While a plain menu's
+ * animated model draws, a node that its animation slides along x
+ * (widescreen_menus_slider), one of the moving rectangles, is drawn between
+ * marks of its own: stretched across the whole width, over the filled
+ * sides. menus5 had only the fixed-function pass's, which Roboy's menu
+ * uses. */
+static void wide_menu_node(void (*body)(void), uint32_t via)
+{
+    unsigned piece;
+    int marked = 0;
+    if (widescreen_menus_slider(MEM32(g_esp + 4), MEM32(g_esp + 8), via, &piece)
+        == NV2A_WIDE_HUD_OVER)
+        marked = wide_menu_mark(piece, NV2A_WIDE_HUD_OVER);
+    body();
+    wide_menu_unmark(WIDE_MENU_PIECE_SLIDERS, marked);
+}
+extern void sub_0005BE50_gen(void);
+void sub_0005BE50(void) { wide_menu_node(sub_0005BE50_gen, 0x0005BE50u); }
+extern void sub_0005BD80_gen(void);
+void sub_0005BD80(void) { wide_menu_node(sub_0005BD80_gen, 0x0005BD80u); }
+extern void sub_0005BF00_gen(void);
+void sub_0005BF00(void) { wide_menu_node(sub_0005BF00_gen, 0x0005BF00u); }
+extern void sub_0005C840_gen(void);
+void sub_0005C840(void) { wide_menu_node(sub_0005C840_gen, 0x0005C840u); }
+extern void sub_0005C990_gen(void);
+void sub_0005C990(void) { wide_menu_node(sub_0005C990_gen, 0x0005C990u); }
+extern void sub_0005CB90_gen(void);
+void sub_0005CB90(void) { wide_menu_node(sub_0005CB90_gen, 0x0005CB90u); }
 /* sub_000FC370: the HUD signs' draw (class 0x1D1B68, this in ecx). The map
- * makes one too, the street pause menu's area name (the strip at the top
- * left), which goes to the left edge with that menu's left-hand parts; the
- * HUD's own signs, such as the stop sign, stay in the middle. */
+ * makes one too, an area's name: the strip at the top left of the street
+ * pause menu, which goes to the left edge with that menu's left-hand parts,
+ * and the banner under the arrow as the player nears another area, which
+ * goes there too, the arrow staying where it is. The result screens'
+ * banners, YOU WIN, CLEARED, GAME OVER and YOU LOSE, are signs the result
+ * flow makes, and go to the right edge. The HUD's own signs, such as the
+ * stop sign, stay in the middle. */
 extern void sub_000FC370_gen(void);
 void sub_000FC370(void)
 {
-    int marked = nv2a_wide_scene()
-              && widescreen_menus_sign((uint8_t *)g_xbox_mem_offset, g_ecx, jsrf_now())
-              && wide_menu_mark(WIDE_MENU_PIECE_SIGN, NV2A_WIDE_HUD_LEFT);
+    unsigned piece = 0;
+    int side = nv2a_wide_scene()
+        ? widescreen_menus_sign((uint8_t *)g_xbox_mem_offset, g_ecx, jsrf_now(), &piece)
+        : NV2A_WIDE_HUD_NONE;
+    int marked = side != NV2A_WIDE_HUD_NONE && wide_menu_mark(piece, side);
     sub_000FC370_gen();
-    wide_menu_unmark(WIDE_MENU_PIECE_SIGN, marked);
+    wide_menu_unmark(piece, marked);
 }
 /* sub_000F7F00: the draw of a header (class 0x1D0770, this in ecx), which
  * other screens use too. The other pause menu's header, the menu's first
- * child, goes to the left edge with that menu's left-hand parts; every
- * other header stays as it is. */
+ * child, goes to the left edge with that menu's left-hand parts, and so
+ * does the race preview's, the race's name; every other header stays as it
+ * is. */
 extern void sub_000F7F00_gen(void);
 void sub_000F7F00(void)
 {
@@ -4511,10 +4638,11 @@ void sub_000F7F00(void)
     sub_000F7F00_gen();
     wide_menu_unmark(WIDE_MENU_PIECE_CHILD, marked);
 }
-/* sub_00115F40: the ticker's draw (class 0x1D3770, this in ecx), a line of
- * text that scrolls in from the right along a pause menu's top bar in a
- * mission, drawn after the menu. Its text runs the whole width, through the
- * font call's override. */
+/* sub_00115F40: the ticker's draw (class 0x1D3770, or the race preview's
+ * 0x1D07F8; this in ecx), a line of text that scrolls in from the right
+ * along a pause menu's top bar in a mission, or the race preview's, drawn
+ * after the menu. Its text runs the whole width, through the font call's
+ * override. */
 extern void sub_00115F40_gen(void);
 void sub_00115F40(void)
 {
@@ -4548,6 +4676,11 @@ void sub_0003D5D0(void)
         sub_0003D610();
         return;
     }
+    /* A result screen's choice drawing: its label, between its marks. */
+    if (widescreen_menus_result_text()) {
+        sub_0003D610();
+        return;
+    }
     memcpy(&x, arg_x, sizeof x);
     side = widescreen_menus_ticker_x(x, nv2a_wide_squeeze(), &wide_x, &piece);
     if (side != NV2A_WIDE_HUD_NONE) {
@@ -4558,7 +4691,11 @@ void sub_0003D5D0(void)
         wide_menu_unmark(piece, marked);
         return;
     }
-    side = widescreen_menus_text_side(x, &piece);
+    {
+        float y;
+        memcpy(&y, arg_x + 4, sizeof y);
+        side = widescreen_menus_text_side(x, y, &piece);
+    }
     if (side != NV2A_WIDE_HUD_NONE) {
         int marked = wide_menu_mark(piece, side);
         sub_0003D610();
@@ -4566,6 +4703,192 @@ void sub_0003D5D0(void)
         return;
     }
     sub_0003D5D0_gen();
+}
+/* The plain menus (widescreen_menus.h): each one's draw, its class's slot
+ * +0xC with this in ecx, marks its frame for the side fill before the menu
+ * draws, and its moving rectangles are found while it draws, until
+ * widescreen_menus_fill_end. Each is the only draw of its class, entered
+ * only through it. pass is the draw's one argument, for the graffiti menu. */
+static int wide_menu_fill(int plain, uint32_t pass)
+{
+    return widescreen_menus_fill((uint8_t *)g_xbox_mem_offset, MEM32(D3D_DEVICE), plain, g_ecx,
+                                 pass, nv2a_wide_scene(), d3d_make_space);
+}
+/* sub_0011DD10: the save and load menu's draw (class 0x1D8CD0). */
+extern void sub_0011DD10_gen(void);
+void sub_0011DD10(void)
+{
+    int began = wide_menu_fill(WIDE_PLAIN_SAVE, 0);
+    sub_0011DD10_gen();
+    widescreen_menus_fill_end(began);
+}
+/* sub_0011C070: Roboy's garage menu's draw (class 0x1D8638). */
+extern void sub_0011C070_gen(void);
+void sub_0011C070(void)
+{
+    int began = wide_menu_fill(WIDE_PLAIN_GARAGE, 0);
+    sub_0011C070_gen();
+    widescreen_menus_fill_end(began);
+}
+/* sub_0011FEB0: the garage's system menu's draw (class 0x1D9090). */
+extern void sub_0011FEB0_gen(void);
+void sub_0011FEB0(void)
+{
+    int began = wide_menu_fill(WIDE_PLAIN_SYSTEM, 0);
+    sub_0011FEB0_gen();
+    widescreen_menus_fill_end(began);
+}
+/* sub_0011CF10: the garage's options menu's draw (class 0x1D8898). */
+extern void sub_0011CF10_gen(void);
+void sub_0011CF10(void)
+{
+    int began = wide_menu_fill(WIDE_PLAIN_OPTIONS, 0);
+    sub_0011CF10_gen();
+    widescreen_menus_fill_end(began);
+}
+/* sub_0011D740: the garage's practice menu's draw (class 0x1D8C90). */
+extern void sub_0011D740_gen(void);
+void sub_0011D740(void)
+{
+    int began = wide_menu_fill(WIDE_PLAIN_PRACTICE, 0);
+    sub_0011D740_gen();
+    widescreen_menus_fill_end(began);
+}
+/* sub_0011F7D0: the garage's music menu's draw (class 0x1D8F88). */
+extern void sub_0011F7D0_gen(void);
+void sub_0011F7D0(void)
+{
+    int began = wide_menu_fill(WIDE_PLAIN_MUSIC, 0);
+    sub_0011F7D0_gen();
+    widescreen_menus_fill_end(began);
+}
+/* sub_0011C750: the garage's test run menu's draw (class 0x1D8798). */
+extern void sub_0011C750_gen(void);
+void sub_0011C750(void)
+{
+    int began = wide_menu_fill(WIDE_PLAIN_TEST_RUN, 0);
+    sub_0011C750_gen();
+    widescreen_menus_fill_end(began);
+}
+/* sub_0011A490: the test run's course screen's draw (class 0x1D7C20). */
+extern void sub_0011A490_gen(void);
+void sub_0011A490(void)
+{
+    int began = wide_menu_fill(WIDE_PLAIN_COURSE, 0);
+    sub_0011A490_gen();
+    widescreen_menus_fill_end(began);
+}
+/* sub_0011AC50: the garage's character select's draw (class 0x1D7D00). */
+extern void sub_0011AC50_gen(void);
+void sub_0011AC50(void)
+{
+    int began = wide_menu_fill(WIDE_PLAIN_CHARACTERS, 0);
+    sub_0011AC50_gen();
+    widescreen_menus_fill_end(began);
+}
+/* sub_00127080: the garage's graffiti menu's draw (class 0x1DA300, slot
+ * +0x24; one argument, the pass, ret 4), filled on its pass 9 in its
+ * states 4 and 8. */
+extern void sub_00127080_gen(void);
+void sub_00127080(void)
+{
+    int began = wide_menu_fill(WIDE_PLAIN_GRAFFITI, MEM32(g_esp + 4));
+    sub_00127080_gen();
+    widescreen_menus_fill_end(began);
+}
+/* sub_00066550: the loading screen's draw (class 0x1CB0A8; one argument,
+ * ret 4), with the blue moving rectangles, filled while it's shown. */
+extern void sub_00066550_gen(void);
+void sub_00066550(void)
+{
+    int began = wide_menu_fill(WIDE_PLAIN_LOADING, 0);
+    sub_00066550_gen();
+    widescreen_menus_fill_end(began);
+}
+/* sub_00071100: VS mode's setup screen's draw, its object's (class
+ * 0x1CCA80, slot +0xC; one argument, the pass, ret 4). The screen's layout,
+ * one full-screen picture, is fitted into the 4:3 screen with its panels'
+ * shades, and its teal carried out to the screen's edges. */
+extern void sub_00071100_gen(void);
+void sub_00071100(void)
+{
+    int began = wide_menu_fill(WIDE_PLAIN_VS, 0);
+    sub_00071100_gen();
+    widescreen_menus_fill_end(began);
+}
+/* The result screens (widescreen_menus.h): the choice's draw, its class's
+ * slot +0xC (this in ecx; one argument, the pass, ret 4), marked whole for
+ * the right edge on the passes it draws on. The race time's is marked the
+ * same way, only in the result screen's modes, with its places moved
+ * (below). Their banner is a sign (sub_000FC370). */
+static void wide_result(int which, void (*gen)(void))
+{
+    unsigned piece = widescreen_menus_results[which].piece;
+    int began = widescreen_menus_result((uint8_t *)g_xbox_mem_offset, which, g_ecx,
+                                        MEM32(g_esp + 4), nv2a_wide_scene());
+    int marked = began && wide_menu_mark(piece, NV2A_WIDE_HUD_RIGHT);
+    gen();
+    wide_menu_unmark(piece, marked);
+    widescreen_menus_result_end(which, began);
+}
+/* sub_0010F670: the result screen's choice's draw (class 0x1D24F0): the
+ * return to title and restart icons, the grey static bar and its label. */
+extern void sub_0010F670_gen(void);
+void sub_0010F670(void)
+{
+    wide_result(WIDE_RESULT_CHOICE, sub_0010F670_gen);
+}
+/* sub_0010EC10: the race time's draw (class 0x1D23F0), the result screen's
+ * under the banner (modes 4 and 6) and the race HUD's timer (modes 2 and 3),
+ * which isn't moved. The result screen's is marked as the choice is and,
+ * for its draw only, its mode's places moved right so its right end comes
+ * under the banner's (widescreen_menus_result_time_begin), then put back as
+ * they were. */
+extern void sub_0010EC10_gen(void);
+void sub_0010EC10(void)
+{
+    uint8_t *mem = (uint8_t *)g_xbox_mem_offset;
+    uint32_t self = g_ecx;
+    WideTimePlaces places;
+    int began = widescreen_menus_result(mem, WIDE_RESULT_TIME, self, MEM32(g_esp + 4),
+                                        nv2a_wide_scene());
+    int marked = began && wide_menu_mark(WIDE_MENU_PIECE_TIME, NV2A_WIDE_HUD_RIGHT);
+    int moved = began && widescreen_menus_result_time_begin(mem, self, &places);
+    sub_0010EC10_gen();
+    widescreen_menus_result_time_end(mem, &places, moved);
+    wide_menu_unmark(WIDE_MENU_PIECE_TIME, marked);
+    widescreen_menus_result_end(WIDE_RESULT_TIME, began);
+}
+/* sub_0007DA30: the title's draw (class 0x1CCEF8; one argument, ret 4),
+ * by its state (+0x44): the scene is widened from its first frame (the
+ * flow's scene, above; with JSRF_WIDE_TITLE=0, from its first "please press
+ * start" on). Widened, in every state but the
+ * city's, the bars it draws go across, between marks
+ * (widescreen_menus_title_bars): its opening parks its tall bars just past
+ * the 4:3 edges and sweeps them in, so stretched across they come in from
+ * the screen's edges; the rest is drawn as it is, and the city, another
+ * object's, fills the sides. */
+extern void sub_0007DA30_gen(void);
+void sub_0007DA30(void)
+{
+    int bars;
+    widescreen_menus_title((uint8_t *)g_xbox_mem_offset, g_ecx, jsrf_now());
+    bars = widescreen_menus_title_bars((uint8_t *)g_xbox_mem_offset, g_ecx, nv2a_wide_scene())
+        && wide_menu_mark(WIDE_MENU_PIECE_BARS, NV2A_WIDE_HUD_BARS);
+    sub_0007DA30_gen();
+    wide_menu_unmark(WIDE_MENU_PIECE_BARS, bars);
+}
+/* sub_0007D8B0: the title's state 6 draw (this in ecx, ret), the city with
+ * the top-left "please press start", its pack's model 1, which goes to the
+ * left edge, and the logo at the bottom right, its pack's model 0, which
+ * goes to the right edge (widescreen_menus_part). */
+extern void sub_0007D8B0_gen(void);
+void sub_0007D8B0(void)
+{
+    int began = widescreen_menus_title_press_begin((uint8_t *)g_xbox_mem_offset, g_ecx,
+                                                   nv2a_wide_scene());
+    sub_0007D8B0_gen();
+    widescreen_menus_title_press_end(began);
 }
 
 

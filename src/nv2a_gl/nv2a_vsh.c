@@ -372,6 +372,7 @@ NV2A_GLSL_VERSION
 "uniform int  posMode;   // how to read what the program wrote to oPos\n"
 "uniform float wideShift; // widescreen: a framed 3D view moved toward the centre, pixels\n"
 "uniform float wideAcross; // widescreen: a menu part stretched across the width, its x scale less one\n"
+"uniform float wideOff; // widescreen: the side fill's copy of a draw, its x offset (NDC)\n"
 "uniform int  fogEnable; // NV097_SET_FOG_ENABLE\n"
 "uniform int  fogMode;   // NV097_SET_FOG_MODE: 0 linear, 1 exp, 2 exp2, +4 the _ABS forms\n"
 "uniform vec2 fogParam;  // NV097_SET_FOG_PARAMS 0 and 1\n"
@@ -609,7 +610,7 @@ static void emit_viewport_epilogue(SB *sb, int ff)
         sb_add(sb,
             "    ndc.w = oPos.w;\n"
             "    gl_Position = vec4(ndc.xyz * ndc.w, ndc.w);\n"
-            "    gl_Position.x *= 1.0 + wideAcross;\n"
+            "    gl_Position.x = gl_Position.x * (1.0 + wideAcross) + wideOff * gl_Position.w;\n"
             "    oFogC = nv_fog(oFog.x);\n"
             "    gl_PointSize = max(oPts.x, 1.0);\n");
         return;
@@ -722,8 +723,10 @@ static void emit_viewport_epilogue(SB *sb, int ff)
         "    }\n"
         "    // A menu part drawn across the width, stretched about the\n"
         "    // surface's centre (nv2a_wide.h, NV2A_WIDE_HUD_ACROSS); 0 for\n"
-        "    // every other draw.\n"
-        "    gl_Position.x *= 1.0 + wideAcross;\n"
+        "    // every other draw. A plain menu's draw copied to a side of the\n"
+        "    // screen, magnified about the column it carries out\n"
+        "    // (nv2a_wide_fill_copy), with wideOff; 0 for every other draw.\n"
+        "    gl_Position.x = gl_Position.x * (1.0 + wideAcross) + wideOff * gl_Position.w;\n"
         "    oFogC = nv_fog(oFog.x);\n"
         "    gl_PointSize = max(oPts.x, 1.0);\n");
 }

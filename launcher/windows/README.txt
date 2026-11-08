@@ -64,9 +64,13 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
   F10                4:3, or widescreen at your screen's own shape (Display
                      > Aspect ratio has 16:10, 16:9 and 21:9 too): a wider
                      view, not a stretch; the HUD keeps its shape and sits
-                     at the screen's edges, the pause menus are laid out
-                     across the screen, the title screen stays 4:3;
-                     remembered
+                     at the screen's edges, the pause menus and the race
+                     previews are laid out across the screen, the garage's
+                     menus and VS mode's setup screen carry their colours
+                     on to its edges, the result screens' banner, time and
+                     choices sit at the right edge, the title fills the
+                     screen, its opening's bars sweeping in from its
+                     edges; remembered
   F9                 resolution: the game is drawn at 1x to 6x the Xbox's
                      640x480 (2x by default), up to 3840x2880, and as much
                      wider as the shape in widescreen (5120x2880 at 16:9);

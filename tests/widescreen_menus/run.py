@@ -3,8 +3,9 @@ builds it: optimised, NDEBUG, with the warnings CI counts, linked with the
 HUD's marks (port/widescreen_hud.c), which write its marks, and the
 widescreen unit (src/nv2a_gl/nv2a_wide.c), and driven by test_main.c
 against a guest memory of its own that holds D3D's device and push buffer
-and a menu's object. How each menu then looks needs the game and the whole
-renderer: the test build's menu step.
+and a menu's object: the laid-out menus' parts and marks, and the plain
+menus' marks for the side fill. How each menu then looks needs the game and
+the whole renderer: the test build's menu step.
 Requires GCC on PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
 """
@@ -31,7 +32,7 @@ ONCE = (
     "(+0x44): marked for across the width",
     "[WIDE] menu part 74 in the street pause menu, ROTATE MAP's button (model 0x100) "
     "(+0x90): marked for the left edge",
-    "[WIDE] menu part 102 in the other pause menu, the mode's emblem (bank 0xB model 0x10) "
+    "[WIDE] menu part 86 in the other pause menu, the mode's emblem (bank 0xB model 0x10) "
     "(+0x6C): marked for the left edge",
     "[WIDE] menu part 192 in the street pause menu, the text on the left: drawn at once, "
     "at the left edge",
@@ -42,8 +43,91 @@ ONCE = (
     "[WIDE] menu part 195 in the other pause menu, the header (its child, class 001D0770): "
     "marked for the left edge",
     "[WIDE] menu part 196, the pause menus' ticker (class 001D3770): across the whole width",
+    "[WIDE] Roboy's garage menu (sub_0011C070) drew an object of class 001D9090, not 001D8638: "
+    "left as it is",
+    "[WIDE] the garage's system menu (sub_0011FEB0) drew an object of class 001D2A00, "
+    "not 001D9090: left as it is",
+    "[WIDE] the save and load menu (sub_0011DD10): its frames' sides filled, piece 208, "
+    "its tan strip hidden",
+    "[WIDE] the garage's character select (sub_0011AC50): its frames' sides filled, piece 216, "
+    "its tan strip hidden",
+    "[WIDE] the garage's graffiti menu (sub_00127080): its frames' sides filled, piece 217, "
+    "its tan strip hidden",
+    "[WIDE] the loading screen (sub_00066550): its frames' sides filled, piece 218",
+    "[WIDE] the GG notebook (sub_00115030): laid out for the wide screen",
+    "[WIDE] menu part 194 in the GG notebook, the area name (a sign, flags 80000000): "
+    "marked for the left edge",
+    "[WIDE] the garage's system menu: 2 moving rectangles in its model 00010000 (animation "
+    "00011000), piece 197, stretched across over the filled sides",
+    "[WIDE] menu part 198, the title's top-left \"please press start\" (its pack's model 1): "
+    "marked for the left edge",
+    "[WIDE] the title (class 001CCEF8) in its state 3: widened from its first "
+    "\"please press start\" on",
+    "[WIDE] the save graffiti's character select (sub_00115A40): laid out for the wide screen",
+    "[WIDE] menu part 199, the title's logo at the bottom right (its pack's model 0): "
+    "marked for the right edge",
+    "[WIDE] menu part 200, the title's own draws in its state 0: its bars across "
+    "(in every state but the city's)",
+    "[WIDE] t=73.0 the title's state 3",
+    "[WIDE] a moving rectangle in the garage's system menu drawn through sub_0005BD80",
+    "[WIDE] a moving rectangle in the garage's options menu drawn through sub_0005C990",
+    "[WIDE] the garage's options menu: 2 moving rectangles in its model 00010000 (animation "
+    "00011000) by the wider rule, piece 197, stretched across over the filled sides",
+    "[WIDE] the garage's options menu: no moving rectangles in its model 00010040 (animation "
+    "00011000), by either rule; its nodes:",
+    "[WIDE]   node 3, depth 1: no mesh, track 00, its translation not keyed",
+    "[WIDE]   node 5, depth 2: a mesh, track 01, x -40.00..50.00 y 0.00..3.00 z 1.50..1.50",
+    "[WIDE] menu part 194 on its own (an area's banner, as the player nears it), the area name "
+    "(a sign, flags 80000000): marked for the left edge",
+    "[WIDE] a sign with flags 58000000 (class 00000000): left where it is",
+    "[WIDE] a sign with flags 40000000 (class 00000000): left where it is",
+    "[WIDE] menu part 203, a result screen's banner (a sign, flags 14000000): moved to the "
+    "right edge",
+    "[WIDE] a result screen's banner, type 7 (+0x54), flags 14000000",
+    "[WIDE] a result screen's banner, type 0 (+0x54), flags 14000000",
+    "[WIDE] a sign with flags 15000000 (class 00000000): left where it is",
+    "[WIDE] the garage's music menu: its moving rectangles left as drawn, not stretched",
+    "[WIDE] the race preview (sub_00111320): laid out for the wide screen",
+    "[WIDE] menu part 128 in the race preview, the backdrop and its grids (model 0x80) "
+    "(+0x60): marked for two halves, moved out by whole cells",
+    "[WIDE] menu part 130 in the race preview, the grey bar with Press the A Button (model 4) "
+    "(+0x4C): marked for the right edge",
+    "[WIDE] menu part 195 in the race preview, the header (the race's name, class 001D0770): "
+    "marked for the left edge",
+    "[WIDE] menu part 196, the race preview's ticker (class 001D07F8): across the whole width",
+    "[WIDE] the garage's system menu: 1 moving part in its model 00010040 (animation "
+    "00011000), too few for a band of rectangles (a knob or a cursor): left as drawn",
+    "[WIDE] menu part 194 in the race preview, the area name (a sign, flags 80000000): "
+    "marked for the left edge",
+    "[WIDE] menu part 201, the pause map (mode 0, sub_00114A80): shown in the light grid, "
+    "not over the dark grid at the top, its yellow lines carried to the screen's edges",
+    "[WIDE] menu part 201, the pause map (mode 1, sub_001137B0): shown in the light grid, "
+    "not over the dark grid at the top, its yellow lines carried to the screen's edges",
+    "[WIDE] menu part 202, the race preview's course map (sub_00112470): shown in the light "
+    "grid, not over the dark grid at the top",
+    "[WIDE] menu part 204, the result screen's return to title and restart icons and static bar "
+    "(sub_0010F670): moved to the right edge",
+    "[WIDE] menu part 204, the result screen's return to title and restart icons and static bar: "
+    "its label drawn at once, at the right edge",
+    "[WIDE] the result screen's return to title and restart icons and static bar (sub_0010F670) "
+    "drew an object of class 001D2538, not 001D24F0: left as it is",
+    "[WIDE] the result screen's race time (sub_0010EC10) drew an object of class 001D24F0, "
+    "not 001D23F0: left as it is",
+    "[WIDE] the result screen's race time (sub_0010EC10) drew in mode 2 (+0x160), not the "
+    "result screen's: left as it is",
+    "[WIDE] menu part 205, the result screen's race time (sub_0010EC10): moved to the right edge",
+    "[WIDE] menu part 205, the result screen's race time, mode 6: its right end at 389.0, moved "
+    "164.0 further, under the banner's end (553)",
+    "[WIDE] menu part 205, the result screen's race time, mode 4: its right end at 402.0, moved "
+    "151.0 further, under the banner's end (553)",
+    "[WIDE] menu part 205, the result screen's race time, mode 4: placed for a split screen "
+    "(flags 80000000 at +0x44, y 0.0 at +0x14C): not moved further",
+    "[WIDE] menu part 205, the result screen's race time, mode 6: its last digit's place 560.0: "
+    "not moved further",
+    "[WIDE] VS mode's setup screen (sub_00071100): its frames' sides filled, piece 219",
 )
-PARTS = 13 + 8
+PLAINS = 12
+PARTS = 13 + 8 + 3 + 3 + 5
 
 with tempfile.TemporaryDirectory(prefix="widescreen_menus-") as directory:
     exe = str(pathlib.Path(directory) / "widescreen_menus.exe")
@@ -66,7 +150,10 @@ with tempfile.TemporaryDirectory(prefix="widescreen_menus-") as directory:
     marked = [l for l in text.splitlines() if l.startswith("[WIDE] menu part ") and "(+0x" in l]
     if len(marked) != PARTS or len(set(marked)) != PARTS:
         sys.exit(f"widescreen_menus: {len(marked)} part lines, not one for each of {PARTS}")
-    if text.count("drew an object of class") != 1:
-        sys.exit("widescreen_menus: the wrong class was named more than once")
+    if text.count("drew an object of class") != 5:
+        sys.exit("widescreen_menus: a wrong class was named more than once")
+    filled = [l for l in text.splitlines() if "its frames' sides filled" in l]
+    if len(filled) != PLAINS or len(set(filled)) != PLAINS:
+        sys.exit(f"widescreen_menus: {len(filled)} plain menus named, not each of {PLAINS} once")
     if "[CHECK]" in text:
         sys.exit("widescreen_menus: a check failed in the marks")

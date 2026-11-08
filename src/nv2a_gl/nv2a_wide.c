@@ -114,10 +114,14 @@ float nv2a_wide_overlay_shift(float centre, float half, float s)
 }
 
 /* A mark's side in its value's low byte, with the own-viewport flag in the
- * byte's top bit. */
+ * byte's top bit and the on-the-grid flag in the bit under it. */
 enum { WIDE_HUD_CODE_NONE, WIDE_HUD_CODE_LEFT, WIDE_HUD_CODE_RIGHT, WIDE_HUD_CODE_ACROSS,
-       WIDE_HUD_CODE_WHOLE, WIDE_HUD_CODE_LEFT_HALF, WIDE_HUD_CODE_RIGHT_HALF };
+       WIDE_HUD_CODE_WHOLE, WIDE_HUD_CODE_LEFT_HALF, WIDE_HUD_CODE_RIGHT_HALF,
+       WIDE_HUD_CODE_FILL, WIDE_HUD_CODE_OVER, WIDE_HUD_CODE_BARS, WIDE_HUD_CODE_STRIP,
+       WIDE_HUD_CODE_LINES };
 #define WIDE_HUD_CODE_OWN_VIEW 0x80u
+#define WIDE_HUD_CODE_ON_GRID  0x40u
+#define WIDE_HUD_CODE_SIDE     0x3Fu
 
 uint32_t nv2a_wide_hud_mark(unsigned piece, int side, unsigned flags)
 {
@@ -125,23 +129,35 @@ uint32_t nv2a_wide_hud_mark(unsigned piece, int side, unsigned flags)
                   ? WIDE_HUD_CODE_RIGHT : side == NV2A_WIDE_HUD_ACROSS ? WIDE_HUD_CODE_ACROSS
                   : side == NV2A_WIDE_HUD_WHOLE ? WIDE_HUD_CODE_WHOLE
                   : side == NV2A_WIDE_HUD_LEFT_HALF ? WIDE_HUD_CODE_LEFT_HALF
-                  : side == NV2A_WIDE_HUD_RIGHT_HALF ? WIDE_HUD_CODE_RIGHT_HALF : WIDE_HUD_CODE_NONE;
+                  : side == NV2A_WIDE_HUD_RIGHT_HALF ? WIDE_HUD_CODE_RIGHT_HALF
+                  : side == NV2A_WIDE_HUD_FILL ? WIDE_HUD_CODE_FILL
+                  : side == NV2A_WIDE_HUD_OVER ? WIDE_HUD_CODE_OVER
+                  : side == NV2A_WIDE_HUD_BARS ? WIDE_HUD_CODE_BARS
+                  : side == NV2A_WIDE_HUD_STRIP ? WIDE_HUD_CODE_STRIP
+                  : side == NV2A_WIDE_HUD_LINES ? WIDE_HUD_CODE_LINES : WIDE_HUD_CODE_NONE;
     if (flags & NV2A_WIDE_HUD_OWN_VIEW) code |= WIDE_HUD_CODE_OWN_VIEW;
+    if (flags & NV2A_WIDE_HUD_ON_GRID) code |= WIDE_HUD_CODE_ON_GRID;
     return NV2A_WIDE_HUD_TAG | ((uint32_t)(piece & 0xFFu) << 8) | code;
 }
 
 int nv2a_wide_hud_read(uint32_t value, unsigned *piece, int *side, unsigned *flags)
 {
-    uint32_t code = value & 0x7Fu;
-    if ((value & 0xFFFF0000u) != NV2A_WIDE_HUD_TAG || code > WIDE_HUD_CODE_RIGHT_HALF) return 0;
+    uint32_t code = value & WIDE_HUD_CODE_SIDE;
+    if ((value & 0xFFFF0000u) != NV2A_WIDE_HUD_TAG || code > WIDE_HUD_CODE_LINES) return 0;
     *piece = (value >> 8) & 0xFFu;
     *side = code == WIDE_HUD_CODE_LEFT ? NV2A_WIDE_HUD_LEFT
           : code == WIDE_HUD_CODE_RIGHT ? NV2A_WIDE_HUD_RIGHT
           : code == WIDE_HUD_CODE_ACROSS ? NV2A_WIDE_HUD_ACROSS
           : code == WIDE_HUD_CODE_WHOLE ? NV2A_WIDE_HUD_WHOLE
           : code == WIDE_HUD_CODE_LEFT_HALF ? NV2A_WIDE_HUD_LEFT_HALF
-          : code == WIDE_HUD_CODE_RIGHT_HALF ? NV2A_WIDE_HUD_RIGHT_HALF : NV2A_WIDE_HUD_NONE;
-    *flags = (value & WIDE_HUD_CODE_OWN_VIEW) ? NV2A_WIDE_HUD_OWN_VIEW : 0u;
+          : code == WIDE_HUD_CODE_RIGHT_HALF ? NV2A_WIDE_HUD_RIGHT_HALF
+          : code == WIDE_HUD_CODE_FILL ? NV2A_WIDE_HUD_FILL
+          : code == WIDE_HUD_CODE_OVER ? NV2A_WIDE_HUD_OVER
+          : code == WIDE_HUD_CODE_BARS ? NV2A_WIDE_HUD_BARS
+          : code == WIDE_HUD_CODE_STRIP ? NV2A_WIDE_HUD_STRIP
+          : code == WIDE_HUD_CODE_LINES ? NV2A_WIDE_HUD_LINES : NV2A_WIDE_HUD_NONE;
+    *flags = ((value & WIDE_HUD_CODE_OWN_VIEW) ? NV2A_WIDE_HUD_OWN_VIEW : 0u)
+           | ((value & WIDE_HUD_CODE_ON_GRID) ? NV2A_WIDE_HUD_ON_GRID : 0u);
     return 1;
 }
 
@@ -155,6 +171,16 @@ float nv2a_wide_hud_shift(int side, float s, int squeezed, float centre)
     move = (1.0f - s) * (centre - edge);    /* the shader takes it off x */
     if (squeezed) move /= s;
     return move;
+}
+
+float nv2a_wide_hud_grid_shift(int side, float s, int squeezed, float centre)
+{
+    float move = nv2a_wide_hud_shift(side, s, squeezed, centre);
+    float half = nv2a_wide_half_move(s);
+    float parts;
+    if (move == 0.0f || half == 0.0f) return move;
+    parts = (1.0f / s - 1.0f) * 0.5f * (float)NV2A_SCALE_FRAME_W;
+    return move * half / parts;
 }
 
 float nv2a_wide_across_stretch(float s)
@@ -181,9 +207,17 @@ float nv2a_wide_half_shift(int side, float s, int squeezed)
     return side == NV2A_WIDE_HUD_LEFT_HALF ? move : -move;
 }
 
-void nv2a_wide_half_clip_x(uint32_t surf_w, int side, uint32_t *x0, uint32_t *x1)
+uint32_t nv2a_wide_half_seam(uint32_t surf_w, float s)
 {
-    uint32_t mid = surf_w / 2u;
+    float cell;
+    if (!(s > 0.0f) || !(s < 1.0f)) return surf_w / 2u;
+    cell = 0.25f * NV2A_WIDE_HALF_STEP * s * (float)surf_w / (float)NV2A_SCALE_FRAME_W;
+    return surf_w / 2u - (uint32_t)floorf(cell + 0.5f);
+}
+
+void nv2a_wide_half_clip_x(uint32_t surf_w, float s, int side, uint32_t *x0, uint32_t *x1)
+{
+    uint32_t mid = nv2a_wide_half_seam(surf_w, s);
     if (side == NV2A_WIDE_HUD_LEFT_HALF) {
         if (*x1 > mid) *x1 = mid;
         if (*x0 > *x1) *x0 = *x1;
@@ -209,6 +243,91 @@ int nv2a_wide_hud_whole_view(float vp_scale_x)
 {
     float w = fabsf(vp_scale_x);
     return !(w > WIDE_VP_SCALE_MIN) || 2.0f * w >= (float)NV2A_WIDE_FRAMED_MAX_W;
+}
+
+int nv2a_wide_fill_fits(const float ext[4], int textured, int samples_surface)
+{
+    return nv2a_wide_overlay(ext) || (textured && !samples_surface);
+}
+
+int nv2a_wide_fill_cols(uint32_t pw, float s, uint32_t *x0, uint32_t *x1,
+                        uint32_t *src_l, uint32_t *src_r)
+{
+    double c = 0.5 * (double)pw, a, b, in;
+    uint32_t l, r, inset;
+    if (!(s > 0.0f) || !(s < 1.0f) || pw < 4u) return 0;
+    /* The first column wholly inside, and one past the last, with a
+     * thousandth of a pixel's slack for s's rounding: 16:10's edge at 2x is
+     * column 128 itself. */
+    a = ceil(c - (double)s * c - 1e-3);
+    b = floor(c + (double)s * c + 1e-3);
+    if (!(a >= 1.0) || !(b <= (double)pw - 1.0) || !(b > a)) return 0;
+    l = (uint32_t)a; r = (uint32_t)b;
+    in = floor((double)pw * (double)s / (double)NV2A_SCALE_FRAME_W + 0.5);
+    inset = in >= 1.0 ? (uint32_t)in : 1u;
+    if (r - l <= 2u * inset) return 0;
+    *x0 = l; *x1 = r;
+    *src_l = l + inset;
+    *src_r = r - 1u - inset;
+    return 1;
+}
+
+int nv2a_wide_fill_strip(uint32_t pw, uint32_t ph, float s, unsigned width, uint32_t *x1,
+                         uint32_t *r0, uint32_t *r1)
+{
+    uint32_t a, b, l, r;
+    double x, y;
+    if (!nv2a_wide_fill_cols(pw, s, &a, &b, &l, &r) || !ph) return 0;
+    /* A title pixel is ph / 480 raster pixels, across as down: the 4:3
+     * picture is as tall as the raster, and its pixels are square. */
+    x = (double)a + ceil((double)width * (double)ph / (double)NV2A_SCALE_FRAME_H - 1e-3);
+    y = ceil((double)NV2A_WIDE_STRIP_ROWS * (double)ph / (double)NV2A_SCALE_FRAME_H - 1e-3);
+    if (!(x < (double)b) || !(y < (double)ph) || !(y >= 1.0)) return 0;
+    *x1 = (uint32_t)x; *r0 = 0; *r1 = (uint32_t)y;
+    return 1;
+}
+
+int nv2a_wide_bar(uint32_t n, float w, float h)
+{
+    return n >= 3u && n <= NV2A_WIDE_BAR_VERTS && w >= 0.0f && h > 0.0f && isfinite(h)
+        && h >= NV2A_WIDE_BAR_TALL * w;
+}
+
+int nv2a_wide_slab(uint32_t n, float s)
+{
+    return n >= NV2A_WIDE_SLAB_VERTS && nv2a_wide_half_move(s) > 0.0f;
+}
+
+int nv2a_wide_lines(float span)
+{
+    return span >= NV2A_WIDE_LINES_SPAN && isfinite(span);
+}
+
+float nv2a_wide_lines_coord(float c, float span)
+{
+    if (!nv2a_wide_lines(span) || !(fabsf(c) >= span / 8.0f)) return c;
+    return c * NV2A_WIDE_LINES_LONGER;
+}
+
+int nv2a_wide_fill_copy(uint32_t pw, float s, int side, uint32_t *x0, uint32_t *x1,
+                        uint32_t *src, float *k, float *off)
+{
+    uint32_t l, r, sl, sr, a, b, c;
+    double xc;
+    if (!nv2a_wide_fill_cols(pw, s, &l, &r, &sl, &sr)) return 0;
+    if (side == NV2A_WIDE_HUD_NONE) {
+        *x0 = sl; *x1 = sr + 1u; *src = sr + 1u; *k = 1.0f; *off = 0.0f;
+        return 1;
+    }
+    if (side == NV2A_WIDE_HUD_LEFT)       { a = 0u; b = sl; c = sl; }
+    else if (side == NV2A_WIDE_HUD_RIGHT) { a = sr + 1u; b = pw; c = sr; }
+    else return 0;
+    *x0 = a; *x1 = b; *src = c;
+    *k = 2.0f * (float)pw;
+    /* The source column's centre in NDC, held still: x' - xc = k (x - xc). */
+    xc = ((double)c + 0.5) * 2.0 / (double)pw - 1.0;
+    *off = (float)((1.0 - (double)*k) * xc);
+    return 1;
 }
 
 void nv2a_wide_raster(uint32_t w, uint32_t h, uint32_t sc, float a,

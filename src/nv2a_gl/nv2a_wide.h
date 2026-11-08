@@ -154,10 +154,92 @@ float nv2a_wide_overlay_shift(float centre, float half, float s);
  * (nv2a_wide_half_shift), the left one left and the right one right, and
  * shown only on its half of the screen (nv2a_wide_half_clip_x), so the grid
  * carries on to the screen's edges with its cells square: nothing is
- * stretched or squeezed. */
+ * stretched or squeezed. FILL isn't a piece's side but the frame's: a plain
+ * menu draws in it, and its sides are filled (nv2a_wide_fill_cols). OVER is
+ * a part of such a menu that moves over its sides, the moving rectangles of
+ * the garage's menus and the loading screens: stretched as a part drawn
+ * across is, it shows on the sides over the fill, which carries out only
+ * what is under it (nv2a_wide_fill_copy), and it doesn't keep the frame
+ * from being filled. BARS is a part whose bars go across: drawn as anything
+ * else is (its 2D squeezed, its 3D widened with the scene) and not clipped
+ * to the 4:3 screen, but a bar in its 3D (nv2a_wide_bar: a plain rectangle,
+ * much taller than wide) is stretched about the screen's centre as a part
+ * drawn across is. The game parks such bars just past the 4:3 edges, out of
+ * sight on the console, and sweeps them in from there: stretched, they're
+ * parked past the wide screen's edges and sweep in from those, and what
+ * else the part moves in from off the screen comes in from the screen's
+ * edges with the widened view. Its full-screen 2D is fitted as a filled
+ * frame's is (nv2a_wide_fill_fits): art squeezed, keeping its shape, an
+ * untextured layer (a fade, a flash) or a copy of the frame left full
+ * width. It moves nothing and fills nothing. STRIP, like FILL, is the
+ * frame's, not a piece's: a filled frame's menu has a thin strip of art
+ * along the top of the picture, at the 4:3 screen's left edge, which the
+ * fill would carry out across the left side (the garage menus' tan strip);
+ * its piece is how far into the 4:3 picture the strip runs, in title
+ * pixels, and the strip's rows, from the left edge of the screen to there,
+ * take the colour of the row under it (nv2a_wide_fill_strip). LINES is a
+ * menu's 3D map, the pause menus' and the race preview's: drawn as it is,
+ * widened with the scene, but shown only in the light grid, not over the
+ * dark grid along its top (NV2A_WIDE_LINES_TOP), and the pause map's yellow
+ * lines (nv2a_wide_lines) are carried out past the wide screen's edges. It
+ * moves nothing. */
 enum { NV2A_WIDE_HUD_LEFT = -1, NV2A_WIDE_HUD_NONE = 0, NV2A_WIDE_HUD_RIGHT = 1,
        NV2A_WIDE_HUD_ACROSS = 2, NV2A_WIDE_HUD_WHOLE = 3, NV2A_WIDE_HUD_LEFT_HALF = 4,
-       NV2A_WIDE_HUD_RIGHT_HALF = 5 };
+       NV2A_WIDE_HUD_RIGHT_HALF = 5, NV2A_WIDE_HUD_FILL = 6, NV2A_WIDE_HUD_OVER = 7,
+       NV2A_WIDE_HUD_BARS = 8, NV2A_WIDE_HUD_STRIP = 9, NV2A_WIDE_HUD_LINES = 10 };
+
+/* Whether a draw between the marks of a part whose bars go across
+ * (NV2A_WIDE_HUD_BARS), of n vertices whose positions come in w wide and h
+ * tall, is a bar: a plain rectangle (no more than NV2A_WIDE_BAR_VERTS
+ * vertices, two triangles) at least NV2A_WIDE_BAR_TALL times as tall as it
+ * is wide. Not for a draw with no height, or one whose sizes aren't
+ * numbers. */
+#define NV2A_WIDE_BAR_VERTS 6u
+#define NV2A_WIDE_BAR_TALL  8.0f
+int nv2a_wide_bar(uint32_t n, float w, float h);
+
+/* Whether a 3D draw of n vertices between the marks of a part drawn across
+ * (NV2A_WIDE_HUD_ACROSS) at squeeze s is the part's grid, drawn as a
+ * backdrop's copies are instead of stretched. The menus' bands model (0x6B)
+ * draws the dark grid along the bottom and down the right-hand side as one
+ * mesh of hundreds of vertices (522 in the pause menus, the race preview,
+ * the GG notebook and character select), and its bands and marks as plain
+ * rectangles. Stretched, the grid's cells came out 1/s as wide as the
+ * backdrop's beside them, out of line with them. So a draw of at least
+ * NV2A_WIDE_SLAB_VERTS vertices is drawn twice, unstretched, the left copy
+ * moved left and the right one right by the backdrop's own move, each shown
+ * on its half (nv2a_wide_half_shift, nv2a_wide_half_clip_x): every grid on
+ * the screen then has the backdrop's lines. Only where the backdrop is
+ * drawn twice too (nv2a_wide_half_move not 0); 0 for anything else. */
+#define NV2A_WIDE_SLAB_VERTS 64u
+int nv2a_wide_slab(uint32_t n, float s);
+
+/* The pause menus' map (NV2A_WIDE_HUD_LINES) draws its yellow lines, one
+ * through the player's place along each axis, as one model: three thin
+ * boxes 426.6 long (213.3 each way) and 147.7 for the upright one, as their
+ * positions come in, where the map's own models are under 70 across. At
+ * 4:3 they run past the screen's edges; on a wide screen, turned, their
+ * ends showed short of its edges (Aden, 8 November 2026, 07:15 UTC: "it
+ * should also continue to the edge of the screen in the light blue
+ * section"). A draw of the map whose positions span at least
+ * NV2A_WIDE_LINES_SPAN on some axis is those lines: each position's
+ * coordinate at least an eighth of that span from 0 (a box's length, not
+ * its thickness) is made NV2A_WIDE_LINES_LONGER times as far out
+ * (nv2a_wide_lines_coord), so each line runs on to the screen's edge
+ * under the same camera, as thin as it was. They are shown only from row
+ * NV2A_WIDE_LINES_TOP down (the title's pixels): the top of the grey bar,
+ * under which the menus' light grid starts, not over the dark grid above
+ * it (Aden, 07:03 UTC: "the yellow lines should only show in the light blue
+ * grid, not the dark blue one"). So is every other draw of the map, and of
+ * the race preview's course map, whose tops came up over that dark grid
+ * once widened (08:32 UTC: "it should only be drawn in the light grid (as
+ * the yellow lines)"). Below and at the right the menus' bands cover them,
+ * as at 4:3. */
+#define NV2A_WIDE_LINES_SPAN   200.0f
+#define NV2A_WIDE_LINES_LONGER 8.0f
+#define NV2A_WIDE_LINES_TOP    47u
+int nv2a_wide_lines(float span);
+float nv2a_wide_lines_coord(float c, float span);
 
 /* A mark's flag: the piece draws in a viewport of its own, a strip that cuts
  * off what rolls past its edges. Its 2D fills that viewport, so measured
@@ -165,8 +247,17 @@ enum { NV2A_WIDE_HUD_LEFT = -1, NV2A_WIDE_HUD_NONE = 0, NV2A_WIDE_HUD_RIGHT = 1,
  * its span, and moved from that viewport's centre, not the frame's. */
 #define NV2A_WIDE_HUD_OWN_VIEW 1u
 
+/* A mark's flag: the piece is one of a menu's parts at a side, on a
+ * backdrop drawn in two copies (NV2A_WIDE_HUD_LEFT_HALF and _RIGHT_HALF).
+ * It moves with its side's copy of the grid, by whole steps of it
+ * (nv2a_wide_hud_grid_shift), not by exactly the screen's margin, so it
+ * sits on the same cell as on the console's 4:3 screen: the pause menus'
+ * buttons across the dark column's edge, as there. Aden's choice, 8
+ * November 2026 (07:44 UTC, card): "Move them with the grid". */
+#define NV2A_WIDE_HUD_ON_GRID 2u
+
 /* The mark's value for piece (0 to 255, which the log names), side and
- * flags (NV2A_WIDE_HUD_OWN_VIEW, or 0). */
+ * flags (NV2A_WIDE_HUD_OWN_VIEW, NV2A_WIDE_HUD_ON_GRID, both or 0). */
 uint32_t nv2a_wide_hud_mark(unsigned piece, int side, unsigned flags);
 
 /* A value read on NV2A_WIDE_HUD_METHOD as a mark: 1, with its piece, side
@@ -186,6 +277,13 @@ int nv2a_wide_hud_read(uint32_t value, unsigned *piece, int *side, unsigned *fla
  * at s 1 (4:3), and for a centre that isn't a number. */
 float nv2a_wide_hud_shift(int side, float s, int squeezed, float centre);
 
+/* That move for a piece marked NV2A_WIDE_HUD_ON_GRID: scaled from the
+ * screen's margin, (1/s - 1) x 320 of the title's pixels, to the backdrop
+ * copies' move, nv2a_wide_half_move (whole steps of the grid): 120.7 for
+ * 106.7 at 16:9, 241.4 for 248.9 at 64:27. The margin's own move where the
+ * backdrop isn't drawn twice (nv2a_wide_half_move 0). */
+float nv2a_wide_hud_grid_shift(int side, float s, int squeezed, float centre);
+
 /* How much a 3D draw between the marks of a part drawn across
  * (NV2A_WIDE_HUD_ACROSS) is stretched, about the screen's centre: 1/s, which
  * takes the 4:3 screen the widened projection leaves it in out to the
@@ -194,16 +292,22 @@ float nv2a_wide_hud_shift(int side, float s, int squeezed, float centre);
  * 1. */
 float nv2a_wide_across_stretch(float s);
 
+
 /* A menu's backdrop (NV2A_WIDE_HUD_LEFT_HALF and _RIGHT_HALF) is a grid that
  * repeats every NV2A_WIDE_HALF_STEP of the title's pixels, as the game lays
- * its 4:3 screen out: two of the pause menus' cells. */
-#define NV2A_WIDE_HALF_STEP 40.0f
+ * its 4:3 screen out: two of the pause menus' cells, each 20.115 of them
+ * (measured at 4:3, 16:9 and 21:9, 20.11 to 20.12), not 20: a step of 40
+ * left the halves 0.07 of a cell out of step at 16:9 and 0.13 at 21:9, a
+ * line at the seam thinned or gone. The grid has a line at the 4:3
+ * screen's centre. */
+#define NV2A_WIDE_HALF_STEP 40.23f
 
 /* How far each copy of the backdrop moves out at squeeze s, in the title's
  * pixels as the game lays its 4:3 screen out: the whole number of
  * NV2A_WIDE_HALF_STEPs nearest to what the parts at the screen's edges move,
  * (1/s - 1) x 320, so the halves meet at the screen's middle with the grid
- * lined up: 120 at 16:9, 80 at 16:10, 240 at 21:9. 0, the backdrop drawn
+ * lined up: three steps (120.7) at 16:9, two (80.5) at 16:10, six (241.4)
+ * at 21:9. 0, the backdrop drawn
  * once as the game draws it, at 4:3, for a shape too near 4:3 for a whole
  * step (whose screen edges the backdrop reaches as it is), and for an s
  * that isn't between 0 and 1. The game side draws the backdrop twice only
@@ -213,7 +317,7 @@ float nv2a_wide_half_move(float s);
 /* That move, for a draw between the marks of a copy on side, as the
  * wideShift the shader takes off its x (the frame's title pixels): the
  * widened projection leaves the game's 4:3 screen s as wide, so a 3D copy
- * moves s times the move (90 at 16:9), and a squeezed overlay (squeezed 1)
+ * moves s times the move (90.5 at 16:9), and a squeezed overlay (squeezed 1)
  * the move itself, in its own pixels, which the squeeze makes s as wide.
  * Positive (to the left) for LEFT_HALF, negative for RIGHT_HALF, and 0 for
  * any other side and wherever nv2a_wide_half_move is 0. */
@@ -226,12 +330,28 @@ float nv2a_wide_half_shift(int side, float s, int squeezed);
  * far one up, and both inside 0 to surf_w. */
 void nv2a_wide_hud_clip_x(uint32_t surf_w, float s, int side, uint32_t *x0, uint32_t *x1);
 
+/* The column of a surface surf_w wide at which the backdrop's halves meet at
+ * squeeze s: half a cell (a quarter of NV2A_WIDE_HALF_STEP, s as wide in
+ * the frame) left of the middle, to the nearest column, so the seam runs
+ * down the middle of a cell, not along the grid's line at the centre,
+ * where the least step out would thin the line or drop it. Left, not
+ * right: the left copy shows the backdrop as far right as the seam plus its
+ * move, and the dark column down the backdrop's right-hand side starts six
+ * steps right of the centre, the move at 21:9 (nv2a_wide_half_move), so
+ * there a seam right of the middle showed half a cell of that column down
+ * the middle of the screen (Aden, 8 November 2026, 08:32 UTC: "half of a
+ * grid is drawn as the dark grid in 21:9"). The right copy shows the
+ * backdrop from the seam less its move, which is light grid out to the 4:3
+ * screen's left edge. The middle, surf_w / 2, for an s that isn't between 0
+ * and 1. */
+uint32_t nv2a_wide_half_seam(uint32_t surf_w, float s);
+
 /* A half's clip (NV2A_WIDE_HUD_LEFT_HALF or _RIGHT_HALF): columns *x0 to
- * *x1 cut at the surface's middle, surf_w / 2, which the left half ends at
+ * *x1 cut at the seam (nv2a_wide_half_seam), which the left half ends at
  * and the right half starts at, so the two meet with no gap and no overlap.
  * A clip wholly on the other half comes out empty (*x0 == *x1); any other
  * side leaves it as it is. */
-void nv2a_wide_half_clip_x(uint32_t surf_w, int side, uint32_t *x0, uint32_t *x1);
+void nv2a_wide_half_clip_x(uint32_t surf_w, float s, int side, uint32_t *x0, uint32_t *x1);
 
 /* Whether a screen-space draw's viewport, of scale vp_scale_x (half its
  * width), spans the whole frame, as one player's HUD does: as wide as
@@ -240,6 +360,83 @@ void nv2a_wide_half_clip_x(uint32_t surf_w, int side, uint32_t *x0, uint32_t *x1
  * moved to the edge, only lined up with its view (nv2a_wide_overlay_shift);
  * a piece with a viewport of its own (NV2A_WIDE_HUD_OWN_VIEW) is moved. */
 int nv2a_wide_hud_whole_view(float vp_scale_x);
+
+/* The side fill. A plain menu -- one with no parts to move, whose rows end
+ * in flat colour at the 4:3 screen's edges -- sits in the middle 4:3 of the
+ * wide screen, and what the widened scene shows around it there is what the
+ * console's screen edge hid. The game side marks each frame such a menu
+ * draws in (NV2A_WIDE_HUD_FILL, written as the menu's draw starts, in order
+ * with its draws: no end mark, the frame's flip ends it), and on that frame:
+ *   - the menu's full-screen art is fitted into the 4:3 screen with the rest
+ *     of the menu, keeping its shape, where it would otherwise be stretched
+ *     across (nv2a_wide_fill_fits);
+ *   - at the flip, the column of pixels just inside each 4:3 edge is copied
+ *     out across that side, so each row's colour carries on to the screen's
+ *     edge and nothing is stretched (nv2a_wide_fill_cols). It covers the
+ *     4:3 screen's outermost title pixel too, which some art leaves dark
+ *     (the options menu's right edge) and the console's screen edge hid.
+ * The art is fitted from the start of the frame after a filled one too, as
+ * another object may draw it before the menu does. A frame with a part
+ * moved to an edge (the HUD's, or a laid-out menu's) isn't filled, so the
+ * fill never paints over it. A frame with no mark is left as it is. */
+
+/* Whether a screen-space draw of extent ext (NDC, as nv2a_wide_overlay
+ * takes it) is squeezed on a filled frame: an overlay, as on any frame, or
+ * full-screen art, which is textured and samples no surface the title drew
+ * into (a copy of the frame, such as the one into the display buffer, which
+ * must fill the screen). Untextured layers, fades and bars stay full width:
+ * the fill carries their colour to the edges anyway. */
+int nv2a_wide_fill_fits(const float ext[4], int textured, int samples_surface);
+
+/* The fill on a filled frame drawn at a raster pw wide and widened at
+ * squeeze s (the frame's shape's, nv2a_wide_squeeze_of): the 4:3 screen's
+ * columns, *x0 to *x1 (the far one exclusive), which every partly covered
+ * column at its edges is left out of; and the column copied across each
+ * side, *src_l, one title pixel (pw x s / 640 of the raster's, at least one)
+ * inside the left edge, across 0 to *src_l, and *src_r as far inside the
+ * right edge, across *src_r + 1 to pw: the fill covers the columns between
+ * each source and its edge too, and leaves *src_l to *src_r as they are.
+ * Returns 0, with nothing to fill and the outputs untouched, at s 1 (4:3),
+ * for an s that isn't between 0 and 1, and for a raster too narrow to have
+ * sides. */
+int nv2a_wide_fill_cols(uint32_t pw, float s, uint32_t *x0, uint32_t *x1,
+                        uint32_t *src_l, uint32_t *src_r);
+
+/* A strip's rows (NV2A_WIDE_HUD_STRIP) at the top of a filled frame drawn
+ * at a raster pw x ph widened at squeeze s, running width title pixels into
+ * the 4:3 picture: the strip is the picture's top NV2A_WIDE_STRIP_ROWS
+ * title rows, and its raster rows, *r0 (0) to *r1 (the far one exclusive,
+ * every row it touches), take row *r1's colour, from the screen's left edge
+ * to *x1 (exclusive): the 4:3 screen's first column (nv2a_wide_fill_cols)
+ * and width title pixels more (ph / 480 raster pixels each), every column
+ * it touches. Returns 0, with the
+ * outputs untouched, wherever nv2a_wide_fill_cols does, for a height of 0,
+ * and where the strip would reach the 4:3 screen's right edge. */
+#define NV2A_WIDE_STRIP_ROWS 6u
+int nv2a_wide_fill_strip(uint32_t pw, uint32_t ph, float s, unsigned width, uint32_t *x1,
+                         uint32_t *r0, uint32_t *r1);
+
+/* The side fill drawn draw by draw. On a frame with a part over its sides
+ * (NV2A_WIDE_HUD_OVER), copying columns at the flip would paint over that
+ * part, and carry it out where it crosses a source column. So from the
+ * menu's mark on, each of the menu's draws (but the parts over the sides)
+ * is drawn in the middle, from source to source, and again on each side,
+ * magnified about that side's source column until the one pixel there
+ * covers the side: each side gets, row by row and in the draws' own order
+ * and depth, the colour of what was drawn under the parts at its source,
+ * and the parts over the sides, stretched, are kept where they're in front.
+ *
+ * For side NV2A_WIDE_HUD_NONE (the middle), LEFT or RIGHT, on a raster pw
+ * wide at squeeze s: its columns, *x0 to *x1 (the far one exclusive) -- the
+ * sources to each other, 0 to the left source, and past the right source to
+ * pw, as nv2a_wide_fill_cols has them -- the source column the side's copy
+ * shows, *src (none for the middle: the far edge, *x1), and the map the
+ * copy's x takes in NDC, x' = *k x + *off: *k = 2 pw, which brings the
+ * whole side to within half a pixel of the source column's centre, and 1
+ * and 0 for the middle. Returns 0, with the outputs untouched, wherever
+ * nv2a_wide_fill_cols does, and for any other side. */
+int nv2a_wide_fill_copy(uint32_t pw, float s, int side, uint32_t *x0, uint32_t *x1,
+                        uint32_t *src, float *k, float *off);
 
 /* The raster a surface w x h is drawn at, at render scale sc, in the
  * device's pixels (*pw x *ph), and the shape it is shown at (*shape, width
