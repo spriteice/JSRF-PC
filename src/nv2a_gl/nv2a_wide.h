@@ -139,8 +139,25 @@ float nv2a_wide_overlay_shift(float centre, float half, float s);
 #define NV2A_WIDE_HUD_METHOD 0x1FF0u
 #define NV2A_WIDE_HUD_TAG    0x48550000u   /* "HU" */
 
-/* A HUD piece's side; NONE is the end of its draws. */
-enum { NV2A_WIDE_HUD_LEFT = -1, NV2A_WIDE_HUD_NONE = 0, NV2A_WIDE_HUD_RIGHT = 1 };
+/* A HUD piece's side; NONE is the end of its draws. ACROSS is a menu part
+ * that goes across the whole width instead (port/widescreen_menus.h): a
+ * background grid or bar, laid out for the 4:3 screen and stretched to the
+ * wide one. Its 3D is stretched about the screen's centre
+ * (nv2a_wide_across_stretch), its 2D left unsqueezed, which stretches it
+ * the same way, and neither is clipped to the 4:3 screen. WHOLE is text
+ * that runs the whole width, a menu's ticker: its 2D is squeezed, as any
+ * text is, whatever its span, so its letters keep their shape, but it isn't
+ * moved or clipped to the 4:3 screen, so where the game side puts it
+ * (spread out from the centre by 1/s) it shows on the whole screen.
+ * LEFT_HALF and RIGHT_HALF are a menu's backdrop, a grid, which the game
+ * side draws twice: each copy is moved out by whole steps of its grid
+ * (nv2a_wide_half_shift), the left one left and the right one right, and
+ * shown only on its half of the screen (nv2a_wide_half_clip_x), so the grid
+ * carries on to the screen's edges with its cells square: nothing is
+ * stretched or squeezed. */
+enum { NV2A_WIDE_HUD_LEFT = -1, NV2A_WIDE_HUD_NONE = 0, NV2A_WIDE_HUD_RIGHT = 1,
+       NV2A_WIDE_HUD_ACROSS = 2, NV2A_WIDE_HUD_WHOLE = 3, NV2A_WIDE_HUD_LEFT_HALF = 4,
+       NV2A_WIDE_HUD_RIGHT_HALF = 5 };
 
 /* A mark's flag: the piece draws in a viewport of its own, a strip that cuts
  * off what rolls past its edges. Its 2D fills that viewport, so measured
@@ -157,7 +174,9 @@ uint32_t nv2a_wide_hud_mark(unsigned piece, int side, unsigned flags);
 int nv2a_wide_hud_read(uint32_t value, unsigned *piece, int *side, unsigned *flags);
 
 /* How far a draw between the marks of a piece on side moves to that side's
- * edge, as the wideShift the shader takes off its x (the title's pixels),
+ * edge (0 for any side but LEFT and RIGHT: a part drawn across is
+ * stretched instead, and a backdrop's copy moves by nv2a_wide_half_shift),
+ * as the wideShift the shader takes off its x (the title's pixels),
  * for a draw whose viewport is centred at centre (the title's pixels: the
  * frame's 320 for one player's HUD). The squeeze brings x toward that
  * centre by s, so it left (1 - s) of the distance from there to the edge
@@ -167,12 +186,52 @@ int nv2a_wide_hud_read(uint32_t value, unsigned *piece, int *side, unsigned *fla
  * at s 1 (4:3), and for a centre that isn't a number. */
 float nv2a_wide_hud_shift(int side, float s, int squeezed, float centre);
 
+/* How much a 3D draw between the marks of a part drawn across
+ * (NV2A_WIDE_HUD_ACROSS) is stretched, about the screen's centre: 1/s, which
+ * takes the 4:3 screen the widened projection leaves it in out to the
+ * screen's edges, as the console's stretched 4:3 picture would (4/3 at
+ * 16:9). 1, no stretch, at s 1 (4:3) and for an s that isn't between 0 and
+ * 1. */
+float nv2a_wide_across_stretch(float s);
+
+/* A menu's backdrop (NV2A_WIDE_HUD_LEFT_HALF and _RIGHT_HALF) is a grid that
+ * repeats every NV2A_WIDE_HALF_STEP of the title's pixels, as the game lays
+ * its 4:3 screen out: two of the pause menus' cells. */
+#define NV2A_WIDE_HALF_STEP 40.0f
+
+/* How far each copy of the backdrop moves out at squeeze s, in the title's
+ * pixels as the game lays its 4:3 screen out: the whole number of
+ * NV2A_WIDE_HALF_STEPs nearest to what the parts at the screen's edges move,
+ * (1/s - 1) x 320, so the halves meet at the screen's middle with the grid
+ * lined up: 120 at 16:9, 80 at 16:10, 240 at 21:9. 0, the backdrop drawn
+ * once as the game draws it, at 4:3, for a shape too near 4:3 for a whole
+ * step (whose screen edges the backdrop reaches as it is), and for an s
+ * that isn't between 0 and 1. The game side draws the backdrop twice only
+ * where this isn't 0. */
+float nv2a_wide_half_move(float s);
+
+/* That move, for a draw between the marks of a copy on side, as the
+ * wideShift the shader takes off its x (the frame's title pixels): the
+ * widened projection leaves the game's 4:3 screen s as wide, so a 3D copy
+ * moves s times the move (90 at 16:9), and a squeezed overlay (squeezed 1)
+ * the move itself, in its own pixels, which the squeeze makes s as wide.
+ * Positive (to the left) for LEFT_HALF, negative for RIGHT_HALF, and 0 for
+ * any other side and wherever nv2a_wide_half_move is 0. */
+float nv2a_wide_half_shift(int side, float s, int squeezed);
+
 /* That draw's window clip, columns *x0 to *x1 (the far one exclusive) on a
  * surface surf_w wide: squeezed about the centre as nv2a_wide_clip_x does,
- * then moved with the piece, so the screen's own edge takes the 4:3 edge's
- * place. The near edge down to a whole pixel, the far one up, and both
- * inside 0 to surf_w. */
+ * then moved with the piece (only for LEFT and RIGHT), so the screen's own
+ * edge takes the 4:3 edge's place. The near edge down to a whole pixel, the
+ * far one up, and both inside 0 to surf_w. */
 void nv2a_wide_hud_clip_x(uint32_t surf_w, float s, int side, uint32_t *x0, uint32_t *x1);
+
+/* A half's clip (NV2A_WIDE_HUD_LEFT_HALF or _RIGHT_HALF): columns *x0 to
+ * *x1 cut at the surface's middle, surf_w / 2, which the left half ends at
+ * and the right half starts at, so the two meet with no gap and no overlap.
+ * A clip wholly on the other half comes out empty (*x0 == *x1); any other
+ * side leaves it as it is. */
+void nv2a_wide_half_clip_x(uint32_t surf_w, int side, uint32_t *x0, uint32_t *x1);
 
 /* Whether a screen-space draw's viewport, of scale vp_scale_x (half its
  * width), spans the whole frame, as one player's HUD does: as wide as

@@ -100,6 +100,7 @@ set(JSRF_SOURCES
     adx_err.c
     voice_follow.c
     widescreen_hud.c
+    widescreen_menus.c
     resource_load.c
     cpuprof.c
     pcores.c

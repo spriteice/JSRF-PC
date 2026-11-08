@@ -28,8 +28,9 @@
  *  10. Render scale's names follow the shape, and are nv2a_scale_names' at 4:3.
  *  11. F10 goes to 4:3 from every wide shape, and to Match screen from 4:3,
  *      so two presses come back to Match screen.
- *  12. A HUD mark reads back as its piece, side and flags, and a value that
- *      isn't one (D3D's own no-operation values among them) doesn't.
+ *  12. A HUD mark reads back as its piece, side and flags, a menu part's
+ *      across the width among them, and a value that isn't one (D3D's own
+ *      no-operation values among them) doesn't.
  *  13. Between a HUD piece's marks, a draw moves to its side's edge: a piece
  *      at the 4:3 edge lands on the screen's edge at every wide shape,
  *      squeezed 2D and widened 3D alike, and keeps its distance from it
@@ -47,6 +48,25 @@
  *      320 at 80 to 320 at 16:9, the right half's at 320 to 560. A viewport
  *      centred on the frame moves nothing, and nor does 4:3, a viewport
  *      outside the frame, a mirrored one or NaN.
+ *  17. A menu part drawn across the width is stretched by 1/s about the
+ *      centre, so the 4:3 screen the widened projection leaves it in fills
+ *      the screen at every wide shape: its 0 to 640 at 0 to 640. It isn't
+ *      moved, and its clip isn't moved; nothing is stretched at 4:3 or for
+ *      an s that isn't between 0 and 1. Text across the whole width (a
+ *      ticker) isn't moved either.
+ *  18. A copy of a menu's backdrop shown on one half of the screen is
+ *      clipped at the surface's middle, the left half up to it and the
+ *      right half from it, so the two meet with no gap and no overlap at
+ *      any width; a clip of its own is cut the same way, one wholly on the
+ *      other half comes out empty, and neither half's clip is moved.
+ *  19. The copies move out by whole steps of the grid, the nearest to the
+ *      parts' move: 120 title pixels at 16:9, 80 at 16:10, 240 at 21:9, at
+ *      every wide shape a whole number of steps within half a step of the
+ *      parts' move, so the left copy's 4:3 edge lands within half a step
+ *      of the screen's (and the right's the same); none at 4:3, too near
+ *      it, or for an s that isn't between 0 and 1. A 3D copy moves s times
+ *      that in the frame's pixels (90 at 16:9), a squeezed one that itself,
+ *      the left copy left and the right right, and no other side moves.
  */
 #include <math.h>
 #include <stdio.h>
@@ -323,9 +343,11 @@ static void f10(void)
 static void hud_marks(void)
 {
     static const unsigned pieces[] = { 0, 7, 255 };
-    static const int sides[] = { NV2A_WIDE_HUD_LEFT, NV2A_WIDE_HUD_NONE, NV2A_WIDE_HUD_RIGHT };
+    static const int sides[] = { NV2A_WIDE_HUD_LEFT, NV2A_WIDE_HUD_NONE, NV2A_WIDE_HUD_RIGHT,
+                                 NV2A_WIDE_HUD_ACROSS, NV2A_WIDE_HUD_WHOLE,
+                                 NV2A_WIDE_HUD_LEFT_HALF, NV2A_WIDE_HUD_RIGHT_HALF };
     static const unsigned flags[] = { 0u, NV2A_WIDE_HUD_OWN_VIEW };
-    static const uint32_t others[] = { 0u, 1u, 2u, 5u, 8u, 9u, 0x48550003u, 0x48550083u,
+    static const uint32_t others[] = { 0u, 1u, 2u, 5u, 8u, 9u, 0x48550007u, 0x48550087u,
                                        0x48550043u, 0x48560001u, 0x00000102u, 0xFFFFFFFFu };
     unsigned i, j, k, piece, fl;
     int side;
@@ -343,6 +365,10 @@ static void hud_marks(void)
     /* build 3b-1's marks read as they did */
     CHECK(nv2a_wide_hud_mark(0, NV2A_WIDE_HUD_RIGHT, 0) == 0x48550002u);
     CHECK(nv2a_wide_hud_mark(0, NV2A_WIDE_HUD_NONE, 0) == 0x48550000u);
+    CHECK(nv2a_wide_hud_mark(0x40, NV2A_WIDE_HUD_ACROSS, 0) == 0x48554003u);
+    CHECK(nv2a_wide_hud_mark(0xC4, NV2A_WIDE_HUD_WHOLE, 0) == 0x4855C404u);
+    CHECK(nv2a_wide_hud_mark(0x40, NV2A_WIDE_HUD_LEFT_HALF, 0) == 0x48554005u);
+    CHECK(nv2a_wide_hud_mark(0x40, NV2A_WIDE_HUD_RIGHT_HALF, 0) == 0x48554006u);
     for (i = 0; i < sizeof others / sizeof others[0]; i++)
         CHECK(!nv2a_wide_hud_read(others[i], &piece, &side, &fl));
     CHECK(NV2A_WIDE_HUD_METHOD > 0x1EA4u && (NV2A_WIDE_HUD_METHOD & 3u) == 0
@@ -504,6 +530,113 @@ static void split(void)
     CHECK(nv2a_wide_overlay_shift(160.0f, INFINITY, 0.75f) == 0.0f);
 }
 
+/* Where a 3D draw at the title's x lands once drawn across: the widened
+ * projection leaves it at its squeezed place, and the stretch takes it out
+ * from the centre again. */
+static float across_lands(float x, float s)
+{
+    return 320.0f + nv2a_wide_across_stretch(s) * s * (x - 320.0f);
+}
+
+static void across(void)
+{
+    const float s16_10 = nv2a_wide_squeeze_of(16.0f / 10.0f);
+    const float s21_9 = nv2a_wide_squeeze_of(64.0f / 27.0f);
+    const float wide[] = { 0.75f, s16_10, s21_9 };
+    unsigned i;
+    uint32_t a = 0, b = 640;
+    CHECK(near(nv2a_wide_across_stretch(0.75f), 4.0f / 3.0f));
+    CHECK(near(nv2a_wide_across_stretch(s21_9), 64.0f / 36.0f));
+    for (i = 0; i < sizeof wide / sizeof wide[0]; i++) {
+        CHECK(near_px(across_lands(0.0f, wide[i]), 0.0f));
+        CHECK(near_px(across_lands(640.0f, wide[i]), 640.0f));
+        CHECK(near_px(across_lands(320.0f, wide[i]), 320.0f));
+        CHECK(nv2a_wide_hud_shift(NV2A_WIDE_HUD_ACROSS, wide[i], 0, 320.0f) == 0.0f);
+        CHECK(nv2a_wide_hud_shift(NV2A_WIDE_HUD_ACROSS, wide[i], 1, 320.0f) == 0.0f);
+        CHECK(nv2a_wide_hud_shift(NV2A_WIDE_HUD_WHOLE, wide[i], 1, 320.0f) == 0.0f);
+    }
+    a = 0; b = 640;
+    nv2a_wide_hud_clip_x(640, 0.75f, NV2A_WIDE_HUD_WHOLE, &a, &b);
+    CHECK(a == 80 && b == 560);
+    a = 0; b = 640;
+    nv2a_wide_hud_clip_x(640, 0.75f, NV2A_WIDE_HUD_ACROSS, &a, &b);
+    CHECK(a == 80 && b == 560);                                     /* nv2a_wide_clip_x's */
+    CHECK(nv2a_wide_across_stretch(1.0f) == 1.0f);                  /* 4:3 */
+    CHECK(nv2a_wide_across_stretch(0.0f) == 1.0f);
+    CHECK(nv2a_wide_across_stretch(1.5f) == 1.0f);
+    CHECK(nv2a_wide_across_stretch(NAN) == 1.0f);
+}
+
+static void half_is(uint32_t w, int side, uint32_t x0, uint32_t x1, uint32_t w0, uint32_t w1)
+{
+    uint32_t a = x0, b = x1;
+    nv2a_wide_half_clip_x(w, side, &a, &b);
+    if (a != w0 || b != w1)
+        printf("widescreen: half %d of %u: %u..%u gave %u..%u, not %u..%u\n",
+               side, w, x0, x1, a, b, w0, w1);
+    CHECK(a == w0 && b == w1);
+}
+
+static void halves(void)
+{
+    half_is(640, NV2A_WIDE_HUD_LEFT_HALF, 0, 640, 0, 320);
+    half_is(640, NV2A_WIDE_HUD_RIGHT_HALF, 0, 640, 320, 640);
+    half_is(641, NV2A_WIDE_HUD_LEFT_HALF, 0, 641, 0, 320);        /* odd: meet at 320 */
+    half_is(641, NV2A_WIDE_HUD_RIGHT_HALF, 0, 641, 320, 641);
+    half_is(640, NV2A_WIDE_HUD_LEFT_HALF, 100, 500, 100, 320);    /* a clip of its own */
+    half_is(640, NV2A_WIDE_HUD_RIGHT_HALF, 100, 500, 320, 500);
+    half_is(640, NV2A_WIDE_HUD_LEFT_HALF, 400, 600, 320, 320);    /* wholly right: empty */
+    half_is(640, NV2A_WIDE_HUD_RIGHT_HALF, 10, 200, 320, 320);    /* wholly left: empty */
+    half_is(640, NV2A_WIDE_HUD_NONE, 10, 200, 10, 200);           /* no half */
+    half_is(640, NV2A_WIDE_HUD_ACROSS, 0, 640, 0, 640);
+    CHECK(nv2a_wide_hud_shift(NV2A_WIDE_HUD_LEFT_HALF, 0.75f, 0, 320.0f) == 0.0f);
+    CHECK(nv2a_wide_hud_shift(NV2A_WIDE_HUD_RIGHT_HALF, 0.75f, 1, 320.0f) == 0.0f);
+}
+
+static void half_moves(void)
+{
+    static const float shapes[] = { 1.4f, 1.5f, 1.6f, 16.0f / 9.0f, 2.0f, 64.0f / 27.0f,
+                                     32.0f / 9.0f };
+    static const int others[] = { NV2A_WIDE_HUD_LEFT, NV2A_WIDE_HUD_NONE, NV2A_WIDE_HUD_RIGHT,
+                                  NV2A_WIDE_HUD_ACROSS, NV2A_WIDE_HUD_WHOLE };
+    const float s169 = 0.75f, s1610 = (4.0f / 3.0f) / 1.6f, s219 = 0.5625f;
+    unsigned i;
+    CHECK(nv2a_wide_half_move(s169) == 120.0f);                    /* 16:9 */
+    CHECK(nv2a_wide_half_move(s1610) == 80.0f);                    /* 16:10 */
+    CHECK(nv2a_wide_half_move(s219) == 240.0f);                    /* 21:9 */
+    for (i = 0; i < sizeof shapes / sizeof shapes[0]; i++) {
+        float s = (4.0f / 3.0f) / shapes[i];
+        float n = nv2a_wide_half_move(s);
+        float steps = n / NV2A_WIDE_HALF_STEP;
+        float parts = (1.0f / s - 1.0f) * 320.0f;
+        float shift = nv2a_wide_half_shift(NV2A_WIDE_HUD_LEFT_HALF, s, 0);
+        CHECK(steps == floorf(steps));                             /* whole steps */
+        CHECK(fabsf(n - parts) <= NV2A_WIDE_HALF_STEP / 2.0f);
+        /* the left copy's 4:3 edge, 0, in the frame: squeezed about the
+         * centre by the widened projection, then moved */
+        CHECK(fabsf(320.0f + s * (0.0f - 320.0f) - shift) <= s * NV2A_WIDE_HALF_STEP / 2.0f + 1e-3f);
+        CHECK(nv2a_wide_half_shift(NV2A_WIDE_HUD_RIGHT_HALF, s, 0) == -shift);
+    }
+    CHECK(nv2a_wide_half_move(1.0f) == 0.0f);                      /* 4:3 */
+    CHECK(nv2a_wide_half_move((4.0f / 3.0f) / 1.4f) == 0.0f);      /* 16 pixels: none */
+    CHECK(nv2a_wide_half_move(0.0f) == 0.0f);
+    CHECK(nv2a_wide_half_move(1.5f) == 0.0f);
+    CHECK(nv2a_wide_half_move(NAN) == 0.0f);
+    CHECK(near(nv2a_wide_half_shift(NV2A_WIDE_HUD_LEFT_HALF, s169, 0), 90.0f));     /* 3D */
+    CHECK(near(nv2a_wide_half_shift(NV2A_WIDE_HUD_RIGHT_HALF, s169, 0), -90.0f));
+    CHECK(nv2a_wide_half_shift(NV2A_WIDE_HUD_LEFT_HALF, s169, 1) == 120.0f);        /* 2D */
+    CHECK(nv2a_wide_half_shift(NV2A_WIDE_HUD_RIGHT_HALF, s169, 1) == -120.0f);
+    CHECK(fabsf(nv2a_wide_half_shift(NV2A_WIDE_HUD_LEFT_HALF, s1610, 0) - 80.0f * s1610) < 1e-4f);
+    CHECK(near(nv2a_wide_half_shift(NV2A_WIDE_HUD_LEFT_HALF, s219, 0), 135.0f));
+    CHECK(nv2a_wide_half_shift(NV2A_WIDE_HUD_LEFT_HALF, 1.0f, 0) == 0.0f);          /* 4:3 */
+    CHECK(nv2a_wide_half_shift(NV2A_WIDE_HUD_RIGHT_HALF, 1.0f, 1) == 0.0f);
+    CHECK(nv2a_wide_half_shift(NV2A_WIDE_HUD_LEFT_HALF, NAN, 0) == 0.0f);
+    for (i = 0; i < sizeof others / sizeof others[0]; i++) {
+        CHECK(nv2a_wide_half_shift(others[i], s169, 0) == 0.0f);
+        CHECK(nv2a_wide_half_shift(others[i], s169, 1) == 0.0f);
+    }
+}
+
 int main(void)
 {
     shapes();
@@ -523,6 +656,9 @@ int main(void)
     hud_clip();
     hud_view();
     split();
+    across();
+    halves();
+    half_moves();
     if (s_failures) {
         printf("widescreen: %d failed\n", s_failures);
         return 1;

@@ -4286,7 +4286,8 @@ static void wide_hud_end(int piece, int marked)
  * slot +0xC, with this in ecx): its draws between its marks. The classes
  * are the HUD's own, made only by the HUD manager (sub_00108870 and
  * sub_001077D0). The HUD's signs, such as the stop sign, aren't marked:
- * their models put them in the middle of the screen, where they stay. */
+ * their models put them in the middle of the screen, where they stay (the
+ * street pause menu's area name, also a sign, goes with that menu, below). */
 /* sub_001060B0: the health bar and its border (class 0x1D1F98), at the top
  * right. */
 extern void sub_001060B0_gen(void);
@@ -4385,6 +4386,143 @@ void sub_001045D0(void)
     sub_001045D0_gen();
     wide_hud_end(WIDE_HUD_MESSAGE, marked);
 }
+/* ---- the menus laid out for widescreen (widescreen_menus.h) ------------------
+ * The game lays its menus out for a 4:3 screen, and in widescreen they sit
+ * in the middle of the wide screen with their backdrop's edges showing.
+ * Each menu that has a wide layout gets an override of its draw method
+ * here, named for the menu (docs/project-rules.md, Where code goes 6),
+ * which tells widescreen_menus.c which menu is drawing and its object. The
+ * menu draws each of its parts, a 3D model held in a field of its object,
+ * through the models' draw, sub_00047690; that call's override asks which
+ * part the model is, by its field, and marks its draws for its side, or for
+ * across the width: the bars and bands are stretched across, the backdrop's
+ * grids are carried on to the screen's edges in two halves, and the other
+ * parts keep their shape and go to the left or the right edge, as the HUD's
+ * pieces do. The menu's text goes through the font call's override,
+ * below, and the three parts that aren't fields through overrides of their
+ * own draws. The marks are the HUD's, written the same way. As with the
+ * HUD, nothing in these functions or in the recompiler is wrong: the menus
+ * were laid out for the console's screen. In 4:3, and with no menu
+ * drawing, nothing is marked. tests/widescreen_menus checks the parts, the
+ * text's sides and the marks; how each menu then looks needs the game, the
+ * test build's menu step. */
+#include "widescreen_menus.h"
+#include "nv2a_wide.h"
+static int wide_menu_mark(unsigned piece, int side)
+{
+    return widescreen_menus_mark((uint8_t *)g_xbox_mem_offset, MEM32(D3D_DEVICE), piece, side,
+                                 d3d_make_space);
+}
+static void wide_menu_unmark(unsigned piece, int marked)
+{
+    widescreen_menus_unmark((uint8_t *)g_xbox_mem_offset, MEM32(D3D_DEVICE), piece, marked,
+                            d3d_make_space);
+}
+/* sub_001129E0: the street pause menu's draw (class 0x1D2A00, slot +0x24,
+ * this in ecx; one argument, the pass, ret 4), with the 3D map drawn
+ * before it and the ticker after. */
+extern void sub_001129E0_gen(void);
+void sub_001129E0(void)
+{
+    int began = widescreen_menus_begin((uint8_t *)g_xbox_mem_offset, WIDE_MENU_STREET_PAUSE,
+                                       g_ecx, nv2a_wide_scene(), jsrf_now());
+    sub_001129E0_gen();
+    widescreen_menus_end(began);
+}
+/* sub_001133A0: the other pause menu's draw, a race's or a mission's (class
+ * 0x1D2AA8, slot +0x24, as the street one), with its header drawn after it
+ * as its child. */
+extern void sub_001133A0_gen(void);
+void sub_001133A0(void)
+{
+    int began = widescreen_menus_begin((uint8_t *)g_xbox_mem_offset, WIDE_MENU_OTHER_PAUSE,
+                                       g_ecx, nv2a_wide_scene(), jsrf_now());
+    sub_001133A0_gen();
+    widescreen_menus_end(began);
+}
+/* sub_00047690: the models' draw (class 0x1CAA8C, slot +0x14, the model in
+ * ecx, two arguments it passes on; it pops them), which every 3D model in
+ * the game goes through. While a menu draws, a model that is one of its
+ * parts is drawn between marks for its side. A model drawn while a part's
+ * marks are open is left inside them.
+ *
+ * The backdrop (WIDE_MENU_EXTEND) is drawn twice, unstretched, where the
+ * shape leaves room for a whole step of its grid (nv2a_wide_half_move):
+ * first between marks for the screen's left half, through a call of its own
+ * with a copy of the arguments, then between marks for the right half, as
+ * the caller's own call. The renderer moves each copy out and shows it on
+ * its half (nv2a_wide_half_shift); the game's draw is the same both times. */
+extern void sub_00047690_gen(void);
+#define WIDE_MENU_MODEL_DRAW 0x00047690u  /* the models' draw, as its own call's return address */
+static void wide_menu_extend(unsigned piece)
+{
+    uint32_t args[2];
+    int marked = nv2a_wide_half_move(nv2a_wide_squeeze()) > 0.0f
+              && wide_menu_mark(piece, NV2A_WIDE_HUD_LEFT_HALF);
+    if (!marked) { sub_00047690_gen(); return; }
+    memcpy(args, (uint8_t *)g_xbox_mem_offset + g_esp + 4, sizeof args);
+    guest_call_cdecl(sub_00047690_gen, WIDE_MENU_MODEL_DRAW, 2, args);
+    wide_menu_unmark(piece, marked);
+    marked = wide_menu_mark(piece, NV2A_WIDE_HUD_RIGHT_HALF);
+    sub_00047690_gen();
+    wide_menu_unmark(piece, marked);
+}
+void sub_00047690(void)
+{
+    static int open;
+    unsigned piece;
+    int side, marked;
+    if (open) { sub_00047690_gen(); return; }
+    side = widescreen_menus_part((uint8_t *)g_xbox_mem_offset, g_ecx, &piece);
+    if (side == NV2A_WIDE_HUD_NONE) { sub_00047690_gen(); return; }
+    open = 1;
+    if (side == WIDE_MENU_EXTEND) {
+        wide_menu_extend(piece);
+    } else {
+        marked = wide_menu_mark(piece, side);
+        sub_00047690_gen();
+        wide_menu_unmark(piece, marked);
+    }
+    open = 0;
+}
+/* sub_000FC370: the HUD signs' draw (class 0x1D1B68, this in ecx). The map
+ * makes one too, the street pause menu's area name (the strip at the top
+ * left), which goes to the left edge with that menu's left-hand parts; the
+ * HUD's own signs, such as the stop sign, stay in the middle. */
+extern void sub_000FC370_gen(void);
+void sub_000FC370(void)
+{
+    int marked = nv2a_wide_scene()
+              && widescreen_menus_sign((uint8_t *)g_xbox_mem_offset, g_ecx, jsrf_now())
+              && wide_menu_mark(WIDE_MENU_PIECE_SIGN, NV2A_WIDE_HUD_LEFT);
+    sub_000FC370_gen();
+    wide_menu_unmark(WIDE_MENU_PIECE_SIGN, marked);
+}
+/* sub_000F7F00: the draw of a header (class 0x1D0770, this in ecx), which
+ * other screens use too. The other pause menu's header, the menu's first
+ * child, goes to the left edge with that menu's left-hand parts; every
+ * other header stays as it is. */
+extern void sub_000F7F00_gen(void);
+void sub_000F7F00(void)
+{
+    int marked = nv2a_wide_scene()
+              && widescreen_menus_child((uint8_t *)g_xbox_mem_offset, g_ecx, jsrf_now())
+              && wide_menu_mark(WIDE_MENU_PIECE_CHILD, NV2A_WIDE_HUD_LEFT);
+    sub_000F7F00_gen();
+    wide_menu_unmark(WIDE_MENU_PIECE_CHILD, marked);
+}
+/* sub_00115F40: the ticker's draw (class 0x1D3770, this in ecx), a line of
+ * text that scrolls in from the right along a pause menu's top bar in a
+ * mission, drawn after the menu. Its text runs the whole width, through the
+ * font call's override. */
+extern void sub_00115F40_gen(void);
+void sub_00115F40(void)
+{
+    int began = widescreen_menus_ticker_begin((uint8_t *)g_xbox_mem_offset, g_ecx,
+                                              nv2a_wide_scene(), jsrf_now());
+    sub_00115F40_gen();
+    widescreen_menus_ticker_end(began);
+}
 /* sub_0003D5D0: the game's font call (x, y, depth, colour, x scale, y scale,
  * text; cdecl), which queues the text for the font's one draw late in the
  * frame, with every other piece of text. While a piece with text runs,
@@ -4392,13 +4530,39 @@ void sub_001045D0(void)
  * takes the same arguments and draws at once, through the font's own
  * batch: so it is drawn between the piece's marks, and moves and is clipped
  * with it, as the piece's digits are. Called in its place, with the stack
- * as the caller left it, it returns to the caller as sub_0003D5D0 would. */
+ * as the caller left it, it returns to the caller as sub_0003D5D0 would.
+ * While a menu draws, its text is drawn at once the same way, between marks
+ * of its own for the side its x is on (widescreen_menus_text_side): the
+ * float at +4. While the ticker draws, its text is drawn at once across the
+ * whole width, its x spread out from the middle (widescreen_menus_ticker_x)
+ * and put back after. */
 extern void sub_0003D5D0_gen(void);
 extern void sub_0003D610(void);
 void sub_0003D5D0(void)
 {
+    uint8_t *arg_x = (uint8_t *)g_xbox_mem_offset + g_esp + 4;
+    unsigned piece;
+    float x, wide_x;
+    int side;
     if (widescreen_hud_text_now()) {
         sub_0003D610();
+        return;
+    }
+    memcpy(&x, arg_x, sizeof x);
+    side = widescreen_menus_ticker_x(x, nv2a_wide_squeeze(), &wide_x, &piece);
+    if (side != NV2A_WIDE_HUD_NONE) {
+        int marked = wide_menu_mark(piece, side);
+        if (marked) memcpy(arg_x, &wide_x, sizeof wide_x);
+        sub_0003D610();
+        memcpy(arg_x, &x, sizeof x);    /* sub_0003D610 has returned: x is no longer at +4 */
+        wide_menu_unmark(piece, marked);
+        return;
+    }
+    side = widescreen_menus_text_side(x, &piece);
+    if (side != NV2A_WIDE_HUD_NONE) {
+        int marked = wide_menu_mark(piece, side);
+        sub_0003D610();
+        wide_menu_unmark(piece, marked);
         return;
     }
     sub_0003D5D0_gen();

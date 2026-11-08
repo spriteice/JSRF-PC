@@ -115,13 +115,17 @@ float nv2a_wide_overlay_shift(float centre, float half, float s)
 
 /* A mark's side in its value's low byte, with the own-viewport flag in the
  * byte's top bit. */
-enum { WIDE_HUD_CODE_NONE, WIDE_HUD_CODE_LEFT, WIDE_HUD_CODE_RIGHT };
+enum { WIDE_HUD_CODE_NONE, WIDE_HUD_CODE_LEFT, WIDE_HUD_CODE_RIGHT, WIDE_HUD_CODE_ACROSS,
+       WIDE_HUD_CODE_WHOLE, WIDE_HUD_CODE_LEFT_HALF, WIDE_HUD_CODE_RIGHT_HALF };
 #define WIDE_HUD_CODE_OWN_VIEW 0x80u
 
 uint32_t nv2a_wide_hud_mark(unsigned piece, int side, unsigned flags)
 {
-    uint32_t code = side < 0 ? WIDE_HUD_CODE_LEFT : side > 0 ? WIDE_HUD_CODE_RIGHT
-                                                             : WIDE_HUD_CODE_NONE;
+    uint32_t code = side < 0 ? WIDE_HUD_CODE_LEFT : side == NV2A_WIDE_HUD_RIGHT
+                  ? WIDE_HUD_CODE_RIGHT : side == NV2A_WIDE_HUD_ACROSS ? WIDE_HUD_CODE_ACROSS
+                  : side == NV2A_WIDE_HUD_WHOLE ? WIDE_HUD_CODE_WHOLE
+                  : side == NV2A_WIDE_HUD_LEFT_HALF ? WIDE_HUD_CODE_LEFT_HALF
+                  : side == NV2A_WIDE_HUD_RIGHT_HALF ? WIDE_HUD_CODE_RIGHT_HALF : WIDE_HUD_CODE_NONE;
     if (flags & NV2A_WIDE_HUD_OWN_VIEW) code |= WIDE_HUD_CODE_OWN_VIEW;
     return NV2A_WIDE_HUD_TAG | ((uint32_t)(piece & 0xFFu) << 8) | code;
 }
@@ -129,10 +133,14 @@ uint32_t nv2a_wide_hud_mark(unsigned piece, int side, unsigned flags)
 int nv2a_wide_hud_read(uint32_t value, unsigned *piece, int *side, unsigned *flags)
 {
     uint32_t code = value & 0x7Fu;
-    if ((value & 0xFFFF0000u) != NV2A_WIDE_HUD_TAG || code > WIDE_HUD_CODE_RIGHT) return 0;
+    if ((value & 0xFFFF0000u) != NV2A_WIDE_HUD_TAG || code > WIDE_HUD_CODE_RIGHT_HALF) return 0;
     *piece = (value >> 8) & 0xFFu;
     *side = code == WIDE_HUD_CODE_LEFT ? NV2A_WIDE_HUD_LEFT
-          : code == WIDE_HUD_CODE_RIGHT ? NV2A_WIDE_HUD_RIGHT : NV2A_WIDE_HUD_NONE;
+          : code == WIDE_HUD_CODE_RIGHT ? NV2A_WIDE_HUD_RIGHT
+          : code == WIDE_HUD_CODE_ACROSS ? NV2A_WIDE_HUD_ACROSS
+          : code == WIDE_HUD_CODE_WHOLE ? NV2A_WIDE_HUD_WHOLE
+          : code == WIDE_HUD_CODE_LEFT_HALF ? NV2A_WIDE_HUD_LEFT_HALF
+          : code == WIDE_HUD_CODE_RIGHT_HALF ? NV2A_WIDE_HUD_RIGHT_HALF : NV2A_WIDE_HUD_NONE;
     *flags = (value & WIDE_HUD_CODE_OWN_VIEW) ? NV2A_WIDE_HUD_OWN_VIEW : 0u;
     return 1;
 }
@@ -140,7 +148,8 @@ int nv2a_wide_hud_read(uint32_t value, unsigned *piece, int *side, unsigned *fla
 float nv2a_wide_hud_shift(int side, float s, int squeezed, float centre)
 {
     float edge, move;
-    if (side == NV2A_WIDE_HUD_NONE || !(s > 0.0f) || !(s < 1.0f) || centre != centre)
+    if ((side != NV2A_WIDE_HUD_LEFT && side != NV2A_WIDE_HUD_RIGHT)
+        || !(s > 0.0f) || !(s < 1.0f) || centre != centre)
         return 0.0f;
     edge = side < 0 ? 0.0f : (float)NV2A_SCALE_FRAME_W;
     move = (1.0f - s) * (centre - edge);    /* the shader takes it off x */
@@ -148,11 +157,48 @@ float nv2a_wide_hud_shift(int side, float s, int squeezed, float centre)
     return move;
 }
 
+float nv2a_wide_across_stretch(float s)
+{
+    if (!(s > 0.0f) || !(s < 1.0f)) return 1.0f;
+    return 1.0f / s;
+}
+
+float nv2a_wide_half_move(float s)
+{
+    float parts;
+    if (!(s > 0.0f) || !(s < 1.0f)) return 0.0f;
+    parts = (1.0f / s - 1.0f) * 0.5f * (float)NV2A_SCALE_FRAME_W;
+    return floorf(parts / NV2A_WIDE_HALF_STEP + 0.5f) * NV2A_WIDE_HALF_STEP;
+}
+
+float nv2a_wide_half_shift(int side, float s, int squeezed)
+{
+    float move;
+    if (side != NV2A_WIDE_HUD_LEFT_HALF && side != NV2A_WIDE_HUD_RIGHT_HALF) return 0.0f;
+    move = nv2a_wide_half_move(s);
+    if (move == 0.0f) return 0.0f;
+    if (!squeezed) move *= s;               /* the shader takes it off x */
+    return side == NV2A_WIDE_HUD_LEFT_HALF ? move : -move;
+}
+
+void nv2a_wide_half_clip_x(uint32_t surf_w, int side, uint32_t *x0, uint32_t *x1)
+{
+    uint32_t mid = surf_w / 2u;
+    if (side == NV2A_WIDE_HUD_LEFT_HALF) {
+        if (*x1 > mid) *x1 = mid;
+        if (*x0 > *x1) *x0 = *x1;
+    } else if (side == NV2A_WIDE_HUD_RIGHT_HALF) {
+        if (*x0 < mid) *x0 = mid;
+        if (*x1 < *x0) *x1 = *x0;
+    }
+}
+
 void nv2a_wide_hud_clip_x(uint32_t surf_w, float s, int side, uint32_t *x0, uint32_t *x1)
 {
     float c = 0.5f * (float)surf_w, m, a, b;
     if (!(s > 0.0f) || s > 1.0f) s = 1.0f;
-    m = side < 0 ? -(1.0f - s) * c : side > 0 ? (1.0f - s) * c : 0.0f;
+    m = side == NV2A_WIDE_HUD_LEFT ? -(1.0f - s) * c
+      : side == NV2A_WIDE_HUD_RIGHT ? (1.0f - s) * c : 0.0f;
     a = floorf(c + s * ((float)*x0 - c) + m);
     b = ceilf(c + s * ((float)*x1 - c) + m);
     *x0 = a > 0.0f ? (a < (float)surf_w ? (uint32_t)a : surf_w) : 0u;

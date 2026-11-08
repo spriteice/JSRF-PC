@@ -371,6 +371,7 @@ NV2A_GLSL_VERSION
 "uniform vec2 vpSurface; // render target size, for the NDC conversion\n"
 "uniform int  posMode;   // how to read what the program wrote to oPos\n"
 "uniform float wideShift; // widescreen: a framed 3D view moved toward the centre, pixels\n"
+"uniform float wideAcross; // widescreen: a menu part stretched across the width, its x scale less one\n"
 "uniform int  fogEnable; // NV097_SET_FOG_ENABLE\n"
 "uniform int  fogMode;   // NV097_SET_FOG_MODE: 0 linear, 1 exp, 2 exp2, +4 the _ABS forms\n"
 "uniform vec2 fogParam;  // NV097_SET_FOG_PARAMS 0 and 1\n"
@@ -608,6 +609,7 @@ static void emit_viewport_epilogue(SB *sb, int ff)
         sb_add(sb,
             "    ndc.w = oPos.w;\n"
             "    gl_Position = vec4(ndc.xyz * ndc.w, ndc.w);\n"
+            "    gl_Position.x *= 1.0 + wideAcross;\n"
             "    oFogC = nv_fog(oFog.x);\n"
             "    gl_PointSize = max(oPts.x, 1.0);\n");
         return;
@@ -718,6 +720,10 @@ static void emit_viewport_epilogue(SB *sb, int ff)
         "    ndc.w = nv_away0(oPos.w);\n"
         "    gl_Position = vec4(ndc.xyz * ndc.w, ndc.w);\n"
         "    }\n"
+        "    // A menu part drawn across the width, stretched about the\n"
+        "    // surface's centre (nv2a_wide.h, NV2A_WIDE_HUD_ACROSS); 0 for\n"
+        "    // every other draw.\n"
+        "    gl_Position.x *= 1.0 + wideAcross;\n"
         "    oFogC = nv_fog(oFog.x);\n"
         "    gl_PointSize = max(oPts.x, 1.0);\n");
 }

@@ -1071,6 +1071,7 @@ static struct {
     float    alpha_ref;
     float    vp_scale[4], vp_off[4];
     float    wide_shift;
+    float    wide_across;
     uint32_t fbo_w, fbo_h;      /* the surface size vpSurface and vpRect hold */
     uint32_t psh_c[NV2A_PSH_NCONSTS];   /* the combiner constants, as words */
     int      psh_ok;                    /* ... and whether the program has them */
@@ -4731,6 +4732,9 @@ float nv2a_wide_squeeze(void) { wide_shape_init(); return g_wide_s; }
 static int g_wide_squeeze;   /* this draw's 2D squeeze, set in do_draw */
 static float g_wide_shift;   /* this draw's framed-3D or HUD move, title pixels, ditto */
 static int g_wide_hud;       /* the side its HUD piece moved it to, or none, ditto */
+static float g_wide_across;  /* how much wider a menu part drawn across comes out, less one, ditto */
+static int g_wide_whole;     /* whether its text runs the whole width, unclipped, ditto */
+static int g_wide_half;      /* the half of the screen a backdrop's copy is shown on, or none, ditto */
 /* The HUD piece being drawn, from the game side's marks (nv2a_wide.h,
  * NV2A_WIDE_HUD_METHOD): its side, NV2A_WIDE_HUD_NONE between pieces, which
  * one, for the log, and its flags (NV2A_WIDE_HUD_OWN_VIEW). */
@@ -6129,6 +6133,16 @@ static void do_draw_body(void)
      * -- the wider camera fills a narrower window. A view that fills the
      * width is the scene itself and is left alone.
      */
+    /* A menu part drawn across the width (nv2a_wide.h, NV2A_WIDE_HUD_ACROSS):
+     * its 2D is left unsqueezed, which stretches it across with the frame,
+     * as its 3D is below. Text that runs the whole width (_WHOLE), a
+     * ticker, is squeezed whatever its span: a long line spans more than an
+     * overlay does, and would be stretched. */
+    if (g_hud_side == NV2A_WIDE_HUD_ACROSS) g_wide_squeeze = 0;
+    if (g_hud_side == NV2A_WIDE_HUD_WHOLE && nv2a_wide_scene() && S.xf_mode != NV2A_XF_MODE_FIXED
+        && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS
+        && nv2a_wide_frame_sized(S.clip_w, S.clip_h))
+        g_wide_squeeze = 1;
     g_wide_shift = 0.0f;
     if (nv2a_wide_scene() && !g_wide_squeeze && nv2a_wide_frame_sized(S.clip_w, S.clip_h)
         && !(S.xf_mode != NV2A_XF_MODE_FIXED && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS)
@@ -6180,9 +6194,68 @@ static void do_draw_body(void)
      * that viewport, so its 2D is squeezed whatever its span, and moves from
      * that viewport's centre: its x is the frame's, but the shader squeezes
      * it about the viewport's.
+     *
+     * A menu part drawn across the width (NV2A_WIDE_HUD_ACROSS), a
+     * background grid or bar the game laid out for the 4:3 screen, isn't
+     * moved but stretched: its 3D, which the widened projection leaves in
+     * the middle 4:3 at its shape, is stretched about the screen's centre
+     * until that 4:3 fills the screen (nv2a_wide_across_stretch), and its 2D
+     * was left unsqueezed (above), which does the same. Neither is clipped
+     * to the 4:3 screen. The first draw of each part is logged. Text that
+     * runs the whole width (NV2A_WIDE_HUD_WHOLE) is squeezed (above) and
+     * neither moved nor clipped to the 4:3 screen: the game side spread it
+     * out from the centre, so it shows across the whole screen. A copy of a
+     * menu's backdrop (NV2A_WIDE_HUD_LEFT_HALF or _RIGHT_HALF), which the
+     * game side draws twice, is moved out by whole steps of its grid, the
+     * left copy left and the right one right (nv2a_wide_half_shift), and
+     * clipped to its half of the screen (the window clip, below), not to
+     * the 4:3 screen; a screen-space draw in it that isn't squeezed (a
+     * backdrop of its own) is only clipped, as the HUD's stays.
      */
     g_wide_hud = NV2A_WIDE_HUD_NONE;
-    if (g_hud_side != NV2A_WIDE_HUD_NONE && nv2a_wide_scene()
+    g_wide_across = 0.0f;
+    g_wide_whole = 0;
+    g_wide_half = NV2A_WIDE_HUD_NONE;
+    if (g_hud_side == NV2A_WIDE_HUD_ACROSS && nv2a_wide_scene()
+        && nv2a_wide_frame_sized(S.clip_w, S.clip_h) && framed == 0.0f) {
+        static unsigned char told[256];
+        int screen = S.xf_mode != NV2A_XF_MODE_FIXED
+                  && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS;
+        if (!screen) g_wide_across = nv2a_wide_across_stretch(g_wide_s) - 1.0f;
+        if (!told[g_hud_piece & 0xFFu]) {
+            told[g_hud_piece & 0xFFu] = 1;
+            fprintf(stderr, "[WIDE] piece %u: drawn across the width, %s, %.3f times as wide\n",
+                    g_hud_piece, screen ? "2D unsqueezed" : "3D stretched",
+                    (double)nv2a_wide_across_stretch(g_wide_s));
+        }
+    } else if (g_hud_side == NV2A_WIDE_HUD_LEFT_HALF || g_hud_side == NV2A_WIDE_HUD_RIGHT_HALF) {
+        if (nv2a_wide_scene() && nv2a_wide_frame_sized(S.clip_w, S.clip_h) && framed == 0.0f) {
+            static unsigned char told[2][256];
+            int screen = S.xf_mode != NV2A_XF_MODE_FIXED
+                      && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS;
+            int right = g_hud_side == NV2A_WIDE_HUD_RIGHT_HALF;
+            g_wide_half = g_hud_side;
+            if (!screen || g_wide_squeeze)
+                g_wide_shift = nv2a_wide_half_shift(g_hud_side, g_wide_s, g_wide_squeeze);
+            if (!told[right][g_hud_piece & 0xFFu]) {
+                told[right][g_hud_piece & 0xFFu] = 1;
+                fprintf(stderr, "[WIDE] piece %u: a copy moved %.1f title pixels %s, %s, "
+                        "shown on the screen's %s half\n", g_hud_piece, (double)fabsf(g_wide_shift),
+                        right ? "right" : "left", !screen ? "3D" : g_wide_squeeze
+                            ? "2D squeezed" : "2D unsqueezed, not moved", right ? "right" : "left");
+            }
+        }
+    } else if (g_hud_side == NV2A_WIDE_HUD_WHOLE) {
+        if (g_wide_squeeze && nv2a_wide_hud_whole_view(S.u.vp_scale[0])) {
+            static unsigned char told[256];
+            g_wide_whole = 1;
+            if (!told[g_hud_piece & 0xFFu]) {
+                told[g_hud_piece & 0xFFu] = 1;
+                fprintf(stderr, "[WIDE] piece %u: text across the whole width, squeezed, "
+                        "not clipped to 4:3\n", g_hud_piece);
+            }
+        }
+    } else if (g_hud_side != NV2A_WIDE_HUD_NONE && nv2a_wide_scene()
         && nv2a_wide_frame_sized(S.clip_w, S.clip_h) && framed == 0.0f) {
         int screen = S.xf_mode != NV2A_XF_MODE_FIXED
                   && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS;
@@ -6621,6 +6694,7 @@ static void do_draw_body(void)
     if (memcmp(g_last.vp_scale, vp_scale_eff, sizeof vp_scale_eff)
      || memcmp(g_last.vp_off, S.u.vp_off, sizeof S.u.vp_off)
      || g_last.wide_shift != g_wide_shift
+     || g_last.wide_across != g_wide_across
      || g_last.fbo_w != g_fbo_w || g_last.fbo_h != g_fbo_h) {
         /* The viewport, whenever it or the surface it is on changes: vpSurface
          * and vpRect hold the surface's size, and a title can draw to a
@@ -6653,9 +6727,11 @@ static void do_draw_body(void)
             G->uniform_f(NV2A_U_VPRECT, r, 1);
         }
         uni1f(NV2A_U_WIDESHIFT, g_wide_shift);
+        uni1f(NV2A_U_WIDEACROSS, g_wide_across);
         memcpy(g_last.vp_scale, vp_scale_eff, sizeof vp_scale_eff);
         memcpy(g_last.vp_off, S.u.vp_off, sizeof S.u.vp_off);
         g_last.wide_shift = g_wide_shift;
+        g_last.wide_across = g_wide_across;
         g_last.fbo_w = g_fbo_w; g_last.fbo_h = g_fbo_h;
     }
 
@@ -6967,8 +7043,15 @@ static void do_draw_body(void)
                               ? "2D squeezed in its own viewport" : "2D squeezed",
                           (double)fabsf(g_wide_shift), was0, was1, cx0, cx1);
               }
-          } else if (g_wide_squeeze || g_wide_shift != 0.0f) {
+          } else if ((g_wide_squeeze || g_wide_shift != 0.0f) && !g_wide_whole
+                     && g_wide_half == NV2A_WIDE_HUD_NONE) {
               nv2a_wide_clip_x(g_fbo_w, g_wide_s, &cx0, &cx1);
+              clip = 1;
+          }
+          /* A copy of a menu's backdrop, moved out: its half of the screen,
+           * to the screen's edge. */
+          if (g_wide_half != NV2A_WIDE_HUD_NONE) {
+              nv2a_wide_half_clip_x(g_fbo_w, g_wide_half, &cx0, &cx1);
               clip = 1;
           }
           if (clip) {
@@ -9668,7 +9751,7 @@ static void do_draw_body(void)
                 "blend %d %04X/%04X depth %d/%d ctl %08X final %08X/%08X "
                 "| xf%u a9 off=%08X t%u s%u st%u u[%.3f..%.3f] v[%.3f..%.3f] "
                 "in%04X | sten %u f%X r%X m%X w%X op%X/%X/%X dfunc %X cm %08X | cull %d %X %X zc %X"
-                " | a0 off=%08X st%u p0 %.3f %.3f %.3f box %.3f..%.3f %.3f..%.3f %.3f..%.3f%s%s%s\n",
+                " | a0 off=%08X st%u p0 %.3f %.3f %.3f box %.3f..%.3f %.3f..%.3f %.3f..%.3f%s%s%s%s\n",
                 (long)S.flips, S.since_present, out_n, S.prim, slot,
                 S.u.vp_off[0] > 100.0f ? "3D" : "2D",
                 S.tex[0].offset, S.tex[0].width, S.tex[0].height,
@@ -9688,7 +9771,10 @@ static void do_draw_body(void)
                 plo[0], phi[0], plo[1], phi[1], plo[2], phi[2],
                 g_imm_drawing ? " | IMMEDIATE" : "",
                 g_wide_squeeze ? " | WIDE-SQUEEZED" : "",
-                g_wide_hud < 0 ? " | HUD-LEFT" : g_wide_hud > 0 ? " | HUD-RIGHT" : "");
+                g_wide_hud < 0 ? " | HUD-LEFT" : g_wide_hud > 0 ? " | HUD-RIGHT" : "",
+                g_hud_side == NV2A_WIDE_HUD_ACROSS ? " | ACROSS"
+                : g_wide_whole ? " | WHOLE" : g_wide_half == NV2A_WIDE_HUD_LEFT_HALF ? " | HALF-LEFT"
+                : g_wide_half == NV2A_WIDE_HUD_RIGHT_HALF ? " | HALF-RIGHT" : "");
         if (nv2a_wide_scene() && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS)
             fprintf(stderr, "[DRAW] f%ld %4u   2D ndc x[%.2f..%.2f] y[%.2f..%.2f]%s\n",
                     (long)S.flips, S.since_present, g_wide_ext[0], g_wide_ext[1],
