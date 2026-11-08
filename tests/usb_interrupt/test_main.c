@@ -5,9 +5,10 @@
  *
  * src/usb/ohci.c's controller thread raises its start-of-frame interrupt
  * every tick, and a timer thread raises the display's interrupt and drains
- * the DPCs, as the kernel's does (src/kernel/kernel_timer.c), both through
- * src/kernel/kernel_interrupt.c. A third thread stands in for the title, holding the
- * guest lock most of the time. Each interrupt routine queues a DPC with
+ * the DPCs once a millisecond, as the kernel's does
+ * (src/kernel/kernel_timer.c), both through src/kernel/kernel_interrupt.c.
+ * A third thread stands in for the title, holding the guest lock most of
+ * the time. Each interrupt routine queues a DPC with
  * KeInsertQueueDpc, as the game's do.
  *
  * Every routine, interrupt or DPC, must run holding the guest lock and marked
@@ -41,6 +42,7 @@
 #define ENOUGH         40            /* of each interrupt, to test anything */
 #define MAX_MS         30000         /* however busy the machine */
 #define POLL_MS        10
+#define TIMER_MS       1             /* the timer thread's sleep, as kernel_timer.c's */
 #define GUEST_BYTES    (16u << 20)   /* past the worker stacks' end */
 
 /* The game's side, in guest memory and in the dispatch table. */
@@ -244,7 +246,12 @@ static DWORD WINAPI title_thread(LPVOID unused)
     return 0;
 }
 
-/* The timer thread: the display's interrupt, then the DPCs, every turn. */
+/* The timer thread: the display's interrupt, then the DPCs, every turn,
+ * with a millisecond's sleep between turns, as the kernel's timer thread
+ * has (kernel_timer.c). Turning again at once, it took the guest lock back
+ * to back with the title, and on a busy machine the controller's thread,
+ * waking once a tick, seldom got it: GitHub's run 72 saw 39456 display
+ * interrupts and 36 USB ones in the 30 s the test allows. */
 static DWORD WINAPI timer_thread(LPVOID unused)
 {
     int slot = xbox_worker_stack_alloc();
@@ -253,7 +260,7 @@ static DWORD WINAPI timer_thread(LPVOID unused)
     while (!__atomic_load_n(&s_stop, __ATOMIC_ACQUIRE)) {
         kernel_raise_interrupt(VBLANK_VECTOR);
         kernel_drain_dpcs();
-        Sleep(0);
+        Sleep(TIMER_MS);
     }
     __atomic_add_fetch(&s_stop, 1, __ATOMIC_RELEASE);
     return 0;
