@@ -452,8 +452,10 @@ A: C is portable, debuggable, and the compiler optimizes it for you. You can rea
 
 ## License
 
-**MIT** — see [LICENSE](../LICENSE). Third-party components keep their original
-licence:
+**MIT** — see [LICENSES/MIT-upstream.txt](../LICENSES/MIT-upstream.txt). JSRF-PC
+as a whole is under the GPL, version 2 or later ([LICENSE](../LICENSE),
+[NOTICE](../NOTICE)); the toolkit's code in it keeps this MIT licence.
+Third-party components keep their original licence:
 
 | Component | Licence | Copyright |
 |---|---|---|

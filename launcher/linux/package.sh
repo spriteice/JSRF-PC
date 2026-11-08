@@ -35,6 +35,7 @@ strip --strip-unneeded "$dir/lib/libSDL2-2.0.so.0" 2>/dev/null || true
 install -m 644 "$repo/launcher/icon/jsrf-pc.png" "$dir/share/jsrf-pc.png"
 install -m 644 "$repo/LICENSE" "$dir/licences/LICENSE.txt"
 install -m 644 "$repo/NOTICE" "$dir/licences/NOTICE.txt"
+install -m 644 "$repo/LICENSES/MIT-upstream.txt" "$dir/licences/MIT-upstream.txt"
 install -m 644 "$repo/LICENSES/LGPL-2.1.txt" "$dir/licences/LGPL-2.1.txt"
 install -m 644 "$repo/LICENSES/imgui-MIT.txt" "$dir/licences/imgui-MIT.txt"
 [ -n "${SDL_LICENSE:-}" ] && install -m 644 "$SDL_LICENSE" "$dir/licences/SDL2-LICENSE.txt"

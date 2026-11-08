@@ -147,8 +147,12 @@ a concern, please open an issue.
 
 ## Licence
 
-MIT for this project's own code; the MCPX audio-processor code extracted from
-xemu is LGPL-2.1-or-later. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+JSRF-PC is under the GNU General Public License, version 2 or any later
+version, with one additional permission: the code made from your game's
+program is never under it. The code from JSRF Unleashed and xboxrecomp stays
+under the MIT licence, and the MCPX audio-processor code extracted from xemu
+under LGPL-2.1-or-later. The releases up to b1.4 were MIT, and stay so. See
+[LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 ## Credits
 

@@ -56,6 +56,7 @@ crlf() { sed 's/\r*$/\r/' "$1" > "$2"; }
 printf '%s\r\n' "$version" > "$dir/VERSION"
 crlf "$here/README.txt" "$dir/README.txt"
 for f in LICENSE NOTICE; do crlf "$repo/$f" "$dir/licences/$f.txt"; done
+crlf "$repo/LICENSES/MIT-upstream.txt" "$dir/licences/MIT-upstream.txt"
 crlf "$repo/LICENSES/LGPL-2.1.txt" "$dir/licences/LGPL-2.1.txt"
 crlf "$repo/LICENSES/imgui-MIT.txt" "$dir/licences/imgui-MIT.txt"
 if [ -n "${LICENCES_DIR:-}" ]; then

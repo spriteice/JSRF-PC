@@ -234,8 +234,10 @@ affiliated with or endorsed by SEGA. This package contains the engine -- the
 runtime and the game's code, machine-translated to native code -- and no game
 data.
 
-Licences: MIT for this project's own code; the MCPX audio-processor code
-extracted from xemu is LGPL-2.1-or-later; the bundled SDL2 library is under
+Licences: GPL version 2 or later for this project's own code, with an
+additional permission for the game's own code, which isn't under it; MIT for
+the code from JSRF Unleashed and xboxrecomp; LGPL-2.1-or-later for the MCPX
+audio-processor code extracted from xemu; the bundled SDL2 library is under
 the zlib licence. See the licences/ folder. Source code:
 https://github.com/spriteice/JSRF-PC, a fork of JuMatt's JSRF Unleashed:
 https://github.com/JuMatt/JetSetRadioFuture-Unleashed

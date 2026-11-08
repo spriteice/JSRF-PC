@@ -1,9 +1,57 @@
-xboxrecomp — third-party attribution
-====================================
+JSRF-PC — licence and attribution
+=================================
 
-xboxrecomp is MIT licensed (see LICENSE). The components listed below are
-not, and are included here under their original licences with their original
-copyright intact. They are other people's work and are credited as such.
+JSRF-PC is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software
+Foundation, either version 2 of the License, or (at your option) any later
+version, with the additional permission below. The licence's text is in
+LICENSE.
+
+JSRF-PC is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+The releases up to and including b1.4 were published under the MIT licence,
+and stay under it.
+
+The code listed below keeps its own licence, with its copyright intact: the
+code JSRF-PC is built on, under MIT, and third-party code, under MIT and
+LGPL-2.1-or-later. It is other people's work and is credited as such.
+
+
+Additional permission for the generated code
+--------------------------------------------
+
+  The engine is the game's own code, translated to C by the recompiler from
+  the player's default.xbe, built together with JSRF-PC. That generated code
+  is never in this repository, and this licence doesn't cover it.
+
+  As a special exception, the copyright holders of JSRF-PC give you
+  permission to combine JSRF-PC with the code its recompiler generates from
+  a game's own executable ("the generated code"), and to convey the combined
+  program, without this licence applying to the generated code. Everything
+  else in the combined program stays under its own licence, and JSRF-PC's
+  source must be offered as this licence requires. If you modify JSRF-PC,
+  you may extend this permission to your version, but you are not obliged
+  to.
+
+
+MIT — JSRF Unleashed and the xboxrecomp toolkit
+-----------------------------------------------
+
+  https://github.com/JuMatt/JetSetRadioFuture-Unleashed
+  https://github.com/sp00nznet/xboxrecomp
+
+  JSRF-PC is built on JuMatt's JSRF Unleashed, which is built on the
+  xboxrecomp toolkit by Ned Heller (sp00nz) and its contributors. Their code
+  is under the MIT licence, as published with both:
+
+    Copyright (c) 2026 sp00nz
+
+  The full text is in LICENSES/MIT-upstream.txt. It applies to their code
+  wherever it is in this repository, as JSRF-PC has changed it since
+  (docs/upstream.md), and goes with every copy, the packaged builds
+  included.
 
 
 LGPL-2.1-or-later — extracted from xemu
@@ -36,12 +84,12 @@ LGPL-2.1-or-later — extracted from xemu
   the canonical copy is
   https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt
 
-  These files keep their own licence. Linking against them from MIT or
-  proprietary code is expressly permitted by the LGPL — that is what
-  distinguishes it from the GPL. What the LGPL asks in return is that the
-  notices stay, that the source stays available, and that a user can relink
-  against a modified version. Distributing this repository, source included,
-  satisfies that.
+  These files keep their own licence, which fits the GPL that covers the
+  rest of JSRF-PC. Linking against them from MIT or proprietary code is
+  also expressly permitted by the LGPL — that is what distinguishes it from
+  the GPL. What the LGPL asks in return is that the notices stay, that the
+  source stays available, and that a user can relink against a modified
+  version. Distributing this repository, source included, satisfies that.
 
 
 MIT — Dear ImGui
