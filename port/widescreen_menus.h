@@ -46,9 +46,10 @@
  *   - the street pause menu's area name (the "Garage" strip at the top
  *     left) is a HUD sign that the map makes (class 0x1D1B68, drawn by
  *     sub_000FC370), told apart from the HUD's own signs by its flags
- *     (WIDE_MENU_AREA_SIGN_FLAG); the map makes it too for the banner with
- *     an area's name that shows as the player nears its way in, and it
- *     goes to the left edge there as well;
+ *     (WIDE_MENU_AREA_SIGN_FLAG); the banner with an area's name that
+ *     shows under an arrow as the player nears its way in is a sign too,
+ *     of another maker (WIDE_MENU_BANNER_CLASS), and goes to the left edge
+ *     as well;
  *   - the other pause menu's header is that menu's child object (class
  *     0x1D0770, drawn by sub_000F7F00), drawn after the menu's draw returns:
  *     the menu's first child;
@@ -224,6 +225,18 @@ extern const WideMenu widescreen_menus[WIDE_MENUS];
  * which no HUD sign has (theirs are 0x58000000 and 0x40000000). */
 #define WIDE_MENU_SIGN_FLAGS     0x5Cu
 #define WIDE_MENU_AREA_SIGN_FLAG 0x80000000u
+/* The banner with an area's name that shows under an arrow as the player
+ * nears the way into another area (Aden, 8 November 2026, 14:48 UTC: "The
+ * level banner before entering a level needs to go to the left side of the
+ * screen, the same distance away from the edge as it is in 4:3") is a sign
+ * with no flags. Only sub_001022C0 makes those, each the child of the HUD
+ * manager's object of class 0x1D1DD0 (drawn by sub_00102490, 3D at the
+ * HUD's origin, the arrow by our reading), whose pointer the sign keeps at
+ * +0x24 (pc/search-2, section 5). Aden's menus12 log has it as "a sign with
+ * flags 00000000 (class 001D1B68): left where it is". The arrow stays in
+ * the middle. */
+#define WIDE_MENU_SIGN_PARENT    0x24u
+#define WIDE_MENU_BANNER_CLASS   0x001D1DD0u
 /* A result screen's banner, YOU WIN, CLEARED, GAME OVER or YOU LOSE, is a
  * HUD sign too, of the type (+0x54) for its word, that the result flow
  * makes with flags of its own, which no other maker of a sign
@@ -281,16 +294,18 @@ int widescreen_menus_part(uint8_t *mem, uint32_t model, unsigned *piece);
 int widescreen_menus_text_side(float x, float y, unsigned *piece);
 
 /* For the HUD signs' draw: the side the sign at sign goes to, with its
- * piece in *piece, or NV2A_WIDE_HUD_NONE where it stays.
+ * piece in *piece, or NV2A_WIDE_HUD_NONE where it stays. top is the end of
+ * the guest's memory, for the sign's parent's pointer.
  *   - An area's name goes to the left edge (WIDE_MENU_PIECE_SIGN): its
  *     flags have WIDE_MENU_AREA_SIGN_FLAG. The map makes it, for the street
- *     pause menu and the GG notebook, the race preview makes its own, and
- *     there is the banner with the area's name that shows, under an arrow
- *     left where it is, as the player nears the way into another area. The
- *     first time in each (that menu, the notebook or the preview drew
+ *     pause menu and the GG notebook, and the race preview makes its own.
+ *     The first time in each (that menu, the notebook or the preview drew
  *     within WIDE_MENU_RECENT of now, or none of them), a line in the log
- *     says so. A menu's moves with its grid (widescreen_menus_mark_flags);
- *     the banner doesn't.
+ *     says so. A menu's moves with its grid (widescreen_menus_mark_flags).
+ *   - The banner with an area's name under the arrow to another area goes
+ *     to the left edge too, with the same piece, not with a grid: its flags
+ *     are 0 and its parent (+WIDE_MENU_SIGN_PARENT, within top) is of class
+ *     WIDE_MENU_BANNER_CLASS. The first time, a line in the log says so.
  *   - A result screen's banner goes to the right edge
  *     (WIDE_MENU_PIECE_RESULT): its flags are one of the result flow's
  *     (WIDE_MENU_RESULT_SIGN_FLAGS, _CHOICE). The first time, and for each
@@ -299,7 +314,8 @@ int widescreen_menus_text_side(float x, float y, unsigned *piece);
  * The first time for each of the first WIDE_MENU_SIGNS_TOLD flags of a sign
  * that stays, a line in the log says so too. */
 #define WIDE_MENU_SIGNS_TOLD 8u
-int widescreen_menus_sign(uint8_t *mem, uint32_t sign, double now, unsigned *piece);
+int widescreen_menus_sign(uint8_t *mem, uint32_t top, uint32_t sign, double now,
+                          unsigned *piece);
 
 /* For the header class's draw: whether the object at self is the first
  * child of the other pause menu that drew last, within WIDE_MENU_RECENT of

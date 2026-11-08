@@ -125,7 +125,8 @@ const WidePlainMenu widescreen_menus_plain[WIDE_PLAINS] = {
 static int s_menu = -1;
 static uint32_t s_self;
 /* Whether the area name's sign being drawn is a menu's (the street pause
- * menu's or the notebook's), not the banner on its own. */
+ * menu's, the notebook's or the race preview's), not one on its own or the
+ * banner under the arrow to another area. */
 static int s_sign_in_menu;
 /* When the street pause menu and the notebook last began, for the area
  * name's sign, and whether they have. */
@@ -282,26 +283,42 @@ static int result_sign(const uint8_t *mem, uint32_t sign, uint32_t flags, unsign
     return NV2A_WIDE_HUD_RIGHT;
 }
 
-int widescreen_menus_sign(uint8_t *mem, uint32_t sign, double now, unsigned *piece)
+/* Whether the sign at sign, with flags, is the banner with an area's name
+ * under the arrow to another area: no flags, and its parent, a pointer
+ * within top, of WIDE_MENU_BANNER_CLASS. */
+static int area_banner(const uint8_t *mem, uint32_t top, uint32_t sign, uint32_t flags)
 {
-    static const char *const where[4] = {
-        "in the street pause menu", "in the GG notebook",
-        "on its own (an area's banner, as the player nears it)", "in the race preview",
+    uint32_t parent;
+    if (flags != 0) return 0;
+    parent = guest32(mem, sign + WIDE_MENU_SIGN_PARENT);
+    return parent && parent % 4u == 0 && top >= 4u && parent <= top - 4u
+        && guest32(mem, parent) == WIDE_MENU_BANNER_CLASS;
+}
+
+int widescreen_menus_sign(uint8_t *mem, uint32_t top, uint32_t sign, double now,
+                          unsigned *piece)
+{
+    enum { IN_STREET, IN_NOTEBOOK, ON_ITS_OWN, IN_PREVIEW, UNDER_ARROW, PLACES };
+    static const char *const where[PLACES] = {
+        [IN_STREET] = "in the street pause menu", [IN_NOTEBOOK] = "in the GG notebook",
+        [ON_ITS_OWN] = "on its own, with no menu drawing", [IN_PREVIEW] = "in the race preview",
+        [UNDER_ARROW] = "under the arrow to another area",
     };
-    static unsigned char told[4];
+    static unsigned char told[PLACES];
     static uint32_t told_flags[WIDE_MENU_SIGNS_TOLD];
     static unsigned n_told;
     int street = s_street_seen && now - s_street_at <= WIDE_MENU_RECENT;
     int notebook = s_notebook_seen && now - s_notebook_at <= WIDE_MENU_RECENT;
     int preview = s_preview_seen && now - s_preview_at <= WIDE_MENU_RECENT;
     uint32_t flags;
-    int which;
+    int which, banner;
     unsigned k;
     if (!sign) return NV2A_WIDE_HUD_NONE;
     flags = guest32(mem, sign + WIDE_MENU_SIGN_FLAGS);
     if (flags == WIDE_MENU_RESULT_SIGN_FLAGS || flags == WIDE_MENU_RESULT_SIGN_FLAGS_CHOICE)
         return result_sign(mem, sign, flags, piece);
-    if (!(flags & WIDE_MENU_AREA_SIGN_FLAG)) {
+    banner = area_banner(mem, top, sign, flags);
+    if (!(flags & WIDE_MENU_AREA_SIGN_FLAG) && !banner) {
         for (k = 0; k < n_told; k++)
             if (told_flags[k] == flags) break;
         if (k == n_told && n_told < WIDE_MENU_SIGNS_TOLD) {
@@ -311,12 +328,16 @@ int widescreen_menus_sign(uint8_t *mem, uint32_t sign, double now, unsigned *pie
         }
         return NV2A_WIDE_HUD_NONE;
     }
-    which = street ? 0 : notebook ? 1 : preview ? 3 : 2;
-    s_sign_in_menu = which != 2;
+    which = banner ? UNDER_ARROW : street ? IN_STREET : notebook ? IN_NOTEBOOK
+          : preview ? IN_PREVIEW : ON_ITS_OWN;
+    s_sign_in_menu = which != ON_ITS_OWN && which != UNDER_ARROW;
     if (!told[which]) {
+        char parent[40] = "";
         told[which] = 1;
-        fprintf(stderr, "[WIDE] menu part %u %s, the area name (a sign, flags %08X): "
-                "marked for the left edge\n", WIDE_MENU_PIECE_SIGN, where[which], flags);
+        if (banner)
+            snprintf(parent, sizeof parent, ", its parent of class %08X", WIDE_MENU_BANNER_CLASS);
+        fprintf(stderr, "[WIDE] menu part %u %s, the area name (a sign, flags %08X%s): "
+                "marked for the left edge\n", WIDE_MENU_PIECE_SIGN, where[which], flags, parent);
     }
     *piece = WIDE_MENU_PIECE_SIGN;
     return NV2A_WIDE_HUD_LEFT;

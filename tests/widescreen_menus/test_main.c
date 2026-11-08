@@ -12,9 +12,8 @@
  *      drawn in halves, its top bar and bands go across, its buttons right
  *      and ROTATE MAP left, and the other's the same; every piece number is
  *      one menu part's or one other piece's, past the HUD's.
- *   2. The area name's sign goes left before any menu has drawn (the
- *      banner as the player nears an area), and the header isn't moved
- *      before the other pause menu has drawn.
+ *   2. The area name's sign goes left before any menu has drawn, and the
+ *      header isn't moved before the other pause menu has drawn.
  *   3. A menu whose object isn't of its class doesn't begin, and the log
  *      says so once (run.py counts); nor does one with no object, nor one
  *      that isn't a menu. In 4:3 a menu doesn't begin either, and none of
@@ -35,7 +34,12 @@
  *      flags, goes right with its own piece, whatever menu drew last, and
  *      no flags on its mark; the log names it once and each of its types
  *      once. Another flag with them makes a sign that stays, or with the
- *      area's flag an area's name.
+ *      area's flag an area's name. The banner under the arrow to another
+ *      area, a sign with no flags whose parent is of the arrow's object's
+ *      class, goes left with the area name's piece, not with a grid, even
+ *      with a menu just drawn, named once; with flags, another parent, none,
+ *      one that isn't a word's place or is past the memory's end, it stays
+ *      and its parent isn't read.
  *   7. The other pause menu's header goes left: its first child, within a
  *      quarter of a second of the menu, not another object, not after, and
  *      not once the menu's object is gone (its class changed). So does the
@@ -126,6 +130,7 @@
 #define MENU   0x4000u     /* a menu's object */
 #define MODELS 0x5000u     /* its models, 0x10 apart */
 #define SIGN   0x6000u     /* a sign */
+#define ARROW  0x6080u     /* the arrow's object, the banner's parent */
 #define HEADER 0x6100u     /* the other pause menu's header */
 
 #define RIG    0x10000u    /* a model and its animation, where a pointer can be */
@@ -158,7 +163,7 @@ static void fresh(void)
 static int sign_left(uint32_t va, double now)
 {
     unsigned piece = 999;
-    return widescreen_menus_sign(mem(), va, now, &piece) == NV2A_WIDE_HUD_LEFT
+    return widescreen_menus_sign(mem(), GUEST, va, now, &piece) == NV2A_WIDE_HUD_LEFT
         && piece == WIDE_MENU_PIECE_SIGN;
 }
 
@@ -166,7 +171,7 @@ static int sign_left(uint32_t va, double now)
 static int sign_right(uint32_t va, double now)
 {
     unsigned piece = 999;
-    return widescreen_menus_sign(mem(), va, now, &piece) == NV2A_WIDE_HUD_RIGHT
+    return widescreen_menus_sign(mem(), GUEST, va, now, &piece) == NV2A_WIDE_HUD_RIGHT
         && piece == WIDE_MENU_PIECE_RESULT;
 }
 
@@ -174,7 +179,8 @@ static int sign_right(uint32_t va, double now)
 static int sign_stays(uint32_t va, double now)
 {
     unsigned piece = 999;
-    return widescreen_menus_sign(mem(), va, now, &piece) == NV2A_WIDE_HUD_NONE && piece == 999;
+    return widescreen_menus_sign(mem(), GUEST, va, now, &piece) == NV2A_WIDE_HUD_NONE
+        && piece == 999;
 }
 
 /* The menu's object, of its class, with part i's model at model(i) and
@@ -313,7 +319,7 @@ static void before(void)
 {
     fresh();
     set(SIGN + WIDE_MENU_SIGN_FLAGS, WIDE_MENU_AREA_SIGN_FLAG);
-    CHECK(sign_left(SIGN, 10.0));             /* the banner */
+    CHECK(sign_left(SIGN, 10.0));             /* on its own */
     CHECK(!widescreen_menus_child(mem(), HEADER, 10.0));
 }
 
@@ -504,6 +510,46 @@ static void sign(void)
     CHECK(sign_stays(SIGN, 40.0));
     set(SIGN + WIDE_MENU_SIGN_FLAGS, WIDE_MENU_RESULT_SIGN_FLAGS | WIDE_MENU_AREA_SIGN_FLAG);
     CHECK(sign_left(SIGN, 40.0));
+    /* the banner under the arrow to another area: no flags, its parent of
+     * the arrow's object's class: left, not on a grid, even with a menu
+     * just drawn, named once */
+    CHECK(WIDE_MENU_SIGN_PARENT == 0x24u && WIDE_MENU_BANNER_CLASS == 0x001D1DD0u);
+    set(ARROW, WIDE_MENU_BANNER_CLASS);
+    set(SIGN + WIDE_MENU_SIGN_PARENT, ARROW);
+    set(SIGN + WIDE_MENU_SIGN_FLAGS, 0);
+    menu_object(WIDE_MENU_STREET_PAUSE);
+    began = widescreen_menus_begin(mem(), WIDE_MENU_STREET_PAUSE, MENU, 1, 50.0);
+    widescreen_menus_end(began);
+    CHECK(sign_left(SIGN, 50.0));
+    CHECK(widescreen_menus_mark_flags(WIDE_MENU_PIECE_SIGN, NV2A_WIDE_HUD_LEFT) == 0u);
+    CHECK(sign_left(SIGN, 60.0));
+    CHECK(widescreen_menus_mark_flags(WIDE_MENU_PIECE_SIGN, NV2A_WIDE_HUD_LEFT) == 0u);
+    /* with the HUD's flags, or another parent: it stays, its flags named once */
+    set(SIGN + WIDE_MENU_SIGN_FLAGS, 0x58000000u);
+    CHECK(sign_stays(SIGN, 60.0));
+    set(SIGN + WIDE_MENU_SIGN_FLAGS, 0);
+    set(ARROW, 0x001D2020u);                                      /* the HUD manager's class */
+    CHECK(sign_stays(SIGN, 60.0));
+    set(ARROW, WIDE_MENU_BANNER_CLASS);
+    /* no parent, or one that isn't a word's place, or past the memory's
+     * end (where the banner's class is, so a read would show): stays */
+    set(SIGN + WIDE_MENU_SIGN_PARENT, 0);
+    CHECK(sign_stays(SIGN, 60.0));
+    set(SIGN + WIDE_MENU_SIGN_PARENT, ARROW + 2u);
+    CHECK(sign_stays(SIGN, 60.0));
+    set(GUEST - 4u, WIDE_MENU_BANNER_CLASS);
+    set(SIGN + WIDE_MENU_SIGN_PARENT, GUEST - 4u);
+    CHECK(sign_left(SIGN, 60.0));                                 /* the last word: read */
+    {
+        unsigned piece = 999;
+        CHECK(widescreen_menus_sign(mem(), GUEST - 4u, SIGN, 60.0, &piece)
+              == NV2A_WIDE_HUD_NONE && piece == 999);             /* past the end */
+        CHECK(widescreen_menus_sign(mem(), 2u, SIGN, 60.0, &piece)
+              == NV2A_WIDE_HUD_NONE && piece == 999);             /* no memory */
+    }
+    set(GUEST - 4u, 0);
+    set(SIGN + WIDE_MENU_SIGN_PARENT, ARROW);
+    CHECK(sign_left(SIGN, 60.0));
     CHECK(word(DEVICE + WIDE_HUD_D3D_PUT) == BUFFER);
 }
 

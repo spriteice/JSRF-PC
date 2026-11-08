@@ -77,8 +77,11 @@ ONCE = (
     "00011000), by either rule; its nodes:",
     "[WIDE]   node 3, depth 1: no mesh, track 00, its translation not keyed",
     "[WIDE]   node 5, depth 2: a mesh, track 01, x -40.00..50.00 y 0.00..3.00 z 1.50..1.50",
-    "[WIDE] menu part 194 on its own (an area's banner, as the player nears it), the area name "
-    "(a sign, flags 80000000): marked for the left edge",
+    "[WIDE] menu part 194 on its own, with no menu drawing, the area name (a sign, flags 80000000): "
+    "marked for the left edge",
+    "[WIDE] menu part 194 under the arrow to another area, the area name (a sign, flags 00000000, "
+    "its parent of class 001D1DD0): marked for the left edge",
+    "[WIDE] a sign with flags 00000000 (class 00000000): left where it is",
     "[WIDE] a sign with flags 58000000 (class 00000000): left where it is",
     "[WIDE] a sign with flags 40000000 (class 00000000): left where it is",
     "[WIDE] menu part 203, a result screen's banner (a sign, flags 14000000): moved to the "
