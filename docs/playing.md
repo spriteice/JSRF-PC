@@ -44,7 +44,7 @@ These work in a window or full screen, and each one is remembered.
   choices sit at the right edge, clear of the dance, and the title screen
   fills the screen from its first frame, its opening's bars sweeping in from
   the screen's edges.
-- **F9:** Resolution, 1× to 6× the Xbox's 640×480 (2× by default), and as
+- **F9:** Resolution, 1× to 6× the Xbox's 640×480 (3× by default), and as
   much wider as the shape in widescreen (3× at 16:9 is 2560×1440). The game
   restarts to apply it, so save first.
 - **F8, or R3 on a controller:** The free camera.

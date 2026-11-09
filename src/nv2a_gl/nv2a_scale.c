@@ -12,7 +12,11 @@ const char *const nv2a_scale_names[NV2A_SCALE_MAX] = {
 
 uint32_t nv2a_scale_parse(const char *v)
 {
-    long n = v ? strtol(v, NULL, 0) : 1;
+    char *end;
+    long n;
+    if (!v) return NV2A_SCALE_DEFAULT;
+    n = strtol(v, &end, 0);
+    if (end == v) return NV2A_SCALE_DEFAULT;    /* no number in it */
     return (uint32_t)(n < 1 ? 1 : n > NV2A_SCALE_MAX ? NV2A_SCALE_MAX : n);
 }
 

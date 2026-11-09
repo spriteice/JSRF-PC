@@ -12,7 +12,7 @@
  *                                  folder or an image on the .exe does this)
  *   JSRF-PC.exe --choose           ask where the game is again
  *   JSRF-PC.exe --scale N          internal resolution, 1 to 6 times 640x480
- *                                  (default 2); remembered
+ *                                  (default 3); remembered
  *   JSRF-PC.exe --fullscreen       start full screen
  *   JSRF-PC.exe --version          which version this is
  *
@@ -521,9 +521,15 @@ static int run(const wchar_t *game, int scale, int fullscreen)
     rotate_logs(g_log, g_logs);
 
     /* The paths and the player's settings, and no switch: what the game
-     * needs is the engine's own default. */
-    _snwprintf(sc, 8, L"%d", scale);
-    SetEnvironmentVariableW(L"RECOMP_GL_SCALE", sc);
+     * needs is the engine's own default. A scale only when the player chose
+     * one (0: none), else the engine's default (NV2A_SCALE_DEFAULT,
+     * src/nv2a_gl/nv2a_scale.h). */
+    if (scale > 0) {
+        _snwprintf(sc, 8, L"%d", scale);
+        SetEnvironmentVariableW(L"RECOMP_GL_SCALE", sc);
+    } else {
+        SetEnvironmentVariableW(L"RECOMP_GL_SCALE", NULL);
+    }
     if (fullscreen) SetEnvironmentVariableW(L"RECOMP_FULLSCREEN", L"1");
     SetEnvironmentVariableW(L"JSRF_GAME_DIR", game);
     SetEnvironmentVariableW(L"JSRF_SAVE_DIR", g_save);
@@ -628,7 +634,7 @@ static int setup_find_game(void *vctx, char *path, size_t n)
 
 int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
 {
-    int argc = 0, i, choose = 0, fullscreen = 0, scale = 2;
+    int argc = 0, i, choose = 0, fullscreen = 0, scale = 0;
     wchar_t **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     wchar_t game[MAX_PATH * 2] = L"", arg[MAX_PATH * 2] = L"", *slash;
     char u8[MAX_PATH * 4], val[64];

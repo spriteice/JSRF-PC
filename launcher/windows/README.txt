@@ -36,7 +36,7 @@ that costs money every year). Click "More info", then "Run anyway".
 You can also drop a game folder or a .iso onto "JSRF-PC.exe", or use
 it from a command prompt:
 
-  "JSRF-PC.exe" --scale N     internal resolution, 1 to 6 (default 2; F9
+  "JSRF-PC.exe" --scale N     internal resolution, 1 to 6 (default 3; F9
                               in game does the same); remembered
   "JSRF-PC.exe" --fullscreen  always starts full screen
   "JSRF-PC.exe" --choose      asks where the game is again
@@ -72,7 +72,7 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
                      screen, its opening's bars sweeping in from its
                      edges; remembered
   F9                 resolution: the game is drawn at 1x to 6x the Xbox's
-                     640x480 (2x by default), up to 3840x2880, and as much
+                     640x480 (3x by default), up to 3840x2880, and as much
                      wider as the shape in widescreen (5120x2880 at 16:9);
                      remembered. The game restarts to apply it, so save
                      first.

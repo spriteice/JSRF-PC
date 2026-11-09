@@ -9,7 +9,7 @@
  *   ./jsrf-pc                  play (asks where the game is, the first time)
  *   ./jsrf-pc /path/to/game    use that folder (or a disc image -- see below), and remember it
  *   ./jsrf-pc --choose         ask where the game is again
- *   ./jsrf-pc --scale N        internal resolution, 1 to 6 times 640x480 (default 2); remembered
+ *   ./jsrf-pc --scale N        internal resolution, 1 to 6 times 640x480 (default 3); remembered
  *   ./jsrf-pc --fullscreen     start full screen
  *   ./jsrf-pc --install        add JSRF-PC to your applications menu
  *   ./jsrf-pc --version        which version this is
@@ -62,7 +62,7 @@ static const char HELP[] =
     "  ./jsrf-pc                  play (asks where the game is, the first time)\n"
     "  ./jsrf-pc /path/to/game    use that folder (or a disc image -- see below), and remember it\n"
     "  ./jsrf-pc --choose         ask where the game is again\n"
-    "  ./jsrf-pc --scale N        internal resolution, 1 to 6 times 640x480 (default 2); remembered\n"
+    "  ./jsrf-pc --scale N        internal resolution, 1 to 6 times 640x480 (default 3); remembered\n"
     "  ./jsrf-pc --fullscreen     start full screen\n"
     "  ./jsrf-pc --install        add JSRF-PC to your applications menu\n"
     "  ./jsrf-pc --version        which version this is\n"
@@ -860,14 +860,17 @@ int main(int argc, char **argv)
         }
     }
 
-    if (!cfg_get("scale", scale, sizeof scale) || !scale_ok(scale)) fmt(scale, sizeof scale, "2");
+    /* The scale the player chose, if any: without one the engine takes its
+     * own default (NV2A_SCALE_DEFAULT, src/nv2a_gl/nv2a_scale.h). */
+    if (!cfg_get("scale", scale, sizeof scale) || !scale_ok(scale)) scale[0] = 0;
 
     fmt(log, sizeof log, "%s/last-run.log", g_state);
     keep_logs(log);
 
     /* The paths and the player's settings, and no switch: what the game
      * needs is the engine's own default (tests/launcher_env checks). */
-    setenv("RECOMP_GL_SCALE", scale, 1);
+    if (scale[0]) setenv("RECOMP_GL_SCALE", scale, 1);
+    else unsetenv("RECOMP_GL_SCALE");
     if (fullscreen) setenv("RECOMP_FULLSCREEN", "1", 1);
     setenv("JSRF_GAME_DIR", game, 1);
     setenv("JSRF_SAVE_DIR", g_save, 1);

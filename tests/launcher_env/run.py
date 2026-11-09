@@ -13,7 +13,9 @@ game needs to work is the engine's own default (docs/project-rules.md, Where
 code goes 5). Up to b1.3 the launcher set twelve of them. Played with, as
 given, with a scale and full screen, and in portable mode; with each end of
 the scales, 1 to 6, given and saved, and one past them, which --scale
-refuses and a saved one drops to the default 2.
+refuses and a saved one is dropped. A scale only when the player chose one:
+with none, or a saved one dropped, no RECOMP_GL_SCALE, even one set in the
+launcher's own environment, so the engine takes its own default (3x).
 
 What it does, as the shell script before it did (b2 row 4b): a default.xbe
 given for its folder; a disc image, or a folder with one in it, checked and
@@ -173,12 +175,13 @@ class Case:
     def answer(self, what, code, text=""):
         (self.pkg / what).write_text("%d\n%s" % (code, text))
 
-    def run(self, args):
+    def run(self, args, outside=None):
         for f in ("args.txt", "env.txt", "cwd.txt"):
             (self.pkg / f).unlink(missing_ok=True)
         # Nothing from this environment: no desktop to show a dialog on,
-        # and no RECOMP_ switch already set.
+        # and no RECOMP_ switch already set, but for a case's `outside`.
         env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(self.home), "LANG": "C"}
+        env.update(outside or {})
         cmd = [str(self.pkg / "jsrf-pc")] + [str(a) for a in args]
         self.p = subprocess.run(cmd, env=env, stdin=subprocess.DEVNULL, capture_output=True,
                                 text=True, timeout=60)
@@ -214,9 +217,10 @@ def result(name, bad, good):
         print("launcher_env %s: %s" % (name, good))
 
 
-def check(name, args, scale, fullscreen, portable=False, saved=None):
+def check(name, args, scale, fullscreen, portable=False, saved=None, outside=None):
+    """scale: the RECOMP_GL_SCALE the engine is handed, None for none."""
     c = Case(portable, saved)
-    p = c.run([c.game] + args)
+    p = c.run([c.game] + args, outside)
     if p.returncode != 0 or not c.started():
         return result(name, ["the launcher didn't start the engine (exit %d): %s"
                              % (p.returncode, (p.stdout + p.stderr).strip())], "")
@@ -224,7 +228,7 @@ def check(name, args, scale, fullscreen, portable=False, saved=None):
     game = str(c.game)
     switches = sorted(k for k in env if k.startswith("RECOMP_"))
     extra = [k + "=" + env[k] for k in switches if k not in SETTINGS]
-    want = {"RECOMP_GL_SCALE": str(scale)}
+    want = {"RECOMP_GL_SCALE": str(scale)} if scale is not None else {}
     if fullscreen:
         want["RECOMP_FULLSCREEN"] = "1"
     got = {k: env[k] for k in switches if k in SETTINGS}
@@ -243,7 +247,8 @@ def check(name, args, scale, fullscreen, portable=False, saved=None):
     if not env.get("LD_LIBRARY_PATH", "").startswith(str(c.pkg / "lib")):
         bad.append("LD_LIBRARY_PATH %r doesn't start with the package's lib" % env.get("LD_LIBRARY_PATH"))
     result(name, bad, "the paths and %s, and no other switch"
-           % ", ".join(k + "=" + v for k, v in sorted(want.items())))
+           % (", ".join(k + "=" + v for k, v in sorted(want.items()))
+              or "no scale (the engine's default)"))
 
 
 def refused(name, args, says, case=None, prepare=None):
@@ -264,16 +269,18 @@ def refused(name, args, says, case=None, prepare=None):
     return c
 
 
-check("as given", [], 2, False)
+check("as given", [], None, False)
+check("as given, with a scale in the launcher's environment", [], None, False,
+      outside={"RECOMP_GL_SCALE": "5"})
 check("with a scale and full screen", ["--scale", "3", "--fullscreen"], 3, True)
-check("portable", [], 2, False, portable=True)
+check("portable", [], None, False, portable=True)
 check("the largest scale", ["--scale", "6"], 6, False)
 check("the smallest scale", ["--scale", "1"], 1, False)
 refused("one scale too many", [lambda c: c.game, "--scale", "7"], "--scale takes 1 to 6.")
 refused("no scale at all", [lambda c: c.game, "--scale", "0"], "--scale takes 1 to 6.")
 refused("a scale with no number", [lambda c: c.game, "--scale"], "--scale takes 1 to 6.")
 check("the largest scale, saved", [], 6, False, saved=6)
-check("one scale too many, saved", [], 2, False, saved=7)
+check("one scale too many, saved", [], None, False, saved=7)
 
 # ---- what it does besides
 

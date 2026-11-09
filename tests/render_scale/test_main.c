@@ -4,8 +4,9 @@
  *
  *   1. There are six scales, and each one's name is the scale and the raster
  *      it makes of the Xbox's 640x480, 1x first.
- *   2. RECOMP_GL_SCALE's value is 1 when unset or not a number, a number as
- *      strtol reads it otherwise, and clamped to 1..NV2A_SCALE_MAX: 1x to 6x.
+ *   2. RECOMP_GL_SCALE's value is the engine's default, 3x, when unset or
+ *      not a number, a number as strtol reads it otherwise, and clamped to
+ *      1..NV2A_SCALE_MAX: 1x to 6x.
  *   3. A frame is fitted into the window whole, its shape kept: a 4:3 frame
  *      in a wide window and in a tall one, the 16:9 and 21:9 shapes a
  *      widened scene is shown at, and a frame already the window's shape.
@@ -37,9 +38,12 @@ static void names(void)
 
 static void parse(void)
 {
-    CHECK(nv2a_scale_parse(NULL) == 1);
-    CHECK(nv2a_scale_parse("") == 1);
-    CHECK(nv2a_scale_parse("sharp") == 1);
+    CHECK(NV2A_SCALE_DEFAULT == 3);
+    CHECK(nv2a_scale_parse(NULL) == NV2A_SCALE_DEFAULT);
+    CHECK(nv2a_scale_parse("") == NV2A_SCALE_DEFAULT);
+    CHECK(nv2a_scale_parse(" ") == NV2A_SCALE_DEFAULT);
+    CHECK(nv2a_scale_parse("sharp") == NV2A_SCALE_DEFAULT);
+    CHECK(nv2a_scale_parse("x2") == NV2A_SCALE_DEFAULT);
     CHECK(nv2a_scale_parse("0") == 1);
     CHECK(nv2a_scale_parse("-3") == 1);
     CHECK(nv2a_scale_parse("1") == 1);

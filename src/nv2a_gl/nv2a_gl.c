@@ -888,7 +888,8 @@ static struct { unsigned n; double decode_s, upload_s, worst;
  * 640x480 is the raster: the transform ends in normalised coordinates, so the
  * number of samples taken along the way is free. RECOMP_GL_SCALE=2 renders
  * four times the pixels into the same logical surface and hands the window a
- * frame at that size.
+ * frame at that size. Unset, it is the engine's default, NV2A_SCALE_DEFAULT
+ * (3x): the launchers pass only a scale the player chose.
  *
  * This is where an idle GPU goes. At 640x480 an M2 Pro is bounded entirely by
  * the CPU side of the emulation and the GPU has nothing to do.
@@ -897,9 +898,10 @@ static uint32_t gl_scale(void)
 {
     static uint32_t sc;
     if (!sc) {
-        sc = nv2a_scale_parse(getenv("RECOMP_GL_SCALE"));
-        if (sc > 1)
-            fprintf(stderr, "  [GL] internal resolution x%u\n", sc);
+        const char *v = getenv("RECOMP_GL_SCALE");
+        sc = nv2a_scale_parse(v);
+        fprintf(stderr, "  [GL] internal resolution x%u%s\n", sc,
+                v ? "" : " (the default)");
     }
     return sc;
 }
