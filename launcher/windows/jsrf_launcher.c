@@ -4,7 +4,7 @@
  * Finds your copy of Jet Set Radio Future (the folder with default.xbe and
  * Media in it, or a disc image, which it unpacks once), remembers it, and
  * starts the engine (engine\jsrf_recomp.exe) with your settings -- what
- * launcher/linux/jsrf-pc does on Linux.
+ * launcher/linux/jsrf_launcher.c does on Linux.
  *
  *   JSRF-PC.exe                    play (asks where the game is, the first time)
  *   JSRF-PC.exe <folder or .iso>   use that, and remember it (dropping a

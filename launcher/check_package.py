@@ -31,7 +31,7 @@ import zipfile
 #   pe      an x86_64 Windows program or DLL
 #   data    anything else
 LINUX = ("JSRF-PC-linux-x86_64", {
-    "jsrf-pc": "script",
+    "jsrf-pc": "elf exec",
     "README.txt": "text",
     "VERSION": "text",
     "bin/jsrf_recomp": "elf exec",
@@ -67,6 +67,7 @@ WINDOWS = ("JSRF-PC-windows-x86_64", {
 LINUX_NEEDS = {
     "bin/jsrf_recomp": {"libc.so.6", "libm.so.6", "libGL.so.1", "libSDL2-2.0.so.0"},
     "lib/libSDL2-2.0.so.0": {"libc.so.6", "libm.so.6"},
+    "jsrf-pc": {"libc.so.6"},
 }
 GLIBC_FLOOR = (2, 34)
 

@@ -78,6 +78,7 @@ a fresh Ubuntu 24.04; the dependency script also knows Debian, Arch, and Fedora.
    ~/JSRF-PC-linux-x86_64/jsrf-pc
    ```
 
+   package.sh also builds the launcher, `jsrf-pc`, with your C compiler.
    From here it works like the download: see
    [Installing on Linux](../README.md#linux).
 

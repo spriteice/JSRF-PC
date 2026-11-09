@@ -229,8 +229,7 @@ Found a bug? Open an issue on GitHub with last-run.log and what you were doing.
 Steam Deck
 ----------
 Not tested yet, but it should work: in Desktop Mode, run ./jsrf-pc once
-to pick the game folder, then add the jsrf-pc script to Steam as a
-non-Steam game.
+to pick the game folder, then add jsrf-pc to Steam as a non-Steam game.
 
 
 Legal

@@ -13,7 +13,8 @@
 #
 # The engine needs only libc, libm, libGL.so.1 and SDL2: --as-needed and the
 # legacy libGL leave out the rest, and the menu's C++ runtime is linked in
-# (port/CMakeLists.txt). Last, launcher/check_package.py checks the package.
+# (port/CMakeLists.txt). The launcher is built with the same clang. Last,
+# launcher/check_package.py checks the package.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
@@ -28,7 +29,7 @@ CC=clang CXX=clang++ cmake -S "$repo/port" -B "$work/build" -G Ninja \
 cmake --build "$work/build"
 mkdir -p "$work/out"
 tar -xzOf "$work/SDL2-2.30.12.tar.gz" SDL2-2.30.12/LICENSE.txt > "$work/out/SDL2-LICENSE.txt"
-SDL_LICENSE="$work/out/SDL2-LICENSE.txt" "$here/package.sh" \
+SDL_LICENSE="$work/out/SDL2-LICENSE.txt" CC=clang "$here/package.sh" \
     "$work/build/jsrf_recomp" "$work/sdl/lib/libSDL2-2.0.so.0" "$work/out"
 rm "$work/out/SDL2-LICENSE.txt"
 echo "build image: $(ldd --version | sed -n 1p)"

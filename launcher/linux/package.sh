@@ -5,6 +5,9 @@
 #
 #   launcher/linux/package.sh <jsrf_recomp> <libSDL2-2.0.so.0> [out dir]
 #
+# The launcher, jsrf-pc, is a C program (launcher/linux/jsrf_launcher.c),
+# built here with CC (cc unless it is set).
+#
 # The release build, from the repository at the release tag, is
 # launcher/linux/build.sh, in the build image launcher/image.sh makes (Ubuntu
 # 22.04, so glibc 2.35, and the result runs on glibc 2.34 or later): the
@@ -22,8 +25,11 @@ name=JSRF-PC-linux-x86_64
 stage="$(mktemp -d)"
 dir="$stage/$name"
 
+trap 'rm -rf "$stage"' EXIT
+
 mkdir -p "$dir/bin" "$dir/lib" "$dir/share" "$dir/licences"
-install -m 755 "$here/jsrf-pc" "$dir/jsrf-pc"
+"${CC:-cc}" -O2 -Wall -Wextra -I "$repo/port" -o "$dir/jsrf-pc" \
+    "$here/jsrf_launcher.c" "$repo/port/xiso.c" "$repo/port/xbe_check.c" -s
 install -m 644 "$here/README.txt" "$dir/README.txt"
 install -m 755 "$engine" "$dir/bin/jsrf_recomp"
 # The version is the engine's own (port/CMakeLists.txt builds it in from the
@@ -40,10 +46,11 @@ install -m 644 "$repo/LICENSES/LGPL-2.1.txt" "$dir/licences/LGPL-2.1.txt"
 install -m 644 "$repo/LICENSES/imgui-MIT.txt" "$dir/licences/imgui-MIT.txt"
 [ -n "${SDL_LICENSE:-}" ] && install -m 644 "$SDL_LICENSE" "$dir/licences/SDL2-LICENSE.txt"
 
-# What the engine needs from the system, said once at packaging time.
+# What the engine and the launcher need from the system, said once at
+# packaging time.
 echo "engine needs:"; objdump -p "$dir/bin/jsrf_recomp" | sed -n 's/^ *NEEDED */  /p'
+echo "launcher needs:"; objdump -p "$dir/jsrf-pc" | sed -n 's/^ *NEEDED */  /p'
 echo "newest glibc symbol:"; objdump -T "$dir/bin/jsrf_recomp" | grep -o 'GLIBC_[0-9.]*' | sort -t. -k2,2n -k3,3n | uniq | tail -n 1 | sed 's/^/  /'
 
 tar -C "$stage" -czf "$out/$name.tar.gz" "$name"
-rm -rf "$stage"
 echo "packaged: $out/$name.tar.gz"
