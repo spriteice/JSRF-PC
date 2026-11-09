@@ -4426,26 +4426,91 @@ static void wide_menu_unmark(unsigned piece, int marked)
     widescreen_menus_unmark((uint8_t *)g_xbox_mem_offset, MEM32(D3D_DEVICE), piece, marked,
                             d3d_make_space);
 }
+/* ---- music info in pause (music_info.h) --------------------------------------
+ * The game has no display of the song that is playing, so a line for it
+ * inside its own pause menus is added where those menus draw: each pause
+ * menu's draw, below, calls music_info_draw after the menu's own text, on
+ * the passes the menu draws on (once a frame). Nothing in these functions,
+ * the recompiler or the runtime is wrong: this adds to what the menu draws,
+ * with the game's own font call, so the lines get the font, its white and
+ * the menu's 2D path, and in widescreen go to the left edge with CHANGE MAP
+ * (the font call's override, while the menu's marks are open). A mix's play
+ * position is ADXT_GetTime's. Both calls are made below the stack the menu
+ * left, with MUSIC_SCRATCH bytes under it for ADXT_GetTime's two outputs
+ * and the number's text: the guest's code keeps nothing below its stack
+ * pointer, and the font call turns the text into glyphs as it is called.
+ * tests/music_info checks the reading, the lookup and the lines; what they
+ * look like needs the game, the test build's steps. */
+#include "music_info.h"
+extern void sub_0013A7D0(void);      /* ADXT_GetTime(adxt, int *ncount, int *tscale), cdecl */
+void sub_0003D5D0(void);             /* the font call's override, below */
+#define MUSIC_GET_TIME     0x0013A7D0u  /* ADXT_GetTime, as its own call's return address */
+#define MUSIC_STREET_FONT  0x00112D5Cu  /* the street pause menu's first font call's return */
+#define MUSIC_OTHER_FONT   0x00113643u  /* the other pause menu's font call's return */
+#define PAUSE_PASS_DRAW    0u           /* the passes a pause menu's draw draws on */
+#define PAUSE_PASS_DRAW_8  8u
+#define MUSIC_SCRATCH      32u          /* the two outputs, then the number's text */
+static void music_info_draw(int menu, uint32_t pass, uint32_t font_ret)
+{
+    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
+    uint32_t esp = g_esp, scratch;
+    int32_t time[2] = { 0, 0 };
+    MusicNow now;
+    MusicLine line[MUSIC_INFO_LINES];
+    int song, n, k;
+    if (!music_info_on() || (pass != PAUSE_PASS_DRAW && pass != PAUSE_PASS_DRAW_8)) return;
+    if (!music_info_now(m, ADX_GUEST_RAM, &now)) return;
+    g_esp -= MUSIC_SCRATCH;
+    scratch = g_esp;
+    if (music_info_is_mix(now.id)) {
+        uint32_t a[3] = { now.player, scratch, scratch + 4 };
+        memset(m + scratch, 0, sizeof time);
+        guest_call_cdecl(sub_0013A7D0, MUSIC_GET_TIME, 3, a);
+        memcpy(time, m + scratch, sizeof time);
+    }
+    song = music_info_pick(menu, now.id, time[0], time[1], jsrf_now());
+    n = song < 0 ? 0 : music_info_lines(m, ADX_GUEST_RAM, song, line,
+                                        (char *)m + scratch + sizeof time,
+                                        MUSIC_SCRATCH - sizeof time);
+    for (k = 0; k < n; k++) {
+        const float f[5] = { line[k].x, line[k].y, MUSIC_INFO_SPACING, line[k].scale,
+                             line[k].scale };
+        uint32_t a[7];
+        memcpy(&a[0], &f[0], 4);
+        memcpy(&a[1], &f[1], 4);
+        memcpy(&a[2], &f[2], 4);
+        a[3] = MUSIC_INFO_WHITE;
+        memcpy(&a[4], &f[3], 4);
+        memcpy(&a[5], &f[4], 4);
+        a[6] = line[k].text ? line[k].text : scratch + (uint32_t)sizeof time;
+        guest_call_cdecl(sub_0003D5D0, font_ret, 7, a);
+    }
+    g_esp = esp;
+}
 /* sub_001129E0: the street pause menu's draw (class 0x1D2A00, slot +0x24,
  * this in ecx; one argument, the pass, ret 4), with the 3D map drawn
- * before it and the ticker after. */
+ * before it and the ticker after. The music's lines go after its own. */
 extern void sub_001129E0_gen(void);
 void sub_001129E0(void)
 {
+    uint32_t pass = GARG(1);
     int began = widescreen_menus_begin((uint8_t *)g_xbox_mem_offset, WIDE_MENU_STREET_PAUSE,
                                        g_ecx, nv2a_wide_scene(), jsrf_now());
     sub_001129E0_gen();
+    music_info_draw(MUSIC_MENU_STREET, pass, MUSIC_STREET_FONT);
     widescreen_menus_end(began);
 }
 /* sub_001133A0: the other pause menu's draw, a race's or a mission's (class
  * 0x1D2AA8, slot +0x24, as the street one), with its header drawn after it
- * as its child. */
+ * as its child. The music's lines go after its own. */
 extern void sub_001133A0_gen(void);
 void sub_001133A0(void)
 {
+    uint32_t pass = GARG(1);
     int began = widescreen_menus_begin((uint8_t *)g_xbox_mem_offset, WIDE_MENU_OTHER_PAUSE,
                                        g_ecx, nv2a_wide_scene(), jsrf_now());
     sub_001133A0_gen();
+    music_info_draw(MUSIC_MENU_OTHER, pass, MUSIC_OTHER_FONT);
     widescreen_menus_end(began);
 }
 /* sub_00115030: the GG notebook's draw (class 0x1D2B68, slot +0x24, this in

@@ -6,15 +6,16 @@ The rows are declared in `src/menu/menu.h` and drawn by `src/menu/menu.cpp`;
 each menu's rows live with the setting they change (File in
 `src/menu/menu_sdl.cpp`, Display, Graphics and Purge shaders in
 `src/nv2a_gl/nv2a_gl.c`, Display's Draw distance and Far buildings in
-`port/draw_distance.c` and Skip intro in `port/intro.c`, Audio in
-`port/audio.c`, Controller in `port/freecam.c`, Developer in
-`port/developer.c`). Skip intro is Display's last row, below any added later
-(`last` in `menu.h`). A row can instead go right below another row of its
-menu, which it names, whichever of the two was added first (`under` in
-`menu.h`): rows added as the game starts can sit among the window's, as Draw
-distance and Far buildings sit under Render scale, in the order they were
-added. If no row has that name, it goes at the end of its menu, above the last
-row, and the log says so once.
+`port/draw_distance.c`, Skip intro in `port/intro.c` and Music info in pause
+in `port/music_info.c`, Audio in `port/audio.c`, Controller in
+`port/freecam.c`, Developer in `port/developer.c`). Skip intro is Display's
+last row, below any added later (`last` in `menu.h`), with Music info in pause
+under it. A row can instead go right below another row of its menu, which it
+names, whichever of the two was added first (`under` in `menu.h`): rows added
+as the game starts can sit among the window's, as Draw distance and Far
+buildings sit under Render scale, in the order they were added. If no row has
+that name, it goes at the end of its menu, above the last row, and the log
+says so once.
 
 ## Wording
 

@@ -9,8 +9,10 @@
  * another thread while a box is open over the rows it was asked from -- all
  * above a row marked last, which arrived before any of them. Rows placed
  * under another (under): two added before the row they name, drawn right
- * below it in the order they were added; and one naming a row that isn't
- * there, drawn below the late rows and above the last. Then
+ * below it in the order they were added; one under the row marked last, as
+ * Display's Music info in pause under Skip intro, drawn below it, at the very
+ * end; and one naming a row that isn't there, drawn below the late rows and
+ * above the last. Then
  * that nothing but the window (F1, Back) shuts it: B and Esc go back a level
  * at a time, to the bar and no further; a click outside the menus, in the
  * game or on the bar past its titles, shuts them all, back to the bar -- and
@@ -73,10 +75,11 @@ static const XBOX_MENU_ITEM k_last = {
  * added in one call before the row they name, and one naming a row that
  * isn't there. Render scale, a submenu, asks its state only when open, so
  * where it is drawn is told by where the rows either side are. */
-static int s_under_at[2], s_unplaced_at;
+static int s_under_at[2], s_unplaced_at, s_under_last_at;
 static int  under0_state(void)   { s_under_at[0] = ++s_drawn_seq; s_under_y[0] = ImGui::GetCursorScreenPos().y; return 0; }
 static int  under1_state(void)   { s_under_at[1] = ++s_drawn_seq; s_under_y[1] = ImGui::GetCursorScreenPos().y; return 0; }
 static int  unplaced_state(void) { s_unplaced_at = ++s_drawn_seq; return 0; }
+static int  under_last_state(void) { s_under_last_at = ++s_drawn_seq; return 0; }
 static void under_run(void)      { }
 static const XBOX_MENU_ITEM k_under[] = {
     { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Under one", under0_state, under_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
@@ -85,6 +88,8 @@ static const XBOX_MENU_ITEM k_under[] = {
       0, 0, 0, NULL, 0, "Render scale" },
     { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Unplaced", unplaced_state, under_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
       0, 0, 0, NULL, 0, "No such row" },
+    { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Under the last", under_last_state, under_run, NULL, NULL, 0, NULL, NULL,
+      NULL, NULL, 0, 0, 0, NULL, 0, "Skip intro" },
 };
 
 /* Numbers, as the Controller menu's: a sensitivity in whole steps, and a
@@ -240,7 +245,7 @@ int main(void)
           "Unsaved progress is lost.", NULL, NULL, 0, 0, 0, NULL, 0, NULL },
     };
     xbox_MenuAdd(&k_last, 1);
-    xbox_MenuAdd(k_under, 3);
+    xbox_MenuAdd(k_under, 4);
     xbox_MenuAdd(developer, 3);
     xbox_MenuAdd(controller, 2);
     xbox_MenuAdd(display, 3);
@@ -335,15 +340,16 @@ int main(void)
     /* The rows under Render scale: right after it, in their order, before
      * the late rows -- after Widescreen with one row's height between, which
      * is Render scale's; the one whose row isn't there after the late rows,
-     * above the last. */
+     * above the last; and the one under the last right after it. */
     fprintf(stderr, "widescreen #%d at y %.1f, under #%d and #%d at y %.1f and %.1f, first late #%d, "
-            "unplaced #%d, last #%d\n", s_wide_at, s_wide_y, s_under_at[0], s_under_at[1], s_under_y[0],
-            s_under_y[1], s_late_first_at, s_unplaced_at, s_last_at);
+            "unplaced #%d, last #%d, under the last #%d\n", s_wide_at, s_wide_y, s_under_at[0], s_under_at[1],
+            s_under_y[0], s_under_y[1], s_late_first_at, s_unplaced_at, s_last_at, s_under_last_at);
     CHECK(s_under_at[0] == s_wide_at + 1 && s_under_at[1] == s_under_at[0] + 1);
     CHECK(s_under_y[1] > s_under_y[0] && s_under_y[0] > s_wide_y);
     CHECK(fabsf((s_under_y[0] - s_wide_y) - 2.0f * (s_under_y[1] - s_under_y[0])) < 0.5f);
     CHECK(s_late_first_at == s_under_at[1] + 1);
     CHECK(s_unplaced_at == s_late_at + 1 && s_last_at == s_unplaced_at + 1);
+    CHECK(s_under_last_at == s_last_at + 1 && s_under_last_at == s_drawn_seq);
 
     /* About: Left walks the bar back to File, A opens it, A on About: a box.
      * OK brings File back. */

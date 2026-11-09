@@ -182,7 +182,7 @@ out by text of a file that can't be linked on its own, when the split is
 bigger than its change. Its run.py says so in its first lines, with a line
 that starts `Cut by text:` naming each file it cuts from and anything it
 changes in what it cuts (a stand-in, or a second version to compare), and
-why. `grep -l "Cut by text:" tests/*/run.py` lists them (22 today, most
+why. `grep -l "Cut by text:" tests/*/run.py` lists them (23 today, most
 from nv2a_gl.c). Once a file is split, its tests link the unit instead.
 
 **A test that starts threads or measures time** passes 20 runs in a row

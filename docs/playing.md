@@ -107,9 +107,9 @@ menu.
 
 - **File:** About (the version and system details), Restart, and Exit.
 - **Display:** Full screen, the aspect ratio, the render scale (1× to 6×), the
-  draw distance, Far buildings, and Skip intro. The aspect ratio is 4:3 (the
-  Xbox's own, widescreen off), 16:10, 16:9, 21:9, or Match screen, the shape
-  of the display the window is on. It changes at once, and is kept as
+  draw distance, Far buildings, Skip intro, and Music info in pause. The
+  aspect ratio is 4:3 (the Xbox's own, widescreen off), 16:10, 16:9, 21:9, or
+  Match screen, the shape of the display the window is on. It changes at once, and is kept as
   `aspect=` (with `widescreen=` for on or off) in the settings file. Draw
   distance is how far away the game draws the things in its world: crowds,
   spray cans, props you can knock over, traffic, the police and the race's
@@ -124,7 +124,12 @@ menu.
   `farbuildings=` (1 or 0) in the settings file. Skip intro leaves out the
   logos and the graffiti disclaimer the game opens with, and starts at the
   title screen's loading. Off by default, so the intro plays as on the Xbox.
-  It is kept as `skipintro=` in the settings file.
+  It is kept as `skipintro=` in the settings file. Music info in pause shows
+  the song playing, its number, title and artist, in both pause menus, on the
+  left, above Rotate map. It follows the songs of the street mixes too, and
+  shows nothing for the title's and the story's own music. Off by default; it
+  changes at once, and is kept as `musicinpause=` (1 or 0) in the settings
+  file.
 - **Graphics:** The [graphics options](#graphics-options) below.
 - **Audio:** Audio effects, our own versions of the console's sound effects:
   the 3D sounds placed to your left or right as the game sets them, the

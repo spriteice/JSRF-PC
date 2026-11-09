@@ -743,6 +743,9 @@ static int host_main(void)
     /* Whether the intro is skipped, and its row on the Display page
      * (port/intro.c). */
     { extern void intro_start(void); intro_start(); }
+    /* Whether the pause menus show the song playing, and its row on the
+     * Display page, under Skip intro (port/music_info.c). */
+    { extern void music_info_start(void); music_info_start(); }
     /* How far the world's objects are drawn, and its row on the Display page
      * (port/draw_distance.c). */
     { extern void draw_distance_start(void); draw_distance_start(); }
