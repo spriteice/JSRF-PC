@@ -44,7 +44,9 @@ that leaves the engine the same, byte for byte, in every way it's built
 needs no test build either: its review pack shows the comparison instead
 (docs/build-and-test-reference.md, The same engine). A change to what makes
 the generated code (the parts of `tools/` the pipeline runs, and
-`port/recomp_manual.c`) can't show that, so it still gets one.
+`port/recomp_manual.c`) can't show that, so it still gets one. A
+release's change to the default settings is tested by the release's own
+packages (docs/release-checklist.md, step 7).
 
 ## Before every commit
 
@@ -170,9 +172,10 @@ failed, and lets the code carry on.
 
 **Every feature gets tests** of the parts of it that link on their own,
 such as its maths, its settings and its menu rows, as tests/menu and
-tests/freecam do. Once saved runs exist, it also gets one in the smoke set
-(docs/build-and-test-reference.md, The smoke set). If no part of it can be
-reached from a test, say why.
+tests/freecam do. From input playback's release on, it also gets a saved
+run in the smoke set (docs/build-and-test-reference.md, The smoke set);
+until then, I test it by hand. If no part of it can be reached from a test,
+say why.
 
 **Tests link the code they test.** A test builds the real source file,
 never a copy. If the code can't be linked on its own, split it into a unit
@@ -232,12 +235,13 @@ In order:
    checks pass: CI's count of the compilers' warnings in our code
    (docs/build-and-test-reference.md, CI, Warnings). You don't play the
    game: on my PC you run only the packaged engine's own checks and its runs
-   with nobody at the pad, the idle run and, once they exist, the smoke
-   set's saved runs (docs/build-and-test-reference.md, "On my PC"). So call
-   every runtime claim "unverified" until I test it, but for what those
-   runs' logs show. Never claim something is fixed without evidence. A
-   change made for timing or speed is measured before and after, and tuning
-   is measured again when a deeper cause in the same area is fixed.
+   with nobody at the pad, the idle run and, from input playback's release
+   on, the smoke set's saved runs (docs/build-and-test-reference.md, "On
+   my PC"). So call every runtime claim "unverified" until I test it, but
+   for what those runs' logs show. Never claim something is fixed without
+   evidence. A change made for timing or speed is measured before and
+   after, and tuning is measured again when a deeper cause in the same area
+   is fixed.
 5. **Track my testing.** Read every log I send in full, start to end, before
    reporting on it, using scripts for logs too long to read whole. Each time
    I send logs, check them against the build's test checklist and list
@@ -350,9 +354,9 @@ The thread's first reply:
   testing will need: for each, the area or stage, what the player does
   there, and the devices and modes. It says whether the shared folder's
   `input-playback/RUNS.md` has one that suits and still plays on route
-  (until input playback exists, there's no such file and no saved run),
-  and for any it hasn't, what I'd need to record, or which steps I'd
-  test by hand instead;
+  (until input playback's release is out, there's no such file and no
+  saved run), and for any it hasn't, what I'd need to record, or which
+  steps I'd test by hand instead;
 - says anything it can already see that will stop it (What still needs
   me, below).
 

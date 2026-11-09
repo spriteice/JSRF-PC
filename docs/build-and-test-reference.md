@@ -93,8 +93,8 @@ files move between them, and what the PC has installed.
 - **No playing by hand:** you may run the packaged engine's own checks
   there (Compatibility checks, Windows: it starts), which don't start the
   game, and its runs with nobody at the pad: the idle run (Compatibility
-  checks, Windows: the idle run) and, once they exist, the smoke set's
-  saved runs (The smoke set). Nothing else of the game.
+  checks, Windows: the idle run) and, from input playback's release on,
+  the smoke set's saved runs (The smoke set). Nothing else of the game.
 - **A step the permission check refuses:** the session stops there and
   reports it. It never runs that command again, or another to the same
   end. The thread then asks me on a card whether to accept it in the
@@ -618,8 +618,8 @@ test-lists/README.md has its path.
 - **What to test:** numbered steps for the areas the change's code touches,
   and nothing else, each saying exactly what to do and on which device,
   what I should see if it works, and what I'd see if it doesn't. A change
-  to a shared layer also has the smoke set's runs, once they exist (The
-  smoke set).
+  to a shared layer also has the smoke set's runs, from input playback's
+  release on (The smoke set).
 - **Where:** Desktop Mode, Game Mode, or both on the Ally X, and the Windows
   PC. A step for the laptop is marked optional, and only for a change that
   could act differently on AMD's Windows driver.
@@ -668,10 +668,10 @@ breaking a stage nobody was looking at.
 - **Where:** on the PC and on the Ally X, with nobody at the pad, as
   input-playback/RUNS.md says. Each run is a step in TESTING.md, and it
   passes when its log, read in full, shows what the step says I'd see.
-- **Until saved runs exist** (RUNS.md lists them once input playback is
-  built), there is no smoke set and nothing waits for it. Once it exists,
-  a new feature's own saved run joins it (project rules, How it's
-  written).
+- **Until input playback's release is out** (RUNS.md lists the saved
+  runs from then), there is no smoke set and nothing waits for it: I test
+  by hand what a saved run would. From then, a new feature's own saved run
+  joins it (project rules, How it's written).
 
 ## Batches
 

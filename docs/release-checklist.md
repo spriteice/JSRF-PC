@@ -1,8 +1,9 @@
 # Release checklist
 
 Every JSRF-PC release goes through these steps, in this order. Steps 1 to 6
-settle what ships, step 8 is the only one on the test devices, and nothing is
-pushed or published before step 9. docs/versioning.md says how a release is
+settle what ships, and step 7 starts with any change to the default
+settings. Step 8 is the only one on the test devices, and nothing is pushed
+or published before step 9. docs/versioning.md says how a release is
 named, and docs/build-and-test-reference.md how it is built and tested.
 
 ## At a glance
@@ -13,7 +14,7 @@ named, and docs/build-and-test-reference.md how it is built and tested.
 4. Known bugs current, and the gate.
 5. Rules review, with the rule changes gathered since the last release.
 6. README and docs.
-7. Release build.
+7. Default settings, then the release build.
 8. Test those packages.
 9. Go-ahead.
 10. Push and publish together.
@@ -105,8 +106,19 @@ progressing, however rarely it happens.
 
 ## Build and test
 
-7. **Release build:** from the release commit, in the pinned build image,
-   as docs/build-and-test-reference.md says, with the release's version given
+7. **Default settings, then the release build:** a change to the game's
+   default settings for the release, if the maintainer asks for one, comes
+   first, right before the build: one commit with the engine's new
+   defaults, the tests that check them, and the docs that name each one
+   (docs/playing.md and both packages' README.txt), made after its six
+   checks and the maintainer's approval. It needs no test build of its own:
+   this step's packages are its test build, and step 8's fresh install
+   shows the new defaults, and its upgrade a player's own choices kept. The
+   README and the changelog describe the new defaults from step 6.
+
+   The release build: from the release commit (the defaults' commit, when
+   there is one), in the pinned build image, as
+   docs/build-and-test-reference.md says, with the release's version given
    to every build (`-DJSRF_VERSION=b1.1`, and the version argument of the
    Windows package.sh, make_kit.sh and firststart/package.sh). The generated
    code is made fresh (0 failed), every test passes, and every package
@@ -132,17 +144,18 @@ progressing, however rarely it happens.
    same commit, with `-DCMAKE_BUILD_TYPE=Debug` after the version
    (`launcher/windows/build.sh /work b1.1-debug -DCMAKE_BUILD_TYPE=Debug`),
    which turns on the recompiler's register check and indirect-call
-   records (port/CMakeLists.txt). It plays the idle run and, once they
-   exist, the smoke set's runs on the PC, and its logs show no `[ABI]`
-   report (docs/build-and-test-reference.md, Windows: the idle run, and The
-   smoke set). It is never shipped or tested by hand.
+   records (port/CMakeLists.txt). It plays the idle run and, from input
+   playback's release on, the smoke set's runs on the PC, and its logs show
+   no `[ABI]` report (docs/build-and-test-reference.md, Windows: the idle
+   run, and The smoke set). It is never shipped or tested by hand.
 8. **Test those packages:** the test checklist on the Ally X, in Desktop
    Mode and Game Mode, and on the Windows PC. It covers the areas the
    release's changes touch and, on both devices, a fresh install, an
-   upgrade over the previous release and, once it exists, the smoke set
-   (docs/build-and-test-reference.md, The smoke set). If anything fails,
-   it is fixed, the fix gets its own rules check, and the release is built
-   again (step 7). A critical bug found here stops the release (The gate).
+   upgrade over the previous release and, from input playback's release
+   on, the smoke set (docs/build-and-test-reference.md, The smoke set). If
+   anything fails, it is fixed, the fix gets its own rules check, and the
+   release is built again (step 7). A critical bug found here stops the
+   release (The gate).
    Nothing is tagged yet, so no tag ever has to move.
 
 ## Publish
