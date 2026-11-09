@@ -130,7 +130,7 @@ def save_sites(path, sites):
     data = {"0x%08X" % site: {"targets": ["0x%08X" % t for t in sorted(ts)],
                               "saturated": sat}
             for site, (ts, sat) in sorted(sites.items())}
-    with open(path, "w") as f:
+    with open(path, "w", newline="\n") as f:
         json.dump(data, f, indent=1)
         f.write("\n")
 
@@ -188,7 +188,7 @@ def save_db(path, targets):
         }
         for va, flags in sorted(targets.items())
     ]
-    with open(path, "w") as f:
+    with open(path, "w", newline="\n") as f:
         json.dump(data, f, indent=1)
         f.write("\n")
 

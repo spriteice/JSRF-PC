@@ -1094,7 +1094,7 @@ def export_json(xbe: XBEFile, output_path: str):
         } if xbe.tls else None,
     }
 
-    with open(output_path, 'w') as f:
+    with open(output_path, 'w', newline="\n") as f:
         json.dump(data, f, indent=2)
 
     print(f"JSON exported to: {output_path}")

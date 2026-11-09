@@ -506,12 +506,12 @@ def run(out, corpus, include=None, prelude=None):
                else Path(__file__).resolve().parents[2] / "templates" / "runtime")
     built = runner._cl(vcvars, str(out),
                        f'/O2 /fp:strict /arch:SSE2 /I"{include}" lifted.c native.obj /Fecompare.exe')
-    (out / "compile.txt").write_text(built.stdout + built.stderr)
+    (out / "compile.txt").write_text(built.stdout + built.stderr, newline="\n")
     if built.returncode:
         raise RuntimeError(built.stdout + built.stderr)
     checked = subprocess.run([str(out / "compare.exe")], capture_output=True,
                              text=True, timeout=600)
-    (out / "results.txt").write_text(checked.stdout + checked.stderr)
+    (out / "results.txt").write_text(checked.stdout + checked.stderr, newline="\n")
     return checked
 
 

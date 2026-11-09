@@ -176,7 +176,7 @@ def main(argv=None):
 
     records = collect_blocks(xbe_data, functions)
     manifest = build_manifest(records)
-    with open(args.output, "w", encoding="utf-8") as fh:
+    with open(args.output, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(manifest, fh, indent=2)
         fh.write("\n")
 

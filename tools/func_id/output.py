@@ -208,5 +208,5 @@ def _print_summary(summary):
 
 def _write_json(path, data):
     """Write data as formatted JSON."""
-    with open(path, "w", encoding="utf-8") as f:
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)

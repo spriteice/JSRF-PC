@@ -145,7 +145,7 @@ class AnalysisCache:
             "elapsed_seconds": elapsed_seconds,
         }
 
-        with open(self.cache_file, 'w') as f:
+        with open(self.cache_file, 'w', newline="\n") as f:
             json.dump(cache_data, f, indent=2)
 
         self._cache_data = cache_data

@@ -14,7 +14,7 @@ def write_summary(stats, output_dir):
     # generated C elsewhere would do all the work and then die at the last step.
     os.makedirs(output_dir, exist_ok=True)
     summary_path = os.path.join(output_dir, "summary.json")
-    with open(summary_path, "w", encoding="utf-8") as f:
+    with open(summary_path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(stats, f, indent=2)
     return summary_path
 
@@ -107,7 +107,7 @@ def generate_header(func_list, output_path, abi_db=None,
 
     lines.extend(["", "#endif /* RECOMP_FUNCTIONS_H */", ""])
 
-    with open(output_path, "w", encoding="utf-8") as f:
+    with open(output_path, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(lines))
 
     return output_path

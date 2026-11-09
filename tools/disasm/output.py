@@ -89,20 +89,20 @@ class OutputWriter:
             ],
         }
 
-        with open(self.output_dir / "summary.json", 'w') as f:
+        with open(self.output_dir / "summary.json", 'w', newline="\n") as f:
             json.dump(summary, f, indent=2)
 
     def _write_functions_json(self) -> None:
         """Write functions.json with the complete function database."""
         funcs = sorted(self.functions.functions.values(), key=lambda f: f.start)
         data = [f.to_dict() for f in funcs]
-        with open(self.output_dir / "functions.json", 'w') as f:
+        with open(self.output_dir / "functions.json", 'w', newline="\n") as f:
             json.dump(data, f, indent=2)
 
     def _write_xrefs_json(self) -> None:
         """Write xrefs.json with all cross-references."""
         data = self.xrefs.to_list()
-        with open(self.output_dir / "xrefs.json", 'w') as f:
+        with open(self.output_dir / "xrefs.json", 'w', newline="\n") as f:
             json.dump(data, f, indent=2)
 
     def _write_strings_json(self) -> None:
@@ -122,13 +122,13 @@ class OutputWriter:
                 ]
             data.append(entry)
 
-        with open(self.output_dir / "strings.json", 'w') as f:
+        with open(self.output_dir / "strings.json", 'w', newline="\n") as f:
             json.dump(data, f, indent=2)
 
     def _write_labels_json(self) -> None:
         """Write labels.json with all named symbols."""
         data = self.labels.to_list()
-        with open(self.output_dir / "labels.json", 'w') as f:
+        with open(self.output_dir / "labels.json", 'w', newline="\n") as f:
             json.dump(data, f, indent=2)
 
     def _write_section_asm(self, section: SectionInfo, asm_dir: Path,
@@ -152,7 +152,7 @@ class OutputWriter:
         func_ends = {f.end for f in funcs_in_section}
         func_by_start = {f.start: f for f in funcs_in_section}
 
-        with open(asm_dir / filename, 'w') as f:
+        with open(asm_dir / filename, 'w', newline="\n") as f:
             # Header
             f.write(f"; ============================================================\n")
             f.write(f"; Section: {section.name}\n")

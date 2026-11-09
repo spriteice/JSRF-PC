@@ -254,7 +254,7 @@ def main():
     print()
 
     print(f'\nWriting {len(missing_functions)} entries to {OUTPUT_PATH}...')
-    with open(OUTPUT_PATH, 'w') as f:
+    with open(OUTPUT_PATH, 'w', newline="\n") as f:
         json.dump(missing_functions, f, indent=2)
     print('Done.')
 
@@ -270,7 +270,7 @@ def main():
                 'section': entry.get('section', '.text'),
             })
     print(f'Writing {len(addable)} addable function candidates to {quick_add_path}...')
-    with open(quick_add_path, 'w') as f:
+    with open(quick_add_path, 'w', newline="\n") as f:
         json.dump(addable, f, indent=2)
     print('Done.')
 

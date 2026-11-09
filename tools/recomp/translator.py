@@ -196,7 +196,7 @@ def write_if_changed(path, text):
                 return False
     except OSError:
         pass
-    with open(path, "w", encoding="utf-8") as f:
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
     return True
 
@@ -3451,7 +3451,7 @@ class BatchTranslator:
             output_file = os.path.join(self.output_dir, "recompiled.c")
 
         output_text = "\n".join(c_chunks)
-        with open(output_file, "w", encoding="utf-8") as f:
+        with open(output_file, "w", encoding="utf-8", newline="\n") as f:
             f.write(output_text)
 
         stats["output_file"] = output_file
@@ -3661,7 +3661,7 @@ class BatchTranslator:
                 with open(types_dst, "r", encoding="utf-8") as dst:
                     have = dst.read()
             if have != want:
-                with open(types_dst, "w", encoding="utf-8") as dst:
+                with open(types_dst, "w", encoding="utf-8", newline="\n") as dst:
                     dst.write(want)
                 print("  %s recomp_types.h (runtime register model)"
                       % ("refreshed" if have is not None else "wrote"),

@@ -131,7 +131,7 @@ def main():
     output_path = args.output or os.path.join(output_dir, "abi_functions.json")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    with open(output_path, "w", encoding="utf-8") as f:
+    with open(output_path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(results, f, indent=2)
 
     thiscall_count = sum(1 for r in results
