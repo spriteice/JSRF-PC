@@ -90,7 +90,11 @@ static uint64_t ref_hash(const uint8_t *data, size_t n, uint64_t seed)
 
 static int have_avx2(void)
 {
-    return __builtin_cpu_supports("avx2") ? 1 : 0;
+    /* Asked once, as the engine asks (nv2a_hash.h): CPUID is slow, and much
+     * slower in a virtual machine, where each one traps to the host. */
+    static int avx2 = -1;
+    if (avx2 < 0) avx2 = nv2a_hash_cpu_avx2();
+    return avx2;
 }
 
 static double now_s(void)

@@ -209,12 +209,43 @@ static uint64_t nv2a_hash_avx2(const void *data, size_t n, uint64_t seed)
 }
 #endif
 
+#if defined(NV2A_HASH_AVX2)
+/* Whether the processor has AVX2 and the system saves the AVX registers, asked
+ * of the processor itself (CPUID and XGETBV). __builtin_cpu_supports needs
+ * the compiler's runtime to define __cpu_model, as GCC's and LLVM's do and
+ * Zig 0.13's doesn't, so the engine built on a player's PC asks here. Not
+ * <cpuid.h>: its __cpuid macro breaks MinGW's intrin.h, which SDL includes. */
+#define NV2A_HASH_CPUID_OSXSAVE (1u << 27)   /* leaf 1, ECX: XGETBV can be used */
+#define NV2A_HASH_CPUID_AVX     (1u << 28)   /* leaf 1, ECX */
+#define NV2A_HASH_CPUID_AVX2    (1u << 5)    /* leaf 7, EBX */
+#define NV2A_HASH_XCR0_SSE      0x2u         /* the system saves the XMM registers... */
+#define NV2A_HASH_XCR0_AVX      0x4u         /* ...and the upper halves of the YMM ones */
+static inline void nv2a_hash_cpuid(unsigned leaf, unsigned sub, unsigned r[4])
+{
+    __asm__ volatile("cpuid" : "=a"(r[0]), "=b"(r[1]), "=c"(r[2]), "=d"(r[3]) : "a"(leaf), "c"(sub));
+}
+static inline int nv2a_hash_cpu_avx2(void)
+{
+    unsigned r[4], lo, hi, max;
+    nv2a_hash_cpuid(0, 0, r);
+    max = r[0];
+    if (max < 7) return 0;
+    nv2a_hash_cpuid(1, 0, r);
+    if (!(r[2] & NV2A_HASH_CPUID_OSXSAVE) || !(r[2] & NV2A_HASH_CPUID_AVX)) return 0;
+    __asm__ volatile("xgetbv" : "=a"(lo), "=d"(hi) : "c"(0));
+    (void)hi;
+    if ((lo & (NV2A_HASH_XCR0_SSE | NV2A_HASH_XCR0_AVX)) != (NV2A_HASH_XCR0_SSE | NV2A_HASH_XCR0_AVX)) return 0;
+    nv2a_hash_cpuid(7, 0, r);
+    return (r[1] & NV2A_HASH_CPUID_AVX2) != 0;
+}
+#endif
+
 /* A 64-bit hash of n bytes, n at least NV2A_HASH_MIN. */
 static inline uint64_t nv2a_hash_wide(const void *data, size_t n, uint64_t seed)
 {
 #if defined(NV2A_HASH_AVX2)
     static int avx2 = -1;
-    if (avx2 < 0) avx2 = __builtin_cpu_supports("avx2") ? 1 : 0;
+    if (avx2 < 0) avx2 = nv2a_hash_cpu_avx2();
     if (avx2) return nv2a_hash_avx2(data, n, seed);
 #endif
     return nv2a_hash_sse2(data, n, seed);
