@@ -4,8 +4,8 @@
 # (.github/ci/docker.sh "linux tests" .github/ci/linux.sh gcc|clang):
 #
 #   gcc     the engine built with GCC, linked as far as it can be without the
-#           game, and its Debug build too; the engine tests; the tool tests,
-#           and CI's own (test_ci.py)
+#           game, and its Debug build too; the engine tests; the tool tests
+#           (tools/ and launcher/), and CI's own (test_ci.py)
 #   clang   the release package, made by launcher/linux/build.sh and checked
 #           by launcher/check_package.py; the engine tests built with clang
 #
@@ -49,7 +49,7 @@ gcc)
     python3 tests/run_all.py
     python3 -m venv "$work/venv"
     "$work/venv/bin/pip" install --quiet --require-hashes -r .github/ci/tools-requirements.txt
-    "$work/venv/bin/python" -m pytest -q -p no:cacheprovider tools .github/ci/test_ci.py
+    "$work/venv/bin/python" -m pytest -q -p no:cacheprovider tools launcher .github/ci/test_ci.py
     python3 .github/ci/count_warnings.py gcc "$work/build.log"
     python3 .github/ci/count_warnings.py gcc-debug "$work/debug.log"
     # The engine tests' line coverage of src/ and port/, for information

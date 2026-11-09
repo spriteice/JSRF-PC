@@ -78,9 +78,9 @@ a fresh Ubuntu 24.04; the dependency script also knows Debian, Arch, and Fedora.
    ~/JSRF-PC-linux-x86_64/jsrf-pc
    ```
 
-   package.sh also builds the launcher, `jsrf-pc`, with your C compiler.
-   From here it works like the download: see
-   [Installing on Linux](../README.md#linux).
+   package.sh also builds the launcher, `jsrf-pc`, with your C and C++
+   compilers and SDL2's headers (the ones step 1 installed). From here it
+   works like the download: see [Installing on Linux](../README.md#linux).
 
 ## A package for other machines
 
@@ -130,6 +130,34 @@ engine with the toolchain file
 and [`launcher/windows/package.sh`](../launcher/windows/package.sh) packages
 it. Unlike the Linux build, it doesn't take its version from git:
 `<version>` above is the version, such as `b1.3`.
+
+## The package without the engine
+
+From b2, the release's packages carry no engine, and nothing else made from
+the game: the player's own PC builds the engine at its first start, from
+their copy of the game, with tools of its own (Python with capstone, and Zig).
+The launcher's setup ([`launcher/setup`](../launcher/setup)) does it, with the
+package's kit, and the package's README.txt says what the player sees. Both
+are made in the build images, as the packages above are:
+
+1. [`launcher/kit/make_kit.sh`](../launcher/kit/make_kit.sh) compiles the
+   engine's own code with Zig 0.13.0 for the system, and writes the kit:
+   those objects, the pipeline that translates `default.xbe`, the link's
+   command, and `kit.json` saying how they go together.
+2. [`launcher/firststart/package.sh`](../launcher/firststart/package.sh) puts
+   the kit in a package with the launcher and the libraries, and makes the
+   tools archive beside it (`JSRF-PC-tools-linux-x86_64.tar.gz` and
+   `JSRF-PC-tools-windows-x86_64.zip`, one folder, `tools`), from the three
+   downloads the setup would fetch.
+3. A first start with the game, on a PC, writes `build/engine.stamp`, and
+   [`launcher/kit/set_expected.py`](../launcher/kit/set_expected.py) puts its
+   hashes in the kit's `expected.txt`. The package is made again with them:
+   every player's first start must build the same engine, byte for byte, and
+   the setup says so when one doesn't.
+
+The engine's build itself is
+[`launcher/kit/build_engine.py`](../launcher/kit/build_engine.py), which the
+setup runs with the tools' own Python, never the system's.
 
 ## The version
 

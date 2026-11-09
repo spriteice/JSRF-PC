@@ -4,11 +4,13 @@
 # with the same MinGW toolchain) beside engine\jsrf_recomp.exe and the DLLs
 # it needs, zipped.
 #
-#   launcher/windows/package.sh <jsrf_recomp.exe> <llvm-mingw dir> <dll dir> <version> [out dir]
+#   launcher/windows/package.sh <jsrf_recomp.exe> <llvm-mingw dir> <deps dir> <version> [out dir]
 #
-# <dll dir> holds SDL2.dll and libepoxy-0.dll; libwinpthread-1.dll comes from
-# the toolchain. Licence texts are taken from LICENCES_DIR when it is set
-# (SDL2-COPYING.txt, libepoxy-COPYING.txt, winpthreads-COPYING.txt).
+# <deps dir> is deps.sh's: SDL2.dll and libepoxy-0.dll from its bin, and the
+# SDL2 the launcher links in (launcher/build_launcher.sh) from its include
+# and lib; libwinpthread-1.dll comes from the toolchain. Licence texts are
+# taken from LICENCES_DIR when it is set (SDL2-COPYING.txt,
+# libepoxy-COPYING.txt, winpthreads-COPYING.txt).
 #
 # The release is built by launcher/windows/build.sh, which makes the
 # toolchain and the libraries with deps.sh, builds the engine, then runs this;
@@ -20,7 +22,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
 engine="${1:?the jsrf_recomp.exe to package}"
 tc="${2:?the llvm-mingw toolchain directory}"
-dlls="${3:?the folder with SDL2.dll and libepoxy-0.dll}"
+deps="${3:?the deps folder deps.sh made}"
 version="${4:?the version}"
 out="${5:-$PWD}"
 name=JSRF-PC-windows-x86_64
@@ -30,24 +32,14 @@ trap 'rm -rf "$stage"' EXIT
 
 mkdir -p "$dir/engine" "$dir/licences"
 
-# The launcher, with the same icon, manifest and version information.
-# X.Y.Z is X.Y.Z.0, X.Y (as 1.0) is X.Y.0.0, a beta's bN.M is 0.0.N.M, and bN is
-# 0.0.N.0, as port/CMakeLists.txt gives the engine.
-num="$(printf '%s' "$version" | sed -n -e 's/^\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\).*/\1,\2,\3,0/p' \
-    -e 's/^\([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1,\2,0,0/p' \
-    -e 's/^b\([0-9][0-9]*\)\.\([0-9][0-9]*\).*/0,0,\1,\2/p' -e 's/^b\([0-9][0-9]*\).*/0,0,\1,0/p')"
-[ -n "$num" ] || num=0,0,0,0
-printf '#define JSRF_VER_NUM %s\n#define JSRF_VER_STR "%s"\n' "$num" "$version" > "$stage/jsrf_version.h"
-"$tc/bin/x86_64-w64-mingw32-windres" -I "$stage" -I "$here" "$here/resources.rc" -O coff -o "$stage/launcher.res"
-"$tc/bin/x86_64-w64-mingw32-clang" -O2 -s -Wall -Wextra -municode -mwindows \
-    -I "$repo/port" -o "$dir/JSRF-PC.exe" \
-    "$here/jsrf_launcher.c" "$repo/port/xiso.c" "$repo/port/xbe_check.c" "$stage/launcher.res" \
-    -lshell32 -lole32 -luuid -lcomctl32
+# The launcher, with the setup inside, the icon, the manifest and the
+# version information.
+"$repo/launcher/build_launcher.sh" windows "$dir/JSRF-PC.exe" "$stage/obj" "$tc" "$deps" "$version"
 
 # The engine and what it loads.
 install -m 755 "$engine" "$dir/engine/jsrf_recomp.exe"
 "$tc/bin/llvm-strip" --strip-debug "$dir/engine/jsrf_recomp.exe"
-install -m 644 "$dlls/SDL2.dll" "$dlls/libepoxy-0.dll" "$dir/engine/"
+install -m 644 "$deps/bin/SDL2.dll" "$deps/bin/libepoxy-0.dll" "$dir/engine/"
 install -m 644 "$tc/x86_64-w64-mingw32/bin/libwinpthread-1.dll" "$dir/engine/"
 "$tc/bin/llvm-strip" --strip-debug "$dir/engine/libepoxy-0.dll" "$dir/engine/libwinpthread-1.dll"
 
@@ -59,6 +51,7 @@ for f in LICENSE NOTICE; do crlf "$repo/$f" "$dir/licences/$f.txt"; done
 crlf "$repo/LICENSES/MIT-upstream.txt" "$dir/licences/MIT-upstream.txt"
 crlf "$repo/LICENSES/LGPL-2.1.txt" "$dir/licences/LGPL-2.1.txt"
 crlf "$repo/LICENSES/imgui-MIT.txt" "$dir/licences/imgui-MIT.txt"
+crlf "$repo/third_party/miniz/LICENSE" "$dir/licences/miniz-MIT.txt"
 if [ -n "${LICENCES_DIR:-}" ]; then
     for f in SDL2-COPYING.txt libepoxy-COPYING.txt winpthreads-COPYING.txt; do
         [ -f "$LICENCES_DIR/$f" ] && crlf "$LICENCES_DIR/$f" "$dir/licences/$f"

@@ -1,10 +1,11 @@
 """Run the Linux launcher, and see what it hands the engine and what it does.
 
-Builds launcher/linux/jsrf_launcher.c, and runs it in a package's layout
-(bin/, lib/, VERSION) with a stand-in engine that writes down its arguments
-and environment, answers --check-game, --check-iso and --unpack-iso as each
-case asks, and exits as asked; and a stand-in game folder (default.xbe and
-Media).
+Builds launcher/linux/jsrf_launcher.c (with the setup's core, and a stand-in
+for its window, which a package with no kit/ folder never opens), and runs it
+in a package's layout (bin/, lib/, VERSION) with a stand-in engine that
+writes down its arguments and environment, answers --check-game,
+--check-iso and --unpack-iso as each case asks, and exits as asked; and a
+stand-in game folder (default.xbe and Media).
 
 What it hands the engine: the paths and the player's settings
 (RECOMP_GL_SCALE, RECOMP_FULLSCREEN) and no other RECOMP_ switch: what the
@@ -28,9 +29,14 @@ The Windows launcher can't run here (it is a windowed program, and CI builds
 it), so the switches it names in launcher/windows/jsrf_launcher.c are
 checked instead: only those two.
 
+Which package it is: one with a kit/ folder (the package without the
+engine) opens the setup when the engine is missing or isn't the kit's, and
+plays when it is; one without (all the runs above) never opens it.
+
 The run needs Linux, and CC (or gcc). LAUNCHER, when set, is a launcher
 program to run instead of building one, to compare.
 """
+import hashlib
 import os
 import pathlib
 import re
@@ -86,14 +92,38 @@ pwd > "$here/cwd.txt"
 if [ -f "$here/play" ]; then sed -n '2,$p' "$here/play"; exit "$(sed -n 1p "$here/play")"; fi
 """
 
+STUB_UI = """#include <stdio.h>
+#include "setup.h"
+/* The window: here it only says it was opened, and that the player closed it. */
+int jsrf_setup_run(jsrf_setup *s)
+{
+    fprintf(stderr, "stub: the setup, in %s\\n", s->root);
+    return JSRF_SETUP_CLOSED;
+}
+"""
+
 
 def build(out):
-    """The launcher, as the package builds it."""
+    """The launcher, as the packages build it but for the window."""
     cc = shlex.split(os.environ.get("CC", "gcc"))
+    stub = out / "stub_ui.c"
+    stub.write_text(STUB_UI)
     exe = out / "jsrf-pc"
-    subprocess.run(cc + ["-std=gnu11", "-O1", "-Wall", "-Wextra", "-Werror", "-I", str(root / "port"),
-                         "-o", str(exe), str(root / "launcher/linux/jsrf_launcher.c"),
-                         str(root / "port/xiso.c"), str(root / "port/xbe_check.c")], check=True)
+    srcs = [root / "launcher/linux/jsrf_launcher.c", root / "launcher/setup/setup_core.c",
+            root / "port/xiso.c", root / "port/xbe_check.c", stub]
+    objs = []
+    for s in srcs:
+        o = out / (s.name + ".o")
+        subprocess.run(cc + ["-std=gnu11", "-O1", "-Wall", "-Wextra", "-Werror",
+                             "-I", str(root / "port"), "-I", str(root / "launcher/setup"),
+                             "-c", str(s), "-o", str(o)], check=True)
+        objs.append(o)
+    o = out / "miniz.c.o"
+    m = subprocess.run(cc + ["-O1", "-w", "-c", str(root / "third_party/miniz/miniz.c"), "-o", str(o)],
+                       capture_output=True, text=True)   # its #pragma message, every time
+    if m.returncode:
+        raise SystemExit("launcher_env: miniz.c didn't compile\n" + m.stdout + m.stderr)
+    subprocess.run(cc + [str(x) for x in objs + [o]] + ["-o", str(exe), "-ldl", "-lm"], check=True)
     return exe
 
 
@@ -406,6 +436,35 @@ refused("--install, portable", ["--install"], "does not add itself to the", case
 c = Case()
 p = c.run(["--version"])
 result("--version", [b for b in [p.stdout != "test\n" and "said %r" % p.stdout] if b], "VERSION's line")
+
+# A package with a kit: the setup when the engine isn't the kit's, else play.
+def kit_case(engine_sha256, engine=True):
+    c = Case()
+    (c.pkg / "kit").mkdir()
+    (c.pkg / "kit/kit.json").write_text("{}\n")
+    (c.pkg / "kit/expected.txt").write_text("engine_sha256=%s\n" % engine_sha256)
+    if not engine:
+        (c.pkg / "bin/jsrf_recomp").unlink()
+    return c, c.run([c.game])
+
+
+def setup_opened(name, c, p):
+    result(name, [b for b in [
+        p.returncode != 0 and "exit %d" % p.returncode,
+        c.started() and "the engine started",
+        "stub: the setup, in %s" % c.pkg not in p.stderr and "no setup: %r" % p.stderr.strip(),
+        ] if b], "the setup opened (and closed): nothing played")
+
+
+ours = hashlib.sha256(ENGINE.encode()).hexdigest()
+setup_opened("a kit and no engine", *kit_case(ours, engine=False))
+setup_opened("a kit and another engine", *kit_case("0" * 64))
+c, p = kit_case(ours)
+result("a kit and its engine", [b for b in [
+    p.returncode != 0 and "exit %d" % p.returncode,
+    not c.started() and "the engine didn't start",
+    "stub:" in p.stderr and "the setup opened",
+    ] if b], "played, no setup")
 
 if failed:
     raise SystemExit("launcher_env: %d of %d runs failed" % (failed, runs))

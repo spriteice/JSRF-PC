@@ -5,8 +5,9 @@
 #
 #   launcher/linux/package.sh <jsrf_recomp> <libSDL2-2.0.so.0> [out dir]
 #
-# The launcher, jsrf-pc, is a C program (launcher/linux/jsrf_launcher.c),
-# built here with CC (cc unless it is set).
+# The launcher, jsrf-pc, is built here (launcher/build_launcher.sh) with CC
+# and CXX, against SDL's headers: those beside the library given (an SDL
+# built by sdl.sh), else the system's (pkg-config sdl2).
 #
 # The release build, from the repository at the release tag, is
 # launcher/linux/build.sh, in the build image launcher/image.sh makes (Ubuntu
@@ -28,8 +29,9 @@ dir="$stage/$name"
 trap 'rm -rf "$stage"' EXIT
 
 mkdir -p "$dir/bin" "$dir/lib" "$dir/share" "$dir/licences"
-"${CC:-cc}" -O2 -Wall -Wextra -I "$repo/port" -o "$dir/jsrf-pc" \
-    "$here/jsrf_launcher.c" "$repo/port/xiso.c" "$repo/port/xbe_check.c" -s
+inc="$(cd "$(dirname "$sdl")/.." && pwd)/include/SDL2"
+[ -f "$inc/SDL.h" ] || inc="$(pkg-config --variable=includedir sdl2)/SDL2"
+"$repo/launcher/build_launcher.sh" linux "$dir/jsrf-pc" "$stage/obj" "$sdl" "$inc"
 install -m 644 "$here/README.txt" "$dir/README.txt"
 install -m 755 "$engine" "$dir/bin/jsrf_recomp"
 # The version is the engine's own (port/CMakeLists.txt builds it in from the
@@ -44,6 +46,9 @@ install -m 644 "$repo/NOTICE" "$dir/licences/NOTICE.txt"
 install -m 644 "$repo/LICENSES/MIT-upstream.txt" "$dir/licences/MIT-upstream.txt"
 install -m 644 "$repo/LICENSES/LGPL-2.1.txt" "$dir/licences/LGPL-2.1.txt"
 install -m 644 "$repo/LICENSES/imgui-MIT.txt" "$dir/licences/imgui-MIT.txt"
+# miniz (the launcher's) ships its licence with CR LF: LF here, as the rest.
+tr -d '\r' < "$repo/third_party/miniz/LICENSE" > "$dir/licences/miniz-MIT.txt"
+chmod 644 "$dir/licences/miniz-MIT.txt"
 [ -n "${SDL_LICENSE:-}" ] && install -m 644 "$SDL_LICENSE" "$dir/licences/SDL2-LICENSE.txt"
 
 # What the engine and the launcher need from the system, said once at

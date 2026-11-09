@@ -107,12 +107,26 @@ progressing, however rarely it happens.
 
 7. **Release build:** from the release commit, in the pinned build image,
    as docs/build-and-test-reference.md says, with the release's version given
-   to both builds (`-DJSRF_VERSION=b1.1`, and the Windows package.sh's
-   version argument). The generated code is made fresh (0 failed), every
-   test passes, and both packages pass every check, including the
-   comparison with the last tested package. The
-   version reads as the release's name everywhere docs/versioning.md lists,
-   with its Windows File version, and SHA256SUMS.txt covers both packages.
+   to every build (`-DJSRF_VERSION=b1.1`, and the version argument of the
+   Windows package.sh, make_kit.sh and firststart/package.sh). The generated
+   code is made fresh (0 failed), every test passes, and every package
+   passes every check, including the comparison with the last tested
+   package. The version reads as the release's name everywhere
+   docs/versioning.md lists, with its Windows File version.
+
+   From b2, the release ships the packages without the engine and a tools
+   archive for each system (docs/build-and-test-reference.md, Packages
+   without the engine), made in this order:
+   - each system's kit, and its package and tools archive;
+   - a first start of each package on the PC, in a new folder, with the
+     game and the tools archive, and its `build/engine.stamp`'s hashes put
+     in the kit (`launcher/kit/set_expected.py`); then each package made
+     again from its kit;
+   - a first start of each final package, in a new folder, whose engine and
+     generated code both report `match`: every player's PC builds that
+     engine, byte for byte.
+
+   SHA256SUMS.txt covers the two packages and the two tools archives.
 
    A Debug build is made too, once a release: the Windows package from the
    same commit, with `-DCMAKE_BUILD_TYPE=Debug` after the version
@@ -140,7 +154,7 @@ Only on the maintainer's say-so.
    gate).
 10. **Push and publish together:** push `main`, then publish the GitHub
     release straight away, as docs/versioning.md describes it, with the
-    packages tested in step 8. Publishing creates the tag on the release
+    packages tested in step 8 and, from b2, the tools archives beside them. Publishing creates the tag on the release
     commit. The README's download links don't work until the release
     exists, so the two go back to back.
 11. **Check the release:** the tag is on the release commit, each file's

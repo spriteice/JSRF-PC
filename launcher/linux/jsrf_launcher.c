@@ -1,6 +1,7 @@
 /*
  * jsrf-pc, the Linux launcher (b2 row 4b: "Launchers, Linux one in C too",
- * 2026-11-09). It does what the shell script before it did, step for step.
+ * 2026-11-09). It does what the shell script before it did, step for step,
+ * and shares the setup with JSRF-PC.exe (launcher/setup).
  *
  * Finds your copy of Jet Set Radio Future (the folder with default.xbe in it),
  * remembers it, and starts the game with your settings.
@@ -19,6 +20,10 @@
  * In game: F1 the in-game menu, F11 (or Alt+Return) full screen, F10 4:3 or your
  * screen's shape (the others in Display > Aspect ratio), F9 resolution, and F8
  * the free camera.
+ *
+ * In a package without the engine (one with a kit/ folder,
+ * launcher/firststart/package.sh), the setup builds it first, when
+ * bin/jsrf_recomp is missing or isn't the one the kit builds.
  *
  * Dialogs are zenity's or kdialog's when there is a desktop and one of them
  * is installed, else the terminal, as before. Every program is started by
@@ -41,84 +46,12 @@
 #include <time.h>
 #include <unistd.h>
 
-#include <ftw.h>
+#include "../setup/setup.h"
 
 /* The scales the engine draws at, 1x to this: its NV2A_SCALE_MAX
  * (src/nv2a_gl/nv2a_scale.h), one digit. */
 #define SCALE_MAX 6
 #define FOLD 72
-
-/* ---- files ------------------------------------------------------------------------ */
-
-static int js_is_file(const char *path)
-{
-    struct stat st;
-    return stat(path, &st) == 0 && S_ISREG(st.st_mode);
-}
-
-static int js_is_dir(const char *path)
-{
-    struct stat st;
-    return stat(path, &st) == 0 && S_ISDIR(st.st_mode);
-}
-
-/* The folder and those above it, as mkdir -p. */
-static int js_mkdirs(const char *path)
-{
-    char buf[PATH_MAX];
-    size_t i, n = strlen(path);
-    if (n >= sizeof buf) return -1;
-    memcpy(buf, path, n + 1);
-    for (i = 1; i <= n; i++) {
-        if (buf[i] == '/' || buf[i] == 0) {
-            char c = buf[i];
-            buf[i] = 0;
-            mkdir(buf, 0755);
-            buf[i] = c;
-        }
-    }
-    return js_is_dir(path) ? 0 : -1;
-}
-
-static int rm_one(const char *p, const struct stat *st, int flag, struct FTW *f)
-{
-    (void)st; (void)flag; (void)f;
-    return remove(p) ? -1 : 0;
-}
-
-/* The folder and everything in it, as rm -rf. 0 when it is gone. */
-static int js_rmtree(const char *path)
-{
-    if (!js_is_dir(path)) { if (js_is_file(path)) remove(path); return js_is_file(path) ? -1 : 0; }
-    nftw(path, rm_one, 32, FTW_DEPTH | FTW_PHYS);
-    return js_is_dir(path) ? -1 : 0;
-}
-
-/* key=value lines: the last value given for key. 1 if found. A line too long
- * to read whole (over 8 KB, more than any path) is skipped, all of it. */
-static int js_read_kv(const char *path, const char *key, char *val, size_t n)
-{
-    char line[8192];
-    size_t kl = strlen(key);
-    int found = 0, whole = 1;
-    FILE *f = fopen(path, "rb");
-    if (n) val[0] = 0;
-    if (!f) return 0;
-    while (fgets(line, sizeof line, f)) {
-        size_t l = strlen(line);
-        int was_whole = whole;
-        whole = l && line[l - 1] == '\n';
-        if (!whole && !feof(f)) continue;     /* the rest of it comes next */
-        if (!was_whole) continue;             /* the end of one too long */
-        while (l && (line[l - 1] == '\n' || line[l - 1] == '\r')) line[--l] = 0;
-        if (!strncmp(line, key, kl) && line[kl] == '=') {
-            snprintf(val, n, "%s", line + kl + 1);
-            found = 1;
-        }
-    }
-    fclose(f);
-    return found;
-}
 
 static const char HELP[] =
     "JSRF-PC -- the Linux launcher.\n"
@@ -515,9 +448,10 @@ static void from_iso(const char *iso, char *out, size_t n)
 
 /* What was given or picked -> the game: the folder itself, the folder of a
  * default.xbe, a disc image (any file: the engine says what it is if it is not
- * one), or a folder with one disc image in it. A disc image is unpacked and
- * out is its folder ("" if cancelled). */
-static void pick(const char *p, char *out, size_t n)
+ * one), or a folder with one disc image in it. With unpack, a disc image is
+ * unpacked and out is its folder ("" if cancelled); without, out is the image
+ * (the setup reads default.xbe out of it). */
+static void pick(const char *p, char *out, size_t n, int unpack)
 {
     char path[PATH_MAX * 2];
     fmt(path, sizeof path, "%s", p);
@@ -528,7 +462,8 @@ static void pick(const char *p, char *out, size_t n)
             else if (s) *s = 0;
             else fmt(path, sizeof path, ".");
         } else {
-            from_iso(path, out, n);
+            if (unpack) from_iso(path, out, n);
+            else fmt(out, n, "%s", path);
             return;
         }
     }
@@ -550,7 +485,8 @@ static void pick(const char *p, char *out, size_t n)
             char one[PATH_MAX * 2 + NAME_MAX];
             fmt(one, sizeof one, "%s", imgs[0]);
             free(imgs[0]);
-            from_iso(one, out, n);
+            if (unpack) from_iso(one, out, n);
+            else fmt(out, n, "%s", one);
             return;
         }
         while (k) free(imgs[--k]);
@@ -596,6 +532,34 @@ static void last_game(char *out, size_t n)
     if (!cfg_get("game_dir", v, sizeof v) || !v[0]) return;
     if (g_portable[0] && v[0] != '/') fmt(out, n, "%s/%s", g_here, v);
     else fmt(out, n, "%s", v);
+}
+
+/* ---- the setup ------------------------------------------------------------------ */
+
+struct game_ctx {
+    const char *arg;   /* a game given on the command line */
+    int choose;        /* --choose: ask again */
+};
+
+/* The game, for the setup: as below, but a disc image stays one (the setup
+ * reads default.xbe out of it, and the game unpacks it afterwards). */
+static int setup_find_game(void *vctx, char *path, size_t n)
+{
+    struct game_ctx *c = (struct game_ctx *)vctx;
+    char got[PATH_MAX * 2];
+    got[0] = 0;
+    if (c->arg) fmt(got, sizeof got, "%s", c->arg);
+    else if (!c->choose) {
+        last_game(got, sizeof got);
+        if (!is_game(got)) got[0] = 0;
+    }
+    if (!got[0] && !ask_game(got, sizeof got)) return 0;
+    pick(got, path, n, 0);
+    {
+        char real[PATH_MAX];
+        if (realpath(path, real)) fmt(path, n, "%s", real);
+    }
+    return path[0] != 0;
 }
 
 /* ---- --install ------------------------------------------------------------------- */
@@ -816,16 +780,40 @@ int main(int argc, char **argv)
         else arg = a;
     }
 
+    /* A package without the engine: the setup builds it, from the game it
+     * asks for, which then goes on as if it had been given. */
+    if (jsrf_setup_needed(g_here)) {
+        static jsrf_setup s;
+        struct game_ctx gc;
+        int r;
+        gc.arg = arg;
+        gc.choose = choose;
+        memset(&s, 0, sizeof s);
+        s.root = g_here;
+        s.find_game = setup_find_game;
+        s.ctx = &gc;
+        r = jsrf_setup_run(&s);
+        if (r == JSRF_SETUP_CLOSED) return 0;
+        if (r != JSRF_SETUP_READY) return 1;
+        if (!arg && s.game[0]) {
+            static char chosen[sizeof s.game];
+            fmt(chosen, sizeof chosen, "%s", s.game);
+            arg = chosen;
+        }
+        /* The tests stop here: the engine is built, nothing is played. */
+        if (getenv("JSRF_SETUP_ONLY")) return 0;
+    }
+
     /* Which game folder: the argument, else the remembered one, else ask. */
     last_game(last, sizeof last);
     if (arg) {
-        pick(arg, game, sizeof game);
+        pick(arg, game, sizeof game, 1);
     } else if (!choose && is_game(last)) {
         fmt(game, sizeof game, "%s", last);
     } else {
         char asked[PATH_MAX * 2];
         if (!ask_game(asked, sizeof asked)) return 0;
-        pick(asked, game, sizeof game);
+        pick(asked, game, sizeof game, 1);
     }
     if (!game[0]) return 0;              /* unpacking was cancelled */
     {

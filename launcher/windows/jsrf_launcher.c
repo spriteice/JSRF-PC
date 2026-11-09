@@ -4,7 +4,8 @@
  * Finds your copy of Jet Set Radio Future (the folder with default.xbe and
  * Media in it, or a disc image, which it unpacks once), remembers it, and
  * starts the engine (engine\jsrf_recomp.exe) with your settings -- what
- * launcher/linux/jsrf_launcher.c does on Linux.
+ * launcher/linux/jsrf_launcher.c does on Linux. In a package without the
+ * engine (one with a kit folder), the setup builds it first (launcher/setup).
  *
  *   JSRF-PC.exe                    play (asks where the game is, the first time)
  *   JSRF-PC.exe <folder or .iso>   use that, and remember it (dropping a
@@ -41,6 +42,7 @@
 
 #include "xiso.h"
 #include "xbe_check.h"
+#include "../setup/setup.h"
 
 #define APP L"JSRF-PC"
 /* The scales the engine draws at, 1x to this: its NV2A_SCALE_MAX
@@ -583,6 +585,45 @@ static int run(const wchar_t *game, int scale, int fullscreen)
     return (int)code;
 }
 
+/* ---- the setup (launcher/setup): the engine built at the first start ---------- */
+
+struct game_ctx {
+    const wchar_t *arg;   /* a game given on the command line */
+    int choose;           /* --choose: ask again */
+};
+
+/* The game, found as main finds it below: the argument, else the one
+ * remembered, else the dialog; a folder without the game but with a disc
+ * image in it means the image. The setup reads default.xbe from either. */
+static int setup_find_game(void *vctx, char *path, size_t n)
+{
+    struct game_ctx *c = (struct game_ctx *)vctx;
+    wchar_t game[MAX_PATH * 2] = L"";
+    char u8[MAX_PATH * 4];
+    if (c->arg && c->arg[0]) {
+        DWORD k = GetFullPathNameW(c->arg, MAX_PATH * 2, game, NULL);
+        if (!k || k >= MAX_PATH * 2) return 0;
+    } else if (!c->choose && cfg_get("game_dir", u8, sizeof u8)) {
+        from_utf8(u8, game, MAX_PATH * 2);
+        if (g_portable[0] && game[0] && game[0] != L'\\' && game[0] != L'/' && game[1] != L':') {
+            wchar_t rel[MAX_PATH * 2];
+            wcscpy(rel, game);
+            join(game, MAX_PATH * 2, g_here, rel);
+        }
+        if (!is_game(game)) game[0] = 0;
+    }
+    if (!game[0] && !pick_folder(game, MAX_PATH * 2)) return 0;
+    if (is_file(game)) {
+        wchar_t *slash = wcsrchr(game, L'\\');
+        if (slash && !_wcsicmp(slash + 1, L"default.xbe")) *slash = 0;
+    } else if (is_dir(game) && !is_game(game)) {
+        wchar_t iso[MAX_PATH * 2];
+        if (find_image_in(game, iso, MAX_PATH * 2)) wcscpy(game, iso);
+    }
+    to_utf8(game, path, (int)n);
+    return 1;
+}
+
 /* ---- main ------------------------------------------------------------------- */
 
 int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
@@ -670,6 +711,33 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
         } else if (argv[i][0] != L'-') {
             _snwprintf(arg, MAX_PATH * 2, L"%ls", argv[i]);
             arg[MAX_PATH * 2 - 1] = 0;
+        }
+    }
+
+    /* A package without the engine: the setup builds it, from the game it
+     * asks for, which then goes on as if it had been given. */
+    {
+        char root[MAX_PATH * 4];
+        to_utf8(g_here, root, sizeof root);
+        if (jsrf_setup_needed(root)) {
+            static jsrf_setup s;
+            struct game_ctx gc;
+            int r;
+            gc.arg = arg;
+            gc.choose = choose;
+            memset(&s, 0, sizeof s);
+            s.root = root;
+            s.find_game = setup_find_game;
+            s.ctx = &gc;
+            r = jsrf_setup_run(&s);
+            if (r == JSRF_SETUP_CLOSED) return 0;
+            if (r != JSRF_SETUP_READY) return 1;
+            if (!arg[0] && s.game[0]) {
+                from_utf8(s.game, arg, MAX_PATH * 2);
+                choose = 0;
+            }
+            /* The tests stop here: the engine is built, nothing is played. */
+            if (_wgetenv(L"JSRF_SETUP_ONLY")) return 0;
         }
     }
 

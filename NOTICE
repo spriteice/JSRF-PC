@@ -105,6 +105,43 @@ MIT — Dear ImGui
   licence; the full text is in LICENSES/imgui-MIT.txt.
 
 
+MIT — miniz
+-----------
+
+  https://github.com/richgel999/miniz
+
+    third_party/miniz/    miniz 3.0.2, the release's amalgamated
+                          miniz.c and miniz.h, unmodified
+                          (c) 2010-2014 Rich Geldreich and Tenacious
+                          Software LLC; 2013-2014 RAD Game Tools and Valve
+                          Software
+
+  The launchers' setup (launcher/setup) unpacks the tools' Python, a
+  .tar.gz, with it. Licensed under the MIT licence; the full text is in
+  third_party/miniz/LICENSE, and the packages carry it as
+  licences/miniz-MIT.txt.
+
+
+The tools the player's PC builds the engine with
+------------------------------------------------
+
+  Not in this repository, and not in the packages: the launchers' setup
+  downloads them from their own sites at the player's first start, or takes
+  them from the tools archive published beside each release, which holds
+  them as they are, with their own licences:
+
+    Python 3.13.0, python-build-standalone 20241016
+                          https://github.com/astral-sh/python-build-standalone
+                          the PSF licence, and those of the libraries it
+                          bundles (tools/python/LICENSE.txt)
+    capstone 5.0.9        https://www.capstone-engine.org
+                          the BSD licence (its dist-info's LICENSE.TXT)
+    Zig 0.13.0            https://ziglang.org, the ziglang wheel on PyPI
+                          the MIT licence (ziglang/LICENSE), with those of
+                          LLVM, the C libraries and the rest it carries,
+                          beside each in ziglang/lib
+
+
 MIT — SMAA, the reference implementation
 ----------------------------------------
 

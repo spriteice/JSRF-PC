@@ -26,6 +26,6 @@ cmake -S "$repo/port" -B "$work/build-win" -G Ninja \
 ninja -C "$work/build-win" jsrf_recomp
 mkdir -p "$work/out"
 LICENCES_DIR="$work/licences" "$here/package.sh" "$work/build-win/jsrf_recomp.exe" \
-    "$work/llvm-mingw" "$work/deps/bin" "$version" "$work/out"
+    "$work/llvm-mingw" "$work/deps" "$version" "$work/out"
 OBJDUMP="$work/llvm-mingw/bin/llvm-objdump" \
     python3 "$repo/launcher/check_package.py" "$work/out/JSRF-PC-windows-x86_64.zip"

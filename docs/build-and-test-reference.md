@@ -243,7 +243,9 @@ machines" says:
   linux` (What is kept between builds).
 - `launcher/linux/build.sh /work`, with no network: SDL 2.30.12 from source
   (`launcher/linux/sdl.sh`), the engine with the release flags, then
-  `launcher/linux/package.sh`.
+  `launcher/linux/package.sh`, which builds the launcher, `jsrf-pc`, a C
+  program with the setup inside, as JSRF-PC.exe is
+  (`launcher/build_launcher.sh`).
 
 The build image is pinned. The recipe names the image, every package
 installed in it with its version, and every option given to SDL's CMake,
@@ -271,6 +273,22 @@ checked by its SHA-256. A download is tried 5 times, with pauses of 10 to
 40 s, as GitHub's release downloads time out now and then; so are SDL's
 source and llvm-mingw for CI (`.github/ci/fetch.py`).
 
+### Packages without the engine
+
+The release's packages, from b2, carry no engine: the player's PC builds it
+at the first start (docs/building-on-linux.md, "The package without the
+engine"). Each is made in the same build image as the package with the
+engine: the kit (`launcher/kit/make_kit.sh`), then the package and the tools
+archive (`launcher/firststart/package.sh`), which ends with the package
+check. The engine's hashes come from a first start with my game on the PC
+(`launcher/kit/set_expected.py`), and Linux's first start runs in WSL there.
+
+Test builds for other changes stay packages with the engine built in, as
+above. A change to the setup (`launcher/setup`), the kit or the packages
+without the engine is tested with those packages: a first start with the
+game on the PC, from the tools archive, for each system, and the engine it
+builds checked against the kit's hashes.
+
 ### The version
 
 - Each build has one version string, shown in File > About and on the log's
@@ -284,7 +302,7 @@ source and llvm-mingw for CI (`.github/ci/fetch.py`).
 
 ### 4. Tests
 
-- Tool tests: `python3 -m pytest -q tools`, with pytest, pefile, and numpy
+- Tool tests: `python3 -m pytest -q tools launcher`, with pytest, pefile, and numpy
   installed beside capstone (the versions in `.github/ci/tools-requirements.txt`).
   In the sandbox they run in the `linux tests` image, with the engine
   tests, as CI's GCC job runs them:
@@ -452,10 +470,12 @@ The Ally X has glibc 2.43, so a binary that needs anything newer won't
 start. The published floor is glibc 2.34 (the package's README.txt). Stay
 within it so other distributions keep working.
 
-check_package.py checks that the engine and the bundled SDL2 need glibc
-2.34 at most, and nothing else from the system but libc, libm, libGL.so.1
-and SDL2 (the engine) or libc and libm (SDL2). It also checks that the
-engine doesn't need libstdc++: the menu's C++ runtime is linked in.
+check_package.py checks that the engine, the launcher and the bundled SDL2
+need glibc 2.34 at most, and nothing else from the system but libc, libm,
+libGL.so.1 and SDL2 (the engine), libc, libm and SDL2 (the launcher, which
+opens OpenGL itself for the setup's window) or libc and libm (SDL2). It also
+checks that the engine doesn't need libstdc++: the menu's C++ runtime is
+linked in.
 
 Also report:
 
@@ -517,6 +537,14 @@ game files, logs, source, or anything left over from debugging. A file added
 to a package goes on that list in the same commit. It also checks that text
 files have the platform's line endings once: LF on Linux, CRLF on Windows,
 never `\r\r\n`.
+
+A package without the engine holds the same files but the engine, and its
+kit: check_package.py checks the kit's own files (kit.json, expected.txt
+and build_engine.py, with LF line endings on both systems), the engine's
+path and the version in kit.json, the hashes' form in expected.txt, and
+that its tools are the ones the setup asks for. The tools archive beside it
+must hold one folder, `tools`, with Python, capstone, Zig and the mark the
+setup reads, and no link pointing out of it.
 
 ### Linux and Windows: against the last tested package
 
