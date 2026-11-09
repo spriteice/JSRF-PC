@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="docs/images/banner-jsrf-pc.png" width="640" alt="Jet Set Radio Future: JSRF-PC">
-</p>
-
 # JSRF-PC
 
 JSRF-PC is built on
@@ -25,15 +21,23 @@ contains no game files.
 
 - **In-game menu:** F1, or Back on a controller, for the display, graphics,
   audio, controller, and developer settings.
-- **Resolution scaling:** 1× to 4×. _(JuMatt)_
-- **Widescreen:** 16:9, in gameplay only. _(JuMatt)_
-- **Free camera:** Modern right-stick camera controls and options, with the
-  graffiti camera turned off. Turn it on and off with R3, reset it with the left
-  trigger, with optional auto centring.
+- **Resolution scaling:** 1× to 6×. 3× by default.
+- **True widescreen:** 16:10, 16:9, 21:9, or Match screen. The picture is
+  drawn as wide as the shape, so neither axis is stretched, and the HUD and
+  menus are laid out across the screen.
+- **Draw distance:** Crowds, spray cans, props, traffic, and the police and
+  their vehicles drawn up to four times further, or an unlimited distance. Far
+  buildings keeps the city's buildings from popping in.
+- **Music info in pause:** The song playing, its title and artist, drawn in
+  the pause menus using the game's font and styling. Can be toggled at any
+  time.
+- **Free camera:** Modern right-stick camera controls, with various settings,
+  and smooth geometry tracking to keep the camera out of walls. The graffiti cam
+  is turned off when the free camera is enabled.
 - **Audio effects:** A targeted, discrete sound engine that mimics the original
   hardware's audio effects with minimal performance overhead: 3D audio and
   reverb.
-- **Anti-aliasing:** SMAA _(JuMatt)_ and MSAA, alone or together.
+- **Anti-aliasing:** MSAA and SMAA _(JuMatt)_, alone or together.
 - **Anisotropic filtering:** Sharper textures at an angle.
 - **Performance:** Smooth frame pacing and optimised engine/renderer on both
   Linux and Windows.
@@ -41,12 +45,14 @@ contains no game files.
 
 ## Download
 
-The latest release is **b1.4**.
+The latest release is **b2**.
 
 | Platform | File |
 |---|---|
-| Linux x86_64: SteamOS, Ubuntu 22.04+, and most modern distros. | [JSRF-PC-b1.4-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b1.4/JSRF-PC-b1.4-linux-x86_64.tar.gz) |
-| Windows 10 or 11, x86_64. | [JSRF-PC-b1.4-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b1.4/JSRF-PC-b1.4-windows-x86_64.zip) |
+| Linux x86_64: SteamOS, Ubuntu 22.04+, and most modern distros. | [JSRF-PC-b2-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b2/JSRF-PC-b2-linux-x86_64.tar.gz) |
+| Windows 10 or 11, x86_64. | [JSRF-PC-b2-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b2/JSRF-PC-b2-windows-x86_64.zip) |
+| Linux tools, to build the engine without downloading (optional). | [JSRF-PC-tools-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b2/JSRF-PC-tools-linux-x86_64.tar.gz) |
+| Windows tools, to build the engine without downloading (optional). | [JSRF-PC-tools-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b2/JSRF-PC-tools-windows-x86_64.zip) |
 
 See the [changelog](CHANGELOG-JSRF-PC.md) for what changed in each version,
 and the [releases](https://github.com/spriteice/JSRF-PC/releases) page for
@@ -57,9 +63,11 @@ every download.
 ### Linux
 
 1. Extract the archive anywhere.
-2. Run `./jsrf-pc`. The first time, pick the folder with `default.xbe` in it,
-   or your disc image (an XISO or a full disc image, usually `.iso`), which is
-   unpacked once. It remembers your choice.
+2. Run `./jsrf-pc`. The first time, it builds the engine from your game
+   ([Building the engine on the first start](#building-the-engine-on-the-first-start),
+   below): pick the folder with `default.xbe` in it, or your disc image (an
+   XISO or a full disc image, usually `.iso`), which is unpacked once. It
+   remembers your choice.
 3. If you like, `./jsrf-pc --install` adds it to your applications menu.
 
 ### Windows
@@ -67,9 +75,22 @@ every download.
 1. Extract the archive anywhere.
 2. Run `JSRF-PC.exe`. It isn't signed, so the first time Windows may say it
    protected your PC: click More info, then Run anyway.
-3. Pick the folder with `default.xbe` in it, or your disc image (an XISO or a
-   full disc image, usually `.iso`), which is unpacked once. It remembers your
-   choice.
+3. The first time, it builds the engine from your game
+   ([Building the engine on the first start](#building-the-engine-on-the-first-start),
+   below): pick the folder with `default.xbe` in it, or your disc image (an
+   XISO or a full disc image, usually `.iso`), which is unpacked once. It
+   remembers your choice.
+
+### Building the engine on the first start
+
+The download holds none of the game, so the first time it runs, the launcher
+builds the engine from your own copy, once. It asks first, then downloads its
+tools (Python, capstone, and Zig, about 100 MB, each checked) and builds, with
+one progress bar: a few minutes. To build without downloading, extract your
+system's tools archive (above) into the same folder first. Nothing is
+installed: it all stays in that folder. Afterwards it offers to delete the
+tools and the code made from your game, and the engine stays. A new release
+extracted over the old folder builds its own engine at its first start.
 
 ### Saves, settings, and logs
 
@@ -97,19 +118,14 @@ graphics options. A controller is the recommended way to play.
 
 ## Status
 
-Playable, early, and not yet played from start to finish. Linux is the main
-target and the most tested. Windows comes second.
+The game can be completed. Please expect minor bugs while the engine is
+still in beta.
 
-- **Works:** The title and menus, starting a new game, saving and loading,
-  skating, grinding, tricks, graffiti, music, sound, and voices. The tutorial,
-  The Garage, Dogenzaka Hill, Shibuya Terminal, and 99th Street are tested the
-  most.
-- **Partly works:** Widescreen 16:9. The game view mostly works, but some menus
-  and effects are still 4:3 or stretched.
+- **Works:** The game can be played from start to finish with no major
+  issues.
 - **Known issues:** Each is described in the
   [latest release's notes](https://github.com/spriteice/JSRF-PC/releases/latest).
-  - The jet boost effect in widescreen.
-  - Some menus in widescreen.
+  - VS mode can't be started: the game doesn't see a second controller.
   - Occasional crashes from bugs not yet found.
   - Some elements half a pixel out of place.
   - Black screenshots on Windows.
@@ -136,10 +152,11 @@ Windows build is cross-compiled.
 
 ## Legality
 
-The releases contain only the engine: a native program the recompiler derived
-from the game's code. It contains **no game data** and does nothing without
-the files from your own copy of the game. This repository holds no game code
-at all, only the tools to recompile the game's code from your own disc.
+The releases contain **nothing of the game**: no game data and none of its
+code. The engine, the game's code translated into a native program, is built
+on your PC from your own copy at the first start, and stays there. This
+repository holds no game code at all, only the tools to recompile the game's
+code from your own disc.
 
 *Jet Set Radio Future* is © SEGA. This is an unofficial fan project, not
 affiliated with or endorsed by SEGA. If you represent a rights holder and have
@@ -167,6 +184,4 @@ under LGPL-2.1-or-later. The releases up to b1.4 were MIT, and stay so. See
   which none of the graphics or audio would exist.
 - [Dear ImGui](https://github.com/ocornut/imgui): the library the in-game menu
   is built with.
-- The title lettering in the banner is set in
-  [Nise JSRF](https://www.dafont.com/nisejsrf.font), a free font by Yoyo.
 - Smilebit and SEGA, who made the game.

@@ -4,6 +4,65 @@ What changed in each JSRF-PC version, newest first. Upstream JSRF Unleashed's
 own changes are in
 [its changelog](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/blob/main/CHANGELOG.md).
 
+## b2 (beta) — 9 November 2026
+
+### Added
+
+- **Render scale up to 6×:** Display > Render scale and F9 now go up to 6×,
+  3840×2880, for 4K screens. When the picture is drawn at more than twice the
+  size it is shown at, it is now shrunk in steps, so none of its detail is
+  lost.
+- **True widescreen:** Display > Aspect ratio offers 4:3, 16:10, 16:9, 21:9,
+  and Match screen, your screen's own shape. The picture is drawn as wide as
+  the shape, so neither axis is stretched any more with widescreen enabled.
+  F10 switches between 4:3 and Match screen.
+- **Widescreen HUD and menus:** In widescreen, the HUD keeps its shape and
+  sits at the screen's edges. The pause menus, the race previews, the garage's
+  menus, the loading screens, the title, the GG notebook, the result screens,
+  and VS mode's setup screen are laid out across the screen.
+- **Draw distance:** Display > Draw distance draws crowds, spray cans, props,
+  traffic, the police, and the race's checkpoints further away: 1× is the
+  game's own, then 2× to 4×, or Unlimited. **Above 2× can introduce severe
+  slowdowns on weaker systems.**
+- **Far buildings:** Display > Far buildings draws every part of the map the
+  game ever shows, so the city's buildings don't pop in as you skate.
+- **Music info in pause:** Display > Music info in pause shows the song
+  playing, its number, title, and artist, in both pause menus.
+
+### Fixed
+
+- **Jet boost in widescreen:** The boost's haze now covers the whole screen,
+  with no black bars at the sides.
+- **Default camera clipping in geometry:** The game's default camera no
+  longer shows what is behind a wall beside it, or behind a half pipe's curve,
+  which happened most in widescreen. Near a wall, the view now moves a little
+  to the side or in. These fixes have come from this repo's free camera code.
+- **Rare crashes:** The engine could misread the game's own timer and
+  interrupt objects when the game cancelled or disconnected one, which could
+  crash it or change the game's memory. It reads them as the Xbox does now.
+  Two checks left from early development, which ended the game, now write a
+  line to the log and let it carry on.
+
+### Changed
+
+- **The first start builds the engine:** The release package no longer
+  includes the engine, only the launcher. The first time you run it, the
+  launcher builds the engine from your own copy of the game. It takes 2-5
+  minutes depending on your system and whether you downloaded the tools
+  beforehand. You also have the option to let the launcher download the tools
+  automatically for you. Then it offers to delete the tools and the code made
+  from your game, keeping only the necessary files to run the game.
+- **Default settings:** A new install, and any setting you never changed, now
+  starts full screen at 3× and your screen's own shape, with 2× draw
+  distance, Far buildings, Music info in pause, SMAA, 8× anisotropic
+  filtering, and a 15% deadzone for the free camera. A setting you changed
+  stays as you set it.
+- **Linux launcher:** `jsrf-pc` is now a program, as the Windows launcher is,
+  rather than a script. It works as before. _(Linux)_
+- **Licence:** JSRF-PC's own code is now under the GNU General Public
+  License, version 2 or later. The code from JSRF Unleashed and xboxrecomp
+  stays under the MIT licence, and so do the releases up to b1.4.
+
 ## b1.4 (beta) — 4 November 2026
 
 ### Added
@@ -233,13 +292,30 @@ Based on upstream JSRF Unleashed 0.5.6.
 
 ## b1 (beta) — 23 October 2026
 
-Based on upstream JSRF Unleashed 0.5.4.
+Based on upstream JSRF Unleashed 0.5.4. It also lists the changes first
+released as 0.5.3a and its release candidate, on 22 October 2026, before the
+beta numbering.
 
 ### Added
 
 - **Developer menu:** In the in-game menu. Log to file turns the log on or off
   at once, Logging switches on the engine's diagnostic logs for bug reports, and
   Purge shaders restarts the game with an empty shader cache.
+- **Portable mode:** A folder named `portable` next to the launcher keeps the
+  settings, saves, logs, and cache inside it.
+- **In-game menu:** F1, or Back on a controller. On Windows it replaces the
+  Video menu bar above the window; F9 to F11 work as before.
+- **Free camera:** F8, or `freecam=1` in the settings file, gives the right
+  stick to the camera, which turns around the player. The L trigger puts it
+  back behind the player. Sensitivity, inversion, and deadzone are settings.
+- **Anti-aliasing:** MSAA (2×, 4×, or 8×, up to what your graphics card
+  supports) and FXAA, in the in-game menu's Graphics menu. They can be on
+  together, a change takes effect straight away, and both are off by default.
+  MSAA is costly; FXAA is cheap but softens the HUD a little.
+- **Anisotropic filtering:** 2× to 16×, in the same menu, keeps textures sharp
+  on surfaces seen at an angle.
+- **Full screen is remembered:** F11, Alt+Return, or the menu's Full screen
+  setting is kept for the next start, like widescreen and the scale.
 
 ### Fixed
 
@@ -247,6 +323,28 @@ Based on upstream JSRF Unleashed 0.5.4.
   never used again, so after an update the game paused to build them again
   during gameplay. The cache now keeps what each shader was made from, and from
   b1 on rebuilds them for the new version at start-up.
+- **Builds from source boot, save, and play:** Built with the repository's own
+  tools alone, the game had a black screen at boot, a hang at the save menu,
+  audio stutter, and two missing functions. Upstream's own downloads didn't
+  have these problems. The tools also find one more of the game's methods than
+  before.
+- **Frame pacing:** The GPU thread's short waits last as long as asked,
+  instead of up to 15 ms longer. _(Windows)_
+- **Kernel calls:** Two kernel calls the game makes are now handled
+  (NtProtectVirtualMemory and KeSetDisableBoostThread), and two others no
+  longer leave the stack off by 4 bytes.
+- **Threads:** The game's threads hand over to each other straight away,
+  instead of waiting a millisecond or more each time (up to 15.6 ms on
+  Windows).
+- **A clock:** A clock the audio and graphics code read no longer overflows,
+  which it did after 9 seconds of computer uptime on Linux and 15 minutes on
+  Windows.
+- **Freeing memory:** Freeing game memory no longer fails thousands of times a
+  minute, each failure logged and reported to the game. _(Windows)_
+- **Reading files:** Two threads reading the same file can no longer get each
+  other's data. _(Linux)_
+- **The graffiti cache:** Its second release of the same memory on every scene
+  change now fails quietly, as on the console.
 
 ### Changed
 
@@ -255,3 +353,8 @@ Based on upstream JSRF Unleashed 0.5.4.
   and put in a clearer order. A click outside the in-game menus now closes
   them, back to the bar, instead of opening the last menu again.
 - **Version numbers:** Distinct from upstream, beta until 1.0.
+- **Shader cache:** Every cached shader is now compiled on each launch, behind
+  a progress bar, and Graphics > Shader Cache turns it on or off (on by
+  default). Cache files left by other drivers or versions are removed.
+- **Release builds:** Smaller and faster, with quieter logs: debugging checks
+  at every function call are now only in debug builds.
