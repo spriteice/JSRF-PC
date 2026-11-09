@@ -36,8 +36,9 @@
  *   invert_y       0 / 1    0: up tilts the view up
  *   sensitivity_x  1 - 10   36 degrees a second at full tilt per step
  *   sensitivity_y  1 - 10
- *   deadzone       0 - 1    0.05 = 5%, measured on the stick's distance from
- *                           centre, and the speed rescaled from 0 at its edge
+ *   deadzone       0 - 1    0.15 = 15%, the default, measured on the stick's
+ *                           distance from centre, and the speed rescaled from 0
+ *                           at its edge
  *
  * A key that is missing takes its default; one that is out of range, or not
  * a number, takes its default and says so in the log. */
@@ -97,7 +98,7 @@ static int nv_window_pref_num(const char *key, double *v)
 static struct {
     int invert_x, invert_y, centre;     /* centre: auto centre's level, 0 off */
     double sens_x, sens_y, deadzone;
-} s_cfg = { 0, 0, 0, 5.0, 5.0, 0.05 };       /* the defaults */
+} s_cfg = { 0, 0, 0, 5.0, 5.0, 0.15 };       /* the defaults */
 static volatile int s_on;
 static volatile int s_steer;    /* on, and the follow camera ran last frame */
 static int s_follow_ran;        /* the follow camera ran since freecam_frame */

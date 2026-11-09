@@ -271,7 +271,7 @@ int main(int argc, char **argv)
     CHECK(s_row.under && !strcmp(s_row.under, "Skip intro"));
     CHECK(s_row.state() == music_info_on());
     if (!strcmp(c, "off")) CHECK(!music_info_on());
-    if (!strcmp(c, "on")) CHECK(music_info_on());
+    if (!strcmp(c, "on") || !strcmp(c, "default")) CHECK(music_info_on());   /* on by default */
     if (!strcmp(c, "flip")) {
         /* Off, then the row: on at once (and kept, which run.py checks). */
         CHECK(!music_info_on());

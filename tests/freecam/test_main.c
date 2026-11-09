@@ -106,13 +106,13 @@ int main(int argc, char **argv)
         near(p, 3, "inverted y");
     } else if (!strcmp(c, "sensitivity")) {
         /* sensitivity_x=10, sensitivity_y=2.5; half tilt is half the speed
-         * past the default deadzone, 0.05. */
+         * past the default deadzone, 0.15. */
         turn(32767, 0, &h, &p);
         near(h, 6, "full right at 10");
         turn(0, -32767, &h, &p);
         near(p, 1.5, "full down at 2.5");
         turn(16384, 0, &h, &p);
-        near(h, 6.0 * (16384.0 / 32767 - 0.05) / 0.95, "half right at 10");
+        near(h, 6.0 * (16384.0 / 32767 - 0.15) / 0.85, "half right at 10");
     } else if (!strcmp(c, "deadzone")) {
         /* deadzone=0.5, radial and rescaled. */
         turn(13107, 0, &h, &p);                 /* 0.4: inside */
@@ -130,11 +130,13 @@ int main(int argc, char **argv)
         turn(32767, 32767, &h, &p);
         near(h, 0, "deadzone 1, x"); near(p, 0, "deadzone 1, y");
     } else if (!strcmp(c, "fallback")) {
-        /* Every key bad: the defaults, 5 and 0.05 and no invert. */
+        /* Every key bad: the defaults, 5 and 0.15 and no invert. */
         turn(32767, 0, &h, &p);
         near(h, 3, "default sensitivity, not inverted");
-        turn(1500, 0, &h, &p);                  /* 0.046: inside 0.05 */
+        turn(4500, 0, &h, &p);                  /* 0.137: inside 0.15 */
         near(h, 0, "default deadzone");
+        turn(6554, 0, &h, &p);                  /* 0.2: past it */
+        near(h, 3 * (6554.0 / 32767 - 0.15) / 0.85, "past the default deadzone");
     } else if (!strcmp(c, "pitch")) {
         int i;
         for (i = 0; i < 100; i++) assert(frame(0, 32767, eye));

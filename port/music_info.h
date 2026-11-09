@@ -1,7 +1,7 @@
 /* Music info in pause: the song playing now, in the pause menus.
  *
  * Display > Music info in pause, kept as musicinpause= in the settings file
- * (0, off, the default, or 1): both pause menus show the song that is
+ * (0, off, or 1, the default): both pause menus show the song that is
  * playing, its number, title and artist, in the game's font, in white, in
  * the free part of the menu's left column, above ROTATE MAP (and below
  * CHANGE MAP, in the street's menu). It changes at once, and the lines change with the song while the

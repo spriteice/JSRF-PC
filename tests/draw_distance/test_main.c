@@ -278,7 +278,10 @@ int main(int argc, char **argv)
     CHECK(!strcmp(s_row.choices[0], "1x") && !strcmp(s_row.choices[3], "4x"));
     CHECK(!strcmp(s_row.choices[DRAW_DISTANCE_UNLIMITED], "Unlimited"));
     CHECK(s_row.state() == draw_distance_step());
-    if (!strcmp(c, "off") || !strncmp(c, "bad", 3)) check_step(0);
+    if (!strcmp(c, "off")) check_step(0);
+    /* None, or one the row doesn't have: 2x, the default. */
+    if (!strcmp(c, "default") || !strncmp(c, "bad", 3)) check_step(1);
+    if (!strcmp(c, "default")) CHECK(draw_far_buildings() && s_far_row.state());   /* on by default */
     if (!strcmp(c, "2x")) check_step(1);
     if (!strcmp(c, "3x")) check_step(2);
     if (!strcmp(c, "4x")) check_step(3);
@@ -312,7 +315,7 @@ int main(int argc, char **argv)
         draw_distance_drawn(DRAW_GATES, 1, 99.0, 99);    /* not a gate: nothing */
     }
     if (!strcmp(c, "far_off")) {
-        /* Off by default: the game's set as it is. */
+        /* Off: the game's set as it is. */
         uint32_t set[DRAW_SET_WORDS];
         CHECK(!draw_far_buildings() && !s_far_row.state());
         map_make();

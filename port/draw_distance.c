@@ -394,16 +394,17 @@ void draw_distance_start(void)
     const char *copies = getenv("JSRF_DRAW_COPIES");
     double v;
     int r = nv_window_pref_num("drawdistance", &v);
-    s_step = 0;
+    s_step = DRAW_DISTANCE_DEFAULT;
     if (r > 0 && v >= 0 && v < DRAW_DISTANCE_STEPS && v == (int)v)
         s_step = (int)v;
     else if (r > 0)
-        fprintf(stderr, "[DRAW] settings: drawdistance=%g is not 0 to %d; using 0\n", v,
-                DRAW_DISTANCE_STEPS - 1);
+        fprintf(stderr, "[DRAW] settings: drawdistance=%g is not 0 to %d; using %d\n", v,
+                DRAW_DISTANCE_STEPS - 1, DRAW_DISTANCE_DEFAULT);
     else if (r < 0)
-        fprintf(stderr, "[DRAW] settings: drawdistance is not a number; using 0\n");
+        fprintf(stderr, "[DRAW] settings: drawdistance is not a number; using %d\n",
+                DRAW_DISTANCE_DEFAULT);
     fprintf(stderr, "[DRAW] objects at %s (settings)\n", k_names[s_step]);
-    s_far = nv_window_pref_num("farbuildings", &v) > 0 && v != 0;
+    s_far = nv_window_pref_num("farbuildings", &v) > 0 ? v != 0 : DRAW_FAR_DEFAULT;
     fprintf(stderr, "[DRAW] Far buildings %s (settings)\n", s_far ? "on" : "off");
     s_copies = copies && strcmp(copies, "0") != 0;
     if (s_copies) fprintf(stderr, "[DRAW] JSRF_DRAW_COPIES: an area's copies drawn too\n");

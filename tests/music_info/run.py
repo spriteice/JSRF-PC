@@ -56,7 +56,8 @@ PICK = [
 
 # case: (settings file or None for none, log lines it must print)
 cases = {
-    "off": (None, ["[MUSIC] info in pause off (settings)"]),
+    "default": (None, ["[MUSIC] info in pause on (settings)"]),
+    "off": ("musicinpause=0\n", ["[MUSIC] info in pause off (settings)"]),
     "on": ("musicinpause=1\n", ["[MUSIC] info in pause on (settings)"]),
     "flip": ("game_dir=/games/jsrf\nmusicinpause=0\n",
              ["[MUSIC] info in pause off (settings)", "[MUSIC] info in pause on (the menu)"]),

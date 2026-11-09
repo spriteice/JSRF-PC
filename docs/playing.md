@@ -34,9 +34,11 @@ one.
 These work in a window or full screen, and each one is remembered.
 
 - **F1, or Back on a controller:** The in-game menu.
-- **F11 or Alt+Return:** Full screen.
+- **F11 or Alt+Return:** Full screen or a window. The game starts full
+  screen until you choose a window.
 - **F10:** 4:3, and back to widescreen at Match screen, your screen's own
-  shape. Display > Aspect ratio has the other shapes. Widescreen widens the
+  shape, which the game starts at until you choose. Display > Aspect ratio
+  has the other shapes. Widescreen widens the
   view rather than stretching it: the HUD and text keep their shape, the HUD
   sits at the screen's edges, the pause menus and the race previews are
   laid out across the screen, the garage's menus and VS mode's setup screen
@@ -109,25 +111,25 @@ menu.
 - **Display:** Full screen, the aspect ratio, the render scale (1× to 6×), the
   draw distance, Far buildings, Skip intro, and Music info in pause. The
   aspect ratio is 4:3 (the Xbox's own, widescreen off), 16:10, 16:9, 21:9, or
-  Match screen, the shape of the display the window is on. It changes at once, and is kept as
+  Match screen, the shape of the display the window is on, the default. It changes at once, and is kept as
   `aspect=` (with `widescreen=` for on or off) in the settings file. Draw
   distance is how far away the game draws the things in its world: crowds,
   spray cans, props you can knock over, traffic, the police and the race's
-  checkpoints. 1x is the game's own distances, 2x to 4x twice to four times
-  them, and Unlimited as far as the camera sees. It changes at once, costs
+  checkpoints. 1x is the game's own distances, 2x (the default) to 4x twice
+  to four times them, and Unlimited as far as the camera sees. It changes at once, costs
   more the further it goes, and is kept as `drawdistance=` (0 for 1x to 4 for
   Unlimited) in the settings file. Above 2x it will struggle on weak hardware.
   Far buildings draws every part of the map the game ever shows, with the
   things in it, not only the part it shows from where the camera is. A part it
   never shows stays hidden, such as the second copy of Dogenzaka Hill's
-  street. Off by default; it changes at once, costs more, and is kept as
+  street. On by default; it changes at once, costs more, and is kept as
   `farbuildings=` (1 or 0) in the settings file. Skip intro leaves out the
   logos and the graffiti disclaimer the game opens with, and starts at the
   title screen's loading. Off by default, so the intro plays as on the Xbox.
   It is kept as `skipintro=` in the settings file. Music info in pause shows
   the song playing, its number, title and artist, in both pause menus, on the
   left, above Rotate map. It follows the songs of the street mixes too, and
-  shows nothing for the title's and the story's own music. Off by default; it
+  shows nothing for the title's and the story's own music. On by default; it
   changes at once, and is kept as `musicinpause=` (1 or 0) in the settings
   file.
 - **Graphics:** The [graphics options](#graphics-options) below.
@@ -140,7 +142,7 @@ menu.
   settings file, and changing it restarts the game. [The audio
   effects](technical/audio-effects.md) says how they work.
 - **Controller:** The free camera, Auto centre, and the free camera's
-  inversion, sensitivity, and deadzone.
+  inversion, sensitivity, and deadzone (15% by default).
 - **Developer:** Settings for testing and bug reports.
   - **Log to file:** Stops or starts writing to `last-run.log` at once.
   - **Logging:** The engine's diagnostic logs, for bug reports.
@@ -187,8 +189,9 @@ These are in the in-game menu, under Graphics.
   when it starts, so play doesn't pause for them. On by default. Changing it
   restarts the game.
 - **Anisotropic filtering:** 2× to 16×. It keeps textures sharp where they are
-  seen at an angle, such as streets running into the distance. Off by default.
+  seen at an angle, such as streets running into the distance. 8× by default,
+  or as much as the graphics card takes, if that is less.
 - **Anti-aliasing:** Smooths jagged edges. SMAA costs little and smooths the
   finished picture, the HUD included. MSAA (2×, 4×, or 8×) gives the cleanest
-  edges but asks the most of the graphics card. Use either, or both. Off by
-  default.
+  edges but asks the most of the graphics card. Use either, or both. SMAA is
+  on by default, MSAA off.

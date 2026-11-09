@@ -1,8 +1,8 @@
 /* Draw distance: how far the game draws the objects in its world, and its
  * buildings.
  *
- * Display > Draw distance, kept as drawdistance= in the settings file: 1x (0,
- * the default) is the game's own distances, 2x, 3x and 4x (1 to 3) twice to
+ * Display > Draw distance, kept as drawdistance= in the settings file: 1x (0)
+ * is the game's own distances, 2x, 3x and 4x (1 to 3, 2x the default) twice to
  * four times them, and Unlimited (4) no distance at all, up to the camera's far
  * plane. It changes at once. The game decides whether to draw each object in a
  * few gates, each comparing the object's depth in front of the eye with
@@ -10,7 +10,7 @@
  * checkpoints, props and traffic, the Enemy bank's kinds (police, tanks), and
  * one attached part.
  *
- * Display > Far buildings, kept as farbuildings= (0, off, the default, or 1):
+ * Display > Far buildings, kept as farbuildings= (0, off, or 1, the default):
  * the buildings aren't cut by distance but by area. Each frame the camera
  * makes the set of the map's areas to draw, the ones the visible list of the
  * area it is in names, and nothing outside the set is drawn: neither the
@@ -26,6 +26,10 @@
 
 #define DRAW_DISTANCE_STEPS     5   /* 1x, 2x, 3x, 4x, Unlimited */
 #define DRAW_DISTANCE_UNLIMITED 4
+/* The defaults, with no drawdistance= or farbuildings= in the settings:
+ * 2x, and Far buildings on. */
+#define DRAW_DISTANCE_DEFAULT   1
+#define DRAW_FAR_DEFAULT        1
 
 /* At start, before the game runs: reads the settings and adds the in-game
  * menu's two Display rows. */

@@ -31,6 +31,9 @@ static int nv_window_pref_num(const char *key, double *v)
 /* The row goes right under Skip intro (port/intro.c). */
 #define MUSIC_UNDER "Skip intro"
 
+/* On with no musicinpause= in the settings. */
+#define MUSIC_INFO_DEFAULT 1
+
 static volatile int s_on;
 
 #if defined(XBOXRECOMP_MENU)
@@ -46,7 +49,7 @@ static void menu_flip(void)
 void music_info_start(void)
 {
     double v;
-    s_on = nv_window_pref_num("musicinpause", &v) > 0 && v != 0;
+    s_on = nv_window_pref_num("musicinpause", &v) > 0 ? v != 0 : MUSIC_INFO_DEFAULT;
     fprintf(stderr, "[MUSIC] info in pause %s (settings)\n", s_on ? "on" : "off");
 #if defined(XBOXRECOMP_MENU)
     {

@@ -959,9 +959,10 @@ static void poly_offset_gl(float *factor, float *units)
  *
  * Nothing the title can observe changes with either -- its surfaces, their
  * sizes and the raster stay what they were. RECOMP_GL_SMAA=0|1 and
- * RECOMP_GL_MSAA=n win over the settings (the window's smaa= and msaa=); both
- * are off by default.
+ * RECOMP_GL_MSAA=n win over the settings (the window's smaa= and msaa=). SMAA
+ * is on by default, multisampling off.
  */
+#define SMAA_DEFAULT 1
 static volatile int g_smaa_want;       /* asked for */
 static int          g_smaa_now;        /* and in use */
 static volatile int g_msaa_want = 1;   /* samples a pixel asked for, 1 none */
@@ -1109,13 +1110,14 @@ static struct {
 
 /*
  * Anisotropic filtering: the most samples a texture with mipmaps is given
- * (tex_aniso), none unless RECOMP_GL_ANISO=n or the window's aniso= setting
- * asks for some; 0 or 1 is none beyond what the title asks for itself. It
+ * (tex_aniso), 8x unless RECOMP_GL_ANISO=n or the window's aniso= setting
+ * asks for other; 0 or 1 is none beyond what the title asks for itself. It
  * can change while the game runs: asked for at any time (the in-game menu)
  * and taken at the next flip, where every texture it reaches is made again
  * (aniso_take).
  */
-#define ANISO_NONE 1            /* one sample: off, our default (upstream's is 16x) */
+#define ANISO_NONE 1            /* one sample: off */
+#define ANISO_DEFAULT 8         /* our default (upstream's is 16x) */
 static volatile int g_aniso_want = ANISO_NONE;  /* the most samples asked for */
 static int          g_aniso_now = ANISO_NONE;   /* and in use */
 
@@ -1343,10 +1345,11 @@ static int gl_init(uint32_t w, uint32_t h)
         }
         if ((e = getenv("RECOMP_WINDOW_W")) && atoi(e) >= 320) ww = atoi(e);
         if ((e = getenv("RECOMP_WINDOW_H")) && atoi(e) >= 240) wh = atoi(e);
-        /* Full screen as the player last left it (sdl_choose_fullscreen),
-         * unless RECOMP_FULLSCREEN says otherwise: the launchers' --fullscreen,
-         * or a new scale's restart (sdl_restart_at). */
-        if ((e = getenv("RECOMP_FULLSCREEN")) && *e ? atoi(e) : sdl_cfg_get("fullscreen", 0))
+        /* Full screen as the player last left it (sdl_choose_fullscreen), and
+         * full screen until they choose, unless RECOMP_FULLSCREEN says
+         * otherwise: the launchers' --fullscreen, or a new scale's restart
+         * (sdl_restart_at). */
+        if ((e = getenv("RECOMP_FULLSCREEN")) && *e ? atoi(e) : sdl_cfg_get("fullscreen", 1))
             flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
         g_window = SDL_CreateWindow("JSRF-PC",
                                     SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
@@ -1577,12 +1580,14 @@ void nv_window_file_set(const char *file, const char *key, int val)
 }
 
 /* nv2a_widescreen() asks this when RECOMP_WIDESCREEN is not set. */
-int nv_window_pref_widescreen(void) { return sdl_cfg_get("widescreen", 0) != 0; }
+int nv_window_pref_widescreen(void) { return sdl_cfg_get("widescreen", 1) != 0; }
 
 /* And this, for the shape it is on at: aspect='s last line as a wide shape
- * (nv2a_wide_shape_parse), or -1 when there is none. widescreen= stays
- * whether it is on, so a settings file from before aspect= reads as it did
- * (16:9), and a build from before it still finds widescreen=. */
+ * (nv2a_wide_shape_parse). With none, 16:9 when widescreen= is there, so a
+ * settings file from before aspect= reads as it did, and Match screen when
+ * neither is: so widescreen is on at Match screen until the player chooses.
+ * widescreen= stays whether it is on, so a build from before aspect= still
+ * finds it. */
 #define SDL_CFG_ASPECT "aspect"
 int nv_window_pref_shape(void);
 int nv_window_pref_shape(void)
@@ -1592,11 +1597,14 @@ int nv_window_pref_shape(void)
     int shape = -1;
     FILE *f;
     sdl_cfg_path(path, sizeof path);
-    if (!path[0] || !(f = fopen(path, "r"))) return -1;
-    while (fgets(line, sizeof line, f))
-        if (!strncmp(line, SDL_CFG_ASPECT, kl) && line[kl] == '=')
-            shape = nv2a_wide_shape_parse(line + kl + 1);
-    fclose(f);
+    if (path[0] && (f = fopen(path, "r"))) {
+        while (fgets(line, sizeof line, f))
+            if (!strncmp(line, SDL_CFG_ASPECT, kl) && line[kl] == '=')
+                shape = nv2a_wide_shape_parse(line + kl + 1);
+        fclose(f);
+    }
+    if (shape < 0)
+        shape = sdl_cfg_get("widescreen", -1) >= 0 ? NV2A_WIDE_SHAPE_16_9 : NV2A_WIDE_SHAPE_MATCH;
     return shape;
 }
 
@@ -12898,9 +12906,9 @@ static void shader_cache_start(void)
 static void aa_start(void)
 {
     const char *vs = getenv("RECOMP_GL_SMAA"), *vm = getenv("RECOMP_GL_MSAA");
-    int smaa = 0, msaa = 0;
+    int smaa = SMAA_DEFAULT, msaa = 0;
 #if defined(NV2A_GL_USE_SDL)
-    smaa = sdl_cfg_get("smaa", 0) != 0;
+    smaa = sdl_cfg_get("smaa", SMAA_DEFAULT) != 0;
     msaa = sdl_cfg_get("msaa", 0);
 #endif
     if (vs && *vs) smaa = atoi(vs) != 0;
@@ -12919,15 +12927,15 @@ static void aa_start(void)
 }
 
 /* Anisotropic filtering from the start, before the first texture is made:
- * RECOMP_GL_ANISO, else the window's setting, else none, as the
+ * RECOMP_GL_ANISO, else the window's setting, else 8x, as the
  * most samples the device takes at or below it, in powers of two; and its
  * menu row. */
 static void aniso_start(void)
 {
     const char *v = getenv("RECOMP_GL_ANISO");
-    int n = (v && *v) ? atoi(v) : ANISO_NONE, max = 16, a = 1;
+    int n = (v && *v) ? atoi(v) : ANISO_DEFAULT, max = 16, a = 1;
 #if defined(NV2A_GL_USE_SDL)
-    if (!(v && *v)) n = sdl_cfg_get("aniso", ANISO_NONE);
+    if (!(v && *v)) n = sdl_cfg_get("aniso", ANISO_DEFAULT);
 #endif
     if (G->aniso_max) max = G->aniso_max();
     while (a * 2 <= n && a * 2 <= max) a *= 2;

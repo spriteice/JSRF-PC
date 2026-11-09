@@ -60,9 +60,11 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
   F1                 the in-game menu (also Back on a controller, which is
                      then the menu's alone): File, Display, Graphics,
                      Audio, Controller, and Developer
-  F11 or Alt+Enter   full screen; remembered
-  F10                4:3, or widescreen at your screen's own shape (Display
-                     > Aspect ratio has 16:10, 16:9 and 21:9 too): a wider
+  F11 or Alt+Enter   full screen or a window, full screen by default;
+                     remembered
+  F10                4:3, or widescreen at your screen's own shape, the
+                     default (Display > Aspect ratio has 16:10, 16:9 and
+                     21:9 too): a wider
                      view, not a stretch; the HUD keeps its shape and sits
                      at the screen's edges, the pause menus and the race
                      previews are laid out across the screen, the garage's
@@ -82,16 +84,16 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
 
 Display > Draw distance in the in-game menu is how far away the game draws
 the things in its world: crowds, spray cans, props you can knock over,
-traffic, the police and the race's checkpoints. 1x (the default) is the
-game's own distances, 2x to 4x twice to four times them, and Unlimited as far
-as the camera sees. It changes straight away, asks more of the computer the
+traffic, the police and the race's checkpoints. 1x is the game's own
+distances, 2x (the default) to 4x twice to four times them, and Unlimited as
+far as the camera sees. It changes straight away, asks more of the computer the
 further it goes, and is remembered as drawdistance= in the settings file (0
 for 1x to 4 for Unlimited). Above 2x it will struggle on weak hardware.
 
 Display > Far buildings in the in-game menu draws every part of the map the
 game ever shows, with the things in it, not only the part it shows from where
 the camera is. A part it never shows stays hidden, such as the second copy of
-Dogenzaka Hill's street. Off by default. It changes straight away, asks more
+Dogenzaka Hill's street. On by default. It changes straight away, asks more
 of the computer, and is remembered as farbuildings= in the settings file
 (1 or 0).
 
@@ -103,7 +105,7 @@ as skipintro= in the settings file (0 or 1).
 Display > Music info in pause in the in-game menu shows the song playing, its
 number, title and artist, in both pause menus, on the left, above Rotate map.
 It follows the songs of the street mixes too, and shows nothing for the
-title's and the story's own music. Off by default. It changes straight away,
+title's and the story's own music. On by default. It changes straight away,
 and is remembered as musicinpause= in the settings file (0 or 1).
 
 Graphics > Anti-aliasing (MSAA) in the in-game menu smooths jagged edges:
@@ -115,12 +117,12 @@ higher resolutions.
 Graphics > Anti-aliasing (SMAA) in the in-game menu smooths jagged edges
 with a quick pass over each finished frame, at much the same small cost
 whatever is on screen. It smooths the HUD too. It works alone or on top of
-MSAA. Off by default; it changes straight away, with no restart, and is
+MSAA. On by default; it changes straight away, with no restart, and is
 remembered as smaa= in the settings file (0 or 1).
 
 Graphics > Anisotropic filtering in the in-game menu keeps textures sharp
 where they are seen at a steep angle, such as streets and walls running into
-the distance: Off (the default), 2x, 4x, 8x, or 16x, as far as the graphics
+the distance: Off, 2x, 4x, 8x (the default), or 16x, as far as the graphics
 card goes. It changes straight away, with no restart, though the textures it
 reaches take a moment to load again, and is remembered as aniso= in the
 settings file (0, 2, 4, 8, or 16). It leaves things that face the screen,
@@ -178,8 +180,8 @@ the defaults, which a key that is left out, or out of range, gets:
   invert_y=0         1: up tilts the view down
   sensitivity_x=5    left-right speed, 1 to 10: 36 degrees a second per step
   sensitivity_y=5    up-down speed, 1 to 10
-  deadzone=0.05      how far the stick moves before the camera does, 0 to 1
-                     (0.05 is 5%)
+  deadzone=0.15      how far the stick moves before the camera does, 0 to 1
+                     (0.15 is 15%)
   autocentre=0       auto centre: once the right stick is let go, the view
                      eases back behind the player. 0 off, 1 mild (after 2
                      seconds, slowly), 2 medium, 3 high (after a second),

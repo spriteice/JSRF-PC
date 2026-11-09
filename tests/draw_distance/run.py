@@ -45,22 +45,23 @@ MAP = ["[DRAW] Far buildings: the map has 7 areas; lists name 6 of them, 1 a cop
 
 # case: (settings file or None for none, log lines it must print[, environment])
 cases = {
-    "off": (None, ["[DRAW] objects at 1x (settings)"]),
+    "default": (None, ["[DRAW] objects at 2x (settings)", "[DRAW] Far buildings on (settings)"]),
+    "off": ("drawdistance=0\nfarbuildings=0\n", ["[DRAW] objects at 1x (settings)"]),
     "2x": ("drawdistance=1\n", ["[DRAW] objects at 2x (settings)"]),
     "3x": ("drawdistance=2\n", ["[DRAW] objects at 3x (settings)"]),
     "4x": ("drawdistance=3\n", ["[DRAW] objects at 4x (settings)"]),
     "unlimited": ("drawdistance=4\r\n", ["[DRAW] objects at Unlimited (settings)"]),
-    "bad_far": ("drawdistance=5\n", ["drawdistance=5 is not 0 to 4; using 0",
-                                     "[DRAW] objects at 1x (settings)"]),
-    "bad_half": ("drawdistance=2.5\n", ["drawdistance=2.5 is not 0 to 4; using 0"]),
-    "bad_below": ("drawdistance=-1\n", ["drawdistance=-1 is not 0 to 4; using 0"]),
-    "bad_word": ("drawdistance=far\n", ["drawdistance is not a number; using 0"]),
-    "bad_nan": ("drawdistance=nan\n", ["drawdistance=nan is not 0 to 4; using 0"]),
+    "bad_far": ("drawdistance=5\n", ["drawdistance=5 is not 0 to 4; using 1",
+                                     "[DRAW] objects at 2x (settings)"]),
+    "bad_half": ("drawdistance=2.5\n", ["drawdistance=2.5 is not 0 to 4; using 1"]),
+    "bad_below": ("drawdistance=-1\n", ["drawdistance=-1 is not 0 to 4; using 1"]),
+    "bad_word": ("drawdistance=far\n", ["drawdistance is not a number; using 1"]),
+    "bad_nan": ("drawdistance=nan\n", ["drawdistance=nan is not 0 to 4; using 1"]),
     "pick": ("game_dir=/games/jsrf\ndrawdistance=0\n",
              ["[DRAW] objects at 1x (settings)", "[DRAW] objects at 4x (the menu)"]),
-    "log": ("drawdistance=1\n", [LOG, "props and traffic 2.0 (0.0), enemies 0.0 (0.0), "
+    "log": ("drawdistance=1\nfarbuildings=0\n", [LOG, "props and traffic 2.0 (0.0), enemies 0.0 (0.0), "
                                       "attached part 0.0 (0.0)"]),
-    "far_off": (None, ["[DRAW] Far buildings off (settings)"]),
+    "far_off": ("farbuildings=0\n", ["[DRAW] Far buildings off (settings)"]),
     "far_on": ("farbuildings=1\n", ["[DRAW] Far buildings on (settings)", *MAP,
                                     "[DRAW] Far buildings: the map has 6 areas; lists name 5 of them, "
                                     "1 a copy of another; no list names 5 (a copy of area 0, (0, 500, 0) away)"]),
@@ -68,7 +69,7 @@ cases = {
                    {"JSRF_DRAW_COPIES": "1"}),
     "far_flip": ("game_dir=/games/jsrf\nfarbuildings=0\n",
                  ["[DRAW] Far buildings off (settings)", "[DRAW] Far buildings on (the menu)", MAP[0]]),
-    "far_log": ("farbuildings=1\n", ["[DRAW] t=5.1 1x, " + AREAS]),
+    "far_log": ("drawdistance=0\nfarbuildings=1\n", ["[DRAW] t=5.1 1x, " + AREAS]),
     "far_log_2x": ("drawdistance=1\nfarbuildings=1\n",
                    ["[DRAW] t=5.1 2x, a frame's objects (past 1x's distance): crowds 1.0 (0.0), pickups 0.0 (0.0)",
                     "attached part 0.0 (0.0); " + AREAS]),
