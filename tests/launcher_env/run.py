@@ -1,7 +1,7 @@
 """Run the Linux launcher, and see what it hands the engine.
 
-Takes launcher/linux/jsrf-unleashed as it is, in a package's layout (as
-jsrf-pc, with bin/ and VERSION beside it), with a stand-in engine that
+Takes launcher/linux/jsrf-pc as it is, in a package's layout (with bin/
+and VERSION beside it), with a stand-in engine that
 writes down its arguments and environment, and a stand-in game folder
 (default.xbe and Media). The engine must be handed the paths and the
 player's settings (RECOMP_GL_SCALE, RECOMP_FULLSCREEN) and no other
@@ -25,7 +25,7 @@ import sys
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
-launcher = root / "launcher/linux/jsrf-unleashed"
+launcher = root / "launcher/linux/jsrf-pc"
 
 # The player's settings: the only switches a launcher may pass.
 SETTINGS = {"RECOMP_GL_SCALE", "RECOMP_FULLSCREEN"}

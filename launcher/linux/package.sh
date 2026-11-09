@@ -23,7 +23,7 @@ stage="$(mktemp -d)"
 dir="$stage/$name"
 
 mkdir -p "$dir/bin" "$dir/lib" "$dir/share" "$dir/licences"
-install -m 755 "$here/jsrf-unleashed" "$dir/jsrf-pc"
+install -m 755 "$here/jsrf-pc" "$dir/jsrf-pc"
 install -m 644 "$here/README.txt" "$dir/README.txt"
 install -m 755 "$engine" "$dir/bin/jsrf_recomp"
 # The version is the engine's own (port/CMakeLists.txt builds it in from the
