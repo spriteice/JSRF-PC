@@ -18,13 +18,14 @@
  *     #include "menu.h"
  *     static const XBOX_MENU_ITEM rows[] = {
  *         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE,
- *           .label = "Fullscreen", .state = is_fullscreen, .run = toggle_fullscreen },
+ *           .label = "Fullscreen", .state = is_fullscreen, .run = toggle_fullscreen,
+ *           .hint = "The window becomes fullscreen." },
  *     };
  *     xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
  *     #endif
  *
- * Plain C; menu.cpp draws the rows with Dear ImGui. Labels, (Restart), boxes
- * and File > About follow docs/menu-format.md.
+ * Plain C; menu.cpp draws the rows with Dear ImGui. Labels, hints,
+ * (Restart), boxes and File > About follow docs/menu-format.md.
  */
 #ifndef XBOX_MENU_H
 #define XBOX_MENU_H
@@ -91,7 +92,15 @@ typedef struct XBOX_MENU_ITEM {
      * row, this one is drawn below the menu's other rows (above any `last`
      * row), and the log says so once. */
     const char     *under;
+    /* What the row does, in one sentence of at most MENU_HINT_LONGEST
+     * characters, shown along the bottom while the pad or the pointer is on
+     * the row or its choices (docs/menu-format.md, Hints). Every row but a
+     * separator has one: the log says so once if one hasn't. */
+    const char     *hint;
 } XBOX_MENU_ITEM;
+
+/* Two lines at 640 x 480, beside the pad's buttons. */
+#define MENU_HINT_LONGEST 70
 
 /* Adds rows to the end of their menus (above any `last` row), or under the
  * row each names, copied: the table can be on the caller's stack. Any
@@ -101,12 +110,18 @@ typedef struct XBOX_MENU_ITEM {
 void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count);
 
 /* The window's side (menu_sdl.cpp, and tests/menu): one frame of the menu,
- * with the game dimmed behind it, between ImGui::NewFrame() and
- * ImGui::Render(), on the window's thread. It stays until the window shuts
- * it (F1, Back). just_opened: the first frame after opening -- the bar
- * alone, the pad on the first menu's title, so a pad has somewhere to
- * start. */
-void menu_build(int just_opened);
+ * with the game dimmed behind it and a strip along the bottom, between
+ * ImGui::NewFrame() and ImGui::Render(), on the window's thread. It stays
+ * until the window shuts it (F1, Back). just_opened: the first frame after
+ * opening -- the bar alone, the pad on the first menu's title, so a pad has
+ * somewhere to start. pad: the player last used a pad, not the keyboard, so
+ * the strip shows the pad's buttons, not the keys. */
+void menu_build(int just_opened, int pad);
+
+/* The hint the strip along the bottom showed in the last menu_build: the
+ * row the pad is on, else the one the pointer is on; NULL on the bar, or in
+ * a box. Read by tests/menu. */
+const char *menu_hint(void);
 
 /* The window's side too, before ImGui::NewFrame(): how far the menu has
  * faded in, from 0 (gone) to 1, `seconds` after it was `fade`, as it opens

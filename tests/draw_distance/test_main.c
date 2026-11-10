@@ -275,6 +275,10 @@ int main(int argc, char **argv)
     CHECK(!strcmp(s_row.label, "Draw distance") && !s_row.confirm);
     CHECK(s_row.under && !strcmp(s_row.under, "Render scale (Restart)"));
     CHECK(s_row.nchoices == DRAW_DISTANCE_STEPS);
+    /* Each with a hint, a sentence short enough for the strip (menu.h). */
+    CHECK(s_row.hint && strlen(s_row.hint) <= MENU_HINT_LONGEST && s_row.hint[strlen(s_row.hint) - 1] == '.');
+    CHECK(s_far_row.hint && strlen(s_far_row.hint) <= MENU_HINT_LONGEST &&
+          s_far_row.hint[strlen(s_far_row.hint) - 1] == '.');
     CHECK(!strcmp(s_row.choices[0], "1x") && !strcmp(s_row.choices[3], "4x"));
     CHECK(!strcmp(s_row.choices[DRAW_DISTANCE_UNLIMITED], "Unlimited"));
     CHECK(s_row.state() == draw_distance_step());

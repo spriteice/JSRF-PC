@@ -49,7 +49,9 @@ int main(int argc, char **argv)
     CHECK(s_row.menu == XBOX_MENU_AUDIO && s_row.kind == XBOX_ITEM_TOGGLE && !s_row.last);
     CHECK(!strcmp(s_row.label, "Audio effects (Restart)"));
     CHECK(s_row.confirm && !strcmp(s_row.confirm,
-                                   "The game restarts to apply this, losing unsaved progress."));
+                                   "Apply selection and restart, losing unsaved progress?"));
+    /* A hint, a sentence short enough for the strip (menu.h). */
+    CHECK(s_row.hint && strlen(s_row.hint) <= MENU_HINT_LONGEST && s_row.hint[strlen(s_row.hint) - 1] == '.');
     CHECK(s_row.state() == audio_effects());
     /* The setting, passed to the effects once, which leave the environment
      * to win over it. */

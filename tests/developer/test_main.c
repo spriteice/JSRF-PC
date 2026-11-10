@@ -9,10 +9,12 @@
  *
  * Built with the in-game menu too, where xbox_MenuAdd is stood in for: each
  * page of switches is a line in the log, its label then its rows in order,
- * and a line after it with its ticks, a bit for each row.
+ * and a line after it with its ticks, a bit for each row. A row without a
+ * hint, or with one too long for the strip (menu.h), stops it there.
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #if defined(XBOXRECOMP_MENU)
 #  include "menu.h"
 #endif
@@ -25,6 +27,13 @@ void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count)
 {
     int i, k;
     for (i = 0; i < count; i++) {
+        /* Each with a hint, a sentence short enough for the strip (menu.h). */
+        const char *h = items[i].hint;
+        if (!h || strlen(h) > MENU_HINT_LONGEST || h[strlen(h) - 1] != '.') {
+            fprintf(stderr, "[MENU] %s: no hint, or not one sentence of at most %d characters\n",
+                    items[i].label, MENU_HINT_LONGEST);
+            exit(1);
+        }
         if (items[i].kind != XBOX_ITEM_TOGGLES) continue;
         fprintf(stderr, "[MENU] %s:", items[i].label);
         for (k = 0; k < items[i].nchoices; k++)

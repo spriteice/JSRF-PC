@@ -5,9 +5,10 @@ unchanged, as that file doesn't link without the rest of the input layer;
 and the window's side of the menu from src/menu/menu_sdl.cpp, unchanged,
 as that file needs SDL, a window and OpenGL.
 
-1. The menu's own drawing (src/menu/menu.cpp), driven with a pad:
-   compiled with Dear ImGui's core and its null backends (third_party/imgui)
-   as the engine builds them -- no exceptions, no RTTI -- and test_main.cpp.
+1. The menu's own drawing (src/menu/menu.cpp, with its look,
+   menu_style.cpp), driven with a pad: compiled with Dear ImGui's core and
+   its null backends (third_party/imgui) as the engine builds them -- no
+   exceptions, no RTTI -- and test_main.cpp.
 2. The window's side (xbox_MenuFrame, xbox_MenuDraw and xbox_MenuBusy, with
    set_open and the state they share, from src/menu/menu_sdl.cpp), with the
    same and test_window.cpp, which stands in for SDL and the backends.
@@ -53,9 +54,9 @@ with tempfile.TemporaryDirectory(prefix="menu-") as tmp:
              "-fno-exceptions", "-fno-rtti", "-fno-threadsafe-statics",
              "-DIMGUI_DISABLE_DEMO_WINDOWS", "-DIMGUI_DISABLE_DEBUG_TOOLS",
              "-DIMGUI_DISABLE_DEFAULT_SHELL_FUNCTIONS",
-             "-I" + str(root / "src/menu"), "-I" + str(imgui)]
+             "-I" + str(root / "src/menu"), "-I" + str(root / "src"), "-I" + str(imgui)]
     # Built once, for both tests.
-    shared = [root / "src/menu/menu.cpp",
+    shared = [root / "src/menu/menu.cpp", root / "src/menu/menu_style.cpp",
               imgui / "imgui.cpp", imgui / "imgui_draw.cpp",
               imgui / "imgui_tables.cpp", imgui / "imgui_widgets.cpp",
               imgui / "backends/imgui_impl_null.cpp"]

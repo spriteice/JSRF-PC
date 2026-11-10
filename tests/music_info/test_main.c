@@ -269,6 +269,8 @@ int main(int argc, char **argv)
     CHECK(s_row.menu == XBOX_MENU_DISPLAY && s_row.kind == XBOX_ITEM_TOGGLE && !s_row.last);
     CHECK(!strcmp(s_row.label, "Music info in pause") && !s_row.confirm);
     CHECK(s_row.under && !strcmp(s_row.under, "Skip intro"));
+    /* A hint, a sentence short enough for the strip (menu.h). */
+    CHECK(s_row.hint && strlen(s_row.hint) <= MENU_HINT_LONGEST && s_row.hint[strlen(s_row.hint) - 1] == '.');
     CHECK(s_row.state() == music_info_on());
     if (!strcmp(c, "off")) CHECK(!music_info_on());
     if (!strcmp(c, "on") || !strcmp(c, "default")) CHECK(music_info_on());   /* on by default */

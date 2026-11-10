@@ -39,6 +39,7 @@ static volatile int g_ready;        /* both read by the input layer's thread */
 static volatile int g_open;
 static int          g_just_opened;
 static float        g_fade;         /* how far in it has faded: menu_fade */
+static int          g_pad;          /* a pad's button was the last pressed, not a key */
 static volatile int g_shown;        /* the last frame built has the menu in it:
                                      * read by whichever thread swaps */
 static float        g_scale;
@@ -117,12 +118,16 @@ static void exit_game(void)
 
 /* Every field, in order: C++11 has no designated initializers. */
 static const XBOX_MENU_ITEM k_file[] = {
-    { XBOX_MENU_FILE, XBOX_ITEM_INFO,      "About", NULL, NULL,      NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL },
-    { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL,    NULL, NULL,      NULL, NULL, 0, NULL,       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL },
+    { XBOX_MENU_FILE, XBOX_ITEM_INFO,      "About", NULL, NULL,      NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
+      "Shows the engine version and relevant system details." },
+    { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL,    NULL, NULL,      NULL, NULL, 0, NULL,       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
+      NULL },
     { XBOX_MENU_FILE, XBOX_ITEM_ACTION,    "Restart", NULL, nv_window_restart, NULL, NULL, 0, NULL,
-      "The game restarts, losing unsaved progress.", NULL, NULL, 0, 0, 0, NULL, 0, NULL },
+      "Restart the game, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL,
+      "Restarts the game, losing unsaved progress." },
     { XBOX_MENU_FILE, XBOX_ITEM_ACTION,    "Exit",  NULL, exit_game, NULL, NULL, 0, NULL,
-      "Unsaved progress is lost.", NULL, NULL, 0, 0, 0, NULL, 0, NULL },
+      "Close the game, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL,
+      "Closes the game, losing unsaved progress." },
 };
 
 /* ---- opening and closing ------------------------------------------------ */
@@ -186,6 +191,10 @@ extern "C" int xbox_MenuInit(SDL_Window *window, void *gl_context, const char *a
 extern "C" int xbox_MenuEvent(const SDL_Event *ev)
 {
     if (!g_ready) return 0;
+    /* Which the player has in hand, for the buttons the menu shows: the
+     * last pressed, in the game or the menu. The mouse leaves it be. */
+    if (ev->type == SDL_CONTROLLERBUTTONDOWN) g_pad = 1;
+    else if (ev->type == SDL_KEYDOWN) g_pad = 0;
     if ((ev->type == SDL_KEYDOWN && ev->key.keysym.scancode == SDL_SCANCODE_F1 && !ev->key.repeat)
      || (ev->type == SDL_CONTROLLERBUTTONDOWN && ev->cbutton.button == SDL_CONTROLLER_BUTTON_BACK)) {
         SDL_LockMutex(g_mu);
@@ -236,7 +245,7 @@ extern "C" void xbox_MenuFrame(void)
     g_fade = menu_fade(g_fade, g_open, g_just_opened ? 0.0f : io.DeltaTime);
     ImGui::GetStyle().Alpha = g_fade;   /* the menu, its boxes and the dim behind */
     ImGui::NewFrame();
-    if (g_open || g_fade > 0.0f) menu_build(g_just_opened);
+    if (g_open || g_fade > 0.0f) menu_build(g_just_opened, g_pad);
     g_just_opened = 0;
     if (g_busy_total) {
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 1.0f);    /* not the menu's to fade */

@@ -68,7 +68,8 @@ void audio_start(void)
         const XBOX_MENU_ITEM row = {
             .menu = XBOX_MENU_AUDIO, .kind = XBOX_ITEM_TOGGLE, .label = "Audio effects (Restart)",
             .state = menu_effects, .run = menu_effects_flip,
-            .confirm = "The game restarts to apply this, losing unsaved progress." };
+            .confirm = "Apply selection and restart, losing unsaved progress?",
+            .hint = "Replicates the console's 3D sound, voices, and reverb." };
         xbox_MenuAdd(&row, 1);
     }
 #endif

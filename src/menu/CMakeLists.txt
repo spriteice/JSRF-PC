@@ -18,7 +18,8 @@ add_library(xbox_menu STATIC
 set_target_properties(xbox_menu PROPERTIES
     CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 target_include_directories(xbox_menu PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_include_directories(xbox_menu PRIVATE ${_imgui})
+target_include_directories(xbox_menu PRIVATE ${_imgui}
+    ${CMAKE_CURRENT_SOURCE_DIR}/..)   # platform/recomp_check.h
 target_compile_definitions(xbox_menu PUBLIC XBOXRECOMP_MENU=1)
 find_package(SDL2 REQUIRED)
 target_link_libraries(xbox_menu PRIVATE SDL2::SDL2 ${CMAKE_DL_LIBS})

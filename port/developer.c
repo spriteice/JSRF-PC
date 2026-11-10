@@ -267,17 +267,22 @@ void developer_start(void)
     {
         const XBOX_MENU_ITEM rows[] = {
             { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_TOGGLE, .label = "Log to file",
-              .state = log_on, .run = log_flip },
+              .state = log_on, .run = log_flip,
+              .hint = "Writes the log to last-run.log, for bug reports." },
             { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_TOGGLES, .label = "Logging",
-              .state = logging_on, .pick = logging_flip, .choices = s_row, .nchoices = DEV_LOGGING },
+              .state = logging_on, .pick = logging_flip, .choices = s_row, .nchoices = DEV_LOGGING,
+              .hint = "Adds the engine's diagnostic lines to the log. Applies on restart." },
             { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_TOGGLES, .label = "Engine switches",
               .state = engine_on, .pick = engine_flip, .choices = s_row + DEV_LOGGING,
-              .nchoices = DEV_ENGINE },
+              .nchoices = DEV_ENGINE,
+              .hint = "Turns parts of the engine off, or changes them. Applies on restart." },
             { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_TOGGLES, .label = "Performance",
-              .state = perf_on, .pick = perf_flip, .choices = k_perf_row, .nchoices = DEV_PERF },
+              .state = perf_on, .pick = perf_flip, .choices = k_perf_row, .nchoices = DEV_PERF,
+              .hint = "Tweaks that improve performance. Turn one off only if you have issues." },
             { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_TOGGLES, .label = "Experimental",
               .state = tries_on, .pick = tries_flip, .choices = k_tries_row,
-              .nchoices = DEV_TRIES },
+              .nchoices = DEV_TRIES,
+              .hint = "Experimental features go here. No guarantees on functionality." },
         };
         /* Experimental, the last, only while it has a row. */
         xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]) - !DEV_TRIES);

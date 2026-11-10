@@ -47,7 +47,8 @@ void intro_start(void)
         /* Below the window's rows, which are added once it is up. */
         const XBOX_MENU_ITEM row = {
             .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Skip intro",
-            .state = menu_skip, .run = menu_skip_flip, .last = 1 };
+            .state = menu_skip, .run = menu_skip_flip, .last = 1,
+            .hint = "Skips the intro logos and graffiti disclaimer." };
         xbox_MenuAdd(&row, 1);
     }
 #endif

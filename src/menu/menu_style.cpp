@@ -40,6 +40,10 @@ static ImVec4 with_alpha(ImVec4 c, float a)
 static constexpr ImVec4 k_green      = rgb(0x92, 0xC8, 0x3E);
 static constexpr ImVec4 k_dark_green = rgb(0x39, 0x7C, 0x2D);
 static constexpr ImVec4 k_black      = rgb(0x00, 0x00, 0x00);
+/* The pad's B, a red as dark as the dark green, and a grey as dark, for the
+ * caps (menu_style_cap). */
+static constexpr ImVec4 k_dark_red   = rgb(0xC4, 0x2B, 0x1C);
+static constexpr ImVec4 k_cap_grey   = rgb(0x66, 0x66, 0x66);
 
 /* How much of the dark green a frame takes when the pointer is on it, and
  * when it is held, over the dark style's frame colour. */
@@ -126,4 +130,9 @@ void menu_style_apply(ImGuiStyle *st)
     c[ImGuiCol_TabSelectedOverline]  = c[ImGuiCol_HeaderActive];
     c[ImGuiCol_TabDimmed]            = ImLerp(c[ImGuiCol_Tab], c[ImGuiCol_TitleBg], DARK_TAB_DIMMED_MIX);
     c[ImGuiCol_TabDimmedSelected]    = ImLerp(c[ImGuiCol_TabSelected], c[ImGuiCol_TitleBg], DARK_TAB_DIMMED_SELECTED_MIX);
+}
+
+ImVec4 menu_style_cap(menu_cap cap)
+{
+    return cap == MENU_CAP_A ? k_dark_green : cap == MENU_CAP_B ? k_dark_red : k_cap_grey;
 }

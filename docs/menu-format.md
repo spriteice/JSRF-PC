@@ -38,14 +38,31 @@ says so once.
 - A box's message is a whole sentence, ending in a full stop. It must be as
   short as possible, while still conveying the correct message.
 
+## Hints
+
+- Every row but a separator has a hint (`hint` in `menu.h`): what the row
+  does, shown in the strip along the bottom while the pad or the pointer is
+  on the row, or on its choices or its - and +. If a row has none, or one
+  too long, the log says so, for the first such row.
+- A hint says what the row does, not how to use the menu, in a sentence
+  ending in a full stop: "Sets how far the right stick moves before the
+  camera turns." A second, short one may say what it costs ("GPU heavy.",
+  "CPU heavy.", "Light on the GPU.") or when it applies ("Applies on
+  restart."). It must be as short as possible, and is at most 70 characters
+  (`MENU_HINT_LONGEST`), so it fits in two lines at 640 × 480.
+- A hint names no key, as a label doesn't.
+- The tests of the modules that add rows (tests/audio, draw_distance, intro,
+  music_info, developer) check that each has one.
+
 ## (Restart)
 
 - A row whose change needs the game to restart ends its label with
   ` (Restart)`, after its name: "Render scale (Restart)".
 - Choosing it asks first, with the "Are you sure?" box (the row's `confirm`),
-  and a message saying what the restart does and what is lost:
-  "The game restarts <doing what>, losing unsaved progress.", as in "The
-  game restarts at the new scale, losing unsaved progress."
+  and a question saying what OK does and what is lost: "<Do what>, losing
+  unsaved progress?", as in "Apply selection and restart, losing unsaved
+  progress?" or Purge shaders' "Delete the shader cache, losing unsaved
+  progress?"
 - OK saves the change and restarts the game (`sdl_restart` in nv2a_gl.c).
   Cancel and B change nothing; the pad starts on Cancel.
 - **Developer's switches are the exception.** The rows under Developer >
@@ -80,6 +97,13 @@ says so once.
 - The game is dimmed behind the menu, and further behind a box: black at
   40% each time (the style's `ModalWindowDimBg`), so the menu reads on the
   brightest stage and a setting's change can still be seen.
+- The strip along the bottom, in the bar's colour, shows the row's hint on
+  the left and on the right the buttons to press: A Select, B Back, and Back
+  Close on a pad, or Enter Select, Esc Back, and F1 Close on the keyboard,
+  whichever was pressed last. Each button or key is on a cap: A in the dark
+  green and B in a red as dark, as the pad colours them, and the rest grey
+  (`menu_style_cap`). The strip is as tall as the longest hint needs at the
+  window's width, so it stays still as the pad moves.
 - Colours come from the style alone: nothing in a menu sets one of its own.
 
 ## Behaviour

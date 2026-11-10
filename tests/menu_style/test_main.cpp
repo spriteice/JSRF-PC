@@ -10,7 +10,8 @@
  *     the setup window draw it on, with the game behind them at its
  *     brightest and at its darkest: the bar, menus and boxes, a box's title
  *     bar, the row the pad is on, the open menu's title, buttons in each
- *     state, the number box, and the progress bar.
+ *     state, the number box, and the progress bar; and on the caps of the
+ *     pad's buttons and the keys in the strip along the bottom.
  *   - The bright marks (the pad's cursor, a tick in a box) stand out at 3:1
  *     or more on what they are drawn on.
  *   - The dim behind the menu and its boxes darkens the game, and leaves it
@@ -212,6 +213,12 @@ int main(void)
             { "the progress bar, empty",       { win, col[ImGuiCol_FrameBg] }, 2 },
         };
         for (auto &o : on) text_on(st, o.what, o.layers, o.n, TEXT_CONTRAST);
+        static const char *const cap_name[MENU_CAP_COUNT] = { "the pad's A", "the pad's B", "a key, or Back" };
+        for (int i = 0; i < MENU_CAP_COUNT; i++) {
+            const ImVec4 cap = menu_style_cap((menu_cap)i);
+            CHECK(cap.w == 1.0f);           /* the strip under it shows through nowhere */
+            text_on(st, cap_name[i], &cap, 1, TEXT_CONTRAST);
+        }
     }
 
     /* The bright marks, on what they're drawn on, with the game black

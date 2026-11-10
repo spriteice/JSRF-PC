@@ -21,10 +21,15 @@
  * a submenu of switches, as Developer > Logging: each flips its own, and the
  * submenu stays open; and a toggle that asks first. The game dimmed behind
  * the menu, and the fade (menu_fade): out as the menu shuts, taking no input
- * as it goes, and in again as it opens. Last, the busy box (menu_build_busy)
- * with no menu, in the middle of the window.
+ * as it goes, and in again as it opens. The strip along the bottom: the
+ * hint of the row the pad or the pointer is on, a choice list's and a
+ * number's their row's, none on the bar or in a box; the pad's buttons or
+ * the keys; and all of it inside the strip, two lines tall at 640 x 480 for
+ * the longest hint a row may have. Last, the busy box (menu_build_busy) with
+ * no menu, in the middle of the window.
  */
 #include "menu.h"
+#include "menu_style.h"
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "backends/imgui_impl_null.h"
@@ -51,6 +56,11 @@ static int  scale_state(void)  { return s_scale; }
 static void scale_pick(int i)  { s_picks = i; }
 static void exit_run(void)     { s_exit = 1; }
 static const char *about_text(void) { return "JSRF-PC test"; }
+/* Two rows' hints, to find in the strip: Render scale's as long as a hint
+ * may be (menu.h), for the strip's height at 640 x 480. */
+static const char k_wide_hint[] = "Shows more of the world, either side.";
+static const char k_scale_hint[] = "Sets how sharp the picture is: higher asks more of your graphics card.";
+static_assert(sizeof k_scale_hint - 1 == MENU_HINT_LONGEST, "as long as a hint may be");
 static const char *const k_scales[] = { "1x  (640 x 480)", "2x  (1280 x 960)",
                                         "3x  (1920 x 1440)", "4x  (2560 x 1920)" };
 
@@ -64,14 +74,16 @@ static int  late_state(void)
 }
 static void late_run(void)   { }
 static const XBOX_MENU_ITEM k_late = {
-    XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Late", late_state, late_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL };
+    XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Late", late_state, late_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
+    "Came late." };
 
 /* A row marked last, as Display's Skip intro: added before the others, and
  * drawn below them all. */
 static int  last_state(void) { s_last_at = ++s_drawn_seq; return 0; }
 static void last_run(void)   { }
 static const XBOX_MENU_ITEM k_last = {
-    XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Skip intro", last_state, last_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 1, NULL };
+    XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Skip intro", last_state, last_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 1, NULL,
+    "Starts at the title screen." };
 
 /* Rows placed under another, as Display's Draw distance under Render scale:
  * added in one call before the row they name, and one naming a row that
@@ -85,13 +97,13 @@ static int  under_last_state(void) { s_under_last_at = ++s_drawn_seq; return 0; 
 static void under_run(void)      { }
 static const XBOX_MENU_ITEM k_under[] = {
     { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Under one", under0_state, under_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, "Render scale" },
+      0, 0, 0, NULL, 0, "Render scale", "The first under it." },
     { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Under two", under1_state, under_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, "Render scale" },
+      0, 0, 0, NULL, 0, "Render scale", "The second under it." },
     { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Unplaced", unplaced_state, under_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, "No such row" },
+      0, 0, 0, NULL, 0, "No such row", "Has nowhere to go." },
     { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Under the last", under_last_state, under_run, NULL, NULL, 0, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, "Skip intro" },
+      NULL, NULL, 0, 0, 0, NULL, 0, "Skip intro", "Goes under the last." },
 };
 
 /* Numbers, as the Controller menu's: a sensitivity in whole steps, and a
@@ -129,6 +141,7 @@ static void *add_late_rows(void *arg)
 }
 
 static int g_just = 1;
+static int g_pad = 1;           /* the strip shows the pad's buttons, not the keys */
 
 /* Frames drawn with no menu, or box, in them, and the bar not the player's
  * either. */
@@ -152,7 +165,7 @@ static void frame(ImGuiKey press = ImGuiKey_None)
     ImGui_ImplNull_NewFrame();
     if (g_display.x > 0.0f) io.DisplaySize = g_display;
     ImGui::NewFrame();
-    menu_build(g_just);
+    menu_build(g_just, g_pad);
     g_just = 0;
     count_bare();
     ImGui::Render();
@@ -160,7 +173,7 @@ static void frame(ImGuiKey press = ImGuiKey_None)
     if (press != ImGuiKey_None) {
         io.AddKeyEvent(press, false);
         ImGui_ImplNull_NewFrame(); ImGui::NewFrame();
-        menu_build(0);
+        menu_build(0, g_pad);
         count_bare();
         ImGui::Render();
     }
@@ -181,7 +194,7 @@ static void fade_frame(int open, ImGuiKey hold = ImGuiKey_None)
     ImGui::GetStyle().Alpha = g_fade;
     ImGui::NewFrame();
     s_built = open || g_fade > 0.0f;
-    if (s_built) menu_build(g_just);
+    if (s_built) menu_build(g_just, g_pad);
     g_just = 0;
     ImGui::Render();
 }
@@ -192,6 +205,44 @@ static int dim_alpha(void)
 {
     const ImDrawList *bg = ImGui::GetBackgroundDrawList();
     return bg->VtxBuffer.Size >= 4 ? (int)((bg->VtxBuffer[0].col >> IM_COL32_A_SHIFT) & 0xFF) : -1;
+}
+
+/* The hint the strip shows is this one. */
+static int hint_is(const char *want)
+{
+    const char *h = menu_hint();
+    if (!(h == want || (h && want && !strcmp(h, want))))
+        fprintf(stderr, "hint: [%s], not [%s]\n", h ? h : "none", want ? want : "none");
+    return h == want || (h && want && !strcmp(h, want));
+}
+
+/* The strip along the bottom: across the window at its foot, with all it
+ * draws inside it, its hint `lines` lines tall (0: shorter than 2); and
+ * whether it has the pad's A in it, by its colour. */
+static int strip_fits(int lines)
+{
+    const ImGuiIO &io = ImGui::GetIO();
+    const ImGuiStyle &st = ImGui::GetStyle();
+    ImGuiWindow *w = ImGui::FindWindowByName("##hints");
+    if (!w || !w->Active) return 0;
+    float inside = w->Size.y - st.WindowPadding.y * 2, line = ImGui::GetTextLineHeight();
+    int in = 1;
+    for (const ImDrawVert &v : w->DrawList->VtxBuffer)
+        in &= v.pos.x >= w->Pos.x && v.pos.x <= w->Pos.x + w->Size.x &&
+              v.pos.y >= w->Pos.y && v.pos.y <= w->Pos.y + w->Size.y;
+    fprintf(stderr, "strip: %.0f,%.0f %.0fx%.0f in %.0fx%.0f, %.1f lines inside, all in %d\n", w->Pos.x, w->Pos.y,
+            w->Size.x, w->Size.y, io.DisplaySize.x, io.DisplaySize.y, inside / line, in);
+    return in && w->Pos.x == 0.0f && w->Size.x == io.DisplaySize.x && w->Pos.y + w->Size.y == io.DisplaySize.y &&
+           (lines ? fabsf(inside - lines * line) < 1.0f : inside < 2 * line);
+}
+static int strip_has_a(void)
+{
+    ImGuiWindow *w = ImGui::FindWindowByName("##hints");
+    ImU32 a = ImGui::GetColorU32(menu_style_cap(MENU_CAP_A));
+    if (w)
+        for (const ImDrawVert &v : w->DrawList->VtxBuffer)
+            if (v.col == a) return 1;
+    return 0;
 }
 
 /* One frame of only the busy box. */
@@ -249,29 +300,34 @@ int main(void)
      * on screen is the enum's, not the order rows arrive in. Before them
      * all, Display's last row. */
     const XBOX_MENU_ITEM developer[] = {
-        { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLE, "Log to file", log_state, log_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL },
+        { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLE, "Log to file", log_state, log_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
+          "Writes the log to a file." },
         { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLES, "Logging", switches_state, NULL, switch_pick, k_switches, 3, NULL, NULL,
-          NULL, NULL, 0, 0, 0, NULL, 0, NULL },
+          NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Adds lines to the log." },
         { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLE, "Asks (Restart)", asked_state, asked_run, NULL, NULL, 0, NULL,
-          "The game restarts to apply it.", NULL, NULL, 0, 0, 0, NULL, 0, NULL },
+          "The game restarts to apply it.", NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Asks first." },
     };
     const XBOX_MENU_ITEM controller[] = {
         { XBOX_MENU_CONTROLLER, XBOX_ITEM_NUMBER, "Sensitivity", NULL, NULL, NULL, NULL, 0, NULL, NULL,
-          sens_value, sens_set, 1, 10, 1, "%g", 0, NULL },
+          sens_value, sens_set, 1, 10, 1, "%g", 0, NULL, "Sets how fast the camera turns." },
         { XBOX_MENU_CONTROLLER, XBOX_ITEM_NUMBER, "Deadzone", NULL, NULL, NULL, NULL, 0, NULL, NULL,
-          dead_value, dead_set, 0, 100, 5, "%g%%", 0, NULL },
+          dead_value, dead_set, 0, 100, 5, "%g%%", 0, NULL, "Sets how far the stick moves first." },
     };
     const XBOX_MENU_ITEM display[] = {
-        { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Fullscreen", full_state, full_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL },
-        { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Widescreen (16:9)", wide_state, wide_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL },
+        { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Fullscreen", full_state, full_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
+          "Fills the screen." },
+        { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Widescreen (16:9)", wide_state, wide_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
+          k_wide_hint },
         { XBOX_MENU_DISPLAY, XBOX_ITEM_CHOICE, "Render scale", scale_state, NULL, scale_pick, k_scales, 4, NULL,
-          "The game restarts at the new scale, losing unsaved progress.", NULL, NULL, 0, 0, 0, NULL, 0, NULL },
+          "Apply selection and restart, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL,
+          k_scale_hint },
     };
     const XBOX_MENU_ITEM file[] = {
-        { XBOX_MENU_FILE, XBOX_ITEM_INFO, "About", NULL, NULL, NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL },
-        { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL },
+        { XBOX_MENU_FILE, XBOX_ITEM_INFO, "About", NULL, NULL, NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
+          "Shows the version." },
+        { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL, NULL },
         { XBOX_MENU_FILE, XBOX_ITEM_ACTION, "Exit", NULL, exit_run, NULL, NULL, 0, NULL,
-          "Unsaved progress is lost.", NULL, NULL, 0, 0, 0, NULL, 0, NULL },
+          "Close the game, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Closes the game." },
     };
     xbox_MenuAdd(&k_last, 1);
     xbox_MenuAdd(k_under, 4);
@@ -306,6 +362,10 @@ int main(void)
             (int)ImGui::GetCurrentContext()->NavCursorVisible);
     CHECK(!strcmp(open_menu(), "") && bar_focused());
     CHECK(ImGui::GetCurrentContext()->NavCursorVisible);
+    /* On the bar, no hint; the strip along the bottom, with the pad's
+     * buttons. */
+    CHECK(hint_is(NULL));
+    CHECK(strip_fits(0) && strip_has_a());
     /* The game dimmed behind it: the first thing drawn, across the window,
      * in the style's colour for what is behind a box. */
     {
@@ -334,7 +394,9 @@ int main(void)
     frame(ImGuiKey_GamepadFaceDown); frames(2);
     fprintf(stderr, "after A: [%s]\n", open_menu());
     CHECK(strstr(open_menu(), "Display") != NULL);
+    CHECK(hint_is("Fills the screen."));
     frame(ImGuiKey_GamepadDpadDown); frames(1);
+    CHECK(hint_is(k_wide_hint));
     frame(ImGuiKey_GamepadFaceDown); frames(2);
     fprintf(stderr, "full runs %d, wide runs %d, menu [%s] %s\n", s_full_runs, s_wide_runs, open_menu(), nav_state());
     CHECK(s_wide_runs == 1 && s_full_runs == 0);
@@ -345,12 +407,15 @@ int main(void)
     /* Down to Render scale, Right into it (the cursor on 1x), down twice to
      * 3x, A: asked first, with Cancel the default... */
     frame(ImGuiKey_GamepadDpadDown); frames(1);
+    CHECK(hint_is(k_scale_hint));
     frame(ImGuiKey_GamepadDpadRight); frames(2);
     fprintf(stderr, "in render scale: [%s]\n", open_menu());
     frame(ImGuiKey_GamepadDpadDown); frame(ImGuiKey_GamepadDpadDown); frames(1);
+    CHECK(hint_is(k_scale_hint));       /* its choices: still the row's */
     frame(ImGuiKey_GamepadFaceDown); frames(3);
     fprintf(stderr, "after choosing: [%s], picks %d\n", open_menu(), s_picks);
     CHECK(strstr(open_menu(), "Are you sure?") != NULL);
+    CHECK(hint_is(NULL));               /* in a box, none */
     CHECK(s_picks == -1);
     /* ... so A there cancels, and Display comes back. */
     frame(ImGuiKey_GamepadFaceDown); frames(3);
@@ -524,6 +589,16 @@ int main(void)
     pointer(disp_x, bar_y); frame(); click(); frames(2);
     fprintf(stderr, "clicked Display: [%s]\n", open_menu());
     CHECK(strstr(open_menu(), "Display") != NULL);
+    /* The pointer on its second row: that row's hint. */
+    {
+        ImGuiWindow *w = ImGui::FindWindowByName(open_menu());
+        CHECK(w != NULL);
+        if (w) {
+            pointer(w->Pos.x + w->Size.x * 0.5f, s_wide_y + ImGui::GetTextLineHeight() * 0.5f);
+            frames(2);
+            CHECK(hint_is(k_wide_hint));
+        }
+    }
     pointer(file_x, bar_y); frames(4);
     fprintf(stderr, "back to File: [%s]\n", open_menu());
     CHECK(strstr(open_menu(), "File") != NULL);
@@ -588,6 +663,7 @@ int main(void)
     frame(ImGuiKey_GamepadFaceDown); frames(2);
     fprintf(stderr, "controller: [%s] %s\n", open_menu(), nav_state());
     CHECK(strstr(open_menu(), "Controller") != NULL);
+    CHECK(hint_is("Sets how fast the camera turns."));
     frame(ImGuiKey_GamepadFaceDown); frames(1);
     fprintf(stderr, "sensitivity after -: %g, sets %d\n", s_sens, s_sets);
     CHECK(s_sens == 4 && s_sets == 1);
@@ -612,6 +688,7 @@ int main(void)
     frame(ImGuiKey_GamepadFaceDown); frames(1);
     fprintf(stderr, "deadzone after +: %g\n", s_dead);
     CHECK(s_dead == 10);
+    CHECK(hint_is("Sets how far the stick moves first."));
     frame(ImGuiKey_GamepadDpadLeft); frames(1);
     frame(ImGuiKey_GamepadFaceDown); frame(ImGuiKey_GamepadFaceDown); frames(1);
     s_sets = 0;
@@ -674,6 +751,23 @@ int main(void)
     frame(ImGuiKey_GamepadFaceDown); frames(3);
     fprintf(stderr, "after OK: [%s], on %d, runs %d\n", open_menu(), s_asked, s_asked_runs);
     CHECK(strstr(open_menu(), "Developer") != NULL && s_asked && s_asked_runs == 1 && s_log_runs == 1);
+
+    /* At 640 x 480, the smallest window, the strip is two lines tall for the
+     * longest hint (Render scale's), and all of it fits, with the pad's
+     * buttons or the keys, which are wider; at 1920 x 1080, one line. With
+     * the keys, no A. */
+    CHECK(strip_fits(0));
+    g_display = ImVec2(640.0f, 480.0f);
+    frames(2);
+    CHECK(strip_fits(2) && strip_has_a());
+    g_pad = 0;
+    frames(2);
+    CHECK(strip_fits(2) && !strip_has_a());
+    g_display = ImVec2(0.0f, 0.0f);
+    frames(2);
+    CHECK(strip_fits(0) && !strip_has_a());
+    g_pad = 1;
+    frames(2);
 
     /* Shut on Developer, with it open and the pad on Log to file: it fades
      * out in MENU_FADE_SECONDS, still drawn, fainter each frame, the dim

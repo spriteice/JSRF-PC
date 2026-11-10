@@ -1942,14 +1942,17 @@ static void sdl_menu_display(void)
 {
     const XBOX_MENU_ITEM rows[] = {
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Fullscreen",
-          .state = sdl_is_fullscreen, .run = sdl_choose_fullscreen },
+          .state = sdl_is_fullscreen, .run = sdl_choose_fullscreen,
+          .hint = "The window becomes fullscreen." },
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Aspect ratio",
           .state = sdl_aspect_now, .pick = sdl_aspect_pick,
-          .choices = nv2a_wide_shape_names, .nchoices = NV2A_WIDE_SHAPES },
+          .choices = nv2a_wide_shape_names, .nchoices = NV2A_WIDE_SHAPES,
+          .hint = "Adjusts the aspect ratio. Menus, HUD, and effects adjust to match." },
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Render scale (Restart)",
           .state = sdl_scale_now, .pick = sdl_scale_pick,
           .choices = g_scale_names, .nchoices = NV2A_SCALE_MAX,
-          .confirm = "The game restarts at the new scale, losing unsaved progress." },
+          .confirm = "Apply selection and restart, losing unsaved progress?",
+          .hint = "The game's drawn resolution, shown for your aspect ratio. GPU heavy." },
     };
     int n = (int)(sizeof rows / sizeof rows[0]);
     /* A new scale is a restart, which not every port can do (F9 asks the same). */
@@ -1982,7 +1985,8 @@ static void sdl_menu_msaa(void)
     if (n > 1) {
         const XBOX_MENU_ITEM row = {
             .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Anti-aliasing (MSAA)",
-            .state = sdl_msaa_now, .pick = sdl_msaa_pick, .choices = sdl_msaa_names, .nchoices = n };
+            .state = sdl_msaa_now, .pick = sdl_msaa_pick, .choices = sdl_msaa_names, .nchoices = n,
+            .hint = "Smooths jagged edges, more effective than SMAA. GPU heavy." };
         xbox_MenuAdd(&row, 1);
     }
 }
@@ -2000,7 +2004,8 @@ static void sdl_menu_smaa(void)
 {
     const XBOX_MENU_ITEM row = {
         .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE, .label = "Anti-aliasing (SMAA)",
-        .state = sdl_smaa_on, .run = sdl_smaa_flip };
+        .state = sdl_smaa_on, .run = sdl_smaa_flip,
+        .hint = "Smooths some jagged edges, less effective than MSAA. Light on the GPU." };
     if (G->target_smaa) xbox_MenuAdd(&row, 1);
 }
 
@@ -2028,7 +2033,8 @@ static void sdl_menu_aniso(void)
     if (n > 1) {
         const XBOX_MENU_ITEM row = {
             .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Anisotropic filtering",
-            .state = sdl_aniso_now, .pick = sdl_aniso_pick, .choices = sdl_aniso_names, .nchoices = n };
+            .state = sdl_aniso_now, .pick = sdl_aniso_pick, .choices = sdl_aniso_names, .nchoices = n,
+            .hint = "Keeps textures sharp when seen at an angle. Light on the GPU." };
         xbox_MenuAdd(&row, 1);
     }
 }
@@ -12764,10 +12770,12 @@ static void sdl_menu_shaders(void)
     const XBOX_MENU_ITEM rows[] = {
         { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE, .label = "Shader cache (Restart)",
           .state = shader_cache_on, .run = shader_cache_toggle,
-          .confirm = "The game restarts to apply this, losing unsaved progress." },
+          .confirm = "Apply selection and restart, losing unsaved progress?",
+          .hint = "Builds a locally stored shader cache, reducing stutter on later plays." },
         { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_ACTION, .label = "Purge shaders (Restart)",
           .run = shader_cache_purge_ask,
-          .confirm = "The game restarts and deletes the shader cache, losing unsaved progress." },
+          .confirm = "Delete the shader cache, losing unsaved progress?",
+          .hint = "Deletes the shader cache, and restarts the game." },
     };
     if (G->cache_open) xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
 }

@@ -105,8 +105,9 @@ drawn over the game, in the original Xbox's greens, with the game dimmed
 behind it. F1, or Back on a controller, opens and closes it, and it opens on
 the bar alone. It works with a controller, the keyboard, or the mouse.
 B or Esc goes back a step, and a click outside the menus shuts them, back to
-the bar. The game keeps running while it is open, but your input goes to the
-menu.
+the bar. Along the bottom, a line says what the row you're on does, beside
+the buttons to press. The game keeps running while it is open, but your
+input goes to the menu.
 
 - **File:** About (the version and system details), Restart, and Exit.
 - **Display:** Full screen, the aspect ratio, the render scale (1× to 6×), the

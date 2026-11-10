@@ -55,7 +55,8 @@ void music_info_start(void)
     {
         const XBOX_MENU_ITEM row = {
             .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Music info in pause",
-            .state = menu_on, .run = menu_flip, .under = MUSIC_UNDER };
+            .state = menu_on, .run = menu_flip, .under = MUSIC_UNDER,
+            .hint = "Shows the song title, artist, and track number in the pause menu." };
         xbox_MenuAdd(&row, 1);
     }
 #endif

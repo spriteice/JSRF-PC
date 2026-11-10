@@ -6,8 +6,10 @@
  * so the engine still links against libc alone.
  */
 #include "menu.h"
+#include "menu_style.h"
 #include "imgui.h"
-#include "imgui_internal.h"   /* the bar's nav state: menu_build */
+#include "imgui_internal.h"   /* the bar's nav state, and the strip: menu_build */
+#include "platform/recomp_check.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -56,12 +58,31 @@ static ImVector<unsigned char> g_under_told;
 
 static void take_queued(void)
 {
+    int from = g_items.Size;
     queue_lock();
     for (int i = 0; i < g_nqueued; i++)
         g_items.push_back(g_queued[i]);
     g_nqueued = 0;
     queue_unlock();
     g_under_told.resize(g_items.Size, 0);
+    /* Every row but a separator says what it does, briefly (menu.h, hint). */
+    for (int i = from; i < g_items.Size; i++) {
+        const XBOX_MENU_ITEM &it = g_items[i];
+        int hinted = it.kind == XBOX_ITEM_SEPARATOR || (it.hint && strlen(it.hint) <= MENU_HINT_LONGEST);
+        RECOMP_CHECK(hinted, "%s: %s", it.label ? it.label : "a row", it.hint ? "its hint is too long" : "no hint");
+    }
+}
+
+/* The hint of the row the pad is on, and of the one the pointer is on:
+ * taken as the rows are drawn, and shown below them in the same frame. */
+static const char *g_hint_pad, *g_hint_pointer, *g_hint_shown;
+
+/* After each of a row's items: a row's choices, and a number's - and +,
+ * are the row's. */
+static void take_hint(const XBOX_MENU_ITEM *it)
+{
+    if (ImGui::IsItemFocused())      g_hint_pad = it->hint;
+    else if (ImGui::IsItemHovered()) g_hint_pointer = it->hint;
 }
 
 static void apply(const XBOX_MENU_ITEM *it, int pick)
@@ -123,9 +144,11 @@ static void draw_number(const XBOX_MENU_ITEM *it, const number_cols *cols)
     ImGui::PushID(g_items.index_from_ptr(it));
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(it->label);
+    take_hint(it);
     ImGui::SameLine(x + cols->label + st.ItemSpacing.x);
     ImGui::PushItemFlag(ImGuiItemFlags_ButtonRepeat, true);   /* held: on it goes */
     if (ImGui::Button("-", ImVec2(side, side))) to = step_from(it, v, -1);
+    take_hint(it);
     ImGui::SameLine();
     /* The value, in a box to read, not to type in: a pad has no keyboard. */
     snprintf(text, sizeof text, it->format, v);
@@ -136,8 +159,10 @@ static void draw_number(const XBOX_MENU_ITEM *it, const number_cols *cols)
     dl->AddText(ImVec2(p.x + (cols->box - t.x) * 0.5f, p.y + st.FramePadding.y),
                 ImGui::GetColorU32(ImGuiCol_Text), text);
     ImGui::Dummy(ImVec2(cols->box, side));
+    take_hint(it);
     ImGui::SameLine();
     if (ImGui::Button("+", ImVec2(side, side))) to = step_from(it, v, 1);
+    take_hint(it);
     ImGui::PopItemFlag();
     ImGui::PopID();
     if (to != v) it->set(to);
@@ -151,29 +176,42 @@ static void draw_item(const XBOX_MENU_ITEM *it, const number_cols *cols)
         break;
     case XBOX_ITEM_ACTION:
         if (ImGui::MenuItem(it->label)) chosen(it, -1);
+        take_hint(it);
         break;
     case XBOX_ITEM_TOGGLE:
         if (ImGui::MenuItem(it->label, NULL, it->state() != 0)) chosen(it, -1);
+        take_hint(it);
         break;
-    case XBOX_ITEM_CHOICE:
-        if (ImGui::BeginMenu(it->label)) {
+    case XBOX_ITEM_CHOICE: {
+        bool open = ImGui::BeginMenu(it->label);
+        take_hint(it);                  /* BeginMenu leaves the row the last item */
+        if (open) {
             int cur = it->state(), i;
-            for (i = 0; i < it->nchoices; i++)
+            for (i = 0; i < it->nchoices; i++) {
                 if (ImGui::MenuItem(it->choices[i], NULL, i == cur) && i != cur)
                     chosen(it, i);
+                take_hint(it);
+            }
             ImGui::EndMenu();
         }
         break;
-    case XBOX_ITEM_TOGGLES:
-        if (ImGui::BeginMenu(it->label)) {
+    }
+    case XBOX_ITEM_TOGGLES: {
+        bool open = ImGui::BeginMenu(it->label);
+        take_hint(it);
+        if (open) {
             int on = it->state(), i;
-            for (i = 0; i < it->nchoices; i++)
+            for (i = 0; i < it->nchoices; i++) {
                 if (ImGui::MenuItem(it->choices[i], NULL, (on >> i) & 1)) chosen(it, i);
+                take_hint(it);
+            }
             ImGui::EndMenu();
         }
         break;
+    }
     case XBOX_ITEM_INFO:
         if (ImGui::MenuItem(it->label)) g_info = g_items.index_from_ptr(it);
+        take_hint(it);
         break;
     case XBOX_ITEM_NUMBER:
         draw_number(it, cols);
@@ -228,6 +266,90 @@ static void box_closed(void)
     g_reopen = g_last_menu;
 }
 
+/* ---- the strip along the bottom: the row's hint, and the buttons --------- */
+
+/* The pad's buttons, or the keys, and what each does in the menu. */
+struct prompt { const char *name; menu_cap cap; const char *does; };
+#define MENU_PROMPTS 3
+static const prompt k_pad_prompts[MENU_PROMPTS] = {
+    { "A", MENU_CAP_A, "Select" }, { "B", MENU_CAP_B, "Back" }, { "Back", MENU_CAP_KEY, "Close" } };
+static const prompt k_key_prompts[MENU_PROMPTS] = {
+    { "Enter", MENU_CAP_KEY, "Select" }, { "Esc", MENU_CAP_KEY, "Back" }, { "F1", MENU_CAP_KEY, "Close" } };
+
+/* A cap is this many times the text's height across, so its name has room
+ * round it: a round one for a letter, and for a word, one this much of its
+ * height wider than the word. */
+#define MENU_CAP_SIZE 1.25f
+#define MENU_CAP_WORD 0.6f
+
+/* The prompts from at.x rightwards, centred on at.y; their width. With dl
+ * NULL, only the width. */
+static float draw_prompts(ImDrawList *dl, const prompt *ps, ImVec2 at)
+{
+    const ImGuiStyle &st = ImGui::GetStyle();
+    float h = ImGui::GetFontSize() * MENU_CAP_SIZE, x = at.x;
+    for (int i = 0; i < MENU_PROMPTS; i++) {
+        const prompt &p = ps[i];
+        ImVec2 name = ImGui::CalcTextSize(p.name), does = ImGui::CalcTextSize(p.does);
+        float w = p.name[1] ? name.x + h * MENU_CAP_WORD : h;
+        if (i) x += st.ItemSpacing.x * 2;
+        if (dl) {
+            dl->AddRectFilled(ImVec2(x, at.y - h * 0.5f), ImVec2(x + w, at.y + h * 0.5f),
+                              ImGui::GetColorU32(menu_style_cap(p.cap)), h * 0.5f);
+            dl->AddText(ImVec2(x + (w - name.x) * 0.5f, at.y - name.y * 0.5f),
+                        ImGui::GetColorU32(ImGuiCol_Text), p.name);
+            dl->AddText(ImVec2(x + w + st.ItemInnerSpacing.x, at.y - does.y * 0.5f),
+                        ImGui::GetColorU32(ImGuiCol_Text), p.does);
+        }
+        x += w + st.ItemInnerSpacing.x + does.x;
+    }
+    return x - at.x;
+}
+
+/* Along the bottom, as the bar is along the top: the hint on the left,
+ * wrapped short of the prompts on the right. As tall as the longest hint
+ * of any row needs, so it stays still as the pad moves. */
+static void draw_strip(int pad)
+{
+    const ImGuiIO &io = ImGui::GetIO();
+    const ImGuiStyle &st = ImGui::GetStyle();
+    const prompt *ps = pad ? k_pad_prompts : k_key_prompts;
+    float prompts = draw_prompts(NULL, ps, ImVec2(0.0f, 0.0f));
+    float wrap = io.DisplaySize.x - st.WindowPadding.x * 2 - st.ItemSpacing.x * 2 - prompts;
+    float tall = ImGui::GetFontSize() * MENU_CAP_SIZE;
+    g_hint_shown = g_hint_pad ? g_hint_pad : g_hint_pointer;
+    for (const XBOX_MENU_ITEM &it : g_items)
+        if (it.hint) tall = ImMax(tall, ImGui::CalcTextSize(it.hint, NULL, false, wrap).y);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImGui::GetStyleColorVec4(ImGuiCol_MenuBarBg));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    /* In whole pixels, as the window's place is, so it meets the window's
+     * foot. */
+    if (ImGui::BeginViewportSideBar("##hints", NULL, ImGuiDir_Down, ImCeil(tall + st.WindowPadding.y * 2),
+                                    ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+                                    ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoSavedSettings |
+                                    ImGuiWindowFlags_NoFocusOnAppearing |
+                                    ImGuiWindowFlags_NoBringToFrontOnFocus)) {
+        ImVec2 at = ImGui::GetCursorScreenPos();
+        if (g_hint_shown) {
+            float h = ImGui::CalcTextSize(g_hint_shown, NULL, false, wrap).y;
+            ImGui::SetCursorScreenPos(ImVec2(at.x, at.y + (tall - h) * 0.5f));
+            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + wrap);
+            ImGui::TextUnformatted(g_hint_shown);
+            ImGui::PopTextWrapPos();
+        }
+        draw_prompts(ImGui::GetWindowDrawList(), ps,
+                     ImVec2(io.DisplaySize.x - st.WindowPadding.x - prompts, at.y + tall * 0.5f));
+    }
+    ImGui::End();
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
+}
+
+extern "C" const char *menu_hint(void)
+{
+    return g_hint_shown;
+}
+
 /* Every box sits in the middle of the window, and stays there: put back each
  * frame, so it follows the window when that changes size. */
 static void box_centre(void)
@@ -244,7 +366,7 @@ static bool box_begin(const char *title)
     return ImGui::BeginPopupModal(title, NULL, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove);
 }
 
-extern "C" void menu_build(int just_opened)
+extern "C" void menu_build(int just_opened, int pad)
 {
     ImGuiContext &g = *ImGui::GetCurrentContext();
     /* B, or Esc: ImGui's own cancel (ImGuiKey_NavGamepadCancel reads g). */
@@ -254,6 +376,7 @@ extern "C" void menu_build(int just_opened)
     ImGuiWindow *bar;
 
     take_queued();
+    g_hint_pad = g_hint_pointer = NULL;
     /* The game dimmed behind the menu, as Dear ImGui dims what is behind a
      * box (ModalWindowDimBg, menu_style.cpp), and fading with the menu. */
     ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0.0f, 0.0f), ImGui::GetIO().DisplaySize,
@@ -328,6 +451,7 @@ extern "C" void menu_build(int just_opened)
         ImGui::PopItemFlag();
         ImGui::EndMainMenuBar();
     }
+    draw_strip(pad);
 
     /* Opened from the top level: a popup opened inside a menu would close
      * with it. */
