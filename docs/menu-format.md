@@ -62,6 +62,23 @@ says so once.
   (`box_begin` and `box_centre` in menu.cpp). New boxes use them.
 - B or Esc is Cancel. A box closes back to the menu it was opened from.
 
+## Look
+
+- The menu's look is `src/menu/menu_style.cpp`'s, and the setup's window
+  (`launcher/setup/setup_ui.cpp`) has the same one: Dear ImGui's dark style
+  with the original Xbox's two greens in place of its blue, rounded corners
+  (on the green behind a row and the pad's cursor round it too), and rows a
+  little further apart than the dark style's, for a pad.
+- The console's green (#92C83E), the bright one, is for thin marks on the
+  dark: the pad's cursor, a tick in a box, a slider's grab. Its dark green
+  (#397C2D) goes behind white text: the row the pad is on, buttons, the open
+  menu's title, a box's title bar, and the progress bar.
+- White text is at 4.5:1 or more on everything it is drawn on, and the bright
+  marks at 3:1 or more, with the game at its brightest or its darkest behind
+  the menu. tests/menu_style checks both, and that no colour is left in the
+  dark style's blue.
+- Colours come from the style alone: nothing in a menu sets one of its own.
+
 ## Behaviour
 
 - The menu opens on the bar alone, with nothing dropped down.

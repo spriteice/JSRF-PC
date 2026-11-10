@@ -1,8 +1,9 @@
 /*
  * The setup's window (launcher/setup/setup.h): Dear ImGui over SDL2 and
- * OpenGL 3, as the in-game menu (src/menu), with the same look. The work is
- * setup_core.c's, on a thread of its own; this draws where it is and asks
- * the player what only they can answer.
+ * OpenGL 3, as the in-game menu (src/menu), with the same look
+ * (src/menu/menu_style.h). The work is setup_core.c's, on a thread of its
+ * own; this draws where it is and asks the player what only they can
+ * answer.
  *
  * With no window to open (or JSRF_SETUP_ANSWER set), the console's way
  * instead (setup_core.c's jsrf_setup_run_console).
@@ -16,6 +17,7 @@
 #include "backends/imgui_impl_opengl3.h"
 #include "backends/imgui_impl_sdl2.h"
 
+#include "menu_style.h"
 #include "setup.h"
 #include "setup_job.h"
 
@@ -171,8 +173,7 @@ extern "C" int jsrf_setup_run(jsrf_setup *s)
     io.LogFilename = NULL;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
     io.Fonts->AddFontDefaultVector();
-    ImGui::StyleColorsDark();
-    ImGui::GetStyle().FrameRounding = 4;
+    menu_style_apply(&ImGui::GetStyle());
     base = ImGui::GetStyle();
     ImGui_ImplSDL2_InitForOpenGL(win, gl);
     ImGui_ImplOpenGL3_Init(NULL);

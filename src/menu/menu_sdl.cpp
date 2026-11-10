@@ -15,6 +15,7 @@
  */
 #include "menu_sdl.h"
 #include "menu.h"
+#include "menu_style.h"
 #include "imgui.h"
 #include "backends/imgui_impl_sdl2.h"
 #include "backends/imgui_impl_opengl3.h"
@@ -154,7 +155,7 @@ extern "C" int xbox_MenuInit(SDL_Window *window, void *gl_context, const char *a
     /* The window keeps its own rule for the pointer (hidden in full screen). */
     io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
     io.Fonts->AddFontDefaultVector();   /* the scalable one: see scale_to_window */
-    ImGui::StyleColorsDark();
+    menu_style_apply(&ImGui::GetStyle());
     g_style = ImGui::GetStyle();
     if (!ImGui_ImplSDL2_InitForOpenGL(window, gl_context) || !ImGui_ImplOpenGL3_Init(OV_GLSL)) {
         fprintf(stderr, "[MENU] Dear ImGui did not start: no in-game menu\n");

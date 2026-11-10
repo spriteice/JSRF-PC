@@ -11,6 +11,7 @@ set(_imgui ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/imgui)
 add_library(xbox_menu STATIC
     menu.cpp
     menu_sdl.cpp
+    menu_style.cpp
     ${_imgui}/imgui.cpp ${_imgui}/imgui_draw.cpp
     ${_imgui}/imgui_tables.cpp ${_imgui}/imgui_widgets.cpp
     ${_imgui}/backends/imgui_impl_sdl2.cpp ${_imgui}/backends/imgui_impl_opengl3.cpp)
@@ -26,7 +27,7 @@ target_link_libraries(xbox_menu PRIVATE SDL2::SDL2 ${CMAKE_DL_LIBS})
 target_compile_options(xbox_menu PRIVATE
     -fno-exceptions -fno-rtti -fno-threadsafe-statics -O2)
 # Our own files' warnings, not Dear ImGui's.
-set_source_files_properties(menu.cpp menu_sdl.cpp PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra")
+set_source_files_properties(menu.cpp menu_sdl.cpp menu_style.cpp PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra")
 target_compile_definitions(xbox_menu PRIVATE
     IMGUI_DISABLE_DEMO_WINDOWS IMGUI_DISABLE_DEBUG_TOOLS
     IMGUI_DISABLE_DEFAULT_SHELL_FUNCTIONS)

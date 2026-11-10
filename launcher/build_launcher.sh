@@ -36,8 +36,11 @@ compile() {   # cc cxx sdl-include
     done
     # miniz and Dear ImGui as their authors wrote them: their warnings aren't ours.
     "$cc" -O2 -w -c "$repo/third_party/miniz/miniz.c" -o "$obj/miniz.c.o"
-    "$cxx" "${cxxflags[@]}" -Wall -Wextra -I "$inc" -I "$repo/third_party/imgui" \
-        -c "$repo/launcher/setup/setup_ui.cpp" -o "$obj/setup_ui.cpp.o"
+    # The setup's window, in the in-game menu's look (src/menu/menu_style.h).
+    for f in "$repo/launcher/setup/setup_ui.cpp" "$repo/src/menu/menu_style.cpp"; do
+        "$cxx" "${cxxflags[@]}" -Wall -Wextra -I "$inc" -I "$repo/third_party/imgui" -I "$repo/src/menu" \
+            -c "$f" -o "$obj/$(basename "$f").o"
+    done
     for f in "${imgui[@]}"; do
         "$cxx" "${cxxflags[@]}" -w -I "$inc" -I "$repo/third_party/imgui" -c "$f" -o "$obj/$(basename "$f").o"
     done
