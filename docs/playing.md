@@ -101,9 +101,9 @@ wall rather than the view turning over.
 ## In-game menu
 
 The in-game menu is a [Dear ImGui](https://github.com/ocornut/imgui) menu bar
-drawn over the game, in the original Xbox's greens. F1, or Back on a
-controller, opens and closes it, and it opens on the bar alone. It works with
-a controller, the keyboard, or the mouse.
+drawn over the game, in the original Xbox's greens, with the game dimmed
+behind it. F1, or Back on a controller, opens and closes it, and it opens on
+the bar alone. It works with a controller, the keyboard, or the mouse.
 B or Esc goes back a step, and a click outside the menus shuts them, back to
 the bar. The game keeps running while it is open, but your input goes to the
 menu.

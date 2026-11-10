@@ -254,6 +254,10 @@ extern "C" void menu_build(int just_opened)
     ImGuiWindow *bar;
 
     take_queued();
+    /* The game dimmed behind the menu, as Dear ImGui dims what is behind a
+     * box (ModalWindowDimBg, menu_style.cpp), and fading with the menu. */
+    ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0.0f, 0.0f), ImGui::GetIO().DisplaySize,
+                                                  ImGui::GetColorU32(ImGuiCol_ModalWindowDimBg));
     /* Opened: the bar alone, the pad on the first title (fold, below). A
      * menu or box still open from the last time is shut: ImGui keeps it
      * while the menu is hidden. */
@@ -354,6 +358,21 @@ extern "C" void menu_build(int just_opened)
         if (ok || back) { g_info = -1; box_closed(); }
         ImGui::EndPopup();
     }
+}
+
+/* Open, the fade is never quite 0: Dear ImGui skips the rows of a window
+ * begun at 0 (Begin), and the menu must take the pad from its first frame,
+ * where the time since the last is none. */
+#define MENU_FADE_LEAST (1.0f / 255.0f)
+
+extern "C" float menu_fade(float fade, int open, float seconds)
+{
+    float step = seconds / MENU_FADE_SECONDS;
+    if (open) return ImClamp(fade + step, MENU_FADE_LEAST, 1.0f);
+    /* Shut, the controls are the game's again (xbox_MenuIsOpen): the menu,
+     * still in sight as it fades, must not act on them too. */
+    ImGui::GetIO().ClearEventsQueue();
+    return ImMax(fade - step, 0.0f);
 }
 
 extern "C" void menu_build_busy(const char *what, int done, int total)

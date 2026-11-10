@@ -2584,7 +2584,7 @@ static void sdl_pump(void)
     }
 #if defined(XBOXRECOMP_MENU)
     sdl_scale_names();                          /* the shape may have changed */
-    xbox_MenuFrame();                           /* nothing while it is shut */
+    xbox_MenuFrame();                           /* nothing once it has shut */
 #endif
 }
 

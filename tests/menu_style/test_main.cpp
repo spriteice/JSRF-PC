@@ -13,6 +13,8 @@
  *     state, the number box, and the progress bar.
  *   - The bright marks (the pad's cursor, a tick in a box) stand out at 3:1
  *     or more on what they are drawn on.
+ *   - The dim behind the menu and its boxes darkens the game, and leaves it
+ *     in sight.
  *   - The sizes: rounded corners, and rows further apart than the dark
  *     style's. A menu's row is drawn, with the pointer on it, and the green
  *     behind it has rounded corners too (Dear ImGui rounds rows by a size
@@ -224,6 +226,16 @@ int main(void)
         fprintf(stderr, "the pad's cursor on a menu: %.2f:1, a tick in a box: %.2f:1\n", cursor, tick);
         CHECK(cursor >= MARK_CONTRAST);
         CHECK(tick >= MARK_CONTRAST);
+    }
+
+    /* The dim: black, at under half. The text above is checked without it,
+     * as the busy box has none: with it, the game at its brightest is
+     * darker, and the text clearer. */
+    {
+        const ImVec4 dim = col[ImGuiCol_ModalWindowDimBg];
+        fprintf(stderr, "the dim: %.2f, %.2f, %.2f at %.2f\n", dim.x, dim.y, dim.z, dim.w);
+        CHECK(dim.x == 0.0f && dim.y == 0.0f && dim.z == 0.0f);
+        CHECK(dim.w > 0.0f && dim.w <= 0.5f);
     }
 
     /* The sizes. */

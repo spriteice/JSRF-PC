@@ -77,11 +77,17 @@ says so once.
   marks at 3:1 or more, with the game at its brightest or its darkest behind
   the menu. tests/menu_style checks both, and that no colour is left in the
   dark style's blue.
+- The game is dimmed behind the menu, and further behind a box: black at
+  40% each time (the style's `ModalWindowDimBg`), so the menu reads on the
+  brightest stage and a setting's change can still be seen.
 - Colours come from the style alone: nothing in a menu sets one of its own.
 
 ## Behaviour
 
 - The menu opens on the bar alone, with nothing dropped down.
+- It fades in as it opens and out as it shuts, in a tenth of a second
+  (`MENU_FADE_SECONDS` in `menu.h`). As it fades out, it takes no input:
+  the controls are the game's again at once.
 - B and Esc go back one level, down to the bar.
 - A click outside the menus shuts them all, back to the bar. A click outside
   the bar with nothing open does nothing.

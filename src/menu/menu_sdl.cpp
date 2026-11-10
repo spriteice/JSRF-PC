@@ -8,7 +8,8 @@
  * window -- SDL's mouse and keyboard calls want that thread -- and drawn by
  * whichever thread swaps: the GL thread, or on Windows the presenter, with a
  * context of its own (nv2a_gl.c). One mutex keeps the two out of ImGui at
- * the same time. Nothing runs, and nothing is drawn, while the menu is shut.
+ * the same time. The menu fades in as it opens and out as it shuts
+ * (menu_fade); nothing runs, and nothing is drawn, once it has faded out.
  *
  * Built with -fno-exceptions -fno-rtti -fno-threadsafe-statics, as ImGui is:
  * nothing here may need the C++ runtime library (no new, no STL).
@@ -37,6 +38,9 @@ static SDL_mutex   *g_mu;
 static volatile int g_ready;        /* both read by the input layer's thread */
 static volatile int g_open;
 static int          g_just_opened;
+static float        g_fade;         /* how far in it has faded: menu_fade */
+static volatile int g_shown;        /* the last frame built has the menu in it:
+                                     * read by whichever thread swaps */
 static float        g_scale;
 static ImGuiStyle   g_style;        /* before scaling */
 static const char  *g_about_gpu, *g_about_gl;
@@ -215,25 +219,41 @@ static void scale_to_window(void)
 
 extern "C" void xbox_MenuFrame(void)
 {
-    if (!g_ready || (!g_open && !g_busy_total)) return;
+    if (!g_ready) return;
+    if (!g_open && g_fade <= 0.0f && !g_busy_total) {
+        g_shown = 0;                    /* nothing built: nothing drawn again */
+        return;
+    }
     SDL_LockMutex(g_mu);
+    ImGuiIO &io = ImGui::GetIO();
     /* Full screen hides the pointer (nv2a_gl.c), and the menu can switch it:
      * ImGui draws its own then, which shows only once a mouse moves. */
-    ImGui::GetIO().MouseDrawCursor = g_open && SDL_ShowCursor(SDL_QUERY) == SDL_DISABLE;
+    io.MouseDrawCursor = g_open && SDL_ShowCursor(SDL_QUERY) == SDL_DISABLE;
     ImGui_ImplSDL2_NewFrame();
     scale_to_window();
+    /* Just opened, the time since the last frame is how long it was shut,
+     * with no frames: the fade starts from where it was. */
+    g_fade = menu_fade(g_fade, g_open, g_just_opened ? 0.0f : io.DeltaTime);
+    ImGui::GetStyle().Alpha = g_fade;   /* the menu, its boxes and the dim behind */
     ImGui::NewFrame();
-    if (g_open) menu_build(g_just_opened);
+    if (g_open || g_fade > 0.0f) menu_build(g_just_opened);
     g_just_opened = 0;
-    if (g_busy_total) menu_build_busy(g_busy_what, g_busy_done, g_busy_total);
+    if (g_busy_total) {
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 1.0f);    /* not the menu's to fade */
+        menu_build_busy(g_busy_what, g_busy_done, g_busy_total);
+        ImGui::PopStyleVar();
+    }
     ImGui::Render();
+    g_shown = g_open || g_fade > 0.0f;
     SDL_UnlockMutex(g_mu);
 }
 
 extern "C" void xbox_MenuDraw(void)
 {
     ImDrawData *dd;
-    if (!g_ready || (!g_open && !g_busy_total)) return;
+    /* The menu while it is in the last frame built; the busy box only while
+     * it lasts, not once more after it ends (xbox_MenuBusy). */
+    if (!g_ready || (!g_shown && !g_busy_total)) return;
     SDL_LockMutex(g_mu);
     dd = ImGui::GetDrawData();
     if (dd) {

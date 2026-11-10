@@ -25,7 +25,8 @@ int  xbox_MenuInit(SDL_Window *window, void *gl_context, const char *about_gpu,
  * must not see it. */
 int  xbox_MenuEvent(const SDL_Event *ev);
 
-/* Once a frame on the GL thread, after the events: builds the menu. */
+/* Once a frame on the GL thread, after the events: builds the menu, as it
+ * fades in or out (menu_fade). */
 void xbox_MenuFrame(void);
 
 /* Just before each swap, on whichever thread swaps, with the window's

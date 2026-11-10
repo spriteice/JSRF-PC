@@ -9,6 +9,9 @@
  *   - its dark green behind white text: the row the pad is on, the open
  *     menu's title, buttons, a box's title bar, the progress bar.
  *
+ * What is behind the menu, the game, is dimmed while it is open, and so is
+ * what is behind one of its boxes: darkened, where the dark style lightens.
+ *
  * White text stays at 4.5:1 or more on everything it is drawn on, and the
  * bright marks at 3:1 or more on the dark (tests/menu_style). The greens are
  * the nearest matches to the console's brand colours, Pantone 7488 C and
@@ -53,6 +56,10 @@ static constexpr ImVec4 k_black      = rgb(0x00, 0x00, 0x00);
 /* Held down (a button or row being pressed): the dark green darkened, so
  * the white on it gets clearer, not fainter. */
 #define STYLE_PRESSED_DARKEN  0.25f
+/* The game behind the menu, and what is behind a box: black at this much,
+ * so the menu stands out on the brightest stage and the game, where a
+ * setting's change is seen, stays in sight. */
+#define STYLE_DIM_ALPHA       0.40f
 
 /* The colours the dark style makes from others, made again from the greens
  * with the dark style's own mixes (StyleColorsDark, imgui_draw.cpp). */
@@ -110,6 +117,7 @@ void menu_style_apply(ImGuiStyle *st)
     c[ImGuiCol_TextLink]             = k_green;
     c[ImGuiCol_TextSelectedBg]       = with_alpha(k_green, c[ImGuiCol_TextSelectedBg].w);
     c[ImGuiCol_NavCursor]            = k_green;
+    c[ImGuiCol_ModalWindowDimBg]     = with_alpha(k_black, STYLE_DIM_ALPHA);
 
     c[ImGuiCol_CheckboxSelectedBg]   = ImLerp(c[ImGuiCol_FrameBg], c[ImGuiCol_FrameBgHovered], DARK_CHECKBOX_MIX);
     c[ImGuiCol_TabHovered]           = c[ImGuiCol_HeaderHovered];

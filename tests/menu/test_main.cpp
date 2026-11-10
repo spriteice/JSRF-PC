@@ -19,8 +19,10 @@
  * a pad still has somewhere to stand after each. Then numbers: - and + a step
  * at a time, held down, at the ends, and from a value between two steps. And
  * a submenu of switches, as Developer > Logging: each flips its own, and the
- * submenu stays open; and a toggle that asks first. Last, the busy box (menu_build_busy) with no menu, in
- * the middle of the window.
+ * submenu stays open; and a toggle that asks first. The game dimmed behind
+ * the menu, and the fade (menu_fade): out as the menu shuts, taking no input
+ * as it goes, and in again as it opens. Last, the busy box (menu_build_busy)
+ * with no menu, in the middle of the window.
  */
 #include "menu.h"
 #include "imgui.h"
@@ -165,6 +167,33 @@ static void frame(ImGuiKey press = ImGuiKey_None)
 }
 static void frames(int n) { while (n--) frame(); }
 
+/* A frame as the window builds it (menu_sdl.cpp's xbox_MenuFrame) as the
+ * menu opens or shuts: the fade first, then the menu at its alpha, until it
+ * has faded out. hold: a key the backend reads as held this frame. */
+static float g_fade = 1.0f;
+static int   s_built;
+static void fade_frame(int open, ImGuiKey hold = ImGuiKey_None)
+{
+    ImGuiIO &io = ImGui::GetIO();
+    if (hold != ImGuiKey_None) io.AddKeyEvent(hold, true);
+    ImGui_ImplNull_NewFrame();
+    g_fade = menu_fade(g_fade, open, g_just ? 0.0f : io.DeltaTime);
+    ImGui::GetStyle().Alpha = g_fade;
+    ImGui::NewFrame();
+    s_built = open || g_fade > 0.0f;
+    if (s_built) menu_build(g_just);
+    g_just = 0;
+    ImGui::Render();
+}
+
+/* The game's dim behind the menu: the background's first rectangle's alpha,
+ * or -1 if it has none. */
+static int dim_alpha(void)
+{
+    const ImDrawList *bg = ImGui::GetBackgroundDrawList();
+    return bg->VtxBuffer.Size >= 4 ? (int)((bg->VtxBuffer[0].col >> IM_COL32_A_SHIFT) & 0xFF) : -1;
+}
+
 /* One frame of only the busy box. */
 static void busy_frame(void)
 {
@@ -258,12 +287,37 @@ int main(void)
     ImGui_ImplNull_Init();
     io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
 
+    /* The fade on its own: in or out in MENU_FADE_SECONDS, by the time since
+     * the last frame, from where it was when it turns back, and within 0 and
+     * 1 however long that time; open, never 0, even with no time since the
+     * last frame (Dear ImGui would skip its rows). */
+    CHECK(menu_fade(0.0f, 1, 0.0f) > 0.0f && menu_fade(0.0f, 1, 0.0f) < 0.01f);
+    CHECK(fabsf(menu_fade(0.0f, 1, MENU_FADE_SECONDS * 0.5f) - 0.5f) < 1e-5f);
+    CHECK(menu_fade(0.5f, 1, MENU_FADE_SECONDS) == 1.0f);
+    CHECK(menu_fade(0.0f, 1, 3600.0f) == 1.0f);
+    CHECK(fabsf(menu_fade(1.0f, 0, MENU_FADE_SECONDS * 0.25f) - 0.75f) < 1e-5f);
+    CHECK(fabsf(menu_fade(0.3f, 1, MENU_FADE_SECONDS * 0.1f) - 0.4f) < 1e-5f);
+    CHECK(menu_fade(0.25f, 0, MENU_FADE_SECONDS) == 0.0f);
+    CHECK(menu_fade(0.0f, 0, 3600.0f) == 0.0f);
+
     /* Opened: the bar alone, the pad on File's title; A opens File. */
     frames(3);
     fprintf(stderr, "open popup after opening: [%s] %s, cursor %d\n", open_menu(), nav_state(),
             (int)ImGui::GetCurrentContext()->NavCursorVisible);
     CHECK(!strcmp(open_menu(), "") && bar_focused());
     CHECK(ImGui::GetCurrentContext()->NavCursorVisible);
+    /* The game dimmed behind it: the first thing drawn, across the window,
+     * in the style's colour for what is behind a box. */
+    {
+        const ImDrawList *bg = ImGui::GetBackgroundDrawList();
+        CHECK(bg->VtxBuffer.Size >= 4);
+        if (bg->VtxBuffer.Size >= 4) {
+            const ImVec2 a = bg->VtxBuffer[0].pos, b = bg->VtxBuffer[2].pos;
+            fprintf(stderr, "the dim: %.0f,%.0f to %.0f,%.0f, %08X\n", a.x, a.y, b.x, b.y, bg->VtxBuffer[0].col);
+            CHECK(a.x == 0.0f && a.y == 0.0f && b.x == io.DisplaySize.x && b.y == io.DisplaySize.y);
+            CHECK(bg->VtxBuffer[0].col == ImGui::GetColorU32(ImGuiCol_ModalWindowDimBg));
+        }
+    }
     frame(ImGuiKey_GamepadFaceDown); frames(2);
     CHECK(strstr(open_menu(), "File") != NULL);
     {   /* menu bar order */
@@ -621,11 +675,54 @@ int main(void)
     fprintf(stderr, "after OK: [%s], on %d, runs %d\n", open_menu(), s_asked, s_asked_runs);
     CHECK(strstr(open_menu(), "Developer") != NULL && s_asked && s_asked_runs == 1 && s_log_runs == 1);
 
-    /* Shut on Developer, with it open, and opened again: the bar alone, on
-     * File's title, and Right goes on from File -- not from where the pad
-     * last was. */
-    g_just = 1;
-    frames(2);
+    /* Shut on Developer, with it open and the pad on Log to file: it fades
+     * out in MENU_FADE_SECONDS, still drawn, fainter each frame, the dim
+     * behind it too, and taking no input -- A, held for the game, flips
+     * nothing. Faded out, it is built no more. */
+    {
+        int n = 0, dim = dim_alpha(), drawn = 1, fainter = 1;
+        float was = g_fade;
+        io.ClearInputKeys();            /* as the window does, shutting it */
+        io.ClearInputMouse();
+        while (g_fade > 0.0f && n < 60) {
+            fade_frame(0, ImGuiKey_GamepadFaceDown);
+            n++;
+            if (g_fade > 0.0f) {
+                ImGuiWindow *w = ImGui::FindWindowByName(open_menu());
+                drawn &= strstr(open_menu(), "Developer") != NULL && w && w->Active;
+                fainter &= g_fade < was && dim_alpha() < dim;
+                dim = dim_alpha();
+            }
+            was = g_fade;
+        }
+        io.AddKeyEvent(ImGuiKey_GamepadFaceDown, false);
+        fprintf(stderr, "faded out in %d frames, drawn %d, fainter %d; log to file %d, runs %d\n",
+                n, drawn, fainter, s_log, s_log_runs);
+        CHECK(g_fade == 0.0f && !s_built);
+        CHECK(fabsf(n / 60.0f - MENU_FADE_SECONDS) <= 1.0f / 60.0f + 1e-4f);
+        CHECK(drawn && fainter);
+        CHECK(s_log == 0 && s_log_runs == 1);
+        CHECK(!ImGui::FindWindowByName("##MainMenuBar")->Active);
+    }
+    /* Opened again: it fades in from nothing, all there in
+     * MENU_FADE_SECONDS; the bar alone, on File's title, and Right goes on
+     * from File -- not from where the pad last was. */
+    {
+        int n = 0, built = 1;
+        float was = -1.0f, first;
+        g_just = 1;
+        fade_frame(1);
+        first = g_fade;
+        while (g_fade < 1.0f && n < 60) {
+            was = g_fade;
+            fade_frame(1);
+            built &= s_built && g_fade > was;
+            n++;
+        }
+        fprintf(stderr, "faded in from %.2f in %d frames\n", first, n);
+        CHECK(first > 0.0f && first < 0.01f && g_fade == 1.0f && built);
+        CHECK(fabsf(n / 60.0f - MENU_FADE_SECONDS) <= 1.0f / 60.0f + 1e-4f);
+    }
     CHECK(!strcmp(open_menu(), "") && bar_focused());
     frame(ImGuiKey_GamepadDpadRight); frames(2);
     frame(ImGuiKey_GamepadFaceDown); frames(2);

@@ -101,11 +101,21 @@ typedef struct XBOX_MENU_ITEM {
 void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count);
 
 /* The window's side (menu_sdl.cpp, and tests/menu): one frame of the menu,
- * between ImGui::NewFrame() and ImGui::Render(), on the window's thread. It
- * stays until the window shuts it (F1, Back). just_opened: the first
- * frame after opening -- the bar alone, the pad on the first menu's title,
- * so a pad has somewhere to start. */
+ * with the game dimmed behind it, between ImGui::NewFrame() and
+ * ImGui::Render(), on the window's thread. It stays until the window shuts
+ * it (F1, Back). just_opened: the first frame after opening -- the bar
+ * alone, the pad on the first menu's title, so a pad has somewhere to
+ * start. */
 void menu_build(int just_opened);
+
+/* The window's side too, before ImGui::NewFrame(): how far the menu has
+ * faded in, from 0 (gone) to 1, `seconds` after it was `fade`, as it opens
+ * (open nonzero) or shuts. It comes or goes in MENU_FADE_SECONDS, and is
+ * never 0 while open. The window draws the menu at that alpha
+ * (ImGuiStyle::Alpha) until it is 0 again; while it shuts, the menu takes no
+ * input: what the backend read for the frame is dropped. */
+#define MENU_FADE_SECONDS 0.10f
+float menu_fade(float fade, int open, float seconds);
 
 /* The window's side too: a box in the middle of the window, over whatever is
  * behind it, saying how far something the game is waiting for has got --
