@@ -62,6 +62,10 @@ static void sb(SB *s, const char *fmt, ...)
 static int s_c0_each = 1, s_c1_each = 1;
 #define PSH_FINAL_STAGE 8
 
+/* A number from a header, as the GLSL writes it. */
+#define PSH_STR_(x) #x
+#define PSH_STR(x)  PSH_STR_(x)
+
 static const char *reg_name(unsigned reg, int stage)
 {
     static char buf[32];
@@ -504,18 +508,25 @@ int nv2a_psh_emit_glsl(const Nv2aPshState *ps, char *buf, int bufsize)
      * reads as "the whole screen is one flat value" and is entirely an
      * artefact of the probe. */
 
-    /* Alpha test: fixed function on the console, absent from GL core. */
+    /* Alpha test: fixed function on the console, absent from GL core. The
+     * function in alphaFunc's low bits, and the see-through fix's half of a
+     * split draw in the two above them (nv2a_psh.h). */
     if (probe & 1) sb(&s, "    // alpha test suppressed\n    frag = result;\n");
     else sb(&s,
        "    if (alphaFunc != 0) {\n"
        "        bool pass = true;\n"
-       "        if      (alphaFunc == 1) pass = false;\n"
-       "        else if (alphaFunc == 2) pass = (result.a <  alphaRef);\n"
-       "        else if (alphaFunc == 3) pass = (result.a == alphaRef);\n"
-       "        else if (alphaFunc == 4) pass = (result.a <= alphaRef);\n"
-       "        else if (alphaFunc == 5) pass = (result.a >  alphaRef);\n"
-       "        else if (alphaFunc == 6) pass = (result.a != alphaRef);\n"
-       "        else if (alphaFunc == 7) pass = (result.a >= alphaRef);\n"
+       "        int f = alphaFunc & " PSH_STR(NV2A_PSH_ALPHA_FUNC) ";\n"
+       "        if      (f == 1) pass = false;\n"
+       "        else if (f == 2) pass = (result.a <  alphaRef);\n"
+       "        else if (f == 3) pass = (result.a == alphaRef);\n"
+       "        else if (f == 4) pass = (result.a <= alphaRef);\n"
+       "        else if (f == 5) pass = (result.a >  alphaRef);\n"
+       "        else if (f == 6) pass = (result.a != alphaRef);\n"
+       "        else if (f == 7) pass = (result.a >= alphaRef);\n"
+       "        if ((alphaFunc & " PSH_STR(NV2A_PSH_ALPHA_OPAQUE) ") != 0 && result.a <  "
+                NV2A_PSH_OPAQUE_GLSL ") pass = false;\n"
+       "        if ((alphaFunc & " PSH_STR(NV2A_PSH_ALPHA_SEE) ") != 0 && result.a >= "
+                NV2A_PSH_OPAQUE_GLSL ") pass = false;\n"
        "        if (!pass) NV2A_DISCARD;\n"
        "    }\n"
        "    frag = result;\n");

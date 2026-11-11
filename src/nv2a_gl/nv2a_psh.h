@@ -109,6 +109,18 @@ int nv2a_psh_emit_glsl(const Nv2aPshState *ps, char *buf, int bufsize);
  * colour draws by identity. */
 int nv2a_psh_emit_solid(char *buf, int bufsize);
 
+/* The alpha test, as the alphaFunc uniform gives it: 0 none, or the
+ * console's function, 1 (NEVER) to 8 (ALWAYS), against alphaRef. With one of
+ * these added, the test also leaves out the fragments whose alpha is below
+ * NV2A_PSH_OPAQUE, or those whose alpha is at least that: the see-through
+ * fix's two halves of a draw (nv2a_seethru.h), each fragment in one of them.
+ * NV2A_PSH_OPAQUE_GLSL is the same number, as the shaders write it. */
+#define NV2A_PSH_OPAQUE         0.95f
+#define NV2A_PSH_OPAQUE_GLSL    "0.95"
+#define NV2A_PSH_ALPHA_FUNC     15      /* the function's bits */
+#define NV2A_PSH_ALPHA_OPAQUE   16
+#define NV2A_PSH_ALPHA_SEE      32
+
 #ifdef __cplusplus
 }
 #endif

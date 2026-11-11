@@ -24,8 +24,8 @@ no submenu has that name, the row goes at the end of its menu, above the last
 row, and the log says so once. Display ends with two, both marked last and
 added by the window (`nv2a_gl.c`): Skips, for the parts of the game a player
 can leave out (Skip intro), then Enhancements, for what goes beyond the
-console (Music info in pause). A new skip or enhancement goes in one of them,
-not in Display itself.
+console (Music info in pause, then See through fix, added by the window). A
+new skip or enhancement goes in one of them, not in Display itself.
 
 ## Wording
 

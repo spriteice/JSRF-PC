@@ -36,6 +36,7 @@
 #include "nv2a_scale.h"
 #include "nv2a_fit.h"
 #include "nv2a_wide.h"
+#include "nv2a_seethru.h"
 #include "nv2a_hash.h"
 #include "nv2a_psh_consts.h"
 
@@ -1285,7 +1286,9 @@ static void revz_start(void)
 static int gl_init_common(uint32_t w, uint32_t h)
 {
     (void)w; (void)h;
-    G = nv2a_gfx_gl();
+    /* Through the see-through fix's wrapper (nv2a_seethru.h), which holds
+     * see-through pixels back to the end of their pass. */
+    G = nv2a_seethru_wrap(nv2a_gfx_gl());
     g_is_gl = 1;
 #if defined(NV2A_GL_USE_SDL)
     revz_start();
@@ -2073,6 +2076,26 @@ static void sdl_menu_aniso(void)
             .hint = "Keeps textures sharp when seen at an angle. Light on the GPU." };
         xbox_MenuAdd(&row, 1);
     }
+}
+
+/* Display > Enhancements > See through fix (nv2a_seethru.h): taken at the
+ * next draw and kept as seethru=. Added once the device is up (seethru_start),
+ * after Music info in pause, added at the start. */
+static void sdl_seethru_flip(void)
+{
+    nv2a_seethru_set(!nv2a_seethru_on());
+    fprintf(stderr, "  [SEETHRU] see through fix %s (the menu)\n", nv2a_seethru_on() ? "on" : "off");
+    sdl_cfg_set("seethru", nv2a_seethru_on());
+}
+static void sdl_menu_seethru(void)
+{
+    const XBOX_MENU_ITEM row = {
+        .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "See through fix",
+        .state = nv2a_seethru_on, .run = sdl_seethru_flip, .group = XBOX_GROUP_ENHANCEMENTS,
+        /* File > Presets: off in Xbox mode, as on the Xbox. */
+        .presets = XBOX_PRESETS_SET, .preset = { 0, NV2A_SEE_DEFAULT, NV2A_SEE_DEFAULT },
+        .hint = "See characters and dynamic world objects through glass and water." };
+    xbox_MenuAdd(&row, 1);
 }
 #endif
 
@@ -5027,7 +5050,10 @@ static const char *vc_debug_switch(void)
         "DUMP_FB", "DUMP_AFTER", "DUMP_EVERY", "DUMP_3D", "DUMP_TRIS",
         "DUMP_CHARS", "DUMP_DEPTH",
         /* the timeline probe: a draw's number, slot and vertex count */
-        "TIMELINE", NULL
+        "TIMELINE",
+        /* the see-through fix's census, and its see-through pixels drawn in
+         * place (nv2a_seethru.h): a draw's state and order */
+        "SEETHRU_LOG", "SEETHRU_HOLD", NULL
     };
     static char name[64];
     char **e;
@@ -8554,11 +8580,48 @@ static void do_draw_body(void)
     }
     PROF_STEP(STEP_PROBES);
     if (!g_surf_lost) {
+        /* The see-through fix (nv2a_seethru.h): a see-through draw that
+         * writes depth is split by its pixels' alpha (nv2a_psh.h), with the
+         * alpha test the title asked for kept: its opaque pixels first, in
+         * place, as the title draws them; then its see-through ones, with no
+         * depth writes, held back to the end of the pass. A draw after it
+         * that writes no depth is held back whole. The widescreen copies
+         * take each half's state from g_draw_rs, and its uniforms as set. */
+        Nv2aRenderState keep = g_draw_rs;
+        Nv2aSeeDraw see;
+        int how, held = 0;
+        see.surf = S.color_offset;
+        see.frame = S.frames;
+        see.draw = S.draws;
+        see.pos = inl ? 0 : S.attr[0].offset;
+        see.verts = out_n;
+        see.slot = slot;
+        see.textured = (uint8_t)(S.tex[0].enabled != 0);
+        see.skinned = (uint8_t)(slot >= 0 && g_pcache[slot].uses_a0 && S.xf_mode != NV2A_XF_MODE_FIXED);
+        see.alpha_uniforms = (uint8_t)uses(slot, NV2A_U_ALPHAFUNC);
+        how = nv2a_seethru_draw(&g_draw_rs, &see);
         PROF_T0();
+        if (how == NV2A_SEE_SPLIT) {
+            G->uniform_i(NV2A_U_ALPHAFUNC, g_last.alpha_func | NV2A_PSH_ALPHA_OPAQUE);
+            if (vc_vb && !vc_seq) G->draw_indexed(mode, out_n, vc_i32);
+            else                  G->draw(mode, out_n);
+            if (g_wide_copy) wide_fill_copies(mode, out_n, vc_vb && !vc_seq, vc_i32);
+            if (g_wide_slab) wide_slab_right(mode, out_n, vc_vb && !vc_seq, vc_i32);
+            g_draw_rs.depth_write = 0;
+            G->state(&g_draw_rs);
+            G->uniform_i(NV2A_U_ALPHAFUNC, g_last.alpha_func | NV2A_PSH_ALPHA_SEE);
+        }
+        if (how != NV2A_SEE_KEEP) held = nv2a_seethru_hold_begin();
         if (vc_vb && !vc_seq) G->draw_indexed(mode, out_n, vc_i32);
         else                  G->draw(mode, out_n);
         if (g_wide_copy) wide_fill_copies(mode, out_n, vc_vb && !vc_seq, vc_i32);
         if (g_wide_slab) wide_slab_right(mode, out_n, vc_vb && !vc_seq, vc_i32);
+        if (held) nv2a_seethru_hold_end();
+        if (how == NV2A_SEE_SPLIT) {
+            G->uniform_i(NV2A_U_ALPHAFUNC, g_last.alpha_func);
+            g_draw_rs = keep;
+            G->state(&g_draw_rs);
+        }
         PROF_ADD(draw);
     }
     xray_done: ;
@@ -10499,8 +10562,12 @@ static void do_clear(uint32_t param)
         rect[2] = raster_x(S.clear_x1 + 1); rect[3] = raster_y(S.clear_y1 + 1);
         rectp = rect;
     }
-    if (!g_surf_lost)
+    if (!g_surf_lost) {
         G->clear(mask, rgba, depth, S.clear_zstencil & 0xFFu, rectp);
+        /* The see-through fix keeps what is drawn over the finished
+         * picture, after a later depth clear, as it is (nv2a_seethru.h). */
+        if (mask & 2u) nv2a_seethru_depth_clear(S.color_offset, S.frames);
+    }
     S.clears++;
 }
 
@@ -13002,6 +13069,21 @@ static void aniso_start(void)
 #endif
 }
 
+/* The see-through fix from the start: the window's setting (seethru=), on
+ * by default (NV2A_SEE_DEFAULT); and its menu row. */
+static void seethru_start(void)
+{
+    int on = NV2A_SEE_DEFAULT;
+#if defined(NV2A_GL_USE_SDL)
+    on = sdl_cfg_get("seethru", NV2A_SEE_DEFAULT) != 0;
+#endif
+    nv2a_seethru_set(on);
+    fprintf(stderr, "  [SEETHRU] see through fix %s (settings)\n", on ? "on" : "off");
+#if defined(XBOXRECOMP_MENU)
+    sdl_menu_seethru();
+#endif
+}
+
 static int gfx_init(uint32_t w, uint32_t h)
 {
     if (!gl_init(w, h)) return 0;     /* the context, then the device */
@@ -13009,6 +13091,7 @@ static int gfx_init(uint32_t w, uint32_t h)
     aa_start();
     shader_cache_start();
     aniso_start();
+    seethru_start();
 #if defined(XBOXRECOMP_MENU)
     sdl_menu_smaa();
     sdl_menu_msaa();

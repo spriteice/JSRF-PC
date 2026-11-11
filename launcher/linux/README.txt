@@ -121,6 +121,13 @@ It follows the songs of the street mixes too, and shows nothing for the
 title's and the story's own music. On by default. It changes straight away,
 and is remembered as musicinpause= in the settings file (0 or 1).
 
+Display > Enhancements > See through fix in the in-game menu shows
+characters and dynamic world objects through glass and water, tinted by
+them: the game draws them after the glass, and on the Xbox the glass hides
+them, as the crowd behind a shop's window. Faded characters still hide what
+is behind them, as on the Xbox. On by default. It changes straight away, and
+is remembered as seethru= in the settings file (1 or 0).
+
 Graphics > Anti-aliasing (MSAA) in the in-game menu smooths jagged edges:
 Off (the default), 2x, 4x, or 8x, as far as the graphics card goes. It changes
 straight away, with no restart, and is remembered as msaa= in the settings

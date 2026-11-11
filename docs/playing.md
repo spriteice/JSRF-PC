@@ -120,7 +120,7 @@ input goes to the menu.
   any. Full screen and the free camera's own settings stay as you set them.
 - **Display:** Full screen, the aspect ratio, the render scale (1× to 6×), the
   draw distance, Far buildings, and two submenus at the end: Skips, with Skip
-  intro, and Enhancements, with Music info in pause. The
+  intro, and Enhancements, with Music info in pause and See through fix. The
   aspect ratio is 4:3 (the Xbox's own, widescreen off), 16:10, 16:9, 21:9, or
   Match screen, the shape of the display the window is on, the default. It changes at once, and is kept as
   `aspect=` (with `widescreen=` for on or off) in the settings file. Draw
@@ -142,7 +142,12 @@ input goes to the menu.
   left, above Rotate map. It follows the songs of the street mixes too, and
   shows nothing for the title's and the story's own music. On by default; it
   changes at once, and is kept as `musicinpause=` (1 or 0) in the settings
-  file.
+  file. See through fix shows characters and dynamic world objects through
+  glass and water, tinted by them: the game draws them after the glass, and
+  on the Xbox the glass hides them, as the crowd behind a shop's window.
+  Faded characters still hide what is behind them, as on the Xbox. On by
+  default; it changes at once, and is kept as `seethru=` (1 or 0) in the
+  settings file.
 - **Graphics:** The [graphics options](#graphics-options) below.
 - **Audio:** Audio effects, our own versions of the console's sound effects:
   the 3D sounds placed to your left or right as the game sets them, the

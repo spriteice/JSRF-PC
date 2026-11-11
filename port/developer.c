@@ -82,6 +82,7 @@ static const DevSwitch k_logging[] = {
 #endif
     { "RECOMP_GL_ERRORS_PER_DRAW", "1" },
     { "RECOMP_GL_PROFILE", "1" },
+    { "RECOMP_GL_SEETHRU_LOG", "1" },       /* the see-through fix's census, one frame in 600 */
     { "RECOMP_GL_TIMELINE", "1" },          /* a frame's surfaces and skinned draws, every 5 s */
     { "RECOMP_GL_UNHANDLED", "1" },
     { "RECOMP_GL_VERBOSE", "1" },
@@ -94,6 +95,7 @@ static const DevSwitch k_logging[] = {
 static const DevSwitch k_engine[] = {
     { "JSRF_DRAW_COPIES", "1" },            /* Far buildings draws an area's copies too (port/draw_distance.c) */
     { "RECOMP_APU_MIX", "xemu" },           /* each voice's own sides, not the mixbins folded */
+    { "RECOMP_GL_SEETHRU_HOLD", "0" },      /* see-through pixels in place, not held back (nv2a_seethru.h) */
     { "RECOMP_GL_STENCILVIS", "1" },        /* the stencil buffer in place of the shadows */
     { "RECOMP_GL_VCACHE", "0" },            /* no vertex cache */
 };
