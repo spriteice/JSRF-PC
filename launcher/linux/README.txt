@@ -88,11 +88,11 @@ the game as the Xbox runs it: 4:3 at 1x, with everything JSRF-PC adds to how
 it looks and plays turned off, but the audio effects, which are the console's
 own. JSRF-PC default is the settings a new install starts with. Max quality
 is JSRF-PC default with the render scale, draw distance, Far buildings,
-anisotropic filtering and both anti-aliasings at their most, as far as the
-graphics card goes: it asks a lot of the computer. The one ticked is the one
-your settings match, if any. Full screen and the free camera's own settings
-stay as you set them. The game restarts if the render scale, the shader cache
-or the audio effects change, so save first.
+anisotropic filtering, 2D upscaling and both anti-aliasings at their most, as
+far as the graphics card goes: it asks a lot of the computer. The one ticked
+is the one your settings match, if any. Full screen and the free camera's own
+settings stay as you set them. The game restarts if the render scale, the
+shader cache or the audio effects change, so save first.
 
 Display > Draw distance in the in-game menu is how far away the game draws
 the things in its world: crowds, spray cans, props you can knock over,
@@ -147,6 +147,14 @@ card goes. It changes straight away, with no restart, though the textures it
 reaches take a moment to load again, and is remembered as aniso= in the
 settings file (0, 2, 4, 8, or 16). It leaves things that face the screen,
 such as the HUD, as they were.
+
+Graphics > 2D upscaling in the in-game menu draws the menus, text, HUD and
+icons from sharper copies of the game's art: Off, 2x, 4x (the default), or
+8x. The graphics card makes each copy the first time that art is shown, a few
+a frame. It helps from render scale 2x up; at 1x it makes nothing, as the art
+is drawn at its own size there. It changes straight away, with no restart,
+and is remembered as upscale_2d= in the settings file (0, 2, 4, or 8). 8x is
+for the highest render scales, and its copies take the most memory.
 
 Graphics > Shader cache in the in-game menu (on by default) keeps the shaders
 the game builds, in the cache folder. Each time the game starts, they are all

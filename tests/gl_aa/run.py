@@ -19,7 +19,8 @@ if os.name == "nt":
 
 root = pathlib.Path(__file__).resolve().parents[2]
 sources = ["tests/gl_aa/test_main.c", "src/nv2a_gl/nv2a_gfx_gl.c", "src/nv2a_gl/nv2a_smaa.c",
-           "src/nv2a_gl/nv2a_shader_cache.c", "src/nv2a_gl/nv2a_uniforms.c"]
+           "src/nv2a_gl/nv2a_shader_cache.c", "src/nv2a_gl/nv2a_uniforms.c",
+           "src/nv2a_gl/nv2a_upscale_glsl.c"]
 cc = shlex.split(os.environ.get("CC", "cc"))
 with tempfile.TemporaryDirectory(prefix="gl-aa-") as directory:
     exe = str(pathlib.Path(directory) / "test")

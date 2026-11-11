@@ -406,6 +406,22 @@ typedef struct Nv2aGfx {
      * colour, each column its own. Raster pixels. NULL where the backend has
      * none. */
     void     (*fill_strip)(uint32_t rt, uint32_t x1, uint32_t src, uint32_t r0, uint32_t r1);
+
+    /* 2D upscaling (nv2a_upscale.h): a new texture made from `tex`, which
+     * tex_new or tex_new_dxt made w x h with sampler `s`, by Super-xBR's
+     * passes on the device. Level 0 is `factor` (2, 4 or 8) times its size,
+     * each level after it half the one before, and the last of them (level 1
+     * at 2x, 2 at 4x, 3 at 8x) holds `tex`'s own level 0 as it is, so a draw
+     * that shows it no larger than the title did samples what it did. With
+     * `s->mip`, the levels below the game's size follow, made from it.
+     * Sampled with `s`'s filters and wrap, mipmapped whatever `s->mip` says:
+     * a nearest filter takes the nearest level, a linear one blends two.
+     * `tex` is left as it was, and the backend as the next draw expects it. 0
+     * where it cannot be made: another factor, a side over the device's
+     * largest, the passes not built, or the device out of memory. NULL where
+     * the backend has none. */
+    uint32_t (*tex_upscale)(uint32_t tex, uint32_t w, uint32_t h, int factor,
+                            const Nv2aSampler *s);
 } Nv2aGfx;
 
 /* The implementation: OpenGL's. */

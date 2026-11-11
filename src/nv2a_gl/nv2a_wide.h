@@ -219,7 +219,7 @@ int nv2a_wide_slab(uint32_t n, float s);
  * boxes 426.6 long (213.3 each way) and 147.7 for the upright one, as their
  * positions come in, where the map's own models are under 70 across. At
  * 4:3 they run past the screen's edges; on a wide screen, turned, their
- * ends showed short of its edges (Aden, 8 November 2026, 07:15 UTC: "it
+ * ends showed short of its edges (spriteice, 8 November 2026, 07:15 UTC: "it
  * should also continue to the edge of the screen in the light blue
  * section"). A draw of the map whose positions span at least
  * NV2A_WIDE_LINES_SPAN on some axis is those lines: each position's
@@ -229,7 +229,7 @@ int nv2a_wide_slab(uint32_t n, float s);
  * under the same camera, as thin as it was. They are shown only from row
  * NV2A_WIDE_LINES_TOP down (the title's pixels): the top of the grey bar,
  * under which the menus' light grid starts, not over the dark grid above
- * it (Aden, 07:03 UTC: "the yellow lines should only show in the light blue
+ * it (spriteice, 07:03 UTC: "the yellow lines should only show in the light blue
  * grid, not the dark blue one"). So is every other draw of the map, and of
  * the race preview's course map, whose tops came up over that dark grid
  * once widened (08:32 UTC: "it should only be drawn in the light grid (as
@@ -252,7 +252,7 @@ float nv2a_wide_lines_coord(float c, float span);
  * It moves with its side's copy of the grid, by whole steps of it
  * (nv2a_wide_hud_grid_shift), not by exactly the screen's margin, so it
  * sits on the same cell as on the console's 4:3 screen: the pause menus'
- * buttons across the dark column's edge, as there. Aden's choice, 8
+ * buttons across the dark column's edge, as there. spriteice's choice, 8
  * November 2026 (07:44 UTC, card): "Move them with the grid". */
 #define NV2A_WIDE_HUD_ON_GRID 2u
 
@@ -339,7 +339,7 @@ void nv2a_wide_hud_clip_x(uint32_t surf_w, float s, int side, uint32_t *x0, uint
  * move, and the dark column down the backdrop's right-hand side starts six
  * steps right of the centre, the move at 21:9 (nv2a_wide_half_move), so
  * there a seam right of the middle showed half a cell of that column down
- * the middle of the screen (Aden, 8 November 2026, 08:32 UTC: "half of a
+ * the middle of the screen (spriteice, 8 November 2026, 08:32 UTC: "half of a
  * grid is drawn as the dark grid in 21:9"). The right copy shows the
  * backdrop from the seam less its move, which is light grid out to the 4:3
  * screen's left edge. The middle, surf_w / 2, for an s that isn't between 0

@@ -32,6 +32,7 @@ with tempfile.TemporaryDirectory(prefix="gl-backend-") as tmp:
                              str(gl / "nv2a_uniforms.c"), str(gl / "nv2a_shader_cache.c"),
                              str(gl / "nv2a_vsh.c"), str(gl / "nv2a_psh.c"),
                              str(gl / "nv2a_fit.c"), str(gl / "nv2a_scale.c"),
-                             str(gl / "nv2a_wide.c"), "-lEGL", "-lGL", "-lm"],
+                             str(gl / "nv2a_wide.c"), str(gl / "nv2a_upscale_glsl.c"),
+                             "-lEGL", "-lGL", "-lm"],
                        check=True)
         subprocess.run([exe], check=True, timeout=60)

@@ -1,0 +1,328 @@
+/* Run with: python tests/gl_backend/run.py
+ *
+ * 2D upscaling's copy in the OpenGL backend (tex_upscale in
+ * src/nv2a_gl/nv2a_gfx_gl.c, its passes in nv2a_upscale_glsl.c), through the
+ * device interface on a headless EGL context (context.h):
+ *
+ *  - the levels: 2x, 4x and 8x the size at level 0, each after it half the
+ *    one before, and the last the game's texels exactly, from RGBA8 and from
+ *    DXT1; with the game's mipmaps, its chain below that too;
+ *  - where the picture lands: Super-xBR's filters are exact on a ramp, so a
+ *    ramp across, down and diagonally comes back as the same ramp at the
+ *    texel centres of the bigger image, at 2x, 4x and 8x -- which a pass
+ *    reading the wrong texel, or the last pass not putting the image back
+ *    where the source was, would not give;
+ *  - alpha: an opaque red half beside a clear blue one keeps red wherever
+ *    anything shows (no fringe of the clear colour), clear blue where
+ *    nothing does, and an edge that falls from opaque to clear and never
+ *    rises;
+ *  - wrap: with repeat, the copy of a picture moved round by (5, 3) is the
+ *    copy moved round by (10, 6), texel for texel;
+ *  - and what is refused (another factor, a side over the device's
+ *    largest), with the target being drawn into and its viewport as they
+ *    were, and no GL error.
+ */
+#include "context.h"
+#include <stdlib.h>
+#include <string.h>
+#include "nv2a_backend.h"
+
+static const Nv2aGfx *G;
+
+static void check(int ok, const char *what)
+{
+    GLenum e = glGetError();
+    if (!ok || e != GL_NO_ERROR) {
+        fprintf(stderr, "FAIL %s%s (GL error 0x%x)\n", what, ok ? "" : ": wrong", e);
+        exit(1);
+    }
+}
+
+/* Through a unit the backend's passes don't use (they use 4 and 5). */
+static void bind(uint32_t tex)
+{
+    glActiveTexture(GL_TEXTURE0 + 6);
+    glBindTexture(GL_TEXTURE_2D, tex);
+}
+
+static void level_size(uint32_t tex, int l, GLint *w, GLint *h)
+{
+    bind(tex);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, l, GL_TEXTURE_WIDTH, w);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, l, GL_TEXTURE_HEIGHT, h);
+}
+
+static GLint param(uint32_t tex, GLenum p)
+{
+    GLint v = -1;
+    bind(tex);
+    glGetTexParameteriv(GL_TEXTURE_2D, p, &v);
+    return v;
+}
+
+/* Level l of tex, RGBA8, malloc'd. */
+static uint8_t *read_level(uint32_t tex, int l)
+{
+    GLint w = 0, h = 0;
+    uint8_t *px;
+    level_size(tex, l, &w, &h);
+    px = malloc((size_t)w * h * 4);
+    bind(tex);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glGetTexImage(GL_TEXTURE_2D, l, GL_RGBA, GL_UNSIGNED_BYTE, px);
+    return px;
+}
+
+/* The copy's levels: sizes, how many, and the last the source's level 0. */
+static void levels(uint32_t src, uint32_t w, uint32_t h, int factor,
+                   const Nv2aSampler *s, const char *what)
+{
+    int steps = factor == 2 ? 1 : factor == 4 ? 2 : 3, l;
+    uint32_t t = G->tex_upscale(src, w, h, factor, s);
+    uint8_t *want, *got;
+    char msg[160];
+    snprintf(msg, sizeof msg, "%s at %dx: made", what, factor);
+    check(t != 0, msg);
+    for (l = 0; l <= steps; l++) {
+        GLint lw, lh;
+        level_size(t, l, &lw, &lh);
+        snprintf(msg, sizeof msg, "%s at %dx: level %d is %ux%u (it is %dx%d)", what, factor, l,
+                 (w * (uint32_t)factor) >> l, (h * (uint32_t)factor) >> l, (int)lw, (int)lh);
+        check(lw == (GLint)((w * (uint32_t)factor) >> l) && lh == (GLint)((h * (uint32_t)factor) >> l), msg);
+    }
+    want = read_level(src, 0);
+    got = read_level(t, steps);
+    snprintf(msg, sizeof msg, "%s at %dx: level %d is the source's texels", what, factor, steps);
+    check(!memcmp(want, got, (size_t)w * h * 4), msg);
+    free(want);
+    free(got);
+    if (s->mip) {
+        GLint lw, lh;
+        level_size(t, steps + 1, &lw, &lh);
+        snprintf(msg, sizeof msg, "%s at %dx: the chain goes on below the source's size", what, factor);
+        check(lw == (GLint)(w / 2) && lh == (GLint)(h / 2) && param(t, GL_TEXTURE_MAX_LEVEL) >= steps + 1
+              && param(t, GL_TEXTURE_MIN_FILTER) == (s->min_linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR),
+              msg);
+    } else {
+        snprintf(msg, sizeof msg, "%s at %dx: levels 0 to %d, mipmapped", what, factor, steps);
+        check(param(t, GL_TEXTURE_MAX_LEVEL) == steps
+              && param(t, GL_TEXTURE_MIN_FILTER) == (s->min_linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_NEAREST)
+              && param(t, GL_TEXTURE_MAG_FILTER) == (s->mag_linear ? GL_LINEAR : GL_NEAREST),
+              msg);
+    }
+    printf("ok: %s at %dx: %u levels, the last the source's\n", what, factor, steps + 1);
+    G->tex_free(t);
+}
+
+/* A ramp, v = ax * x + ay * y, comes back as the same ramp: texel (X, Y) of
+ * the copy is at (X + 0.5) / f - 0.5 of the source's, away from the edges. */
+static void ramp(int ax, int ay, int factor, const char *what)
+{
+    enum { N = 24 };
+    static uint8_t px[N * N * 4];
+    Nv2aSampler s = { 1, 1, 0, 0, 0, 0, 0 };
+    uint32_t src, t;
+    uint8_t *got;
+    int x, y, worst = 0, n = N * factor, margin = 4 * factor;
+    char msg[160];
+    for (y = 0; y < N; y++)
+        for (x = 0; x < N; x++) {
+            uint8_t *p = px + (y * N + x) * 4;
+            p[0] = (uint8_t)(ax * x + ay * y);
+            p[1] = (uint8_t)(255 - (ax * x + ay * y));
+            p[2] = 77;
+            p[3] = 255;
+        }
+    src = G->tex_new(N, N, px, &s);
+    t = G->tex_upscale(src, N, N, factor, &s);
+    check(src && t, "a ramp's copy made");
+    got = read_level(t, 0);
+    for (y = margin; y < n - margin; y++)
+        for (x = margin; x < n - margin; x++) {
+            double sx = (x + 0.5) / factor - 0.5, sy = (y + 0.5) / factor - 0.5;
+            double v = ax * sx + ay * sy;
+            const uint8_t *p = got + ((size_t)y * n + x) * 4;
+            int d0 = abs(p[0] - (int)(v + 0.5)), d1 = abs(p[1] - (int)(255 - v + 0.5));
+            int d2 = abs(p[2] - 77), d3 = abs(p[3] - 255);
+            int d = d0 > d1 ? d0 : d1;
+            if (d2 > d) d = d2;
+            if (d3 > d) d = d3;
+            if (d > worst) worst = d;
+        }
+    snprintf(msg, sizeof msg, "%s at %dx: the ramp where it should be (out by %d at most)",
+             what, factor, worst);
+    check(worst <= 1, msg);
+    printf("ok: %s\n", msg);
+    free(got);
+    G->tex_free(t);
+    G->tex_free(src);
+}
+
+/* Opaque red on the left, clear blue on the right. */
+static void alpha_edge(int factor)
+{
+    enum { N = 16 };
+    static uint8_t px[N * N * 4];
+    Nv2aSampler s = { 1, 1, 0, 0, 0, 0, 0 };
+    uint32_t src, t;
+    uint8_t *got;
+    int x, y, n = N * factor;
+    char msg[160];
+    for (y = 0; y < N; y++)
+        for (x = 0; x < N; x++) {
+            uint8_t *p = px + (y * N + x) * 4;
+            p[0] = x < N / 2 ? 255 : 0;
+            p[1] = 0;
+            p[2] = x < N / 2 ? 0 : 255;
+            p[3] = x < N / 2 ? 255 : 0;
+        }
+    src = G->tex_new(N, N, px, &s);
+    t = G->tex_upscale(src, N, N, factor, &s);
+    check(src && t, "the alpha edge's copy made");
+    got = read_level(t, 0);
+    for (y = 0; y < n; y++)
+        for (x = 0; x < n; x++) {
+            const uint8_t *p = got + ((size_t)y * n + x) * 4;
+            const uint8_t *q = got + (size_t)x * 4;        /* row 0 */
+            int edge = n / 2;
+            snprintf(msg, sizeof msg, "%dx: texel %d,%d is %u,%u,%u,%u", factor, x, y,
+                     p[0], p[1], p[2], p[3]);
+            if (p[3]) check(p[0] >= 253 && p[1] <= 2 && p[2] <= 2, msg);   /* red where it shows */
+            else check(p[0] == 0 && p[1] == 0 && p[2] == 255, msg);       /* the clear's own */
+            check(memcmp(p, q, 4) == 0, msg);                               /* every row the same */
+            if (x < edge - factor) check(p[3] == 255, msg);
+            if (x >= edge + factor) check(p[3] == 0, msg);
+            if (x > 0) check(p[3] <= p[-1], msg);                           /* never rises */
+        }
+    printf("ok: alpha at %dx: red wherever it shows, the clear blue elsewhere, a falling edge\n",
+           factor);
+    free(got);
+    G->tex_free(t);
+    G->tex_free(src);
+}
+
+/* With repeat on both, moving the picture round moves the copy round. */
+static void wrap(int factor)
+{
+    enum { N = 16, DX = 5, DY = 3 };
+    static uint8_t a[N * N * 4], b[N * N * 4];
+    Nv2aSampler s = { 1, 1, 0, 1, 1, 0, 0 };
+    uint32_t ta, tb, ua, ub;
+    uint8_t *ga, *gb;
+    int x, y, n = N * factor, i;
+    srand(9);
+    for (i = 0; i < N * N * 4; i++) a[i] = (uint8_t)rand();
+    for (i = 0; i < N * N; i++) a[i * 4 + 3] = (uint8_t)(a[i * 4 + 3] | 0x80);
+    for (y = 0; y < N; y++)
+        for (x = 0; x < N; x++)
+            memcpy(b + (((y + DY) % N) * N + (x + DX) % N) * 4, a + (y * N + x) * 4, 4);
+    ta = G->tex_new(N, N, a, &s);
+    tb = G->tex_new(N, N, b, &s);
+    ua = G->tex_upscale(ta, N, N, factor, &s);
+    ub = G->tex_upscale(tb, N, N, factor, &s);
+    check(ua && ub, "the wrap test's copies made");
+    ga = read_level(ua, 0);
+    gb = read_level(ub, 0);
+    for (y = 0; y < n; y++)
+        for (x = 0; x < n; x++) {
+            int yy = (y + DY * factor) % n, xx = (x + DX * factor) % n;
+            char msg[96];
+            snprintf(msg, sizeof msg, "repeat at %dx: texel %d,%d moved round", factor, x, y);
+            check(!memcmp(ga + ((size_t)y * n + x) * 4, gb + ((size_t)yy * n + xx) * 4, 4), msg);
+        }
+    printf("ok: repeat at %dx: the copy moves round with the picture\n", factor);
+    free(ga);
+    free(gb);
+    G->tex_free(ua); G->tex_free(ub); G->tex_free(ta); G->tex_free(tb);
+}
+
+int main(void)
+{
+    static uint8_t px[32 * 16 * 4], blocks[4096];
+    Nv2aSampler lin = { 1, 1, 0, 0, 0, 0, 0 }, near = { 0, 0, 0, 0, 0, 0, 0 };
+    Nv2aSampler mip = { 1, 1, 2, 0, 0, 0, 0 }, plain = { 1, 1, 0, 1, 1, 1, 0 };
+    uint32_t t, dxt, rt, i, *wide;
+    GLint fbo0 = -1, fbo1 = -2, vp0[4], vp1[4];
+
+    if (!gl_backend_context()) return 1;
+    G = nv2a_gfx_gl();
+    check(G->init(), "init");
+    check(G->tex_upscale != NULL, "the device has tex_upscale");
+
+    /* Drawing into a target, as the front half is when the flip comes. */
+    rt = G->target_new(48, 40);
+    G->target_bind(rt);
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo0);
+    glGetIntegerv(GL_VIEWPORT, vp0);
+
+    srand(3);
+    for (i = 0; i < sizeof px; i++) px[i] = (uint8_t)rand();
+    t = G->tex_new(32, 16, px, &lin);
+    levels(t, 32, 16, 2, &lin, "RGBA 32x16, linear");
+    levels(t, 32, 16, 4, &lin, "RGBA 32x16, linear");
+    levels(t, 32, 16, 8, &lin, "RGBA 32x16, linear");
+    G->tex_free(t);
+    t = G->tex_new(32, 16, px, &near);
+    levels(t, 32, 16, 4, &near, "RGBA 32x16, nearest");
+    G->tex_free(t);
+    t = G->tex_new(32, 16, px, &mip);
+    levels(t, 32, 16, 2, &mip, "RGBA 32x16 with the driver's mipmaps");
+    levels(t, 32, 16, 8, &mip, "RGBA 32x16 with the driver's mipmaps");
+    G->tex_free(t);
+
+    for (i = 0; i < sizeof blocks; i++) blocks[i] = (uint8_t)rand();
+    dxt = G->tex_new_dxt(16, 16, 1, blocks, &plain);
+    if (dxt) {
+        levels(dxt, 16, 16, 2, &plain, "DXT1 16x16");
+        levels(dxt, 16, 16, 4, &plain, "DXT1 16x16");
+        levels(dxt, 16, 16, 8, &plain, "DXT1 16x16");
+        G->tex_free(dxt);
+    } else {
+        printf("ok: no DXT here (no S3TC), so no DXT copy to check\n");
+    }
+
+    ramp(8, 0, 2, "across");
+    ramp(0, 8, 2, "down");
+    ramp(4, 6, 2, "diagonal");
+    ramp(8, 0, 4, "across");
+    ramp(0, 8, 4, "down");
+    ramp(4, 6, 4, "diagonal");
+    ramp(8, 0, 8, "across");
+    ramp(0, 8, 8, "down");
+    ramp(4, 6, 8, "diagonal");
+    alpha_edge(2);
+    alpha_edge(4);
+    alpha_edge(8);
+    wrap(2);
+    wrap(4);
+    wrap(8);
+
+    t = G->tex_new(32, 16, px, &lin);
+    check(G->tex_upscale(t, 32, 16, 3, &lin) == 0, "3x is refused");
+    check(G->tex_upscale(t, 32, 16, 16, &lin) == 0, "16x is refused");
+    check(G->tex_upscale(0, 32, 16, 2, &lin) == 0, "no texture is refused");
+    G->tex_free(t);
+    {
+        GLint max = 0;
+        glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max);
+        wide = calloc((size_t)max / 4 + 1, 4);
+        t = G->tex_new((uint32_t)max / 4 + 1, 1, wide, &lin);
+        check(t && G->tex_upscale(t, (uint32_t)max / 4 + 1, 1, 4, &lin) == 0,
+              "a side over the device's largest is refused");
+        G->tex_free(t);
+        t = G->tex_new((uint32_t)max / 8 + 1, 1, wide, &lin);
+        check(t && G->tex_upscale(t, (uint32_t)max / 8 + 1, 1, 8, &lin) == 0,
+              "a side over the device's largest is refused at 8x");
+        G->tex_free(t);
+        free(wide);
+    }
+
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo1);
+    glGetIntegerv(GL_VIEWPORT, vp1);
+    check(fbo0 == fbo1 && !memcmp(vp0, vp1, sizeof vp0) && vp1[2] == 48 && vp1[3] == 40,
+          "the target being drawn into, and its viewport, as they were");
+    printf("ok: refused where it should be; the target and viewport left as they were\n");
+    G->target_free(rt);
+    printf("gl_backend: 2D upscaling's copy passes\n");
+    return 0;
+}

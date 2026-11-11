@@ -15,7 +15,7 @@
 
 /* The street pause menu (class 0x1D2A00), in the order its draw draws them.
  * Its fields as the read of the generated code found them, and each model
- * as Aden's draw log of the menu showed it (widescreen-3b/menus/layout-1).
+ * as spriteice's draw log of the menu showed it (widescreen-3b/menus/layout-1).
  * +0x64 is empty. */
 static const WideMenuPart street_parts[] = {
     { 0x7C, E, "the backdrop and its grids (model 0x80)" },

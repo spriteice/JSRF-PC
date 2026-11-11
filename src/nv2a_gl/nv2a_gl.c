@@ -37,6 +37,7 @@
 #include "nv2a_fit.h"
 #include "nv2a_wide.h"
 #include "nv2a_seethru.h"
+#include "nv2a_upscale.h"
 #include "nv2a_hash.h"
 #include "nv2a_psh_consts.h"
 
@@ -1108,7 +1109,17 @@ static struct {
     int      aniso;         /* has mipmaps, so takes the setting (tex_aniso) */
     int      used;
     size_t   held;          /* bytes handed to the device: RGBA8, or DXT as stored */
+    uint8_t  up;            /* 2D upscaling: UP_NONE, ... (up_note, up_take) */
+    uint8_t  up_said;       /* its census lines written: UP_SAID_... (RECOMP_GL_UPSCALE_LOG) */
 } g_tcache[TEX_CACHE];
+/* A texture's part in 2D upscaling: not taken yet (UP_NONE); taken by the
+ * rule and waiting for its copy (UP_WANTED); never to be, the rule having
+ * left it for what it is (UP_NEVER); its copy in `tex` (UP_MADE); or the
+ * device couldn't make one (UP_FAILED), tried again when the row changes. */
+enum { UP_NONE, UP_WANTED, UP_NEVER, UP_MADE, UP_FAILED };
+/* The census lines a texture has had: its verdict's, and that of a draw
+ * that is neither kind of 2D but has depth off (nv2a_up_census_wants). */
+enum { UP_SAID_VERDICT = 1, UP_SAID_NOT_2D = 2 };
 
 /*
  * Anisotropic filtering: the most samples a texture with mipmaps is given
@@ -1122,6 +1133,18 @@ static struct {
 #define ANISO_DEFAULT 8         /* our default (upstream's is 16x) */
 static volatile int g_aniso_want = ANISO_NONE;  /* the most samples asked for */
 static int          g_aniso_now = ANISO_NONE;   /* and in use */
+
+/*
+ * 2D upscaling (nv2a_upscale.h): the factor its copies are made at, 0 for
+ * none, from the window's upscale_2d= setting, 4x unless set otherwise
+ * (NV2A_UP_DEFAULT). It can change while the game runs: asked for at any
+ * time (the in-game menu) and taken at the next flip (up_take). At render
+ * scale 1x nothing is made (up_factor), as the game's own art is drawn at
+ * its own size there.
+ */
+static volatile int g_up_want;  /* the factor asked for: 0, 2, 4 or 8 */
+static int          g_up_now;   /* and in use */
+static Nv2aUpSecond g_up_sec;   /* this second's work, for RECOMP_GL_UPSCALE_LOG */
 
 /* ---- helpers ------------------------------------------------------------ */
 
@@ -2096,6 +2119,31 @@ static void sdl_menu_seethru(void)
         .presets = XBOX_PRESETS_SET, .preset = { 0, NV2A_SEE_DEFAULT, NV2A_SEE_DEFAULT },
         .hint = "See characters and dynamic world objects through glass and water." };
     xbox_MenuAdd(&row, 1);
+}
+
+/* Graphics > 2D upscaling: Off, 2x, 4x or 8x, taken at the next flip and kept
+ * as upscale_2d= (0, 2, 4 or 8), as F10 keeps widescreen=. Added once the
+ * device is up (gfx_init), after the anti-aliasing rows, so it is Graphics'
+ * last row, where the backend can make the copies. */
+static const char *const sdl_up_names[NV2A_UP_CHOICES] = { "Off", "2x", "4x", "8x" };
+static int  sdl_up_now(void)   { return nv2a_up_choice(g_up_want); }
+static void sdl_up_pick(int i)
+{
+    g_up_want = nv2a_up_choice_factor(i);
+    sdl_cfg_set("upscale_2d", g_up_want);
+}
+static void sdl_menu_up(void)
+{
+    /* The presets (File > Presets): off in Xbox mode, JSRF-PC default's
+     * (4x), and 8x in Max quality. */
+    const XBOX_MENU_ITEM row = {
+        .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "2D upscaling",
+        .state = sdl_up_now, .pick = sdl_up_pick, .choices = sdl_up_names,
+        .nchoices = NV2A_UP_CHOICES,
+        .presets = XBOX_PRESETS_SET,
+        .preset = { nv2a_up_choice(0), nv2a_up_choice(NV2A_UP_DEFAULT), nv2a_up_choice(8) },
+        .hint = "Sharpens menus, text and the HUD at higher render scales." };
+    if (G->tex_upscale) xbox_MenuAdd(&row, 1);
 }
 #endif
 
@@ -3750,13 +3798,115 @@ static uint32_t surface_texture_for(const TexStage *t, float *sx, float *sy, int
     return G->target_snapshot(g_surf[i].rt);
 }
 
+/* The cache slot upload_texture_inner's texture came from, for the bind
+ * loop to note how the draw binds it (up_note); -1 for none. */
+static int g_tex_slot = -1;
+
 static uint32_t upload_texture(const TexStage *t)
 {
     uint32_t r; PROF_T0();
     g_prof.n_tex_lookup++;
+    g_tex_slot = -1;
     r = upload_texture_inner(t);
     PROF_ADD(tex);
     return r;
+}
+
+/* 2D upscaling's factor now: the row's, but none at render scale 1x. */
+static int up_factor(void)
+{
+    return gl_scale() > 1 ? g_up_now : 0;
+}
+
+/*
+ * Over the picture (nv2a_upscale.h, Nv2aUpOver): each colour surface's state
+ * this frame. An entry not used this frame is free; the title draws to five
+ * surfaces in a frame, so a table this small is enough, and a surface it
+ * can't hold is never over.
+ */
+#define UP_OVER_SURFS 8
+static struct { uint32_t surf, frame; int used; Nv2aUpOver o; } g_up_ov[UP_OVER_SURFS];
+
+static int up_over_at(uint32_t surf)
+{
+    int i, free_i = -1;
+    for (i = 0; i < UP_OVER_SURFS; i++) {
+        if (g_up_ov[i].used && g_up_ov[i].frame == S.frames) {
+            if (g_up_ov[i].surf == surf) return i;
+        } else if (free_i < 0) {
+            free_i = i;
+        }
+    }
+    if (free_i < 0) return -1;
+    g_up_ov[free_i].used = 1;
+    g_up_ov[free_i].surf = surf;
+    g_up_ov[free_i].frame = S.frames;
+    memset(&g_up_ov[free_i].o, 0, sizeof g_up_ov[free_i].o);
+    return free_i;
+}
+
+/* do_clear, of colour and or depth, on the surface drawn to now. */
+static void up_over_clear(int colour, int depth)
+{
+    int i = up_over_at(S.color_offset);
+    if (i < 0) return;
+    nv2a_up_over_clear(&g_up_ov[i].o, colour, depth);
+}
+
+/* A draw to the surface drawn to now: whether it is over the picture. */
+static int up_over_draw(void)
+{
+    int i = up_over_at(S.color_offset);
+    if (i < 0) return 0;
+    return nv2a_up_over_draw(&g_up_ov[i].o, S.depth_test != 0);
+}
+
+/*
+ * 2D upscaling (nv2a_upscale.h): a draw binding the texture in cache slot k,
+ * screen-space or not (draw_screen_space), over the picture or not
+ * (up_over_draw). The rule's verdict on the
+ * binding, and the entry marked: taken, to have its copy made at the flip
+ * (up_take); or, where the texture itself is what leaves it, never to be,
+ * so that the world's textures are asked about once. A draw's reasons leave
+ * the entry as it was, for a 2D draw to take it later. With
+ * RECOMP_GL_UPSCALE_LOG, the census (nv2a_up_census_wants): the verdict on
+ * each texture a 2D draw into the frame binds, and each the rule would take
+ * that another draw binds into the frame with depth off, once an entry
+ * each. Nothing is asked with the row off and the census not logged.
+ */
+static int g_up_log = -1;   /* RECOMP_GL_UPSCALE_LOG; -1 not asked yet */
+static void up_note(int k, int screen, int over)
+{
+    Nv2aUpBind b;
+    int v, said;
+    if (g_up_log < 0) g_up_log = getenv("RECOMP_GL_UPSCALE_LOG") ? 1 : 0;
+    if (k < 0 || (!g_up_log && !up_factor())) return;
+    if (g_tcache[k].up != UP_NONE && (!g_up_log || (g_tcache[k].up_said & UP_SAID_VERDICT)))
+        return;
+    b.screen = screen;
+    b.over = over;
+    b.depth_test = S.depth_test;
+    b.depth_write = S.depth_mask;
+    b.into_frame = nv2a_wide_frame_sized(S.clip_w, S.clip_h);
+    b.w = g_tcache[k].w;
+    b.h = g_tcache[k].h;
+    b.levels = g_tcache[k].levels;
+    b.layout = fmt_is_dxt(g_tcache[k].format) ? NV2A_UP_DXT
+             : fmt_is_swz(g_tcache[k].format) ? NV2A_UP_SWIZZLED : NV2A_UP_LINEAR;
+    b.bump = g_tcache[k].bias;
+    v = nv2a_up_rule(&b);
+    if (g_tcache[k].up == UP_NONE) {
+        if (v == NV2A_UP_TAKEN) { g_tcache[k].up = UP_WANTED; g_up_sec.taken++; }
+        else if (nv2a_up_of_texture(v)) g_tcache[k].up = UP_NEVER;
+    }
+    said = v == NV2A_UP_NOT_2D ? UP_SAID_NOT_2D : UP_SAID_VERDICT;
+    if (g_up_log && !(g_tcache[k].up_said & said) && nv2a_up_census_wants(&b, v)) {
+        char line[192];
+        g_tcache[k].up_said |= (uint8_t)said;
+        nv2a_up_census_line(line, sizeof line, g_tcache[k].offset, g_tcache[k].format, &b,
+                            S.xf_mode != NV2A_XF_MODE_FIXED, v);
+        fputs(line, stderr);
+    }
 }
 static uint64_t vc_hash(const void *data, size_t n, uint64_t seed);   /* the vertex cache's, below */
 /* The bytes a texture's decode reads from its base level. */
@@ -4004,6 +4154,18 @@ static uint32_t sampler_key(const Nv2aSampler *s)
          | (uint32_t)s->levels << 16;
 }
 
+/* The sampler a key was made from (sampler_key), as the entry keeps it. */
+static void sampler_of_key(uint32_t key, Nv2aSampler *s)
+{
+    s->min_linear = (uint8_t)(key & 1);
+    s->mag_linear = (uint8_t)(key >> 1 & 1);
+    s->mip = (uint8_t)(key >> 2 & 3);
+    s->wrap_s = (uint8_t)(key >> 4 & 3);
+    s->wrap_t = (uint8_t)(key >> 6 & 3);
+    s->aniso = (uint8_t)(key >> 8 & 0xFF);
+    s->levels = (uint8_t)(key >> 16 & 0xFF);
+}
+
 /* At the flip: a level of anisotropy asked for since the last one. How a
  * texture is sampled is part of what it is in the cache (sampler_key), so
  * every texture held that takes the level is dropped, and made again at the
@@ -4018,6 +4180,82 @@ static void aniso_take(void)
         if (g_tcache[k].tex && g_tcache[k].aniso) { tcache_drop(k); n++; }
     fprintf(stderr, "  [GL] anisotropic filtering: %dx from present %u (was %dx), %u textures made again\n",
             want, S.flips, was, n);
+}
+
+/*
+ * At the flip, after aniso_take: 2D upscaling's row, if it changed, and the
+ * copies of the textures waiting for one (nv2a_upscale.h).
+ *
+ * A change drops every texture with a copy, made again at its next draw as
+ * the game's own or a new copy, as aniso_take does; one the device couldn't
+ * copy is tried again. Then each texture the rule took that was drawn this
+ * frame or the last gets its copy, while the flip's budget of texels lasts
+ * (NV2A_UP_TEXELS_A_FLIP, and always one): the game's texture is freed and
+ * the copy takes its place, sampled the same way. At the flip, so no draw
+ * is still using what is freed, and the next frame draws the copy. With
+ * RECOMP_GL_UPSCALE_LOG, a summary line a second while anything is happening.
+ */
+static void up_take(void)
+{
+    static double t0;
+    uint64_t spent = 0;
+    uint32_t k;
+    int f;
+    if (g_up_want != g_up_now) {
+        uint32_t n = 0;
+        int was = g_up_now;
+        g_up_now = g_up_want;
+        for (k = 0; k < TEX_CACHE; k++) {
+            if (g_tcache[k].tex && g_tcache[k].up == UP_MADE) { tcache_drop(k); n++; }
+            else if (g_tcache[k].up == UP_FAILED) g_tcache[k].up = UP_WANTED;
+        }
+        fprintf(stderr, "  [GL] 2D upscaling: %dx from present %u (was %dx; 0 is off), "
+                "%u textures made again\n", g_up_now, S.flips, was, n);
+    }
+    f = up_factor();
+    for (k = 0; f && k < TEX_CACHE; k++) {
+        Nv2aSampler smp;
+        uint64_t texels, bytes;
+        uint32_t copy;
+        if (g_tcache[k].up != UP_WANTED || !g_tcache[k].tex || S.flips - g_tcache[k].drawn > 1)
+            continue;
+        texels = nv2a_up_texels(g_tcache[k].w, g_tcache[k].h, f);
+        if (spent && spent + texels > NV2A_UP_TEXELS_A_FLIP) continue;
+        sampler_of_key(g_tcache[k].sampling, &smp);
+        copy = G->tex_upscale ? G->tex_upscale(g_tcache[k].tex, g_tcache[k].w, g_tcache[k].h, f, &smp) : 0;
+        if (!copy) {
+            g_tcache[k].up = UP_FAILED;
+            g_up_sec.failed++;
+            continue;
+        }
+        bytes = nv2a_up_bytes(g_tcache[k].w, g_tcache[k].h, f, smp.mip != 0);
+        G->tex_free(g_tcache[k].tex);
+        g_prof.tex_held_bytes -= (unsigned long long)g_tcache[k].held;
+        g_prof.tex_held_bytes += (unsigned long long)bytes;
+        g_tcache[k].tex = copy;
+        g_tcache[k].held = (size_t)bytes;
+        g_tcache[k].up = UP_MADE;
+        spent += texels;
+        g_up_sec.made++;
+        g_up_sec.texels += texels;
+    }
+    if (g_up_log > 0 && mono_now() - t0 >= 1.0) {
+        t0 = mono_now();
+        g_up_sec.factor = f;
+        g_up_sec.waiting = g_up_sec.held = 0;
+        g_up_sec.held_bytes = 0;
+        for (k = 0; k < TEX_CACHE; k++) {
+            if (!g_tcache[k].tex) continue;
+            if (g_tcache[k].up == UP_WANTED && f) g_up_sec.waiting++;
+            if (g_tcache[k].up == UP_MADE) { g_up_sec.held++; g_up_sec.held_bytes += g_tcache[k].held; }
+        }
+        if (g_up_sec.taken || g_up_sec.made || g_up_sec.failed || g_up_sec.waiting) {
+            char line[192];
+            nv2a_up_second_line(line, sizeof line, &g_up_sec);
+            fputs(line, stderr);
+        }
+        memset(&g_up_sec, 0, sizeof g_up_sec);
+    }
 }
 
 /*
@@ -4111,6 +4349,7 @@ static uint32_t upload_texture_inner(const TexStage *t)
             }
             g_tcache[k].drawn = S.flips;
             g_tcache[k].last_draw = S.draws;
+            g_tex_slot = (int)k;
             return g_tcache[k].tex;
         }
         if (g_tcache[k].used && g_tcache[k].offset == t->offset && g_tcache[k].format == t->color
@@ -4328,6 +4567,9 @@ made:
     g_tcache[slot].content = tex_content(t->color, h, t->pitch, src, bytes);
     g_tcache[slot].drawn = S.flips;
     g_tcache[slot].last_draw = S.draws;
+    g_tcache[slot].up = UP_NONE;
+    g_tcache[slot].up_said = 0;
+    g_tex_slot = slot;
     return tex;
 }
 
@@ -5053,7 +5295,9 @@ static const char *vc_debug_switch(void)
         "TIMELINE",
         /* the see-through fix's census, and its see-through pixels drawn in
          * place (nv2a_seethru.h): a draw's state and order */
-        "SEETHRU_LOG", "SEETHRU_HOLD", NULL
+        "SEETHRU_LOG", "SEETHRU_HOLD",
+        /* 2D upscaling's census: a texture's verdict, from its cache entry */
+        "UPSCALE_LOG", NULL
     };
     static char name[64];
     char **e;
@@ -5765,6 +6009,7 @@ static void do_draw_body(void)
     uint32_t n, i, k, out_n, fan_expand;
     int mode;
     int slot;
+    int over;                         /* over the picture (up_over_draw) */
     int inl = (S.inline_count != 0);
     uint32_t stride_floats = NUM_ATTRS * 4;
     /* The vertex layout this draw actually needs. See where it is built. */
@@ -7078,6 +7323,7 @@ static void do_draw_body(void)
     }
 
     PROF_STEP(STEP_UNIF);
+    over = up_over_draw();
     /* Bind every stage the combiner shader samples.
      *
      * Coordinates are normalised for a swizzled or compressed texture and in
@@ -7101,6 +7347,7 @@ static void do_draw_body(void)
                     g_upload_bias_bg = (S.psh.tex_signed[st] & 0x10) != 0;
                     tex = upload_texture(&S.tex[st]);
                     g_upload_bias_bg = 0;
+                    if (tex) up_note(g_tex_slot, draw_screen_space(slot), over);
                     if (tex && !fmt_is_swz(S.tex[st].color)
                             && !fmt_is_dxt(S.tex[st].color)) {
                         sx = 1.0f / (float)S.tex[st].width;
@@ -10570,6 +10817,7 @@ static void do_clear(uint32_t param)
          * picture, after a later depth clear, as it is (nv2a_seethru.h). */
         if (mask & 2u) nv2a_seethru_depth_clear(S.color_offset, S.frames);
     }
+    up_over_clear((mask & 1u) != 0, (mask & 2u) != 0);
     S.clears++;
 }
 
@@ -10976,7 +11224,7 @@ static void present(int is_frame)
     }
     if (!g_ready || !g_fbo_w || !g_fbo_h || !S.color_offset) return;
     g_probe_now = mono_now();
-    if (is_frame) { S.frames++; prof_report(); tcache_sweep(); tcache_verify(); aniso_take();
+    if (is_frame) { S.frames++; prof_report(); tcache_sweep(); tcache_verify(); aniso_take(); up_take();
                     /* the census counts one frame, not everything since the
                      * last dump -- otherwise it measures the gap, not the
                      * picture next to it */
@@ -13086,6 +13334,23 @@ static void seethru_start(void)
 #endif
 }
 
+/* 2D upscaling from the start: the window's setting, else 4x
+ * (NV2A_UP_DEFAULT). Its menu row comes after the anti-aliasing rows
+ * (gfx_init). */
+static void up_start(void)
+{
+    int n = NV2A_UP_DEFAULT;
+#if defined(NV2A_GL_USE_SDL)
+    n = sdl_cfg_get("upscale_2d", NV2A_UP_DEFAULT);
+#endif
+    g_up_now = g_up_want = nv2a_up_factor(n);
+    if (g_up_now && !G->tex_upscale)
+        fprintf(stderr, "  [GL] 2D upscaling: not on the %s backend\n", G->name);
+    else
+        fprintf(stderr, "  [GL] 2D upscaling: %dx from the settings (0 is off)%s\n", g_up_now,
+                g_up_now && gl_scale() < 2 ? ", nothing made at render scale 1x" : "");
+}
+
 static int gfx_init(uint32_t w, uint32_t h)
 {
     if (!gl_init(w, h)) return 0;     /* the context, then the device */
@@ -13094,9 +13359,11 @@ static int gfx_init(uint32_t w, uint32_t h)
     shader_cache_start();
     aniso_start();
     seethru_start();
+    up_start();
 #if defined(XBOXRECOMP_MENU)
     sdl_menu_smaa();
     sdl_menu_msaa();
+    sdl_menu_up();
     sdl_shader_cache();
 #endif
     return 1;

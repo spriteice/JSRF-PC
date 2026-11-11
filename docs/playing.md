@@ -115,9 +115,10 @@ input goes to the menu.
   plays turned off, but the audio effects, which are the console's own.
   JSRF-PC default is the settings a new install starts with. Max quality is
   JSRF-PC default with the render scale, draw distance, Far buildings,
-  anisotropic filtering and both anti-aliasings at their most, as far as the
-  graphics card goes. The one ticked is the one your settings match, if
-  any. Full screen and the free camera's own settings stay as you set them.
+  anisotropic filtering, 2D upscaling and both anti-aliasings at their most,
+  as far as the graphics card goes. The one ticked is the one your settings
+  match, if any. Full screen and the free camera's own settings stay as you
+  set them.
 - **Display:** Full screen, the aspect ratio, the render scale (1× to 6×), the
   draw distance, Far buildings, and two submenus at the end: Skips, with Skip
   intro, and Enhancements, with Music info in pause and See through fix. The
@@ -212,3 +213,8 @@ These are in the in-game menu, under Graphics.
   finished picture, the HUD included. MSAA (2×, 4×, or 8×) gives the cleanest
   edges but asks the most of the graphics card. Use either, or both. SMAA is
   on by default, MSAA off.
+- **2D upscaling:** Off, 2×, 4×, or 8×. The menus, text, HUD and icons are drawn
+  from sharper copies of the game's art, which the graphics card makes the first
+  time each piece is shown. It helps from render scale 2× up; at 1× they look as
+  they always have. 8× is for the highest render scales, and its copies take the
+  most memory. 4× by default.

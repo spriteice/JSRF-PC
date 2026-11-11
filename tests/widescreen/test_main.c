@@ -643,7 +643,7 @@ static void halves(void)
          * seam (in the game's pixels, about the centre) plus its move, and
          * the dark column down the backdrop's right-hand side starts DARK
          * steps right of the centre: a seam right of the middle showed half
-         * a cell of it at 21:9, whose move is those six steps (Aden, 8
+         * a cell of it at 21:9, whose move is those six steps (spriteice, 8
          * November 2026). The right copy shows the backdrop from the seam
          * less its move, which must still be on the 4:3 screen, its light
          * grid running to the left edge. */
@@ -713,7 +713,7 @@ static void half_moves(void)
 }
 
 /* A part's grid drawn as the backdrop's two copies, and the pieces at the
- * sides moved with them (Aden, 8 November 2026: "Move them with the grid"). */
+ * sides moved with them (spriteice, 8 November 2026: "Move them with the grid"). */
 static void grid_slabs_and_pieces(void)
 {
     static const float shapes[] = { 1.5f, 1.6f, 16.0f / 9.0f, 2.0f, 64.0f / 27.0f, 32.0f / 9.0f };

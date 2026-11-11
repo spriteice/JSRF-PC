@@ -153,7 +153,7 @@ with tempfile.TemporaryDirectory(prefix="setup-") as directory:
     out = p.stdout
     bad = []
     if sys.platform != "win32":
-        # The questions, in Aden's words (2026-11-09), as the console asks them.
+        # The questions, in spriteice's words (2026-11-09), as the console asks them.
         for q in ("No matching binary detected. Build now with local tools?",
                   "No matching binary detected. Download tools now and build?",
                   "The engine built here isn't the one this release builds. Play anyway?",

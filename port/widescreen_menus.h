@@ -81,7 +81,7 @@
  * menu on its pass 9 in its states 4 and 8 (graffiti select's 3D scene,
  * shown wide, draws in the others), the loading screen while it's shown.
  * So is VS mode's setup screen, the first after "VS mode" on the title
- * (Aden, 8 November 2026, 08:39 UTC: "the first menu after clicking "vs
+ * (spriteice, 8 November 2026, 08:39 UTC: "the first menu after clicking "vs
  * mode" (3rd option on title screen) is still completely broken"), by its
  * object's draw (sub_00071100, class 0x1CCA80): its layout, the teal with
  * its frame's and panels' outlines, is one full-screen picture cut from
@@ -226,13 +226,13 @@ extern const WideMenu widescreen_menus[WIDE_MENUS];
 #define WIDE_MENU_SIGN_FLAGS     0x5Cu
 #define WIDE_MENU_AREA_SIGN_FLAG 0x80000000u
 /* The banner with an area's name that shows under an arrow as the player
- * nears the way into another area (Aden, 8 November 2026, 14:48 UTC: "The
+ * nears the way into another area (spriteice, 8 November 2026, 14:48 UTC: "The
  * level banner before entering a level needs to go to the left side of the
  * screen, the same distance away from the edge as it is in 4:3") is a sign
  * with no flags. Only sub_001022C0 makes those, each the child of the HUD
  * manager's object of class 0x1D1DD0 (drawn by sub_00102490, 3D at the
  * HUD's origin, the arrow by our reading), whose pointer the sign keeps at
- * +0x24 (pc/search-2, section 5). Aden's menus12 log has it as "a sign with
+ * +0x24 (pc/search-2, section 5). spriteice's menus12 log has it as "a sign with
  * flags 00000000 (class 001D1B68): left where it is". The arrow stays in
  * the middle. */
 #define WIDE_MENU_SIGN_PARENT    0x24u
@@ -343,7 +343,7 @@ int widescreen_menus_ticker_x(float x, float s, float *wide_x, unsigned *piece);
 /* The flags of piece's mark at side: NV2A_WIDE_HUD_ON_GRID for a piece at
  * the left or right of a menu whose backdrop is drawn in two copies
  * (WIDE_MENU_EXTEND), so that it moves with its side's copy of the grid and
- * keeps its cell (Aden's choice, 8 November 2026, "Move them with the
+ * keeps its cell (spriteice's choice, 8 November 2026, "Move them with the
  * grid"): the menus' parts, their text and the header; the area name's sign
  * only in the street pause menu and the notebook, not as the banner on its
  * own (from the last widescreen_menus_sign). 0 for anything else. */
@@ -552,12 +552,12 @@ void widescreen_menus_title_press_end(int began);
 
 /* The result screens: YOU WIN, CLEARED, GAME OVER and YOU LOSE, each over
  * the character's dance, each part moved whole to the right edge, as a HUD
- * piece is (Aden, 8 November 2026, 09:05 UTC: "Can we also move the banner
+ * piece is (spriteice, 8 November 2026, 09:05 UTC: "Can we also move the banner
  * in the "you win" and "cleared" screen to the right accordingly, it blocks
  * the characters dance. The game over and you lose screens will also follow
  * this, including the return to title and restart icons, and the small
  * static banner."). The banner is a HUD sign, moved by the signs' draw
- * (widescreen_menus_sign; Aden's menus9 log has the result flow's signs on
+ * (widescreen_menus_sign; spriteice's menus9 log has the result flow's signs on
  * those screens, and no draw of class 0x1D2538, the part menus9 took for
  * the banner). The other parts are each its object's draw, its class's
  * slot +0xC, this in ecx, one argument, the pass (ret 4), drawing on some
@@ -570,7 +570,7 @@ void widescreen_menus_title_press_end(int began);
  *   - the race time under the banner, sub_0010EC10 (class 0x1D23F0), on
  *     passes 0, 3, 5 and 8: its digits, 2D quads, placed by its mode
  *     (+0x160, 32 bits). The same class draws the race HUD's timer at the
- *     top of the screen, which stays as it is (Aden, 09:06 UTC: "Make sure
+ *     top of the screen, which stays as it is (spriteice, 09:06 UTC: "Make sure
  *     the race time ONLY changes in this context, I do not want it moved
  *     anywhere else"): only the result flow's (sub_00073500) modes, 4 and 6,
  *     move; the race HUD's (sub_000FF390) are 2 and 3, and the log says
@@ -592,11 +592,11 @@ extern const WideResult widescreen_menus_results[WIDE_RESULTS];
 #define WIDE_RESULT_MODE   0x160u /* the race time's mode (32 bits) */
 
 /* The race time on a result screen goes further right than the rest, so
- * that its right end comes under the banner's (Aden, 8 November 2026, 11:20
+ * that its right end comes under the banner's (spriteice, 8 November 2026, 11:20
  * UTC: "The timer has not moved enough, it should be at the edge of the
  * screen (the same distance from the edge that the banner is in 4:3)"):
  * moved with the others, it kept its 4:3 place, 164 title pixels short of
- * the banner's end in mode 6 and 151 in mode 4 (Aden's menus9 shots, at
+ * the banner's end in mode 6 and 151 in mode 4 (spriteice's menus9 shots, at
  * 21:9). Its digits and separators are placed by its mode's rows of four
  * tables of floats, one after another (widescreen-3b/menus/menus10/search-9,
  * C): the two digits of each field, minutes, seconds and hundredths, then

@@ -18,7 +18,7 @@
  *     and 312). The body's depth, faded pixels too, hides the inside of that
  *     copy, so split, a faded body filled with it, black and brown. Those
  *     pieces are learnt and kept whole (seethru3): faded characters keep
- *     hiding what is behind them, as on the console (Aden's choice, 12:45
+ *     hiding what is behind them, as on the console (spriteice's choice, 12:45
  *     UTC on 2026-11-10).
  *   - In every frame of play, two draws are see-through and write depth
  *     with no alpha test, so they write it where they are invisible: that
@@ -33,9 +33,9 @@
  *
  * seethru4 drew a split draw's see-through pixels in place, with no depth
  * writes, so what was drawn after them and behind them showed, but over
- * them, without the glass's colour: the crowd untinted (Aden, 12:37 UTC on
+ * them, without the glass's colour: the crowd untinted (spriteice, 12:37 UTC on
  * 2026-11-10: "their colour is not tinted, something we would need to
- * add"). Here they are held back to the pass's end instead (his choice on
+ * add"). Here they are held back to the pass's end instead (spriteice's choice on
  * 2026-11-11). seethru2 to 4 drew a split draw's depth first, with no
  * colour, then all its colour; held back, that colour would come after the
  * shadows and the faded characters drawn in place, and over them. So here
@@ -49,11 +49,11 @@
  * writes nothing (seethru5's census at 99th Street: the list drawn four
  * times a frame, at the two shadows and at two draws with only the mask).
  * The level's tape behind the water was drawn after one of those, over the
- * water, untinted (Aden, 10:15 UTC on 2026-11-11). Only the stencil test
+ * water, untinted (spriteice, 10:15 UTC on 2026-11-11). Only the stencil test
  * counts now, and a draw using it that isn't split (a shadow) is drawn in
  * place without drawing the list. seethru6 also kept a see-through draw
  * using the stencil test whole, and the tape behind the water was hidden
- * again (Aden, 11:47 UTC), as it is behind water kept whole. Such a draw is
+ * again (spriteice, 11:47 UTC), as it is behind water kept whole. Such a draw is
  * split as any other now: its see-through half is held back with its
  * stencil state, and tests what the stencil holds at the pass's end, after
  * any shadow drawn since. The census gives each run's stencil state.

@@ -5,7 +5,7 @@
  *
  * The package carries no engine. When engine/jsrf_recomp.exe (bin/jsrf_recomp
  * on Linux) is missing or isn't the one this release's kit builds, the setup
- * opens a window and asks, in Aden's words:
+ * opens a window and asks, in spriteice's words:
  *
  *   No matching binary detected. Build now with local tools?   (a tools folder is there)
  *   No matching binary detected. Download tools now and build? (it isn't)

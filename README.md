@@ -41,6 +41,8 @@ contains no game files.
   reverb.
 - **Anti-aliasing:** MSAA and SMAA _(JuMatt)_, alone or together.
 - **Anisotropic filtering:** Sharper textures at an angle.
+- **2D upscaling:** Sharper menus, text and HUD at high render scales, drawn
+  from copies of the game's art made with Super-xBR.
 - **Performance:** Smooth frame pacing and optimised engine/renderer on both
   Linux and Windows.
 - **Portable mode:** Everything in one folder that can be moved.

@@ -16,6 +16,7 @@
 #include "nv2a_backend.h"
 #include "nv2a_shader_cache.h"
 #include "nv2a_smaa.h"
+#include "nv2a_upscale.h"
 
 #define GL_GLEXT_PROTOTYPES 1
 #if defined(_WIN32)
@@ -1755,6 +1756,178 @@ static uint32_t glx_target_smaa(uint32_t h)
     return g_sm.out;
 }
 
+/* ---- 2D upscaling ---------------------------------------------------------
+ *
+ * tex_upscale (nv2a_backend.h): Super-xBR's passes (nv2a_upscale.h) drawn
+ * into images of our own, one triangle each, as SMAA's are, and stored into
+ * the levels of a new texture. Units 4 and 5 hold what a pass reads, which
+ * nothing the title draws samples (SMAA's, above). The images are half
+ * floats, made for the call and deleted after it: the copy is made once,
+ * at a flip, within the front half's budget for it.
+ *
+ * No glGetError or framebuffer status is asked for: either waits for the
+ * driver's thread, and each of our framebuffers holds one RGBA8 or RGBA16F
+ * image, formats every OpenGL 3.3 driver must draw into. An error still
+ * shows in the front half's check once a frame. */
+#define UP_UNIT 4
+static struct {
+    GLuint prog[NV2A_UP_PASSES];
+    GLint  wrap_loc[NV2A_UP_PASSES], premul_loc[NV2A_UP_PASSES], shift_loc[NV2A_UP_PASSES];
+    GLuint vao, fbo;
+    GLint  side_max;                    /* the largest side a level may have */
+    int    bad;                         /* the passes would not build */
+} g_up;
+
+static int up_build(void)
+{
+    double t0 = glx_now_ms();
+    GLint vp[2] = { 0, 0 };
+    int p;
+    for (p = 0; p < NV2A_UP_PASSES; p++) {
+        GLuint g = glx_build(nv2a_up_glsl(p, 0), nv2a_up_glsl(p, 1), nv2a_up_pass_names[p]);
+        if (!g) return 0;
+        g_up.prog[p] = g;
+        glUseProgram(g);
+        smaa_sampler(g, "upSrc", UP_UNIT);
+        smaa_sampler(g, "upAux", UP_UNIT + 1);
+        g_up.wrap_loc[p] = glGetUniformLocation(g, "upWrap");
+        g_up.premul_loc[p] = glGetUniformLocation(g, "upPremul");
+        g_up.shift_loc[p] = glGetUniformLocation(g, "upShift");
+    }
+    glGenVertexArrays(1, &g_up.vao);
+    glGenFramebuffers(1, &g_up.fbo);
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &g_up.side_max);
+    glGetIntegerv(GL_MAX_VIEWPORT_DIMS, vp);
+    if (vp[0] < g_up.side_max) g_up.side_max = vp[0];
+    if (vp[1] < g_up.side_max) g_up.side_max = vp[1];
+    fprintf(stderr, "  [GL] 2D upscaling: built in %.0f ms, sides up to %d\n",
+            glx_now_ms() - t0, (int)g_up.side_max);
+    return 1;
+}
+
+/* A pass's image: RGBA16F, w x h. */
+static GLuint up_image(uint32_t w, uint32_t h)
+{
+    GLuint t = 0;
+    glGenTextures(1, &t);
+    scratch_bind(t);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, (GLsizei)w, (GLsizei)h, 0, GL_RGBA,
+                 GL_HALF_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    return t;
+}
+
+/* Pass p into level `level` of `out`, w x h, reading src (and aux). */
+static void up_pass(int p, GLuint out, GLint level, uint32_t w, uint32_t h,
+                    GLuint src, GLuint aux, int premul, int shift, const Nv2aSampler *s)
+{
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, out, level);
+    glViewport(0, 0, (GLsizei)w, (GLsizei)h);
+    glUseProgram(g_up.prog[p]);
+    glUniform2i(g_up.wrap_loc[p], s->wrap_s < 3 ? s->wrap_s : 0, s->wrap_t < 3 ? s->wrap_t : 0);
+    glUniform1i(g_up.premul_loc[p], premul);
+    glUniform1i(g_up.shift_loc[p], shift);
+    smaa_bind(UP_UNIT, src);
+    smaa_bind(UP_UNIT + 1, aux);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+}
+
+static uint32_t glx_tex_upscale(uint32_t tex, uint32_t w, uint32_t h, int factor,
+                                const Nv2aSampler *s)
+{
+    static const GLint wrap_of[3] = { GL_CLAMP_TO_EDGE, GL_REPEAT, GL_MIRRORED_REPEAT };
+    int steps = factor == 2 ? 1 : factor == 4 ? 2 : factor == 8 ? 3 : 0, k;
+    GLuint out = 0, cur;
+    GLint l;
+
+    if (!tex || !steps || !w || !h || !s || g_up.bad) return 0;
+    if (!g_up.prog[NV2A_UP_PASSES - 1] && !up_build()) {
+        g_up.bad = 1;
+        fprintf(stderr, "  [GL] 2D upscaling: no programs; the game's own art is kept\n");
+        glActiveTexture(GL_TEXTURE0 + SCRATCH_UNIT);
+        glUseProgram(prog_ok(g_cur_prog) ? g_prog[g_cur_prog - 1].prog : 0);
+        return 0;
+    }
+    if ((uint64_t)w * (uint32_t)factor > (uint64_t)g_up.side_max
+     || (uint64_t)h * (uint32_t)factor > (uint64_t)g_up.side_max)
+        return 0;
+
+    /* The copy: every level, the last the game's size, then those below it. */
+    glGenTextures(1, &out);
+    if (!out) return 0;
+    scratch_bind(out);
+    for (l = 0; l <= steps; l++)
+        glTexImage2D(GL_TEXTURE_2D, l, GL_RGBA8, (GLsizei)((w * (uint32_t)factor) >> l),
+                     (GLsizei)((h * (uint32_t)factor) >> l), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    /* Only those levels, or a level but the first can't be drawn into. */
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, steps);
+
+    glDisable(GL_BLEND);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_STENCIL_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_SCISSOR_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glBindVertexArray(g_up.vao);
+    glBindFramebuffer(GL_FRAMEBUFFER, g_up.fbo);
+
+    /* Each step doubles the image before it: the game's texture first, read
+     * premultiplied, then the step before's last pass, already so. Its
+     * store fills the level of its size. */
+    cur = (GLuint)tex;
+    for (k = 1; k <= steps; k++) {
+        uint32_t cw = w << (k - 1), ch = h << (k - 1);
+        GLuint d = up_image(cw, ch), m = up_image(2 * cw, 2 * ch), n = up_image(2 * cw, 2 * ch);
+        int premul = k == 1;
+        up_pass(NV2A_UP_PASS0, d, 0, cw, ch, cur, 0, premul, 0, s);
+        up_pass(NV2A_UP_PASS1, m, 0, 2 * cw, 2 * ch, cur, d, premul, 0, s);
+        up_pass(NV2A_UP_PASS2, n, 0, 2 * cw, 2 * ch, m, 0, 0, 0, s);
+        up_pass(NV2A_UP_STORE, out, steps - k, 2 * cw, 2 * ch, n, (GLuint)tex, 0, k, s);
+        glDeleteTextures(1, &d);
+        glDeleteTextures(1, &m);
+        if (cur != (GLuint)tex) glDeleteTextures(1, &cur);
+        cur = n;
+    }
+    if (cur != (GLuint)tex) glDeleteTextures(1, &cur);
+    up_pass(NV2A_UP_COPY, out, steps, w, h, (GLuint)tex, 0, 0, 0, s);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+
+    /* How it is sampled: s's filters and wrap, over the levels. */
+    scratch_bind(out);
+    if (s->mip) {
+        /* The game's chain below its own size, made from it as the driver
+         * made the game's: from the last level, which is the game's. */
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 1000);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, steps);
+        glGenerateMipmap(GL_TEXTURE_2D);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                        s->mip == 1 ? (s->min_linear ? GL_LINEAR_MIPMAP_NEAREST : GL_NEAREST_MIPMAP_NEAREST)
+                                    : (s->min_linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR));
+        if (s->aniso > 1) {
+            GLfloat a = (GLfloat)s->aniso, cap = (GLfloat)glx_aniso_max();
+            if (a > cap) a = cap;
+            if (a > 1.0f) glTexParameterf(GL_TEXTURE_2D, 0x84FE, a);   /* MAX_ANISOTROPY */
+        }
+    } else {
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                        s->min_linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_NEAREST);
+    }
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, s->mag_linear ? GL_LINEAR : GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap_of[s->wrap_s < 3 ? s->wrap_s : 0]);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_of[s->wrap_t < 3 ? s->wrap_t : 0]);
+
+    /* Back as the title's next draw expects it, as after SMAA. */
+    glActiveTexture(GL_TEXTURE0 + SCRATCH_UNIT);
+    glUseProgram(prog_ok(g_cur_prog) ? g_prog[g_cur_prog - 1].prog : 0);
+    glx_state_invalidate();
+    if (rt_ok(g_cur_rt)) glx_target_bind(g_cur_rt);
+    else glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return out;
+}
+
 static const Nv2aGfx g_gl = {
     "opengl", NV2A_LANG_GLSL, 1,
     glx_init,
@@ -1777,6 +1950,7 @@ static const Nv2aGfx g_gl = {
     glx_tex_new_dxt,
     glx_fill_sides,
     glx_fill_strip,
+    glx_tex_upscale,
 };
 
 const Nv2aGfx *nv2a_gfx_gl(void) { return &g_gl; }
