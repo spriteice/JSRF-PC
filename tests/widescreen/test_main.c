@@ -360,12 +360,15 @@ static void hud_marks(void)
                                  NV2A_WIDE_HUD_FILL, NV2A_WIDE_HUD_OVER, NV2A_WIDE_HUD_BARS,
                                  NV2A_WIDE_HUD_STRIP, NV2A_WIDE_HUD_LINES };
     static const unsigned flags[] = { 0u, NV2A_WIDE_HUD_OWN_VIEW, NV2A_WIDE_HUD_ON_GRID,
-                                      NV2A_WIDE_HUD_OWN_VIEW | NV2A_WIDE_HUD_ON_GRID };
-    /* past the last side, with each flag and both; sides with a bit the
-     * flags don't use */
+                                      NV2A_WIDE_HUD_OWN_VIEW | NV2A_WIDE_HUD_ON_GRID,
+                                      NV2A_WIDE_HUD_ANCHOR, NV2A_WIDE_HUD_FROM_ANCHOR,
+                                      NV2A_WIDE_HUD_ANCHOR | NV2A_WIDE_HUD_FROM_ANCHOR,
+                                      NV2A_WIDE_HUD_OWN_VIEW | NV2A_WIDE_HUD_ON_GRID
+                                      | NV2A_WIDE_HUD_ANCHOR | NV2A_WIDE_HUD_FROM_ANCHOR };
+    /* past the last side, with each flag and all of them; not tagged */
     static const uint32_t others[] = { 0u, 1u, 2u, 5u, 8u, 9u, 0x4855000Cu, 0x4855008Cu,
-                                       0x4855004Cu, 0x485500CCu, 0x48550013u, 0x48550023u,
-                                       0x48560001u, 0x00000102u, 0xFFFFFFFFu };
+                                       0x4855004Cu, 0x485500CCu, 0x4855001Du, 0x4855002Eu,
+                                       0x485500FFu, 0x48560001u, 0x00000102u, 0xFFFFFFFFu };
     unsigned i, j, k, piece, fl;
     int side;
     for (i = 0; i < sizeof pieces / sizeof pieces[0]; i++)
@@ -393,6 +396,10 @@ static void hud_marks(void)
     CHECK(nv2a_wide_hud_mark(0x44, NV2A_WIDE_HUD_RIGHT, NV2A_WIDE_HUD_ON_GRID) == 0x48554442u);
     CHECK(nv2a_wide_hud_mark(0xC9, NV2A_WIDE_HUD_LINES, 0) == 0x4855C90Bu);
     CHECK(nv2a_wide_hud_mark(0xC0, NV2A_WIDE_HUD_LEFT, NV2A_WIDE_HUD_ON_GRID) == 0x4855C041u);
+    /* a chain's anchor and the parts stretched about it */
+    CHECK(nv2a_wide_hud_mark(0xC5, NV2A_WIDE_HUD_OVER, NV2A_WIDE_HUD_ANCHOR
+                             | NV2A_WIDE_HUD_FROM_ANCHOR) == 0x4855C538u);
+    CHECK(nv2a_wide_hud_mark(0xC5, NV2A_WIDE_HUD_OVER, NV2A_WIDE_HUD_FROM_ANCHOR) == 0x4855C518u);
     for (i = 0; i < sizeof others / sizeof others[0]; i++)
         CHECK(!nv2a_wide_hud_read(others[i], &piece, &side, &fl));
     CHECK(NV2A_WIDE_HUD_METHOD > 0x1EA4u && (NV2A_WIDE_HUD_METHOD & 3u) == 0
@@ -589,6 +596,45 @@ static void across(void)
     CHECK(nv2a_wide_across_stretch(0.0f) == 1.0f);
     CHECK(nv2a_wide_across_stretch(1.5f) == 1.0f);
     CHECK(nv2a_wide_across_stretch(NAN) == 1.0f);
+}
+
+/* A chain of sliding parts stretched about its anchor, as the garage menus'
+ * arrows are, here one 80 of the title's pixels into the 4:3 picture, which
+ * is NDC -s to s in the widened frame. The anchor stays where it is, every
+ * point goes out from it by the stretch, and the picture's middle goes 80
+ * of the title's pixels right at 16:9 (0.1875 in NDC). Nothing moves at
+ * 4:3. */
+static void chain_anchor(void)
+{
+    const float wide[] = { 0.75f, nv2a_wide_squeeze_of(16.0f / 10.0f),
+                           nv2a_wide_squeeze_of(64.0f / 27.0f) };
+    unsigned i;
+    float x = 9.0f;
+    /* where an origin lands: the matrix's x over its w, plus the viewport
+     * offset, less the shift, across the surface */
+    CHECK(nv2a_wide_origin_x(320.0f, 1.0f, 0.0f, 0.0f, 640.0f, &x) && near(x, 0.0f));
+    CHECK(nv2a_wide_origin_x(0.0f, 1.0f, 0.0f, 0.0f, 640.0f, &x) && near(x, -1.0f));
+    CHECK(nv2a_wide_origin_x(160.0f, 2.0f, 0.5f, 0.5f, 640.0f, &x) && near(x, -0.75f));
+    CHECK(nv2a_wide_origin_x(-80.0f, -1.0f, 0.0f, -100.0f, 1280.0f, &x) && near(x, -0.71875f));
+    x = 9.0f;
+    CHECK(!nv2a_wide_origin_x(80.0f, 0.0f, 0.0f, 0.0f, 640.0f, &x) && x == 9.0f);   /* w 0 */
+    CHECK(!nv2a_wide_origin_x(80.0f, NAN, 0.0f, 0.0f, 640.0f, &x) && x == 9.0f);
+    CHECK(!nv2a_wide_origin_x(80.0f, 1.0f, 0.0f, 0.0f, 0.0f, &x) && x == 9.0f);    /* no width */
+    CHECK(!nv2a_wide_origin_x(NAN, 1.0f, 0.0f, 0.0f, 640.0f, &x) && x == 9.0f);
+    CHECK(!nv2a_wide_origin_x(INFINITY, 1.0f, 0.0f, 0.0f, 640.0f, &x) && x == 9.0f);
+    for (i = 0; i < sizeof wide / sizeof wide[0]; i++) {
+        float s = wide[i], k = nv2a_wide_across_stretch(s);
+        float anchor = (80.0f / 320.0f - 1.0f) * s, off = nv2a_wide_anchor_off(anchor, k - 1.0f);
+        float p = (200.0f / 320.0f - 1.0f) * s;
+        CHECK(near(anchor * k + off, anchor));
+        CHECK(near(p * k + off - anchor, (p - anchor) * k));
+        CHECK(near(0.0f * k + off, 0.75f * (1.0f - s)));
+        CHECK(off > 0.0f);                              /* to the right */
+    }
+    CHECK(near(nv2a_wide_anchor_off(-0.5625f, 1.0f / 3.0f), 0.1875f));   /* 16:9 */
+    CHECK(nv2a_wide_anchor_off(-0.75f, 0.0f) == 0.0f);                   /* 4:3 */
+    CHECK(nv2a_wide_anchor_off(NAN, 1.0f / 3.0f) == 0.0f);
+    CHECK(nv2a_wide_anchor_off(-0.5f, NAN) == 0.0f);
 }
 
 static void half_is(uint32_t w, float s, int side, uint32_t x0, uint32_t x1, uint32_t w0, uint32_t w1)
@@ -986,6 +1032,7 @@ int main(void)
     hud_view();
     split();
     across();
+    chain_anchor();
     halves();
     half_moves();
     grid_slabs_and_pieces();

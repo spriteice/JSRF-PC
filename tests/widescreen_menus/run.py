@@ -76,7 +76,29 @@ ONCE = (
     "[WIDE] the garage's options menu: no moving rectangles in its model 00010040 (animation "
     "00011000), by either rule; its nodes:",
     "[WIDE]   node 3, depth 1: no mesh, track 00, its translation not keyed",
-    "[WIDE]   node 5, depth 2: a mesh, track 01, x -40.00..50.00 y 0.00..3.00 z 1.50..1.50",
+    "[WIDE] the garage's test run menu: 6 moving rectangles in its model 00010020 (animation "
+    "00011000), piece 197, stretched across over the filled sides; 2 of them in a chain of "
+    "sliding parts, with what carries it, stretched alike about its origin; its nodes:",
+    "[WIDE]   node 1, depth 1: a mesh, track 01, x -40.00..50.00 y 0.00..0.00 z 0.00..0.00: "
+    "stretched across, with the band\n",
+    "[WIDE]   node 4, depth 1: a mesh, track 01, x 0.00..0.00 y 0.00..0.00 z 0.00..0.00: "
+    "carries a chain of sliding parts: stretched with it, about its own origin\n",
+    "[WIDE]   node 5, depth 2: a mesh, track 01, x 0.00..12.00 y 0.00..0.00 z 0.00..0.00: "
+    "in a chain of sliding parts: stretched alike, about its carrier's origin\n",
+    "[WIDE]   node 6, depth 3: a mesh, track 01, x 0.00..12.00 y 0.00..0.00 z 0.00..0.00: "
+    "in a chain of sliding parts: stretched alike, about its carrier's origin\n",
+    "[WIDE] the garage's practice menu: 7 moving rectangles in its model 00010060 (animation "
+    "00011000) by the wider rule, piece 197, stretched across over the filled sides; 2 of them "
+    "in a chain of sliding parts, stretched alike; its nodes:",
+    "[WIDE]   node 4, depth 2: a mesh, track 10, its translation not keyed: stretched across, "
+    "with the band\n",
+    "[WIDE]   node 5, depth 1: a mesh, track 11, x 0.00..0.00 y 0.00..0.00 z 0.00..0.00\n",
+    "[WIDE]   node 6, depth 2: a mesh, track 11, x -40.00..50.00 y 0.00..0.00 z 0.00..0.00: "
+    "stretched across, with the band\n",
+    "[WIDE]   node 7, depth 2: a mesh, track 11, x 0.00..12.00 y 0.00..0.00 z 0.00..0.00: "
+    "in a chain of sliding parts: stretched alike\n",
+    "[WIDE]   node 8, depth 3: a mesh, track 11, x 0.00..12.00 y 0.00..0.00 z 0.00..0.00: "
+    "in a chain of sliding parts: stretched alike\n",
     "[WIDE] menu part 194 on its own, with no menu drawing, the area name (a sign, flags 80000000): "
     "marked for the left edge",
     "[WIDE] menu part 194 under the arrow to another area, the area name (a sign, flags 00000000, "
@@ -129,6 +151,13 @@ ONCE = (
     "not moved further",
     "[WIDE] VS mode's setup screen (sub_00071100): its frames' sides filled, piece 219",
 )
+# Whole lines that come a set number of times: a node in each listing of
+# the models whose nodes the log lists (a plain menu's first models, each
+# once), as the same rig is listed for several.
+COUNTED = {
+    # the climbing n5, in the system menu's two listings and options' two
+    "[WIDE]   node 5, depth 2: a mesh, track 01, x -40.00..50.00 y 0.00..3.00 z 1.50..1.50\n": 4,
+}
 PLAINS = 12
 PARTS = 13 + 8 + 3 + 3 + 5
 
@@ -150,6 +179,9 @@ with tempfile.TemporaryDirectory(prefix="widescreen_menus-") as directory:
     for line in ONCE:
         if text.count(line) != 1:
             sys.exit(f"widescreen_menus: {line!r} came {text.count(line)} times, not once")
+    for line, times in COUNTED.items():
+        if text.count(line) != times:
+            sys.exit(f"widescreen_menus: {line!r} came {text.count(line)} times, not {times}")
     marked = [l for l in text.splitlines() if l.startswith("[WIDE] menu part ") and "(+0x" in l]
     if len(marked) != PARTS or len(set(marked)) != PARTS:
         sys.exit(f"widescreen_menus: {len(marked)} part lines, not one for each of {PARTS}")

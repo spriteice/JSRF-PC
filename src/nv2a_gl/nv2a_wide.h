@@ -256,8 +256,27 @@ float nv2a_wide_lines_coord(float c, float span);
  * November 2026 (07:44 UTC, card): "Move them with the grid". */
 #define NV2A_WIDE_HUD_ON_GRID 2u
 
+/* A mark's flags for a chain of sliding parts over a filled frame's sides
+ * (NV2A_WIDE_HUD_OVER): the garage menus' three arrows along the bottom,
+ * each carried by the one before and sliding out from it. On the system and
+ * graffiti menus the first one is still, over the stop symbol at the left.
+ * Stretched about the screen's centre, as the band of rectangles above them
+ * is, the arrows would come away from that symbol, which stays where it is
+ * in the 4:3 picture: they'd start a third of their distance from the centre
+ * further left at 16:9, more at 21:9. So the still part that carries the
+ * chain is marked NV2A_WIDE_HUD_ANCHOR: where its own origin lands
+ * (nv2a_wide_origin_x, from its draw's composite matrix) is kept, as the
+ * anchor, until the next or the frame's end. It and what it carries are
+ * marked NV2A_WIDE_HUD_FROM_ANCHOR, and stretched alike about that anchor
+ * instead (nv2a_wide_anchor_off). The first arrow's origin is the model's,
+ * at the 4:3 picture's left edge, so each arrow is a third wider at 16:9
+ * and goes out from that edge, not the centre: the first still starts at
+ * the stop symbol. */
+#define NV2A_WIDE_HUD_ANCHOR      4u
+#define NV2A_WIDE_HUD_FROM_ANCHOR 8u
+
 /* The mark's value for piece (0 to 255, which the log names), side and
- * flags (NV2A_WIDE_HUD_OWN_VIEW, NV2A_WIDE_HUD_ON_GRID, both or 0). */
+ * flags (any of the NV2A_WIDE_HUD_ flags above, or 0). */
 uint32_t nv2a_wide_hud_mark(unsigned piece, int side, unsigned flags);
 
 /* A value read on NV2A_WIDE_HUD_METHOD as a mark: 1, with its piece, side
@@ -291,6 +310,22 @@ float nv2a_wide_hud_grid_shift(int side, float s, int squeezed, float centre);
  * 16:9). 1, no stretch, at s 1 (4:3) and for an s that isn't between 0 and
  * 1. */
 float nv2a_wide_across_stretch(float s);
+
+/* Where a fixed-function draw's own origin, (0, 0, 0, 1) through its
+ * composite matrix, lands across the surface, in NDC (-1 to 1), as the
+ * shader puts it: px over pw (the matrix's x and w for it, the last of its
+ * first and fourth vectors), plus the viewport offset off_x
+ * (nv2a_vsh_ff_vpoff), less shift (wideShift), in pixels of a surface w
+ * wide. 1, with *x; 0, *x untouched, for a pw of 0 or a width of 0, or
+ * anything that isn't a number. */
+int nv2a_wide_origin_x(float px, float pw, float off_x, float shift, float w, float *x);
+
+/* The offset in x, in NDC (wideOff), that makes a draw stretched about the
+ * screen's centre by 1 + across (wideAcross) stretched about anchor (NDC)
+ * instead: the shader takes x to x (1 + across) + off, which leaves the
+ * anchor where it is for an off of -anchor x across. 0 for an anchor or an
+ * across that isn't a number. */
+float nv2a_wide_anchor_off(float anchor, float across);
 
 
 /* A menu's backdrop (NV2A_WIDE_HUD_LEFT_HALF and _RIGHT_HALF) is a grid that

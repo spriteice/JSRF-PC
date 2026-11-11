@@ -1078,6 +1078,7 @@ static struct {
     float    vp_scale[4], vp_off[4];
     float    wide_shift;
     float    wide_across;
+    float    wide_off;
     uint32_t fbo_w, fbo_h;      /* the surface size vpSurface and vpRect hold */
     uint32_t psh_c[NV2A_PSH_NCONSTS];   /* the combiner constants, as words */
     int      psh_ok;                    /* ... and whether the program has them */
@@ -5050,6 +5051,7 @@ static int g_wide_squeeze;   /* this draw's 2D squeeze, set in do_draw */
 static float g_wide_shift;   /* this draw's framed-3D or HUD move, title pixels, ditto */
 static int g_wide_hud;       /* the side its HUD piece moved it to, or none, ditto */
 static float g_wide_across;  /* how much wider a menu part drawn across comes out, less one, ditto */
+static float g_wide_off;     /* its x offset in NDC (wideOff): a chain stretched about its anchor, ditto */
 static int g_wide_whole;     /* whether its text runs the whole width, unclipped, ditto */
 static int g_wide_half;      /* the half of the screen a backdrop's copy is shown on, or none, ditto */
 static int g_wide_bar;       /* whether it is a bar that goes across (NV2A_WIDE_HUD_BARS), ditto */
@@ -5079,6 +5081,11 @@ static unsigned g_wide_fill_piece;
  * (nv2a_wide_fill_copy), and the flip leaves them as they are, rather than
  * copying columns over the part. */
 static int g_wide_over;
+/* The anchor of a chain of sliding parts over the sides (nv2a_wide.h,
+ * NV2A_WIDE_HUD_ANCHOR): where its still carrier's origin landed, in NDC,
+ * and whether one has since the frame's start. The flip ends it. */
+static float g_wide_anchor;
+static int g_wide_anchor_ok;
 /* A strip of the filled frame's menu's art to hide at the top of the
  * picture (NV2A_WIDE_HUD_STRIP): how far into the 4:3 picture it runs, in
  * title pixels, plus one, or 0 for none. The flip ends it. */
@@ -5931,7 +5938,7 @@ static void wide_fill_copies(int mode, uint32_t n, int indexed, int i32)
     }
     if (drew) {
         uni1f(NV2A_U_WIDEACROSS, g_wide_across);
-        uni1f(NV2A_U_WIDEOFF, 0.0f);
+        uni1f(NV2A_U_WIDEOFF, g_wide_off);
         G->state(&g_draw_rs);
     }
 }
@@ -5951,6 +5958,56 @@ static void wide_slab_right(int mode, uint32_t n, int indexed, int i32)
     else         G->draw(mode, n);
     uni1f(NV2A_U_WIDESHIFT, g_wide_shift);
     G->state(&g_draw_rs);
+}
+/* A part over a filled frame's sides (NV2A_WIDE_HUD_OVER) in a chain of
+ * sliding parts (nv2a_wide.h, NV2A_WIDE_HUD_ANCHOR, _FROM_ANCHOR), its
+ * stretch (g_wide_across) set: the chain's still carrier keeps where its own
+ * origin lands as the anchor, from its composite matrix as the shader
+ * transforms (a vertex program's isn't read: its chain is stretched about
+ * the screen's centre), and it and what it carries are stretched about that
+ * anchor (g_wide_off). Each anchor up to WIDE_ANCHORS_TOLD is logged, with
+ * where it lands in the 4:3 picture, in the title's pixels. */
+#define WIDE_ANCHORS_TOLD 8u
+static void wide_chain_anchor(void)
+{
+    static float told[WIDE_ANCHORS_TOLD];
+    static unsigned n_told;
+    static int told_vp, told_none;
+    if (g_hud_flags & NV2A_WIDE_HUD_ANCHOR) {
+        float off[4], x;
+        unsigned k;
+        g_wide_anchor_ok = 0;
+        if (S.xf_mode != NV2A_XF_MODE_FIXED) {
+            if (!told_vp++)
+                fprintf(stderr, "[WIDE] piece %u: a chain's carrier drawn through a vertex "
+                        "program: its origin not read, the chain stretched about the screen's "
+                        "centre\n", g_hud_piece);
+        } else {
+            nv2a_vsh_ff_vpoff(S.vp_off_reg, off);
+            if (nv2a_wide_origin_x(S.u.ff_mat[0][3], S.u.ff_mat[3][3], off[0], g_wide_shift,
+                                   (float)g_fbo_w, &x)) {
+                g_wide_anchor = x;
+                g_wide_anchor_ok = 1;
+                for (k = 0; k < n_told && fabsf(told[k] - x) > 1e-3f; k++) {}
+                if (k == n_told && n_told < WIDE_ANCHORS_TOLD) {
+                    told[n_told++] = x;
+                    fprintf(stderr, "[WIDE] piece %u: a chain of sliding parts stretched about "
+                            "its still carrier's origin, at x %.3f in NDC (%.1f title pixels "
+                            "into the 4:3 picture), not the screen's centre: moved %.3f in "
+                            "NDC\n", g_hud_piece, (double)x,
+                            (double)((x / g_wide_s + 1.0f) * 320.0f),
+                            (double)nv2a_wide_anchor_off(x, g_wide_across));
+                }
+            }
+        }
+    }
+    if (g_hud_flags & NV2A_WIDE_HUD_FROM_ANCHOR) {
+        if (g_wide_anchor_ok)
+            g_wide_off = nv2a_wide_anchor_off(g_wide_anchor, g_wide_across);
+        else if (!told_none++)
+            fprintf(stderr, "[WIDE] piece %u: a part of a chain with no anchor in the frame: "
+                    "stretched about the screen's centre\n", g_hud_piece);
+    }
 }
 /* A draw, timed whole for the profile (it has a great many ways out), and
  * every DRAW_STEP_EVERY-th one step by step. */
@@ -6681,6 +6738,7 @@ static void do_draw_body(void)
      */
     g_wide_hud = NV2A_WIDE_HUD_NONE;
     g_wide_across = 0.0f;
+    g_wide_off = 0.0f;
     g_wide_whole = 0;
     g_wide_half = NV2A_WIDE_HUD_NONE;
     g_wide_bar = 0;
@@ -6707,6 +6765,8 @@ static void do_draw_body(void)
                         g_hud_piece, out_n, (double)nv2a_wide_half_move(g_wide_s));
             }
         } else if (!screen) g_wide_across = nv2a_wide_across_stretch(g_wide_s) - 1.0f;
+        /* A chain of sliding parts over the sides: about its anchor. */
+        if (over && !screen) wide_chain_anchor();
         /* Over a filled frame's sides: they're filled draw by draw, under it. */
         if (over && g_wide_fill && !g_wide_moved) g_wide_over = 1;
         if (!g_wide_slab && !told[g_hud_piece & 0xFFu]) {
@@ -7282,6 +7342,7 @@ static void do_draw_body(void)
      || memcmp(g_last.vp_off, S.u.vp_off, sizeof S.u.vp_off)
      || g_last.wide_shift != g_wide_shift
      || g_last.wide_across != g_wide_across
+     || g_last.wide_off != g_wide_off
      || g_last.fbo_w != g_fbo_w || g_last.fbo_h != g_fbo_h) {
         /* The viewport, whenever it or the surface it is on changes: vpSurface
          * and vpRect hold the surface's size, and a title can draw to a
@@ -7315,10 +7376,12 @@ static void do_draw_body(void)
         }
         uni1f(NV2A_U_WIDESHIFT, g_wide_shift);
         uni1f(NV2A_U_WIDEACROSS, g_wide_across);
+        uni1f(NV2A_U_WIDEOFF, g_wide_off);
         memcpy(g_last.vp_scale, vp_scale_eff, sizeof vp_scale_eff);
         memcpy(g_last.vp_off, S.u.vp_off, sizeof S.u.vp_off);
         g_last.wide_shift = g_wide_shift;
         g_last.wide_across = g_wide_across;
+        g_last.wide_off = g_wide_off;
         g_last.fbo_w = g_fbo_w; g_last.fbo_h = g_fbo_h;
     }
 
@@ -11220,6 +11283,7 @@ static void present(int is_frame)
         wide_hud_frame_end();
         g_wide_fill_last = g_wide_fill && !g_wide_moved;
         g_wide_fill = g_wide_moved = g_wide_over = 0;
+        g_wide_anchor_ok = 0;
         g_wide_strip = 0;
     }
     if (!g_ready || !g_fbo_w || !g_fbo_h || !S.color_offset) return;

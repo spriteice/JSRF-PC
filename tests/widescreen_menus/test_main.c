@@ -85,11 +85,21 @@
  *      by that rule is looked at by the wider one: a node with a mesh that
  *      slides whatever else is keyed, or that an ancestor's slide carries
  *      and that doesn't climb itself, is found, and no other; one with none
- *      by either has its nodes listed in the log. Whichever node function
- *      draws a rectangle, it is marked the same, and the log names each
- *      function once. A model with a single one (a knob, a cursor) has
- *      none, and the log says so once. The music menu's are left as drawn:
- *      none is found, and the log says so once.
+ *      by either has its nodes listed in the log, and so has each model a
+ *      menu's first finds are made for, each node with what is done with
+ *      it. Whichever node function draws a rectangle, it is marked the
+ *      same, and the log names each function once. A model with a single
+ *      one (a knob, a cursor) has none, and the log says so once. The
+ *      music menu's are left as drawn: none is found, and the log says so
+ *      once.
+ *  11a. The arrows: of the nodes found, those in a chain (one sliding by
+ *      its own keys, carried by another found, the one that carries it,
+ *      and what either carries), such as the garage's arrows along the
+ *      bottom, are marked alike with the band, by either rule, and so is
+ *      the still node with a mesh that carries a chain, and what it carries,
+ *      unless it's the model's first or carries one of the band too; a
+ *      still piece carried by one of the band goes with it. The log says
+ *      how many are in a chain and marks each node.
  *  12. The title: widened from its state 3 on, within a quarter of a second
  *      of its draw, not in its states 0 to 2, nor for another class; in its
  *      state 6 draw, its pack's model 1 goes to the left edge, its model 0,
@@ -1071,6 +1081,128 @@ static void sliders_wider(void)
     widescreen_menus_fill_end(fill);
 }
 
+/* The arrows, for a model whose animation slides other parts along x alone
+ * besides its rectangles, as the garage's menus slide their three arrows
+ * along the bottom: as a chain, each carried by the one before and sliding
+ * out from it, all at the keys' one height (9e02d60-arrows1's log). Nine
+ * nodes, in the walk's order in their array at CHAIN. First as the system
+ * and graffiti menus' model, by the first rule (drawn by the test run menu,
+ * whose models no other case lists): n0 still; n1, n2 and n3 slide side by
+ * side, the band; n4, the first arrow, still, carries n5, the second,
+ * sliding out from it, which carries n6, the third, sliding out from n5.
+ * All are stretched alike but n0: before, n4 wasn't, so the arrows came
+ * apart (Adri on GitHub issue 2, 10 November 2026: in the system and
+ * graffiti menus, one arrow overlapped the next). n4 is the chain's anchor
+ * (NV2A_WIDE_HUD_ANCHOR), and it, n5 and n6 are stretched about its origin
+ * (NV2A_WIDE_HUD_FROM_ANCHOR), so the arrows go out from where the first
+ * one's origin lands, and still start at the stop symbol under it, which
+ * isn't stretched; the band, about the screen's centre. Then by the
+ * wider rule, every node turned too: n3 carries n4, a still piece of it,
+ * which goes with the band; n5, still, carries n6, a rectangle of the band,
+ * and n7, sliding, which carries n8, sliding out from it. The chain n7 and
+ * n8 is stretched with the band, about the screen's centre, but not n5,
+ * which carries a rectangle too, and so isn't the chain's anchor. */
+#define CHAIN (RIG + 0x800u)
+static uint32_t chain_va(unsigned walk) { return CHAIN + WIDE_NODE_SIZE * walk; }
+static void sliders_band(void)
+{
+    /* each node's track flags and how its keys slide it: 0 still, 1 as
+     * the band, from far off one side to past the other, 2 out from the
+     * one that carries it, as the game's arrows do */
+    static const struct { uint8_t flags; int slides; } sys[9] = {
+        { 0x01, 0 }, { 0x01, 1 }, { 0x01, 1 }, { 0x01, 1 },
+        { 0x01, 0 }, { 0x01, 2 }, { 0x01, 2 }, { 0x00, 0 }, { 0x00, 0 },
+    }, wide[9] = {
+        { 0x11, 0 }, { 0x11, 1 }, { 0x11, 1 }, { 0x11, 1 },
+        { 0x10, 0 }, { 0x11, 0 }, { 0x11, 1 }, { 0x11, 2 }, { 0x11, 2 },
+    };
+    const uint32_t system = RIG + 0x20u, practice = RIG + 0x60u;
+    unsigned k, f, piece;
+    int fill, began;
+    fresh();
+    rig();
+    for (k = 0; k < 9; k++) {
+        uint32_t track = TRACKS + WIDE_TRACK_SIZE * k, keys = KEYS + 0x100u * k;
+        set(chain_va(k) + WIDE_NODE_MESH, 0x7100u + 0x10u * k);
+        set(track, 0xC0DE0000u | sys[k].flags);
+        set(track + WIDE_TRACK_MOVE, keys);
+        for (f = 0; f < 4; f++) {
+            setf(keys + 12u * f, sys[k].slides == 1 ? -40.0f + 30.0f * (float)f
+                               : sys[k].slides == 2 ? 4.0f * (float)f : 0.0f);
+            setf(keys + 12u * f + 4, 0.0f);
+            setf(keys + 12u * f + 8, 0.0f);
+        }
+    }
+    set(chain_va(0) + WIDE_NODE_CHILD, chain_va(1));
+    set(chain_va(1) + WIDE_NODE_SIBLING, chain_va(2));
+    set(chain_va(2) + WIDE_NODE_SIBLING, chain_va(3));
+    set(chain_va(3) + WIDE_NODE_SIBLING, chain_va(4));
+    set(chain_va(4) + WIDE_NODE_CHILD, chain_va(5));
+    set(chain_va(5) + WIDE_NODE_CHILD, chain_va(6));
+    set(system + WIDE_MODEL_NODES, chain_va(0));
+    set(system + WIDE_MODEL_NODE_COUNT, 7);
+    memset(mem() + MENU, 0, 0x200);
+    set(MENU, widescreen_menus_plain[WIDE_PLAIN_TEST_RUN].vtable);
+    fill = widescreen_menus_fill(mem(), DEVICE, WIDE_PLAIN_TEST_RUN, MENU, 0, 1, space);
+    CHECK(fill);
+    began = widescreen_menus_sliders_begin(mem(), TOP, system, ANIM);
+    CHECK(began);
+    for (k = 0; k < 7; k++) {
+        piece = 999;
+        CHECK(widescreen_menus_slider(system, chain_va(k), 0x0005BD80u, &piece)
+              == (k >= 1 ? NV2A_WIDE_HUD_OVER : NV2A_WIDE_HUD_NONE));
+        CHECK(piece == (k >= 1 ? WIDE_MENU_PIECE_SLIDERS : 999u));
+        CHECK(widescreen_menus_mark_flags(WIDE_MENU_PIECE_SLIDERS, NV2A_WIDE_HUD_OVER)
+              == (k == 4 ? NV2A_WIDE_HUD_ANCHOR | NV2A_WIDE_HUD_FROM_ANCHOR
+                  : k >= 5 ? NV2A_WIDE_HUD_FROM_ANCHOR : 0u));
+        /* only the moving rectangles' mark over the sides has them */
+        CHECK(widescreen_menus_mark_flags(WIDE_MENU_PIECE_SLIDERS, NV2A_WIDE_HUD_ACROSS) == 0u);
+    }
+    /* the mark the node function's override pushes for n5 */
+    CHECK(widescreen_menus_slider(system, chain_va(5), 0x0005BD80u, &piece)
+          == NV2A_WIDE_HUD_OVER);
+    {
+        uint32_t put = word(DEVICE + WIDE_HUD_D3D_PUT);
+        CHECK(widescreen_menus_mark(mem(), DEVICE, piece, NV2A_WIDE_HUD_OVER, space));
+        CHECK(word(put + 4) == nv2a_wide_hud_mark(WIDE_MENU_PIECE_SLIDERS, NV2A_WIDE_HUD_OVER,
+                                                  NV2A_WIDE_HUD_FROM_ANCHOR));
+        widescreen_menus_unmark(mem(), DEVICE, piece, 1, space);
+    }
+    widescreen_menus_sliders_end(began);
+    CHECK(widescreen_menus_mark_flags(WIDE_MENU_PIECE_SLIDERS, NV2A_WIDE_HUD_OVER) == 0u);
+    widescreen_menus_fill_end(fill);
+    /* by the wider rule: n3 carries n4; n5, beside n3, carries n6 and n7,
+     * and n7 carries n8 */
+    for (k = 0; k < 9; k++) {
+        set(TRACKS + WIDE_TRACK_SIZE * k, 0xC0DE0000u | wide[k].flags);
+        for (f = 0; f < 4; f++)
+            setf(KEYS + 0x100u * k + 12u * f, wide[k].slides == 1 ? -40.0f + 30.0f * (float)f
+                                            : wide[k].slides == 2 ? 4.0f * (float)f : 0.0f);
+    }
+    set(chain_va(3) + WIDE_NODE_SIBLING, chain_va(5));
+    set(chain_va(3) + WIDE_NODE_CHILD, chain_va(4));
+    set(chain_va(4) + WIDE_NODE_CHILD, 0);
+    set(chain_va(5) + WIDE_NODE_CHILD, chain_va(6));
+    set(chain_va(6) + WIDE_NODE_CHILD, 0);
+    set(chain_va(6) + WIDE_NODE_SIBLING, chain_va(7));
+    set(chain_va(7) + WIDE_NODE_CHILD, chain_va(8));
+    set(practice + WIDE_MODEL_NODES, chain_va(0));
+    set(practice + WIDE_MODEL_NODE_COUNT, 9);
+    memset(mem() + MENU, 0, 0x200);
+    set(MENU, widescreen_menus_plain[WIDE_PLAIN_PRACTICE].vtable);
+    fill = widescreen_menus_fill(mem(), DEVICE, WIDE_PLAIN_PRACTICE, MENU, 0, 1, space);
+    CHECK(fill);
+    began = widescreen_menus_sliders_begin(mem(), TOP, practice, ANIM);
+    CHECK(began);
+    for (k = 0; k < 9; k++) {
+        CHECK(widescreen_menus_slider(practice, chain_va(k), 0x0005BD80u, &piece)
+              == (k >= 1 && k != 5 ? NV2A_WIDE_HUD_OVER : NV2A_WIDE_HUD_NONE));
+        CHECK(widescreen_menus_mark_flags(WIDE_MENU_PIECE_SLIDERS, NV2A_WIDE_HUD_OVER) == 0u);
+    }
+    widescreen_menus_sliders_end(began);
+    widescreen_menus_fill_end(fill);
+}
+
 #define PACK (RIG + 0x3000u)   /* where a pointer can be */
 static void title(void)
 {
@@ -1345,6 +1477,7 @@ int main(void)
     plain();
     sliders();
     sliders_wider();
+    sliders_band();
     title();
     results();
     if (s_failures) {

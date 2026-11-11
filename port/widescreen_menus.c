@@ -428,8 +428,13 @@ static int menu_extends(unsigned menu)
     return 0;
 }
 
+/* The mark's flags of the moving rectangle widescreen_menus_slider last
+ * found (see s_sliders, below). */
+static unsigned s_slider_flags;
+
 unsigned widescreen_menus_mark_flags(unsigned piece, int side)
 {
+    if (side == NV2A_WIDE_HUD_OVER && piece == WIDE_MENU_PIECE_SLIDERS) return s_slider_flags;
     if (side != NV2A_WIDE_HUD_LEFT && side != NV2A_WIDE_HUD_RIGHT) return 0u;
     if (piece >= WIDE_MENU_PIECE0 && piece < WIDE_MENU_PIECE(WIDE_MENUS, 0))
         return menu_extends((piece - WIDE_MENU_PIECE0) / WIDE_MENU_PARTS_MAX)
@@ -518,13 +523,39 @@ void widescreen_menus_fill_end(int began)
     if (began) s_fill = -1;
 }
 
-/* The moving rectangles of the model drawing now: its sliding nodes. The
- * last model and animation they were found for are kept, as a menu draws
- * the same ones every frame. */
+/* The moving rectangles of the model drawing now: its sliding nodes, and
+ * the still nodes that carry a chain of them (keep_chains). As they're
+ * found, each has the index of the nearest found node that carries it (-1
+ * for none) in s_slider_up, whether its own keys slide it in s_slider_own,
+ * and its place in the walk in s_slider_visit, for keep_chains. Those in a
+ * chain, and the still ones added with a chain, are kept for the log too
+ * (s_chain, s_carried). The still node that carries a chain is its anchor
+ * (s_anchors), and it and what it carries are stretched about the anchor
+ * (s_anchored). The last model and animation they were found for are kept,
+ * as a menu draws the same ones every frame. The flags for the mark of the
+ * node widescreen_menus_slider last found are in s_slider_flags (above), for
+ * widescreen_menus_mark_flags: the node function's override marks the node
+ * as soon as it's found. */
 static uint32_t s_slider_model, s_slider_anim;
 static uint32_t s_sliders[WIDE_MENU_SLIDERS_MAX];
+static int s_slider_up[WIDE_MENU_SLIDERS_MAX];
+static unsigned char s_slider_own[WIDE_MENU_SLIDERS_MAX];
+static int s_slider_visit[WIDE_MENU_SLIDERS_MAX];
 static unsigned s_n_sliders;
+static uint32_t s_chain[WIDE_MENU_SLIDERS_MAX], s_carried[WIDE_MENU_SLIDERS_MAX];
+static unsigned s_n_chain, s_n_carried;
+static uint32_t s_anchors[WIDE_MENU_SLIDERS_MAX], s_anchored[WIDE_MENU_SLIDERS_MAX];
+static unsigned s_n_anchors, s_n_anchored;
 static int s_sliders_on;
+/* The walk's first WIDE_MENU_VISITS nodes, in its order, for keep_chains:
+ * each one's node, the place of the node that carries it (-1 for the
+ * model's first and its siblings), its depth, whether it has a mesh, and
+ * its index in s_sliders (-1 if it wasn't found). */
+#define WIDE_MENU_VISITS 256u
+static uint32_t s_visit_node[WIDE_MENU_VISITS];
+static int s_visit_up[WIDE_MENU_VISITS], s_visit_found[WIDE_MENU_VISITS];
+static unsigned char s_visit_depth[WIDE_MENU_VISITS], s_visit_mesh[WIDE_MENU_VISITS];
+static unsigned s_n_visits;
 
 static float guest_float(const uint8_t *mem, uint32_t va)
 {
@@ -590,25 +621,40 @@ static int rig_read(const uint8_t *mem, uint32_t top, uint32_t model, uint32_t a
         && g->count * WIDE_TRACK_SIZE <= top - g->tracks;
 }
 
+/* Whether node is one of the n in list. */
+static int listed(const uint32_t *list, unsigned n, uint32_t node)
+{
+    unsigned i;
+    for (i = 0; i < n; i++)
+        if (list[i] == node) return 1;
+    return 0;
+}
+
 /* Finds the model's sliding nodes into s_sliders, by the first rule (wide
- * 0) or the wider one (1); with tell, lists its nodes in the log instead,
- * up to WIDE_MENU_NODES_TOLD. 1 if it reads as a model and its animation as
- * one, even with none. */
+ * 0) or the wider one (1), each with the nearest found node that carries it,
+ * whether it slides by its own keys and its place in the walk (s_slider_up,
+ * s_slider_own, s_slider_visit), and the walk's nodes (s_visit_*); with
+ * tell, lists its nodes in the log instead, up to WIDE_MENU_NODES_TOLD, each
+ * with what is done with it (as keep_chains left s_sliders, s_chain and
+ * s_carried), and changes none of them. 1 if it reads as a model and its
+ * animation as one, even with none. */
 static int find_sliders(const uint8_t *mem, uint32_t top, uint32_t model, uint32_t anim, int wide,
                         int tell)
 {
-    struct { uint32_t node; uint8_t depth, carried; } stack[64];
+    struct { uint32_t node; uint8_t depth, carried; int up, parent; } stack[64];
     uint32_t visits = 0;
     unsigned depth = 0;
     WideRig g;
-    s_n_sliders = 0;
+    if (!tell) s_n_sliders = s_n_visits = 0;
     if (!rig_read(mem, top, model, anim, &g)) return 0;
-    stack[0].node = g.nodes; stack[0].depth = 0; stack[0].carried = 0;
+    stack[0].node = g.nodes; stack[0].depth = 0; stack[0].carried = 0; stack[0].up = -1;
+    stack[0].parent = -1;
     depth = 1;
     while (depth) {
         uint32_t node = stack[--depth].node, next, track;
         unsigned d = stack[depth].depth;
-        int carried = stack[depth].carried, mesh, move, slides;
+        int carried = stack[depth].carried, up = stack[depth].up, below = up;
+        int parent = stack[depth].parent, mesh, move, slides;
         float r[6] = { 0, 0, 0, 0, 0, 0 };
         if (node < g.nodes || (node - g.nodes) % WIDE_NODE_SIZE
             || (node - g.nodes) / WIDE_NODE_SIZE >= g.count || visits >= g.count)
@@ -622,17 +668,46 @@ static int find_sliders(const uint8_t *mem, uint32_t top, uint32_t model, uint32
         slides = wide ? move == MOVE_SLIDE : move == MOVE_SLIDE && (mem[track] & 0x15u) == 0x01u;
         if (tell) {
             if (visits < WIDE_MENU_NODES_TOLD) {
+                int about = listed(s_anchored, s_n_anchored, node);
+                const char *what = listed(s_anchors, s_n_anchors, node)
+                                 ? ": carries a chain of sliding parts: stretched with it, "
+                                   "about its own origin"
+                                 : listed(s_chain, s_n_chain, node)
+                                 ? about ? ": in a chain of sliding parts: stretched alike, "
+                                           "about its carrier's origin"
+                                         : ": in a chain of sliding parts: stretched alike"
+                                 : listed(s_carried, s_n_carried, node)
+                                 ? ": carried with a chain of sliding parts: stretched with it, "
+                                   "about its carrier's origin"
+                                 : listed(s_sliders, s_n_sliders, node)
+                                 ? ": stretched across, with the band" : "";
                 if (move == MOVE_NONE)
                     fprintf(stderr, "[WIDE]   node %u, depth %u: %s, track %02X, its translation "
-                            "not keyed\n", visits, d, mesh ? "a mesh" : "no mesh", mem[track]);
+                            "not keyed%s\n", visits, d, mesh ? "a mesh" : "no mesh", mem[track],
+                            what);
                 else
                     fprintf(stderr, "[WIDE]   node %u, depth %u: %s, track %02X, x %.2f..%.2f "
-                            "y %.2f..%.2f z %.2f..%.2f\n", visits, d, mesh ? "a mesh" : "no mesh",
-                            mem[track], r[0], r[1], r[2], r[3], r[4], r[5]);
+                            "y %.2f..%.2f z %.2f..%.2f%s\n", visits, d, mesh ? "a mesh" : "no mesh",
+                            mem[track], r[0], r[1], r[2], r[3], r[4], r[5], what);
             }
-        } else if (mesh && (slides || (wide && carried && move != MOVE_OTHER))
-                   && s_n_sliders < WIDE_MENU_SLIDERS_MAX) {
-            s_sliders[s_n_sliders++] = node;
+        } else {
+            int found = -1;
+            if (mesh && (slides || (wide && carried && move != MOVE_OTHER))
+                && s_n_sliders < WIDE_MENU_SLIDERS_MAX) {
+                s_slider_up[s_n_sliders] = up;
+                s_slider_own[s_n_sliders] = (unsigned char)(move == MOVE_SLIDE);
+                s_slider_visit[s_n_sliders] = visits < WIDE_MENU_VISITS ? (int)visits : -1;
+                below = found = (int)s_n_sliders;
+                s_sliders[s_n_sliders++] = node;
+            }
+            if (visits < WIDE_MENU_VISITS) {
+                s_visit_node[visits] = node;
+                s_visit_up[visits] = parent;
+                s_visit_found[visits] = found;
+                s_visit_depth[visits] = (unsigned char)(d < 255u ? d : 255u);
+                s_visit_mesh[visits] = (unsigned char)mesh;
+                s_n_visits = visits + 1u;
+            }
         }
         visits++;
         next = guest32(mem, node + WIDE_NODE_SIBLING);
@@ -640,6 +715,8 @@ static int find_sliders(const uint8_t *mem, uint32_t top, uint32_t model, uint32
             if (depth >= sizeof stack / sizeof stack[0]) return 0;
             stack[depth].node = next; stack[depth].depth = (uint8_t)d;
             stack[depth].carried = (uint8_t)carried;
+            stack[depth].up = up;
+            stack[depth].parent = parent;
             depth++;
         }
         next = guest32(mem, node + WIDE_NODE_CHILD);
@@ -647,10 +724,91 @@ static int find_sliders(const uint8_t *mem, uint32_t top, uint32_t model, uint32
             if (depth >= sizeof stack / sizeof stack[0] || d >= 255u) return 0;
             stack[depth].node = next; stack[depth].depth = (uint8_t)(d + 1u);
             stack[depth].carried = (uint8_t)(carried || (wide && move == MOVE_SLIDE));
+            stack[depth].up = below;
+            stack[depth].parent = (int)visits - 1;
             depth++;
         }
     }
     return 1;
+}
+
+/* Whether the walk's node at place w is carried by the one at place p. */
+static int visit_under(int w, int p)
+{
+    for (w = s_visit_up[w]; w >= 0; w = s_visit_up[w])
+        if (w == p) return 1;
+    return 0;
+}
+
+/* The chains among the sliding nodes found, and the still node that
+ * carries each one. The band's rectangles hang side by side, none carried
+ * by another that slides. The garage's menus also slide their three arrows
+ * along the bottom, along x alone and at the band's height in the keys, but
+ * as a chain: each arrow is carried by the one before it and slides out
+ * from it by its own keys. In the system and graffiti menus the first arrow
+ * doesn't slide, so it wasn't found, and the two it carries were stretched
+ * without it: one landed on the next (Adri on GitHub issue 2, 10 November
+ * 2026; 9e02d60-arrows1's log, 11 November). Left as drawn instead, at
+ * their 4:3 shape (test build 9e02d60-arrows2, 11 November), the practice
+ * menu's ran on too far to the right: its last slides past the 4:3
+ * screen's edge, which the stretched picture puts at the screen's. So all
+ * of a chain is stretched alike, and with it the still node that carries
+ * it, and what that one carries, when that node has a mesh, isn't the
+ * model's first or one of its siblings, and carries nothing of the band.
+ * Stretched about the screen's centre, as the band is, such a chain came
+ * away from the stop symbol under the first arrow at the left, which isn't
+ * stretched: the system and graffiti menus' arrows started a third of their
+ * distance from the centre further left (test build 9e02d60-arrows3, 11
+ * November). So that still node is the chain's anchor (s_anchors), and it
+ * and what it carries are stretched about where its own origin lands
+ * (s_anchored, NV2A_WIDE_HUD_FROM_ANCHOR). That origin is the model's, at
+ * the 4:3 picture's left edge (9e02d60-arrows4's log): the arrows go out
+ * from there rather than from the centre, so the first one's tail stays on
+ * the stop symbol at 16:9 and is a little right of it at 21:9, as chosen on
+ * 11 November. A chain carried
+ * by the model's first node (Roboy's menu, practice, save and load) has no
+ * anchor, and is stretched about the screen's centre, as the band is. A
+ * found node that slides by its own keys and is carried by another found
+ * node is a link: it, the one that carries it, and what either carries are
+ * the chain (s_chain); the nodes added with it are s_carried. Each node
+ * comes after the one that carries it, in the walk's order. */
+static void keep_chains(void)
+{
+    unsigned char chain[WIDE_MENU_SLIDERS_MAX] = { 0 };
+    unsigned i, n = s_n_sliders;
+    s_n_chain = s_n_carried = s_n_anchors = s_n_anchored = 0;
+    for (i = 0; i < n; i++)
+        if (s_slider_own[i] && s_slider_up[i] >= 0) chain[i] = chain[s_slider_up[i]] = 1;
+    for (i = 0; i < n; i++)
+        if (s_slider_up[i] >= 0 && chain[s_slider_up[i]]) chain[i] = 1;
+    for (i = 0; i < n; i++)
+        if (chain[i]) s_chain[s_n_chain++] = s_sliders[i];
+    for (i = 0; i < n; i++) {
+        int v = s_slider_visit[i], p = v >= 0 ? s_visit_up[v] : -1, w, band = 0;
+        /* a chain's first node, carried by a still node with a mesh, not
+         * the model's first or one of its siblings */
+        if (!chain[i] || s_slider_up[i] >= 0 || p < 0 || !s_visit_mesh[p] || !s_visit_depth[p])
+            continue;
+        for (w = p + 1; w < (int)s_n_visits && !band; w++)
+            band = visit_under(w, p) && s_visit_found[w] >= 0 && !chain[s_visit_found[w]];
+        if (band) continue;
+        for (w = p; w < (int)s_n_visits && s_n_sliders < WIDE_MENU_SLIDERS_MAX; w++)
+            if ((w == p || visit_under(w, p)) && s_visit_mesh[w] && s_visit_found[w] < 0
+                && !listed(s_sliders, s_n_sliders, s_visit_node[w])) {
+                s_carried[s_n_carried++] = s_visit_node[w];
+                s_sliders[s_n_sliders++] = s_visit_node[w];
+            }
+        /* the anchor, if it was added, and it and what it carries, found or
+         * added, stretched about it */
+        if (!listed(s_sliders, s_n_sliders, s_visit_node[p])
+            || listed(s_anchors, s_n_anchors, s_visit_node[p]))
+            continue;
+        s_anchors[s_n_anchors++] = s_visit_node[p];
+        for (w = p; w < (int)s_n_visits && s_n_anchored < WIDE_MENU_SLIDERS_MAX; w++)
+            if ((w == p || visit_under(w, p)) && listed(s_sliders, s_n_sliders, s_visit_node[w])
+                && !listed(s_anchored, s_n_anchored, s_visit_node[w]))
+                s_anchored[s_n_anchored++] = s_visit_node[w];
+    }
 }
 
 int widescreen_menus_sliders_begin(const uint8_t *mem, uint32_t top, uint32_t model,
@@ -677,37 +835,43 @@ int widescreen_menus_sliders_begin(const uint8_t *mem, uint32_t top, uint32_t mo
         }
         s_slider_model = model;
         s_slider_anim = anim;
-        if (!ok) s_n_sliders = 0;
+        if (!ok) s_n_sliders = s_n_visits = 0;
+        keep_chains();
         few = s_n_sliders < WIDE_MENU_SLIDERS_MIN ? s_n_sliders : 0;
-        if (few) s_n_sliders = 0;
+        if (few) s_n_sliders = s_n_chain = s_n_carried = s_n_anchors = s_n_anchored = 0;
         for (k = 0; k < n_told[s_fill]; k++)
             if (told[s_fill][k][0] == model && told[s_fill][k][1] == anim) break;
         if (k == n_told[s_fill] && k < WIDE_MENU_MODELS_TOLD) {
+            char others[128] = "";
             told[s_fill][k][0] = model;
             told[s_fill][k][1] = anim;
             n_told[s_fill]++;
+            if (s_n_chain)
+                snprintf(others, sizeof others, "; %u of them in a chain of sliding parts%s, "
+                         "stretched alike%s", s_n_chain, s_n_carried ? ", with what carries it"
+                                                                     : "",
+                         s_n_anchors ? " about its origin" : "");
             if (!ok)
                 fprintf(stderr, "[WIDE] %s: its model %08X (animation %08X) doesn't read as a "
                         "model with an animation: no moving rectangles\n",
                         widescreen_menus_plain[s_fill].name, model, anim);
             else if (few)
                 fprintf(stderr, "[WIDE] %s: %u moving %s in its model %08X (animation %08X)%s, "
-                        "too few for a band of rectangles (a knob or a cursor): left as drawn\n",
+                        "too few for a band of rectangles (a knob or a cursor): left as "
+                        "drawn; its nodes:\n",
                         widescreen_menus_plain[s_fill].name, few, few == 1 ? "part" : "parts",
                         model, anim, wide ? " by the wider rule" : "");
             else if (s_n_sliders)
                 fprintf(stderr, "[WIDE] %s: %u moving rectangles in its model %08X (animation "
-                        "%08X)%s, piece %u, stretched across over the filled sides\n",
+                        "%08X)%s, piece %u, stretched across over the filled sides%s; its "
+                        "nodes:\n",
                         widescreen_menus_plain[s_fill].name, s_n_sliders, model, anim,
-                        wide ? " by the wider rule" : "", WIDE_MENU_PIECE_SLIDERS);
-            else {
-                unsigned n = s_n_sliders;
+                        wide ? " by the wider rule" : "", WIDE_MENU_PIECE_SLIDERS, others);
+            else
                 fprintf(stderr, "[WIDE] %s: no moving rectangles in its model %08X (animation "
                         "%08X), by either rule; its nodes:\n",
                         widescreen_menus_plain[s_fill].name, model, anim);
-                find_sliders(mem, top, model, anim, 1, 1);
-                s_n_sliders = n;
-            }
+            if (ok) find_sliders(mem, top, model, anim, wide, 1);
         }
     }
     if (!s_n_sliders) return 0;
@@ -718,6 +882,7 @@ int widescreen_menus_sliders_begin(const uint8_t *mem, uint32_t top, uint32_t mo
 void widescreen_menus_sliders_end(int began)
 {
     if (began) s_sliders_on = 0;
+    s_slider_flags = 0;
 }
 
 int widescreen_menus_slider(uint32_t model, uint32_t node, uint32_t via, unsigned *piece)
@@ -725,10 +890,14 @@ int widescreen_menus_slider(uint32_t model, uint32_t node, uint32_t via, unsigne
     static uint32_t told[8];
     static unsigned n_told;
     unsigned i, k;
+    s_slider_flags = 0;
     if (!s_sliders_on || model != s_slider_model) return NV2A_WIDE_HUD_NONE;
     for (i = 0; i < s_n_sliders; i++)
         if (s_sliders[i] == node) {
             *piece = WIDE_MENU_PIECE_SLIDERS;
+            s_slider_flags = (listed(s_anchors, s_n_anchors, node) ? NV2A_WIDE_HUD_ANCHOR : 0u)
+                           | (listed(s_anchored, s_n_anchored, node)
+                              ? NV2A_WIDE_HUD_FROM_ANCHOR : 0u);
             for (k = 0; k < n_told && told[k] != via; k++) {}
             if (k == n_told && n_told < sizeof told / sizeof told[0]) {
                 told[n_told++] = via;

@@ -99,8 +99,22 @@
  * nodes of the menu's own background model, moved by its animation, drawn
  * in the one call that draws the band under them. So while a filled menu
  * draws an animated model, the nodes whose animation moves them along x
- * alone are found from the animation's keys (widescreen_menus_sliders_begin)
- * and each one's draw is marked NV2A_WIDE_HUD_OVER, node by node, from the
+ * alone are found from the animation's keys (widescreen_menus_sliders_begin).
+ * The same animation slides the three arrows along the bottom of the
+ * garage's menus along x alone too, as a chain, each carried by the one
+ * before it and sliding out from it; where the first doesn't slide, it
+ * wasn't found, and the two it carries were stretched without it, so one
+ * landed on the next (Adri on GitHub issue 2, 10 November 2026). So a
+ * chain is stretched alike, and with it the still node that carries it
+ * (the first arrow), unless that one carries some of the band too. Left as
+ * drawn instead, an arrow that slides past the 4:3 screen's edge would run
+ * on into a side (test build 9e02d60-arrows2, on the practice menu). That
+ * still node is the chain's anchor: it and what it carries are stretched
+ * about its own origin, at the 4:3 picture's left edge, rather than the
+ * screen's centre, so the arrows still start at the stop symbol under the
+ * first, which isn't stretched (on the system and graffiti menus; a chain
+ * the model's first node carries is stretched about the centre). Each
+ * draw found is marked NV2A_WIDE_HUD_OVER, node by node, from the
  * override of the node function the fixed-function pass calls for it
  * (widescreen_menus_slider): the renderer stretches them across the whole
  * width, as the console's stretched picture would, and fills the sides from
@@ -346,7 +360,11 @@ int widescreen_menus_ticker_x(float x, float s, float *wide_x, unsigned *piece);
  * keeps its cell (spriteice's choice, 8 November 2026, "Move them with the
  * grid"): the menus' parts, their text and the header; the area name's sign
  * only in the street pause menu and the notebook, not as the banner on its
- * own (from the last widescreen_menus_sign). 0 for anything else. */
+ * own (from the last widescreen_menus_sign). For the moving rectangles over
+ * the sides (WIDE_MENU_PIECE_SLIDERS, NV2A_WIDE_HUD_OVER): the flags of the
+ * node widescreen_menus_slider last found, NV2A_WIDE_HUD_ANCHOR for a still
+ * node that carries a chain and NV2A_WIDE_HUD_FROM_ANCHOR for it and what it
+ * carries (widescreen_menus_sliders_begin). 0 for anything else. */
 unsigned widescreen_menus_mark_flags(unsigned piece, int side);
 
 /* A menu's 3D map's draw starts: the pause menus' (sub_00114A80 for mode 0,
@@ -479,22 +497,31 @@ void widescreen_menus_fill_end(int began);
  * knob landed past its scale's ends. */
 #define WIDE_MENU_SLIDERS_MIN 2u
 /* How many of a plain menu's animated models the log names, and how many of
- * a model's nodes it lists when none slide, so a model whose rectangles
- * aren't found says why. */
+ * each one's nodes it lists, so the log says which parts are stretched, and
+ * why a model's rectangles aren't found. */
 #define WIDE_MENU_MODELS_TOLD 4u
 #define WIDE_MENU_NODES_TOLD  48u
 
 /* The models' draw, for model drawn with animation anim (its first
  * argument; 0 for none), on guest memory below top: while a plain menu
- * draws (widescreen_menus_fill), the model's sliding nodes are found, for
- * widescreen_menus_slider, until widescreen_menus_sliders_end. Returns
- * whether any were. A model whose nodes or animation don't read as above
- * (a pointer out of memory, a tree that isn't one) has none. For each of a
- * plain menu's first WIDE_MENU_MODELS_TOLD models, a line in the log says
- * how many, and by which rule; with none, it lists the model's nodes (up to
- * WIDE_MENU_NODES_TOLD): their depth, mesh, track flags and how their keys
- * move. A model with fewer than WIDE_MENU_SLIDERS_MIN found has none, and
- * its line says so. A plain menu whose rectangles don't go across
+ * draws (widescreen_menus_fill), the model's sliding nodes are found, with
+ * the still node that carries a chain of them, for widescreen_menus_slider,
+ * until widescreen_menus_sliders_end. Returns whether any were. A node found
+ * that slides by its own keys and is carried by another found node is a
+ * link, and it, the one that carries it, and what either carries are a
+ * chain; the node that carries a chain's first is found too, with what it
+ * carries, when it has a mesh, isn't the model's first node or one of its
+ * siblings, and carries no node found but the chain's: that node is the
+ * chain's anchor, and it and what it carries are marked to be stretched
+ * about its origin (widescreen_menus_mark_flags). A model whose nodes or
+ * animation don't read as above (a pointer out of memory, a tree that isn't
+ * one) has none. For each of a plain menu's first WIDE_MENU_MODELS_TOLD
+ * models, a line in the log says how many, by which rule, and how many are
+ * in a chain, and lists the model's nodes (up to WIDE_MENU_NODES_TOLD):
+ * their depth, mesh, track flags, how their keys move, and which are
+ * stretched with the band, in a chain, or carrying one. A model with fewer
+ * than WIDE_MENU_SLIDERS_MIN found has none, and its line says so. A plain
+ * menu whose rectangles don't go across
  * (WidePlainMenu.slides 0: the music menu, whose dark yellow covers the
  * sides, where stretched they only moved faster) has none, and the log
  * says so once. The practice menu's rectangles go across: left as drawn,
@@ -507,9 +534,9 @@ void widescreen_menus_sliders_end(int began);
 
 /* The node functions (the pose's, one for each way of drawing a node), for
  * node of model, from the function at via: NV2A_WIDE_HUD_OVER for a sliding
- * node of the model the sliders were found for (its piece in *piece), else
- * NV2A_WIDE_HUD_NONE. The first time a node function draws one, a line in
- * the log names it. */
+ * node of the model the sliders were found for (its piece in *piece, its
+ * mark's flags for widescreen_menus_mark_flags), else NV2A_WIDE_HUD_NONE.
+ * The first time a node function draws one, a line in the log names it. */
 int widescreen_menus_slider(uint32_t model, uint32_t node, uint32_t via, unsigned *piece);
 
 /* The title (class 0x1CCEF8): its draw's state (+0x44, 32 bits) and its

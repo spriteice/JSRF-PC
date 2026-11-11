@@ -113,15 +113,18 @@ float nv2a_wide_overlay_shift(float centre, float half, float s)
     return (1.0f - s) * (centre - 0.5f * w) / s;
 }
 
-/* A mark's side in its value's low byte, with the own-viewport flag in the
- * byte's top bit and the on-the-grid flag in the bit under it. */
+/* A mark's side in its value's low four bits, with the own-viewport flag in
+ * the byte's top bit, the on-the-grid flag in the bit under it, the anchor
+ * flag under that and the from-the-anchor flag under that. */
 enum { WIDE_HUD_CODE_NONE, WIDE_HUD_CODE_LEFT, WIDE_HUD_CODE_RIGHT, WIDE_HUD_CODE_ACROSS,
        WIDE_HUD_CODE_WHOLE, WIDE_HUD_CODE_LEFT_HALF, WIDE_HUD_CODE_RIGHT_HALF,
        WIDE_HUD_CODE_FILL, WIDE_HUD_CODE_OVER, WIDE_HUD_CODE_BARS, WIDE_HUD_CODE_STRIP,
        WIDE_HUD_CODE_LINES };
-#define WIDE_HUD_CODE_OWN_VIEW 0x80u
-#define WIDE_HUD_CODE_ON_GRID  0x40u
-#define WIDE_HUD_CODE_SIDE     0x3Fu
+#define WIDE_HUD_CODE_OWN_VIEW    0x80u
+#define WIDE_HUD_CODE_ON_GRID     0x40u
+#define WIDE_HUD_CODE_ANCHOR      0x20u
+#define WIDE_HUD_CODE_FROM_ANCHOR 0x10u
+#define WIDE_HUD_CODE_SIDE        0x0Fu
 
 uint32_t nv2a_wide_hud_mark(unsigned piece, int side, unsigned flags)
 {
@@ -137,6 +140,8 @@ uint32_t nv2a_wide_hud_mark(unsigned piece, int side, unsigned flags)
                   : side == NV2A_WIDE_HUD_LINES ? WIDE_HUD_CODE_LINES : WIDE_HUD_CODE_NONE;
     if (flags & NV2A_WIDE_HUD_OWN_VIEW) code |= WIDE_HUD_CODE_OWN_VIEW;
     if (flags & NV2A_WIDE_HUD_ON_GRID) code |= WIDE_HUD_CODE_ON_GRID;
+    if (flags & NV2A_WIDE_HUD_ANCHOR) code |= WIDE_HUD_CODE_ANCHOR;
+    if (flags & NV2A_WIDE_HUD_FROM_ANCHOR) code |= WIDE_HUD_CODE_FROM_ANCHOR;
     return NV2A_WIDE_HUD_TAG | ((uint32_t)(piece & 0xFFu) << 8) | code;
 }
 
@@ -157,7 +162,9 @@ int nv2a_wide_hud_read(uint32_t value, unsigned *piece, int *side, unsigned *fla
           : code == WIDE_HUD_CODE_STRIP ? NV2A_WIDE_HUD_STRIP
           : code == WIDE_HUD_CODE_LINES ? NV2A_WIDE_HUD_LINES : NV2A_WIDE_HUD_NONE;
     *flags = ((value & WIDE_HUD_CODE_OWN_VIEW) ? NV2A_WIDE_HUD_OWN_VIEW : 0u)
-           | ((value & WIDE_HUD_CODE_ON_GRID) ? NV2A_WIDE_HUD_ON_GRID : 0u);
+           | ((value & WIDE_HUD_CODE_ON_GRID) ? NV2A_WIDE_HUD_ON_GRID : 0u)
+           | ((value & WIDE_HUD_CODE_ANCHOR) ? NV2A_WIDE_HUD_ANCHOR : 0u)
+           | ((value & WIDE_HUD_CODE_FROM_ANCHOR) ? NV2A_WIDE_HUD_FROM_ANCHOR : 0u);
     return 1;
 }
 
@@ -187,6 +194,22 @@ float nv2a_wide_across_stretch(float s)
 {
     if (!(s > 0.0f) || !(s < 1.0f)) return 1.0f;
     return 1.0f / s;
+}
+
+int nv2a_wide_origin_x(float px, float pw, float off_x, float shift, float w, float *x)
+{
+    float v;
+    if (pw == 0.0f || pw != pw || !(w > 0.0f)) return 0;
+    v = (px / pw + off_x - shift) * 2.0f / w - 1.0f;
+    if (!isfinite(v)) return 0;
+    *x = v;
+    return 1;
+}
+
+float nv2a_wide_anchor_off(float anchor, float across)
+{
+    if (anchor != anchor || across != across) return 0.0f;
+    return -anchor * across;
 }
 
 float nv2a_wide_half_move(float s)
