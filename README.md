@@ -33,9 +33,6 @@ contains no game files.
 - **Music info in pause:** The song playing, its title and artist, drawn in
   the pause menus using the game's font and styling. Can be toggled at any
   time.
-- **See through fix:** Characters and dynamic world objects seen through
-  glass and water, tinted by them, where the original hides them. Can be
-  toggled at any time.
 - **Free camera:** Modern right-stick camera controls, with various settings,
   and smooth geometry tracking to keep the camera out of walls. The graffiti cam
   is turned off when the free camera is enabled.
