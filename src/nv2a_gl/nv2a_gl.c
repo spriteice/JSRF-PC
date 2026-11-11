@@ -963,6 +963,7 @@ static void poly_offset_gl(float *factor, float *units)
  * is on by default, multisampling off.
  */
 #define SMAA_DEFAULT 1
+#define MSAA_DEFAULT 0          /* samples a pixel, as msaa= keeps them: 0, none */
 static volatile int g_smaa_want;       /* asked for */
 static int          g_smaa_now;        /* and in use */
 static volatile int g_msaa_want = 1;   /* samples a pixel asked for, 1 none */
@@ -1589,6 +1590,7 @@ int nv_window_pref_widescreen(void) { return sdl_cfg_get("widescreen", 1) != 0; 
  * widescreen= stays whether it is on, so a build from before aspect= still
  * finds it. */
 #define SDL_CFG_ASPECT "aspect"
+#define SDL_CFG_SHAPE_DEFAULT NV2A_WIDE_SHAPE_MATCH
 int nv_window_pref_shape(void);
 int nv_window_pref_shape(void)
 {
@@ -1604,7 +1606,7 @@ int nv_window_pref_shape(void)
         fclose(f);
     }
     if (shape < 0)
-        shape = sdl_cfg_get("widescreen", -1) >= 0 ? NV2A_WIDE_SHAPE_16_9 : NV2A_WIDE_SHAPE_MATCH;
+        shape = sdl_cfg_get("widescreen", -1) >= 0 ? NV2A_WIDE_SHAPE_16_9 : SDL_CFG_SHAPE_DEFAULT;
     return shape;
 }
 
@@ -1800,10 +1802,12 @@ static void sdl_restart(int fs)
     recomp_restart_self();      /* does not return when it works */
 }
 
-static void sdl_restart_at(int pick, int fs)
+/* A scale kept for the next start: as the launchers' "scale" key, which
+ * they pass on as RECOMP_GL_SCALE, and in this run's RECOMP_GL_SCALE, which
+ * the engine starts again with (port/main.c). */
+static void sdl_scale_keep(int pick)
 {
-    char val[4];
-    if (!recomp_restart_self) return;
+    char val[12];                   /* room for any int */
     sdl_cfg_set("scale", pick);
     snprintf(val, sizeof val, "%d", pick);
 #if defined(_WIN32)
@@ -1811,6 +1815,12 @@ static void sdl_restart_at(int pick, int fs)
 #else
     setenv("RECOMP_GL_SCALE", val, 1);
 #endif
+}
+
+static void sdl_restart_at(int pick, int fs)
+{
+    if (!recomp_restart_self) return;
+    sdl_scale_keep(pick);
     fprintf(stderr, "[WIN] resolution %dx chosen; restarting\n", pick);
     sdl_restart(fs);
 }
@@ -1967,12 +1977,14 @@ static void sdl_menu_display(void)
  * rows, after SMAA's, which it can be used with. */
 static const char *const sdl_msaa_names[] = { "Off", "2x", "4x", "8x" };
 #define SDL_MSAA_N ((int)(sizeof sdl_msaa_names / sizeof sdl_msaa_names[0]))
-static int sdl_msaa_now(void)
+/* The choice for a count of samples: the most at or below it. */
+static int sdl_msaa_index(int samples)
 {
     int i = 0;
-    while (i + 1 < SDL_MSAA_N && (2 << i) <= g_msaa_want) i++;
+    while (i + 1 < SDL_MSAA_N && (2 << i) <= samples) i++;
     return i;
 }
+static int sdl_msaa_now(void) { return sdl_msaa_index(g_msaa_want); }
 static void sdl_msaa_pick(int i)
 {
     g_msaa_want = 1 << i;
@@ -2015,12 +2027,14 @@ static void sdl_menu_smaa(void)
  * Shader cache's row. */
 static const char *const sdl_aniso_names[] = { "Off", "2x", "4x", "8x", "16x" };
 #define SDL_ANISO_N ((int)(sizeof sdl_aniso_names / sizeof sdl_aniso_names[0]))
-static int sdl_aniso_now(void)
+/* The choice for a count of samples: the most at or below it. */
+static int sdl_aniso_index(int samples)
 {
     int i = 0;
-    while (i + 1 < SDL_ANISO_N && (2 << i) <= g_aniso_want) i++;
+    while (i + 1 < SDL_ANISO_N && (2 << i) <= samples) i++;
     return i;
 }
+static int sdl_aniso_now(void) { return sdl_aniso_index(g_aniso_want); }
 static void sdl_aniso_pick(int i)
 {
     g_aniso_want = 1 << i;
@@ -12717,6 +12731,7 @@ void nv2a_gl_report(void)
  * settings file, on when it is not there; RECOMP_SHADER_CACHE=0 or 1 wins.
  * Read at start-up, the only time the cache is opened, so a change applies
  * from the next one. */
+#define SHADER_CACHE_DEFAULT 1
 static int g_shaders = -1;
 
 static int shader_cache_on(void)
@@ -12724,22 +12739,28 @@ static int shader_cache_on(void)
     if (g_shaders < 0) {
         const char *e = getenv("RECOMP_SHADER_CACHE");
 #if defined(NV2A_GL_USE_SDL)
-        g_shaders = e ? atoi(e) != 0 : sdl_cfg_get("shaders", 1) != 0;
+        g_shaders = e ? atoi(e) != 0 : sdl_cfg_get("shaders", SHADER_CACHE_DEFAULT) != 0;
 #else
-        g_shaders = e ? atoi(e) != 0 : 1;
+        g_shaders = e ? atoi(e) != 0 : SHADER_CACHE_DEFAULT;
 #endif
     }
     return g_shaders;
 }
 
 #if defined(XBOXRECOMP_MENU)
+/* Kept for the next start, the only time the cache is opened. */
+static void shader_cache_keep(int on)
+{
+    g_shaders = on;
+    sdl_cfg_set("shaders", g_shaders);
+}
+
 /* Graphics > Shader cache, once its box has had OK: kept, and the game
  * started again for it, as for a new render scale. Where it cannot start
  * again, from the next start. */
 static void shader_cache_toggle(void)
 {
-    g_shaders = !shader_cache_on();
-    sdl_cfg_set("shaders", g_shaders);
+    shader_cache_keep(!shader_cache_on());
     if (recomp_restart_self) {
         fprintf(stderr, "  [SHADERS] shader cache %s; restarting\n", g_shaders ? "on" : "off");
         sdl_restart(sdl_is_fullscreen());
@@ -12914,10 +12935,10 @@ static void shader_cache_start(void)
 static void aa_start(void)
 {
     const char *vs = getenv("RECOMP_GL_SMAA"), *vm = getenv("RECOMP_GL_MSAA");
-    int smaa = SMAA_DEFAULT, msaa = 0;
+    int smaa = SMAA_DEFAULT, msaa = MSAA_DEFAULT;
 #if defined(NV2A_GL_USE_SDL)
     smaa = sdl_cfg_get("smaa", SMAA_DEFAULT) != 0;
-    msaa = sdl_cfg_get("msaa", 0);
+    msaa = sdl_cfg_get("msaa", MSAA_DEFAULT);
 #endif
     if (vs && *vs) smaa = atoi(vs) != 0;
     if (vm && *vm) msaa = atoi(vm);

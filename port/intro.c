@@ -25,6 +25,9 @@ static int nv_window_pref_num(const char *key, double *v)
 }
 #endif
 
+/* Off with no skipintro= in the settings: the intro plays, as on the Xbox. */
+#define INTRO_SKIP_DEFAULT 0
+
 static volatile int s_skip;
 
 #if defined(XBOXRECOMP_MENU)
@@ -40,7 +43,7 @@ static void menu_skip_flip(void)
 void intro_start(void)
 {
     double v;
-    s_skip = nv_window_pref_num("skipintro", &v) > 0 && v != 0;
+    s_skip = nv_window_pref_num("skipintro", &v) > 0 ? v != 0 : INTRO_SKIP_DEFAULT;
     fprintf(stderr, "[INTRO] skip %s (settings)\n", s_skip ? "on" : "off");
 #if defined(XBOXRECOMP_MENU)
     {

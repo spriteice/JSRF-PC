@@ -99,6 +99,8 @@ static struct {
     int invert_x, invert_y, centre;     /* centre: auto centre's level, 0 off */
     double sens_x, sens_y, deadzone;
 } s_cfg = { 0, 0, 0, 5.0, 5.0, 0.15 };       /* the defaults */
+/* Off with no freecam= in the settings: the game's own camera. */
+#define FREECAM_ON_DEFAULT 0
 static volatile int s_on;
 static volatile int s_steer;    /* on, and the follow camera ran last frame */
 static int s_follow_ran;        /* the follow camera ran since freecam_frame */
@@ -142,7 +144,7 @@ static void freecam_menu(void);
 
 void freecam_start(void)
 {
-    s_on = cfg_num("freecam", 0, -HUGE_VAL, HUGE_VAL) != 0;
+    s_on = cfg_num("freecam", FREECAM_ON_DEFAULT, -HUGE_VAL, HUGE_VAL) != 0;
     s_cfg.invert_x = cfg_num("invert_x", s_cfg.invert_x, -HUGE_VAL, HUGE_VAL) != 0;
     s_cfg.invert_y = cfg_num("invert_y", s_cfg.invert_y, -HUGE_VAL, HUGE_VAL) != 0;
     s_cfg.sens_x = cfg_num("sensitivity_x", s_cfg.sens_x, FREECAM_SENS_MIN, FREECAM_SENS_MAX);

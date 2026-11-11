@@ -15,6 +15,8 @@
 
 #define AUDIO_EFFECTS_KEY "audioeffects"
 #define AUDIO_EFFECTS_ENV "RECOMP_APU_GPFX"
+/* On with no audioeffects= in the settings. */
+#define AUDIO_EFFECTS_DEFAULT 1
 
 #if defined(NV2A_GL_USE_SDL)
 /* nv2a_gl.c: a number from the settings file the engine already keeps, and a
@@ -41,12 +43,17 @@ static volatile int s_effects;
 
 #if defined(XBOXRECOMP_MENU)
 static int  menu_effects(void) { return s_effects; }
-static void menu_effects_flip(void)
+/* Kept for the next start, which reads it (audio_start). */
+static void menu_effects_keep(int on)
 {
-    s_effects = !s_effects;
+    s_effects = on;
     nv_window_pref_set_num(AUDIO_EFFECTS_KEY, s_effects);
     fprintf(stderr, "[AUDIO] effects %s from the next start (the menu)\n",
             s_effects ? "on" : "off");
+}
+static void menu_effects_flip(void)
+{
+    menu_effects_keep(!s_effects);
     nv_window_restart();        /* returns only where the game can't restart */
 }
 #endif
@@ -55,8 +62,8 @@ void audio_start(void)
 {
     const char *env = getenv(AUDIO_EFFECTS_ENV);
     double v;
-    /* On unless the settings file has a 0 for it. */
-    s_effects = !(nv_window_pref_num(AUDIO_EFFECTS_KEY, &v) > 0 && v == 0);
+    /* As the settings file has it, or the default. */
+    s_effects = nv_window_pref_num(AUDIO_EFFECTS_KEY, &v) > 0 ? v != 0 : AUDIO_EFFECTS_DEFAULT;
     apu_gpfx_choose(s_effects);
     if (env)
         fprintf(stderr, "[AUDIO] effects %s (" AUDIO_EFFECTS_ENV "=%s in the environment, over "
