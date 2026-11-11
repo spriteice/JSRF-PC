@@ -19,10 +19,13 @@
  * surface read as a texture, or the flip. What is behind the glass has been
  * drawn by then, so the glass's colour falls on it, as through real glass.
  * Once a pass has something held back, every later draw that writes no
- * depth and doesn't use the stencil (smoke, sparks, the HUD) is held back
- * with it, so it stays over the glass; what writes depth is drawn in place;
- * and what uses the stencil (the shadows) is drawn after the list, so a
- * shadow falls on the glass's colour as well.
+ * depth (smoke, sparks, the HUD) is held back with it, so it stays over the
+ * glass, and what writes depth is drawn in place. What writes no depth but
+ * uses the stencil test (the shadows) is drawn in place too, in the title's
+ * order, so the glass's colour goes over a shadow behind it. A see-through
+ * draw that writes depth is split whether it uses the stencil or not (the
+ * characters do, and it seems the water); its see-through half keeps its
+ * stencil state.
  *
  * Some draws are left as the title draws them, by draw state and order, not
  * by program: the pieces an outline follows (characters, the level's

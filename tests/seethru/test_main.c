@@ -113,8 +113,8 @@ static void d_vbuf_bind(uint32_t vb, uint32_t stride, const int at[16], uint32_t
 
 /* A draw, as it would come out: its vertices (the case's marker), program,
  * tint, alpha test, depth write and function, blend source (- off), and
- * where they aren't nothing, its texture, fog, widescreen offset, stencil
- * writes and target. */
+ * where they aren't nothing, its texture, fog, widescreen offset, the
+ * stencil test (s) or a write mask alone (m), and target. */
 static void d_draw_rec(uint32_t count, int indexed)
 {
     char s[160], *e = s;
@@ -129,7 +129,8 @@ static void d_draw_rec(uint32_t count, int indexed)
     if (dev.uf[p][NV2A_U_FOGCOLOR][0] != 0.0f) e += sprintf(e, " f%g", dev.uf[p][NV2A_U_FOGCOLOR][0]);
     if (dev.uf[p][NV2A_U_WIDEOFF][0] != 0.0f) e += sprintf(e, " w%g", dev.uf[p][NV2A_U_WIDEOFF][0]);
     if (dev.c[p][1][0] != 0.0f || dev.c[p][100][0] != 0.0f) e += sprintf(e, " c%g,%g", dev.c[p][1][0], dev.c[p][100][0]);
-    if (rs->stencil_wmask) e += sprintf(e, " s");
+    if (rs->stencil_test) e += sprintf(e, " s");
+    else if (rs->stencil_wmask) e += sprintf(e, " m");
     if (dev.rt != 1) e += sprintf(e, " rt%u", dev.rt);
     if (count != 3) e += sprintf(e, " n%u", count);
     if (indexed) e += sprintf(e, " i");
@@ -215,7 +216,7 @@ typedef struct {
     int      opaque;            /* -1: not set */
     int      zt, zw, zf;
     int      src;               /* 0: no blending */
-    int      stencil;
+    int      stencil;           /* 1: the stencil test on; 2: a write mask alone, the test off */
     uint32_t pos, verts;
     int      textured;
     int      wide;              /* 1: a widescreen copy; 2: its offset set while held, put back after */
@@ -312,7 +313,11 @@ static int fh_draw(Spec s)
     rs.depth_test = s.zt; rs.depth_write = s.zw; rs.depth_func = s.zf;
     rs.blend_enable = s.src != 0; rs.blend_src = s.src ? s.src : 1; rs.blend_dst = s.src ? 0x303 : 0;
     rs.alpha_test = s.atest;
-    rs.stencil_test = s.stencil; rs.stencil_wmask = s.stencil ? 0xFF : 0;
+    rs.stencil_test = s.stencil == 1; rs.stencil_wmask = s.stencil ? 0xFF : 0;
+    if (s.stencil == 1) {               /* where the stencil isn't 1: KEEP, KEEP, REPLACE with 1 */
+        rs.stencil_func = 0x205; rs.stencil_ref = 1; rs.stencil_rmask = 0xFF;
+        rs.stencil_op[0] = rs.stencil_op[1] = 0x1E00; rs.stencil_op[2] = 0x1E01;
+    }
     G->state(&rs);
     g_fh_rs = rs;
     d.surf = k_surf; d.frame = g_frame; d.draw = g_draws++; d.pos = s.pos; d.verts = s.verts;
@@ -461,21 +466,36 @@ static void cases_hold(void)
                " | PRESENT");
     expect_device("held whole");
 
-    /* What uses the stencil (a shadow): drawn after the list, so it falls
-     * on the glass's colour too, and what comes after it is drawn in place,
-     * with nothing held. */
+    /* What uses the stencil, the test on, and writes no depth (a shadow):
+     * drawn in place, as the title draws it, with the list still held, so
+     * the glass's colour goes over the shadow; and what comes after it is
+     * held back as before. A write mask alone, with the test off, writes
+     * nothing and doesn't count (seethru5 counted it, and at 99th Street
+     * nearly every draw has one). A see-through draw that writes depth and
+     * uses the stencil is split as any other (seethru6 kept it whole, and
+     * the tape behind the water was hidden), its see-through half held back
+     * with its stencil state. */
     start("stencil");
     fh_draw(glass(1));
     fh_draw(hud(3));
     s = solid(4); s.zw = 0; s.src = 0x302; s.stencil = 1; s.prog = 3;
     expect_how("stencil: a shadow", fh_draw(s), NV2A_SEE_KEEP);
-    expect_how("stencil: the HUD after it", fh_draw(hud(5)), NV2A_SEE_KEEP);
+    s = hud(5); s.stencil = 2;
+    expect_how("stencil: a write mask alone", fh_draw(s), NV2A_SEE_HOLD);
+    s = glass(6); s.stencil = 1;
+    expect_how("stencil: see-through, writing depth", fh_draw(s), NV2A_SEE_SPLIT);
+    s = glass(7); s.stencil = 2;
+    expect_how("stencil: see-through, a write mask alone", fh_draw(s), NV2A_SEE_SPLIT);
     G->present(1, 640, 480);
     expect_log("stencil", "v1 p1 t0.5 a20/0 z1/203 b302 T5"
+               " | v4 p3 t1 a4/0 z0/203 b302 T6 s"
+               " | v6 p1 t0.5 a20/0 z1/203 b302 T5 s"
+               " | v7 p1 t0.5 a20/0 z1/203 b302 T5 m"
                " | v1 p1 t0.5 a36/0 z0/203 b302 T5"
                " | v3 p3 t1 a4/0 z0/203 b302 T7"
-               " | v4 p3 t1 a4/0 z0/203 b302 T6 s"
-               " | v5 p3 t1 a4/0 z0/203 b302 T7"
+               " | v5 p3 t1 a4/0 z0/203 b302 T7 m"
+               " | v6 p1 t0.5 a36/0 z0/203 b302 T5 s"
+               " | v7 p1 t0.5 a36/0 z0/203 b302 T5 m"
                " | PRESENT");
     expect_device("stencil");
 
@@ -731,11 +751,15 @@ static void cases_inplace(void)
 /* RECOMP_GL_SEETHRU_LOG=1: frame 600 recorded, and said when 601 starts. */
 static void cases_census(void)
 {
+    Spec s;
     G->target_bind(1);
     g_frame = 600;
     fh_draw(solid(2));
     fh_draw(glass(1));
-    fh_draw(hud(3));
+    s = hud(3); s.stencil = 2;          /* a write mask alone: not marked */
+    fh_draw(s);
+    s = glass(4); s.stencil = 1;
+    fh_draw(s);
     fh_clear(3);
     g_frame = 601;
     fh_draw(solid(2));

@@ -42,6 +42,21 @@
  * the two halves are its pixels, by the shaders' alpha test (nv2a_psh.h):
  * the opaque ones as the title draws them, in place, and only the
  * see-through ones held back.
+ *
+ * seethru5 drew the list before any draw using the stencil, meant for the
+ * shadows, and counted a stencil write mask as using it; but the title
+ * leaves one set on nearly every draw, with the stencil test off, so it
+ * writes nothing (seethru5's census at 99th Street: the list drawn four
+ * times a frame, at the two shadows and at two draws with only the mask).
+ * The level's tape behind the water was drawn after one of those, over the
+ * water, untinted (Aden, 10:15 UTC on 2026-11-11). Only the stencil test
+ * counts now, and a draw using it that isn't split (a shadow) is drawn in
+ * place without drawing the list. seethru6 also kept a see-through draw
+ * using the stencil test whole, and the tape behind the water was hidden
+ * again (Aden, 11:47 UTC), as it is behind water kept whole. Such a draw is
+ * split as any other now: its see-through half is held back with its
+ * stencil state, and tests what the stencil holds at the pass's end, after
+ * any shadow drawn since. The census gives each run's stencil state.
  */
 #include "nv2a_seethru.h"
 
@@ -92,16 +107,20 @@ static const char *const k_why[WHYS] = {
     ", kept whole: reads its surface", ", kept whole: its depth function",
     ", kept whole: the fix is off", ", drawn after what is held back: writes depth everywhere" };
 /* What drew the held-back list. */
-enum { FL_CLEAR, FL_SURFACE, FL_READ, FL_FLIP, FL_CUT, FL_STENCIL, FL_FREE, FL_OTHER, FLS };
+enum { FL_CLEAR, FL_SURFACE, FL_READ, FL_FLIP, FL_CUT, FL_FREE, FL_OTHER, FLS };
 static const char *const k_fl[FLS] = {
     "a clear", "a change of surface", "the surface read", "the flip", "a draw writing depth everywhere",
-    "a draw using the stencil", "something held back freed or refilled", "the device's other work" };
+    "something held back freed or refilled", "the device's other work" };
 
 typedef struct {
     uint32_t draw, surf, verts;
     int      slot;
     uint16_t src, dst, func;
     uint8_t  kind, why, skinned, textured, atest, stencil;
+    /* With the stencil test on: its function, reference, read and write
+     * masks, and operations (fail, z-fail, z-pass). */
+    uint16_t sfunc, sop[3];
+    uint8_t  sref, srmask, swmask;
 } CRec;
 #define C_RECS 8192
 #define C_RUNS 150
@@ -155,7 +174,7 @@ static CRec *g_c_last;
 static void census_report(void)
 {
     int i, j, k, runs = 0;
-    int n_draws = 0, n_see_z = 0, n_split = 0, n_inplace = 0, n_held = 0, n_kept[WHYS];
+    int n_draws = 0, n_see_z = 0, n_split = 0, n_inplace = 0, n_split_st = 0, n_held = 0, n_kept[WHYS];
     int n_fl[FLS], n_flushes = 0;
     memset(n_kept, 0, sizeof n_kept);
     memset(n_fl, 0, sizeof n_fl);
@@ -167,24 +186,27 @@ static void census_report(void)
         n_see_z += r->kind == CK_SEE_Z;
         n_split += r->why == WHY_SPLIT || r->why == WHY_SPLIT_INPLACE;
         n_inplace += r->why == WHY_SPLIT_INPLACE;
+        n_split_st += (r->why == WHY_SPLIT || r->why == WHY_SPLIT_INPLACE) && r->stencil;
         n_held += r->why == WHY_HELD;
         if (r->kind == CK_SEE_Z) n_kept[r->why]++;
     }
     fprintf(stderr, "  [SEETHRU] frame %u%s: %d draws, %d see-through with depth writes: %d split"
-            " (%d of them drawn in place), kept whole %d for an outline, %d outlines,"
-            " %d without the alpha test, %d over the finished picture, %d reading their"
-            " surface, %d for their depth function, %d with the fix off; %d more held back"
+            " (%d of them drawn in place, %d using the stencil), kept whole %d for an outline,"
+            " %d outlines, %d without the alpha test, %d over the finished picture, %d reading"
+            " their surface, %d for their depth function, %d with the fix off; %d more held back"
             " whole; %d held-back lists drawn (", g_c_frame,
             g_c_lost ? " (longer than the record)" : "", n_draws, n_see_z, n_split, n_inplace,
-            n_kept[WHY_PIECE], n_kept[WHY_OUTLINE], n_kept[WHY_NO_ATEST] + n_kept[WHY_CUT], n_kept[WHY_OVER],
-            n_kept[WHY_READS], n_kept[WHY_FUNC], n_kept[WHY_OFF], n_held, n_flushes);
+            n_split_st, n_kept[WHY_PIECE], n_kept[WHY_OUTLINE], n_kept[WHY_NO_ATEST] + n_kept[WHY_CUT],
+            n_kept[WHY_OVER], n_kept[WHY_READS], n_kept[WHY_FUNC], n_kept[WHY_OFF], n_held,
+            n_flushes);
     for (i = 0, k = 0; i < FLS; i++)
         if (n_fl[i]) fprintf(stderr, "%s%d at %s", k++ ? ", " : "", n_fl[i], k_fl[i]);
     fprintf(stderr, "), %u draws drawn again, %u KB kept for them\n", g_c_redrawn,
             (g_c_bytes + 1023) / 1024);
     /* The frame in order, as runs of draws next to each other in one surface
-     * of the same kind, skinned or not, gone the same way; for see-through
-     * ones, the same blend, alpha test and depth function too. */
+     * of the same kind, skinned or not, gone the same way, with the same
+     * stencil state; for see-through ones, the same blend, alpha test and
+     * depth function too. */
     for (i = 0; i < g_c_n && runs < C_RUNS; i = j) {
         const CRec *r = &g_c[i];
         int see = r->kind == CK_SEE_Z || r->kind == CK_SEE, nslot = 0, more = 0, slots[4];
@@ -205,7 +227,9 @@ static void census_report(void)
             const CRec *q = &g_c[j];
             if (q->kind != r->kind || q->surf != r->surf || q->skinned != r->skinned || q->why != r->why)
                 break;
-            if (q->stencil != r->stencil) break;
+            if (q->stencil != r->stencil || (r->stencil && (q->sfunc != r->sfunc || q->sref != r->sref
+                || q->srmask != r->srmask || q->swmask != r->swmask || memcmp(q->sop, r->sop, sizeof q->sop))))
+                break;
             if (see && (q->src != r->src || q->dst != r->dst || q->atest != r->atest || q->func != r->func))
                 break;
             verts += q->verts;
@@ -213,11 +237,14 @@ static void census_report(void)
             for (k = 0; k < nslot && slots[k] != q->slot; k++) ;
             if (k == nslot) { if (nslot < 4) slots[nslot++] = q->slot; else more = 1; }
         }
-        fprintf(stderr, "  [SEETHRU]   draws %u-%u (%d): %s%s%s, surface %08X, programs", r->draw,
-                g_c[j - 1].draw, j - i,
+        fprintf(stderr, "  [SEETHRU]   draws %u-%u (%d): %s%s", r->draw, g_c[j - 1].draw, j - i,
                 r->kind == CK_SOLID ? "solid" : r->kind == CK_SEE_Z ? "see-through with depth writes"
                 : r->kind == CK_SEE ? "see-through without" : "no depth test",
-                r->skinned ? ", skinned" : "", r->stencil ? ", stencil" : "", r->surf);
+                r->skinned ? ", skinned" : "");
+        if (r->stencil)
+            fprintf(stderr, ", stencil func %03X ref %02X masks %02X %02X ops %04X %04X %04X", r->sfunc,
+                    r->sref, r->srmask, r->swmask, r->sop[0], r->sop[1], r->sop[2]);
+        fprintf(stderr, ", surface %08X, programs", r->surf);
         for (k = 0; k < nslot; k++) fprintf(stderr, "%s %d", k ? "," : "", slots[k]);
         fprintf(stderr, "%s, %u verts, %u textured", more ? " and more" : "", verts, tex);
         if (see)
@@ -249,9 +276,12 @@ static int writes_colour(const Nv2aRenderState *rs)
     return (cm & 0x01010101u) != 0;
 }
 
+/* The stencil test on: a write mask alone writes nothing while the test is
+ * off, on the NV2A as in GL, and the title leaves one set on nearly every
+ * draw (seethru5's census at 99th Street). */
 static int uses_stencil(const Nv2aRenderState *rs)
 {
-    return rs->stencil_test || rs->stencil_wmask;
+    return rs->stencil_test != 0;
 }
 
 /* Over the picture: for each colour surface, whether the frame has drawn to
@@ -830,13 +860,15 @@ int nv2a_seethru_draw(const Nv2aRenderState *rs, const Nv2aSeeDraw *d)
     else { why = hold_on() ? WHY_SPLIT : WHY_SPLIT_INPLACE; how = NV2A_SEE_SPLIT; }
     /* With something held back: a draw that writes depth where it is
      * invisible, which the held-back pixels behind it never had to pass, is
-     * drawn after them, and so is one that uses the stencil (a shadow), so
-     * it falls on them too; one that writes no depth is held back as well,
-     * so it stays over them. */
+     * drawn after them; one that writes no depth is held back as well, so
+     * it stays over them. One that writes no depth but uses the stencil
+     * test (a shadow) is drawn in place, as the title draws it, without
+     * drawing the list, so what the title draws after it still goes behind
+     * the held-back pixels (the tape behind the water), and they go over the
+     * shadow. The rest is drawn in place too. */
     if (g_nheld && how == NV2A_SEE_KEEP) {
         if (writes_depth(rs) && see && !rs->alpha_test) { flush(FL_CUT); why = WHY_CUT; }
-        else if (uses_stencil(rs)) flush(FL_STENCIL);
-        else if (!writes_depth(rs) && writes_colour(rs) && !read) {
+        else if (!writes_depth(rs) && writes_colour(rs) && !read && !uses_stencil(rs)) {
             how = NV2A_SEE_HOLD;
             why = WHY_HELD;
         }
@@ -853,6 +885,13 @@ int nv2a_seethru_draw(const Nv2aRenderState *rs, const Nv2aSeeDraw *d)
         r->func = (uint16_t)rs->depth_func;
         r->atest = (uint8_t)(rs->alpha_test != 0);
         r->stencil = (uint8_t)(uses_stencil(rs) != 0);
+        if (r->stencil) {
+            r->sfunc = (uint16_t)rs->stencil_func;
+            r->sref = (uint8_t)rs->stencil_ref;
+            r->srmask = (uint8_t)rs->stencil_rmask;
+            r->swmask = (uint8_t)rs->stencil_wmask;
+            for (i = 0; i < 3; i++) r->sop[i] = (uint16_t)rs->stencil_op[i];
+        }
         r->skinned = d->skinned;
         r->textured = d->textured;
     }
