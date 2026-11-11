@@ -5749,6 +5749,15 @@ static void ff_revz_row(float out[4])
         out[c] = (float)((far_end * S.u.ff_mat[3][c] - S.u.ff_mat[2][c]) / range);
 }
 
+/* Whether the draw, through program cache slot `slot`, comes through D3D's
+ * screen-space (XYZRHW) pass-through program: the title's 2D -- the HUD,
+ * text, menus, and its copies of whole frames (nv2a_wide.h). */
+static int draw_screen_space(int slot)
+{
+    return S.xf_mode != NV2A_XF_MODE_FIXED
+        && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS;
+}
+
 static void do_draw_body(void)
 {
     static float *vbuf;
@@ -6091,8 +6100,7 @@ static void do_draw_body(void)
     PROF_STEP(STEP_SETUP);
     /* The 2D draws the widescreen squeeze measures (below): it reads their
      * converted positions back, so they take the old path. */
-    wide2d = nv2a_wide_scene() && S.xf_mode != NV2A_XF_MODE_FIXED
-          && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS && attr_at[0] >= 0
+    wide2d = nv2a_wide_scene() && draw_screen_space(slot) && attr_at[0] >= 0
           && nv2a_wide_frame_sized(S.clip_w, S.clip_h);
 
     { double vbo0 = g_prof.vbo;   /* vc_prepare's uploads count as vbo */
@@ -6260,8 +6268,7 @@ static void do_draw_body(void)
 
     g_wide_squeeze = 0;
     memset(g_wide_ext, 0, sizeof g_wide_ext);
-    if (nv2a_wide_scene() && S.xf_mode != NV2A_XF_MODE_FIXED
-        && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS && attr_at[0] >= 0
+    if (nv2a_wide_scene() && draw_screen_space(slot) && attr_at[0] >= 0
         && nv2a_wide_frame_sized(S.clip_w, S.clip_h)) {
         float lo = 1e30f, hi = -1e30f, ylo = 1e30f, yhi = -1e30f;
         uint32_t k3;
@@ -6346,13 +6353,12 @@ static void do_draw_body(void)
      * ticker, is squeezed whatever its span: a long line spans more than an
      * overlay does, and would be stretched. */
     if (g_hud_side == NV2A_WIDE_HUD_ACROSS || g_hud_side == NV2A_WIDE_HUD_OVER) g_wide_squeeze = 0;
-    if (g_hud_side == NV2A_WIDE_HUD_WHOLE && nv2a_wide_scene() && S.xf_mode != NV2A_XF_MODE_FIXED
-        && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS
+    if (g_hud_side == NV2A_WIDE_HUD_WHOLE && nv2a_wide_scene() && draw_screen_space(slot)
         && nv2a_wide_frame_sized(S.clip_w, S.clip_h))
         g_wide_squeeze = 1;
     g_wide_shift = 0.0f;
     if (nv2a_wide_scene() && !g_wide_squeeze && nv2a_wide_frame_sized(S.clip_w, S.clip_h)
-        && !(S.xf_mode != NV2A_XF_MODE_FIXED && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS)
+        && !draw_screen_space(slot)
         && S.wclip_valid && S.wclip_type == 0) {
         uint32_t x0 =  S.wclip_h[0]        & 0xFFFu;
         uint32_t x1 = (S.wclip_h[0] >> 16) & 0xFFFu;
@@ -6439,8 +6445,7 @@ static void do_draw_body(void)
     if ((g_hud_side == NV2A_WIDE_HUD_ACROSS || g_hud_side == NV2A_WIDE_HUD_OVER)
         && nv2a_wide_scene() && nv2a_wide_frame_sized(S.clip_w, S.clip_h) && framed == 0.0f) {
         static unsigned char told[256];
-        int screen = S.xf_mode != NV2A_XF_MODE_FIXED
-                  && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS;
+        int screen = draw_screen_space(slot);
         int over = g_hud_side == NV2A_WIDE_HUD_OVER;
         if (!screen && !over && nv2a_wide_slab(out_n, g_wide_s)) {
             /* The part's grid: not stretched, but drawn as a backdrop's two
@@ -6470,8 +6475,7 @@ static void do_draw_body(void)
     } else if (g_hud_side == NV2A_WIDE_HUD_LEFT_HALF || g_hud_side == NV2A_WIDE_HUD_RIGHT_HALF) {
         if (nv2a_wide_scene() && nv2a_wide_frame_sized(S.clip_w, S.clip_h) && framed == 0.0f) {
             static unsigned char told[2][256];
-            int screen = S.xf_mode != NV2A_XF_MODE_FIXED
-                      && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS;
+            int screen = draw_screen_space(slot);
             int right = g_hud_side == NV2A_WIDE_HUD_RIGHT_HALF;
             g_wide_half = g_hud_side;
             if (!screen || g_wide_squeeze)
@@ -6540,8 +6544,7 @@ static void do_draw_body(void)
         if (nv2a_wide_scene() && nv2a_wide_frame_sized(S.clip_w, S.clip_h) && framed == 0.0f) {
             static unsigned char told[2][256];
             static unsigned bars_told;
-            int screen = S.xf_mode != NV2A_XF_MODE_FIXED
-                      && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS;
+            int screen = draw_screen_space(slot);
             float bw = 0.0f, bh = 0.0f;
             if (!screen && attr_at[0] >= 0 && out_n && out_n <= NV2A_WIDE_BAR_VERTS) {
                 float lo = 1e30f, hi = -1e30f, ylo = 1e30f, yhi = -1e30f;
@@ -6575,8 +6578,7 @@ static void do_draw_body(void)
         }
     } else if (g_hud_side != NV2A_WIDE_HUD_NONE && nv2a_wide_scene()
         && nv2a_wide_frame_sized(S.clip_w, S.clip_h) && framed == 0.0f) {
-        int screen = S.xf_mode != NV2A_XF_MODE_FIXED
-                  && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS;
+        int screen = draw_screen_space(slot);
         int own = screen && (g_hud_flags & NV2A_WIDE_HUD_OWN_VIEW)
                && fabsf(S.u.vp_scale[0]) > 1e-6f;
         if (own) g_wide_squeeze = 1;
