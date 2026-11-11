@@ -51,7 +51,7 @@ static const char  *g_busy_what;
 static int          g_busy_done;
 static volatile int g_busy_total;
 
-/* ---- File: About, Restart, Exit ----------------------------------------- */
+/* ---- File: About, Presets, Restart, Exit -------------------------------- */
 
 /* The engine's version comes from the port (port/main.c), which is built
  * with it; the runtime is not. */
@@ -116,18 +116,39 @@ static void exit_game(void)
     SDL_PushEvent(&e);
 }
 
+/* File > Presets: every row the presets set (menu.h) put at the Xbox's own
+ * settings, the engine's defaults, or their most, each by its owner's own
+ * function (menu_preset_apply); ticked where the settings are now. A
+ * (Restart) row among them keeps its value, and the game starts again once,
+ * after them all, where it can. */
+static const char *const k_preset_names[] = { "Xbox mode", "JSRF-PC default", "Max quality" };
+static_assert(sizeof k_preset_names / sizeof k_preset_names[0] == XBOX_PRESETS, "a name for each preset in menu.h");
+
+static void preset_pick(int i)
+{
+    fprintf(stderr, "[MENU] preset %s chosen\n", k_preset_names[i]);
+    if (menu_preset_apply(i)) nv_window_restart();     /* returns only where it can't */
+}
+
 /* Every field, in order: C++11 has no designated initializers. */
+#define FILE_NO_PRESETS XBOX_PRESETS_UNSAID, { 0, 0, 0 }, NULL
 static const XBOX_MENU_ITEM k_file[] = {
     { XBOX_MENU_FILE, XBOX_ITEM_INFO,      "About", NULL, NULL,      NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-      "Shows the engine version and relevant system details." },
+      "Shows the engine version and relevant system details.", FILE_NO_PRESETS },
     { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL,    NULL, NULL,      NULL, NULL, 0, NULL,       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-      NULL },
+      NULL, FILE_NO_PRESETS },
+    { XBOX_MENU_FILE, XBOX_ITEM_CHOICE,    "Presets (Restart)", menu_preset_now, NULL, preset_pick,
+      k_preset_names, XBOX_PRESETS, NULL,
+      "Apply selection and restart, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL,
+      "Sets many settings at once: the Xbox's own, ours, or the highest.", FILE_NO_PRESETS },
+    { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL,    NULL, NULL,      NULL, NULL, 0, NULL,       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
+      NULL, FILE_NO_PRESETS },
     { XBOX_MENU_FILE, XBOX_ITEM_ACTION,    "Restart", NULL, nv_window_restart, NULL, NULL, 0, NULL,
       "Restart the game, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-      "Restarts the game, losing unsaved progress." },
+      "Restarts the game, losing unsaved progress.", FILE_NO_PRESETS },
     { XBOX_MENU_FILE, XBOX_ITEM_ACTION,    "Exit",  NULL, exit_game, NULL, NULL, 0, NULL,
       "Close the game, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-      "Closes the game, losing unsaved progress." },
+      "Closes the game, losing unsaved progress.", FILE_NO_PRESETS },
 };
 
 /* ---- opening and closing ------------------------------------------------ */

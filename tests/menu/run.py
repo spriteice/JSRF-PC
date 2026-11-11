@@ -68,7 +68,21 @@ with tempfile.TemporaryDirectory(prefix="menu-") as tmp:
     menu = tmp / "menu_test"
     subprocess.run(cxx + flags + ["-o", str(menu), str(here / "test_main.cpp")] + objects + threads,
                    check=True)
-    subprocess.run([str(menu)], check=True, timeout=60)
+    run = subprocess.run([str(menu)], timeout=60, capture_output=True, text=True)
+    sys.stderr.write(run.stderr)
+    if run.returncode:
+        sys.exit(run.returncode)
+    # The rows that say the wrong thing about File > Presets, said in the log
+    # (menu.cpp's take_queued) once a check, as a row without a hint is: the
+    # first that says nothing, and the first a preset can't set (the button
+    # after it isn't said, but is left alone too, or the test would have
+    # failed setting it). And a preset's lines, one a row it changes.
+    for line in ["Says nothing: nothing said about presets",
+                 "Asks, keeps nothing: asks first, and keeps nothing for a preset",
+                 "[MENU] preset: Scale (Restart) to 1x, from the next start",
+                 "[MENU] preset: Filtering to 4x\n"]:
+        if run.stderr.count(line) != 1:
+            sys.exit(f"menu: {line!r} is in the log {run.stderr.count(line)} times, not once")
 
     (tmp / "menu_sdl_cut.inc").write_text(window_cut, encoding="utf-8")
     window_exe = tmp / "window_test"

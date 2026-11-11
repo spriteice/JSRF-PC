@@ -117,6 +117,39 @@ says so once.
   the bar with nothing open does nothing.
 - Choosing a row leaves its menu open, so the change can be seen.
 
+## File > Presets
+
+- Presets (Restart) is File's second row, under About, with a separator
+  above and below it, as between About and Restart before it. Its choices
+  are Xbox mode, JSRF-PC default and Max quality, in that order
+  (`XBOX_PRESET` in `menu.h`).
+- **Xbox mode** is the game as the Xbox runs it: 4:3 at 1x, with everything
+  JSRF-PC adds to how it looks and plays turned off. What the console did
+  itself stays on: the audio effects, which are our versions of its own
+  sound, and the shader cache, which changes nothing on screen.
+  **JSRF-PC default** is the settings a new install starts with. **Max
+  quality** is JSRF-PC default with each graphics and display setting that
+  has a most at its most: the last choice, or the most the device has.
+- The tick is on the preset whose value every row it sets has now, and on
+  none when one differs. A new install is at JSRF-PC default.
+- Choosing one asks first, as a (Restart) row does. OK sets each row
+  through its own function, as choosing that row would, and saves it as the
+  row does. A (Restart) row keeps its value instead, and the game restarts
+  once, after them all, if one changed.
+- **Every row of Display, Graphics, Audio and Controller** gives its value in
+  each preset where it's added (`presets` and `preset` in `menu.h`), with
+  JSRF-PC default's from the constant its own default comes from, so the
+  preset moves with the default. Or it says it's the player's own
+  (`XBOX_PRESETS_OWN`): Fullscreen, which is how the window sits, not how
+  the game looks, and the free camera's tuning (Auto centre, Invert X and Y,
+  Sensitivity X and Y, Deadzone), which matters only with the free camera
+  on. A (Restart) row the presets set also has `keep`, which keeps a value
+  for the next start without restarting. A row that says nothing, or that
+  asks first with no `keep`, is told once in the log and left alone, as a
+  row with no hint is told. File's and Developer's rows are never set.
+- The tests of the modules that add rows check their values, and that
+  JSRF-PC default's is what a start with no settings gives.
+
 ## File > About
 
 - One section per subject, in this order: build info, OS, graphics, SDL,

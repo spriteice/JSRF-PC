@@ -4,11 +4,12 @@ Cut by text: the settings file code from src/nv2a_gl/nv2a_gl.c,
 unchanged. nv2a_gl.c doesn't link on its own; port/freecam.c is built
 whole.
 
-Takes port/freecam.c as it is, and the settings file code from
-src/nv2a_gl/nv2a_gl.c verbatim (sdl_cfg_path through sdl_cfg_set, with
-nv_window_pref_num between them); test_main.c stands in for the window's key
-hook. Each case gets its own settings file, passed as JSRF_SETTINGS_FILE, and
-its own run, since the settings are read once.
+Takes port/freecam.c as it is, built with the in-game menu, and the
+settings file code from src/nv2a_gl/nv2a_gl.c verbatim (sdl_cfg_path through
+sdl_cfg_set, with nv_window_pref_num between them); test_main.c stands in
+for the window's key hook and the menu's xbox_MenuAdd. Each case gets its
+own settings file, passed as JSRF_SETTINGS_FILE, and its own run, since the
+settings are read once.
 Requires GCC on PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
 """
@@ -71,8 +72,8 @@ cases = {
 with tempfile.TemporaryDirectory(prefix="freecam-") as directory:
     work = pathlib.Path(directory)
     exe = str(work / "test.exe")
-    command = cc + ["-std=c11", "-DNV2A_GL_USE_SDL=1", "-Iport", "-x", "c", "-",
-               "port/freecam.c", "-o", exe, "-lm"]
+    command = cc + ["-std=c11", "-DNV2A_GL_USE_SDL=1", "-DXBOXRECOMP_MENU=1", "-Iport", "-Isrc/menu",
+               "-x", "c", "-", "port/freecam.c", "-o", exe, "-lm"]
     subprocess.run(command, cwd=root, input=source, text=True, check=True)
     for name, (text, logs) in cases.items():
         path = work / (name + ".cfg")

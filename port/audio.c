@@ -76,6 +76,10 @@ void audio_start(void)
             .menu = XBOX_MENU_AUDIO, .kind = XBOX_ITEM_TOGGLE, .label = "Audio effects (Restart)",
             .state = menu_effects, .run = menu_effects_flip,
             .confirm = "Apply selection and restart, losing unsaved progress?",
+            /* File > Presets: on in each, Xbox mode's too, as they are the
+             * console's own; kept for the restart it gives after every row. */
+            .presets = XBOX_PRESETS_SET, .keep = menu_effects_keep,
+            .preset = { 1, AUDIO_EFFECTS_DEFAULT, AUDIO_EFFECTS_DEFAULT },
             .hint = "Replicates the console's 3D sound, voices, and reverb." };
         xbox_MenuAdd(&row, 1);
     }

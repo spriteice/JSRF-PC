@@ -414,12 +414,17 @@ void draw_distance_start(void)
          * once it is up, after this: so the rows name the one they go under,
          * and keep their order there. */
         const XBOX_MENU_ITEM rows[] = {
+            /* File > Presets: the game's own distances and areas in Xbox
+             * mode, the defaults, and the most in Max quality. */
             { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Draw distance",
               .state = menu_step, .pick = menu_step_pick,
               .choices = k_names, .nchoices = DRAW_DISTANCE_STEPS, .under = DRAW_UNDER,
+              .presets = XBOX_PRESETS_SET,
+              .preset = { 0, DRAW_DISTANCE_DEFAULT, DRAW_DISTANCE_UNLIMITED },     /* 1x, 2x, Unlimited */
               .hint = "Sets how far crowds, vehicles, props, and police are drawn. CPU heavy." },
             { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Far buildings",
               .state = menu_far, .run = menu_far_flip, .under = DRAW_UNDER,
+              .presets = XBOX_PRESETS_SET, .preset = { 0, DRAW_FAR_DEFAULT, 1 },
               .hint = "Draws the whole map, eliminating building pop-in. CPU heavy." },
         };
         xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));

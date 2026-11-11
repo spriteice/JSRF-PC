@@ -19,13 +19,14 @@
  *     static const XBOX_MENU_ITEM rows[] = {
  *         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE,
  *           .label = "Fullscreen", .state = is_fullscreen, .run = toggle_fullscreen,
- *           .hint = "The window becomes fullscreen." },
+ *           .presets = XBOX_PRESETS_OWN, .hint = "The window becomes fullscreen." },
  *     };
  *     xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
  *     #endif
  *
  * Plain C; menu.cpp draws the rows with Dear ImGui. Labels, hints,
- * (Restart), boxes and File > About follow docs/menu-format.md.
+ * (Restart), boxes, File > About and File > Presets follow
+ * docs/menu-format.md.
  */
 #ifndef XBOX_MENU_H
 #define XBOX_MENU_H
@@ -59,8 +60,33 @@ typedef enum {
                              * bit in state() is set; pick(i) flips it        */
 } XBOX_ITEM_KIND;
 
-/* state, run, pick, text, value and set are called on the window's thread
- * while the game runs on: keep them to what the owner's hotkey would do. */
+/* File > Presets' presets, in its order (docs/menu-format.md). */
+typedef enum {
+    XBOX_PRESET_XBOX,       /* Xbox mode: the game as the console runs it      */
+    XBOX_PRESET_JSRF_PC,    /* JSRF-PC default: the engine's own defaults       */
+    XBOX_PRESET_MAX,        /* Max quality: JSRF-PC default, with the graphics
+                             * and display settings at their most             */
+    XBOX_PRESETS
+} XBOX_PRESET;
+
+/* What the presets do with a row (XBOX_MENU_ITEM's presets). */
+typedef enum {
+    XBOX_PRESETS_UNSAID,    /* nothing said: File's and Developer's rows, which
+                             * no preset sets. Any other row says which it is:
+                             * the log says so once for one that doesn't      */
+    XBOX_PRESETS_SET,       /* each preset sets it, to its value in preset[]   */
+    XBOX_PRESETS_OWN        /* the player's own: no preset changes it          */
+} XBOX_PRESETS_USE;
+
+/* A preset's value for a row that has no fixed most, as Max quality's
+ * anisotropic filtering: past a choice's last, or a number's max, it is the
+ * last or the max -- the most the device has, which can stop short of the
+ * names a row could show. */
+#define XBOX_PRESET_MOST 1e9
+
+/* state, run, pick, text, value, set and keep are called on the window's
+ * thread while the game runs on: keep them to what the owner's hotkey would
+ * do. */
 typedef struct XBOX_MENU_ITEM {
     XBOX_MENU_ID    menu;
     XBOX_ITEM_KIND  kind;
@@ -97,6 +123,18 @@ typedef struct XBOX_MENU_ITEM {
      * the row or its choices (docs/menu-format.md, Hints). Every row but a
      * separator has one: the log says so once if one hasn't. */
     const char     *hint;
+    /* File > Presets (docs/menu-format.md): whether the presets set the
+     * row, and its value in each, in XBOX_PRESET's order -- a TOGGLE's 0 or
+     * 1, a CHOICE's index, a NUMBER's value, each within the row's own
+     * (XBOX_PRESET_MOST). The owner gives them beside the row, from the same
+     * constants its setting uses, so JSRF-PC default's are the defaults. */
+    XBOX_PRESETS_USE presets;
+    double          preset[XBOX_PRESETS];
+    /* A (Restart) row the presets set, a TOGGLE or a CHOICE, whose run or
+     * pick restarts the game: keeps v (a toggle's 0 or 1, a choice's index)
+     * for the next start, as they would, without restarting. File > Presets
+     * restarts once, after every row is set. */
+    void          (*keep)(int v);
 } XBOX_MENU_ITEM;
 
 /* Two lines at 640 x 480, beside the pad's buttons. */
@@ -117,6 +155,14 @@ void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count);
  * somewhere to start. pad: the player last used a pad, not the keyboard, so
  * the strip shows the pad's buttons, not the keys. */
 void menu_build(int just_opened, int pad);
+
+/* File > Presets (menu_sdl.cpp, and tests/menu), on the window's thread:
+ * the preset whose value every row the presets set has now, or -1 for none;
+ * and preset p, each row put at its value through its own pick, run or set,
+ * or keep for a (Restart) row, saying so in the log. menu_preset_apply is
+ * nonzero when a (Restart) row was kept: the game starts again for it. */
+int menu_preset_now(void);
+int menu_preset_apply(int p);
 
 /* The hint the strip along the bottom showed in the last menu_build: the
  * row the pad is on, else the one the pointer is on; NULL on the bar, or in

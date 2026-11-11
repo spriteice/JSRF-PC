@@ -1909,6 +1909,7 @@ static void sdl_choose_scale(void)
 static int  sdl_is_fullscreen(void) { return (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0; }
 static int  sdl_scale_now(void)     { return (int)gl_scale() - 1; }
 static void sdl_scale_pick(int i)   { sdl_restart_at(i + 1, sdl_is_fullscreen()); }
+static void sdl_scale_keep_choice(int i) { sdl_scale_keep(i + 1); }   /* File > Presets */
 
 /* Display > Aspect ratio: 4:3 is widescreen off, as F10 turns it off; any
  * other is widescreen on at that shape, kept as aspect= (with widescreen=,
@@ -1951,17 +1952,24 @@ void nv_window_restart(void)
 static void sdl_menu_display(void)
 {
     const XBOX_MENU_ITEM rows[] = {
+        /* The presets (File > Presets) leave how the window sits to the
+         * player; Xbox mode is the console's 4:3 at its 640x480. */
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Fullscreen",
           .state = sdl_is_fullscreen, .run = sdl_choose_fullscreen,
+          .presets = XBOX_PRESETS_OWN,
           .hint = "The window becomes fullscreen." },
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Aspect ratio",
           .state = sdl_aspect_now, .pick = sdl_aspect_pick,
           .choices = nv2a_wide_shape_names, .nchoices = NV2A_WIDE_SHAPES,
+          .presets = XBOX_PRESETS_SET,
+          .preset = { NV2A_WIDE_SHAPE_4_3, SDL_CFG_SHAPE_DEFAULT, SDL_CFG_SHAPE_DEFAULT },
           .hint = "Adjusts the aspect ratio. Menus, HUD, and effects adjust to match." },
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Render scale (Restart)",
           .state = sdl_scale_now, .pick = sdl_scale_pick,
           .choices = g_scale_names, .nchoices = NV2A_SCALE_MAX,
           .confirm = "Apply selection and restart, losing unsaved progress?",
+          .presets = XBOX_PRESETS_SET, .keep = sdl_scale_keep_choice,
+          .preset = { 0, NV2A_SCALE_DEFAULT - 1, NV2A_SCALE_MAX - 1 },  /* 1x, 3x, 6x */
           .hint = "The game's drawn resolution, shown for your aspect ratio. GPU heavy." },
     };
     int n = (int)(sizeof rows / sizeof rows[0]);
@@ -1998,6 +2006,8 @@ static void sdl_menu_msaa(void)
         const XBOX_MENU_ITEM row = {
             .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Anti-aliasing (MSAA)",
             .state = sdl_msaa_now, .pick = sdl_msaa_pick, .choices = sdl_msaa_names, .nchoices = n,
+            .presets = XBOX_PRESETS_SET,
+            .preset = { sdl_msaa_index(MSAA_DEFAULT), sdl_msaa_index(MSAA_DEFAULT), XBOX_PRESET_MOST },
             .hint = "Smooths jagged edges, more effective than SMAA. GPU heavy." };
         xbox_MenuAdd(&row, 1);
     }
@@ -2017,6 +2027,7 @@ static void sdl_menu_smaa(void)
     const XBOX_MENU_ITEM row = {
         .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE, .label = "Anti-aliasing (SMAA)",
         .state = sdl_smaa_on, .run = sdl_smaa_flip,
+        .presets = XBOX_PRESETS_SET, .preset = { 0, SMAA_DEFAULT, 1 },
         .hint = "Smooths some jagged edges, less effective than MSAA. Light on the GPU." };
     if (G->target_smaa) xbox_MenuAdd(&row, 1);
 }
@@ -2048,6 +2059,8 @@ static void sdl_menu_aniso(void)
         const XBOX_MENU_ITEM row = {
             .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Anisotropic filtering",
             .state = sdl_aniso_now, .pick = sdl_aniso_pick, .choices = sdl_aniso_names, .nchoices = n,
+            .presets = XBOX_PRESETS_SET,
+            .preset = { sdl_aniso_index(ANISO_NONE), sdl_aniso_index(ANISO_DEFAULT), XBOX_PRESET_MOST },
             .hint = "Keeps textures sharp when seen at an angle. Light on the GPU." };
         xbox_MenuAdd(&row, 1);
     }
@@ -12789,9 +12802,13 @@ static void shader_cache_purge_ask(void)
 static void sdl_menu_shaders(void)
 {
     const XBOX_MENU_ITEM rows[] = {
+        /* On in every preset: it changes nothing on screen, and off only
+         * stutters, as the Xbox never did. */
         { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE, .label = "Shader cache (Restart)",
           .state = shader_cache_on, .run = shader_cache_toggle,
           .confirm = "Apply selection and restart, losing unsaved progress?",
+          .presets = XBOX_PRESETS_SET, .keep = shader_cache_keep,
+          .preset = { 1, SHADER_CACHE_DEFAULT, SHADER_CACHE_DEFAULT },
           .hint = "Builds a locally stored shader cache, reducing stutter on later plays." },
         { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_ACTION, .label = "Purge shaders (Restart)",
           .run = shader_cache_purge_ask,

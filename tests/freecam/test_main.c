@@ -3,7 +3,8 @@
  * The free camera without the game: port/freecam.c as it is, reading its keys
  * through the engine's own settings code (taken from src/nv2a_gl/nv2a_gl.c by
  * run.py), with a camera that looks at the origin from 10 units behind it
- * (-z). Each case is its own run, as the settings are read once; run.py
+ * (-z), and the Controller page's rows caught for their File > Presets
+ * values. Each case is its own run, as the settings are read once; run.py
  * writes the settings file and checks the log.
  */
 #include <assert.h>
@@ -12,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "freecam.h"
+#include "menu.h"
 
 static const float tgt[3] = { 0, 0, 0 }, seye[3] = { 0, 0, -10 };
 static const double deg = 3.14159265358979323846 / 180.0;
@@ -30,6 +32,15 @@ void nv_window_pad_hotkey(const char *name, void (*run)(void))
 {
     s_button = name;
     s_button_run = run;
+}
+
+/* The menu's xbox_MenuAdd: the Controller page's rows, caught. */
+#define ROWS_MOST 16
+static XBOX_MENU_ITEM s_rows[ROWS_MOST];
+static int s_nrows;
+void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count)
+{
+    while (count-- > 0 && s_nrows < ROWS_MOST) s_rows[s_nrows++] = *items++;
 }
 
 /* One frame: a pad read, then the camera's update and its follow camera.
@@ -85,6 +96,16 @@ int main(int argc, char **argv)
     float eye[3];
     freecam_start();
     if (!strcmp(c, "off")) {
+        /* File > Presets: Free camera off in Xbox mode, and JSRF-PC
+         * default's and Max quality's what a start with no key gives; the
+         * rest of the page is the player's own. */
+        int i;
+        assert(s_nrows > 1 && !strcmp(s_rows[0].label, "Free camera"));
+        assert(s_rows[0].presets == XBOX_PRESETS_SET && !s_rows[0].keep);
+        assert(s_rows[0].preset[XBOX_PRESET_XBOX] == 0);
+        assert(s_rows[0].preset[XBOX_PRESET_JSRF_PC] == freecam_on());
+        assert(s_rows[0].preset[XBOX_PRESET_MAX] == freecam_on());
+        for (i = 1; i < s_nrows; i++) assert(s_rows[i].presets == XBOX_PRESETS_OWN);
         /* No key: off, and the game's eye stands, its reset too. */
         assert(!freecam_on());
         assert(!frame(32767, 0, eye));

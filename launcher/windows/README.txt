@@ -82,6 +82,17 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
                      the player; remembered (see Free camera below). R3 on
                      a controller does the same
 
+File > Presets in the in-game menu sets many settings at once. Xbox mode is
+the game as the Xbox runs it: 4:3 at 1x, with everything JSRF-PC adds to how
+it looks and plays turned off, but the audio effects, which are the console's
+own. JSRF-PC default is the settings a new install starts with. Max quality
+is JSRF-PC default with the render scale, draw distance, Far buildings,
+anisotropic filtering and both anti-aliasings at their most, as far as the
+graphics card goes: it asks a lot of the computer. The one ticked is the one
+your settings match, if any. Full screen and the free camera's own settings
+stay as you set them. The game restarts if the render scale, the shader cache
+or the audio effects change, so save first.
+
 Display > Draw distance in the in-game menu is how far away the game draws
 the things in its world: crowds, spray cans, props you can knock over,
 traffic, the police and the race's checkpoints. 1x is the game's own

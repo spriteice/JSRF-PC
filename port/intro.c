@@ -51,6 +51,8 @@ void intro_start(void)
         const XBOX_MENU_ITEM row = {
             .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Skip intro",
             .state = menu_skip, .run = menu_skip_flip, .last = 1,
+            /* File > Presets: the intro plays in Xbox mode, as on the Xbox. */
+            .presets = XBOX_PRESETS_SET, .preset = { 0, INTRO_SKIP_DEFAULT, INTRO_SKIP_DEFAULT },
             .hint = "Skips the intro logos and graffiti disclaimer." };
         xbox_MenuAdd(&row, 1);
     }

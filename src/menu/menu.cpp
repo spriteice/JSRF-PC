@@ -65,11 +65,27 @@ static void take_queued(void)
     g_nqueued = 0;
     queue_unlock();
     g_under_told.resize(g_items.Size, 0);
-    /* Every row but a separator says what it does, briefly (menu.h, hint). */
+    /* Every row but a separator says what it does, briefly (menu.h, hint).
+     * Every row of Display, Graphics, Audio and Controller says what File >
+     * Presets does with it (menu.h, presets). One the presets set is a
+     * TOGGLE, a CHOICE with choices or a NUMBER, and one that asks first (for
+     * a restart) keeps its value instead (keep), so a preset restarts the
+     * game once, at the end: any other is left to the player. */
     for (int i = from; i < g_items.Size; i++) {
         const XBOX_MENU_ITEM &it = g_items[i];
+        const char *name = it.label ? it.label : "a row";
         int hinted = it.kind == XBOX_ITEM_SEPARATOR || (it.hint && strlen(it.hint) <= MENU_HINT_LONGEST);
-        RECOMP_CHECK(hinted, "%s: %s", it.label ? it.label : "a row", it.hint ? "its hint is too long" : "no hint");
+        int said = it.presets != XBOX_PRESETS_UNSAID || it.kind == XBOX_ITEM_SEPARATOR
+                || it.menu == XBOX_MENU_FILE || it.menu == XBOX_MENU_DEVELOPER;
+        int settable = it.presets != XBOX_PRESETS_SET
+                    || ((it.kind == XBOX_ITEM_TOGGLE || (it.kind == XBOX_ITEM_CHOICE && it.nchoices > 0)
+                         || it.kind == XBOX_ITEM_NUMBER)
+                        && (!it.confirm || (it.keep && it.kind != XBOX_ITEM_NUMBER)));
+        RECOMP_CHECK(hinted, "%s: %s", name, it.hint ? "its hint is too long" : "no hint");
+        RECOMP_CHECK(said, "%s: nothing said about presets", name);
+        if (!RECOMP_CHECK(settable, "%s: %s", name,
+                          it.confirm ? "asks first, and keeps nothing for a preset" : "not a setting a preset can set"))
+            g_items[i].presets = XBOX_PRESETS_OWN;
     }
 }
 
@@ -103,6 +119,78 @@ static void chosen(const XBOX_MENU_ITEM *it, int pick)
  * value between two steps (written into the settings file by hand) goes to
  * the next one either way. Within min and max. */
 #define MENU_STEP_SLACK 1e-6    /* of a step: what floating point leaves over */
+
+/* ---- File > Presets (menu.h) ---------------------------------------------- */
+
+/* A row's value now, as preset[] gives it. */
+static double row_now(const XBOX_MENU_ITEM &it)
+{
+    switch (it.kind) {
+    case XBOX_ITEM_TOGGLE: return it.state() != 0;
+    case XBOX_ITEM_CHOICE: return it.state();
+    default:               return it.value();
+    }
+}
+
+/* Preset p's value for a row, within the row's own: a choice it has, a
+ * number from min to max. */
+static double row_preset(const XBOX_MENU_ITEM &it, int p)
+{
+    double v = it.preset[p];
+    switch (it.kind) {
+    case XBOX_ITEM_TOGGLE: return v != 0;
+    case XBOX_ITEM_CHOICE: return v < 0 ? 0 : v > it.nchoices - 1 ? it.nchoices - 1 : floor(v);
+    default:               return v < it.min ? it.min : v > it.max ? it.max : v;
+    }
+}
+
+/* The row is at preset p's value: a number within what floating point
+ * leaves over of a step, as 15% kept as 0.15. */
+static int row_at(const XBOX_MENU_ITEM &it, int p)
+{
+    double now = row_now(it), want = row_preset(it, p);
+    return it.kind == XBOX_ITEM_NUMBER ? fabs(now - want) <= MENU_STEP_SLACK * it.step : now == want;
+}
+
+extern "C" int menu_preset_now(void)
+{
+    for (int p = 0; p < XBOX_PRESETS; p++) {
+        int rows = 0, at = 0;
+        for (const XBOX_MENU_ITEM &it : g_items)
+            if (it.presets == XBOX_PRESETS_SET) {
+                rows++;
+                if (!row_at(it, p)) break;
+                at++;
+            }
+        if (rows && at == rows) return p;
+    }
+    return -1;
+}
+
+extern "C" int menu_preset_apply(int p)
+{
+    int restart = 0;
+    char shown[32];
+    if (p < 0 || p >= XBOX_PRESETS) return 0;
+    /* By index: no row's own function adds rows, but nothing is assumed. */
+    for (int i = 0; i < g_items.Size; i++) {
+        const XBOX_MENU_ITEM it = g_items[i];
+        double v;
+        if (it.presets != XBOX_PRESETS_SET || row_at(it, p)) continue;
+        v = row_preset(it, p);
+        if (it.kind == XBOX_ITEM_CHOICE) snprintf(shown, sizeof shown, "%s", it.choices[(int)v]);
+        else if (it.kind == XBOX_ITEM_TOGGLE) snprintf(shown, sizeof shown, "%s", v != 0 ? "on" : "off");
+        else snprintf(shown, sizeof shown, it.format, v);
+        fprintf(stderr, "[MENU] preset: %s to %s%s\n", it.label, shown, it.keep ? ", from the next start" : "");
+        if (it.keep) {
+            it.keep((int)v);
+            restart = 1;
+        } else if (it.kind == XBOX_ITEM_TOGGLE) it.run();
+        else if (it.kind == XBOX_ITEM_CHOICE)   it.pick((int)v);
+        else                                    it.set(v);
+    }
+    return restart;
+}
 
 static double step_from(const XBOX_MENU_ITEM *it, double v, int dir)
 {

@@ -10,7 +10,8 @@ test_main.c stands in for the menu, the effects and the restart. Each case
 gets its own settings file, passed as JSRF_SETTINGS_FILE, and its own run,
 since the setting is read once: on with no audioeffects= or with 1, off
 with 0, and RECOMP_APU_GPFX in the environment winning over it. The row
-keeps its change in the settings file and asks for a restart. Requires GCC
+keeps its change in the settings file and asks for a restart; a preset
+(File > Presets) keeps it through the row's keep, which doesn't. Requires GCC
 on PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
 """
@@ -54,6 +55,9 @@ cases = {
     "flip_on": ("game_dir=/games/jsrf\naudioeffects=0\n", None,
                 ["[AUDIO] effects off (settings)", "[AUDIO] effects on from the next start (the menu)"],
                 "game_dir=/games/jsrf\naudioeffects=1\n"),
+    "keep_off": ("game_dir=/games/jsrf\n", None,
+                 ["[AUDIO] effects on (settings)", "[AUDIO] effects off from the next start (the menu)"],
+                 "game_dir=/games/jsrf\naudioeffects=0\n"),
 }
 
 with tempfile.TemporaryDirectory(prefix="audio-") as directory:

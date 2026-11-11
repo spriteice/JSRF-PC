@@ -109,7 +109,15 @@ the bar. Along the bottom, a line says what the row you're on does, beside
 the buttons to press. The game keeps running while it is open, but your
 input goes to the menu.
 
-- **File:** About (the version and system details), Restart, and Exit.
+- **File:** About (the version and system details), Presets, Restart, and
+  Exit. Presets sets many settings at once. Xbox mode is the game as the
+  Xbox runs it: 4:3 at 1×, with everything JSRF-PC adds to how it looks and
+  plays turned off, but the audio effects, which are the console's own.
+  JSRF-PC default is the settings a new install starts with. Max quality is
+  JSRF-PC default with the render scale, draw distance, Far buildings,
+  anisotropic filtering and both anti-aliasings at their most, as far as the
+  graphics card goes. The one ticked is the one your settings match, if
+  any. Full screen and the free camera's own settings stay as you set them.
 - **Display:** Full screen, the aspect ratio, the render scale (1× to 6×), the
   draw distance, Far buildings, Skip intro, and Music info in pause. The
   aspect ratio is 4:3 (the Xbox's own, widescreen off), 16:10, 16:9, 21:9, or
@@ -178,10 +186,11 @@ input goes to the menu.
   Experimental are kept in `developer.cfg` beside the settings file, and
   apply from the next start.
 
-Everything is remembered. Restart, Exit, a new render scale, the shader cache,
-Audio effects, and Purge shaders ask first, as anything since your last save
-is lost: all but Exit restart the game. The other rows marked (Restart) apply
-from the next start, which File > Restart gives.
+Everything is remembered. Restart, Exit, a preset, a new render scale, the
+shader cache, Audio effects, and Purge shaders ask first, as anything since
+your last save is lost: all but Exit restart the game, a preset only when it
+changes the render scale, the shader cache or Audio effects. The other rows
+marked (Restart) apply from the next start, which File > Restart gives.
 
 ## Graphics options
 

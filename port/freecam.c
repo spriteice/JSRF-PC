@@ -281,29 +281,39 @@ static void   menu_dz_set(double v)    { s_cfg.deadzone = v / 100; nv_window_pre
 static void freecam_menu(void)
 {
     const XBOX_MENU_ITEM rows[] = {
+        /* File > Presets: the game's own camera in Xbox mode. How the free
+         * camera handles is the player's own, and matters only with it on. */
         { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_TOGGLE, .label = "Free camera",
           .state = menu_on, .run = freecam_flip,
+          .presets = XBOX_PRESETS_SET,
+          .preset = { 0, FREECAM_ON_DEFAULT, FREECAM_ON_DEFAULT },
           .hint = "Lets the right stick control the camera." },
         { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_CHOICE, .label = "Auto centre",
           .state = menu_centre, .pick = menu_centre_pick,
           .choices = k_centre_names, .nchoices = FREECAM_CENTRE_LEVELS,
+          .presets = XBOX_PRESETS_OWN,
           .hint = "Resets the camera shortly after the right stick rests." },
         { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_TOGGLE, .label = "Invert X",
           .state = menu_inv_x, .run = menu_inv_x_run,
+          .presets = XBOX_PRESETS_OWN,
           .hint = "Swaps the camera's left and right." },
         { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_TOGGLE, .label = "Invert Y",
           .state = menu_inv_y, .run = menu_inv_y_run,
+          .presets = XBOX_PRESETS_OWN,
           .hint = "Swaps the camera's up and down." },
         { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_NUMBER, .label = "Sensitivity X",
           .value = menu_sens_x, .set = menu_sens_x_set,
           .min = FREECAM_SENS_MIN, .max = FREECAM_SENS_MAX, .step = 1, .format = "%g",
+          .presets = XBOX_PRESETS_OWN,
           .hint = "Sets how fast the camera turns left and right." },
         { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_NUMBER, .label = "Sensitivity Y",
           .value = menu_sens_y, .set = menu_sens_y_set,
           .min = FREECAM_SENS_MIN, .max = FREECAM_SENS_MAX, .step = 1, .format = "%g",
+          .presets = XBOX_PRESETS_OWN,
           .hint = "Sets how fast the camera turns up and down." },
         { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_NUMBER, .label = "Deadzone",
           .value = menu_dz, .set = menu_dz_set, .min = 0, .max = 100, .step = 5, .format = "%g%%",
+          .presets = XBOX_PRESETS_OWN,
           .hint = "Sets how far the right stick moves before the camera turns." },
     };
     xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));

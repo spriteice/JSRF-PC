@@ -25,8 +25,12 @@
  * hint of the row the pad or the pointer is on, a choice list's and a
  * number's their row's, none on the bar or in a box; the pad's buttons or
  * the keys; and all of it inside the strip, two lines tall at 640 x 480 for
- * the longest hint a row may have. Last, the busy box (menu_build_busy) with
- * no menu, in the middle of the window.
+ * the longest hint a row may have. File > Presets: the preset every row
+ * is at ticked, or none; each preset setting each row through its own
+ * function, within what the row has, and a (Restart) row kept, not run, with
+ * a restart asked for; and rows that say the wrong thing about presets left
+ * alone, and said in the log (run.py). Last, the busy box (menu_build_busy)
+ * with no menu, in the middle of the window.
  */
 #include "menu.h"
 #include "menu_style.h"
@@ -42,6 +46,13 @@
 
 static int g_fail;
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); g_fail = 1; } } while (0)
+
+/* Every field, in order, as menu_sdl.cpp's File rows: C++11 has no
+ * designated initializers. File's and Developer's rows say nothing about
+ * File > Presets, which never sets them; the rows standing in for the other
+ * menus' are the player's own, but for the presets' own, at the end. */
+#define NO_PRESETS XBOX_PRESETS_UNSAID, { 0, 0, 0 }, NULL
+#define OWN_ROW    XBOX_PRESETS_OWN, { 0, 0, 0 }, NULL
 
 static int s_full, s_wide, s_scale = 1, s_exit, s_full_runs, s_wide_runs, s_picks = -1;
 /* Each row drawn that counts takes the next number, so the order they are
@@ -75,7 +86,7 @@ static int  late_state(void)
 static void late_run(void)   { }
 static const XBOX_MENU_ITEM k_late = {
     XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Late", late_state, late_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-    "Came late." };
+    "Came late.", OWN_ROW };
 
 /* A row marked last, as Display's Skip intro: added before the others, and
  * drawn below them all. */
@@ -83,7 +94,7 @@ static int  last_state(void) { s_last_at = ++s_drawn_seq; return 0; }
 static void last_run(void)   { }
 static const XBOX_MENU_ITEM k_last = {
     XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Skip intro", last_state, last_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 1, NULL,
-    "Starts at the title screen." };
+    "Starts at the title screen.", OWN_ROW };
 
 /* Rows placed under another, as Display's Draw distance under Render scale:
  * added in one call before the row they name, and one naming a row that
@@ -97,13 +108,13 @@ static int  under_last_state(void) { s_under_last_at = ++s_drawn_seq; return 0; 
 static void under_run(void)      { }
 static const XBOX_MENU_ITEM k_under[] = {
     { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Under one", under0_state, under_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, "Render scale", "The first under it." },
+      0, 0, 0, NULL, 0, "Render scale", "The first under it.", OWN_ROW },
     { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Under two", under1_state, under_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, "Render scale", "The second under it." },
+      0, 0, 0, NULL, 0, "Render scale", "The second under it.", OWN_ROW },
     { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Unplaced", unplaced_state, under_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, "No such row", "Has nowhere to go." },
+      0, 0, 0, NULL, 0, "No such row", "Has nowhere to go.", OWN_ROW },
     { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Under the last", under_last_state, under_run, NULL, NULL, 0, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, "Skip intro", "Goes under the last." },
+      NULL, NULL, 0, 0, 0, NULL, 0, "Skip intro", "Goes under the last.", OWN_ROW },
 };
 
 /* Numbers, as the Controller menu's: a sensitivity in whole steps, and a
@@ -125,6 +136,57 @@ static void switch_pick(int i)    { s_switches ^= 1 << i; s_flips++; }
 static int  asked_state(void)     { return s_asked; }
 static void asked_run(void)       { s_asked = !s_asked; s_asked_runs++; }
 static const char *const k_switches[] = { "First (Restart)", "Second (Restart)", "Third (Restart)" };
+
+/* File > Presets' rows (menu.h): a toggle, a choice with fewer choices on
+ * this device than the presets name, a number kept as a fraction, as
+ * Controller > Deadzone, and two (Restart) rows, which keep their values:
+ * a choice whose state is the scale this run started at, as Render scale's,
+ * and a toggle whose state is what it kept, as Audio effects'. */
+static int    p_smaa = 1, p_effects = 1;
+static int    p_aniso = 2;              /* 4x: JSRF-PC default's 8x is past this device's most */
+static int    p_scale = 2;              /* 3x */
+static double p_dz = 0.15;
+static int    p_smaa_runs, p_aniso_picks, p_dz_sets, p_scale_picks, p_scale_keeps, p_scale_kept = -1;
+static int    p_effects_runs, p_effects_keeps, p_bad_runs;
+static int    p_smaa_state(void)       { return p_smaa; }
+static void   p_smaa_run(void)         { p_smaa = !p_smaa; p_smaa_runs++; }
+static int    p_aniso_state(void)      { return p_aniso; }
+static void   p_aniso_pick(int i)      { p_aniso = i; p_aniso_picks++; }
+static double p_dz_value(void)         { return p_dz * 100; }
+static void   p_dz_set(double v)       { p_dz = v / 100; p_dz_sets++; }
+static int    p_scale_state(void)      { return p_scale; }
+static void   p_scale_pick(int i)      { (void)i; p_scale_picks++; }
+static void   p_scale_keep(int i)      { p_scale_kept = i; p_scale_keeps++; }
+static int    p_effects_state(void)    { return p_effects; }
+static void   p_effects_run(void)      { p_effects_runs++; }
+static void   p_effects_keep(int on)   { p_effects = on; p_effects_keeps++; }
+static int    p_bad_state(void)        { return 0; }
+static void   p_bad_run(void)          { p_bad_runs++; }
+static const char *const k_p_aniso[] = { "Off", "2x", "4x" };     /* 8x and 16x not on this device */
+static const char *const k_p_scales[] = { "1x", "2x", "3x", "4x", "5x", "6x" };
+#define P_ASK "Apply selection and restart, losing unsaved progress?"
+static const XBOX_MENU_ITEM k_presets[] = {
+    { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLE, "SMAA", p_smaa_state, p_smaa_run, NULL, NULL, 0, NULL, NULL,
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Smooths edges.", XBOX_PRESETS_SET, { 0, 1, 1 }, NULL },
+    { XBOX_MENU_GRAPHICS, XBOX_ITEM_CHOICE, "Filtering", p_aniso_state, NULL, p_aniso_pick, k_p_aniso, 3, NULL, NULL,
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sharpens textures.", XBOX_PRESETS_SET, { 0, 3, XBOX_PRESET_MOST }, NULL },
+    { XBOX_MENU_CONTROLLER, XBOX_ITEM_NUMBER, "Deadzone %", NULL, NULL, NULL, NULL, 0, NULL, NULL,
+      p_dz_value, p_dz_set, 0, 100, 5, "%g%%", 0, NULL, "Sets the stick's slack.", XBOX_PRESETS_SET, { 0, 15, 15 }, NULL },
+    { XBOX_MENU_DISPLAY, XBOX_ITEM_CHOICE, "Scale (Restart)", p_scale_state, NULL, p_scale_pick, k_p_scales, 6, NULL,
+      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sets the scale.", XBOX_PRESETS_SET, { 0, 2, XBOX_PRESET_MOST },
+      p_scale_keep },
+    { XBOX_MENU_AUDIO, XBOX_ITEM_TOGGLE, "Effects (Restart)", p_effects_state, p_effects_run, NULL, NULL, 0, NULL,
+      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Adds the effects.", XBOX_PRESETS_SET, { 1, 1, 1 }, p_effects_keep },
+    /* Three that say the wrong thing, each told once in the log: one that
+     * asks first but keeps nothing, and a button, which no preset can set
+     * (both left to the player), and one that says nothing. */
+    { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLE, "Asks, keeps nothing", p_bad_state, p_bad_run, NULL, NULL, 0, NULL,
+      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Asks first.", XBOX_PRESETS_SET, { 1, 1, 1 }, NULL },
+    { XBOX_MENU_GRAPHICS, XBOX_ITEM_ACTION, "A button", NULL, p_bad_run, NULL, NULL, 0, NULL, NULL,
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Does a thing.", XBOX_PRESETS_SET, { 1, 1, 1 }, NULL },
+    { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Says nothing", p_bad_state, p_bad_run, NULL, NULL, 0, NULL, NULL,
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Says nothing of presets.", NO_PRESETS },
+};
 
 /* Widescreen's owner adds a row as it runs, on the window's thread. */
 static void wide_run(void) { s_wide = !s_wide; s_wide_runs++; xbox_MenuAdd(&k_late, 1); }
@@ -301,33 +363,33 @@ int main(void)
      * all, Display's last row. */
     const XBOX_MENU_ITEM developer[] = {
         { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLE, "Log to file", log_state, log_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-          "Writes the log to a file." },
+          "Writes the log to a file.", NO_PRESETS },
         { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLES, "Logging", switches_state, NULL, switch_pick, k_switches, 3, NULL, NULL,
-          NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Adds lines to the log." },
+          NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Adds lines to the log.", NO_PRESETS },
         { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLE, "Asks (Restart)", asked_state, asked_run, NULL, NULL, 0, NULL,
-          "The game restarts to apply it.", NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Asks first." },
+          "The game restarts to apply it.", NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Asks first.", NO_PRESETS },
     };
     const XBOX_MENU_ITEM controller[] = {
         { XBOX_MENU_CONTROLLER, XBOX_ITEM_NUMBER, "Sensitivity", NULL, NULL, NULL, NULL, 0, NULL, NULL,
-          sens_value, sens_set, 1, 10, 1, "%g", 0, NULL, "Sets how fast the camera turns." },
+          sens_value, sens_set, 1, 10, 1, "%g", 0, NULL, "Sets how fast the camera turns.", OWN_ROW },
         { XBOX_MENU_CONTROLLER, XBOX_ITEM_NUMBER, "Deadzone", NULL, NULL, NULL, NULL, 0, NULL, NULL,
-          dead_value, dead_set, 0, 100, 5, "%g%%", 0, NULL, "Sets how far the stick moves first." },
+          dead_value, dead_set, 0, 100, 5, "%g%%", 0, NULL, "Sets how far the stick moves first.", OWN_ROW },
     };
     const XBOX_MENU_ITEM display[] = {
         { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Fullscreen", full_state, full_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-          "Fills the screen." },
+          "Fills the screen.", OWN_ROW },
         { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Widescreen (16:9)", wide_state, wide_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-          k_wide_hint },
+          k_wide_hint, OWN_ROW },
         { XBOX_MENU_DISPLAY, XBOX_ITEM_CHOICE, "Render scale", scale_state, NULL, scale_pick, k_scales, 4, NULL,
           "Apply selection and restart, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-          k_scale_hint },
+          k_scale_hint, OWN_ROW },
     };
     const XBOX_MENU_ITEM file[] = {
         { XBOX_MENU_FILE, XBOX_ITEM_INFO, "About", NULL, NULL, NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-          "Shows the version." },
-        { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL, NULL },
+          "Shows the version.", NO_PRESETS },
+        { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL, NULL, NO_PRESETS },
         { XBOX_MENU_FILE, XBOX_ITEM_ACTION, "Exit", NULL, exit_run, NULL, NULL, 0, NULL,
-          "Close the game, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Closes the game." },
+          "Close the game, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Closes the game.", NO_PRESETS },
     };
     xbox_MenuAdd(&k_last, 1);
     xbox_MenuAdd(k_under, 4);
@@ -822,6 +884,72 @@ int main(void)
     frame(ImGuiKey_GamepadFaceDown); frames(2);
     fprintf(stderr, "opened again, Right, A: [%s]\n", open_menu());
     CHECK(strstr(open_menu(), "Display") != NULL);
+
+    /* File > Presets (menu.h). No row sets anything: no preset is ticked.
+     * Then the presets' rows, at JSRF-PC default's values, which is ticked:
+     * the choice's 8x is the most this device has, 4x. */
+    CHECK(menu_preset_now() == -1);
+    xbox_MenuAdd(k_presets, (int)(sizeof k_presets / sizeof k_presets[0]));
+    frame();
+    fprintf(stderr, "presets: %d now\n", menu_preset_now());
+    CHECK(menu_preset_now() == XBOX_PRESET_JSRF_PC);
+    CHECK(menu_preset_apply(-1) == 0 && menu_preset_apply(XBOX_PRESETS) == 0);
+    CHECK(p_smaa_runs + p_aniso_picks + p_dz_sets + p_scale_keeps + p_effects_keeps == 0);
+    /* Xbox mode: each row through its own function, once; the scale kept for
+     * the next start, not picked, and a restart asked for. The effects are
+     * already on, so not kept again. Until the restart, the scale is this
+     * run's, so nothing is ticked; after it, Xbox mode is. */
+    CHECK(menu_preset_apply(XBOX_PRESET_XBOX) == 1);
+    fprintf(stderr, "presets: Xbox mode: smaa %d (%d runs), filtering %d (%d), deadzone %g (%d), "
+            "scale kept %d (%d keeps, %d picks), effects %d (%d keeps, %d runs)\n",
+            p_smaa, p_smaa_runs, p_aniso, p_aniso_picks, p_dz, p_dz_sets, p_scale_kept, p_scale_keeps,
+            p_scale_picks, p_effects, p_effects_keeps, p_effects_runs);
+    CHECK(p_smaa == 0 && p_smaa_runs == 1 && p_aniso == 0 && p_aniso_picks == 1);
+    CHECK(p_dz == 0 && p_dz_sets == 1);
+    CHECK(p_scale_kept == 0 && p_scale_keeps == 1 && p_scale_picks == 0);
+    CHECK(p_effects == 1 && p_effects_keeps == 0 && p_effects_runs == 0);
+    CHECK(menu_preset_now() == -1);
+    p_scale = p_scale_kept;
+    CHECK(menu_preset_now() == XBOX_PRESET_XBOX);
+    /* Max quality: the choice and the scale at their last, past what the
+     * presets name. */
+    CHECK(menu_preset_apply(XBOX_PRESET_MAX) == 1);
+    p_scale = p_scale_kept;
+    CHECK(p_smaa == 1 && p_aniso == 2 && fabs(p_dz - 0.15) < 1e-9 && p_scale == 5);
+    CHECK(menu_preset_now() == XBOX_PRESET_MAX);
+    /* Max quality again: every row is there already, so nothing is set and
+     * no restart. */
+    {
+        int runs = p_smaa_runs, picks = p_aniso_picks, sets = p_dz_sets, keeps = p_scale_keeps;
+        CHECK(menu_preset_apply(XBOX_PRESET_MAX) == 0);
+        CHECK(p_smaa_runs == runs && p_aniso_picks == picks && p_dz_sets == sets && p_scale_keeps == keeps);
+    }
+    /* A row changed by hand: the settings are the player's own. Back to
+     * JSRF-PC default: 15% kept as 0.15 reads back a hair over 15, which is
+     * still its 15. */
+    p_dz_set(20);
+    CHECK(menu_preset_now() == -1);
+    CHECK(menu_preset_apply(XBOX_PRESET_JSRF_PC) == 1);
+    p_scale = p_scale_kept;
+    CHECK(p_scale == 2 && menu_preset_now() == XBOX_PRESET_JSRF_PC);
+    /* The effects off by hand: the (Restart) toggle kept on, not run. */
+    p_effects = 0;
+    CHECK(menu_preset_apply(XBOX_PRESET_JSRF_PC) == 1);
+    CHECK(p_effects == 1 && p_effects_keeps == 1 && p_effects_runs == 0);
+    /* SMAA off by hand, and back to JSRF-PC default: only a row that applies
+     * at once differs, so it is run and nothing restarts. */
+    CHECK(menu_preset_now() == XBOX_PRESET_JSRF_PC);
+    p_smaa_run();
+    CHECK(p_smaa == 0 && menu_preset_now() == -1);
+    {
+        int runs = p_smaa_runs, keeps = p_scale_keeps + p_effects_keeps;
+        CHECK(menu_preset_apply(XBOX_PRESET_JSRF_PC) == 0);
+        CHECK(p_smaa == 1 && p_smaa_runs == runs + 1 && p_scale_keeps + p_effects_keeps == keeps);
+        CHECK(menu_preset_now() == XBOX_PRESET_JSRF_PC);
+    }
+    /* The three that said the wrong thing were never set (run.py finds
+     * their lines in the log). */
+    CHECK(p_bad_runs == 0);
 
     /* The busy box, centred. */
     busy_frame();

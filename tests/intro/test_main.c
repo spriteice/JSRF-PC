@@ -35,6 +35,11 @@ int main(int argc, char **argv)
     /* A hint, a sentence short enough for the strip (menu.h). */
     CHECK(s_row.hint && strlen(s_row.hint) <= MENU_HINT_LONGEST && s_row.hint[strlen(s_row.hint) - 1] == '.');
     CHECK(s_row.state() == intro_skip());
+    /* File > Presets: the intro plays in Xbox mode, and JSRF-PC default's
+     * and Max quality's are what a start with no skipintro= gives. */
+    CHECK(s_row.presets == XBOX_PRESETS_SET && !s_row.keep && s_row.preset[XBOX_PRESET_XBOX] == 0);
+    CHECK(s_row.preset[XBOX_PRESET_MAX] == s_row.preset[XBOX_PRESET_JSRF_PC]);
+    if (!strcmp(c, "off")) CHECK(s_row.preset[XBOX_PRESET_JSRF_PC] == intro_skip());
     if (!strcmp(c, "off")) CHECK(!intro_skip());
     if (!strcmp(c, "on")) CHECK(intro_skip());
     if (!strcmp(c, "flip")) {
