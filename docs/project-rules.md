@@ -277,6 +277,28 @@ clone or worktree of the thread's own in the sandbox, for staging and
 checking trees, may be made, reset and removed without asking: nothing is
 ever committed in it or pushed from it.
 
+**Signed commits.** Every commit pushed to `main` is signed, so GitHub
+shows it as Verified, and `main`'s ruleset on GitHub refuses a push that
+carries an unsigned one. A thread's sandbox signs each commit made with
+`git commit` with the environment's own key (its git config has
+`commit.gpgsign` on), and a rebase onto a newer `origin/main` signs the
+commits it moves. Never make a commit with plain `git commit-tree`, which
+doesn't sign (`git commit-tree -S` does), or with signing turned off
+(`--no-gpg-sign`, `-c commit.gpgsign=false`). Just before a push, check
+that each commit going onto `main` is signed: this prints nothing when all
+are.
+
+```
+for c in $(git rev-list origin/main..main); do
+  git cat-file -p "$c" | grep -q '^gpgsig ' || echo "unsigned: $c"
+done
+```
+
+If one isn't, or the sandbox can't sign, don't push, and don't turn signing
+off: tell me, and the commit is made again, signed, on my say. The history
+holds commits pushed unsigned before this rule, the last of them on
+11 November (13 of ours, and most of upstream's); they stay.
+
 **Taking turns on `main`.** Every push to `main`, from any thread,
 pre-approved or not, takes its turn in the shared folder's
 `release-prep/PUSH-QUEUE.md`, one at a time:
@@ -292,9 +314,9 @@ pre-approved or not, takes its turn in the shared folder's
   wait go ahead. The thread whose turn it is marks its row as pushing.
 - **On its turn:** if `origin/main` has moved since its checks, its
   commits move onto it (asking me first, unless the thread is
-  pre-approved) and their checks run again (Several items at once), then
-  it pushes. Nothing else is pushed meanwhile, so its checks can't go
-  stale.
+  pre-approved) and their checks run again (Several items at once). Then
+  it checks they're signed (Signed commits, above), and pushes. Nothing
+  else is pushed meanwhile, so its checks can't go stale.
 - **The turn ends** when GitHub's run of `.github/workflows/ci.yml` on its
   push has passed. A failure there is fixed on the same turn, and a job that
   failed because a server was down is run again until the server is back
