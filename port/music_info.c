@@ -1,5 +1,5 @@
 /* Music info in pause (music_info.h): musicinpause= in the settings file,
- * or Display > Music info in pause.
+ * or Display > Enhancements > Music info in pause.
  *
  * Read once, at start (music_info_start). The menu's row changes it at once
  * and keeps it in the settings file; it runs on the window's thread, and the
@@ -28,9 +28,6 @@ static int nv_window_pref_num(const char *key, double *v)
 }
 #endif
 
-/* The row goes right under Skip intro (port/intro.c). */
-#define MUSIC_UNDER "Skip intro"
-
 /* On with no musicinpause= in the settings. */
 #define MUSIC_INFO_DEFAULT 1
 
@@ -53,9 +50,10 @@ void music_info_start(void)
     fprintf(stderr, "[MUSIC] info in pause %s (settings)\n", s_on ? "on" : "off");
 #if defined(XBOXRECOMP_MENU)
     {
+        /* In Display's Enhancements, which the window adds once it is up. */
         const XBOX_MENU_ITEM row = {
             .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Music info in pause",
-            .state = menu_on, .run = menu_flip, .under = MUSIC_UNDER,
+            .state = menu_on, .run = menu_flip, .group = XBOX_GROUP_ENHANCEMENTS,
             /* File > Presets: off in Xbox mode, as on the Xbox. */
             .presets = XBOX_PRESETS_SET, .preset = { 0, MUSIC_INFO_DEFAULT, MUSIC_INFO_DEFAULT },
             .hint = "Shows the song title, artist, and track number in the pause menu." };

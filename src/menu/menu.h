@@ -56,8 +56,10 @@ typedef enum {
     XBOX_ITEM_SEPARATOR,
     XBOX_ITEM_NUMBER,       /* value() in a box, with - and + either side: a
                              * step down or up, from min to max; set(v)       */
-    XBOX_ITEM_TOGGLES       /* a submenu of choices[], each ticked while its
+    XBOX_ITEM_TOGGLES,      /* a submenu of choices[], each ticked while its
                              * bit in state() is set; pick(i) flips it        */
+    XBOX_ITEM_GROUP         /* a submenu of the rows of its menu whose group
+                             * is its label (below, group)                    */
 } XBOX_ITEM_KIND;
 
 /* File > Presets' presets, in its order (docs/menu-format.md). */
@@ -108,8 +110,8 @@ typedef struct XBOX_MENU_ITEM {
     double          min, max, step;
     const char     *format;
     /* Nonzero: drawn below the menu's other rows, whenever it was added --
-     * Display's Skip intro, added as the game starts, below the window's
-     * rows, added once the window is up. */
+     * Display's two submenus (XBOX_GROUP_SKIPS, below), below the rows
+     * added as the game starts, under the window's. */
     int             last;
     /* Set: drawn right below the row of its menu with this label, whenever
      * either was added, as a row added at start goes under one of the
@@ -135,7 +137,21 @@ typedef struct XBOX_MENU_ITEM {
      * for the next start, as they would, without restarting. File > Presets
      * restarts once, after every row is set. */
     void          (*keep)(int v);
+    /* Set: drawn in the submenu of its menu with this label (an
+     * XBOX_ITEM_GROUP row), whenever either was added, in the order the
+     * submenu's rows were added; its last and under are not used. With no
+     * such submenu, it is drawn below the menu's other rows (above any
+     * `last` row), and the log says so once. A submenu nobody has put rows
+     * in is not shown; one with the label of one before it in its menu adds
+     * nothing; and one can't go in another. */
+    const char     *group;
 } XBOX_MENU_ITEM;
+
+/* Display's submenus, at its foot (nv2a_gl.c adds them): Skips, for the
+ * parts of the game a player can leave out, then Enhancements, for what
+ * goes beyond the console. */
+#define XBOX_GROUP_SKIPS        "Skips"
+#define XBOX_GROUP_ENHANCEMENTS "Enhancements"
 
 /* Two lines at 640 x 480, beside the pad's buttons. */
 #define MENU_HINT_LONGEST 70

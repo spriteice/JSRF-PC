@@ -1972,11 +1972,20 @@ static void sdl_menu_display(void)
           .preset = { 0, NV2A_SCALE_DEFAULT - 1, NV2A_SCALE_MAX - 1 },  /* 1x, 3x, 6x */
           .hint = "The game's drawn resolution, shown for your aspect ratio. GPU heavy." },
     };
+    /* Display's two submenus, at its foot whatever is added later (menu.h,
+     * last), for rows from elsewhere: Skips, then Enhancements. */
+    static const XBOX_MENU_ITEM groups[] = {
+        { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_SKIPS, .last = 1,
+          .hint = "Leaves out parts of the game, such as the intro." },
+        { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_ENHANCEMENTS, .last = 1,
+          .hint = "Improves the game beyond the original Xbox version." },
+    };
     int n = (int)(sizeof rows / sizeof rows[0]);
     /* A new scale is a restart, which not every port can do (F9 asks the same). */
     if (!recomp_restart_self) n--;          /* Render scale, the last row */
     sdl_scale_names();                      /* its names, for the shape now */
     xbox_MenuAdd(rows, n);
+    xbox_MenuAdd(groups, (int)(sizeof groups / sizeof groups[0]));
 }
 
 /* Graphics > Anti-aliasing (MSAA): none, then each count the device can draw

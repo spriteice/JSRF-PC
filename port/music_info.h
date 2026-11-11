@@ -1,8 +1,8 @@
 /* Music info in pause: the song playing now, in the pause menus.
  *
- * Display > Music info in pause, kept as musicinpause= in the settings file
- * (0, off, or 1, the default): both pause menus show the song that is
- * playing, its number, title and artist, in the game's font, in white, in
+ * Display > Enhancements > Music info in pause, kept as musicinpause= in the
+ * settings file (0, off, or 1, the default): both pause menus show the song
+ * that is playing, its number, title and artist, in the game's font, in white, in
  * the free part of the menu's left column, above ROTATE MAP (and below
  * CHANGE MAP, in the street's menu). It changes at once, and the lines change with the song while the
  * menu is open, as the music plays on through the pause.
@@ -97,7 +97,7 @@ enum {
 enum { MUSIC_MENU_STREET, MUSIC_MENU_OTHER, MUSIC_MENUS };
 
 /* At start, before the game runs: reads the setting and adds its row to the
- * in-game menu's Display page, under Skip intro. */
+ * in-game menu's Display > Enhancements. */
 void music_info_start(void);
 
 /* Whether the menus show the song. */

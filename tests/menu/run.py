@@ -83,6 +83,10 @@ with tempfile.TemporaryDirectory(prefix="menu-") as tmp:
                  "[MENU] preset: Filtering to 4x\n"]:
         if run.stderr.count(line) != 1:
             sys.exit(f"menu: {line!r} is in the log {run.stderr.count(line)} times, not once")
+    # Submenus are no setting, so say nothing about presets, and aren't told.
+    for line in ["Skips: nothing said about presets", "Enhancements: nothing said about presets"]:
+        if line in run.stderr:
+            sys.exit(f"menu: {line!r} is in the log")
 
     (tmp / "menu_sdl_cut.inc").write_text(window_cut, encoding="utf-8")
     window_exe = tmp / "window_test"

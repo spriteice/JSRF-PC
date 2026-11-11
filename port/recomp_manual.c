@@ -2010,10 +2010,10 @@ void sub_00051FC0(void)
  * not in yet itself, and waits for it: its own files at sub_0004F8E0, its
  * mission's in the game flow's steps (0x1F9888: sub_0004ABA0 on).
  *
- * With Display > Skip intro on, the task is put at its end before its first
- * update, with the screen's fade black, as the disclaimer leaves it: the
- * game opens at the title's loading, and no card is drawn. [INTRO] logs each
- * card's steps, with the time and the game frame. */
+ * With Display > Skips > Skip intro on, the task is put at its end before
+ * its first update, with the screen's fade black, as the disclaimer leaves
+ * it: the game opens at the title's loading, and no card is drawn. [INTRO]
+ * logs each card's steps, with the time and the game frame. */
 #define INTRO_STATE        0x098u  /* three to a card: in, held, out; then done */
 #define INTRO_PER_CARD     3u
 #define INTRO_DONE         15u
@@ -2033,7 +2033,7 @@ void sub_0007E360(void)
         const uint32_t black = INTRO_FADE_BLACK;
         t[INTRO_STATE / 4] = INTRO_DONE;
         guest_call_cdecl(sub_00024600, INTRO_FADE_SET_RA, 1, &black);
-        fprintf(stderr, "[INTRO] t=%.2f frame %u: skipped (Display > Skip intro)\n",
+        fprintf(stderr, "[INTRO] t=%.2f frame %u: skipped (Display > Skips > Skip intro)\n",
                 pad_now(), s_game_frames);
     }
     sub_0007E360_gen();

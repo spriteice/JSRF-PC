@@ -119,7 +119,8 @@ input goes to the menu.
   graphics card goes. The one ticked is the one your settings match, if
   any. Full screen and the free camera's own settings stay as you set them.
 - **Display:** Full screen, the aspect ratio, the render scale (1× to 6×), the
-  draw distance, Far buildings, Skip intro, and Music info in pause. The
+  draw distance, Far buildings, and two submenus at the end: Skips, with Skip
+  intro, and Enhancements, with Music info in pause. The
   aspect ratio is 4:3 (the Xbox's own, widescreen off), 16:10, 16:9, 21:9, or
   Match screen, the shape of the display the window is on, the default. It changes at once, and is kept as
   `aspect=` (with `widescreen=` for on or off) in the settings file. Draw

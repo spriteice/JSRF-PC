@@ -1,5 +1,5 @@
-/* The intro (intro.h): skipintro=1 in the settings file, or Display > Skip
- * intro.
+/* The intro (intro.h): skipintro=1 in the settings file, or Display > Skips >
+ * Skip intro.
  *
  * Read once, at start (intro_start). The menu's row changes it at once and
  * keeps it in the settings file; it runs on the window's thread, and the
@@ -47,10 +47,10 @@ void intro_start(void)
     fprintf(stderr, "[INTRO] skip %s (settings)\n", s_skip ? "on" : "off");
 #if defined(XBOXRECOMP_MENU)
     {
-        /* Below the window's rows, which are added once it is up. */
+        /* In Display's Skips, which the window adds once it is up. */
         const XBOX_MENU_ITEM row = {
             .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Skip intro",
-            .state = menu_skip, .run = menu_skip_flip, .last = 1,
+            .state = menu_skip, .run = menu_skip_flip, .group = XBOX_GROUP_SKIPS,
             /* File > Presets: the intro plays in Xbox mode, as on the Xbox. */
             .presets = XBOX_PRESETS_SET, .preset = { 0, INTRO_SKIP_DEFAULT, INTRO_SKIP_DEFAULT },
             .hint = "Skips the intro logos and graffiti disclaimer." };

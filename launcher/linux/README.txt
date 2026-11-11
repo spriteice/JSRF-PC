@@ -109,13 +109,14 @@ Dogenzaka Hill's street. On by default. It changes straight away, asks more
 of the computer, and is remembered as farbuildings= in the settings file
 (1 or 0).
 
-Display > Skip intro in the in-game menu leaves out the logos and the
-graffiti disclaimer the game opens with: it starts at the title screen's
-loading. Off by default, so the intro plays as on the Xbox. It is remembered
+Display > Skips > Skip intro in the in-game menu leaves out the logos and
+the graffiti disclaimer the game opens with: it starts at the title
+screen's loading. Off by default, so the intro plays as on the Xbox. It is remembered
 as skipintro= in the settings file (0 or 1).
 
-Display > Music info in pause in the in-game menu shows the song playing, its
-number, title and artist, in both pause menus, on the left, above Rotate map.
+Display > Enhancements > Music info in pause in the in-game menu shows the
+song playing, its number, title and artist, in both pause menus, on the
+left, above Rotate map.
 It follows the songs of the street mixes too, and shows nothing for the
 title's and the story's own music. On by default. It changes straight away,
 and is remembered as musicinpause= in the settings file (0 or 1).

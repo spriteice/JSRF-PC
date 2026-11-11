@@ -740,11 +740,11 @@ static int host_main(void)
     /* The free camera's settings, its rows on the Controller page and F8
      * (port/freecam.c). */
     { extern void freecam_start(void); freecam_start(); }
-    /* Whether the intro is skipped, and its row on the Display page
+    /* Whether the intro is skipped, and its row in Display > Skips
      * (port/intro.c). */
     { extern void intro_start(void); intro_start(); }
-    /* Whether the pause menus show the song playing, and its row on the
-     * Display page, under Skip intro (port/music_info.c). */
+    /* Whether the pause menus show the song playing, and its row in
+     * Display > Enhancements (port/music_info.c). */
     { extern void music_info_start(void); music_info_start(); }
     /* How far the world's objects are drawn, and its row on the Display page
      * (port/draw_distance.c). */

@@ -8,14 +8,24 @@ each menu's rows live with the setting they change (File in
 `src/nv2a_gl/nv2a_gl.c`, Display's Draw distance and Far buildings in
 `port/draw_distance.c`, Skip intro in `port/intro.c` and Music info in pause
 in `port/music_info.c`, Audio in `port/audio.c`, Controller in
-`port/freecam.c`, Developer in `port/developer.c`). Skip intro is Display's
-last row, below any added later (`last` in `menu.h`), with Music info in pause
-under it. A row can instead go right below another row of its menu, which it
-names, whichever of the two was added first (`under` in `menu.h`): rows added
-as the game starts can sit among the window's, as Draw distance and Far
-buildings sit under Render scale, in the order they were added. If no row has
-that name, it goes at the end of its menu, above the last row, and the log
-says so once.
+`port/freecam.c`, Developer in `port/developer.c`). A row marked last goes
+below any added later (`last` in `menu.h`). A row can instead go right below
+another row of its menu, which it names, whichever of the two was added first
+(`under` in `menu.h`): rows added as the game starts can sit among the
+window's, as Draw distance and Far buildings sit under Render scale, in the
+order they were added. If no row has that name, it goes at the end of its
+menu, above the last row, and the log says so once.
+
+A row can also go in a submenu of its menu, which it names (`group` in
+`menu.h`): the submenu is a row of its own (`XBOX_ITEM_GROUP`), with its
+label and hint, and holds the rows that name it in the order they were added,
+whichever was added first. A submenu nobody has put a row in isn't shown. If
+no submenu has that name, the row goes at the end of its menu, above the last
+row, and the log says so once. Display ends with two, both marked last and
+added by the window (`nv2a_gl.c`): Skips, for the parts of the game a player
+can leave out (Skip intro), then Enhancements, for what goes beyond the
+console (Music info in pause). A new skip or enhancement goes in one of them,
+not in Display itself.
 
 ## Wording
 
@@ -136,17 +146,19 @@ says so once.
   through its own function, as choosing that row would, and saves it as the
   row does. A (Restart) row keeps its value instead, and the game restarts
   once, after them all, if one changed.
-- **Every row of Display, Graphics, Audio and Controller** gives its value in
-  each preset where it's added (`presets` and `preset` in `menu.h`), with
-  JSRF-PC default's from the constant its own default comes from, so the
-  preset moves with the default. Or it says it's the player's own
-  (`XBOX_PRESETS_OWN`): Fullscreen, which is how the window sits, not how
-  the game looks, and the free camera's tuning (Auto centre, Invert X and Y,
-  Sensitivity X and Y, Deadzone), which matters only with the free camera
-  on. A (Restart) row the presets set also has `keep`, which keeps a value
-  for the next start without restarting. A row that says nothing, or that
-  asks first with no `keep`, is told once in the log and left alone, as a
-  row with no hint is told. File's and Developer's rows are never set.
+- **Every row of Display, Graphics, Audio and Controller**, in a submenu or
+  not, gives its value in each preset where it's added (`presets` and
+  `preset` in `menu.h`), with JSRF-PC default's from the constant its own
+  default comes from, so the preset moves with the default. Or it says it's
+  the player's own (`XBOX_PRESETS_OWN`): Fullscreen, which is how the window
+  sits, not how the game looks, and the free camera's tuning (Auto centre,
+  Invert X and Y, Sensitivity X and Y, Deadzone), which matters only with
+  the free camera on. A (Restart) row the presets set also has `keep`, which
+  keeps a value for the next start without restarting. A row that says
+  nothing, or that asks first with no `keep`, is told once in the log and
+  left alone, as a row with no hint is told. File's and Developer's rows are
+  never set, and a submenu (`XBOX_ITEM_GROUP`) is no setting, so says
+  nothing.
 - The tests of the modules that add rows check their values, and that
   JSRF-PC default's is what a start with no settings gives.
 

@@ -134,21 +134,21 @@ static void preset_pick(int i)
 #define FILE_NO_PRESETS XBOX_PRESETS_UNSAID, { 0, 0, 0 }, NULL
 static const XBOX_MENU_ITEM k_file[] = {
     { XBOX_MENU_FILE, XBOX_ITEM_INFO,      "About", NULL, NULL,      NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-      "Shows the engine version and relevant system details.", FILE_NO_PRESETS },
+      "Shows the engine version and relevant system details.", FILE_NO_PRESETS, NULL },
     { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL,    NULL, NULL,      NULL, NULL, 0, NULL,       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-      NULL, FILE_NO_PRESETS },
+      NULL, FILE_NO_PRESETS, NULL },
     { XBOX_MENU_FILE, XBOX_ITEM_CHOICE,    "Presets (Restart)", menu_preset_now, NULL, preset_pick,
       k_preset_names, XBOX_PRESETS, NULL,
       "Apply selection and restart, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-      "Sets many settings at once: the Xbox's own, ours, or the highest.", FILE_NO_PRESETS },
+      "Sets many settings at once: the Xbox's own, ours, or the highest.", FILE_NO_PRESETS, NULL },
     { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL,    NULL, NULL,      NULL, NULL, 0, NULL,       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-      NULL, FILE_NO_PRESETS },
+      NULL, FILE_NO_PRESETS, NULL },
     { XBOX_MENU_FILE, XBOX_ITEM_ACTION,    "Restart", NULL, nv_window_restart, NULL, NULL, 0, NULL,
       "Restart the game, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-      "Restarts the game, losing unsaved progress.", FILE_NO_PRESETS },
+      "Restarts the game, losing unsaved progress.", FILE_NO_PRESETS, NULL },
     { XBOX_MENU_FILE, XBOX_ITEM_ACTION,    "Exit",  NULL, exit_game, NULL, NULL, 0, NULL,
       "Close the game, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-      "Closes the game, losing unsaved progress.", FILE_NO_PRESETS },
+      "Closes the game, losing unsaved progress.", FILE_NO_PRESETS, NULL },
 };
 
 /* ---- opening and closing ------------------------------------------------ */

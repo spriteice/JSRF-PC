@@ -1,7 +1,7 @@
 /* The intro: the cards the game opens with, four logos and then the graffiti
  * disclaimer, before the title screen.
  *
- * Display > Skip intro, kept as skipintro= in the settings file, leaves them
+ * Display > Skips > Skip intro, kept as skipintro= in the settings file, leaves them
  * out: the game opens at the title screen's loading. Off (skipintro=0, the
  * default), they play as on the Xbox. The hook is in recomp_manual.c:
  * sub_0007E360, the cards' update. */

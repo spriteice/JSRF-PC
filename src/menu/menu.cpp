@@ -53,7 +53,7 @@ extern "C" void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count)
 }
 
 /* For each row, whether the log has said its row to go under (menu.h,
- * under) isn't there. */
+ * under), or its submenu (group), isn't there. */
 static ImVector<unsigned char> g_under_told;
 
 static void take_queued(void)
@@ -75,8 +75,9 @@ static void take_queued(void)
         const XBOX_MENU_ITEM &it = g_items[i];
         const char *name = it.label ? it.label : "a row";
         int hinted = it.kind == XBOX_ITEM_SEPARATOR || (it.hint && strlen(it.hint) <= MENU_HINT_LONGEST);
+        /* A submenu row (menu.h, group) holds rows and is no setting itself. */
         int said = it.presets != XBOX_PRESETS_UNSAID || it.kind == XBOX_ITEM_SEPARATOR
-                || it.menu == XBOX_MENU_FILE || it.menu == XBOX_MENU_DEVELOPER;
+                || it.kind == XBOX_ITEM_GROUP || it.menu == XBOX_MENU_FILE || it.menu == XBOX_MENU_DEVELOPER;
         int settable = it.presets != XBOX_PRESETS_SET
                     || ((it.kind == XBOX_ITEM_TOGGLE || (it.kind == XBOX_ITEM_CHOICE && it.nchoices > 0)
                          || it.kind == XBOX_ITEM_NUMBER)
@@ -86,7 +87,31 @@ static void take_queued(void)
         if (!RECOMP_CHECK(settable, "%s: %s", name,
                           it.confirm ? "asks first, and keeps nothing for a preset" : "not a setting a preset can set"))
             g_items[i].presets = XBOX_PRESETS_OWN;
+        /* A submenu goes in its menu, not in another (menu.h, group). */
+        RECOMP_CHECK(it.kind != XBOX_ITEM_GROUP || !it.group, "%s: a submenu in a submenu", name);
     }
+}
+
+/* The submenu a row's group names (menu.h, group): the first of its menu
+ * with that label. NULL: none. */
+static const XBOX_MENU_ITEM *group_row(int m, const char *label)
+{
+    for (const XBOX_MENU_ITEM &o : g_items)
+        if (o.menu == m && o.kind == XBOX_ITEM_GROUP && !o.group && o.label && !strcmp(o.label, label)) return &o;
+    return NULL;
+}
+
+/* The submenu a row is drawn in: NULL for the menu itself, as for a row
+ * whose submenu isn't there. */
+static const char *drawn_in(const XBOX_MENU_ITEM &it)
+{
+    return it.group && group_row(it.menu, it.group) ? it.group : NULL;
+}
+
+static int drawn_in_is(const XBOX_MENU_ITEM &it, const char *group)
+{
+    const char *in = drawn_in(it);
+    return in == group || (in && group && !strcmp(in, group));
 }
 
 /* The hint of the row the pad is on, and of the one the pointer is on:
@@ -200,16 +225,16 @@ static double step_from(const XBOX_MENU_ITEM *it, double v, int dir)
     return v < it->min ? it->min : v > it->max ? it->max : v;
 }
 
-/* A menu's NUMBER rows line up: the labels in one column, then boxes as
- * wide as the widest value any of them shows. */
+/* A menu's NUMBER rows line up, or a submenu's (group): the labels in one
+ * column, then boxes as wide as the widest value any of them shows. */
 struct number_cols { float label, box; };
 
-static number_cols number_columns(int m)
+static number_cols number_columns(int m, const char *group)
 {
     number_cols c = { 0, 0 };
     char text[32];
     for (const XBOX_MENU_ITEM &it : g_items) {
-        if (it.menu != m || it.kind != XBOX_ITEM_NUMBER) continue;
+        if (it.menu != m || it.kind != XBOX_ITEM_NUMBER || !drawn_in_is(it, group)) continue;
         const double shown[3] = { it.min, it.max, it.value() };
         c.label = ImMax(c.label, ImGui::CalcTextSize(it.label).x);
         for (double v : shown) {
@@ -304,15 +329,32 @@ static void draw_item(const XBOX_MENU_ITEM *it, const number_cols *cols)
     case XBOX_ITEM_NUMBER:
         draw_number(it, cols);
         break;
+    case XBOX_ITEM_GROUP: {
+        /* Its rows, in the order added; shown with one at least, and only
+         * the first of its name (menu.h, group). */
+        int any = 0;
+        for (const XBOX_MENU_ITEM &r : g_items)
+            any |= r.menu == it->menu && drawn_in_is(r, it->label);
+        if (!any || group_row(it->menu, it->label) != it) break;
+        bool open = ImGui::BeginMenu(it->label);
+        take_hint(it);
+        if (open) {
+            number_cols in = number_columns(it->menu, it->label);
+            for (const XBOX_MENU_ITEM &r : g_items)
+                if (r.menu == it->menu && drawn_in_is(r, it->label)) draw_item(&r, &in);
+            ImGui::EndMenu();
+        }
+        break;
+    }
     }
 }
 
 /* The row a row goes under (menu.h, under): the first of its menu with
- * that label that isn't under another itself. NULL: none. */
+ * that label that isn't under another itself, or in a submenu. NULL: none. */
 static const XBOX_MENU_ITEM *under_row(const XBOX_MENU_ITEM *it)
 {
     for (const XBOX_MENU_ITEM &o : g_items)
-        if (o.menu == it->menu && !o.under && o.label && !strcmp(o.label, it->under)) return &o;
+        if (o.menu == it->menu && !o.under && !o.group && o.label && !strcmp(o.label, it->under)) return &o;
     return NULL;
 }
 
@@ -321,18 +363,19 @@ static void draw_row(const XBOX_MENU_ITEM *it, const number_cols *cols)
 {
     draw_item(it, cols);
     for (const XBOX_MENU_ITEM &u : g_items)
-        if (u.under && u.menu == it->menu && under_row(&u) == it) draw_item(&u, cols);
+        if (u.under && !u.group && u.menu == it->menu && under_row(&u) == it) draw_item(&u, cols);
 }
 
-/* A row whose row to go under isn't there: drawn below the others, and said
- * once. */
+/* A row whose row to go under, or submenu to go in, isn't there: drawn
+ * below the others, and said once. */
 static void draw_unplaced(const XBOX_MENU_ITEM *it, const number_cols *cols)
 {
     int i = g_items.index_from_ptr(it);
     if (!g_under_told[i]) {
         g_under_told[i] = 1;
-        fprintf(stderr, "[MENU] %s: no row \"%s\" to go under; drawn below the others\n",
-                it->label ? it->label : "a row", it->under);
+        fprintf(stderr, "[MENU] %s: no %s \"%s\" to go %s; drawn below the others\n",
+                it->label ? it->label : "a row", it->group ? "submenu" : "row",
+                it->group ? it->group : it->under, it->group ? "in" : "under");
     }
     draw_item(it, cols);
 }
@@ -514,16 +557,18 @@ extern "C" void menu_build(int just_opened, int pad)
             if (!open) continue;
             g_last_menu = m;
             if (m == g_reopen) g_reopen = -1;
-            number_cols cols = number_columns(m);
+            number_cols cols = number_columns(m, NULL);
             /* The rows in the order added, each with those under it; then
-             * any whose row to go under isn't there; then the rows marked
-             * last, below the rest. */
+             * any whose row to go under, or submenu, isn't there; then the
+             * rows marked last, below the rest. A submenu's rows are drawn
+             * in it (draw_item). */
             for (const XBOX_MENU_ITEM &it : g_items)
-                if (it.menu == m && !it.under && !it.last) draw_row(&it, &cols);
+                if (it.menu == m && !it.group && !it.under && !it.last) draw_row(&it, &cols);
             for (const XBOX_MENU_ITEM &it : g_items)
-                if (it.menu == m && it.under && !under_row(&it)) draw_unplaced(&it, &cols);
+                if (it.menu == m && (it.group ? !drawn_in(it) : it.under && !under_row(&it)))
+                    draw_unplaced(&it, &cols);
             for (const XBOX_MENU_ITEM &it : g_items)
-                if (it.menu == m && !it.under && it.last) draw_row(&it, &cols);
+                if (it.menu == m && !it.group && !it.under && it.last) draw_row(&it, &cols);
             ImGui::EndMenu();
         }
         /* The pad to the title it left, as ImGui does when Left / Right run

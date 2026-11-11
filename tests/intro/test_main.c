@@ -27,10 +27,10 @@ int main(int argc, char **argv)
 {
     const char *c = argc > 1 ? argv[1] : "";
     intro_start();
-    /* One row: a toggle at the bottom of the Display page, showing the
-     * setting. */
+    /* One row: a toggle in Display > Skips, showing the setting. */
     CHECK(s_rows == 1);
-    CHECK(s_row.menu == XBOX_MENU_DISPLAY && s_row.kind == XBOX_ITEM_TOGGLE && s_row.last);
+    CHECK(s_row.menu == XBOX_MENU_DISPLAY && s_row.kind == XBOX_ITEM_TOGGLE && !s_row.last && !s_row.under);
+    CHECK(s_row.group && !strcmp(s_row.group, XBOX_GROUP_SKIPS));
     CHECK(!strcmp(s_row.label, "Skip intro") && !s_row.confirm);
     /* A hint, a sentence short enough for the strip (menu.h). */
     CHECK(s_row.hint && strlen(s_row.hint) <= MENU_HINT_LONGEST && s_row.hint[strlen(s_row.hint) - 1] == '.');
