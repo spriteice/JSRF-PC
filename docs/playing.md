@@ -96,7 +96,8 @@ it, and the end of a wall you skate past doesn't jerk it. Something narrower
 than the picture, such as a pole or a rail between you and the camera, doesn't
 move it. The view never comes closer to the player than just in front of them:
 right up against a wall with the camera turned into it, you see through that
-wall rather than the view turning over.
+wall rather than the view turning over. While you spray graffiti, the game
+frames the shot itself, as on the Xbox, and the camera leaves it as it is.
 
 ## In-game menu
 

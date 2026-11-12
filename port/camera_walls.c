@@ -17,6 +17,11 @@ void camwall_reset(struct camwall *w)
     *w = start;
 }
 
+int camwall_mode_on(uint32_t mode)
+{
+    return mode != CAMWALL_MODE_GRAFFITI;
+}
+
 struct camwall *camwall_for(uint32_t cam, uint32_t key)
 {
     static struct { uint32_t cam, key; unsigned seen; struct camwall w; } kept[CAMWALL_CAMERAS];

@@ -5222,7 +5222,10 @@ void sub_000A5070(void)
  * eye's move crosses a surface. A pole or a rail the game lets pass between
  * the player and the eye still passes, and the camera moves only then or
  * while a surface cuts across its view. It changes only the working eye,
- * so the game's smoothing and following go on as before.
+ * so the game's smoothing and following go on as before. The graffiti
+ * camera (mode 13) is the one mode it leaves be (camwall_mode_on): the game
+ * aims that shot at the spot being sprayed, so the surface is right by the
+ * target, and the test would bring the eye in to a first-person view.
  * Each camera keeps its own state (camwall_for): split screen's players',
  * and a scene's shown through another skater's camera. This supplies the
  * line test, the game's own. */
@@ -5378,9 +5381,20 @@ void sub_000A6100(void)
         return;
     }
     /* The game's own eye: its state goes with its mode, and starts again
-     * when the game puts the camera back behind the player. */
+     * when the game puts the camera back behind the player. The graffiti
+     * shot is left as the game frames it (camwall_mode_on); its state is
+     * still taken, so the follow mode after it starts again, as before. */
     w = camwall_for(cam, mode);
     if (behind) camwall_reset(w);
+    if (!camwall_mode_on(mode)) {
+        static double next;
+        if (pad_now() >= next) {
+            next = pad_now() + 1.0;
+            fprintf(stderr, "[CAMWALL] t=%.2f camera %08X mode %u: the graffiti shot, as the game frames it (no wall test)\n",
+                    pad_now(), cam, mode);
+        }
+        return;
+    }
     camera_walls(cam, w, 0);
 }
 

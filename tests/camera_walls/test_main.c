@@ -426,6 +426,15 @@ int main(int argc, char **argv)
             camwall_share(camwall_for(0x02000000u + i * 0x1000u, 3), 0.5);
         near(camwall_share(camwall_for(0x01001000u, 3), 1), 0.7, "camera B, seen since: kept");
         near(camwall_share(camwall_for(0x01000000u, 4), 1), 1, "camera A, seen longest ago: gone");
+    } else if (!strcmp(c, "modes")) {
+        /* The game's own eye is kept out of walls in every mode the follow
+         * camera's post-update serves but graffiti's, whose shot the game
+         * aims at the spot being sprayed and is left as it frames it. */
+        static const uint32_t kept[] = { 3, 4, 5, 9 };
+        uint32_t i;
+        for (i = 0; i < sizeof kept / sizeof kept[0]; i++) assert(camwall_mode_on(kept[i]));
+        assert(CAMWALL_MODE_GRAFFITI == 13);
+        assert(!camwall_mode_on(CAMWALL_MODE_GRAFFITI));
     } else {
         fprintf(stderr, "no case %s\n", c);
         return 2;

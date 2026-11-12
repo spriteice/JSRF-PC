@@ -17,7 +17,8 @@ surface. camwall_share and camwall_across: in, or across, at
 once; held for 20 frames; back by a tenth of the gap a frame; and all the
 way out once the camera starts again (camwall_reset). camwall_for: each
 camera's own, started again when its key changes, the one seen longest ago
-given up for a new one.
+given up for a new one. camwall_mode_on: every mode the follow camera's
+post-update serves kept out of walls, but graffiti's (13).
 Requires GCC on PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
 """
@@ -64,6 +65,7 @@ cases = {
     "game_alongside": ["game_alongside 0: share 1.0000, 0.00 across, by 0",
                        "game_alongside 1: share 1.0000", "game_alongside 2: share 1.0000"],
     "cameras": [],
+    "modes": [],
 }
 
 with tempfile.TemporaryDirectory(prefix="camera_walls-") as directory:
