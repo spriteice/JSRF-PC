@@ -7,41 +7,25 @@
 #   launcher/windows/deps.sh <dir>
 #
 # In the build image (launcher/image.sh windows). Each download is checked by
-# its SHA-256, meson's too. The three below are fetched only when <dir>
-# doesn't have them already, and meson each time. In <dir> it makes
-# llvm-mingw/ (the toolchain), deps/ (SDL2 and libepoxy in one prefix, with
-# include/, lib/ and bin/), and licences/ (the texts package.sh takes for
-# them, through LICENCES_DIR).
+# its SHA-256, meson's too. The three below are fetched by
+# launcher/windows/fetch.sh only when <dir> doesn't have them already, and
+# meson each time. In <dir> it makes llvm-mingw/ (the toolchain), deps/ (SDL2
+# and libepoxy in one prefix, with include/, lib/ and bin/), and licences/
+# (the texts package.sh takes for them, through LICENCES_DIR).
 set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
 dir="$(mkdir -p "${1:?the folder for the toolchain and libraries}" && cd "$1" && pwd)"
 
 llvm_mingw=llvm-mingw-20241217-ucrt-ubuntu-20.04-x86_64
-# Each is tried 5 times, with pauses of 10, 20, 30 and 40 s, as GitHub's
-# release downloads time out now and then (.github/ci/fetch.py does the same).
-fetch() {   # file, URL, SHA-256
-    if [ ! -f "$dir/$1" ]; then
-        local try
-        for try in 1 2 3 4 5; do
-            python3 -c 'import sys, urllib.request; urllib.request.urlretrieve(sys.argv[1], sys.argv[2])' \
-                "$2" "$dir/$1.part" && break
-            rm -f "$dir/$1.part"
-            [ "$try" -lt 5 ] || { echo "deps.sh: $2: 5 tries failed" >&2; return 1; }
-            echo "deps.sh: $2: try $try of 5 failed, again in $((try * 10)) s" >&2
-            sleep $((try * 10))
-        done
-        mv "$dir/$1.part" "$dir/$1"
-    fi
-    echo "$3  $dir/$1" | sha256sum -c --quiet -
-}
-fetch "$llvm_mingw.tar.xz" \
-    "https://github.com/mstorsjo/llvm-mingw/releases/download/20241217/$llvm_mingw.tar.xz" \
-    cfe4aac3d245a77d8cd0c41bdcd7971b1002c771d3bba2ac39702733b0fb0c12
-fetch SDL2-devel-2.30.0-mingw.tar.gz \
-    https://github.com/libsdl-org/SDL/releases/download/release-2.30.0/SDL2-devel-2.30.0-mingw.tar.gz \
-    d44bd8cd869219f43634a898d7735d0c92d4b2cca129f709dc8b98402b36d5f3
-fetch libepoxy_1.5.10.orig.tar.gz \
-    http://archive.ubuntu.com/ubuntu/pool/main/libe/libepoxy/libepoxy_1.5.10.orig.tar.gz \
-    a7ced37f4102b745ac86d6a70a9da399cc139ff168ba6b8002b4d8d43c900c15
+"$here/fetch.sh" "$dir/$llvm_mingw.tar.xz" \
+    cfe4aac3d245a77d8cd0c41bdcd7971b1002c771d3bba2ac39702733b0fb0c12 \
+    "https://github.com/mstorsjo/llvm-mingw/releases/download/20241217/$llvm_mingw.tar.xz"
+"$here/fetch.sh" "$dir/SDL2-devel-2.30.0-mingw.tar.gz" \
+    d44bd8cd869219f43634a898d7735d0c92d4b2cca129f709dc8b98402b36d5f3 \
+    https://github.com/libsdl-org/SDL/releases/download/release-2.30.0/SDL2-devel-2.30.0-mingw.tar.gz
+"$here/fetch.sh" "$dir/libepoxy_1.5.10.orig.tar.gz" \
+    a7ced37f4102b745ac86d6a70a9da399cc139ff168ba6b8002b4d8d43c900c15 \
+    http://archive.ubuntu.com/ubuntu/pool/main/libe/libepoxy/libepoxy_1.5.10.orig.tar.gz
 
 cd "$dir"
 rm -rf llvm-mingw deps licences SDL2-2.30.0 libepoxy-1.5.10 epoxy-build meson

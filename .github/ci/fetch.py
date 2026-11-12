@@ -8,8 +8,8 @@ server's error (5xx, 408 or 429), a dropped connection or a timeout is
 tried again: 5 tries in all, with pauses of 10, 20, 30 and 40 s between
 them. Any other answer, such as a 404, fails at once, and so does a file
 whose SHA-256 is wrong. The file is written whole or not at all.
-llvm_mingw.py fetches with it too, and launcher/windows/deps.sh tries its
-own downloads the same way.
+llvm_mingw.py fetches with it too, and launcher/windows/fetch.sh tries
+deps.sh's downloads the same way.
 """
 
 import hashlib
