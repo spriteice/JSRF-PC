@@ -405,6 +405,7 @@ uint32_t xbox_current_thread_stack_top(void) { return g_thread_stack_top; }
 
 struct bridge_thread_start {
     recomp_func_t fn;
+    uint32_t routine;   /* fn's guest address, for the [THREADS] report */
     uint32_t ctx1, ctx2, stack_top;
 };
 
@@ -421,11 +422,17 @@ static void bridge_run_thread_inline(recomp_func_t fn, uint32_t ctx1,
     g_esp += 12;
 }
 
+static void kthread_starting(uint32_t routine, uint32_t ctx1);
+
 static DWORD WINAPI bridge_thread_main(LPVOID param)
 {
     struct bridge_thread_start *s = (struct bridge_thread_start *)param;
     recomp_func_t fn = s->fn;
     uint32_t ctx1 = s->ctx1, ctx2 = s->ctx2;
+
+    /* In the [THREADS] report from now, as starting, not from its first
+     * kernel call: a thread stuck before that was missing from it. */
+    kthread_starting(s->routine, s->ctx1);
 
     /* Own register set (RECOMP_TLS), own simulated stack -- and own TIB.
      *
@@ -460,14 +467,16 @@ static DWORD WINAPI bridge_thread_main(LPVOID param)
     return 0;
 }
 
-static HANDLE bridge_spawn_thread(recomp_func_t fn, uint32_t ctx1,
-                                  uint32_t ctx2, uint32_t stack_top)
+static HANDLE bridge_spawn_thread(recomp_func_t fn, uint32_t routine,
+                                  uint32_t ctx1, uint32_t ctx2,
+                                  uint32_t stack_top)
 {
     struct bridge_thread_start *s = malloc(sizeof(*s));
     HANDLE th;
 
     if (!s) return NULL;
-    s->fn = fn; s->ctx1 = ctx1; s->ctx2 = ctx2; s->stack_top = stack_top;
+    s->fn = fn; s->routine = routine;
+    s->ctx1 = ctx1; s->ctx2 = ctx2; s->stack_top = stack_top;
 
     th = CreateThread(NULL, 0, bridge_thread_main, s, 0, NULL);
     if (!th) free(s);
@@ -583,7 +592,7 @@ static void bridge_PsCreateSystemThreadEx(void)
                      * that the child can start. Only here: every other way
                      * through this call runs the routine on this thread. */
                     int held = xbox_guest_lock_drop();
-                    HANDLE th = bridge_spawn_thread(fn, start_context1,
+                    HANDLE th = bridge_spawn_thread(fn, start_routine, start_context1,
                                                     start_context2, stack_top);
                     xbox_guest_lock_retake(held);
                     fprintf(stderr, "  [KERNEL] PsCreateSystemThreadEx: spawned "
@@ -6171,6 +6180,10 @@ typedef struct {
      * back from the call leaves nothing behind that a taker could write. */
     volatile int lock_taken;
     volatile int lock_taker_prio;
+    /* A spawned thread's first context, for its row while it starts: a
+     * title's threads can share one start routine (JSRF's four CRI threads
+     * all start at 0x00147EBB), and the context says which one it is. */
+    volatile uint32_t start_ctx;
 } KThreadState;
 static KThreadState g_kthreads[KTHREAD_SLOTS];
 static volatile long g_kthread_n;
@@ -6181,12 +6194,12 @@ static uint32_t gcs_caller(void)
     return t_kthread ? t_kthread->caller : 0u;
 }
 
+/* Taken at once, as threads starting take theirs without the guest lock. */
 static KThreadState *kthread_slot(void)
 {
     if (!t_kthread) {
-        long i = g_kthread_n;
+        long i = __atomic_fetch_add(&g_kthread_n, 1, __ATOMIC_ACQ_REL);
         if (i < KTHREAD_SLOTS) {
-            g_kthread_n = i + 1;
             g_kthreads[i].tid = (unsigned long long)(uintptr_t)GetCurrentThreadId();
             t_kthread = &g_kthreads[i];
         } else {
@@ -6194,6 +6207,19 @@ static KThreadState *kthread_slot(void)
         }
     }
     return t_kthread;
+}
+
+/* A thread the bridge has spawned, as it starts: in the report as starting
+ * (no calls yet), with its routine's guest address where a call's caller
+ * goes, and its first context, as PsCreateSystemThreadEx's spawn line gives
+ * them. Its first kernel call writes over the time and the caller. */
+static void kthread_starting(uint32_t routine, uint32_t ctx1)
+{
+    KThreadState *k = kthread_slot();
+    k->caller = routine;
+    k->start_ctx = ctx1;
+    k->entered_ms = (long long)GetTickCount64();
+    k->left_ms = 0;
 }
 
 /* Exposed so the crash handler can print it too: a fault is a hang's twin --
@@ -6282,8 +6308,9 @@ static void kernel_freeze_watch(void)
 static void kthread_report(void)
 {
     long long now = (long long)GetTickCount64();
-    long i, n = g_kthread_n;
-    fprintf(stderr, "  [THREADS] %ld guest threads have called the kernel:\n", n);
+    long i, n = __atomic_load_n(&g_kthread_n, __ATOMIC_ACQUIRE);
+    fprintf(stderr, "  [THREADS] %ld guest threads have started or called the "
+                    "kernel:\n", n);
     for (i = 0; i < n && i < KTHREAD_SLOTS; i++) {
         const KThreadState *k = &g_kthreads[i];
         long long age = now - (k->left_ms ? k->left_ms : k->entered_ms);
@@ -6292,12 +6319,20 @@ static void kthread_report(void)
          * this the reader has to guess which, and the last kernel call that
          * thread made is the likeliest source of a pointer it should not
          * have been given. */
-        fprintf(stderr, "  %s tid %-6llu ordinal %-4u from 0x%08X  %s %lld ms  "
-                "(%llu calls)\n",
-                (k == t_kthread) ? "->" : "  ",
-                k->tid, k->ordinal, k->caller,
-                k->left_ms ? "idle for" : "INSIDE for", age,
-                (unsigned long long)k->calls);
+        const char *mark = (k == t_kthread) ? "->" : "  ";
+        /* A thread spawned and not yet at its first kernel call. One stuck
+         * there (known bug 49: stopped inside its TIB's allocation) used to
+         * be missing from this list, and only a log of a good start beside
+         * it showed that. */
+        if (!k->calls)
+            fprintf(stderr, "  %s tid %-6llu starting, worker 0x%08X (ctx=0x%08X)  "
+                    "for %lld ms\n", mark, k->tid, k->caller, k->start_ctx, age);
+        else
+            fprintf(stderr, "  %s tid %-6llu ordinal %-4u from 0x%08X  %s %lld ms  "
+                    "(%llu calls)\n",
+                    mark, k->tid, k->ordinal, k->caller,
+                    k->left_ms ? "idle for" : "INSIDE for", age,
+                    (unsigned long long)k->calls);
     }
     fflush(stderr);
 }
