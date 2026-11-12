@@ -5,7 +5,7 @@
  * glsl-shaders, xbr/shaders/super-xbr/), at their
  * defaults, mode 0 ("Normal"), edge strength 0.6 and full anti-ringing, with
  * his filter weight a uniform (upWeight: 1, his default, unless Graphics >
- * Upscale sharpness says otherwise). What is ours: the texels read whole (texelFetch) at the
+ * Upscaling > Sharpness says otherwise). What is ours: the texels read whole (texelFetch) at the
  * source's wrap instead of sampled, colour premultiplied by alpha and edges
  * found in alpha as well as brightness (his read colour only), 4x as two
  * steps of 2x, and the store and copy passes. His notice, which goes with

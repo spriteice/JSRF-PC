@@ -1180,7 +1180,7 @@ static int          g_upg_now;  /* and in use */
 static Nv2aUpSecond g_upg_sec;  /* this second's work, for RECOMP_GL_UPSCALE_LOG */
 
 /*
- * Upscale sharpness (nv2a_upscale.h): Super-xBR's filter weight for all
+ * Sharpness (nv2a_upscale.h): Super-xBR's filter weight for all
  * three rows' copies, from the window's upscale_sharpness= setting, Normal
  * unless set otherwise (NV2A_UP_SHARP_DEFAULT), taken at the next flip as
  * the rows are.
@@ -2164,10 +2164,12 @@ static void sdl_menu_seethru(void)
     xbox_MenuAdd(&row, 1);
 }
 
-/* Graphics > 2D upscaling: Off, 2x, 4x or 8x, taken at the next flip and kept
- * as upscale_2d= (0, 2, 4 or 8), as F10 keeps widescreen=. Added once the
- * device is up (gfx_init), after the anti-aliasing rows and before 3D
- * upscaling, where the backend can make the copies. */
+/* Graphics > Upscaling, a submenu at Graphics' foot whatever is added later
+ * (menu.h, last), with its first row, Menus and HUD (2D upscaling): Off, 2x,
+ * 4x or 8x, taken at the next flip and kept as upscale_2d= (0, 2, 4 or 8),
+ * as F10 keeps widescreen=. Added once the device is up (gfx_init), after
+ * the anti-aliasing rows and before Textures, where the backend can make the
+ * copies. */
 static const char *const sdl_up_names[NV2A_UP_CHOICES] = { "Off", "2x", "4x", "8x" };
 static int  sdl_up_now(void)   { return nv2a_up_choice(g_up_want); }
 static void sdl_up_pick(int i)
@@ -2179,19 +2181,23 @@ static void sdl_menu_up(void)
 {
     /* The presets (File > Presets): off in Xbox mode, JSRF-PC default's
      * (4x), and 8x in Max quality. */
-    const XBOX_MENU_ITEM row = {
-        .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "2D upscaling",
-        .state = sdl_up_now, .pick = sdl_up_pick, .choices = sdl_up_names,
-        .nchoices = NV2A_UP_CHOICES,
-        .presets = XBOX_PRESETS_SET,
-        .preset = { nv2a_up_choice(0), nv2a_up_choice(NV2A_UP_DEFAULT), nv2a_up_choice(8) },
-        .hint = "Sharpens menus, text and the HUD at higher render scales." };
-    if (G->tex_upscale) xbox_MenuAdd(&row, 1);
+    const XBOX_MENU_ITEM rows[] = {
+        { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_UPSCALING, .last = 1,
+          .hint = "Sharpens the game's art and textures at higher render scales." },
+        { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Menus and HUD",
+          .state = sdl_up_now, .pick = sdl_up_pick, .choices = sdl_up_names,
+          .nchoices = NV2A_UP_CHOICES,
+          .presets = XBOX_PRESETS_SET,
+          .preset = { nv2a_up_choice(0), nv2a_up_choice(NV2A_UP_DEFAULT), nv2a_up_choice(8) },
+          .group = XBOX_GROUP_UPSCALING,
+          .hint = "Sharpens menus, text and the HUD at higher render scales." },
+    };
+    if (G->tex_upscale) xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
 }
 
-/* Graphics > 3D upscaling: Off, 2x, 4x or 8x, taken at the next flip and kept
- * as upscale_3d= (0, 2, 4 or 8). Added after 2D upscaling (gfx_init), where
- * the backend can make the copies. */
+/* Graphics > Upscaling > Textures (3D upscaling): Off, 2x, 4x or 8x, taken
+ * at the next flip and kept as upscale_3d= (0, 2, 4 or 8). Added after Menus
+ * and HUD (gfx_init), so it is the submenu's row below it. */
 static int  sdl_up3_now(void)   { return nv2a_up_choice(g_up3_want); }
 static void sdl_up3_pick(int i)
 {
@@ -2203,18 +2209,19 @@ static void sdl_menu_up3(void)
     /* The presets (File > Presets): off in Xbox mode, JSRF-PC default's
      * (4x), and 8x in Max quality. */
     const XBOX_MENU_ITEM row = {
-        .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "3D upscaling",
+        .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Textures",
         .state = sdl_up3_now, .pick = sdl_up3_pick, .choices = sdl_up_names,
         .nchoices = NV2A_UP_CHOICES,
         .presets = XBOX_PRESETS_SET,
         .preset = { nv2a_up_choice(0), nv2a_up_choice(NV2A_UP3_DEFAULT), nv2a_up_choice(8) },
+        .group = XBOX_GROUP_UPSCALING,
         .hint = "Sharpens textures in the 3D world at higher render scales." };
     if (G->tex_upscale) xbox_MenuAdd(&row, 1);
 }
 
-/* Graphics > Graffiti upscaling: Off, 2x, 4x or 8x, taken at the next flip
- * and kept as upscale_graffiti= (0, 2, 4 or 8). Added after 3D upscaling
- * (gfx_init), so it is the row below it. */
+/* Graphics > Upscaling > Graffiti (graffiti upscaling): Off, 2x, 4x or 8x,
+ * taken at the next flip and kept as upscale_graffiti= (0, 2, 4 or 8). Added
+ * after Textures (gfx_init), so it is the submenu's row below it. */
 static int  sdl_upg_now(void)   { return nv2a_up_choice(g_upg_want); }
 static void sdl_upg_pick(int i)
 {
@@ -2226,19 +2233,19 @@ static void sdl_menu_upg(void)
     /* The presets (File > Presets): off in Xbox mode, JSRF-PC default's
      * (off), and 8x in Max quality. */
     const XBOX_MENU_ITEM row = {
-        .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Graffiti upscaling",
+        .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Graffiti",
         .state = sdl_upg_now, .pick = sdl_upg_pick, .choices = sdl_up_names,
         .nchoices = NV2A_UP_CHOICES,
         .presets = XBOX_PRESETS_SET,
         .preset = { nv2a_up_choice(0), nv2a_up_choice(NV2A_UPG_DEFAULT), nv2a_up_choice(8) },
+        .group = XBOX_GROUP_UPSCALING,
         .hint = "Sharpens the graffiti tags at higher render scales." };
     if (G->tex_upscale) xbox_MenuAdd(&row, 1);
 }
 
-/* Graphics > Upscale sharpness: Soft, Normal or Sharp, for the three
+/* Graphics > Upscaling > Sharpness: Soft, Normal or Sharp, for the three
  * rows' copies, taken at the next flip and kept as upscale_sharpness= (0, 1
- * or 2). Added after Graffiti upscaling (gfx_init), so it is the row below
- * it. */
+ * or 2). Added after Graffiti (gfx_init), so it is the submenu's last row. */
 static int  sdl_up_sharp_now(void)   { return nv2a_up_sharp(g_up_sharp_want); }
 static void sdl_up_sharp_pick(int i)
 {
@@ -2249,11 +2256,12 @@ static void sdl_menu_up_sharp(void)
 {
     /* The presets (File > Presets): Normal in each. */
     const XBOX_MENU_ITEM row = {
-        .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Upscale sharpness",
+        .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Sharpness",
         .state = sdl_up_sharp_now, .pick = sdl_up_sharp_pick, .choices = nv2a_up_sharp_names,
         .nchoices = NV2A_UP_SHARP_CHOICES,
         .presets = XBOX_PRESETS_SET,
         .preset = { NV2A_UP_SHARP_DEFAULT, NV2A_UP_SHARP_DEFAULT, NV2A_UP_SHARP_DEFAULT },
+        .group = XBOX_GROUP_UPSCALING,
         .hint = "How crisp the upscaled edges are. Normal is Super-xBR's own." };
     if (G->tex_upscale) xbox_MenuAdd(&row, 1);
 }
@@ -14050,7 +14058,7 @@ static void seethru_start(void)
 }
 
 /* 2D upscaling from the start: the window's setting, else 4x
- * (NV2A_UP_DEFAULT). Its menu row comes after the anti-aliasing rows
+ * (NV2A_UP_DEFAULT). Its menu row, Menus and HUD, is Upscaling's first
  * (gfx_init). */
 static void up_start(void)
 {
@@ -14067,7 +14075,8 @@ static void up_start(void)
 }
 
 /* 3D upscaling from the start: the window's setting, else 4x
- * (NV2A_UP3_DEFAULT). Its menu row comes after 2D upscaling's (gfx_init). */
+ * (NV2A_UP3_DEFAULT). Its menu row, Textures, comes after Menus and HUD's
+ * (gfx_init). */
 static void up3_start(void)
 {
     int n = NV2A_UP3_DEFAULT;
@@ -14082,7 +14091,8 @@ static void up3_start(void)
 }
 
 /* Graffiti upscaling from the start: the window's setting, else off
- * (NV2A_UPG_DEFAULT). Its menu row comes after 3D upscaling's (gfx_init). */
+ * (NV2A_UPG_DEFAULT). Its menu row, Graffiti, comes after Textures'
+ * (gfx_init). */
 static void upg_start(void)
 {
     int n = NV2A_UPG_DEFAULT;
@@ -14096,9 +14106,8 @@ static void upg_start(void)
         fprintf(stderr, "  [GL] graffiti upscaling: %dx from the settings (0 is off)\n", g_upg_now);
 }
 
-/* Upscale sharpness from the start: the window's setting, else Normal
- * (NV2A_UP_SHARP_DEFAULT). Its menu row comes after Graffiti upscaling's
- * (gfx_init). */
+/* Sharpness from the start: the window's setting, else Normal
+ * (NV2A_UP_SHARP_DEFAULT). Its menu row comes after Graffiti's (gfx_init). */
 static void up_sharp_start(void)
 {
     int n = NV2A_UP_SHARP_DEFAULT;

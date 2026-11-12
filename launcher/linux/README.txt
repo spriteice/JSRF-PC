@@ -88,12 +88,12 @@ the game as the Xbox runs it: 4:3 at 1x, with everything JSRF-PC adds to how
 it looks and plays turned off, but the audio effects, which are the console's
 own. JSRF-PC default is the settings a new install starts with. Max quality
 is JSRF-PC default with the render scale, draw distance, Far buildings,
-anisotropic filtering, 2D, 3D and graffiti upscaling and both
-anti-aliasings at their most, as far as the graphics card goes: it asks a
-lot of the computer. The one ticked is the one your settings match, if any.
-Full screen and the free camera's own settings stay as you set them. The
-game restarts if the render scale, the shader cache or the audio effects
-change, so save first.
+anisotropic filtering, Upscaling's Menus and HUD, Textures and Graffiti, and
+both anti-aliasings at their most, as far as the graphics card goes: it asks
+a lot of the computer. The one ticked is the one your settings match, if any.
+Full screen and the free camera's own settings stay as you set them. The game
+restarts if the render scale, the shader cache or the audio effects change,
+so save first.
 
 Display > Draw distance in the in-game menu is how far away the game draws
 the things in its world: crowds, spray cans, props you can knock over,
@@ -149,43 +149,43 @@ reaches take a moment to load again, and is remembered as aniso= in the
 settings file (0, 2, 4, 8, or 16). It leaves things that face the screen,
 such as the HUD, as they were.
 
-Graphics > 2D upscaling in the in-game menu draws the menus, text, HUD and
-icons from sharper copies of the game's art: Off, 2x, 4x (the default), or
-8x. The graphics card makes each copy the first time that art is shown, a few
-a frame. It helps from render scale 2x up; at 1x it makes nothing, as the art
-is drawn at its own size there. It changes straight away, with no restart,
-and is remembered as upscale_2d= in the settings file (0, 2, 4, or 8). Each
-size suits a render scale: 2x for 2x, 4x for 3x and 4x, and 8x for 5x and 6x,
-whose copies take the most memory.
+Graphics > Upscaling > Menus and HUD in the in-game menu draws the menus,
+text, HUD and icons from sharper copies of the game's art: Off, 2x, 4x (the
+default), or 8x. The graphics card makes each copy the first time that art is
+shown, a few a frame. It helps from render scale 2x up; at 1x it makes
+nothing, as the art is drawn at its own size there. It changes straight away,
+with no restart, and is remembered as upscale_2d= in the settings file (0, 2,
+4, or 8). Each size suits a render scale: 2x for 2x, 4x for 3x and 4x, and 8x
+for 5x and 6x, whose copies take the most memory.
 
-Graphics > 3D upscaling in the in-game menu draws the textures of the 3D
-world (walls, the ground, signs and the characters) from sharper copies: Off,
-2x, 4x (the default), or 8x. The graphics card makes the copies in a level's
-first moments, a few a frame. They show where a surface comes close enough to
-the camera for its texture to be enlarged, at any render scale and more so
-the higher it is. Distant surfaces, and cut-out edges such as fences, look as
-they always have. It changes straight away, with no restart, and is
+Graphics > Upscaling > Textures in the in-game menu draws the textures of the
+3D world (walls, the ground, signs and the characters) from sharper copies:
+Off, 2x, 4x (the default), or 8x. The graphics card makes the copies in a
+level's first moments, a few a frame. They show where a surface comes close
+enough to the camera for its texture to be enlarged, at any render scale and
+more so the higher it is. Distant surfaces, and cut-out edges such as fences,
+look as they always have. It changes straight away, with no restart, and is
 remembered as upscale_3d= in the settings file (0, 2, 4, or 8). No copy is
 larger than 2048 a side, so 8x enlarges the larger textures 4x. The copies
 take up to 4 GB of the graphics card's memory, 1 to 2.5 GB at 4x in play;
 whatever doesn't fit keeps the game's own textures.
 
-Graphics > Graffiti upscaling in the in-game menu draws the graffiti tags
+Graphics > Upscaling > Graffiti in the in-game menu draws the graffiti tags
 from sharper copies: Off (the default), 2x, 4x, or 8x. The tags come 16 to a
 sheet of 1024 x 1024, and the graphics card makes a sheet's copy the first
 time it is drawn, after the 3D world's; the garage's graffiti picker has its
 copy made as it draws it, which can pause the menu for a moment. It changes
-straight away, with no restart, and is remembered as upscale_graffiti= in
-the settings file (0, 2, 4, or 8). The copies take up to 1 GB of the
-graphics card's memory, apart from 3D upscaling's: about 85 MB a sheet at 4x
-and 340 MB at 8x.
+straight away, with no restart, and is remembered as upscale_graffiti= in the
+settings file (0, 2, 4, or 8). The copies take up to 1 GB of the graphics
+card's memory, apart from Textures': about 85 MB a sheet at 4x and 340 MB at
+8x.
 
-Graphics > Upscale sharpness in the in-game menu sets how crisp the edges in
-the 2D, 3D and graffiti copies are: Soft, Normal (the default), or Sharp.
+Graphics > Upscaling > Sharpness in the in-game menu sets how crisp the edges
+in the 2D, 3D and graffiti copies are: Soft, Normal (the default), or Sharp.
 Normal is Super-xBR as its author set it; Sharp draws edges crisper and Soft
-softer, neither with halos. It changes straight away, with no restart,
-making every copy again, which can pause the game for a moment, and is
-remembered as upscale_sharpness= in the settings file (0, 1, or 2).
+softer, neither with halos. It changes straight away, with no restart, making
+every copy again, which can pause the game for a moment, and is remembered as
+upscale_sharpness= in the settings file (0, 1, or 2).
 
 Graphics > Shader cache in the in-game menu (on by default) keeps the shaders
 the game builds, in the cache folder. Each time the game starts, they are all

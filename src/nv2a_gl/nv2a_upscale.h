@@ -180,8 +180,8 @@ int nv2a_up_factor(int n);
 int nv2a_up_choice(int factor);
 int nv2a_up_choice_factor(int choice);
 
-/* Sharpness, the Graphics row Upscale sharpness, for every row's copies:
- * Soft, Normal and Sharp, Super-xBR's filter weight at 0.5, 1 (its
+/* Sharpness, Graphics > Upscaling > Sharpness, for every row's
+ * copies: Soft, Normal and Sharp, Super-xBR's filter weight at 0.5, 1 (its
  * author's) and 1.5 (the top of his range). A higher weight draws an edge
  * crisper, a lower one softer; its anti-ringing keeps each new texel within
  * the four it lies between, so no weight leaves a halo. Kept as

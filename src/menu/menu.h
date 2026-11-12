@@ -153,6 +153,11 @@ typedef struct XBOX_MENU_ITEM {
 #define XBOX_GROUP_SKIPS        "Skips"
 #define XBOX_GROUP_ENHANCEMENTS "Enhancements"
 
+/* Graphics' submenu, at its foot (nv2a_gl.c adds it): Upscaling, for the
+ * rows that draw the game from sharper copies -- Menus and HUD, Textures
+ * and Graffiti (2D, 3D and graffiti upscaling), then Sharpness. */
+#define XBOX_GROUP_UPSCALING    "Upscaling"
+
 /* Two lines at 640 x 480, beside the pad's buttons. */
 #define MENU_HINT_LONGEST 70
 
