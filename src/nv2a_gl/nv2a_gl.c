@@ -1172,7 +1172,7 @@ static Nv2aUpSecond g_up3_sec;  /* this second's work, for RECOMP_GL_UPSCALE_LOG
 
 /*
  * Graffiti upscaling (nv2a_upscale.h): the same, from the window's
- * upscale_graffiti= setting, off unless set otherwise (NV2A_UPG_DEFAULT),
+ * upscale_graffiti= setting, 4x unless set otherwise (NV2A_UPG_DEFAULT),
  * for the graffiti tags' sheets, with copies held under a cap of their own.
  */
 static volatile int g_upg_want; /* the factor asked for: 0, 2, 4 or 8 */
@@ -2241,7 +2241,7 @@ static void sdl_upg_pick(int i)
 static void sdl_menu_upg(void)
 {
     /* The presets (File > Presets): off in Xbox mode, JSRF-PC default's
-     * (off), and 8x in Max quality. */
+     * (4x), and 8x in Max quality. */
     const XBOX_MENU_ITEM row = {
         .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Graffiti",
         .state = sdl_upg_now, .pick = sdl_upg_pick, .choices = sdl_up_names,
@@ -14142,7 +14142,7 @@ static void up3_start(void)
         fprintf(stderr, "  [GL] 3D upscaling: %dx from the settings (0 is off)\n", g_up3_now);
 }
 
-/* Graffiti upscaling from the start: the window's setting, else off
+/* Graffiti upscaling from the start: the window's setting, else 4x
  * (NV2A_UPG_DEFAULT). Its menu row, Graffiti, comes after Textures'
  * (gfx_init). */
 static void upg_start(void)

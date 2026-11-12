@@ -171,7 +171,7 @@ take up to 4 GB of the graphics card's memory, 1 to 2.5 GB at 4x in play;
 whatever doesn't fit keeps the game's own textures.
 
 Graphics > Upscaling > Graffiti in the in-game menu draws the graffiti tags
-from sharper copies: Off (the default), 2x, 4x, or 8x. The tags come 16 to a
+from sharper copies: Off, 2x, 4x (the default), or 8x. The tags come 16 to a
 sheet of 1024 x 1024, and the graphics card makes a sheet's copy the first
 time it is drawn, after the 3D world's; the garage's graffiti picker has its
 copy made as it draws it, which can pause the menu for a moment. It changes

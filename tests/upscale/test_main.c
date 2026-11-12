@@ -779,8 +779,9 @@ static void factor_g(void)
     CHECK(nv2a_up_bytes(1024, 1024, 8, 1, 11) / MB == 341);
     CHECK(3 * nv2a_up_bytes(1024, 1024, 8, 1, 11) <= NV2A_UPG_HELD_MAX);
     CHECK(3 * nv2a_up_bytes(1024, 1024, 8, 0, 1) <= NV2A_UPG_HELD_MAX);
-    /* The setting: off as a new install starts; the cap, 1 GB. */
-    CHECK(NV2A_UPG_DEFAULT == 0 && nv2a_up_choice(NV2A_UPG_DEFAULT) == 0);
+    /* The setting: 4x as a new install starts, the row's third choice;
+     * the cap, 1 GB. */
+    CHECK(NV2A_UPG_DEFAULT == 4 && nv2a_up_choice(NV2A_UPG_DEFAULT) == 2);
     CHECK(NV2A_UPG_HELD_MAX == 1024 * MB);
     /* The summary line a second. */
     memset(&s, 0, sizeof s);

@@ -243,7 +243,7 @@ These are in the in-game menu, under Graphics.
     garage's graffiti picker has its copy made as it draws it, which can pause
     the menu for a moment. The copies take up to 1 GB of the graphics card's
     memory, apart from Textures': about 85 MB a sheet at 4× and 340 MB at 8×.
-    Off by default.
+    4× by default.
   - **Sharpness:** Soft, Normal, or Sharp. How crisp the edges in the 2D, 3D and
     graffiti copies are. Normal is Super-xBR as its author set it; Sharp draws
     edges crisper and Soft softer, neither with halos. Changing it makes every
