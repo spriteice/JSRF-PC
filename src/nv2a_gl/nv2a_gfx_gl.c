@@ -1760,24 +1760,26 @@ static uint32_t glx_target_smaa(uint32_t h)
  *
  * tex_upscale (nv2a_backend.h): Super-xBR's passes (nv2a_upscale.h) drawn
  * into images of our own, one triangle each, as SMAA's are, and stored into
- * the levels of a new texture. Units 4 and 5 hold what a pass reads, which
- * nothing the title draws samples (SMAA's, above). The images are half
- * floats, made for the call and deleted after it: the copy is made once,
+ * the levels of a new texture, after the cleanup's passes where it has any.
+ * Units 4 and 5 hold what a pass reads, which nothing the title draws
+ * samples (SMAA's, above). The images are half floats (the cleanup's full
+ * ones), made for the call and deleted after it: the copy is made once,
  * at a flip, within the front half's budget for it, or before a draw that
  * puts a graffiti texture into a picture of the title's own (nv2a_gl.c's
  * upg_capture), which is why the draw's vertex array is asked for and put
  * back too: one glGetIntegerv, nothing beside the copy.
  *
  * No glGetError or framebuffer status is asked for: either waits for the
- * driver's thread, and each of our framebuffers holds one RGBA8 or RGBA16F
- * image, formats every OpenGL 3.3 driver must draw into. An error still
- * shows in the front half's check once a frame. */
+ * driver's thread, and each of our framebuffers holds one RGBA8, RGBA16F or
+ * RGBA32F image, formats every OpenGL 3.3 driver must draw into. An error
+ * still shows in the front half's check once a frame. */
 #define UP_UNIT 4
 static struct {
     GLuint prog[NV2A_UP_PASSES];
     GLint  wrap_loc[NV2A_UP_PASSES], premul_loc[NV2A_UP_PASSES], shift_loc[NV2A_UP_PASSES];
     GLint  keep_loc[NV2A_UP_PASSES], maglin_loc[NV2A_UP_PASSES], level_loc[NV2A_UP_PASSES];
     GLint  weight_loc[NV2A_UP_PASSES], edge_loc[NV2A_UP_PASSES];
+    GLint  clean_loc[NV2A_UP_PASSES], step_loc[NV2A_UP_PASSES];
     GLuint vao, fbo;
     GLint  side_max;                    /* the largest side a level may have */
     int    bad;                         /* the passes would not build */
@@ -1803,6 +1805,8 @@ static int up_build(void)
         g_up.level_loc[p] = glGetUniformLocation(g, "upLevel");
         g_up.weight_loc[p] = glGetUniformLocation(g, "upWeight");
         g_up.edge_loc[p] = glGetUniformLocation(g, "upEdge");
+        g_up.clean_loc[p] = glGetUniformLocation(g, "upClean");
+        g_up.step_loc[p] = glGetUniformLocation(g, "upStep");
     }
     glGenVertexArrays(1, &g_up.vao);
     glGenFramebuffers(1, &g_up.fbo);
@@ -1815,14 +1819,16 @@ static int up_build(void)
     return 1;
 }
 
-/* A pass's image: RGBA16F, w x h. */
-static GLuint up_image(uint32_t w, uint32_t h)
+/* A pass's image: RGBA16F, w x h; with `full`, RGBA32F, so that what a
+ * cleanup leaves as it was is read by the first step as the game's texel
+ * itself. */
+static GLuint up_image(uint32_t w, uint32_t h, int full)
 {
     GLuint t = 0;
     glGenTextures(1, &t);
     scratch_bind(t);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, (GLsizei)w, (GLsizei)h, 0, GL_RGBA,
-                 GL_HALF_FLOAT, NULL);
+    glTexImage2D(GL_TEXTURE_2D, 0, full ? GL_RGBA32F : GL_RGBA16F, (GLsizei)w, (GLsizei)h, 0,
+                 GL_RGBA, full ? GL_FLOAT : GL_HALF_FLOAT, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     return t;
@@ -1831,10 +1837,10 @@ static GLuint up_image(uint32_t w, uint32_t h)
 /* Pass p into level `level` of `out`, w x h, reading src (and aux); the
  * store keeping the game's alpha (keep), the copy reading src's level
  * `src_level`, Super-xBR's passes filtering at `weight` with edge strength
- * `edge`. */
+ * `edge`, the cleanup doing `clean`'s what at its steps. */
 static void up_pass(int p, GLuint out, GLint level, uint32_t w, uint32_t h,
                     GLuint src, GLuint aux, int premul, int shift, int keep, int src_level,
-                    float weight, float edge, const Nv2aSampler *s)
+                    float weight, float edge, const Nv2aUpClean *clean, const Nv2aSampler *s)
 {
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, out, level);
     glViewport(0, 0, (GLsizei)w, (GLsizei)h);
@@ -1847,6 +1853,10 @@ static void up_pass(int p, GLuint out, GLint level, uint32_t w, uint32_t h,
     glUniform1i(g_up.level_loc[p], src_level);
     glUniform1f(g_up.weight_loc[p], weight);
     glUniform1f(g_up.edge_loc[p], edge);
+    if (clean) {
+        glUniform1i(g_up.clean_loc[p], (GLint)clean->what);
+        glUniform3fv(g_up.step_loc[p], 1, clean->step);
+    }
     smaa_bind(UP_UNIT, src);
     smaa_bind(UP_UNIT + 1, aux);
     glDrawArrays(GL_TRIANGLES, 0, 3);
@@ -1854,7 +1864,7 @@ static void up_pass(int p, GLuint out, GLint level, uint32_t w, uint32_t h,
 
 static uint32_t glx_tex_upscale(uint32_t tex, uint32_t w, uint32_t h, int factor,
                                 int keep_alpha, float weight, float edge,
-                                const Nv2aSampler *s)
+                                const struct Nv2aUpClean *clean, const Nv2aSampler *s)
 {
     static const GLint wrap_of[3] = { GL_CLAMP_TO_EDGE, GL_REPEAT, GL_MIRRORED_REPEAT };
     int steps = factor == 2 ? 1 : factor == 4 ? 2 : factor == 8 ? 3 : 0, k;
@@ -1901,19 +1911,32 @@ static uint32_t glx_tex_upscale(uint32_t tex, uint32_t w, uint32_t h, int factor
     glBindVertexArray(g_up.vao);
     glBindFramebuffer(GL_FRAMEBUFFER, g_up.fbo);
 
-    /* Each step doubles the image before it: the game's texture first, read
-     * premultiplied, then the step before's last pass, already so. Its
-     * store fills the level of its size. */
+    /* The cleanup first, one a pass, into images of the game's size:
+     * de-dithered, then that deblocked. */
     cur = (GLuint)tex;
+    for (k = 0; clean && k < 2; k++) {
+        Nv2aUpClean one = *clean;
+        GLuint c;
+        one.what &= k == 0 ? NV2A_UP_DEDITHER : NV2A_UP_DEBLOCK;
+        if (!one.what) continue;
+        c = up_image(w, h, 1);
+        up_pass(NV2A_UP_CLEAN, c, 0, w, h, cur, 0, 0, 0, 0, 0, weight, edge, &one, s);
+        if (cur != (GLuint)tex) glDeleteTextures(1, &cur);
+        cur = c;
+    }
+
+    /* Each step doubles the image before it: the game's texture (or its
+     * cleanup) first, read premultiplied, then the step before's last pass,
+     * already so. Its store fills the level of its size. */
     for (k = 1; k <= steps; k++) {
         uint32_t cw = w << (k - 1), ch = h << (k - 1);
-        GLuint d = up_image(cw, ch), m = up_image(2 * cw, 2 * ch), n = up_image(2 * cw, 2 * ch);
+        GLuint d = up_image(cw, ch, 0), m = up_image(2 * cw, 2 * ch, 0), n = up_image(2 * cw, 2 * ch, 0);
         int premul = k == 1;
-        up_pass(NV2A_UP_PASS0, d, 0, cw, ch, cur, 0, premul, 0, 0, 0, weight, edge, s);
-        up_pass(NV2A_UP_PASS1, m, 0, 2 * cw, 2 * ch, cur, d, premul, 0, 0, 0, weight, edge, s);
-        up_pass(NV2A_UP_PASS2, n, 0, 2 * cw, 2 * ch, m, 0, 0, 0, 0, 0, weight, edge, s);
+        up_pass(NV2A_UP_PASS0, d, 0, cw, ch, cur, 0, premul, 0, 0, 0, weight, edge, NULL, s);
+        up_pass(NV2A_UP_PASS1, m, 0, 2 * cw, 2 * ch, cur, d, premul, 0, 0, 0, weight, edge, NULL, s);
+        up_pass(NV2A_UP_PASS2, n, 0, 2 * cw, 2 * ch, m, 0, 0, 0, 0, 0, weight, edge, NULL, s);
         up_pass(NV2A_UP_STORE, out, steps - k, 2 * cw, 2 * ch, n, (GLuint)tex, 0, k,
-                keep_alpha != 0, 0, weight, edge, s);
+                keep_alpha != 0, 0, weight, edge, NULL, s);
         glDeleteTextures(1, &d);
         glDeleteTextures(1, &m);
         if (cur != (GLuint)tex) glDeleteTextures(1, &cur);
@@ -1924,7 +1947,7 @@ static uint32_t glx_tex_upscale(uint32_t tex, uint32_t w, uint32_t h, int factor
     for (l = 0; l < chain; l++) {
         uint32_t lw = w >> l, lh = h >> l;
         up_pass(NV2A_UP_COPY, out, steps + l, lw ? lw : 1, lh ? lh : 1, (GLuint)tex, 0, 0, 0,
-                0, (int)l, weight, edge, s);
+                0, (int)l, weight, edge, NULL, s);
     }
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
 

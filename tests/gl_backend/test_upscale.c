@@ -30,6 +30,13 @@
  *  - the edge strength (Edge strength): a faint diagonal line is followed
  *    the more the lower it is, every texel within the source's range, and a
  *    strength out of range is taken as 0.6;
+ *  - the cleanup (Cleanup): asking for none is the same as no cleanup,
+ *    texel for texel, and either leaves the game's own level as it is;
+ *    de-dithering makes a checkerboard one step apart nearly flat and leaves
+ *    an edge many steps high where it was; deblocking spreads a small step
+ *    between blocks of four into a ramp, and leaves a large one, and a
+ *    picture with no step between blocks, as no cleanup does, texel for
+ *    texel;
  *  - and what is refused (another factor, a side over the device's
  *    largest), with the target being drawn into and its viewport as they
  *    were, and no GL error.
@@ -39,6 +46,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "nv2a_backend.h"
+#include "nv2a_upscale.h"
 
 static const Nv2aGfx *G;
 
@@ -91,7 +99,7 @@ static void levels(uint32_t src, uint32_t w, uint32_t h, int factor,
                    const Nv2aSampler *s, const char *what)
 {
     int steps = factor == 2 ? 1 : factor == 4 ? 2 : 3, l;
-    uint32_t t = G->tex_upscale(src, w, h, factor, 0, 1.0f, 0.6f, s);
+    uint32_t t = G->tex_upscale(src, w, h, factor, 0, 1.0f, 0.6f, NULL, s);
     uint8_t *want, *got;
     char msg[160];
     snprintf(msg, sizeof msg, "%s at %dx: made", what, factor);
@@ -147,7 +155,7 @@ static void ramp(int ax, int ay, int factor, float weight, float edge, const cha
             p[3] = 255;
         }
     src = G->tex_new(N, N, px, &s);
-    t = G->tex_upscale(src, N, N, factor, 0, weight, edge, &s);
+    t = G->tex_upscale(src, N, N, factor, 0, weight, edge, NULL, &s);
     check(src && t, "a ramp's copy made");
     got = read_level(t, 0);
     for (y = margin; y < n - margin; y++)
@@ -203,7 +211,7 @@ static void weight(int factor)
     check(src != 0, "the blocks' texture made");
     for (i = 0; i < 4; i++) {
         long sum = 0;
-        t = G->tex_upscale(src, N, N, factor, 0, w[i], 0.6f, &s);
+        t = G->tex_upscale(src, N, N, factor, 0, w[i], 0.6f, NULL, &s);
         snprintf(msg, sizeof msg, "the blocks' copy at %dx, weight %.1f, made", factor, (double)w[i]);
         check(t != 0, msg);
         got[i] = read_level(t, 0);
@@ -257,7 +265,7 @@ static void edge(int factor)
     check(src != 0, "the line's texture made");
     for (i = 0; i < 4; i++) {
         long sum = 0;
-        t = G->tex_upscale(src, N, N, factor, 0, 1.0f, e[i], &s);
+        t = G->tex_upscale(src, N, N, factor, 0, 1.0f, e[i], NULL, &s);
         snprintf(msg, sizeof msg, "the line's copy at %dx, edge strength %.1f, made", factor,
                  (double)e[i]);
         check(t != 0, msg);
@@ -285,6 +293,167 @@ static void edge(int factor)
     G->tex_free(src);
 }
 
+/* The cleanup's pictures, N x N, grey, opaque: v(x, y) for each texel. */
+enum { CN = 16 };
+static uint32_t clean_src(int (*v)(int x, int y), const Nv2aSampler *s)
+{
+    static uint8_t px[CN * CN * 4];
+    int x, y;
+    for (y = 0; y < CN; y++)
+        for (x = 0; x < CN; x++) {
+            uint8_t *p = px + (y * CN + x) * 4;
+            p[0] = p[1] = p[2] = (uint8_t)v(x, y);
+            p[3] = 255;
+        }
+    return G->tex_new(CN, CN, px, s);
+}
+
+/* The copy of src at factor with cleanup c (NULL none), level 0, malloc'd;
+ * and its last new level the source's own, texel for texel. */
+static uint8_t *clean_copy(uint32_t src, int factor, const Nv2aUpClean *c, const Nv2aSampler *s,
+                           const char *what)
+{
+    int steps = factor == 2 ? 1 : factor == 4 ? 2 : 3;
+    uint32_t t = G->tex_upscale(src, CN, CN, factor, 0, 1.0f, 0.6f, c, s);
+    uint8_t *got, *own, *want;
+    char msg[160];
+    snprintf(msg, sizeof msg, "%s at %dx: made", what, factor);
+    check(t != 0, msg);
+    got = read_level(t, 0);
+    own = read_level(t, steps);
+    want = read_level(src, 0);
+    snprintf(msg, sizeof msg, "%s at %dx: the game's own level as it was", what, factor);
+    check(!memcmp(own, want, CN * CN * 4), msg);
+    free(own);
+    free(want);
+    G->tex_free(t);
+    return got;
+}
+
+/* Red's least and most over the copy's texels at least `margin` from its
+ * sides. */
+static void clean_range(const uint8_t *px, int n, int margin, int *lo, int *hi)
+{
+    int x, y;
+    *lo = 255;
+    *hi = 0;
+    for (y = margin; y < n - margin; y++)
+        for (x = margin; x < n - margin; x++) {
+            int r = px[((size_t)y * n + x) * 4];
+            if (r < *lo) *lo = r;
+            if (r > *hi) *hi = r;
+        }
+}
+
+/* The largest step in red between texels side by side across, in the
+ * copy's middle rows. */
+static int clean_jump(const uint8_t *px, int n)
+{
+    int x, y, most = 0;
+    for (y = n / 4; y < n - n / 4; y++)
+        for (x = 1; x < n; x++) {
+            int d = abs(px[((size_t)y * n + x) * 4] - px[((size_t)y * n + x - 1) * 4]);
+            if (d > most) most = d;
+        }
+    return most;
+}
+
+static int checker(int x, int y) { return (x + y) & 1 ? 108 : 100; }
+static int checker_halves(int x, int y) { return (x < CN / 2 ? 100 : 180) + ((x + y) & 1 ? 8 : 0); }
+static int blocks_small(int x, int y) { (void)y; return (x >> 2) & 1 ? 116 : 100; }
+static int blocks_large(int x, int y) { (void)y; return (x >> 2) & 1 ? 200 : 100; }
+static int blocks_none(int x, int y) { (void)y; return 100 + 6 * x; }
+
+static void clean(int factor)
+{
+    Nv2aSampler s = { 1, 1, 0, 0, 0, 0, 0 };
+    /* A grey's steps in X1R5G5B5 (DXT's red and blue). */
+    Nv2aUpClean none = { 0, { 1.0f / 31, 1.0f / 31, 1.0f / 31 } };
+    Nv2aUpClean dither = { NV2A_UP_DEDITHER, { 1.0f / 31, 1.0f / 31, 1.0f / 31 } };
+    Nv2aUpClean block = { NV2A_UP_DEBLOCK, { 1.0f / 31, 1.0f / 31, 1.0f / 31 } };
+    int n = CN * factor, lo0, hi0, lo1, hi1, j0, j1;
+    uint32_t src;
+    uint8_t *a, *b;
+    char msg[160];
+
+    /* None asked: as no cleanup. */
+    src = clean_src(checker, &s);
+    a = clean_copy(src, factor, NULL, &s, "the checkerboard");
+    b = clean_copy(src, factor, &none, &s, "the checkerboard, cleanup none");
+    snprintf(msg, sizeof msg, "%dx: cleanup none as no cleanup", factor);
+    check(!memcmp(a, b, (size_t)n * n * 4), msg);
+    printf("ok: %s, texel for texel\n", msg);
+    free(b);
+
+    /* De-dither: a checkerboard of 100 and 108, a step of five bits apart. */
+    b = clean_copy(src, factor, &dither, &s, "the checkerboard, de-dithered");
+    clean_range(a, n, factor, &lo0, &hi0);
+    clean_range(b, n, factor, &lo1, &hi1);
+    snprintf(msg, sizeof msg, "%dx: de-dithered, the checkerboard from %d to %d (%d to %d without)",
+             factor, lo1, hi1, lo0, hi0);
+    check(hi0 - lo0 >= 6 && hi1 - lo1 <= 2 && lo1 >= 100 && hi1 <= 108, msg);
+    printf("ok: %s\n", msg);
+    free(a);
+    free(b);
+    G->tex_free(src);
+
+    /* ... and an edge many steps high, each side dithered: each side flat,
+     * the edge where it was. */
+    src = clean_src(checker_halves, &s);
+    b = clean_copy(src, factor, &dither, &s, "the dithered halves, de-dithered");
+    {
+        int x, y, left_hi = 0, right_lo = 255;
+        for (y = factor; y < n - factor; y++)
+            for (x = factor; x < n - factor; x++) {
+                int r = b[((size_t)y * n + x) * 4];
+                if (x < n / 2 - factor && r > left_hi) left_hi = r;
+                if (x >= n / 2 + factor && r < right_lo) right_lo = r;
+            }
+        snprintf(msg, sizeof msg, "%dx: de-dithered halves, the left at most %d, the right at least %d",
+                 factor, left_hi, right_lo);
+        check(left_hi <= 106 && right_lo >= 182, msg);
+        printf("ok: %s, the edge kept\n", msg);
+    }
+    free(b);
+    G->tex_free(src);
+
+    /* Deblock: blocks of four across, 100 and 116 (two steps apart): the
+     * step spread out. */
+    src = clean_src(blocks_small, &s);
+    a = clean_copy(src, factor, NULL, &s, "the small blocks");
+    b = clean_copy(src, factor, &block, &s, "the small blocks, deblocked");
+    j0 = clean_jump(a, n);
+    j1 = clean_jump(b, n);
+    clean_range(b, n, 0, &lo1, &hi1);
+    snprintf(msg, sizeof msg, "%dx: deblocked, the largest step %d (%d without)", factor, j1, j0);
+    check(j1 * 2 <= j0 && lo1 >= 100 && hi1 <= 116, msg);
+    printf("ok: %s, within the source's range\n", msg);
+    free(a);
+    free(b);
+    G->tex_free(src);
+
+    /* ... and blocks 100 and 200, and a ramp with no step between blocks:
+     * as with no cleanup. */
+    src = clean_src(blocks_large, &s);
+    a = clean_copy(src, factor, NULL, &s, "the large blocks");
+    b = clean_copy(src, factor, &block, &s, "the large blocks, deblocked");
+    snprintf(msg, sizeof msg, "%dx: deblocked, blocks 100 steps apart as without", factor);
+    check(!memcmp(a, b, (size_t)n * n * 4), msg);
+    printf("ok: %s, texel for texel\n", msg);
+    free(a);
+    free(b);
+    G->tex_free(src);
+    src = clean_src(blocks_none, &s);
+    a = clean_copy(src, factor, NULL, &s, "the ramp");
+    b = clean_copy(src, factor, &block, &s, "the ramp, deblocked");
+    snprintf(msg, sizeof msg, "%dx: deblocked, a ramp as without", factor);
+    check(!memcmp(a, b, (size_t)n * n * 4), msg);
+    printf("ok: %s, texel for texel\n", msg);
+    free(a);
+    free(b);
+    G->tex_free(src);
+}
+
 /* Opaque red on the left, clear blue on the right. */
 static void alpha_edge(int factor)
 {
@@ -304,7 +473,7 @@ static void alpha_edge(int factor)
             p[3] = x < N / 2 ? 255 : 0;
         }
     src = G->tex_new(N, N, px, &s);
-    t = G->tex_upscale(src, N, N, factor, 0, 1.0f, 0.6f, &s);
+    t = G->tex_upscale(src, N, N, factor, 0, 1.0f, 0.6f, NULL, &s);
     check(src && t, "the alpha edge's copy made");
     got = read_level(t, 0);
     for (y = 0; y < n; y++)
@@ -345,8 +514,8 @@ static void wrap(int factor)
             memcpy(b + (((y + DY) % N) * N + (x + DX) % N) * 4, a + (y * N + x) * 4, 4);
     ta = G->tex_new(N, N, a, &s);
     tb = G->tex_new(N, N, b, &s);
-    ua = G->tex_upscale(ta, N, N, factor, 0, 1.0f, 0.6f, &s);
-    ub = G->tex_upscale(tb, N, N, factor, 0, 1.0f, 0.6f, &s);
+    ua = G->tex_upscale(ta, N, N, factor, 0, 1.0f, 0.6f, NULL, &s);
+    ub = G->tex_upscale(tb, N, N, factor, 0, 1.0f, 0.6f, NULL, &s);
     check(ua && ub, "the wrap test's copies made");
     ga = read_level(ua, 0);
     gb = read_level(ub, 0);
@@ -369,7 +538,7 @@ static void title_chain(uint32_t src, uint32_t w, uint32_t h, int factor,
                         const Nv2aSampler *s, const char *what)
 {
     int steps = factor == 2 ? 1 : factor == 4 ? 2 : 3, l;
-    uint32_t t = G->tex_upscale(src, w, h, factor, 1, 1.0f, 0.6f, s);
+    uint32_t t = G->tex_upscale(src, w, h, factor, 1, 1.0f, 0.6f, NULL, s);
     char msg[160];
     snprintf(msg, sizeof msg, "%s at %dx: made", what, factor);
     check(t != 0, msg);
@@ -412,8 +581,8 @@ static void kept_alpha(int factor, int mag)
     for (x = 0; x < N * N; x++)                 /* clear, opaque and between */
         px[x * 4 + 3] = (uint8_t)((x * 7) % 5 == 0 ? 0 : (x * 7) % 5 == 1 ? 128 : 255);
     src = G->tex_new(N, N, px, &s);
-    a = G->tex_upscale(src, N, N, factor, 0, 1.0f, 0.6f, &s);
-    b = G->tex_upscale(src, N, N, factor, 1, 1.0f, 0.6f, &s);
+    a = G->tex_upscale(src, N, N, factor, 0, 1.0f, 0.6f, NULL, &s);
+    b = G->tex_upscale(src, N, N, factor, 1, 1.0f, 0.6f, NULL, &s);
     check(src && a && b, "the kept alpha's copies made");
     for (l = 0; l < steps; l++) {
         int n = (N * factor) >> l, f = factor >> l;
@@ -517,6 +686,9 @@ int main(void)
     edge(2);
     edge(4);
     edge(8);
+    clean(2);
+    clean(4);
+    clean(8);
     alpha_edge(2);
     alpha_edge(4);
     alpha_edge(8);
@@ -547,20 +719,20 @@ int main(void)
     }
 
     t = G->tex_new(32, 16, px, &lin);
-    check(G->tex_upscale(t, 32, 16, 3, 0, 1.0f, 0.6f, &lin) == 0, "3x is refused");
-    check(G->tex_upscale(t, 32, 16, 16, 0, 1.0f, 0.6f, &lin) == 0, "16x is refused");
-    check(G->tex_upscale(0, 32, 16, 2, 0, 1.0f, 0.6f, &lin) == 0, "no texture is refused");
+    check(G->tex_upscale(t, 32, 16, 3, 0, 1.0f, 0.6f, NULL, &lin) == 0, "3x is refused");
+    check(G->tex_upscale(t, 32, 16, 16, 0, 1.0f, 0.6f, NULL, &lin) == 0, "16x is refused");
+    check(G->tex_upscale(0, 32, 16, 2, 0, 1.0f, 0.6f, NULL, &lin) == 0, "no texture is refused");
     G->tex_free(t);
     {
         GLint max = 0;
         glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max);
         wide = calloc((size_t)max / 4 + 1, 4);
         t = G->tex_new((uint32_t)max / 4 + 1, 1, wide, &lin);
-        check(t && G->tex_upscale(t, (uint32_t)max / 4 + 1, 1, 4, 0, 1.0f, 0.6f, &lin) == 0,
+        check(t && G->tex_upscale(t, (uint32_t)max / 4 + 1, 1, 4, 0, 1.0f, 0.6f, NULL, &lin) == 0,
               "a side over the device's largest is refused");
         G->tex_free(t);
         t = G->tex_new((uint32_t)max / 8 + 1, 1, wide, &lin);
-        check(t && G->tex_upscale(t, (uint32_t)max / 8 + 1, 1, 8, 0, 1.0f, 0.6f, &lin) == 0,
+        check(t && G->tex_upscale(t, (uint32_t)max / 8 + 1, 1, 8, 0, 1.0f, 0.6f, NULL, &lin) == 0,
               "a side over the device's largest is refused at 8x");
         G->tex_free(t);
         free(wide);

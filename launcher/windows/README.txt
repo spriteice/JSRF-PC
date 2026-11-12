@@ -194,6 +194,16 @@ ones, blending the rest. It changes straight away, with no restart, making
 every copy again, which can pause the game for a moment, and is remembered as
 upscale_edge_strength= in the settings file (0, 1, or 2).
 
+Graphics > Upscaling > Cleanup in the in-game menu cleans the game's textures
+up before the copies are made, with two ticks, each off by default: DXT
+deblock smooths the faint steps where a DXT texture's 4x4 blocks meet, and
+De-dither smooths the dot patterns of 16-bit and DXT textures. Each leaves
+larger differences, edges in the picture, as they are, and neither changes a
+texture's see-through parts. A change takes effect straight away, with no
+restart, making every copy again, which can pause the game for a moment.
+File > Presets leaves them as you set them. They are remembered as
+upscale_deblock= and upscale_dedither= in the settings file (0 or 1).
+
 Graphics > Shader cache in the in-game menu (on by default) keeps the shaders
 the game builds, in the cache folder. Each time the game starts, they are all
 built again before it begins, behind a progress bar, so none are built while

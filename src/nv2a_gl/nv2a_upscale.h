@@ -215,6 +215,64 @@ int nv2a_up_edge(int n);
 /* A choice's edge strength (nv2a_up_edge takes it): 1.8, 0.6 or 0.2. */
 float nv2a_up_edge_strength(int choice);
 
+/* Cleanup, Graphics > Upscaling > Cleanup, for every row's copies: two
+ * ticks, each off unless set otherwise, that clean the game's texture up
+ * before Super-xBR's first pass (the CLEAN pass, below), so it doesn't
+ * sharpen what the texture's format left in it. Neither changes alpha, or
+ * the game's own level under the copy's new ones.
+ *
+ *   DXT deblock  DXT's 4x4 blocks: where the colour steps a little across
+ *                the edge between two blocks (at most NV2A_UP_BLOCK_STEP of
+ *                the format's steps in each channel) but is nearly flat
+ *                beside it on both sides (at most NV2A_UP_FLAT_STEP), the
+ *                two texels beside the edge are moved towards the ramp
+ *                through them, so the step is spread over four texels. A
+ *                ramp is left as it is, and so is a larger step, which is
+ *                an edge in the picture. DXT1, 3 and 5 only.
+ *   De-dither    dither, the dots a format with few bits a channel patterns
+ *                its colour with between its steps: each texel becomes the
+ *                mean of those of the 3 x 3 around it that differ from it by
+ *                at most NV2A_UP_DITHER_STEP of the format's steps in each
+ *                channel, and little in alpha. A checkerboard one step apart
+ *                comes out nine times fainter; anything a few steps apart
+ *                stays. The 16-bit formats (R5G6B5, A1R5G5B5, X1R5G5B5,
+ *                A4R4G4B4) and DXT, whose colours are R5G6B5's; not 8 bits
+ *                a channel.
+ *
+ * Kept as upscale_deblock= and upscale_dedither= (0 or 1). */
+#define NV2A_UP_DEBLOCK       1
+#define NV2A_UP_DEDITHER      2
+#define NV2A_UP_CLEAN_DEFAULT 0         /* both off */
+#define NV2A_UP_CLEANS        2         /* the row's ticks, in the order of their bits */
+extern const char *const nv2a_up_clean_names[NV2A_UP_CLEANS];
+
+/* The steps, in steps of the texture's format (Nv2aUpClean's step). */
+#define NV2A_UP_BLOCK_STEP  3.0
+#define NV2A_UP_FLAT_STEP   1.5
+#define NV2A_UP_DITHER_STEP 1.5
+
+/* The cleanup a copy is made with: what is done, and one step of the
+ * format's red, green and blue, as a fraction of the whole (1/31 for five
+ * bits). */
+typedef struct Nv2aUpClean {
+    unsigned what;                      /* NV2A_UP_DEBLOCK | NV2A_UP_DEDITHER; 0 none */
+    float    step[3];
+} Nv2aUpClean;
+
+/* The ticks from the settings' two values: each on for 1, off for
+ * anything else. */
+unsigned nv2a_up_clean(int deblock, int dedither);
+
+/* The cleanup a texture of format `fmt` (NV097_SET_TEXTURE_FORMAT's colour
+ * field) gets of `want`, the ticks, into *c: deblock for DXT, de-dither for
+ * DXT and the 16-bit formats, each step that format's. What c->what is; 0
+ * (nothing to do) for any other format. */
+unsigned nv2a_up_clean_of(unsigned want, uint32_t fmt, Nv2aUpClean *c);
+
+/* The ticks' names for the log: "none", "DXT deblock", "De-dither" or
+ * "DXT deblock and De-dither". */
+const char *nv2a_up_clean_said(unsigned want);
+
 /* What a flip may spend on copies, in texels of their level 0: one 512 x
  * 512 texture at 4x. The first copy of a flip is made however large, so at
  * 8x a 512 x 512 texture is one flip's whole copy. */
@@ -433,6 +491,10 @@ int nv2a_upg_second_line(char *buf, size_t n, const Nv2aUpSecond *s);
  *   COPY   a level of the game's own texels into a level of the copy, as
  *          they are: its level 0 under the new levels, then the rest of the
  *          title's own chain where it has one.
+ *   CLEAN  with Cleanup ticked (above), at the source's size, before PASS0:
+ *          the game's texture deblocked, de-dithered or both, straight
+ *          alpha, its alpha as it was; the first step then reads it in the
+ *          texture's place.
  *
  * The passes work on colour premultiplied by alpha, in half floats, so a
  * clear texel's colour never bleeds into its neighbours, and find edges in
@@ -446,10 +508,12 @@ int nv2a_upg_second_line(char *buf, size_t n, const Nv2aUpSecond *s);
  * halvings from the copy's level to the game's size), upKeep and upMagLin
  * (STORE: 1 to keep the game's alpha, and whether it is magnified linearly),
  * upLevel (COPY: the game's level to copy), upWeight (PASS0 to PASS2:
- * Super-xBR's filter weight, 1 his own; nv2a_up_sharp_weight) and upEdge
- * (PASS0 to PASS2: his edge strength, 0.6 his own; nv2a_up_edge_strength). */
+ * Super-xBR's filter weight, 1 his own; nv2a_up_sharp_weight), upEdge
+ * (PASS0 to PASS2: his edge strength, 0.6 his own; nv2a_up_edge_strength),
+ * and upClean and upStep (CLEAN: what is done, Nv2aUpClean's what, and the
+ * format's steps). */
 enum { NV2A_UP_PASS0, NV2A_UP_PASS1, NV2A_UP_PASS2, NV2A_UP_STORE, NV2A_UP_COPY,
-       NV2A_UP_PASSES };
+       NV2A_UP_CLEAN, NV2A_UP_PASSES };
 
 /* Each pass's name, for the backend's messages. */
 extern const char *const nv2a_up_pass_names[NV2A_UP_PASSES];

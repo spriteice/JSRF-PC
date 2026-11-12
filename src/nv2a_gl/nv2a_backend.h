@@ -98,6 +98,9 @@
 extern "C" {
 #endif
 
+/* Upscaling's cleanup (nv2a_upscale.h), which tex_upscale takes. */
+struct Nv2aUpClean;
+
 /* The front half's own record of the transform state: what the title has
  * written to the registers that feed the vertex stage. Not part of the device
  * interface -- uniforms cross the line one at a time, by name, below -- but
@@ -422,7 +425,11 @@ typedef struct Nv2aGfx {
      * nv2a_up_sharp_weight), higher for crisper edges; any other is taken
      * as 1. `edge` is its edge strength, from 0 to 5 (0.6 its author's;
      * nv2a_up_edge_strength), lower to follow fainter diagonals; any other
-     * is taken as 0.6.
+     * is taken as 0.6. With `clean` and its `what`, the game's texture is
+     * first deblocked, de-dithered or both at its steps (nv2a_upscale.h,
+     * Cleanup), and the new levels made from that; NULL or none: from the
+     * texture as it is. The game's own levels are copied as they are either
+     * way.
      * Sampled with `s`'s filters and wrap, mipmapped whatever `s->mip` says:
      * a nearest filter takes the nearest level, a linear one blends two.
      * `tex` is left as it was, and the backend as the next draw expects it. 0
@@ -431,7 +438,7 @@ typedef struct Nv2aGfx {
      * the backend has none. */
     uint32_t (*tex_upscale)(uint32_t tex, uint32_t w, uint32_t h, int factor,
                             int keep_alpha, float weight, float edge,
-                            const Nv2aSampler *s);
+                            const struct Nv2aUpClean *clean, const Nv2aSampler *s);
 } Nv2aGfx;
 
 /* The implementation: OpenGL's. */

@@ -266,6 +266,47 @@ static void edge_strength(void)
     CHECK(nv2a_up_edge_strength(-1) == 0.6f && nv2a_up_edge_strength(9) == 0.6f);
 }
 
+/* Cleanup: the row's two ticks, each on only for a saved 1; deblock for
+ * DXT alone, de-dither for DXT and the 16-bit formats, each at its format's
+ * steps; nothing for 8 bits a channel; and the log's names. */
+static void cleanup(void)
+{
+    Nv2aUpClean c;
+    const unsigned both = NV2A_UP_DEBLOCK | NV2A_UP_DEDITHER;
+    static const uint32_t none[] = { 0x00, 0x06, 0x07, 0x12, 0x13, 0x1E, 0x19, 0x1A, 0x1F, 0x20, 0x3F };
+    unsigned i;
+    CHECK(NV2A_UP_CLEANS == 2 && NV2A_UP_CLEAN_DEFAULT == 0);
+    CHECK(!strcmp(nv2a_up_clean_names[0], "DXT deblock") && !strcmp(nv2a_up_clean_names[1], "De-dither"));
+    CHECK(NV2A_UP_DEBLOCK == 1 && NV2A_UP_DEDITHER == 2);   /* the ticks' order */
+    CHECK(nv2a_up_clean(0, 0) == 0 && nv2a_up_clean(1, 0) == NV2A_UP_DEBLOCK);
+    CHECK(nv2a_up_clean(0, 1) == NV2A_UP_DEDITHER && nv2a_up_clean(1, 1) == both);
+    CHECK(nv2a_up_clean(2, -1) == 0 && nv2a_up_clean(1, 7) == NV2A_UP_DEBLOCK);
+    /* DXT1, 3 and 5: both, at R5G6B5's steps. */
+    CHECK(nv2a_up_clean_of(both, 0x0C, &c) == both && c.what == both);
+    CHECK(c.step[0] == 1.0f / 31 && c.step[1] == 1.0f / 63 && c.step[2] == 1.0f / 31);
+    CHECK(nv2a_up_clean_of(both, 0x0E, &c) == both && nv2a_up_clean_of(both, 0x0F, &c) == both);
+    CHECK(nv2a_up_clean_of(NV2A_UP_DEBLOCK, 0x0C, &c) == NV2A_UP_DEBLOCK);
+    CHECK(nv2a_up_clean_of(NV2A_UP_DEDITHER, 0x0F, &c) == NV2A_UP_DEDITHER);
+    CHECK(nv2a_up_clean_of(0, 0x0C, &c) == 0 && c.what == 0);
+    /* The 16-bit formats: de-dither alone, at their own steps. */
+    CHECK(nv2a_up_clean_of(both, 0x05, &c) == NV2A_UP_DEDITHER && c.step[1] == 1.0f / 63);
+    CHECK(nv2a_up_clean_of(both, 0x11, &c) == NV2A_UP_DEDITHER && c.step[0] == 1.0f / 31);
+    CHECK(nv2a_up_clean_of(both, 0x02, &c) == NV2A_UP_DEDITHER && c.step[1] == 1.0f / 31);
+    CHECK(nv2a_up_clean_of(both, 0x10, &c) == NV2A_UP_DEDITHER && c.step[2] == 1.0f / 31);
+    CHECK(nv2a_up_clean_of(both, 0x03, &c) == NV2A_UP_DEDITHER && nv2a_up_clean_of(both, 0x1C, &c) == NV2A_UP_DEDITHER);
+    CHECK(nv2a_up_clean_of(both, 0x04, &c) == NV2A_UP_DEDITHER && c.step[0] == 1.0f / 15);
+    CHECK(nv2a_up_clean_of(both, 0x1D, &c) == NV2A_UP_DEDITHER && c.step[1] == 1.0f / 15 && c.step[2] == 1.0f / 15);
+    CHECK(nv2a_up_clean_of(NV2A_UP_DEBLOCK, 0x05, &c) == 0 && c.what == 0);
+    /* 8 bits a channel, and anything else: nothing. */
+    for (i = 0; i < sizeof none / sizeof none[0]; i++)
+        CHECK(nv2a_up_clean_of(both, none[i], &c) == 0 && c.what == 0);
+    CHECK(!strcmp(nv2a_up_clean_said(0), "none") && !strcmp(nv2a_up_clean_said(NV2A_UP_DEBLOCK), "DXT deblock"));
+    CHECK(!strcmp(nv2a_up_clean_said(NV2A_UP_DEDITHER), "De-dither"));
+    CHECK(!strcmp(nv2a_up_clean_said(both), "DXT deblock and De-dither"));
+    /* The steps the passes use. */
+    CHECK(NV2A_UP_BLOCK_STEP == 3.0 && NV2A_UP_FLAT_STEP == 1.5 && NV2A_UP_DITHER_STEP == 1.5);
+}
+
 /* A frame's draws to one surface: d for one with the depth test, n for one
  * without; C a clear of colour and depth, Z of depth alone. Each draw's
  * answer, 1 over and 0 not, in order. */
@@ -817,6 +858,7 @@ int main(void)
     choices();
     sharpness();
     edge_strength();
+    cleanup();
     over();
     budget();
     second();

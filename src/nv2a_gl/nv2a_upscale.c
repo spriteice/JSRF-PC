@@ -121,6 +121,49 @@ float nv2a_up_edge_strength(int choice)
     return strength[nv2a_up_edge(choice)];
 }
 
+const char *const nv2a_up_clean_names[NV2A_UP_CLEANS] = { "DXT deblock", "De-dither" };
+
+unsigned nv2a_up_clean(int deblock, int dedither)
+{
+    return (deblock == 1 ? NV2A_UP_DEBLOCK : 0u) | (dedither == 1 ? NV2A_UP_DEDITHER : 0u);
+}
+
+unsigned nv2a_up_clean_of(unsigned want, uint32_t fmt, Nv2aUpClean *c)
+{
+    int r, g, b, dxt = 0;
+    switch (fmt) {
+    case 0x0C: case 0x0E: case 0x0F:    /* DXT1, 3, 5: R5G6B5 colours */
+        dxt = 1; r = 5; g = 6; b = 5; break;
+    case 0x05: case 0x11:               /* R5G6B5, swizzled and linear */
+        r = 5; g = 6; b = 5; break;
+    case 0x02: case 0x10:               /* A1R5G5B5 */
+    case 0x03: case 0x1C:               /* X1R5G5B5 */
+        r = g = b = 5; break;
+    case 0x04: case 0x1D:               /* A4R4G4B4 */
+        r = g = b = 4; break;
+    default:
+        r = g = b = 0; break;
+    }
+    c->what = 0;
+    c->step[0] = r ? 1.0f / (float)((1 << r) - 1) : 0.0f;
+    c->step[1] = g ? 1.0f / (float)((1 << g) - 1) : 0.0f;
+    c->step[2] = b ? 1.0f / (float)((1 << b) - 1) : 0.0f;
+    if (!r) return 0;
+    if (dxt) c->what |= want & NV2A_UP_DEBLOCK;
+    c->what |= want & NV2A_UP_DEDITHER;
+    return c->what;
+}
+
+const char *nv2a_up_clean_said(unsigned want)
+{
+    switch (want & (NV2A_UP_DEBLOCK | NV2A_UP_DEDITHER)) {
+    case NV2A_UP_DEBLOCK: return "DXT deblock";
+    case NV2A_UP_DEDITHER: return "De-dither";
+    case NV2A_UP_DEBLOCK | NV2A_UP_DEDITHER: return "DXT deblock and De-dither";
+    default: return "none";
+    }
+}
+
 uint64_t nv2a_up_texels(uint32_t w, uint32_t h, int factor)
 {
     return (uint64_t)w * h * (uint64_t)factor * (uint64_t)factor;

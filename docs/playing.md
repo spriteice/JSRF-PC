@@ -221,7 +221,7 @@ These are in the in-game menu, under Graphics.
   finished picture, the HUD included. MSAA (2×, 4×, or 8×) gives the cleanest
   edges but asks the most of the graphics card. Use either, or both. SMAA is
   on by default, MSAA off.
-- **Upscaling:** A submenu at the foot of Graphics, with five rows:
+- **Upscaling:** A submenu at the foot of Graphics, with six rows:
   - **Menus and HUD:** Off, 2×, 4×, or 8×. The menus, text, HUD and icons are
     drawn from sharper copies of the game's art, which the graphics card makes
     the first time each piece is shown. It helps from render scale 2× up; at 1×
@@ -253,3 +253,12 @@ These are in the in-game menu, under Graphics.
     Strong follows fainter diagonals too, for smoother lines in fine detail, and
     Soft only clear ones, blending the rest. Changing it makes every copy again,
     which can pause the game for a moment. Normal by default.
+  - **Cleanup:** DXT deblock and De-dither, each ticked on or off. They clean
+    the game's textures up before the copies are made, so the upscaling
+    doesn't sharpen what the textures' formats left in them. DXT deblock
+    smooths the faint steps where a DXT texture's 4×4 blocks meet; De-dither
+    smooths the dot patterns of 16-bit and DXT textures. Each leaves larger
+    differences, edges in the picture, as they are, and neither changes a
+    texture's see-through parts. Changing either makes every copy again,
+    which can pause the game for a moment. Both off by default; File > Presets
+    leaves them as you set them.

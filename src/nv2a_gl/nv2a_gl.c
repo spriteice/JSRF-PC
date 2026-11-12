@@ -1199,6 +1199,23 @@ static volatile int g_up_edge_want; /* the choice asked for: 0 Soft, 1 Normal, 2
 static int          g_up_edge_now;  /* and in use */
 static float up_edge(void) { return nv2a_up_edge_strength(g_up_edge_now); }
 
+/*
+ * Cleanup (nv2a_upscale.h): what is done to a texture before any row's copy
+ * of it is made, from the window's upscale_deblock= and upscale_dedither=
+ * settings, both off unless set otherwise (NV2A_UP_CLEAN_DEFAULT), taken at
+ * the next flip as the rows are.
+ */
+static volatile unsigned g_up_clean_want; /* the ticks: NV2A_UP_DEBLOCK, NV2A_UP_DEDITHER */
+static unsigned          g_up_clean_now;  /* and in use */
+
+/* The cleanup the copy of the texture in cache slot k is made with, as its
+ * format takes the ticks in use (nv2a_up_clean_of), into *c. */
+static const Nv2aUpClean *up_clean(uint32_t k, Nv2aUpClean *c)
+{
+    nv2a_up_clean_of(g_up_clean_now, g_tcache[k].format, c);
+    return c;
+}
+
 /* ---- helpers ------------------------------------------------------------ */
 
 int nv2a_gl_enabled(void)
@@ -2279,7 +2296,7 @@ static void sdl_menu_up_sharp(void)
 /* Graphics > Upscaling > Edge strength: Soft, Normal or Strong, for the
  * three rows' copies, taken at the next flip and kept as
  * upscale_edge_strength= (0, 1 or 2). Added after Sharpness (gfx_init), so it
- * is the submenu's last row. */
+ * is the submenu's row below it. */
 static int  sdl_up_edge_now(void)   { return nv2a_up_edge(g_up_edge_want); }
 static void sdl_up_edge_pick(int i)
 {
@@ -2297,6 +2314,32 @@ static void sdl_menu_up_edge(void)
         .preset = { NV2A_UP_EDGE_DEFAULT, NV2A_UP_EDGE_DEFAULT, NV2A_UP_EDGE_DEFAULT },
         .group = XBOX_GROUP_UPSCALING,
         .hint = "How faint a diagonal the upscaling follows. Normal is Super-xBR's own." };
+    if (G->tex_upscale) xbox_MenuAdd(&row, 1);
+}
+
+/* Graphics > Upscaling > Cleanup: DXT deblock and De-dither, each ticked on
+ * or off, for the three rows' copies, taken at the next flip and kept as
+ * upscale_deblock= and upscale_dedither= (0 or 1). Added after Edge strength
+ * (gfx_init), so it is the submenu's last row. The presets leave it as the
+ * player has it: a submenu of ticks is no setting a preset sets (menu.h,
+ * presets), and with the rows Off, as Xbox mode has them, it does nothing. */
+static int  sdl_up_clean_now(void) { return (int)g_up_clean_want; }
+static void sdl_up_clean_pick(int i)
+{
+    unsigned bit = i == 0 ? NV2A_UP_DEBLOCK : NV2A_UP_DEDITHER;
+    unsigned want = g_up_clean_want ^ bit;
+    g_up_clean_want = want;
+    sdl_cfg_set(i == 0 ? "upscale_deblock" : "upscale_dedither", (want & bit) != 0);
+}
+static void sdl_menu_up_clean(void)
+{
+    const XBOX_MENU_ITEM row = {
+        .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLES, .label = "Cleanup",
+        .state = sdl_up_clean_now, .pick = sdl_up_clean_pick, .choices = nv2a_up_clean_names,
+        .nchoices = NV2A_UP_CLEANS,
+        .presets = XBOX_PRESETS_OWN,
+        .group = XBOX_GROUP_UPSCALING,
+        .hint = "Smooths out DXT blocks and dither before upscaling." };
     if (G->tex_upscale) xbox_MenuAdd(&row, 1);
 }
 #endif
@@ -4503,11 +4546,12 @@ static uint8_t *world_of(uint32_t k, int graffiti)
  * 0 for none. *factor is then the one made. */
 static uint32_t world_copy(uint32_t k, int *factor, const Nv2aSampler *smp)
 {
+    Nv2aUpClean c;
     uint32_t copy;
     if (!G->tex_upscale) return 0;
     for (;;) {
         copy = G->tex_upscale(g_tcache[k].tex, g_tcache[k].w, g_tcache[k].h, *factor, 1,
-                              up_weight(), up_edge(), smp);
+                              up_weight(), up_edge(), up_clean(k, &c), smp);
         if (copy || *factor <= 2) return copy;
         *factor /= 2;
     }
@@ -4807,8 +4851,9 @@ static uint32_t up_drop_copies(void)
  *
  * A change of a row drops every texture with a copy of its own, made again
  * at its next draw as the game's own or a new copy, as aniso_take does; one
- * the device couldn't copy is tried again. A change of sharpness or edge
- * strength drops every texture with a copy of any row's (up_drop_copies).
+ * the device couldn't copy is tried again. A change of sharpness, edge
+ * strength or cleanup drops every texture with a copy of any row's
+ * (up_drop_copies).
  * Then each texture the 2D rule took that was drawn this frame or the last
  * gets its copy, while the flip's budget of texels lasts
  * (NV2A_UP_TEXELS_A_FLIP, and always one): the game's texture is freed and
@@ -4878,9 +4923,18 @@ static void up_take(void)
                 "%u textures made again\n", nv2a_up_edge_names[g_up_edge_now], S.flips,
                 nv2a_up_edge_names[was], (double)up_edge(), n);
     }
+    if (g_up_clean_want != g_up_clean_now) {
+        unsigned was = g_up_clean_now;
+        uint32_t n;
+        g_up_clean_now = g_up_clean_want;
+        n = up_drop_copies();
+        fprintf(stderr, "  [GL] upscale cleanup: %s from present %u (was %s), %u textures made again\n",
+                nv2a_up_clean_said(g_up_clean_now), S.flips, nv2a_up_clean_said(was), n);
+    }
     f = up_factor();
     for (k = 0; f && k < TEX_CACHE; k++) {
         Nv2aSampler smp;
+        Nv2aUpClean c;
         uint64_t texels, bytes;
         uint32_t copy;
         if (g_tcache[k].up != UP_WANTED || !g_tcache[k].tex || S.flips - g_tcache[k].drawn > 1)
@@ -4890,7 +4944,7 @@ static void up_take(void)
         if (spent && spent + texels > NV2A_UP_TEXELS_A_FLIP) continue;
         sampler_of_key(g_tcache[k].sampling, &smp);
         copy = G->tex_upscale ? G->tex_upscale(g_tcache[k].tex, g_tcache[k].w, g_tcache[k].h, f, 0,
-                                               up_weight(), up_edge(), &smp) : 0;
+                                               up_weight(), up_edge(), up_clean(k, &c), &smp) : 0;
         if (!copy) {
             g_tcache[k].up = UP_FAILED;
             g_up_sec.failed++;
@@ -14184,6 +14238,19 @@ static void up_edge_start(void)
             nv2a_up_edge_names[g_up_edge_now], (double)up_edge());
 }
 
+/* Cleanup from the start: the window's two settings, else both off
+ * (NV2A_UP_CLEAN_DEFAULT). Its menu row comes after Edge strength's
+ * (gfx_init). */
+static void up_clean_start(void)
+{
+    unsigned c = NV2A_UP_CLEAN_DEFAULT;
+#if defined(NV2A_GL_USE_SDL)
+    c = nv2a_up_clean(sdl_cfg_get("upscale_deblock", 0), sdl_cfg_get("upscale_dedither", 0));
+#endif
+    g_up_clean_now = g_up_clean_want = c;
+    fprintf(stderr, "  [GL] upscale cleanup: %s from the settings\n", nv2a_up_clean_said(c));
+}
+
 static int gfx_init(uint32_t w, uint32_t h)
 {
     if (!gl_init(w, h)) return 0;     /* the context, then the device */
@@ -14197,6 +14264,7 @@ static int gfx_init(uint32_t w, uint32_t h)
     upg_start();
     up_sharp_start();
     up_edge_start();
+    up_clean_start();
 #if defined(XBOXRECOMP_MENU)
     sdl_menu_smaa();
     sdl_menu_msaa();
@@ -14205,6 +14273,7 @@ static int gfx_init(uint32_t w, uint32_t h)
     sdl_menu_upg();
     sdl_menu_up_sharp();
     sdl_menu_up_edge();
+    sdl_menu_up_clean();
     sdl_shader_cache();
 #endif
     return 1;

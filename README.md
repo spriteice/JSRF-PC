@@ -51,6 +51,8 @@ contains no game files.
   copies.
 - **Edge strength:** Soft, Normal or Strong: how faint a diagonal edge all
   three upscalings' copies follow.
+- **Upscaling cleanup:** DXT deblock and De-dither, each on or off, smooth
+  the textures' block steps and dither before they are upscaled.
 - **Performance:** Smooth frame pacing and optimised engine/renderer on both
   Linux and Windows.
 - **Portable mode:** Everything in one folder that can be moved.

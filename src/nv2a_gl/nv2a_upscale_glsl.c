@@ -9,8 +9,8 @@
  * does). What is ours: the texels read whole (texelFetch) at the source's
  * wrap instead of sampled, colour premultiplied by alpha and edges found in
  * alpha as well as brightness (his read colour only), 4x as two steps of 2x,
- * and the store and copy passes. His notice, which goes with this file and
- * is in NOTICE:
+ * and the store, copy and cleanup passes. His notice, which goes with this
+ * file and is in NOTICE:
  *
  *   Super XBR Shader
  *
@@ -40,8 +40,11 @@
 
 const char *const nv2a_up_pass_names[NV2A_UP_PASSES] = {
     "upscaling pass 0", "upscaling pass 1", "upscaling pass 2",
-    "upscaling store", "upscaling copy",
+    "upscaling store", "upscaling copy", "upscaling cleanup",
 };
+
+#define UP_GLSL_STR_(x) #x
+#define UP_GLSL_STR(x) UP_GLSL_STR_(x)
 
 /* One triangle over the target; the fragment stages work from gl_FragCoord,
  * whose row 0 is the target's first row, as a texture's is. */
@@ -68,6 +71,8 @@ static const char glsl_vs[] =
     "uniform int upLevel;\n" \
     "uniform float upWeight;\n" \
     "uniform float upEdge;\n" \
+    "uniform int upClean;\n" \
+    "uniform vec3 upStep;\n" \
     "out vec4 upOut;\n" \
     "int up_wrap(int p, int n, int mode)\n{\n" \
     "    if (mode == 1) return (p + 4 * n) % n;\n" \
@@ -214,6 +219,59 @@ static const char glsl_store[] =
     "    if (upKeep != 0) upOut.a = up_kept_alpha(p);\n"
     "}\n";
 
+/* Cleanup (nv2a_upscale.h): upSrc, the game's texture or the image the
+ * cleanup before made from it, de-dithered (upClean NV2A_UP_DEDITHER) or
+ * deblocked (NV2A_UP_DEBLOCK), one a pass, straight alpha, alpha as it was.
+ * Two texels are near when every colour channel is within k of the
+ * format's steps (upStep) of each other's, and alpha within 0.1.
+ *
+ * De-dither: the mean of the 3 x 3 around the texel of those near it at
+ * DITHER, itself among them.
+ *
+ * Deblock, on each axis: a texel last in its block of four (p0) or first
+ * (q0) is one of the two beside an edge between blocks, p1 p0 | q0 q1.
+ * Where p0 and q0 are near at BLOCK, and p1 and p0, and q0 and q1, at FLAT,
+ * p0 moves by d and q0 by -d, where d is a third of the step across the
+ * edge less the mean of the steps beside it: a step alone becomes an even
+ * ramp of four texels, and a ramp stays as it is. An edge at the texture's
+ * own side only where the texture repeats. The two axes' moves add up. */
+static const char glsl_clean[] =
+    GLSL_HEAD
+    "#define DITHER " UP_GLSL_STR(NV2A_UP_DITHER_STEP) "\n"
+    "#define BLOCK " UP_GLSL_STR(NV2A_UP_BLOCK_STEP) "\n"
+    "#define FLAT " UP_GLSL_STR(NV2A_UP_FLAT_STEP) "\n"
+    "vec4 C(ivec2 p) { return up_at(upSrc, p); }\n"
+    "bool up_near(vec4 a, vec4 b, float k)\n{\n"
+    "    return all(lessThanEqual(abs(a.rgb - b.rgb), upStep * k + 0.0001)) && abs(a.a - b.a) <= 0.1;\n"
+    "}\n"
+    "vec3 up_deblock(ivec2 p, ivec2 d, int x, int n, int wrap)\n{\n"
+    "    int at = (x & 3) == 3 ? 1 : (x & 3) == 0 ? -1 : 0;\n"
+    "    if (at == 0 || (wrap != 1 && (x + at < 0 || x + at >= n))) return vec3(0.0);\n"
+    "    ivec2 e = d * at;\n"
+    "    vec4 s0 = C(p), s1 = C(p - e), o0 = C(p + e), o1 = C(p + 2 * e);\n"
+    "    if (!up_near(s0, o0, BLOCK) || !up_near(s0, s1, FLAT) || !up_near(o0, o1, FLAT))\n"
+    "        return vec3(0.0);\n"
+    "    return ((o0.rgb - s0.rgb) - 0.5 * ((s0.rgb - s1.rgb) + (o1.rgb - o0.rgb))) / 3.0;\n"
+    "}\n"
+    "void main()\n{\n"
+    "    ivec2 p = ivec2(gl_FragCoord.xy), n = textureSize(upSrc, 0);\n"
+    "    vec4 c = C(p);\n"
+    "    if (upClean == " UP_GLSL_STR(NV2A_UP_DEDITHER) ") {\n"
+    "        vec3 sum = vec3(0.0);\n"
+    "        float k = 0.0;\n"
+    "        for (int y = -1; y <= 1; y++)\n"
+    "            for (int x = -1; x <= 1; x++) {\n"
+    "                vec4 o = C(p + ivec2(x, y));\n"
+    "                if (up_near(c, o, DITHER)) { sum += o.rgb; k += 1.0; }\n"
+    "            }\n"
+    "        upOut = vec4(sum / k, c.a);\n"
+    "    } else {\n"
+    "        vec3 m = up_deblock(p, ivec2(1, 0), p.x, n.x, upWrap.x)\n"
+    "               + up_deblock(p, ivec2(0, 1), p.y, n.y, upWrap.y);\n"
+    "        upOut = vec4(clamp(c.rgb + m, 0.0, 1.0), c.a);\n"
+    "    }\n"
+    "}\n";
+
 /* Level upLevel of the game's texture, as it is. */
 static const char glsl_copy[] =
     GLSL_HEAD
@@ -224,7 +282,7 @@ static const char glsl_copy[] =
 const char *nv2a_up_glsl(int pass, int fragment)
 {
     static const char *const fs[NV2A_UP_PASSES] = {
-        glsl_pass0, glsl_pass1, glsl_pass2, glsl_store, glsl_copy,
+        glsl_pass0, glsl_pass1, glsl_pass2, glsl_store, glsl_copy, glsl_clean,
     };
     if (pass < 0 || pass >= NV2A_UP_PASSES) return 0;
     return fragment ? fs[pass] : glsl_vs;
