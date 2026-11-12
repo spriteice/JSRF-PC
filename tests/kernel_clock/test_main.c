@@ -91,8 +91,7 @@ int xbox_worker_stack_alloc(void)
 
 /* The timer thread's other work, each pass. */
 static volatile LONG s_passes;
-void kernel_freeze_watch(void) { __atomic_add_fetch(&s_passes, 1, __ATOMIC_RELAXED); }
-void kernel_vblank_tick(void) { }
+void kernel_vblank_tick(void) { __atomic_add_fetch(&s_passes, 1, __ATOMIC_RELAXED); }
 void kernel_pgraph_tick(void) { }
 void kernel_apu_tick(void) { }
 void kernel_cvfs_watch(void) { }

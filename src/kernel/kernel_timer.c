@@ -7,7 +7,9 @@
  * KeTickCount, fires the timers that are due and runs their DPCs, drains the
  * DPC queue, and does the devices' periodic work: the display interrupt and
  * the GPU's software methods (nv2a_intr.c), and the APU's interrupt and the
- * freeze and file-device watches (kernel_bridge.c).
+ * file-device watch (kernel_bridge.c). The freeze watch is on the report
+ * thread (kernel_bridge.c's kernel_report_thread), which never waits for the
+ * guest lock as this thread does to deliver an interrupt.
  *
  * Moved out of kernel_bridge.c as it was, so that it can be linked and tested
  * on its own.
@@ -171,7 +173,6 @@ static DWORD WINAPI kernel_timer_thread(LPVOID unused)
                 prev_valid = 1;
             }
         }
-        kernel_freeze_watch(); /* has the picture stopped? */
         kernel_vblank_tick();  /* the GPU's frame clock */
         kernel_pgraph_tick();  /* the GPU's software methods */
         kernel_apu_tick();     /* the APU's interrupt line */

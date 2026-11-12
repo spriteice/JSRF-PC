@@ -119,7 +119,6 @@ void bridge_KeCancelTimer(void);
 /* Signal a guest dispatcher object. Returns the previous state. */
 uint32_t xbox_dispatcher_signal(uint32_t va);
 /* The devices' periodic work, on every pass of the timer thread. */
-void kernel_freeze_watch(void);   /* has the picture stopped? */
 void kernel_apu_tick(void);       /* the APU's interrupt line */
 void kernel_cvfs_watch(void);     /* CRI's streaming file device */
 

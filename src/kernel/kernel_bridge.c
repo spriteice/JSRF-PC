@@ -5552,16 +5552,20 @@ void xbox_guest_lock_stats(void)
     fflush(stderr);
 }
 
-/* The guest lock's reports, on a thread of their own.
+/* The guest lock's reports, and the freeze watch, on a thread of their own.
  *
  * They have to tick steadily and never wait for the guest lock: a watchdog
  * that can be blocked by the thing it is watching reports nothing at exactly
  * the moment it matters. The x87 census comes too, as it has to reach stderr
- * on a run that is killed, which is every run. All four rode the USB
- * controller's loop until its interrupt took the guest lock like every other
- * (ohci_call_isr in src/usb/ohci.c), at the same 20 ms. */
+ * on a run that is killed, which is every run. The guest lock's four rode
+ * the USB controller's loop until its interrupt took the guest lock like
+ * every other (ohci_call_isr in src/usb/ohci.c), at the same 20 ms. The
+ * freeze watch rode the kernel timer thread until a hang where that thread
+ * was itself waiting for the guest lock to deliver a vertical blank, and so
+ * never said the picture had stopped (known bug 49). */
 #define KERNEL_REPORT_MS 20
 void recomp_fp_report(void);
+static void kernel_freeze_watch(void);
 static DWORD WINAPI kernel_report_thread(LPVOID unused)
 {
     (void)unused;
@@ -5571,6 +5575,7 @@ static DWORD WINAPI kernel_report_thread(LPVOID unused)
         xbox_guest_lock_stats();
         xbox_guest_cs_report();
         recomp_fp_report();
+        kernel_freeze_watch();   /* has the picture stopped? */
     }
     return 0;
 }
@@ -6211,10 +6216,10 @@ void xbox_kernel_thread_report(void) { kthread_report(); }
  * and a frozen game is not going to un-freeze at five. Repeats every ten
  * seconds while it lasts, so a log from a player who walked away is bounded.
  *
- * Runs on the kernel timer thread, which takes no guest lock to do any of
- * this -- deliberately, since the thread being diagnosed is quite likely the
- * one holding it. */
-void kernel_freeze_watch(void)
+ * Runs on the report thread (kernel_report_thread), which takes no guest
+ * lock to do any of this -- deliberately, since the thread being diagnosed
+ * is quite likely the one holding it. */
+static void kernel_freeze_watch(void)
 {
     extern unsigned long nv2a_gl_progress(void) __attribute__((weak));
     static unsigned long last_frames;
