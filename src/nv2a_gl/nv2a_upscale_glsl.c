@@ -2,14 +2,15 @@
  * Upscaling's passes (nv2a_upscale.h), for 2D art and 3D textures alike:
  * Super-xBR, written in our GLSL from Hyllian's published shaders,
  * super-xbr-pass0.glsl, -pass1.glsl and -pass2.glsl (libretro's
- * glsl-shaders, xbr/shaders/super-xbr/), at their
- * defaults, mode 0 ("Normal"), edge strength 0.6 and full anti-ringing, with
- * his filter weight a uniform (upWeight: 1, his default, unless Graphics >
- * Upscaling > Sharpness says otherwise). What is ours: the texels read whole (texelFetch) at the
- * source's wrap instead of sampled, colour premultiplied by alpha and edges
- * found in alpha as well as brightness (his read colour only), 4x as two
- * steps of 2x, and the store and copy passes. His notice, which goes with
- * this file and is in NOTICE:
+ * glsl-shaders, xbr/shaders/super-xbr/), at their defaults, mode 0
+ * ("Normal") and full anti-ringing, with his filter weight and edge strength
+ * uniforms (upWeight: 1, his default, unless Graphics > Upscaling >
+ * Sharpness says otherwise; upEdge: 0.6, his, unless Edge strength there
+ * does). What is ours: the texels read whole (texelFetch) at the source's
+ * wrap instead of sampled, colour premultiplied by alpha and edges found in
+ * alpha as well as brightness (his read colour only), 4x as two steps of 2x,
+ * and the store and copy passes. His notice, which goes with this file and
+ * is in NOTICE:
  *
  *   Super XBR Shader
  *
@@ -66,6 +67,7 @@ static const char glsl_vs[] =
     "uniform int upMagLin;\n" \
     "uniform int upLevel;\n" \
     "uniform float upWeight;\n" \
+    "uniform float upEdge;\n" \
     "out vec4 upOut;\n" \
     "int up_wrap(int p, int n, int mode)\n{\n" \
     "    if (mode == 1) return (p + 4 * n) % n;\n" \
@@ -93,7 +95,8 @@ static const char glsl_vs[] =
  *     P2 H5 I5 P3
  *
  * Edges are found in (brightness, alpha) pairs, a difference being the sum
- * of the two; the four directions' colours are blended as his are, and the
+ * of the two; the four directions' colours are blended as his are, by how far
+ * the diagonal edge stands out against upEdge, his edge strength, and the
  * result clamped to E, F, H and I's range (anti-ringing), alpha with it. */
 #define GLSL_XBR \
     "vec2 up_key(vec4 c) { return vec2(dot(c.rgb, vec3(0.2126, 0.7152, 0.0722)), c.a); }\n" \
@@ -118,7 +121,7 @@ static const char glsl_vs[] =
     "    float d_edge = d_wd(d, b, g, e, c, p2, h, f, p1, h5, i, f4, i5, i4)\n" \
     "                 - d_wd(c, f4, b, f, i4, p0, e, i, p3, d, h, i5, g, h5);\n" \
     "    float hv_edge = hv_wd(f, i, e, h, c, i5, b, h5) - hv_wd(e, f, h, i, d, f4, g, i4);\n" \
-    "    float strength = smoothstep(0.0, 0.6 + 0.000001, abs(d_edge));\n" \
+    "    float strength = smoothstep(0.0, upEdge + 0.000001, abs(d_edge));\n" \
     "    vec4 w1 = vec4(-WEIGHT1, WEIGHT1 + 0.5, WEIGHT1 + 0.5, -WEIGHT1);\n" \
     "    vec4 w2 = vec4(-WEIGHT2, WEIGHT2 + 0.25, WEIGHT2 + 0.25, -WEIGHT2);\n" \
     "    vec4 c1 = mat4(P2, H, F, P1) * w1;\n" \

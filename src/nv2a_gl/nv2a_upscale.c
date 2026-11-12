@@ -108,6 +108,19 @@ float nv2a_up_sharp_weight(int choice)
     return weight[nv2a_up_sharp(choice)];
 }
 
+const char *const nv2a_up_edge_names[NV2A_UP_EDGE_CHOICES] = { "Soft", "Normal", "Strong" };
+
+int nv2a_up_edge(int n)
+{
+    return n >= 0 && n < NV2A_UP_EDGE_CHOICES ? n : NV2A_UP_EDGE_DEFAULT;
+}
+
+float nv2a_up_edge_strength(int choice)
+{
+    static const float strength[NV2A_UP_EDGE_CHOICES] = { 1.8f, 0.6f, 0.2f };
+    return strength[nv2a_up_edge(choice)];
+}
+
 uint64_t nv2a_up_texels(uint32_t w, uint32_t h, int factor)
 {
     return (uint64_t)w * h * (uint64_t)factor * (uint64_t)factor;

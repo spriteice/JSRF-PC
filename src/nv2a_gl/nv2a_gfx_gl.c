@@ -1777,7 +1777,7 @@ static struct {
     GLuint prog[NV2A_UP_PASSES];
     GLint  wrap_loc[NV2A_UP_PASSES], premul_loc[NV2A_UP_PASSES], shift_loc[NV2A_UP_PASSES];
     GLint  keep_loc[NV2A_UP_PASSES], maglin_loc[NV2A_UP_PASSES], level_loc[NV2A_UP_PASSES];
-    GLint  weight_loc[NV2A_UP_PASSES];
+    GLint  weight_loc[NV2A_UP_PASSES], edge_loc[NV2A_UP_PASSES];
     GLuint vao, fbo;
     GLint  side_max;                    /* the largest side a level may have */
     int    bad;                         /* the passes would not build */
@@ -1802,6 +1802,7 @@ static int up_build(void)
         g_up.maglin_loc[p] = glGetUniformLocation(g, "upMagLin");
         g_up.level_loc[p] = glGetUniformLocation(g, "upLevel");
         g_up.weight_loc[p] = glGetUniformLocation(g, "upWeight");
+        g_up.edge_loc[p] = glGetUniformLocation(g, "upEdge");
     }
     glGenVertexArrays(1, &g_up.vao);
     glGenFramebuffers(1, &g_up.fbo);
@@ -1829,10 +1830,11 @@ static GLuint up_image(uint32_t w, uint32_t h)
 
 /* Pass p into level `level` of `out`, w x h, reading src (and aux); the
  * store keeping the game's alpha (keep), the copy reading src's level
- * `src_level`, Super-xBR's passes filtering at `weight`. */
+ * `src_level`, Super-xBR's passes filtering at `weight` with edge strength
+ * `edge`. */
 static void up_pass(int p, GLuint out, GLint level, uint32_t w, uint32_t h,
                     GLuint src, GLuint aux, int premul, int shift, int keep, int src_level,
-                    float weight, const Nv2aSampler *s)
+                    float weight, float edge, const Nv2aSampler *s)
 {
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, out, level);
     glViewport(0, 0, (GLsizei)w, (GLsizei)h);
@@ -1844,13 +1846,15 @@ static void up_pass(int p, GLuint out, GLint level, uint32_t w, uint32_t h,
     glUniform1i(g_up.maglin_loc[p], s->mag_linear != 0);
     glUniform1i(g_up.level_loc[p], src_level);
     glUniform1f(g_up.weight_loc[p], weight);
+    glUniform1f(g_up.edge_loc[p], edge);
     smaa_bind(UP_UNIT, src);
     smaa_bind(UP_UNIT + 1, aux);
     glDrawArrays(GL_TRIANGLES, 0, 3);
 }
 
 static uint32_t glx_tex_upscale(uint32_t tex, uint32_t w, uint32_t h, int factor,
-                                int keep_alpha, float weight, const Nv2aSampler *s)
+                                int keep_alpha, float weight, float edge,
+                                const Nv2aSampler *s)
 {
     static const GLint wrap_of[3] = { GL_CLAMP_TO_EDGE, GL_REPEAT, GL_MIRRORED_REPEAT };
     int steps = factor == 2 ? 1 : factor == 4 ? 2 : factor == 8 ? 3 : 0, k;
@@ -1859,6 +1863,7 @@ static uint32_t glx_tex_upscale(uint32_t tex, uint32_t w, uint32_t h, int factor
 
     if (!tex || !steps || !w || !h || !s || g_up.bad) return 0;
     if (!(weight >= 0.0f && weight <= 1.5f)) weight = 1.0f;
+    if (!(edge >= 0.0f && edge <= 5.0f)) edge = 0.6f;
     if (!g_up.prog[NV2A_UP_PASSES - 1] && !up_build()) {
         g_up.bad = 1;
         fprintf(stderr, "  [GL] upscaling: no programs; the game's own textures are kept\n");
@@ -1904,11 +1909,11 @@ static uint32_t glx_tex_upscale(uint32_t tex, uint32_t w, uint32_t h, int factor
         uint32_t cw = w << (k - 1), ch = h << (k - 1);
         GLuint d = up_image(cw, ch), m = up_image(2 * cw, 2 * ch), n = up_image(2 * cw, 2 * ch);
         int premul = k == 1;
-        up_pass(NV2A_UP_PASS0, d, 0, cw, ch, cur, 0, premul, 0, 0, 0, weight, s);
-        up_pass(NV2A_UP_PASS1, m, 0, 2 * cw, 2 * ch, cur, d, premul, 0, 0, 0, weight, s);
-        up_pass(NV2A_UP_PASS2, n, 0, 2 * cw, 2 * ch, m, 0, 0, 0, 0, 0, weight, s);
+        up_pass(NV2A_UP_PASS0, d, 0, cw, ch, cur, 0, premul, 0, 0, 0, weight, edge, s);
+        up_pass(NV2A_UP_PASS1, m, 0, 2 * cw, 2 * ch, cur, d, premul, 0, 0, 0, weight, edge, s);
+        up_pass(NV2A_UP_PASS2, n, 0, 2 * cw, 2 * ch, m, 0, 0, 0, 0, 0, weight, edge, s);
         up_pass(NV2A_UP_STORE, out, steps - k, 2 * cw, 2 * ch, n, (GLuint)tex, 0, k,
-                keep_alpha != 0, 0, weight, s);
+                keep_alpha != 0, 0, weight, edge, s);
         glDeleteTextures(1, &d);
         glDeleteTextures(1, &m);
         if (cur != (GLuint)tex) glDeleteTextures(1, &cur);
@@ -1919,7 +1924,7 @@ static uint32_t glx_tex_upscale(uint32_t tex, uint32_t w, uint32_t h, int factor
     for (l = 0; l < chain; l++) {
         uint32_t lw = w >> l, lh = h >> l;
         up_pass(NV2A_UP_COPY, out, steps + l, lw ? lw : 1, lh ? lh : 1, (GLuint)tex, 0, 0, 0,
-                0, (int)l, weight, s);
+                0, (int)l, weight, edge, s);
     }
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
 

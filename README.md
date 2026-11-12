@@ -49,6 +49,8 @@ contains no game files.
   of their own.
 - **Upscale sharpness:** Soft, Normal or Sharp edges in all three upscalings'
   copies.
+- **Edge strength:** Soft, Normal or Strong: how faint a diagonal edge all
+  three upscalings' copies follow.
 - **Performance:** Smooth frame pacing and optimised engine/renderer on both
   Linux and Windows.
 - **Portable mode:** Everything in one folder that can be moved.

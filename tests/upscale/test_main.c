@@ -252,6 +252,20 @@ static void sharpness(void)
     CHECK(nv2a_up_sharp_weight(-1) == 1.0f && nv2a_up_sharp_weight(9) == 1.0f);
 }
 
+/* Edge strength: the row's three choices, a setting out of range taken as
+ * Normal, and each choice's strength, lower to follow fainter edges. */
+static void edge_strength(void)
+{
+    CHECK(NV2A_UP_EDGE_CHOICES == 3 && NV2A_UP_EDGE_DEFAULT == 1);
+    CHECK(!strcmp(nv2a_up_edge_names[0], "Soft") && !strcmp(nv2a_up_edge_names[1], "Normal"));
+    CHECK(!strcmp(nv2a_up_edge_names[2], "Strong"));
+    CHECK(nv2a_up_edge(0) == 0 && nv2a_up_edge(1) == 1 && nv2a_up_edge(2) == 2);
+    CHECK(nv2a_up_edge(-1) == 1 && nv2a_up_edge(3) == 1 && nv2a_up_edge(150) == 1);
+    CHECK(nv2a_up_edge_strength(0) == 1.8f && nv2a_up_edge_strength(1) == 0.6f);
+    CHECK(nv2a_up_edge_strength(2) == 0.2f);
+    CHECK(nv2a_up_edge_strength(-1) == 0.6f && nv2a_up_edge_strength(9) == 0.6f);
+}
+
 /* A frame's draws to one surface: d for one with the depth test, n for one
  * without; C a clear of colour and depth, Z of depth alone. Each draw's
  * answer, 1 over and 0 not, in order. */
@@ -801,6 +815,7 @@ int main(void)
     setting();
     choices();
     sharpness();
+    edge_strength();
     over();
     budget();
     second();

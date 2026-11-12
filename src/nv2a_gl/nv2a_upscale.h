@@ -196,6 +196,25 @@ int nv2a_up_sharp(int n);
 /* A choice's filter weight (nv2a_up_sharp takes it): 0.5, 1 or 1.5. */
 float nv2a_up_sharp_weight(int choice);
 
+/* Edge strength, Graphics > Upscaling > Edge strength, for every row's
+ * copies: Soft, Normal and Strong, Super-xBR's edge strength at 1.8, 0.6
+ * (its author's) and 0.2, from his range of 0 to 5. Where the texels
+ * around a new one show an edge along one diagonal more than along the
+ * other by at least that much, that diagonal alone draws it; by less, it is
+ * blended with the level or upright direction, the more the less it stands
+ * out. So a lower strength follows fainter diagonals too (Strong), and a
+ * higher one only clear ones, blending the rest (Soft). Kept as
+ * upscale_edge_strength= (0, 1 or 2), Normal unless set otherwise. */
+#define NV2A_UP_EDGE_CHOICES 3
+#define NV2A_UP_EDGE_DEFAULT 1
+extern const char *const nv2a_up_edge_names[NV2A_UP_EDGE_CHOICES];
+
+/* A setting's choice: itself from 0 to 2, else Normal. */
+int nv2a_up_edge(int n);
+
+/* A choice's edge strength (nv2a_up_edge takes it): 1.8, 0.6 or 0.2. */
+float nv2a_up_edge_strength(int choice);
+
 /* What a flip may spend on copies, in texels of their level 0: one 512 x
  * 512 texture at 4x. The first copy of a flip is made however large, so at
  * 8x a 512 x 512 texture is one flip's whole copy. */
@@ -424,8 +443,9 @@ int nv2a_upg_second_line(char *buf, size_t n, const Nv2aUpSecond *s);
  * straight alpha, premultiplied as it is read), upShift (STORE: how many
  * halvings from the copy's level to the game's size), upKeep and upMagLin
  * (STORE: 1 to keep the game's alpha, and whether it is magnified linearly),
- * upLevel (COPY: the game's level to copy) and upWeight (PASS0 to PASS2:
- * Super-xBR's filter weight, 1 his own; nv2a_up_sharp_weight). */
+ * upLevel (COPY: the game's level to copy), upWeight (PASS0 to PASS2:
+ * Super-xBR's filter weight, 1 his own; nv2a_up_sharp_weight) and upEdge
+ * (PASS0 to PASS2: his edge strength, 0.6 his own; nv2a_up_edge_strength). */
 enum { NV2A_UP_PASS0, NV2A_UP_PASS1, NV2A_UP_PASS2, NV2A_UP_STORE, NV2A_UP_COPY,
        NV2A_UP_PASSES };
 

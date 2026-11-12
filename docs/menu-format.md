@@ -30,7 +30,7 @@ console (Music info in pause, then See through fix, added by the window). A
 new skip or enhancement goes in one of them, not in Display itself. Graphics
 ends with one, Upscaling, marked last and added by the window too, for the
 rows that draw the game from sharper copies: Menus and HUD, Textures,
-Graffiti, then Sharpness.
+Graffiti, Sharpness, then Edge strength.
 
 ## Wording
 

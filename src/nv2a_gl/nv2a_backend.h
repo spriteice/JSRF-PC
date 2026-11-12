@@ -420,7 +420,9 @@ typedef struct Nv2aGfx {
      * edges stay where they were; else Super-xBR's, which 2D art wants.
      * `weight` is Super-xBR's filter weight, from 0 to 1.5 (1 its author's;
      * nv2a_up_sharp_weight), higher for crisper edges; any other is taken
-     * as 1.
+     * as 1. `edge` is its edge strength, from 0 to 5 (0.6 its author's;
+     * nv2a_up_edge_strength), lower to follow fainter diagonals; any other
+     * is taken as 0.6.
      * Sampled with `s`'s filters and wrap, mipmapped whatever `s->mip` says:
      * a nearest filter takes the nearest level, a linear one blends two.
      * `tex` is left as it was, and the backend as the next draw expects it. 0
@@ -428,7 +430,8 @@ typedef struct Nv2aGfx {
      * largest, the passes not built, or the device out of memory. NULL where
      * the backend has none. */
     uint32_t (*tex_upscale)(uint32_t tex, uint32_t w, uint32_t h, int factor,
-                            int keep_alpha, float weight, const Nv2aSampler *s);
+                            int keep_alpha, float weight, float edge,
+                            const Nv2aSampler *s);
 } Nv2aGfx;
 
 /* The implementation: OpenGL's. */

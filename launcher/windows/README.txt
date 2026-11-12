@@ -186,6 +186,14 @@ softer, neither with halos. It changes straight away, with no restart, making
 every copy again, which can pause the game for a moment, and is remembered as
 upscale_sharpness= in the settings file (0, 1, or 2).
 
+Graphics > Upscaling > Edge strength in the in-game menu sets how faint a
+diagonal edge the 2D, 3D and graffiti copies follow: Soft, Normal (the
+default), or Strong. Normal is Super-xBR as its author set it; Strong follows
+fainter diagonals too, for smoother lines in fine detail, and Soft only clear
+ones, blending the rest. It changes straight away, with no restart, making
+every copy again, which can pause the game for a moment, and is remembered as
+upscale_edge_strength= in the settings file (0, 1, or 2).
+
 Graphics > Shader cache in the in-game menu (on by default) keeps the shaders
 the game builds, in the cache folder. Each time the game starts, they are all
 built again before it begins, behind a progress bar, so none are built while
