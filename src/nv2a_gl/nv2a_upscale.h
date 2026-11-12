@@ -180,6 +180,22 @@ int nv2a_up_factor(int n);
 int nv2a_up_choice(int factor);
 int nv2a_up_choice_factor(int choice);
 
+/* Sharpness, the Graphics row Upscale sharpness, for every row's copies:
+ * Soft, Normal and Sharp, Super-xBR's filter weight at 0.5, 1 (its
+ * author's) and 1.5 (the top of his range). A higher weight draws an edge
+ * crisper, a lower one softer; its anti-ringing keeps each new texel within
+ * the four it lies between, so no weight leaves a halo. Kept as
+ * upscale_sharpness= (0, 1 or 2), Normal unless set otherwise. */
+#define NV2A_UP_SHARP_CHOICES 3
+#define NV2A_UP_SHARP_DEFAULT 1
+extern const char *const nv2a_up_sharp_names[NV2A_UP_SHARP_CHOICES];
+
+/* A setting's choice: itself from 0 to 2, else Normal. */
+int nv2a_up_sharp(int n);
+
+/* A choice's filter weight (nv2a_up_sharp takes it): 0.5, 1 or 1.5. */
+float nv2a_up_sharp_weight(int choice);
+
 /* What a flip may spend on copies, in texels of their level 0: one 512 x
  * 512 texture at 4x. The first copy of a flip is made however large, so at
  * 8x a 512 x 512 texture is one flip's whole copy. */
@@ -407,8 +423,9 @@ int nv2a_upg_second_line(char *buf, size_t n, const Nv2aUpSecond *s);
  * 1 repeat, 2 mirrored repeat), upPremul (1: upSrc is the game's texture,
  * straight alpha, premultiplied as it is read), upShift (STORE: how many
  * halvings from the copy's level to the game's size), upKeep and upMagLin
- * (STORE: 1 to keep the game's alpha, and whether it is magnified linearly)
- * and upLevel (COPY: the game's level to copy). */
+ * (STORE: 1 to keep the game's alpha, and whether it is magnified linearly),
+ * upLevel (COPY: the game's level to copy) and upWeight (PASS0 to PASS2:
+ * Super-xBR's filter weight, 1 his own; nv2a_up_sharp_weight). */
 enum { NV2A_UP_PASS0, NV2A_UP_PASS1, NV2A_UP_PASS2, NV2A_UP_STORE, NV2A_UP_COPY,
        NV2A_UP_PASSES };
 

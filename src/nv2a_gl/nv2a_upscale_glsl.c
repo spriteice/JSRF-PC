@@ -3,8 +3,9 @@
  * Super-xBR, written in our GLSL from Hyllian's published shaders,
  * super-xbr-pass0.glsl, -pass1.glsl and -pass2.glsl (libretro's
  * glsl-shaders, xbr/shaders/super-xbr/), at their
- * defaults: mode 0 ("Normal"), edge strength 0.6, filter weight 1 and full
- * anti-ringing. What is ours: the texels read whole (texelFetch) at the
+ * defaults, mode 0 ("Normal"), edge strength 0.6 and full anti-ringing, with
+ * his filter weight a uniform (upWeight: 1, his default, unless Graphics >
+ * Upscale sharpness says otherwise). What is ours: the texels read whole (texelFetch) at the
  * source's wrap instead of sampled, colour premultiplied by alpha and edges
  * found in alpha as well as brightness (his read colour only), 4x as two
  * steps of 2x, and the store and copy passes. His notice, which goes with
@@ -64,6 +65,7 @@ static const char glsl_vs[] =
     "uniform int upKeep;\n" \
     "uniform int upMagLin;\n" \
     "uniform int upLevel;\n" \
+    "uniform float upWeight;\n" \
     "out vec4 upOut;\n" \
     "int up_wrap(int p, int n, int mode)\n{\n" \
     "    if (mode == 1) return (p + 4 * n) % n;\n" \
@@ -81,7 +83,8 @@ static const char glsl_vs[] =
     "}\n"
 
 /* Super-xBR's filter, the same in every pass but for its weights (WP1 to
- * WP6, WEIGHT1, WEIGHT2), on the 4x4 texels around the point it works out,
+ * WP6, WEIGHT1, WEIGHT2, the last two his filter weight, upWeight, times
+ * each pass's own), on the 4x4 texels around the point it works out,
  * named as his are:
  *
  *     P0 B  C  P1
@@ -143,7 +146,7 @@ static const char glsl_pass0[] =
     GLSL_HEAD
     "#define WP1 2.0\n#define WP2 1.0\n#define WP3 -1.0\n"
     "#define WP4 4.0\n#define WP5 -1.0\n#define WP6 1.0\n"
-    "#define WEIGHT1 (1.29633 / 10.0)\n#define WEIGHT2 (1.75068 / 10.0 / 2.0)\n"
+    "#define WEIGHT1 (upWeight * 1.29633 / 10.0)\n#define WEIGHT2 (upWeight * 1.75068 / 10.0 / 2.0)\n"
     GLSL_XBR
     GLSL_ONE_IMAGE("0");
 
@@ -155,7 +158,7 @@ static const char glsl_pass1[] =
     GLSL_HEAD
     "#define WP1 8.0\n#define WP2 0.0\n#define WP3 0.0\n"
     "#define WP4 0.0\n#define WP5 0.0\n#define WP6 0.0\n"
-    "#define WEIGHT1 (1.75068 / 10.0)\n#define WEIGHT2 (1.29633 / 10.0 / 2.0)\n"
+    "#define WEIGHT1 (upWeight * 1.75068 / 10.0)\n#define WEIGHT2 (upWeight * 1.29633 / 10.0 / 2.0)\n"
     GLSL_XBR
     "vec4 O(ivec2 p) { return up_src(p); }\n"
     "vec4 Q(ivec2 p) { return up_at(upAux, p); }\n"
@@ -175,7 +178,7 @@ static const char glsl_pass2[] =
     GLSL_HEAD
     "#define WP1 1.0\n#define WP2 0.0\n#define WP3 2.0\n"
     "#define WP4 3.0\n#define WP5 -2.0\n#define WP6 1.0\n"
-    "#define WEIGHT1 (1.29633 / 10.0)\n#define WEIGHT2 (1.75068 / 10.0 / 2.0)\n"
+    "#define WEIGHT1 (upWeight * 1.29633 / 10.0)\n#define WEIGHT2 (upWeight * 1.75068 / 10.0 / 2.0)\n"
     GLSL_XBR
     GLSL_ONE_IMAGE("-1");
 

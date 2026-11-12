@@ -180,6 +180,13 @@ the settings file (0, 2, 4, or 8). The copies take up to 1 GB of the
 graphics card's memory, apart from 3D upscaling's: about 85 MB a sheet at 4x
 and 340 MB at 8x.
 
+Graphics > Upscale sharpness in the in-game menu sets how crisp the edges in
+the 2D, 3D and graffiti copies are: Soft, Normal (the default), or Sharp.
+Normal is Super-xBR as its author set it; Sharp draws edges crisper and Soft
+softer, neither with halos. It changes straight away, with no restart,
+making every copy again, which can pause the game for a moment, and is
+remembered as upscale_sharpness= in the settings file (0, 1, or 2).
+
 Graphics > Shader cache in the in-game menu (on by default) keeps the shaders
 the game builds, in the cache folder. Each time the game starts, they are all
 built again before it begins, behind a progress bar, so none are built while

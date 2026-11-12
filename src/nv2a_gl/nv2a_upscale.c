@@ -95,6 +95,19 @@ int nv2a_up_choice_factor(int choice)
     return choice >= 3 ? 8 : choice == 2 ? 4 : choice == 1 ? 2 : 0;
 }
 
+const char *const nv2a_up_sharp_names[NV2A_UP_SHARP_CHOICES] = { "Soft", "Normal", "Sharp" };
+
+int nv2a_up_sharp(int n)
+{
+    return n >= 0 && n < NV2A_UP_SHARP_CHOICES ? n : NV2A_UP_SHARP_DEFAULT;
+}
+
+float nv2a_up_sharp_weight(int choice)
+{
+    static const float weight[NV2A_UP_SHARP_CHOICES] = { 0.5f, 1.0f, 1.5f };
+    return weight[nv2a_up_sharp(choice)];
+}
+
 uint64_t nv2a_up_texels(uint32_t w, uint32_t h, int factor)
 {
     return (uint64_t)w * h * (uint64_t)factor * (uint64_t)factor;

@@ -238,6 +238,20 @@ static void choices(void)
     CHECK(nv2a_up_choice_factor(NV2A_UP_CHOICES - 1) == 8);
 }
 
+/* Upscale sharpness: the row's three choices, a setting out of range
+ * taken as Normal, and each choice's filter weight. */
+static void sharpness(void)
+{
+    CHECK(NV2A_UP_SHARP_CHOICES == 3 && NV2A_UP_SHARP_DEFAULT == 1);
+    CHECK(!strcmp(nv2a_up_sharp_names[0], "Soft") && !strcmp(nv2a_up_sharp_names[1], "Normal"));
+    CHECK(!strcmp(nv2a_up_sharp_names[2], "Sharp"));
+    CHECK(nv2a_up_sharp(0) == 0 && nv2a_up_sharp(1) == 1 && nv2a_up_sharp(2) == 2);
+    CHECK(nv2a_up_sharp(-1) == 1 && nv2a_up_sharp(3) == 1 && nv2a_up_sharp(150) == 1);
+    CHECK(nv2a_up_sharp_weight(0) == 0.5f && nv2a_up_sharp_weight(1) == 1.0f);
+    CHECK(nv2a_up_sharp_weight(2) == 1.5f);
+    CHECK(nv2a_up_sharp_weight(-1) == 1.0f && nv2a_up_sharp_weight(9) == 1.0f);
+}
+
 /* A frame's draws to one surface: d for one with the depth test, n for one
  * without; C a clear of colour and depth, Z of depth alone. Each draw's
  * answer, 1 over and 0 not, in order. */
@@ -786,6 +800,7 @@ int main(void)
     lines();
     setting();
     choices();
+    sharpness();
     over();
     budget();
     second();

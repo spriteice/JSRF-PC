@@ -11,7 +11,8 @@
  *    ramp across, down and diagonally comes back as the same ramp at the
  *    texel centres of the bigger image, at 2x, 4x and 8x -- which a pass
  *    reading the wrong texel, or the last pass not putting the image back
- *    where the source was, would not give;
+ *    where the source was, would not give; at Soft's and Sharp's filter
+ *    weights as at Normal's;
  *  - alpha: an opaque red half beside a clear blue one keeps red wherever
  *    anything shows (no fringe of the clear colour), clear blue where
  *    nothing does, and an edge that falls from opaque to clear and never
@@ -23,6 +24,9 @@
  *  - the game's alpha kept: each new level's alpha the game's as the sampler
  *    magnifies it (nearest and linear, at repeat), and its colour Super-xBR's
  *    as without it;
+ *  - the filter weight (Upscale sharpness): hard edges come back crisper the
+ *    higher it is, every texel within the source's range, and a weight out
+ *    of range is taken as 1;
  *  - and what is refused (another factor, a side over the device's
  *    largest), with the target being drawn into and its viewport as they
  *    were, and no GL error.
@@ -84,7 +88,7 @@ static void levels(uint32_t src, uint32_t w, uint32_t h, int factor,
                    const Nv2aSampler *s, const char *what)
 {
     int steps = factor == 2 ? 1 : factor == 4 ? 2 : 3, l;
-    uint32_t t = G->tex_upscale(src, w, h, factor, 0, s);
+    uint32_t t = G->tex_upscale(src, w, h, factor, 0, 1.0f, s);
     uint8_t *want, *got;
     char msg[160];
     snprintf(msg, sizeof msg, "%s at %dx: made", what, factor);
@@ -122,7 +126,7 @@ static void levels(uint32_t src, uint32_t w, uint32_t h, int factor,
 
 /* A ramp, v = ax * x + ay * y, comes back as the same ramp: texel (X, Y) of
  * the copy is at (X + 0.5) / f - 0.5 of the source's, away from the edges. */
-static void ramp(int ax, int ay, int factor, const char *what)
+static void ramp(int ax, int ay, int factor, float weight, const char *what)
 {
     enum { N = 24 };
     static uint8_t px[N * N * 4];
@@ -140,7 +144,7 @@ static void ramp(int ax, int ay, int factor, const char *what)
             p[3] = 255;
         }
     src = G->tex_new(N, N, px, &s);
-    t = G->tex_upscale(src, N, N, factor, 0, &s);
+    t = G->tex_upscale(src, N, N, factor, 0, weight, &s);
     check(src && t, "a ramp's copy made");
     got = read_level(t, 0);
     for (y = margin; y < n - margin; y++)
@@ -155,12 +159,71 @@ static void ramp(int ax, int ay, int factor, const char *what)
             if (d3 > d) d = d3;
             if (d > worst) worst = d;
         }
-    snprintf(msg, sizeof msg, "%s at %dx: the ramp where it should be (out by %d at most)",
-             what, factor, worst);
+    snprintf(msg, sizeof msg, "%s at %dx, weight %.1f: the ramp where it should be (out by %d at most)",
+             what, factor, (double)weight, worst);
     check(worst <= 1, msg);
     printf("ok: %s\n", msg);
     free(got);
     G->tex_free(t);
+    G->tex_free(src);
+}
+
+/* Blocks of 2 x 2 texels, each light or dark at random, at the filter
+ * weights of Soft, Normal and Sharp and one out of range: the higher the
+ * weight, the further the copy's texels from the middle grey on average (its
+ * edges crisper), each within the source's range (anti-ringing: no halo); the
+ * one out of range the same as Normal's, texel for texel. */
+static void weight(int factor)
+{
+    enum { N = 16, DARK = 40, LIGHT = 220 };
+    static const float w[4] = { 0.5f, 1.0f, 1.5f, 9.0f };
+    static uint8_t px[N * N * 4];
+    Nv2aSampler s = { 1, 1, 0, 0, 0, 0, 0 };
+    uint32_t src, t;
+    uint8_t *got[4];
+    double crisp[4];
+    int x, y, i, n = N * factor;
+    char msg[160];
+    srand(11);
+    for (y = 0; y < N; y += 2)
+        for (x = 0; x < N; x += 2) {
+            uint8_t v = (rand() & 1) ? LIGHT : DARK;
+            int dx, dy;
+            for (dy = 0; dy < 2; dy++)
+                for (dx = 0; dx < 2; dx++) {
+                    uint8_t *p = px + ((y + dy) * N + x + dx) * 4;
+                    p[0] = p[1] = p[2] = v;
+                    p[3] = 255;
+                }
+        }
+    src = G->tex_new(N, N, px, &s);
+    check(src != 0, "the blocks' texture made");
+    for (i = 0; i < 4; i++) {
+        long sum = 0;
+        t = G->tex_upscale(src, N, N, factor, 0, w[i], &s);
+        snprintf(msg, sizeof msg, "the blocks' copy at %dx, weight %.1f, made", factor, (double)w[i]);
+        check(t != 0, msg);
+        got[i] = read_level(t, 0);
+        G->tex_free(t);
+        for (y = 0; y < n; y++)
+            for (x = 0; x < n; x++) {
+                const uint8_t *p = got[i] + ((size_t)y * n + x) * 4;
+                snprintf(msg, sizeof msg, "%dx, weight %.1f: texel %d,%d is %u,%u,%u,%u", factor,
+                         (double)w[i], x, y, p[0], p[1], p[2], p[3]);
+                check(p[0] >= DARK && p[0] <= LIGHT && p[1] == p[0] && p[2] == p[0], msg);
+                check(p[3] == 255, msg);
+                sum += abs(p[0] - (DARK + LIGHT) / 2);
+            }
+        crisp[i] = (double)sum / ((double)n * n);
+    }
+    snprintf(msg, sizeof msg, "%dx: crisper the higher the weight (%.2f, %.2f, %.2f from the middle)",
+             factor, crisp[0], crisp[1], crisp[2]);
+    check(crisp[0] < crisp[1] && crisp[1] < crisp[2], msg);
+    printf("ok: %s, within the source's range\n", msg);
+    snprintf(msg, sizeof msg, "%dx: a weight out of range taken as 1", factor);
+    check(!memcmp(got[3], got[1], (size_t)n * n * 4), msg);
+    printf("ok: %s\n", msg);
+    for (i = 0; i < 4; i++) free(got[i]);
     G->tex_free(src);
 }
 
@@ -183,7 +246,7 @@ static void alpha_edge(int factor)
             p[3] = x < N / 2 ? 255 : 0;
         }
     src = G->tex_new(N, N, px, &s);
-    t = G->tex_upscale(src, N, N, factor, 0, &s);
+    t = G->tex_upscale(src, N, N, factor, 0, 1.0f, &s);
     check(src && t, "the alpha edge's copy made");
     got = read_level(t, 0);
     for (y = 0; y < n; y++)
@@ -224,8 +287,8 @@ static void wrap(int factor)
             memcpy(b + (((y + DY) % N) * N + (x + DX) % N) * 4, a + (y * N + x) * 4, 4);
     ta = G->tex_new(N, N, a, &s);
     tb = G->tex_new(N, N, b, &s);
-    ua = G->tex_upscale(ta, N, N, factor, 0, &s);
-    ub = G->tex_upscale(tb, N, N, factor, 0, &s);
+    ua = G->tex_upscale(ta, N, N, factor, 0, 1.0f, &s);
+    ub = G->tex_upscale(tb, N, N, factor, 0, 1.0f, &s);
     check(ua && ub, "the wrap test's copies made");
     ga = read_level(ua, 0);
     gb = read_level(ub, 0);
@@ -248,7 +311,7 @@ static void title_chain(uint32_t src, uint32_t w, uint32_t h, int factor,
                         const Nv2aSampler *s, const char *what)
 {
     int steps = factor == 2 ? 1 : factor == 4 ? 2 : 3, l;
-    uint32_t t = G->tex_upscale(src, w, h, factor, 1, s);
+    uint32_t t = G->tex_upscale(src, w, h, factor, 1, 1.0f, s);
     char msg[160];
     snprintf(msg, sizeof msg, "%s at %dx: made", what, factor);
     check(t != 0, msg);
@@ -291,8 +354,8 @@ static void kept_alpha(int factor, int mag)
     for (x = 0; x < N * N; x++)                 /* clear, opaque and between */
         px[x * 4 + 3] = (uint8_t)((x * 7) % 5 == 0 ? 0 : (x * 7) % 5 == 1 ? 128 : 255);
     src = G->tex_new(N, N, px, &s);
-    a = G->tex_upscale(src, N, N, factor, 0, &s);
-    b = G->tex_upscale(src, N, N, factor, 1, &s);
+    a = G->tex_upscale(src, N, N, factor, 0, 1.0f, &s);
+    b = G->tex_upscale(src, N, N, factor, 1, 1.0f, &s);
     check(src && a && b, "the kept alpha's copies made");
     for (l = 0; l < steps; l++) {
         int n = (N * factor) >> l, f = factor >> l;
@@ -373,15 +436,22 @@ int main(void)
         printf("ok: no DXT here (no S3TC), so no DXT copy to check\n");
     }
 
-    ramp(8, 0, 2, "across");
-    ramp(0, 8, 2, "down");
-    ramp(4, 6, 2, "diagonal");
-    ramp(8, 0, 4, "across");
-    ramp(0, 8, 4, "down");
-    ramp(4, 6, 4, "diagonal");
-    ramp(8, 0, 8, "across");
-    ramp(0, 8, 8, "down");
-    ramp(4, 6, 8, "diagonal");
+    ramp(8, 0, 2, 1.0f, "across");
+    ramp(0, 8, 2, 1.0f, "down");
+    ramp(4, 6, 2, 1.0f, "diagonal");
+    ramp(8, 0, 4, 1.0f, "across");
+    ramp(0, 8, 4, 1.0f, "down");
+    ramp(4, 6, 4, 1.0f, "diagonal");
+    ramp(8, 0, 8, 1.0f, "across");
+    ramp(0, 8, 8, 1.0f, "down");
+    ramp(4, 6, 8, 1.0f, "diagonal");
+    ramp(4, 6, 4, 0.5f, "diagonal");
+    ramp(4, 6, 4, 1.5f, "diagonal");
+    ramp(8, 0, 8, 0.5f, "across");
+    ramp(0, 8, 8, 1.5f, "down");
+    weight(2);
+    weight(4);
+    weight(8);
     alpha_edge(2);
     alpha_edge(4);
     alpha_edge(8);
@@ -412,20 +482,20 @@ int main(void)
     }
 
     t = G->tex_new(32, 16, px, &lin);
-    check(G->tex_upscale(t, 32, 16, 3, 0, &lin) == 0, "3x is refused");
-    check(G->tex_upscale(t, 32, 16, 16, 0, &lin) == 0, "16x is refused");
-    check(G->tex_upscale(0, 32, 16, 2, 0, &lin) == 0, "no texture is refused");
+    check(G->tex_upscale(t, 32, 16, 3, 0, 1.0f, &lin) == 0, "3x is refused");
+    check(G->tex_upscale(t, 32, 16, 16, 0, 1.0f, &lin) == 0, "16x is refused");
+    check(G->tex_upscale(0, 32, 16, 2, 0, 1.0f, &lin) == 0, "no texture is refused");
     G->tex_free(t);
     {
         GLint max = 0;
         glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max);
         wide = calloc((size_t)max / 4 + 1, 4);
         t = G->tex_new((uint32_t)max / 4 + 1, 1, wide, &lin);
-        check(t && G->tex_upscale(t, (uint32_t)max / 4 + 1, 1, 4, 0, &lin) == 0,
+        check(t && G->tex_upscale(t, (uint32_t)max / 4 + 1, 1, 4, 0, 1.0f, &lin) == 0,
               "a side over the device's largest is refused");
         G->tex_free(t);
         t = G->tex_new((uint32_t)max / 8 + 1, 1, wide, &lin);
-        check(t && G->tex_upscale(t, (uint32_t)max / 8 + 1, 1, 8, 0, &lin) == 0,
+        check(t && G->tex_upscale(t, (uint32_t)max / 8 + 1, 1, 8, 0, 1.0f, &lin) == 0,
               "a side over the device's largest is refused at 8x");
         G->tex_free(t);
         free(wide);

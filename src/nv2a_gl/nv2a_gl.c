@@ -1179,6 +1179,16 @@ static volatile int g_upg_want; /* the factor asked for: 0, 2, 4 or 8 */
 static int          g_upg_now;  /* and in use */
 static Nv2aUpSecond g_upg_sec;  /* this second's work, for RECOMP_GL_UPSCALE_LOG */
 
+/*
+ * Upscale sharpness (nv2a_upscale.h): Super-xBR's filter weight for all
+ * three rows' copies, from the window's upscale_sharpness= setting, Normal
+ * unless set otherwise (NV2A_UP_SHARP_DEFAULT), taken at the next flip as
+ * the rows are.
+ */
+static volatile int g_up_sharp_want; /* the choice asked for: 0 Soft, 1 Normal, 2 Sharp */
+static int          g_up_sharp_now;  /* and in use */
+static float up_weight(void) { return nv2a_up_sharp_weight(g_up_sharp_now); }
+
 /* ---- helpers ------------------------------------------------------------ */
 
 int nv2a_gl_enabled(void)
@@ -2222,6 +2232,29 @@ static void sdl_menu_upg(void)
         .presets = XBOX_PRESETS_SET,
         .preset = { nv2a_up_choice(0), nv2a_up_choice(NV2A_UPG_DEFAULT), nv2a_up_choice(8) },
         .hint = "Sharpens the graffiti tags at higher render scales." };
+    if (G->tex_upscale) xbox_MenuAdd(&row, 1);
+}
+
+/* Graphics > Upscale sharpness: Soft, Normal or Sharp, for the three
+ * rows' copies, taken at the next flip and kept as upscale_sharpness= (0, 1
+ * or 2). Added after Graffiti upscaling (gfx_init), so it is the row below
+ * it. */
+static int  sdl_up_sharp_now(void)   { return nv2a_up_sharp(g_up_sharp_want); }
+static void sdl_up_sharp_pick(int i)
+{
+    g_up_sharp_want = nv2a_up_sharp(i);
+    sdl_cfg_set("upscale_sharpness", g_up_sharp_want);
+}
+static void sdl_menu_up_sharp(void)
+{
+    /* The presets (File > Presets): Normal in each. */
+    const XBOX_MENU_ITEM row = {
+        .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Upscale sharpness",
+        .state = sdl_up_sharp_now, .pick = sdl_up_sharp_pick, .choices = nv2a_up_sharp_names,
+        .nchoices = NV2A_UP_SHARP_CHOICES,
+        .presets = XBOX_PRESETS_SET,
+        .preset = { NV2A_UP_SHARP_DEFAULT, NV2A_UP_SHARP_DEFAULT, NV2A_UP_SHARP_DEFAULT },
+        .hint = "How crisp the upscaled edges are. Normal is Super-xBR's own." };
     if (G->tex_upscale) xbox_MenuAdd(&row, 1);
 }
 #endif
@@ -4431,7 +4464,8 @@ static uint32_t world_copy(uint32_t k, int *factor, const Nv2aSampler *smp)
     uint32_t copy;
     if (!G->tex_upscale) return 0;
     for (;;) {
-        copy = G->tex_upscale(g_tcache[k].tex, g_tcache[k].w, g_tcache[k].h, *factor, 1, smp);
+        copy = G->tex_upscale(g_tcache[k].tex, g_tcache[k].w, g_tcache[k].h, *factor, 1,
+                              up_weight(), smp);
         if (copy || *factor <= 2) return copy;
         *factor /= 2;
     }
@@ -4717,7 +4751,8 @@ static void up_waiting_line(int graffiti)
  *
  * A change of a row drops every texture with a copy of its own, made again
  * at its next draw as the game's own or a new copy, as aniso_take does; one
- * the device couldn't copy is tried again. Then each texture the 2D rule
+ * the device couldn't copy is tried again. A change of sharpness drops
+ * every texture with a copy of any row's. Then each texture the 2D rule
  * took that was drawn this frame or the last gets its copy, while the
  * flip's budget of texels lasts (NV2A_UP_TEXELS_A_FLIP, and always one):
  * the game's texture is freed and the copy takes its place, sampled the
@@ -4769,6 +4804,20 @@ static void up_take(void)
         fprintf(stderr, "  [GL] graffiti upscaling: %dx from present %u (was %dx; 0 is off), "
                 "%u textures made again\n", g_upg_now, S.flips, was, n);
     }
+    if (g_up_sharp_want != g_up_sharp_now) {
+        uint32_t n = 0;
+        int was = g_up_sharp_now;
+        g_up_sharp_now = nv2a_up_sharp(g_up_sharp_want);
+        for (k = 0; k < TEX_CACHE; k++)
+            if (g_tcache[k].tex && (g_tcache[k].up == UP_MADE || g_tcache[k].up3 == UP_MADE
+                                    || g_tcache[k].upg == UP_MADE)) {
+                tcache_drop(k);
+                n++;
+            }
+        fprintf(stderr, "  [GL] upscale sharpness: %s from present %u (was %s; weight %.1f), "
+                "%u textures made again\n", nv2a_up_sharp_names[g_up_sharp_now], S.flips,
+                nv2a_up_sharp_names[was], (double)up_weight(), n);
+    }
     f = up_factor();
     for (k = 0; f && k < TEX_CACHE; k++) {
         Nv2aSampler smp;
@@ -4780,7 +4829,8 @@ static void up_take(void)
         texels = nv2a_up_texels(g_tcache[k].w, g_tcache[k].h, f);
         if (spent && spent + texels > NV2A_UP_TEXELS_A_FLIP) continue;
         sampler_of_key(g_tcache[k].sampling, &smp);
-        copy = G->tex_upscale ? G->tex_upscale(g_tcache[k].tex, g_tcache[k].w, g_tcache[k].h, f, 0, &smp) : 0;
+        copy = G->tex_upscale ? G->tex_upscale(g_tcache[k].tex, g_tcache[k].w, g_tcache[k].h, f, 0,
+                                               up_weight(), &smp) : 0;
         if (!copy) {
             g_tcache[k].up = UP_FAILED;
             g_up_sec.failed++;
@@ -14046,6 +14096,20 @@ static void upg_start(void)
         fprintf(stderr, "  [GL] graffiti upscaling: %dx from the settings (0 is off)\n", g_upg_now);
 }
 
+/* Upscale sharpness from the start: the window's setting, else Normal
+ * (NV2A_UP_SHARP_DEFAULT). Its menu row comes after Graffiti upscaling's
+ * (gfx_init). */
+static void up_sharp_start(void)
+{
+    int n = NV2A_UP_SHARP_DEFAULT;
+#if defined(NV2A_GL_USE_SDL)
+    n = sdl_cfg_get("upscale_sharpness", NV2A_UP_SHARP_DEFAULT);
+#endif
+    g_up_sharp_now = g_up_sharp_want = nv2a_up_sharp(n);
+    fprintf(stderr, "  [GL] upscale sharpness: %s from the settings (weight %.1f)\n",
+            nv2a_up_sharp_names[g_up_sharp_now], (double)up_weight());
+}
+
 static int gfx_init(uint32_t w, uint32_t h)
 {
     if (!gl_init(w, h)) return 0;     /* the context, then the device */
@@ -14057,12 +14121,14 @@ static int gfx_init(uint32_t w, uint32_t h)
     up_start();
     up3_start();
     upg_start();
+    up_sharp_start();
 #if defined(XBOXRECOMP_MENU)
     sdl_menu_smaa();
     sdl_menu_msaa();
     sdl_menu_up();
     sdl_menu_up3();
     sdl_menu_upg();
+    sdl_menu_up_sharp();
     sdl_shader_cache();
 #endif
     return 1;
