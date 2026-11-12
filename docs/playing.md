@@ -98,6 +98,9 @@ move it. The view never comes closer to the player than just in front of them:
 right up against a wall with the camera turned into it, you see through that
 wall rather than the view turning over. While you spray graffiti, the game
 frames the shot itself, as on the Xbox, and the camera leaves it as it is.
+Controller > Default cam fix turns this off for the game's own camera, which
+then stops at walls as on the Xbox; the free camera keeps walls out of its
+view either way.
 
 ## In-game menu
 
@@ -159,8 +162,12 @@ input goes to the menu.
   off, the sound is as before them. It is kept as `audioeffects=` in the
   settings file, and changing it restarts the game. [The audio
   effects](technical/audio-effects.md) says how they work.
-- **Controller:** The free camera, Auto centre, and the free camera's
-  inversion, sensitivity, and deadzone (15% by default).
+- **Controller:** The free camera, Default cam fix, Auto centre, and the
+  free camera's inversion, sensitivity, and deadzone (15% by default).
+  Default cam fix keeps the game's own camera out of walls (Near walls,
+  above). On by default; off, the game's camera is as on the Xbox. It
+  changes at once, and is kept as `dcamfix=` (1 or 0) in the settings
+  file.
 - **Developer:** Settings for testing and bug reports.
   - **Log to file:** Stops or starts writing to `last-run.log` at once.
   - **Logging:** The engine's diagnostic logs, for bug reports.

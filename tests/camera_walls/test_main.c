@@ -10,7 +10,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "menu.h"
 #include "camera_walls.h"
+
+/* port/camera_walls.c is built once, with the settings and the menu
+ * (run.py), for test_setting.c too. No case here calls camwall_start, so
+ * these are never called: they stand in for nv2a_gl.c and the menu only so
+ * that it links. */
+int nv_window_pref_num(const char *key, double *v) { (void)key; (void)v; abort(); }
+void nv_window_pref_set_num(const char *key, double v) { (void)key; (void)v; abort(); }
+void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count) { (void)items; (void)count; abort(); }
 
 static void near(double got, double want, const char *what)
 {

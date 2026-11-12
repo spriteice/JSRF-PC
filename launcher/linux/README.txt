@@ -220,6 +220,13 @@ The in-game menu's Controller menu has all of these too, and keeps them here
 as F8 does: with no keyboard (Steam's Game Mode), Back opens it, and R3
 turns the free camera on and off. The game does not use R3.
 
+Controller > Default cam fix in the in-game menu keeps the game's own camera
+from showing through a wall beside it, which happens on the Xbox too and more
+in widescreen: near a wall, the view shifts a little to the side, or in. While
+you spray graffiti, the game frames the shot as on the Xbox. On by default;
+off, the game's camera is as on the Xbox. It changes straight away, and is
+remembered as dcamfix= in the settings file (0 or 1).
+
 
 Where things are kept
 ---------------------

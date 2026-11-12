@@ -1,9 +1,73 @@
 /* The follow camera's view kept out of walls (camera_walls.h).
  *
  * What a camera keeps from one frame to the next, the share and the move
- * across, is each camera's own (camwall_for), or the caller's. */
+ * across, is each camera's own (camwall_for), or the caller's. Default cam
+ * fix, whether the game's own eye is kept out of walls, is dcamfix= in the
+ * settings file, or the Controller page's row (camwall_start); it runs on
+ * the window's thread, and the follow camera's hook reads it on the
+ * game's. */
 #include <math.h>
+#include <stdio.h>
 #include "camera_walls.h"
+#if defined(XBOXRECOMP_MENU)
+#  include "menu.h"
+#endif
+
+#if defined(NV2A_GL_USE_SDL)
+/* nv2a_gl.c: a number from the settings file the engine already keeps, and a
+ * number kept there. */
+extern int  nv_window_pref_num(const char *key, double *v);
+extern void nv_window_pref_set_num(const char *key, double v);
+#else
+/* Without the SDL window (a headless build) there is no settings file: no
+ * keys. */
+static int nv_window_pref_num(const char *key, double *v)
+{
+    (void)key; (void)v;
+    return 0;
+}
+#endif
+
+/* The row goes right under the free camera's own (port/freecam.c). */
+#define CAMWALL_UNDER "Free camera"
+
+/* On with no dcamfix= in the settings. */
+#define CAMWALL_DEFAULT 1
+
+static volatile int s_on = CAMWALL_DEFAULT;
+
+#if defined(XBOXRECOMP_MENU)
+static int  menu_on(void) { return s_on; }
+static void menu_flip(void)
+{
+    s_on = !s_on;
+    fprintf(stderr, "[CAMWALL] default cam fix %s (the menu)\n", s_on ? "on" : "off");
+    nv_window_pref_set_num("dcamfix", s_on);
+}
+#endif
+
+void camwall_start(void)
+{
+    double v;
+    s_on = nv_window_pref_num("dcamfix", &v) > 0 ? v != 0 : CAMWALL_DEFAULT;
+    fprintf(stderr, "[CAMWALL] default cam fix %s (settings)\n", s_on ? "on" : "off");
+#if defined(XBOXRECOMP_MENU)
+    {
+        const XBOX_MENU_ITEM row = {
+            .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_TOGGLE, .label = "Default cam fix",
+            .state = menu_on, .run = menu_flip, .under = CAMWALL_UNDER,
+            /* File > Presets: the Xbox's own camera in Xbox mode. */
+            .presets = XBOX_PRESETS_SET, .preset = { 0, CAMWALL_DEFAULT, CAMWALL_DEFAULT },
+            .hint = "Keeps the game's own camera from showing through walls." };
+        xbox_MenuAdd(&row, 1);
+    }
+#endif
+}
+
+int camwall_on(void)
+{
+    return s_on;
+}
 
 /* How many times camwall_clear moves the eye across, and then brings it
  * in, for the corners of the view before it takes it that neither clears

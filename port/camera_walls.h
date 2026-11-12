@@ -11,9 +11,10 @@
  * free camera (freecam.h) places, whose own line it tests as well; for the
  * game's, the eye's line counts only when what it meets is wider than the
  * view, as a wall or a half pipe's curve the eye has gone behind is, where
- * the game's test runs only when the eye's move crosses a surface. The
- * hooks are in recomp_manual.c: sub_000A6100, the follow camera's
- * post-update. */
+ * the game's test runs only when the eye's move crosses a surface. For the
+ * game's own eye it is a setting, Default cam fix (camwall_start), on by
+ * default. The hooks are in recomp_manual.c: sub_000A6100, the follow
+ * camera's post-update. */
 #ifndef JSRF_CAMERA_WALLS_H
 #define JSRF_CAMERA_WALLS_H
 
@@ -57,6 +58,17 @@ struct camwall {
 
 /* CAMWALL_START: as a camera that starts again. */
 void camwall_reset(struct camwall *w);
+
+/* Default cam fix: dcamfix= in the settings file (1, the default, or 0),
+ * or Controller > Default cam fix, right below Free camera. Read once, at
+ * start, before the game runs, which also adds the row: it changes the
+ * setting at once and keeps it in the settings file, on the window's
+ * thread. Off, the game's own eye stands where the game's wall test put it,
+ * as on the Xbox; the free camera's is kept out of walls either way. */
+void camwall_start(void);
+
+/* Whether the game's own eye is kept out of walls (Default cam fix). */
+int camwall_on(void);
 
 /* The graffiti camera's mode (the camera's +0x208): the spray code
  * (sub_0008D280) asks for it, and it frames the spot being sprayed, then

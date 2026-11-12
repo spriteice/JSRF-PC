@@ -740,6 +740,9 @@ static int host_main(void)
     /* The free camera's settings, its rows on the Controller page and F8
      * (port/freecam.c). */
     { extern void freecam_start(void); freecam_start(); }
+    /* Whether the game's own camera is kept out of walls, and its row on the
+     * Controller page, under Free camera (port/camera_walls.c). */
+    { extern void camwall_start(void); camwall_start(); }
     /* Whether the intro is skipped, and its row in Display > Skips
      * (port/intro.c). */
     { extern void intro_start(void); intro_start(); }

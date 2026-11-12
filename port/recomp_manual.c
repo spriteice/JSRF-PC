@@ -5226,6 +5226,9 @@ void sub_000A5070(void)
  * camera (mode 13) is the one mode it leaves be (camwall_mode_on): the game
  * aims that shot at the spot being sprayed, so the surface is right by the
  * target, and the test would bring the eye in to a first-person view.
+ * And Default cam fix (camwall_on, Controller's row) turns it off for the
+ * game's own eye altogether; the free camera's is kept out of walls either
+ * way.
  * Each camera keeps its own state (camwall_for): split screen's players',
  * and a scene's shown through another skater's camera. This supplies the
  * line test, the game's own. */
@@ -5381,10 +5384,17 @@ void sub_000A6100(void)
         return;
     }
     /* The game's own eye: its state goes with its mode, and starts again
-     * when the game puts the camera back behind the player. The graffiti
-     * shot is left as the game frames it (camwall_mode_on); its state is
-     * still taken, so the follow mode after it starts again, as before. */
+     * when the game puts the camera back behind the player. With Default
+     * cam fix off (camwall_on), the eye stands where the game put it, as on
+     * the Xbox, and its state starts again, so turning it back on starts
+     * from the game's eye. The graffiti shot is left as the game frames it
+     * (camwall_mode_on); its state is still taken, so the follow mode after
+     * it starts again, as before. */
     w = camwall_for(cam, mode);
+    if (!camwall_on()) {
+        camwall_reset(w);
+        return;
+    }
     if (behind) camwall_reset(w);
     if (!camwall_mode_on(mode)) {
         static double next;

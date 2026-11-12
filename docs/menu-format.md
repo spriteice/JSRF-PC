@@ -8,13 +8,15 @@ each menu's rows live with the setting they change (File in
 `src/nv2a_gl/nv2a_gl.c`, Display's Draw distance and Far buildings in
 `port/draw_distance.c`, Skip intro in `port/intro.c` and Music info in pause
 in `port/music_info.c`, Audio in `port/audio.c`, Controller in
-`port/freecam.c`, Developer in `port/developer.c`). A row marked last goes
-below any added later (`last` in `menu.h`). A row can instead go right below
-another row of its menu, which it names, whichever of the two was added first
+`port/freecam.c` and Default cam fix in `port/camera_walls.c`, Developer in
+`port/developer.c`). A row marked last goes below any added later (`last` in
+`menu.h`). A row can instead go right below another row of its menu, which it
+names, whichever of the two was added first
 (`under` in `menu.h`): rows added as the game starts can sit among the
 window's, as Draw distance and Far buildings sit under Render scale, in the
-order they were added. If no row has that name, it goes at the end of its
-menu, above the last row, and the log says so once.
+order they were added, or among another module's, as Default cam fix sits
+under Controller's Free camera. If no row has that name, it goes at the end of
+its menu, above the last row, and the log says so once.
 
 A row can also go in a submenu of its menu, which it names (`group` in
 `menu.h`): the submenu is a row of its own (`XBOX_ITEM_GROUP`), with its
@@ -61,8 +63,8 @@ new skip or enhancement goes in one of them, not in Display itself.
   restart."). It must be as short as possible, and is at most 70 characters
   (`MENU_HINT_LONGEST`), so it fits in two lines at 640 × 480.
 - A hint names no key, as a label doesn't.
-- The tests of the modules that add rows (tests/audio, draw_distance, intro,
-  music_info, developer) check that each has one.
+- The tests of the modules that add rows (tests/audio, camera_walls,
+  draw_distance, intro, music_info, developer) check that each has one.
 
 ## (Restart)
 
