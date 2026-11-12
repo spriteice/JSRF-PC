@@ -119,10 +119,10 @@ input goes to the menu.
   plays turned off, but the audio effects, which are the console's own.
   JSRF-PC default is the settings a new install starts with. Max quality is
   JSRF-PC default with the render scale, draw distance, Far buildings,
-  anisotropic filtering, 2D and 3D upscaling and both anti-aliasings at
-  their most, as far as the graphics card goes. The one ticked is the one
-  your settings match, if any. Full screen and the free camera's own
-  settings stay as you set them.
+  anisotropic filtering, 2D, 3D and graffiti upscaling and both
+  anti-aliasings at their most, as far as the graphics card goes. The one
+  ticked is the one your settings match, if any. Full screen and the free
+  camera's own settings stay as you set them.
 - **Display:** Full screen, the aspect ratio, the render scale (1× to 6×), the
   draw distance, Far buildings, and two submenus at the end: Skips, with Skip
   intro, and Enhancements, with Music info in pause and See through fix. The
@@ -235,3 +235,10 @@ These are in the in-game menu, under Graphics.
   copy is larger than 2048 a side, so 8× enlarges the larger textures 4×. The
   copies take up to 4 GB of the graphics card's memory, 1 to 2.5 GB at 4× in
   play; whatever doesn't fit keeps the game's own textures. 4× by default.
+- **Graffiti upscaling:** Off, 2×, 4×, or 8×. The graffiti tags are drawn from
+  sharper copies. The tags come 16 to a sheet of 1024 × 1024, and the graphics
+  card makes a sheet's copy the first time it is drawn, after the 3D world's;
+  the garage's graffiti picker has its copy made as it draws it, which can
+  pause the menu for a moment. The copies take up to 1 GB of the graphics
+  card's memory, apart from 3D upscaling's: about 85 MB a sheet at 4× and
+  340 MB at 8×. Off by default.

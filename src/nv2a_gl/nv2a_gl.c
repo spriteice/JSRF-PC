@@ -75,6 +75,7 @@
 #  include <GL/glext.h>
 #endif
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1111,23 +1112,29 @@ static struct {
     int      used;
     size_t   held;          /* bytes handed to the device: RGBA8, or DXT as stored */
     uint8_t  up;            /* 2D upscaling: UP_NONE, ... (up_note, up_take) */
-    uint8_t  up3;           /* 3D upscaling: the same (up3_note, up3_take) */
+    uint8_t  up3;           /* 3D upscaling: the same (up3_note, world_take) */
+    uint8_t  upg;           /* graffiti upscaling: the same (upg_note, world_take) */
     uint8_t  up_said;       /* its census lines written: UP_SAID_... (RECOMP_GL_UPSCALE_LOG) */
     uint32_t born;          /* the frame it was uploaded in (S.frames) */
     uint32_t seen;          /* the frame it was last looked up in (S.frames): the
                              * upscaling copies' recency, where `drawn` counts passes */
+    uint32_t asked;         /* the frame a graffiti copy at a draw was last tried
+                             * for it, plus one; 0 not yet (upg_capture) */
 } g_tcache[TEX_CACHE];
-/* A texture's part in 2D or 3D upscaling: not taken yet (UP_NONE); taken
- * by the rule and waiting for its copy (UP_WANTED); never to be, the rule
- * having left it for what it is (UP_NEVER); its copy in `tex` (UP_MADE); or
- * the device couldn't make one (UP_FAILED), tried again when the row
- * changes. An entry holds one copy, the 2D rule's or the 3D rule's. */
+/* A texture's part in 2D, 3D or graffiti upscaling: not taken yet
+ * (UP_NONE); taken by the rule and waiting for its copy (UP_WANTED); never
+ * to be, the rule having left it for what it is (UP_NEVER); its copy in
+ * `tex` (UP_MADE); or the device couldn't make one (UP_FAILED), tried again
+ * when the row changes. An entry holds one copy, the 2D rule's, the 3D
+ * rule's or the graffiti rule's. */
 enum { UP_NONE, UP_WANTED, UP_NEVER, UP_MADE, UP_FAILED };
 /* The census lines a texture has had: the 2D verdict's, and that of a draw
  * that is neither kind of 2D but has depth off (nv2a_up_census_wants); the
  * 3D verdict's, and that of a draw with the depth test off
- * (nv2a_up3_census_wants). */
-enum { UP_SAID_VERDICT = 1, UP_SAID_NOT_2D = 2, UP_SAID_3D = 4, UP_SAID_3D_DEPTH = 8 };
+ * (nv2a_up3_census_wants); and the graffiti verdict's and its depth-off
+ * line (nv2a_upg_census_wants). */
+enum { UP_SAID_VERDICT = 1, UP_SAID_NOT_2D = 2, UP_SAID_3D = 4, UP_SAID_3D_DEPTH = 8,
+       UP_SAID_G = 16, UP_SAID_G_DEPTH = 32 };
 
 /*
  * Anisotropic filtering: the most samples a texture with mipmaps is given
@@ -1162,6 +1169,15 @@ static Nv2aUpSecond g_up_sec;   /* this second's work, for RECOMP_GL_UPSCALE_LOG
 static volatile int g_up3_want; /* the factor asked for: 0, 2, 4 or 8 */
 static int          g_up3_now;  /* and in use */
 static Nv2aUpSecond g_up3_sec;  /* this second's work, for RECOMP_GL_UPSCALE_LOG */
+
+/*
+ * Graffiti upscaling (nv2a_upscale.h): the same, from the window's
+ * upscale_graffiti= setting, off unless set otherwise (NV2A_UPG_DEFAULT),
+ * for the graffiti tags' sheets, with copies held under a cap of their own.
+ */
+static volatile int g_upg_want; /* the factor asked for: 0, 2, 4 or 8 */
+static int          g_upg_now;  /* and in use */
+static Nv2aUpSecond g_upg_sec;  /* this second's work, for RECOMP_GL_UPSCALE_LOG */
 
 /* ---- helpers ------------------------------------------------------------ */
 
@@ -2164,8 +2180,8 @@ static void sdl_menu_up(void)
 }
 
 /* Graphics > 3D upscaling: Off, 2x, 4x or 8x, taken at the next flip and kept
- * as upscale_3d= (0, 2, 4 or 8). Added after 2D upscaling (gfx_init), so it
- * is Graphics' last row, where the backend can make the copies. */
+ * as upscale_3d= (0, 2, 4 or 8). Added after 2D upscaling (gfx_init), where
+ * the backend can make the copies. */
 static int  sdl_up3_now(void)   { return nv2a_up_choice(g_up3_want); }
 static void sdl_up3_pick(int i)
 {
@@ -2183,6 +2199,29 @@ static void sdl_menu_up3(void)
         .presets = XBOX_PRESETS_SET,
         .preset = { nv2a_up_choice(0), nv2a_up_choice(NV2A_UP3_DEFAULT), nv2a_up_choice(8) },
         .hint = "Sharpens textures in the 3D world at higher render scales." };
+    if (G->tex_upscale) xbox_MenuAdd(&row, 1);
+}
+
+/* Graphics > Graffiti upscaling: Off, 2x, 4x or 8x, taken at the next flip
+ * and kept as upscale_graffiti= (0, 2, 4 or 8). Added after 3D upscaling
+ * (gfx_init), so it is the row below it. */
+static int  sdl_upg_now(void)   { return nv2a_up_choice(g_upg_want); }
+static void sdl_upg_pick(int i)
+{
+    g_upg_want = nv2a_up_choice_factor(i);
+    sdl_cfg_set("upscale_graffiti", g_upg_want);
+}
+static void sdl_menu_upg(void)
+{
+    /* The presets (File > Presets): off in Xbox mode, JSRF-PC default's
+     * (off), and 8x in Max quality. */
+    const XBOX_MENU_ITEM row = {
+        .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Graffiti upscaling",
+        .state = sdl_upg_now, .pick = sdl_upg_pick, .choices = sdl_up_names,
+        .nchoices = NV2A_UP_CHOICES,
+        .presets = XBOX_PRESETS_SET,
+        .preset = { nv2a_up_choice(0), nv2a_up_choice(NV2A_UPG_DEFAULT), nv2a_up_choice(8) },
+        .hint = "Sharpens the graffiti tags at higher render scales." };
     if (G->tex_upscale) xbox_MenuAdd(&row, 1);
 }
 #endif
@@ -3916,6 +3955,7 @@ static void up3_bind(Nv2aUp3Bind *b, int k, int screen, int over, int mode, int 
 {
     b->screen = screen;
     b->over = over;
+    b->kept = !nv2a_wide_frame_sized(S.clip_w, S.clip_h);
     b->depth_test = S.depth_test != 0;
     b->depth_write = S.depth_mask != 0;
     b->mode = mode;
@@ -3929,11 +3969,16 @@ static void up3_bind(Nv2aUp3Bind *b, int k, int screen, int over, int mode, int 
                || g_tcache[k].up == UP_FAILED;
 }
 
-/* A 3D census line (nv2a_up3_census_line). */
+static int up_blue_alpha(void);
+
+/* A 3D census line (nv2a_up3_census_line), with whether the draw's combiner
+ * uses blue-to-alpha. */
 static void up3_say(int k, const Nv2aUp3Bind *b, int verdict)
 {
-    char line[224];
-    nv2a_up3_census_line(line, sizeof line, g_tcache[k].offset, g_tcache[k].format, b,
+    char line[240];
+    Nv2aUp3Bind said = *b;
+    said.blue_alpha = up_blue_alpha();
+    nv2a_up3_census_line(line, sizeof line, g_tcache[k].offset, g_tcache[k].format, &said,
                          S.xf_mode != NV2A_XF_MODE_FIXED, verdict);
     fputs(line, stderr);
 }
@@ -4002,7 +4047,7 @@ static void up2_note(int k, int screen, int over, int mode, int alpha_only)
 /*
  * 3D upscaling (nv2a_upscale.h): the same binding, as the 3D rule reads it,
  * with its stage's texture mode and whether the stage reads it alpha-only.
- * Taken, to have its copy made at the flip (up3_take); left for good where
+ * Taken, to have its copy made at the flip (world_take); left for good where
  * the texture or how its stage samples it leaves it; a draw's reasons (a 2D
  * draw, the depth test off) leave the entry as it was. After the 2D rule,
  * whose taking a texture leaves it to 2D upscaling. With
@@ -4030,14 +4075,73 @@ static void up3_note(int k, int screen, int over, int mode, int alpha_only)
     }
 }
 
+/* Whether the draw's combiner writes a blue-to-alpha (nv2a_psh.c's
+ * OUT_AB_BLUE and OUT_CD_BLUE: bits 19 and 18 of a stage's colour output,
+ * to a register), as the graffiti's spray does. For the graffiti census. */
+static int up_blue_alpha(void)
+{
+    int i;
+    for (i = 0; i < (int)(S.psh.control & 0xF) && i < NV2A_PSH_STAGES; i++) {
+        uint32_t o = S.psh.rgb_ocw[i];
+        if ((((o >> 19) & 1) && ((o >> 4) & 0xF) != NV2A_PSH_REG_ZERO)
+         || (((o >> 18) & 1) && (o & 0xF) != NV2A_PSH_REG_ZERO))
+            return 1;
+    }
+    return 0;
+}
+
+static void upg_capture(uint32_t k);   /* below, with world_take */
+
+/*
+ * Graffiti upscaling (nv2a_upscale.h): the same binding, as the graffiti
+ * rule reads it, which takes textures larger than any the 3D rule or the
+ * 2D rule takes, so the three never take the same one; into a picture the
+ * title keeps, a flat draw's too (the garage picker's preview). Taken, to
+ * have its copy made at its first draw of a frame (upg_capture), or at the
+ * flip (world_take); left for good where the texture or how its stage
+ * samples it leaves it, a texture of the 3D rule's size among them; a
+ * draw's reasons leave the entry as it was. With
+ * RECOMP_GL_UPSCALE_LOG, the census (nv2a_upg_census_wants), once an
+ * entry, with whether the draw's combiner uses blue-to-alpha.
+ */
+static void upg_note(int k, int screen, int over, int mode, int alpha_only)
+{
+    Nv2aUp3Bind b;
+    int v, said;
+    if (!g_up_log && !g_upg_now) return;
+    if (g_tcache[k].upg != UP_NONE && (!g_up_log || (g_tcache[k].up_said & UP_SAID_G))) {
+        upg_capture((uint32_t)k);
+        return;
+    }
+    up3_bind(&b, k, screen, over, mode, alpha_only);
+    v = nv2a_upg_rule(&b);
+    if (g_tcache[k].upg == UP_NONE) {
+        if (v == NV2A_UP3_TAKEN) { g_tcache[k].upg = UP_WANTED; g_upg_sec.taken++; }
+        else if (nv2a_up3_of_texture(v)) g_tcache[k].upg = UP_NEVER;
+    }
+    /* A texture of the 3D rule's size is never in this census. */
+    if (v == NV2A_UPG_NOT_GRAFFITI) g_tcache[k].up_said |= UP_SAID_G | UP_SAID_G_DEPTH;
+    said = v == NV2A_UP3_NO_DEPTH ? UP_SAID_G_DEPTH : UP_SAID_G;
+    if (g_up_log && !(g_tcache[k].up_said & said) && nv2a_upg_census_wants(&b, v)) {
+        char line[240];
+        g_tcache[k].up_said |= (uint8_t)said;
+        b.blue_alpha = up_blue_alpha();
+        nv2a_upg_census_line(line, sizeof line, g_tcache[k].offset, g_tcache[k].format, &b,
+                             S.xf_mode != NV2A_XF_MODE_FIXED, v);
+        fputs(line, stderr);
+    }
+    upg_capture((uint32_t)k);
+}
+
 /* A draw binding the texture in cache slot k (-1 for none) to a stage of
- * texture mode `mode`, alpha-only or not: both rules' notes. */
+ * texture mode `mode`, alpha-only or not: the three rules' notes. */
 static void up_note(int k, int screen, int over, int mode, int alpha_only)
 {
     if (g_up_log < 0) g_up_log = getenv("RECOMP_GL_UPSCALE_LOG") ? 1 : 0;
     if (k < 0) return;
     up2_note(k, screen, over, mode, alpha_only);
     up3_note(k, screen, over, mode, alpha_only);
+    upg_note(k, screen, over, mode, alpha_only);
 }
 static uint64_t vc_hash(const void *data, size_t n, uint64_t seed);   /* the vertex cache's, below */
 /* The bytes a texture's decode reads from its base level. */
@@ -4313,90 +4417,298 @@ static void aniso_take(void)
             want, S.flips, was, n);
 }
 
+/* An entry's part in the 3D row or, with `graffiti`, the graffiti row. */
+static uint8_t *world_of(uint32_t k, int graffiti)
+{
+    return graffiti ? &g_tcache[k].upg : &g_tcache[k].up3;
+}
+
+/* The copy of the texture in slot k at *factor, or at the largest smaller
+ * one the device makes (tex_upscale refuses a side past its own largest);
+ * 0 for none. *factor is then the one made. */
+static uint32_t world_copy(uint32_t k, int *factor, const Nv2aSampler *smp)
+{
+    uint32_t copy;
+    if (!G->tex_upscale) return 0;
+    for (;;) {
+        copy = G->tex_upscale(g_tcache[k].tex, g_tcache[k].w, g_tcache[k].h, *factor, 1, smp);
+        if (copy || *factor <= 2) return copy;
+        *factor /= 2;
+    }
+}
+
 /*
- * At the flip, after the 2D copies: 3D upscaling's, with what is left of the
- * flip's budget of texels (the first copy of a flip made however large, as
- * for 2D), each of a texture the rule took (up3_note) that was drawn in the
- * frame just shown or the one before it and uploaded before the frame just
- * shown, so one the title rewrites every frame, which is uploaded again each
- * time, is never copied. Frames, not flips: a flip ends each of the title's
- * render passes, and the garage's graffiti picker ends seven a frame;
- * counted in flips, a texture drawn early in such a frame was never recent
- * enough, and the garage behind the picker kept the game's own. The copy keeps the game's alpha and its own chain under the new levels
- * (tex_upscale), at most NV2A_UP3_OUT_MAX a side (nv2a_up3_factor: at 8x, a
- * 512 texture's copy is 4x). The bytes the copies hold stay under NV2A_UP3_HELD_MAX
- * (nv2a_up3_room): to make room, copies not drawn for two seconds are
- * dropped, the longest idle first, made again as the game's own at their
- * next draw; when that isn't enough, the texture waits and the game's own
- * is drawn. What the flip spent, from `spent`.
+ * At the flip, after the 2D copies: 3D upscaling's, then graffiti
+ * upscaling's, with what is left of the flip's budget of texels (the first
+ * copy of a flip made however large, as for 2D), each of a texture the
+ * row's rule took (up3_note, upg_note) that was drawn in the frame just
+ * shown or the one before it and uploaded before the frame just shown, so
+ * one the title rewrites every frame, which is uploaded again each time, is
+ * never copied. Frames, not flips: a flip ends each of the title's render
+ * passes, and the garage's graffiti picker ends seven a frame; counted in
+ * flips, a texture drawn early in such a frame was never recent enough, and
+ * the picker and the garage behind it kept the game's own. The copy keeps
+ * the game's alpha and its own chain under the new levels (tex_upscale), at
+ * most the row's longest side (nv2a_up3_factor: at 8x, a 512 texture's 3D
+ * copy is 4x; nv2a_upg_factor), and at a smaller factor where the device
+ * can't make it at that one (past its largest side). The bytes each row's
+ * copies hold stay under the row's cap, NV2A_UP3_HELD_MAX or
+ * NV2A_UPG_HELD_MAX (nv2a_up3_room): to make room, the row's copies not
+ * drawn for two seconds are dropped, the longest idle first, made again as
+ * the game's own at their next draw; when that isn't enough, the texture
+ * waits and the game's own is drawn. What the flip spent, from `spent`.
  */
-static Nv2aUp3Held g_up3_held[TEX_CACHE];   /* the 3D copies held, a flip's */
+static Nv2aUp3Held g_up3_held[TEX_CACHE];   /* a row's copies held, a flip's */
 static uint32_t    g_up3_held_at[TEX_CACHE];/* ... and their slots */
 static int         g_up3_drop[TEX_CACHE];
-static uint64_t up3_take(uint64_t spent)
+
+/* The row's copies held, as the cap weighs them: into g_up3_held, their
+ * slots into g_up3_held_at; how many, their bytes into *held. */
+static int world_held(int graffiti, uint64_t *held)
+{
+    uint32_t j;
+    int n = 0;
+    *held = 0;
+    for (j = 0; j < TEX_CACHE; j++) {
+        if (!g_tcache[j].tex || *world_of(j, graffiti) != UP_MADE) continue;
+        g_up3_held[n].bytes = g_tcache[j].held;
+        g_up3_held[n].idle = S.frames - g_tcache[j].seen;
+        g_up3_held_at[n++] = j;
+        *held += g_tcache[j].held;
+    }
+    return n;
+}
+
+/* Entry k's copy for the row, at factor *ft (lowered where the device took
+ * only a smaller one), room having been found for it among the *n copies
+ * held with the r drops in g_up3_drop (nv2a_up3_room): those dropped, the
+ * copy in the entry, and the copies held and *held brought up to date. The
+ * texels made, or 0 where the device couldn't make it (UP_FAILED). */
+static uint64_t world_make(uint32_t k, int graffiti, int *ft, const Nv2aSampler *smp, int r,
+                           int *n, uint64_t *held)
+{
+    Nv2aUpSecond *sec = graffiti ? &g_upg_sec : &g_up3_sec;
+    uint64_t texels, bytes;
+    uint32_t copy = world_copy(k, ft, smp);
+    int i;
+    if (!copy) {
+        *world_of(k, graffiti) = UP_FAILED;
+        sec->failed++;
+        return 0;
+    }
+    /* Made at a smaller factor, if the device took only that: fewer
+     * bytes, which fit where the first did. */
+    texels = nv2a_up_texels(g_tcache[k].w, g_tcache[k].h, *ft);
+    bytes = nv2a_up_bytes(g_tcache[k].w, g_tcache[k].h, *ft, smp->mip != 0, smp->levels);
+    for (i = 0; i < r; i++) {
+        int d = g_up3_drop[i];
+        tcache_drop(g_up3_held_at[d]);
+        *held -= g_up3_held[d].bytes;
+        g_up3_held[d].bytes = 0;
+        g_up3_held[d].idle = 0;
+        sec->dropped++;
+    }
+    G->tex_free(g_tcache[k].tex);
+    g_prof.tex_held_bytes -= (unsigned long long)g_tcache[k].held;
+    g_prof.tex_held_bytes += (unsigned long long)bytes;
+    g_tcache[k].tex = copy;
+    g_tcache[k].held = (size_t)bytes;
+    *world_of(k, graffiti) = UP_MADE;
+    g_up3_held[*n].bytes = bytes;
+    g_up3_held[*n].idle = 0;
+    g_up3_held_at[(*n)++] = k;
+    *held += bytes;
+    sec->made++;
+    sec->texels += texels;
+    return texels;
+}
+
+static uint64_t world_take(int graffiti, uint64_t spent)
 {
     uint64_t held = 0, waits = UINT64_MAX;  /* waits: the least that found no room */
-    uint32_t k, j;
-    int f = g_up3_now, n = -1, i, r;
+    uint64_t cap = graffiti ? NV2A_UPG_HELD_MAX : NV2A_UP3_HELD_MAX;
+    uint32_t k;
+    int f = graffiti ? g_upg_now : g_up3_now, n = -1, r;
     for (k = 0; f && k < TEX_CACHE; k++) {
         Nv2aSampler smp;
         uint64_t texels, bytes;
-        uint32_t copy;
-        int ft;                 /* this texture's factor (nv2a_up3_factor) */
+        int ft;                 /* this texture's factor (nv2a_up3_factor, nv2a_upg_factor) */
         /* S.frames already counts the frame just shown: what it drew is 1
          * behind, what the one before drew 2. */
-        if (g_tcache[k].up3 != UP_WANTED || !g_tcache[k].tex || S.frames - g_tcache[k].seen > 2
-         || S.frames - g_tcache[k].born < 2)
+        if (*world_of(k, graffiti) != UP_WANTED || !g_tcache[k].tex
+         || S.frames - g_tcache[k].seen > 2 || S.frames - g_tcache[k].born < 2)
             continue;
-        ft = nv2a_up3_factor(g_tcache[k].w, g_tcache[k].h, f);
+        ft = graffiti ? nv2a_upg_factor(g_tcache[k].w, g_tcache[k].h, f)
+                      : nv2a_up3_factor(g_tcache[k].w, g_tcache[k].h, f);
         if (!ft) continue;
         texels = nv2a_up_texels(g_tcache[k].w, g_tcache[k].h, ft);
         if (spent && spent + texels > NV2A_UP_TEXELS_A_FLIP) continue;
         sampler_of_key(g_tcache[k].sampling, &smp);
         bytes = nv2a_up_bytes(g_tcache[k].w, g_tcache[k].h, ft, smp.mip != 0, smp.levels);
         if (bytes >= waits) continue;
-        if (n < 0) {
-            /* The copies held, once a flip, when there is one to make. */
-            n = 0;
-            for (j = 0; j < TEX_CACHE; j++) {
-                if (!g_tcache[j].tex || g_tcache[j].up3 != UP_MADE) continue;
-                g_up3_held[n].bytes = g_tcache[j].held;
-                g_up3_held[n].idle = S.frames - g_tcache[j].seen;
-                g_up3_held_at[n++] = j;
-                held += g_tcache[j].held;
-            }
-        }
-        r = nv2a_up3_room(g_up3_held, n, held, bytes, NV2A_UP3_HELD_MAX, g_up3_drop);
+        /* The row's copies held, once a flip, when there is one to make. */
+        if (n < 0) n = world_held(graffiti, &held);
+        r = nv2a_up3_room(g_up3_held, n, held, bytes, cap, g_up3_drop);
         if (r < 0) { waits = bytes; continue; }
-        copy = G->tex_upscale ? G->tex_upscale(g_tcache[k].tex, g_tcache[k].w, g_tcache[k].h, ft, 1, &smp) : 0;
-        if (!copy) {
-            g_tcache[k].up3 = UP_FAILED;
-            g_up3_sec.failed++;
-            continue;
-        }
-        for (i = 0; i < r; i++) {
-            int d = g_up3_drop[i];
-            tcache_drop(g_up3_held_at[d]);
-            held -= g_up3_held[d].bytes;
-            g_up3_held[d].bytes = 0;
-            g_up3_held[d].idle = 0;
-            g_up3_sec.dropped++;
-        }
-        G->tex_free(g_tcache[k].tex);
-        g_prof.tex_held_bytes -= (unsigned long long)g_tcache[k].held;
-        g_prof.tex_held_bytes += (unsigned long long)bytes;
-        g_tcache[k].tex = copy;
-        g_tcache[k].held = (size_t)bytes;
-        g_tcache[k].up3 = UP_MADE;
-        g_up3_held[n].bytes = bytes;
-        g_up3_held[n].idle = 0;
-        g_up3_held_at[n++] = k;
-        held += bytes;
-        spent += texels;
-        g_up3_sec.made++;
-        g_up3_sec.texels += texels;
+        spent += world_make(k, graffiti, &ft, &smp, r, &n, &held);
     }
     return spent;
+}
+
+/*
+ * A draw into a picture the title keeps keeps what it samples there: the
+ * character select draws its tags once into a picture of its own, on screen
+ * from then on, so a copy made at a later flip (world_take) comes too late
+ * for it. A graffiti texture taken and waiting has its copy made at its
+ * first draw of a frame, wherever it is drawn, whatever the flip's budget
+ * and however new the texture: a pause as a menu opens or changes design,
+ * rather than its picture left at the game's own size. Under the cap as at
+ * the flip; with no room, it waits for the flip, and is tried at a draw
+ * again the next frame. Not for a texture at an address that had one within
+ * the last frame: one the title rewrites every frame, uploaded again each
+ * time, is left to the flip, which never copies it.
+ */
+static void upg_capture(uint32_t k)
+{
+    static uint32_t last_at = 0xFFFFFFFFu, last_frame;
+    Nv2aSampler smp;
+    uint64_t held, made;
+    int ft, n, r;
+    if (g_tcache[k].upg != UP_WANTED || !g_upg_now || !g_tcache[k].tex
+     || g_tcache[k].asked == S.frames + 1u)
+        return;
+    g_tcache[k].asked = S.frames + 1u;
+    if (g_tcache[k].offset == last_at && S.frames - last_frame < 2) {
+        last_frame = S.frames;
+        return;
+    }
+    ft = nv2a_upg_factor(g_tcache[k].w, g_tcache[k].h, g_upg_now);
+    if (!ft) return;
+    sampler_of_key(g_tcache[k].sampling, &smp);
+    n = world_held(1, &held);
+    r = nv2a_up3_room(g_up3_held, n, held,
+                      nv2a_up_bytes(g_tcache[k].w, g_tcache[k].h, ft, smp.mip != 0, smp.levels),
+                      NV2A_UPG_HELD_MAX, g_up3_drop);
+    if (r < 0) return;
+    last_at = g_tcache[k].offset;
+    last_frame = S.frames;
+    made = world_make(k, 1, &ft, &smp, r, &n, &held);
+    if (g_up_log > 0)
+        fprintf(stderr, "[UPSCALE] graffiti copy %s at the draw: %08X %ux%u at %dx, for a draw "
+                        "into %08X, %ux%u\n", made ? "made" : "failed", g_tcache[k].offset,
+                g_tcache[k].w, g_tcache[k].h, ft, S.color_offset, (unsigned)S.clip_w,
+                (unsigned)S.clip_h);
+}
+
+/*
+ * With RECOMP_GL_UPSCALE_LOG, the larger pictures a frame draws from: each
+ * texture of more than NV2A_UP_SIDE_MAX a side a draw binds, with its
+ * graffiti copy's state then, and each surface a draw samples, with the
+ * surface drawn into and the pass of the frame (a flip ends each), once a
+ * pair a frame. Written at the frame's end (up_take) when it differs from
+ * the last one written, at most once a second: which picture the garage's
+ * graffiti picker shows a design from, and whether that is drawn every
+ * frame.
+ */
+#define UP_SEEN_MAX 16
+static struct {
+    uint32_t what, into;
+    uint32_t w, h, pass;
+    int surface, state;
+} g_up_seen[UP_SEEN_MAX];
+static int g_up_seen_n, g_up_seen_more;
+static uint32_t g_up_seen_base;     /* S.flips at the last frame's end */
+
+static void up_seen(uint32_t what, uint32_t w, uint32_t h, int surface, int state)
+{
+    int i;
+    for (i = 0; i < g_up_seen_n; i++)
+        if (g_up_seen[i].what == what && g_up_seen[i].into == S.color_offset
+         && g_up_seen[i].surface == surface)
+            return;
+    if (g_up_seen_n == UP_SEEN_MAX) { g_up_seen_more = 1; return; }
+    g_up_seen[i].what = what;
+    g_up_seen[i].into = S.color_offset;
+    g_up_seen[i].w = w;
+    g_up_seen[i].h = h;
+    g_up_seen[i].pass = S.flips - g_up_seen_base;
+    g_up_seen[i].surface = surface;
+    g_up_seen[i].state = state;
+    g_up_seen_n++;
+}
+
+/* Appends to a line of n bytes at *o, as far as it goes. */
+static void up_put(char *line, size_t n, size_t *o, const char *fmt, ...)
+{
+    va_list ap;
+    int k;
+    if (*o + 1 >= n) return;
+    va_start(ap, fmt);
+    k = vsnprintf(line + *o, n - *o, fmt, ap);
+    va_end(ap);
+    if (k > 0) *o += (size_t)k < n - *o ? (size_t)k : n - *o - 1;
+}
+
+static void up_seen_frame(void)
+{
+    static const char *const state[] = { "not taken", "waiting", "left", "made", "failed" };
+    static char last[1024];
+    static double t;
+    char line[1024];
+    size_t o = 0;
+    int i;
+    if (g_up_log > 0 && g_up_seen_n) {
+        up_put(line, sizeof line, &o, "[UPSCALE] larger pictures drawn this frame, of %u "
+               "passes:", S.flips - g_up_seen_base);
+        for (i = 0; i < g_up_seen_n; i++) {
+            if (g_up_seen[i].surface)
+                up_put(line, sizeof line, &o, "%s surface %08X %ux%u", i ? ";" : "",
+                       g_up_seen[i].what, g_up_seen[i].w, g_up_seen[i].h);
+            else
+                up_put(line, sizeof line, &o, "%s %08X %ux%u (graffiti %s)", i ? ";" : "",
+                       g_up_seen[i].what, g_up_seen[i].w, g_up_seen[i].h,
+                       g_up_seen[i].state >= 0 && g_up_seen[i].state < 5
+                       ? state[g_up_seen[i].state] : "?");
+            up_put(line, sizeof line, &o, " into %08X in pass %u", g_up_seen[i].into,
+                   g_up_seen[i].pass);
+        }
+        up_put(line, sizeof line, &o, "%s\n", g_up_seen_more ? "; and more" : "");
+        if (strcmp(line, last) && mono_now() - t >= 1.0) {
+            fputs(line, stderr);
+            memcpy(last, line, sizeof last);
+            t = mono_now();
+        }
+    }
+    g_up_seen_n = g_up_seen_more = 0;
+    g_up_seen_base = S.flips;
+}
+
+/* With RECOMP_GL_UPSCALE_LOG, a row's textures waiting for a copy, up to
+ * four, with the frames since each was last drawn and since it was
+ * uploaded: one drawn more than two frames ago waits to be drawn again, one
+ * uploaded in the frame just shown for the next. At most one line every
+ * five seconds a row. */
+static void up_waiting_line(int graffiti)
+{
+    static double t[2];
+    char line[512];
+    size_t o = 0;
+    uint32_t k;
+    int n = 0, more = 0;
+    if (mono_now() - t[graffiti] < 5.0) return;
+    t[graffiti] = mono_now();
+    up_put(line, sizeof line, &o, "[UPSCALE] %s waiting:", graffiti ? "graffiti" : "3D");
+    for (k = 0; k < TEX_CACHE; k++) {
+        if (!g_tcache[k].tex || *world_of(k, graffiti) != UP_WANTED) continue;
+        if (n == 4) { more++; continue; }
+        up_put(line, sizeof line, &o, "%s %08X %ux%u drawn %u frames ago, uploaded %u ago",
+               n ? ";" : "", g_tcache[k].offset, g_tcache[k].w, g_tcache[k].h,
+               S.frames - g_tcache[k].seen, S.frames - g_tcache[k].born);
+        n++;
+    }
+    if (more) up_put(line, sizeof line, &o, "; and %d more", more);
+    up_put(line, sizeof line, &o, "\n");
+    fputs(line, stderr);
 }
 
 /*
@@ -4411,10 +4723,11 @@ static uint64_t up3_take(uint64_t spent)
  * the game's texture is freed and the copy takes its place, sampled the
  * same way; one with a 3D copy, made before a 2D draw bound it, is dropped
  * instead, to be the game's own again and then the 2D rule's. Then the 3D
- * copies (up3_take), with what is left of the budget. At the flip, so no
+ * copies and the graffiti copies (world_take), with what is left of the
+ * budget. At the flip, so no
  * draw is still using what is freed, and the next frame draws the copy.
  * With RECOMP_GL_UPSCALE_LOG, a summary line a second for each row while
- * anything is happening.
+ * anything is happening, and the frame's larger pictures (up_seen_frame).
  */
 static void up_take(void)
 {
@@ -4422,6 +4735,7 @@ static void up_take(void)
     uint64_t spent = 0;
     uint32_t k;
     int f;
+    up_seen_frame();
     if (g_up_want != g_up_now) {
         uint32_t n = 0;
         int was = g_up_now;
@@ -4443,6 +4757,17 @@ static void up_take(void)
         }
         fprintf(stderr, "  [GL] 3D upscaling: %dx from present %u (was %dx; 0 is off), "
                 "%u textures made again\n", g_up3_now, S.flips, was, n);
+    }
+    if (g_upg_want != g_upg_now) {
+        uint32_t n = 0;
+        int was = g_upg_now;
+        g_upg_now = g_upg_want;
+        for (k = 0; k < TEX_CACHE; k++) {
+            if (g_tcache[k].tex && g_tcache[k].upg == UP_MADE) { tcache_drop(k); n++; }
+            else if (g_tcache[k].upg == UP_FAILED) g_tcache[k].upg = UP_WANTED;
+        }
+        fprintf(stderr, "  [GL] graffiti upscaling: %dx from present %u (was %dx; 0 is off), "
+                "%u textures made again\n", g_upg_now, S.flips, was, n);
     }
     f = up_factor();
     for (k = 0; f && k < TEX_CACHE; k++) {
@@ -4472,7 +4797,8 @@ static void up_take(void)
         g_up_sec.made++;
         g_up_sec.texels += texels;
     }
-    up3_take(spent);
+    spent = world_take(0, spent);
+    world_take(1, spent);
     if (g_up_log > 0 && mono_now() - t0 >= 1.0) {
         char line[224];
         t0 = mono_now();
@@ -4482,12 +4808,17 @@ static void up_take(void)
         g_up3_sec.factor = g_up3_now;
         g_up3_sec.waiting = g_up3_sec.held = 0;
         g_up3_sec.held_bytes = 0;
+        g_upg_sec.factor = g_upg_now;
+        g_upg_sec.waiting = g_upg_sec.held = 0;
+        g_upg_sec.held_bytes = 0;
         for (k = 0; k < TEX_CACHE; k++) {
             if (!g_tcache[k].tex) continue;
             if (g_tcache[k].up == UP_WANTED && f) g_up_sec.waiting++;
             if (g_tcache[k].up == UP_MADE) { g_up_sec.held++; g_up_sec.held_bytes += g_tcache[k].held; }
             if (g_tcache[k].up3 == UP_WANTED && g_up3_now) g_up3_sec.waiting++;
             if (g_tcache[k].up3 == UP_MADE) { g_up3_sec.held++; g_up3_sec.held_bytes += g_tcache[k].held; }
+            if (g_tcache[k].upg == UP_WANTED && g_upg_now) g_upg_sec.waiting++;
+            if (g_tcache[k].upg == UP_MADE) { g_upg_sec.held++; g_upg_sec.held_bytes += g_tcache[k].held; }
         }
         if (g_up_sec.taken || g_up_sec.made || g_up_sec.failed || g_up_sec.waiting) {
             nv2a_up_second_line(line, sizeof line, &g_up_sec);
@@ -4497,9 +4828,17 @@ static void up_take(void)
          || g_up3_sec.dropped) {
             nv2a_up3_second_line(line, sizeof line, &g_up3_sec);
             fputs(line, stderr);
+            if (g_up3_sec.waiting) up_waiting_line(0);
+        }
+        if (g_upg_sec.taken || g_upg_sec.made || g_upg_sec.failed || g_upg_sec.waiting
+         || g_upg_sec.dropped) {
+            nv2a_upg_second_line(line, sizeof line, &g_upg_sec);
+            fputs(line, stderr);
+            if (g_upg_sec.waiting) up_waiting_line(1);
         }
         memset(&g_up_sec, 0, sizeof g_up_sec);
         memset(&g_up3_sec, 0, sizeof g_up3_sec);
+        memset(&g_upg_sec, 0, sizeof g_upg_sec);
     }
 }
 
@@ -4815,8 +5154,10 @@ made:
     g_tcache[slot].last_draw = S.draws;
     g_tcache[slot].up = UP_NONE;
     g_tcache[slot].up3 = UP_NONE;
+    g_tcache[slot].upg = UP_NONE;
     g_tcache[slot].up_said = 0;
     g_tcache[slot].born = g_tcache[slot].seen = S.frames;
+    g_tcache[slot].asked = 0;
     g_tex_slot = slot;
     return tex;
 }
@@ -7652,13 +7993,25 @@ static void do_draw_body(void)
 
             if (S.psh.tex_bound[st]) {
                 tex = surface_texture_for(&S.tex[st], &sx, &sy, &sslot);
+                if (tex && sslot >= 0 && g_up_log > 0)
+                    up_seen(g_surf[sslot].offset, g_surf[sslot].w, g_surf[sslot].h, 1, 0);
                 if (!tex) {
                     sx = sy = 1.0f;
                     g_upload_bias_bg = (S.psh.tex_signed[st] & 0x10) != 0;
                     tex = upload_texture(&S.tex[st]);
                     g_upload_bias_bg = 0;
-                    if (tex) up_note(g_tex_slot, draw_screen_space(slot), over,
-                                     S.psh.tex_mode[st], S.psh.tex_alpha_only[st]);
+                    if (tex) {
+                        up_note(g_tex_slot, draw_screen_space(slot), over,
+                                S.psh.tex_mode[st], S.psh.tex_alpha_only[st]);
+                        /* A graffiti copy made for this draw (upg_capture). */
+                        if (g_tex_slot >= 0 && g_tcache[g_tex_slot].tex)
+                            tex = g_tcache[g_tex_slot].tex;
+                        if (g_tex_slot >= 0 && g_up_log > 0
+                         && (g_tcache[g_tex_slot].w > NV2A_UP_SIDE_MAX
+                          || g_tcache[g_tex_slot].h > NV2A_UP_SIDE_MAX))
+                            up_seen(g_tcache[g_tex_slot].offset, g_tcache[g_tex_slot].w,
+                                    g_tcache[g_tex_slot].h, 0, g_tcache[g_tex_slot].upg);
+                    }
                     if (tex && !fmt_is_swz(S.tex[st].color)
                             && !fmt_is_dxt(S.tex[st].color)) {
                         sx = 1.0f / (float)S.tex[st].width;
@@ -13678,6 +14031,21 @@ static void up3_start(void)
         fprintf(stderr, "  [GL] 3D upscaling: %dx from the settings (0 is off)\n", g_up3_now);
 }
 
+/* Graffiti upscaling from the start: the window's setting, else off
+ * (NV2A_UPG_DEFAULT). Its menu row comes after 3D upscaling's (gfx_init). */
+static void upg_start(void)
+{
+    int n = NV2A_UPG_DEFAULT;
+#if defined(NV2A_GL_USE_SDL)
+    n = sdl_cfg_get("upscale_graffiti", NV2A_UPG_DEFAULT);
+#endif
+    g_upg_now = g_upg_want = nv2a_up_factor(n);
+    if (g_upg_now && !G->tex_upscale)
+        fprintf(stderr, "  [GL] graffiti upscaling: not on the %s backend\n", G->name);
+    else
+        fprintf(stderr, "  [GL] graffiti upscaling: %dx from the settings (0 is off)\n", g_upg_now);
+}
+
 static int gfx_init(uint32_t w, uint32_t h)
 {
     if (!gl_init(w, h)) return 0;     /* the context, then the device */
@@ -13688,11 +14056,13 @@ static int gfx_init(uint32_t w, uint32_t h)
     seethru_start();
     up_start();
     up3_start();
+    upg_start();
 #if defined(XBOXRECOMP_MENU)
     sdl_menu_smaa();
     sdl_menu_msaa();
     sdl_menu_up();
     sdl_menu_up3();
+    sdl_menu_upg();
     sdl_shader_cache();
 #endif
     return 1;

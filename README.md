@@ -45,6 +45,8 @@ contains no game files.
   from copies of the game's art made with Super-xBR.
 - **3D upscaling:** Sharper walls, ground, signs and characters close up,
   drawn from copies of the game's textures made with Super-xBR.
+- **Graffiti upscaling:** Sharper graffiti tags, drawn from Super-xBR copies
+  of their own.
 - **Performance:** Smooth frame pacing and optimised engine/renderer on both
   Linux and Windows.
 - **Portable mode:** Everything in one folder that can be moved.

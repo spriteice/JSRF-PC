@@ -85,7 +85,7 @@ static const DevSwitch k_logging[] = {
     { "RECOMP_GL_SEETHRU_LOG", "1" },       /* the see-through fix's census, one frame in 600 */
     { "RECOMP_GL_TIMELINE", "1" },          /* a frame's surfaces and skinned draws, every 5 s */
     { "RECOMP_GL_UNHANDLED", "1" },
-    { "RECOMP_GL_UPSCALE_LOG", "1" },       /* 2D and 3D upscaling's census: what their rules take (nv2a_upscale.h) */
+    { "RECOMP_GL_UPSCALE_LOG", "1" },       /* 2D, 3D and graffiti upscaling's census: what their rules take (nv2a_upscale.h) */
     { "RECOMP_GL_VERBOSE", "1" },
     { "RECOMP_HEAP_GUARD", "1" },           /* released memory held, and its misuse said (src/kernel/xbox_heap.c) */
     { "RECOMP_KERNEL_IO", "1" },

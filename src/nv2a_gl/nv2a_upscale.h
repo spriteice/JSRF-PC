@@ -1,9 +1,9 @@
 /*
  * Upscaling: textures drawn from a sharper copy of themselves, made by
- * Super-xBR on the device (the passes below). Two rows ask for it, each with
- * its own rule, which says which textures are its own from how a draw binds
- * them, never from a list of them; nv2a_gl.c keeps the texture cache, notes
- * each binding on its entry and asks both.
+ * Super-xBR on the device (the passes below). Three rows ask for it, each
+ * with its own rule, which says which textures are its own from how a draw
+ * binds them, never from a list of them; nv2a_gl.c keeps the texture cache,
+ * notes each binding on its entry and asks each.
  *
  * 2D upscaling: the game's 2D art -- its menus, fonts, HUD and icons.
  *
@@ -50,6 +50,24 @@
  * A copy is at most NV2A_UP3_OUT_MAX a side (nv2a_up3_factor), and the
  * copies held stay under NV2A_UP3_HELD_MAX bytes (nv2a_up3_room).
  *
+ * Graffiti upscaling: the graffiti tags, which the title builds into
+ * sheets of 1024 x 1024, 16 tags of 256 x 256 each (the graffiti cache's
+ * JSRF_TEXS0.JTX and JSRF_TEXS1.JTX, and the garage picker's own image).
+ *
+ * Its rule (nv2a_upg_rule) is the 3D rule's, but for size: it takes a
+ * texture larger than NV2A_UP_SIDE_MAX a side, up to NV2A_UPG_SIDE_MAX,
+ * which the 3D rule leaves. Every census of play so far found the graffiti
+ * sheets, and nothing else, there. And into a picture the title keeps, a
+ * surface other than the frame, it takes a flat draw's too, and a linear
+ * texture: the garage's graffiti picker draws the chosen design each frame,
+ * flat, from its own 1024 x 1024 image into a 1024 x 1024 surface, and its
+ * preview shows that surface. Into the frame, a flat draw is the 2D rule's,
+ * as for 3D. A sheet's copy is made the same way, the
+ * game's alpha and chain kept, at most NV2A_UPG_OUT_MAX a side, and the
+ * copies held stay under their own NV2A_UPG_HELD_MAX. The census also says
+ * whether the draw's combiner uses blue-to-alpha, as the spray's reveal
+ * does, to learn whether that tells graffiti apart better than its size.
+ *
  * RECOMP_GL_UPSCALE_LOG=1 logs, under [UPSCALE], each texture a 2D draw
  * binds, once: taken, or left and why (nv2a_up_census_line), with which
  * kind of 2D draw it was. That is the census of what the rule takes in the
@@ -58,7 +76,8 @@
  * off: 2D art drawn some other way, which the rule leaves. And, as
  * "[UPSCALE] 3D ...", each texture the 3D rule takes or leaves for what it
  * is, once (nv2a_up3_census_line), and each it would take that a draw with
- * the depth test off binds.
+ * the depth test off binds; and, as "[UPSCALE] graffiti ...", the same for
+ * the graffiti rule.
  *
  * Plain C, with nothing of GL's or SDL's, so a test links it (tests/upscale).
  */
@@ -203,6 +222,7 @@ enum { NV2A_UP3_MODE_PROJECT2D = 1, NV2A_UP3_MODE_PROJECT3D = 2 };
 /* One draw's binding of one texture, as the 3D rule reads it. */
 typedef struct {
     int      screen, over;              /* the draw is 2D: screen-space, or over the picture */
+    int      kept;                      /* into a picture the title keeps, not the frame */
     int      depth_test, depth_write;   /* the draw's */
     int      mode;                      /* the stage's texture mode */
     uint32_t w, h;                      /* the texture's size */
@@ -211,6 +231,7 @@ typedef struct {
     int      bump;                      /* bound as a bump source */
     int      alpha_only;                /* A8: its colour reads as white */
     int      taken_2d;                  /* the 2D rule took it */
+    int      blue_alpha;                /* the draw's combiner uses blue-to-alpha (the census's) */
 } Nv2aUp3Bind;
 
 /* The 3D rule's verdict: taken, or the first thing that leaves it. The
@@ -227,6 +248,8 @@ enum {
     NV2A_UP3_TOO_BIG,       /* a side over NV2A_UP_SIDE_MAX */
     NV2A_UP3_BUMP,          /* a bump source */
     NV2A_UP3_ALPHA_ONLY,    /* alpha-only */
+    NV2A_UPG_NOT_GRAFFITI,  /* graffiti: at most NV2A_UP_SIDE_MAX a side, the 3D rule's */
+    NV2A_UPG_TOO_BIG,       /* graffiti: a side over NV2A_UPG_SIDE_MAX */
     NV2A_UP3_VERDICTS
 };
 
@@ -249,7 +272,9 @@ int nv2a_up3_census_wants(const Nv2aUp3Bind *b, int verdict);
  * format fmt, bound as b by a draw through a vertex program (vp) or the
  * fixed function, with the 3D rule's verdict: "[UPSCALE] 3D taken ..." or
  * "[UPSCALE] 3D left ...: why", and a newline. It names the stage's mode
- * and what the draw does with depth. What snprintf returns. */
+ * and what the draw does with depth, and "blue-to-alpha" where the draw's
+ * combiner uses it (to learn whether graffiti alone does). What snprintf
+ * returns. */
 int nv2a_up3_census_line(char *buf, size_t n, uint32_t addr, uint32_t fmt,
                          const Nv2aUp3Bind *b, int vp, int verdict);
 
@@ -300,6 +325,53 @@ int nv2a_up3_room(const Nv2aUp3Held *h, int n, uint64_t held, uint64_t need, uin
 /* The summary line for a second of 3D work, "[UPSCALE] 3D 2x: ...", and a
  * newline; what snprintf returns. */
 int nv2a_up3_second_line(char *buf, size_t n, const Nv2aUpSecond *s);
+
+/* ---- Graffiti upscaling ----------------------------------------------------- */
+
+/* The largest side of a texture the graffiti rule takes: the sheets'. */
+#define NV2A_UPG_SIDE_MAX 1024
+
+/* The graffiti rule: the verdict on binding b. First NV2A_UPG_NOT_GRAFFITI
+ * for a texture at most NV2A_UP_SIDE_MAX a side, the 3D rule's to weigh;
+ * then the 3D rule's verdicts, with NV2A_UPG_TOO_BIG for a side over
+ * NV2A_UPG_SIDE_MAX, but none about the draw or the texture's layout where
+ * it is into a picture the title keeps (b->kept): there a flat draw, one
+ * with depth off, or a linear texture is taken too. So the two rules never take the same texture, and the
+ * 2D rule, which stops at NV2A_UP_SIDE_MAX too, never one of graffiti's. */
+int nv2a_upg_rule(const Nv2aUp3Bind *b);
+
+/* Whether the census logs binding b, of the graffiti rule's verdict: as
+ * nv2a_up3_census_wants, but never a texture of the 3D rule's size, which
+ * the 3D census already names. */
+int nv2a_upg_census_wants(const Nv2aUp3Bind *b, int verdict);
+
+/* The census line for the graffiti rule, as nv2a_up3_census_line's, as
+ * "[UPSCALE] graffiti taken ..." or "... left ...: why", with whether the
+ * draw's combiner uses blue-to-alpha. What snprintf returns. */
+int nv2a_upg_census_line(char *buf, size_t n, uint32_t addr, uint32_t fmt,
+                         const Nv2aUp3Bind *b, int vp, int verdict);
+
+/* The setting a new install starts with: off, until it has been tested. */
+#define NV2A_UPG_DEFAULT 0
+
+/* The longest side a graffiti copy may have: a 1024 sheet at 8x. Every
+ * graphics card the port runs on takes 8192 a side or more; one whose limit
+ * is lower gets the largest factor that fits (nv2a_gfx_gl.c's tex_upscale
+ * refuses the rest). */
+#define NV2A_UPG_OUT_MAX 8192
+
+/* The factor a w x h texture's graffiti copy is made at with the setting
+ * `factor`, as nv2a_up3_factor's under NV2A_UPG_OUT_MAX. */
+int nv2a_upg_factor(uint32_t w, uint32_t h, int factor);
+
+/* The most bytes the graffiti copies may hold on the device, together, apart
+ * from the 3D copies: 1 GB. A sheet's copy with its chain is 21 MB at 2x,
+ * 85 MB at 4x and 341 MB at 8x, and a scene has shown three sheets at most. */
+#define NV2A_UPG_HELD_MAX (1024ull * 1024 * 1024)
+
+/* The summary line for a second of graffiti work, "[UPSCALE] graffiti 2x:
+ * ...", as nv2a_up3_second_line's under NV2A_UPG_HELD_MAX. */
+int nv2a_upg_second_line(char *buf, size_t n, const Nv2aUpSecond *s);
 
 /* ---- The copy's passes (nv2a_upscale_glsl.c) ------------------------------
  *

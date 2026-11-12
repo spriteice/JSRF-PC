@@ -16,7 +16,7 @@ set(NV2A_GL_SOURCES
     nv2a_fit.c                  # the frame put in the window, halved first if need be
     nv2a_wide.c                 # widescreen's maths: the squeeze, the 2D overlays, their clip, the HUD's move
     nv2a_seethru.c              # the see-through fix: which draws are split, and the held-back list
-    nv2a_upscale.c              # 2D and 3D upscaling: which textures each takes, and the cap
+    nv2a_upscale.c              # 2D, 3D and graffiti upscaling: which textures each takes, and the caps
     nv2a_upscale_glsl.c         # upscaling: Super-xBR's passes, for the device
 )
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

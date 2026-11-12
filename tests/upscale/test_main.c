@@ -590,6 +590,179 @@ static void second_3d(void)
     CHECK(!strstr(buf, "dropped"));
 }
 
+/* ---- Graffiti upscaling ----------------------------------------------------- */
+
+/* A 3D draw through a vertex program binding a 1024x1024 DXT sheet of tags,
+ * one level, to a PROJECT2D stage, as every census of play has shown them. */
+static Nv2aUp3Bind sheet(void)
+{
+    Nv2aUp3Bind b = wall();
+    b.w = 1024;
+    b.h = 1024;
+    b.levels = 1;
+    return b;
+}
+
+static void rule_g(void)
+{
+    Nv2aUp3Bind b = sheet();
+    /* The sheet: graffiti's, and left by the 3D rule. */
+    CHECK(nv2a_upg_rule(&b) == NV2A_UP3_TAKEN);
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_TOO_BIG);
+    /* One side over 512 is enough; 1024 a side is the most. */
+    b.w = 1024; b.h = 256;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UP3_TAKEN);
+    b.w = 256; b.h = 1024;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UP3_TAKEN);
+    b.w = 513; b.h = 16;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UP3_TAKEN);
+    b.w = 2048; b.h = 1024;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UPG_TOO_BIG);
+    b.w = 1024; b.h = 1025;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UPG_TOO_BIG);
+    /* 512 or less is the 3D rule's to weigh, before anything about the
+     * draw: the two rules never take the same texture. */
+    b = wall();
+    CHECK(nv2a_upg_rule(&b) == NV2A_UPG_NOT_GRAFFITI);
+    b.w = b.h = 512;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UPG_NOT_GRAFFITI && nv2a_up3_rule(&b) == NV2A_UP3_TAKEN);
+    b.screen = 1;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UPG_NOT_GRAFFITI);
+    CHECK(nv2a_up3_of_texture(NV2A_UPG_NOT_GRAFFITI) && nv2a_up3_of_texture(NV2A_UPG_TOO_BIG));
+    /* Then the 3D rule's own reasons. */
+    b = sheet(); b.screen = 1;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UP3_2D_DRAW);
+    b = sheet(); b.over = 1;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UP3_2D_DRAW);
+    b = sheet(); b.depth_test = 0;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UP3_NO_DEPTH);
+    b = sheet(); b.mode = 6;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UP3_MODE);
+    b = sheet(); b.layout = NV2A_UP_LINEAR;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UP3_LINEAR_TEX);
+    b = sheet(); b.h = 8;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UP3_TOO_SMALL);
+    b = sheet(); b.bump = 1;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UP3_BUMP);
+    b = sheet(); b.alpha_only = 1;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UP3_ALPHA_ONLY);
+    /* Into a picture the title keeps, not the frame, neither the draw nor
+     * the layout matters: the garage picker draws its design flat into its
+     * preview's surface. The texture's other reasons still do; the 3D rule
+     * weighs the draw as before, and a texture of its size is its own. */
+    b = sheet(); b.kept = 1; b.screen = 1;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UP3_TAKEN);
+    b.screen = 0; b.over = 1; b.depth_test = 0; b.depth_write = 0;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UP3_TAKEN);
+    b.layout = NV2A_UP_LINEAR;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UP3_TAKEN);
+    b.kept = 0; b.over = 0; b.depth_test = 1;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UP3_LINEAR_TEX);
+    b = sheet(); b.kept = 1; b.mode = 6;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UP3_MODE);
+    b = sheet(); b.kept = 1; b.bump = 1;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UP3_BUMP);
+    b = sheet(); b.kept = 1; b.screen = 1; b.alpha_only = 1;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UP3_ALPHA_ONLY);
+    b = sheet(); b.kept = 1; b.screen = 1; b.w = 2048;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UPG_TOO_BIG);
+    b = wall(); b.kept = 1; b.screen = 1;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_2D_DRAW && nv2a_upg_rule(&b) == NV2A_UPG_NOT_GRAFFITI);
+    b = wall(); b.kept = 1; b.depth_test = 0;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_NO_DEPTH);
+    b = wall(); b.kept = 1; b.layout = NV2A_UP_LINEAR;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_LINEAR_TEX);
+    /* Blue-to-alpha is for the census: no verdict changes with it. */
+    b = sheet(); b.blue_alpha = 1;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UP3_TAKEN);
+    b = wall(); b.blue_alpha = 1;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_TAKEN && nv2a_upg_rule(&b) == NV2A_UPG_NOT_GRAFFITI);
+}
+
+static void census_g(void)
+{
+    char buf[240];
+    Nv2aUp3Bind b = sheet();
+    int n;
+    CHECK(nv2a_upg_census_wants(&b, NV2A_UP3_TAKEN));
+    CHECK(nv2a_upg_census_wants(&b, NV2A_UP3_MODE));
+    b.w = 2048;
+    CHECK(nv2a_upg_census_wants(&b, NV2A_UPG_TOO_BIG));
+    /* Never one of the 3D rule's size, which the 3D census names, nor a 2D
+     * draw's, which the 2D census names. */
+    b = wall();
+    CHECK(!nv2a_upg_census_wants(&b, NV2A_UPG_NOT_GRAFFITI));
+    b = sheet(); b.screen = 1;
+    CHECK(!nv2a_upg_census_wants(&b, NV2A_UP3_2D_DRAW));
+    /* Into a picture the title keeps, a flat draw's verdict is the
+     * texture's, and logged. */
+    b.kept = 1;
+    CHECK(nv2a_upg_census_wants(&b, nv2a_upg_rule(&b)));
+    /* A draw with depth off, of a sheet the rule takes with it on; not of
+     * one it wouldn't. */
+    b = sheet(); b.depth_test = 0;
+    CHECK(nv2a_upg_census_wants(&b, NV2A_UP3_NO_DEPTH));
+    b.w = 4096;
+    CHECK(!nv2a_upg_census_wants(&b, NV2A_UP3_NO_DEPTH));
+    /* Its lines, with whether the draw's combiner uses blue-to-alpha. */
+    b = sheet(); b.blue_alpha = 1;
+    n = nv2a_upg_census_line(buf, sizeof buf, 0x01808000u, 0x0E, &b, 1, NV2A_UP3_TAKEN);
+    CHECK(n == (int)strlen(buf));
+    CHECK(!strcmp(buf, "[UPSCALE] graffiti taken 01808000 1024x1024 fmt 0E DXT, 1 level, stage "
+                       "PROJECT2D (draw: vp, depth tested and written, blue-to-alpha)\n"));
+    b.blue_alpha = 0; b.w = 2048; b.depth_write = 0;
+    nv2a_upg_census_line(buf, sizeof buf, 0x02000000u, 0x0E, &b, 1, NV2A_UPG_TOO_BIG);
+    CHECK(!strcmp(buf, "[UPSCALE] graffiti left 02000000 2048x1024 fmt 0E DXT, 1 level, stage "
+                       "PROJECT2D (draw: vp, depth tested, no blue-to-alpha): it is larger than "
+                       "1024\n"));
+    /* And says a draw into a picture the title keeps is one. */
+    b = sheet(); b.kept = 1; b.screen = 1; b.depth_test = 0; b.depth_write = 0;
+    nv2a_upg_census_line(buf, sizeof buf, 0x01808000u, 0x0C, &b, 1, nv2a_upg_rule(&b));
+    CHECK(!strcmp(buf, "[UPSCALE] graffiti taken 01808000 1024x1024 fmt 0C DXT, 1 level, stage "
+                       "PROJECT2D (draw: screen-space, depth off, into a picture of its own, no "
+                       "blue-to-alpha)\n"));
+    CHECK(!strcmp(nv2a_up3_verdict_names[NV2A_UPG_NOT_GRAFFITI],
+                  "it is 512 or less, the 3D rule's"));
+    /* The 3D line says blue-to-alpha only where the draw uses it. */
+    b = wall(); b.blue_alpha = 1;
+    nv2a_up3_census_line(buf, sizeof buf, 0x01A2B000u, 0x0C, &b, 1, NV2A_UP3_TAKEN);
+    CHECK(!strcmp(buf, "[UPSCALE] 3D taken 01A2B000 256x256 fmt 0C DXT, 9 levels, stage PROJECT2D "
+                       "(draw: vp, depth tested and written, blue-to-alpha)\n"));
+    b.blue_alpha = 0;
+    nv2a_up3_census_line(buf, sizeof buf, 0x01A2B000u, 0x0C, &b, 1, NV2A_UP3_TAKEN);
+    CHECK(!strstr(buf, "blue"));
+}
+
+static void factor_g(void)
+{
+    char buf[224];
+    Nv2aUpSecond s;
+    /* A sheet at each setting: 2048, 4096 and 8192 a side. */
+    CHECK(nv2a_upg_factor(1024, 1024, 2) == 2);
+    CHECK(nv2a_upg_factor(1024, 1024, 4) == 4);
+    CHECK(nv2a_upg_factor(1024, 1024, 8) == 8);
+    CHECK(nv2a_upg_factor(1024, 1024, 0) == 0);
+    /* Past NV2A_UPG_OUT_MAX, halved, as for 3D. */
+    CHECK(nv2a_upg_factor(NV2A_UPG_OUT_MAX / 8 + 1, 16, 8) == 4);
+    /* A sheet's copy with a chain to 1x1: about 21, 85 and 341 MB; three
+     * fit under the cap at 8x, with or without one. */
+    CHECK(nv2a_up_bytes(1024, 1024, 2, 1, 11) / MB == 21);
+    CHECK(nv2a_up_bytes(1024, 1024, 4, 1, 11) / MB == 85);
+    CHECK(nv2a_up_bytes(1024, 1024, 8, 1, 11) / MB == 341);
+    CHECK(3 * nv2a_up_bytes(1024, 1024, 8, 1, 11) <= NV2A_UPG_HELD_MAX);
+    CHECK(3 * nv2a_up_bytes(1024, 1024, 8, 0, 1) <= NV2A_UPG_HELD_MAX);
+    /* The setting: off as a new install starts; the cap, 1 GB. */
+    CHECK(NV2A_UPG_DEFAULT == 0 && nv2a_up_choice(NV2A_UPG_DEFAULT) == 0);
+    CHECK(NV2A_UPG_HELD_MAX == 1024 * MB);
+    /* The summary line a second. */
+    memset(&s, 0, sizeof s);
+    s.factor = 8; s.taken = 2; s.made = 1; s.texels = 67108864; s.waiting = 1;
+    s.held = 1; s.held_bytes = 341 * MB;
+    CHECK(nv2a_upg_second_line(buf, sizeof buf, &s) == (int)strlen(buf));
+    CHECK(!strcmp(buf, "[UPSCALE] graffiti 8x: 2 taken, 1 made (67108864 texels), 0 failed, "
+                       "1 waiting, 0 dropped for the cap; 1 copies held, 341.0 MB of 1024 MB\n"));
+}
+
 static void second(void)
 {
     char buf[192];
@@ -625,6 +798,9 @@ int main(void)
     bytes_3d();
     factor_3d();
     second_3d();
+    rule_g();
+    census_g();
+    factor_g();
     if (s_failures) {
         printf("upscale: %d failed\n", s_failures);
         return 1;

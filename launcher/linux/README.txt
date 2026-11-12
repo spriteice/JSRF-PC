@@ -88,11 +88,12 @@ the game as the Xbox runs it: 4:3 at 1x, with everything JSRF-PC adds to how
 it looks and plays turned off, but the audio effects, which are the console's
 own. JSRF-PC default is the settings a new install starts with. Max quality
 is JSRF-PC default with the render scale, draw distance, Far buildings,
-anisotropic filtering, 2D and 3D upscaling and both anti-aliasings at their
-most, as far as the graphics card goes: it asks a lot of the computer. The
-one ticked is the one your settings match, if any. Full screen and the free
-camera's own settings stay as you set them. The game restarts if the render
-scale, the shader cache or the audio effects change, so save first.
+anisotropic filtering, 2D, 3D and graffiti upscaling and both
+anti-aliasings at their most, as far as the graphics card goes: it asks a
+lot of the computer. The one ticked is the one your settings match, if any.
+Full screen and the free camera's own settings stay as you set them. The
+game restarts if the render scale, the shader cache or the audio effects
+change, so save first.
 
 Display > Draw distance in the in-game menu is how far away the game draws
 the things in its world: crowds, spray cans, props you can knock over,
@@ -168,6 +169,16 @@ remembered as upscale_3d= in the settings file (0, 2, 4, or 8). No copy is
 larger than 2048 a side, so 8x enlarges the larger textures 4x. The copies
 take up to 4 GB of the graphics card's memory, 1 to 2.5 GB at 4x in play;
 whatever doesn't fit keeps the game's own textures.
+
+Graphics > Graffiti upscaling in the in-game menu draws the graffiti tags
+from sharper copies: Off (the default), 2x, 4x, or 8x. The tags come 16 to a
+sheet of 1024 x 1024, and the graphics card makes a sheet's copy the first
+time it is drawn, after the 3D world's; the garage's graffiti picker has its
+copy made as it draws it, which can pause the menu for a moment. It changes
+straight away, with no restart, and is remembered as upscale_graffiti= in
+the settings file (0, 2, 4, or 8). The copies take up to 1 GB of the
+graphics card's memory, apart from 3D upscaling's: about 85 MB a sheet at 4x
+and 340 MB at 8x.
 
 Graphics > Shader cache in the in-game menu (on by default) keeps the shaders
 the game builds, in the cache folder. Each time the game starts, they are all

@@ -1763,7 +1763,10 @@ static uint32_t glx_target_smaa(uint32_t h)
  * the levels of a new texture. Units 4 and 5 hold what a pass reads, which
  * nothing the title draws samples (SMAA's, above). The images are half
  * floats, made for the call and deleted after it: the copy is made once,
- * at a flip, within the front half's budget for it.
+ * at a flip, within the front half's budget for it, or before a draw that
+ * puts a graffiti texture into a picture of the title's own (nv2a_gl.c's
+ * upg_capture), which is why the draw's vertex array is asked for and put
+ * back too: one glGetIntegerv, nothing beside the copy.
  *
  * No glGetError or framebuffer status is asked for: either waits for the
  * driver's thread, and each of our framebuffers holds one RGBA8 or RGBA16F
@@ -1849,7 +1852,7 @@ static uint32_t glx_tex_upscale(uint32_t tex, uint32_t w, uint32_t h, int factor
     static const GLint wrap_of[3] = { GL_CLAMP_TO_EDGE, GL_REPEAT, GL_MIRRORED_REPEAT };
     int steps = factor == 2 ? 1 : factor == 4 ? 2 : factor == 8 ? 3 : 0, k;
     GLuint out = 0, cur;
-    GLint l, chain;
+    GLint l, chain, vao = 0;
 
     if (!tex || !steps || !w || !h || !s || g_up.bad) return 0;
     if (!g_up.prog[NV2A_UP_PASSES - 1] && !up_build()) {
@@ -1879,6 +1882,7 @@ static uint32_t glx_tex_upscale(uint32_t tex, uint32_t w, uint32_t h, int factor
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, steps + chain - 1);
 
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vao);
     glDisable(GL_BLEND);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_STENCIL_TEST);
@@ -1946,6 +1950,7 @@ static uint32_t glx_tex_upscale(uint32_t tex, uint32_t w, uint32_t h, int factor
     /* Back as the title's next draw expects it, as after SMAA. */
     glActiveTexture(GL_TEXTURE0 + SCRATCH_UNIT);
     glUseProgram(prog_ok(g_cur_prog) ? g_prog[g_cur_prog - 1].prog : 0);
+    glBindVertexArray((GLuint)vao);
     glx_state_invalidate();
     if (rt_ok(g_cur_rt)) glx_target_bind(g_cur_rt);
     else glBindFramebuffer(GL_FRAMEBUFFER, 0);
