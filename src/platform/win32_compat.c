@@ -1059,10 +1059,20 @@ static void w32_suspend_signal_install(void)
     sigaction(W32_SUSPEND_SIGNAL, &sa, NULL);
 }
 
+/* Whether the calling thread has a suspend to stop for: under its lock, as
+ * every write of the two is. Read without it, the look raced the suspend
+ * that was writing them (the thread sanitizer, tests/suspend_other). One
+ * lock a slice check, at every 256th recompiled function's entry, held only
+ * by this thread and whoever suspends or resumes it. */
 int w32_suspend_pending(void)
 {
-    const w32_object *o = t_self_obj;
-    return o && o->suspend_count > 0 && !o->parked;
+    w32_object *o = t_self_obj;
+    int pending;
+    if (!o) return 0;
+    pthread_mutex_lock(&o->lock);
+    pending = o->suspend_count > 0 && !o->parked;
+    pthread_mutex_unlock(&o->lock);
+    return pending;
 }
 
 void w32_suspend_checkpoint(void)
