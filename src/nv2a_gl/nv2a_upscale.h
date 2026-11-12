@@ -1,9 +1,11 @@
 /*
- * 2D upscaling: the game's 2D art -- its menus, fonts, HUD and icons --
- * drawn from a sharper copy of each texture. This unit says which textures
- * are 2D art, from how a draw binds them (the rule), never from a list of
- * them; nv2a_gl.c keeps the texture cache, notes each binding on its entry
- * and asks.
+ * Upscaling: textures drawn from a sharper copy of themselves, made by
+ * Super-xBR on the device (the passes below). Two rows ask for it, each with
+ * its own rule, which says which textures are its own from how a draw binds
+ * them, never from a list of them; nv2a_gl.c keeps the texture cache, notes
+ * each binding on its entry and asks both.
+ *
+ * 2D upscaling: the game's 2D art -- its menus, fonts, HUD and icons.
  *
  * The rule takes a texture that a 2D draw binds, whatever the draw does
  * with depth (the HUD's speed bar writes it, and the title's logo tests
@@ -30,12 +32,33 @@
  * is ever taken: not the title's copies of whole frames either, which come
  * through the screen-space program.
  *
+ * 3D upscaling: the textures the 3D scene is drawn with -- walls, the
+ * ground, signs, the characters' own.
+ *
+ * Its rule (nv2a_up3_rule) takes a texture that a draw with the depth test
+ * on, of neither kind of 2D, binds to a stage that samples it as a plain 2D
+ * texture (PROJECT2D or PROJECT3D: not a cube map, a bump target or a
+ * dot-product mode), when the texture is swizzled or DXT, NV2A_UP3_SIDE_MIN
+ * to NV2A_UP_SIDE_MAX a side (smaller is a ramp or a dot), not a bump
+ * source, not alpha-only (its colour reads as white) and not one the 2D rule
+ * took: an entry holds one copy, and the 2D rule wins. Its copy keeps the
+ * game's alpha, so cut-out edges stay where they were, and the title's own
+ * chain below the new levels, so a surface that isn't magnified samples what
+ * it did. It is made at every render scale, as a surface close to the camera
+ * magnifies its texture at any, and only for a texture uploaded before the
+ * frame last shown, so one the title rewrites every frame is never copied.
+ * A copy is at most NV2A_UP3_OUT_MAX a side (nv2a_up3_factor), and the
+ * copies held stay under NV2A_UP3_HELD_MAX bytes (nv2a_up3_room).
+ *
  * RECOMP_GL_UPSCALE_LOG=1 logs, under [UPSCALE], each texture a 2D draw
  * binds, once: taken, or left and why (nv2a_up_census_line), with which
  * kind of 2D draw it was. That is the census of what the rule takes in the
  * real game. It also logs, once, each texture the rule would take that
  * another draw binds into the frame with the depth test and depth writes
- * off: 2D art drawn some other way, which the rule leaves.
+ * off: 2D art drawn some other way, which the rule leaves. And, as
+ * "[UPSCALE] 3D ...", each texture the 3D rule takes or leaves for what it
+ * is, once (nv2a_up3_census_line), and each it would take that a draw with
+ * the depth test off binds.
  *
  * Plain C, with nothing of GL's or SDL's, so a test links it (tests/upscale).
  */
@@ -147,8 +170,10 @@ int nv2a_up_choice_factor(int choice);
 uint64_t nv2a_up_texels(uint32_t w, uint32_t h, int factor);
 
 /* The bytes a copy holds on the device, RGBA8: its levels from factor
- * times w x h down to w x h, and with `mip` the chain below that to 1x1. */
-uint64_t nv2a_up_bytes(uint32_t w, uint32_t h, int factor, int mip);
+ * times w x h down to w x h, and with `mip` the chain below that: the
+ * title's own, `levels` of them counting w x h, where it has one (2 or
+ * more), else to 1x1. */
+uint64_t nv2a_up_bytes(uint32_t w, uint32_t h, int factor, int mip, uint32_t levels);
 
 /* A second's work, for its summary line. */
 typedef struct {
@@ -159,11 +184,122 @@ typedef struct {
     uint32_t waiting;           /* textures taken and still without a copy */
     uint32_t held;              /* copies on the device */
     uint64_t held_bytes;        /* ... and their bytes (nv2a_up_bytes) */
+    uint32_t dropped;           /* 3D: copies dropped to make room under the cap */
 } Nv2aUpSecond;
 
 /* The summary line for a second, "[UPSCALE] 2x: ...", and a newline; what
  * snprintf returns. */
 int nv2a_up_second_line(char *buf, size_t n, const Nv2aUpSecond *s);
+
+/* ---- 3D upscaling ---------------------------------------------------------- */
+
+/* The smallest side of a texture the 3D rule takes. */
+#define NV2A_UP3_SIDE_MIN 16
+
+/* A stage's texture mode (the texture shader's), as the 3D rule reads it:
+ * the two that the combiner samples as a plain 2D texture. */
+enum { NV2A_UP3_MODE_PROJECT2D = 1, NV2A_UP3_MODE_PROJECT3D = 2 };
+
+/* One draw's binding of one texture, as the 3D rule reads it. */
+typedef struct {
+    int      screen, over;              /* the draw is 2D: screen-space, or over the picture */
+    int      depth_test, depth_write;   /* the draw's */
+    int      mode;                      /* the stage's texture mode */
+    uint32_t w, h;                      /* the texture's size */
+    uint32_t levels;                    /* of the title's own chain, 1 for none */
+    int      layout;                    /* NV2A_UP_SWIZZLED, _DXT or _LINEAR */
+    int      bump;                      /* bound as a bump source */
+    int      alpha_only;                /* A8: its colour reads as white */
+    int      taken_2d;                  /* the 2D rule took it */
+} Nv2aUp3Bind;
+
+/* The 3D rule's verdict: taken, or the first thing that leaves it. The
+ * first two are about the draw, the rest about the texture or how its
+ * stage samples it. */
+enum {
+    NV2A_UP3_TAKEN,
+    NV2A_UP3_2D_DRAW,       /* the draw is 2D: screen-space or over the picture */
+    NV2A_UP3_NO_DEPTH,      /* the draw has the depth test off */
+    NV2A_UP3_TAKEN_2D,      /* the 2D rule took it */
+    NV2A_UP3_MODE,          /* its stage doesn't sample it as a plain 2D texture */
+    NV2A_UP3_LINEAR_TEX,    /* addressed in texels */
+    NV2A_UP3_TOO_SMALL,     /* a side under NV2A_UP3_SIDE_MIN */
+    NV2A_UP3_TOO_BIG,       /* a side over NV2A_UP_SIDE_MAX */
+    NV2A_UP3_BUMP,          /* a bump source */
+    NV2A_UP3_ALPHA_ONLY,    /* alpha-only */
+    NV2A_UP3_VERDICTS
+};
+
+/* Each verdict in words, as the census line gives it. */
+extern const char *const nv2a_up3_verdict_names[NV2A_UP3_VERDICTS];
+
+/* The 3D rule: the verdict on binding b. */
+int nv2a_up3_rule(const Nv2aUp3Bind *b);
+
+/* Whether a verdict is about the texture or how its stage samples it, so
+ * the texture is taken or left for good. */
+int nv2a_up3_of_texture(int verdict);
+
+/* Whether the census logs binding b, of the 3D rule's verdict: one with a
+ * verdict about the texture, and one by a draw with the depth test off, of
+ * a texture the rule would take from a draw with it on. Not a 2D draw's. */
+int nv2a_up3_census_wants(const Nv2aUp3Bind *b, int verdict);
+
+/* The census line for a texture at guest address addr, of the title's
+ * format fmt, bound as b by a draw through a vertex program (vp) or the
+ * fixed function, with the 3D rule's verdict: "[UPSCALE] 3D taken ..." or
+ * "[UPSCALE] 3D left ...: why", and a newline. It names the stage's mode
+ * and what the draw does with depth. What snprintf returns. */
+int nv2a_up3_census_line(char *buf, size_t n, uint32_t addr, uint32_t fmt,
+                         const Nv2aUp3Bind *b, int vp, int verdict);
+
+/* The setting a new install starts with: 4x, whose copies of a busy scene
+ * fit under NV2A_UP3_HELD_MAX whole. */
+#define NV2A_UP3_DEFAULT 4
+
+/* The longest side a 3D copy may have, in texels. A texture whose side
+ * times the setting would pass it is copied at the largest smaller factor
+ * that fits: at 8x, a 512 texture is copied at 4x, so 8x adds texels only
+ * to textures up to 256 a side. A 4096 copy would show more only with one
+ * texel of the game's covering eight pixels or more, and holds 85 MB. */
+#define NV2A_UP3_OUT_MAX 2048
+
+/* The factor a w x h texture's 3D copy is made at with the setting
+ * `factor`: the setting, halved until a side times it is at most
+ * NV2A_UP3_OUT_MAX; 0 when the setting is off or even 2x would pass it. */
+int nv2a_up3_factor(uint32_t w, uint32_t h, int factor);
+
+/* The most bytes the 3D copies may hold on the device, together: 4 GB, the
+ * same at every setting. The title screen's demo binds about 150 textures
+ * the rule takes, whose copies need about 1.2 GB at 4x and 2.1 GB at 8x
+ * (NV2A_UP3_OUT_MAX); a busy scene in play, up to 2.5 GB at 4x and 4.3 GB
+ * at 8x. Only what a scene draws is held, so 2x and 4x stay well under it. */
+#define NV2A_UP3_HELD_MAX (4096ull * 1024 * 1024)
+
+/* How long a 3D copy goes undrawn before the cap may drop it: 120 frames
+ * shown, two seconds at 60 frames a second. Frames, not flips: a flip ends
+ * each of the title's render passes, and the garage's graffiti picker ends
+ * seven a frame. */
+#define NV2A_UP3_IDLE_FRAMES 120u
+
+/* A 3D copy on the device, as the cap weighs it. */
+typedef struct {
+    uint64_t bytes;             /* nv2a_up_bytes */
+    uint32_t idle;              /* frames since it was last drawn */
+} Nv2aUp3Held;
+
+/* Room under the cap for a new copy of `need` bytes, with `held` bytes in
+ * the n copies h: 0 when it fits as things are; else how many copies to
+ * drop first, their indexes in drop[] (room for n): those idle for at
+ * least NV2A_UP3_IDLE_FRAMES, the longest idle first, as few as make room.
+ * -1 when dropping every idle one would still leave too little, or the
+ * copy is larger than the cap: then nothing is dropped and it waits. */
+int nv2a_up3_room(const Nv2aUp3Held *h, int n, uint64_t held, uint64_t need, uint64_t cap,
+                  int *drop);
+
+/* The summary line for a second of 3D work, "[UPSCALE] 3D 2x: ...", and a
+ * newline; what snprintf returns. */
+int nv2a_up3_second_line(char *buf, size_t n, const Nv2aUpSecond *s);
 
 /* ---- The copy's passes (nv2a_upscale_glsl.c) ------------------------------
  *

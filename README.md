@@ -43,6 +43,8 @@ contains no game files.
 - **Anisotropic filtering:** Sharper textures at an angle.
 - **2D upscaling:** Sharper menus, text and HUD at high render scales, drawn
   from copies of the game's art made with Super-xBR.
+- **3D upscaling:** Sharper walls, ground, signs and characters close up,
+  drawn from copies of the game's textures made with Super-xBR.
 - **Performance:** Smooth frame pacing and optimised engine/renderer on both
   Linux and Windows.
 - **Portable mode:** Everything in one folder that can be moved.

@@ -119,10 +119,10 @@ input goes to the menu.
   plays turned off, but the audio effects, which are the console's own.
   JSRF-PC default is the settings a new install starts with. Max quality is
   JSRF-PC default with the render scale, draw distance, Far buildings,
-  anisotropic filtering, 2D upscaling and both anti-aliasings at their most,
-  as far as the graphics card goes. The one ticked is the one your settings
-  match, if any. Full screen and the free camera's own settings stay as you
-  set them.
+  anisotropic filtering, 2D and 3D upscaling and both anti-aliasings at
+  their most, as far as the graphics card goes. The one ticked is the one
+  your settings match, if any. Full screen and the free camera's own
+  settings stay as you set them.
 - **Display:** Full screen, the aspect ratio, the render scale (1× to 6×), the
   draw distance, Far buildings, and two submenus at the end: Skips, with Skip
   intro, and Enhancements, with Music info in pause and See through fix. The
@@ -224,5 +224,14 @@ These are in the in-game menu, under Graphics.
 - **2D upscaling:** Off, 2×, 4×, or 8×. The menus, text, HUD and icons are drawn
   from sharper copies of the game's art, which the graphics card makes the first
   time each piece is shown. It helps from render scale 2× up; at 1× they look as
-  they always have. 8× is for the highest render scales, and its copies take the
-  most memory. 4× by default.
+  they always have. Each size suits a render scale: 2× for 2×, 4× for 3× and 4×,
+  and 8× for 5× and 6×, whose copies take the most memory. 4× by default.
+- **3D upscaling:** Off, 2×, 4×, or 8×. The textures of the 3D world (walls,
+  the ground, signs and the characters) are drawn from sharper copies, which
+  the graphics card makes in a level's first moments, a few a frame. They show
+  where a surface is close enough to the camera for its texture to be
+  enlarged, at any render scale and more so the higher it is. Distant
+  surfaces, and cut-out edges such as fences, look as they always have. No
+  copy is larger than 2048 a side, so 8× enlarges the larger textures 4×. The
+  copies take up to 4 GB of the graphics card's memory, 1 to 2.5 GB at 4× in
+  play; whatever doesn't fit keeps the game's own textures. 4× by default.

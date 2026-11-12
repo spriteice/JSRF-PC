@@ -1,7 +1,7 @@
 /* Run with: python tests/upscale/run.py
  *
- * 2D upscaling's rule and its census, src/nv2a_gl/nv2a_upscale.c, as the
- * engine builds it:
+ * Upscaling's rules and their census, src/nv2a_gl/nv2a_upscale.c, as the
+ * engine builds it. 2D upscaling:
  *
  *   1. A font page, an icon sheet and a HUD piece a screen-space draw binds
  *      into the frame are taken: one level, swizzled or DXT, up to 512 a
@@ -302,19 +302,292 @@ static void budget(void)
     CHECK(nv2a_up_texels(256, 256, 2) == 262144u);
     CHECK(nv2a_up_texels(8, 32, 4) == 4096u);
     /* 8x8 at 2x: 16x16 and 8x8. With mipmaps, 4x4, 2x2 and 1x1 too. */
-    CHECK(nv2a_up_bytes(8, 8, 2, 0) == (16 * 16 + 8 * 8) * 4u);
-    CHECK(nv2a_up_bytes(8, 8, 2, 1) == (16 * 16 + 8 * 8 + 4 * 4 + 2 * 2 + 1) * 4u);
+    CHECK(nv2a_up_bytes(8, 8, 2, 0, 1) == (16 * 16 + 8 * 8) * 4u);
+    CHECK(nv2a_up_bytes(8, 8, 2, 1, 1) == (16 * 16 + 8 * 8 + 4 * 4 + 2 * 2 + 1) * 4u);
     /* 8x2 at 4x: 32x8, 16x4, 8x2; then 4x1, 2x1, 1x1. */
-    CHECK(nv2a_up_bytes(8, 2, 4, 0) == (32 * 8 + 16 * 4 + 8 * 2) * 4u);
-    CHECK(nv2a_up_bytes(8, 2, 4, 1) == (32 * 8 + 16 * 4 + 8 * 2 + 4 + 2 + 1) * 4u);
+    CHECK(nv2a_up_bytes(8, 2, 4, 0, 1) == (32 * 8 + 16 * 4 + 8 * 2) * 4u);
+    CHECK(nv2a_up_bytes(8, 2, 4, 1, 1) == (32 * 8 + 16 * 4 + 8 * 2 + 4 + 2 + 1) * 4u);
     /* The largest: 512x512 at 4x, a little over 21 MB. */
-    CHECK(nv2a_up_bytes(512, 512, 4, 0) == (2048ull * 2048 + 1024 * 1024 + 512 * 512) * 4);
+    CHECK(nv2a_up_bytes(512, 512, 4, 0, 1) == (2048ull * 2048 + 1024 * 1024 + 512 * 512) * 4);
     /* 8x: 512x512 is a whole flip's budget four times over, and 85 MB. */
     CHECK(nv2a_up_texels(512, 512, 8) == 4u * NV2A_UP_TEXELS_A_FLIP);
-    CHECK(nv2a_up_bytes(8, 2, 8, 0) == (64 * 16 + 32 * 8 + 16 * 4 + 8 * 2) * 4u);
-    CHECK(nv2a_up_bytes(512, 512, 8, 0)
+    CHECK(nv2a_up_bytes(8, 2, 8, 0, 1) == (64 * 16 + 32 * 8 + 16 * 4 + 8 * 2) * 4u);
+    CHECK(nv2a_up_bytes(512, 512, 8, 0, 1)
           == (4096ull * 4096 + 2048 * 2048 + 1024 * 1024 + 512 * 512) * 4);
-    CHECK(nv2a_up_bytes(0, 8, 2, 0) == 0);
+    CHECK(nv2a_up_bytes(0, 8, 2, 0, 1) == 0);
+}
+
+/* ---- 3D upscaling ---------------------------------------------------------- */
+
+/* A 3D draw binding a 256x256 DXT wall with its chain to a PROJECT2D stage. */
+static Nv2aUp3Bind wall(void)
+{
+    Nv2aUp3Bind b;
+    memset(&b, 0, sizeof b);
+    b.depth_test = 1;
+    b.depth_write = 1;
+    b.mode = NV2A_UP3_MODE_PROJECT2D;
+    b.w = 256;
+    b.h = 256;
+    b.levels = 9;
+    b.layout = NV2A_UP_DXT;
+    return b;
+}
+
+static void taken_3d(void)
+{
+    Nv2aUp3Bind b = wall();
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_TAKEN);
+    b.mode = NV2A_UP3_MODE_PROJECT3D;            /* projected */
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_TAKEN);
+    b = wall();
+    b.levels = 1; b.layout = NV2A_UP_SWIZZLED;   /* a sign with one level */
+    b.w = 128; b.h = 64;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_TAKEN);
+    b = wall();
+    b.depth_write = 0;                           /* a fence, drawn after the world */
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_TAKEN);
+    b = wall();
+    b.w = 16; b.h = 16;                          /* the smallest */
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_TAKEN);
+    b.w = 512; b.h = 512;                        /* the largest */
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_TAKEN);
+    b.w = 512; b.h = 16;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_TAKEN);
+}
+
+static void draws_3d(void)
+{
+    Nv2aUp3Bind b = wall();
+    b.screen = 1;                                /* the HUD */
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_2D_DRAW);
+    b.screen = 0; b.over = 1;                    /* the title screen's text */
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_2D_DRAW);
+    b = wall();
+    b.depth_test = 0;                            /* the sky, or an effect */
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_NO_DEPTH);
+    b.depth_write = 0;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_NO_DEPTH);
+    CHECK(!nv2a_up3_of_texture(NV2A_UP3_2D_DRAW));
+    CHECK(!nv2a_up3_of_texture(NV2A_UP3_NO_DEPTH));
+}
+
+static void textures_3d(void)
+{
+    static const int modes[] = { 0, 3, 4, 5, 6, 7, 8, 9, 15, 17 };
+    unsigned i;
+    Nv2aUp3Bind b = wall();
+    for (i = 0; i < sizeof modes / sizeof modes[0]; i++) {
+        b.mode = modes[i];                       /* cube, bump target, dot products, ... */
+        CHECK(nv2a_up3_rule(&b) == NV2A_UP3_MODE);
+    }
+    b = wall();
+    b.taken_2d = 1;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_TAKEN_2D);
+    b = wall();
+    b.layout = NV2A_UP_LINEAR;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_LINEAR_TEX);
+    b = wall();
+    b.w = 256; b.h = 1; b.levels = 1;            /* a tone ramp */
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_TOO_SMALL);
+    b.w = 8; b.h = 8;                            /* a dot */
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_TOO_SMALL);
+    b.w = 15; b.h = 512;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_TOO_SMALL);
+    b = wall();
+    b.w = 1024; b.h = 1024;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_TOO_BIG);
+    b.w = 513; b.h = 64;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_TOO_BIG);
+    b = wall();
+    b.bump = 1;                                  /* water's ripples */
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_BUMP);
+    b = wall();
+    b.alpha_only = 1;                            /* a shadow's mask */
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_ALPHA_ONLY);
+    /* The first reason that applies is the one given: the draw's first,
+     * then the 2D rule's, then how the stage samples it, then the texture. */
+    b = wall();
+    b.taken_2d = 1; b.mode = 3; b.layout = NV2A_UP_LINEAR; b.w = 4; b.bump = 1; b.alpha_only = 1;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_TAKEN_2D);
+    b.taken_2d = 0;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_MODE);
+    b.mode = NV2A_UP3_MODE_PROJECT2D;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_LINEAR_TEX);
+    b.layout = NV2A_UP_DXT;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_TOO_SMALL);
+    b.w = 600;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_TOO_BIG);
+    b.w = 64;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_BUMP);
+    b.bump = 0;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_ALPHA_ONLY);
+    b.depth_test = 0;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_NO_DEPTH);
+    b.screen = 1;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_2D_DRAW);
+}
+
+static void census_3d(void)
+{
+    int v;
+    Nv2aUp3Bind b = wall();
+    for (v = 0; v < NV2A_UP3_VERDICTS; v++)
+        CHECK(nv2a_up3_verdict_names[v] && nv2a_up3_verdict_names[v][0]);
+    for (v = NV2A_UP3_TAKEN; v < NV2A_UP3_VERDICTS; v++)
+        if (v != NV2A_UP3_2D_DRAW && v != NV2A_UP3_NO_DEPTH) {
+            CHECK(nv2a_up3_of_texture(v));
+            CHECK(nv2a_up3_census_wants(&b, v));
+        }
+    /* Never a 2D draw's: the 2D census has those. */
+    b.screen = 1;
+    CHECK(!nv2a_up3_census_wants(&b, NV2A_UP3_2D_DRAW));
+    /* A draw with depth off, of a texture the rule takes with it on. */
+    b = wall();
+    b.depth_test = 0;
+    CHECK(nv2a_up3_census_wants(&b, NV2A_UP3_NO_DEPTH));
+    /* Not of one it wouldn't: a ramp, or one the 2D rule took. */
+    b.h = 1;
+    CHECK(!nv2a_up3_census_wants(&b, NV2A_UP3_NO_DEPTH));
+    b.h = 256; b.taken_2d = 1;
+    CHECK(!nv2a_up3_census_wants(&b, NV2A_UP3_NO_DEPTH));
+}
+
+static void lines_3d(void)
+{
+    char buf[224];
+    Nv2aUp3Bind b = wall();
+    int n = nv2a_up3_census_line(buf, sizeof buf, 0x01A2B000u, 0x0C, &b, 1, NV2A_UP3_TAKEN);
+    CHECK(n == (int)strlen(buf));
+    CHECK(!strcmp(buf, "[UPSCALE] 3D taken 01A2B000 256x256 fmt 0C DXT, 9 levels, stage PROJECT2D "
+                       "(draw: vp, depth tested and written)\n"));
+    b.levels = 1; b.layout = NV2A_UP_SWIZZLED; b.depth_write = 0; b.mode = NV2A_UP3_MODE_PROJECT3D;
+    nv2a_up3_census_line(buf, sizeof buf, 0x01A2B000u, 0x06, &b, 0, NV2A_UP3_TAKEN);
+    CHECK(!strcmp(buf, "[UPSCALE] 3D taken 01A2B000 256x256 fmt 06 swizzled, 1 level, stage PROJECT3D "
+                       "(draw: ff, depth tested)\n"));
+    b = wall();
+    b.w = 256; b.h = 1; b.levels = 1;
+    nv2a_up3_census_line(buf, sizeof buf, 0x00C40000u, 0x0C, &b, 1, NV2A_UP3_TOO_SMALL);
+    CHECK(!strcmp(buf, "[UPSCALE] 3D left 00C40000 256x1 fmt 0C DXT, 1 level, stage PROJECT2D "
+                       "(draw: vp, depth tested and written): a side is under 16\n"));
+    b = wall();
+    b.mode = 6;
+    nv2a_up3_census_line(buf, sizeof buf, 0x00C40000u, 0x0C, &b, 1, NV2A_UP3_MODE);
+    CHECK(!strcmp(buf, "[UPSCALE] 3D left 00C40000 256x256 fmt 0C DXT, 9 levels, stage BUMPENVMAP "
+                       "(draw: vp, depth tested and written): its stage doesn't sample it as a "
+                       "plain 2D texture\n"));
+    b.mode = 17;
+    nv2a_up3_census_line(buf, sizeof buf, 0x00C40000u, 0x0C, &b, 1, NV2A_UP3_MODE);
+    CHECK(!strcmp(buf, "[UPSCALE] 3D left 00C40000 256x256 fmt 0C DXT, 9 levels, stage mode 17 "
+                       "(draw: vp, depth tested and written): its stage doesn't sample it as a "
+                       "plain 2D texture\n"));
+    b = wall();
+    b.depth_test = 0; b.depth_write = 0;
+    nv2a_up3_census_line(buf, sizeof buf, 0x00C40000u, 0x0C, &b, 0, NV2A_UP3_NO_DEPTH);
+    CHECK(!strcmp(buf, "[UPSCALE] 3D left 00C40000 256x256 fmt 0C DXT, 9 levels, stage PROJECT2D "
+                       "(draw: ff, depth off): the draw has the depth test off\n"));
+    b = wall();
+    b.taken_2d = 1; b.levels = 1;
+    nv2a_up3_census_line(buf, sizeof buf, 0x0254F000u, 0x0C, &b, 1, NV2A_UP3_TAKEN_2D);
+    CHECK(!strcmp(buf, "[UPSCALE] 3D left 0254F000 256x256 fmt 0C DXT, 1 level, stage PROJECT2D "
+                       "(draw: vp, depth tested and written): the 2D rule took it\n"));
+}
+
+#define MB (1024ull * 1024)
+
+static void room(void)
+{
+    /* Four copies held: A idle 500 flips, B 200, C 1000, D drawn just now. */
+    static const Nv2aUp3Held h[4] = {
+        { 100 * MB, 500 }, { 300 * MB, 200 }, { 50 * MB, 1000 }, { 400 * MB, 10 } };
+    const uint64_t held = 850 * MB, cap = 1000 * MB;
+    int drop[4];
+    /* It fits as things are: nothing goes. */
+    CHECK(nv2a_up3_room(h, 4, held, 150 * MB, cap, drop) == 0);
+    CHECK(nv2a_up3_room(h, 4, 0, cap, cap, drop) == 0);
+    /* 150 MB more than the cap: C (the longest idle), then A. */
+    CHECK(nv2a_up3_room(h, 4, held, 300 * MB, cap, drop) == 2);
+    CHECK(drop[0] == 2 && drop[1] == 0);
+    /* Only C. */
+    CHECK(nv2a_up3_room(h, 4, held, 200 * MB, cap, drop) == 1 && drop[0] == 2);
+    /* Every idle one: C, A, B; D, drawn just now, stays. */
+    CHECK(nv2a_up3_room(h, 4, held, 600 * MB, cap, drop) == 3);
+    CHECK(drop[0] == 2 && drop[1] == 0 && drop[2] == 1);
+    /* One byte more than they hold: nothing goes, and it waits. */
+    CHECK(nv2a_up3_room(h, 4, held, 600 * MB + 1, cap, drop) == -1);
+    /* Larger than the cap itself. */
+    CHECK(nv2a_up3_room(h, 4, 0, cap + 1, cap, drop) == -1);
+    CHECK(nv2a_up3_room(NULL, 0, 0, cap + 1, cap, drop) == -1);
+    /* Idle exactly two seconds may go; a flip less may not. */
+    {
+        Nv2aUp3Held e[2] = { { 10 * MB, NV2A_UP3_IDLE_FRAMES - 1 }, { 10 * MB, NV2A_UP3_IDLE_FRAMES } };
+        CHECK(nv2a_up3_room(e, 2, 20 * MB, 5 * MB, 20 * MB, drop) == 1 && drop[0] == 1);
+        CHECK(nv2a_up3_room(e, 2, 20 * MB, 15 * MB, 20 * MB, drop) == -1);
+    }
+    /* Equals: the first first. */
+    {
+        Nv2aUp3Held e[3] = { { 10 * MB, 300 }, { 10 * MB, 300 }, { 10 * MB, 300 } };
+        CHECK(nv2a_up3_room(e, 3, 30 * MB, 15 * MB, 30 * MB, drop) == 2);
+        CHECK(drop[0] == 0 && drop[1] == 1);
+    }
+}
+
+static void bytes_3d(void)
+{
+    /* 32x16 with its 6 levels at 2x: 64x32, then the title's 32x16 to 1x1. */
+    CHECK(nv2a_up_bytes(32, 16, 2, 1, 6)
+          == (64 * 32 + 32 * 16 + 16 * 8 + 8 * 4 + 4 * 2 + 2 * 1 + 1) * 4u);
+    /* 256x256 whose chain stops at 32x32 (4 levels) at 4x: 1024 to 256 new,
+     * then 128, 64 and 32; not to 1x1. */
+    CHECK(nv2a_up_bytes(256, 256, 4, 1, 4)
+          == (1024ull * 1024 + 512 * 512 + 256 * 256 + 128 * 128 + 64 * 64 + 32 * 32) * 4);
+    /* Without mipmaps, the chain isn't sampled and isn't there. */
+    CHECK(nv2a_up_bytes(256, 256, 4, 0, 4) == nv2a_up_bytes(256, 256, 4, 0, 1));
+    /* With one level and mipmaps, to 1x1, as for 2D. */
+    CHECK(nv2a_up_bytes(8, 8, 2, 1, 1) == nv2a_up_bytes(8, 8, 2, 1, 4));
+    /* The largest at 8x with its whole chain, about 85 MB. */
+    CHECK(nv2a_up_bytes(512, 512, 8, 1, 10) / MB == 85);
+    /* The setting: 4x as a new install starts, the Graphics row's third
+     * choice. */
+    CHECK(NV2A_UP3_DEFAULT == 4 && nv2a_up_choice(NV2A_UP3_DEFAULT) == 2);
+    CHECK(NV2A_UP3_HELD_MAX == 4096 * MB);
+}
+
+static void factor_3d(void)
+{
+    /* Up to 256 a side, the setting as it is. */
+    CHECK(nv2a_up3_factor(256, 256, 8) == 8);
+    CHECK(nv2a_up3_factor(32, 32, 8) == 8);
+    CHECK(nv2a_up3_factor(512, 512, 4) == 4);
+    CHECK(nv2a_up3_factor(512, 512, 2) == 2);
+    /* 512 at 8x would be 4096: halved to 4x, 2048. */
+    CHECK(nv2a_up3_factor(512, 512, 8) == 4);
+    CHECK(nv2a_up3_factor(512, 64, 8) == 4 && nv2a_up3_factor(64, 512, 8) == 4);
+    /* The longer side decides, at the limit exactly. */
+    CHECK(nv2a_up3_factor(256, 16, 8) == 8);
+    CHECK(nv2a_up3_factor(NV2A_UP3_OUT_MAX / 8 + 1, 16, 8) == 4);
+    /* Off stays off; a texture even 2x would pass isn't copied. */
+    CHECK(nv2a_up3_factor(256, 256, 0) == 0);
+    CHECK(nv2a_up3_factor(NV2A_UP3_OUT_MAX, 16, 2) == 0);
+    /* At 8x the largest copy is about 22 MB, not 85. */
+    CHECK(nv2a_up_bytes(512, 512, nv2a_up3_factor(512, 512, 8), 1, 10) / MB == 21);
+}
+
+static void second_3d(void)
+{
+    char buf[224];
+    Nv2aUpSecond s;
+    int n;
+    memset(&s, 0, sizeof s);
+    s.factor = 8; s.taken = 60; s.made = 3; s.texels = 50331648; s.failed = 0;
+    s.waiting = 41; s.dropped = 2; s.held = 14; s.held_bytes = 1000 * MB;
+    n = nv2a_up3_second_line(buf, sizeof buf, &s);
+    CHECK(n == (int)strlen(buf));
+    CHECK(!strcmp(buf, "[UPSCALE] 3D 8x: 60 taken, 3 made (50331648 texels), 0 failed, 41 waiting, "
+                       "2 dropped for the cap; 14 copies held, 1000.0 MB of 4096 MB\n"));
+    /* The 2D line leaves out what the cap dropped, as before. */
+    nv2a_up_second_line(buf, sizeof buf, &s);
+    CHECK(!strstr(buf, "dropped"));
 }
 
 static void second(void)
@@ -343,6 +616,15 @@ int main(void)
     over();
     budget();
     second();
+    taken_3d();
+    draws_3d();
+    textures_3d();
+    census_3d();
+    lines_3d();
+    room();
+    bytes_3d();
+    factor_3d();
+    second_3d();
     if (s_failures) {
         printf("upscale: %d failed\n", s_failures);
         return 1;

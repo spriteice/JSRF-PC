@@ -88,11 +88,11 @@ the game as the Xbox runs it: 4:3 at 1x, with everything JSRF-PC adds to how
 it looks and plays turned off, but the audio effects, which are the console's
 own. JSRF-PC default is the settings a new install starts with. Max quality
 is JSRF-PC default with the render scale, draw distance, Far buildings,
-anisotropic filtering, 2D upscaling and both anti-aliasings at their most, as
-far as the graphics card goes: it asks a lot of the computer. The one ticked
-is the one your settings match, if any. Full screen and the free camera's own
-settings stay as you set them. The game restarts if the render scale, the
-shader cache or the audio effects change, so save first.
+anisotropic filtering, 2D and 3D upscaling and both anti-aliasings at their
+most, as far as the graphics card goes: it asks a lot of the computer. The
+one ticked is the one your settings match, if any. Full screen and the free
+camera's own settings stay as you set them. The game restarts if the render
+scale, the shader cache or the audio effects change, so save first.
 
 Display > Draw distance in the in-game menu is how far away the game draws
 the things in its world: crowds, spray cans, props you can knock over,
@@ -153,8 +153,21 @@ icons from sharper copies of the game's art: Off, 2x, 4x (the default), or
 8x. The graphics card makes each copy the first time that art is shown, a few
 a frame. It helps from render scale 2x up; at 1x it makes nothing, as the art
 is drawn at its own size there. It changes straight away, with no restart,
-and is remembered as upscale_2d= in the settings file (0, 2, 4, or 8). 8x is
-for the highest render scales, and its copies take the most memory.
+and is remembered as upscale_2d= in the settings file (0, 2, 4, or 8). Each
+size suits a render scale: 2x for 2x, 4x for 3x and 4x, and 8x for 5x and 6x,
+whose copies take the most memory.
+
+Graphics > 3D upscaling in the in-game menu draws the textures of the 3D
+world (walls, the ground, signs and the characters) from sharper copies: Off,
+2x, 4x (the default), or 8x. The graphics card makes the copies in a level's
+first moments, a few a frame. They show where a surface comes close enough to
+the camera for its texture to be enlarged, at any render scale and more so
+the higher it is. Distant surfaces, and cut-out edges such as fences, look as
+they always have. It changes straight away, with no restart, and is
+remembered as upscale_3d= in the settings file (0, 2, 4, or 8). No copy is
+larger than 2048 a side, so 8x enlarges the larger textures 4x. The copies
+take up to 4 GB of the graphics card's memory, 1 to 2.5 GB at 4x in play;
+whatever doesn't fit keeps the game's own textures.
 
 Graphics > Shader cache in the in-game menu (on by default) keeps the shaders
 the game builds, in the cache folder. Each time the game starts, they are all
