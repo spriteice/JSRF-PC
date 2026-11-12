@@ -23,8 +23,14 @@ llvm_mingw=llvm-mingw-20241217-ucrt-ubuntu-20.04-x86_64
 "$here/fetch.sh" "$dir/SDL2-devel-2.30.0-mingw.tar.gz" \
     d44bd8cd869219f43634a898d7735d0c92d4b2cca129f709dc8b98402b36d5f3 \
     https://github.com/libsdl-org/SDL/releases/download/release-2.30.0/SDL2-devel-2.30.0-mingw.tar.gz
+# libepoxy's source is its 1.5.10 tag's archive on GitHub, which Debian and
+# Ubuntu also keep, byte for byte, as their packages' original source, so
+# a build needs no other server than the toolchain's and SDL's while
+# GitHub is up, and has two more when it isn't.
 "$here/fetch.sh" "$dir/libepoxy_1.5.10.orig.tar.gz" \
     a7ced37f4102b745ac86d6a70a9da399cc139ff168ba6b8002b4d8d43c900c15 \
+    https://github.com/anholt/libepoxy/archive/refs/tags/1.5.10.tar.gz \
+    https://deb.debian.org/debian/pool/main/libe/libepoxy/libepoxy_1.5.10.orig.tar.gz \
     http://archive.ubuntu.com/ubuntu/pool/main/libe/libepoxy/libepoxy_1.5.10.orig.tar.gz
 
 cd "$dir"

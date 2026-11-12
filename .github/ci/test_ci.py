@@ -1,5 +1,6 @@
 """Tests for CI's own scripts, run with the tool tests in CI's GCC job
-(.github/ci/linux.sh): fetch.py's tries, how tests/run_all.py names a
+(.github/ci/linux.sh): fetch.py's tries, launcher/windows/fetch.sh's tries
+at each of a file's sources, how tests/run_all.py names a
 sanitizer's leak, checks that each known bug names its release and counts
 what each tsan.supp entry hides, how count_warnings.py counts a build's
 warnings, how coverage.py adds up the tests' line counts, how
@@ -9,7 +10,9 @@ again."""
 import hashlib
 import http.server
 import importlib.util
+import os
 import pathlib
+import socket
 import subprocess
 import sys
 import threading
@@ -89,6 +92,80 @@ def test_fetch_refuses_the_wrong_sha256(server, tmp_path):
     with pytest.raises(ValueError):
         fetch.fetch(server["url"], str(tmp_path / "file"), "0" * 64, pause=0)
     assert list(tmp_path.iterdir()) == []
+
+
+def fetch_sh(tmp_path, path, *urls):
+    """launcher/windows/fetch.sh fetching BODY to path from urls, with no
+    proxy, and a sleep on PATH that writes down its pause instead of
+    pausing. Returns the run and the pauses."""
+    stub = tmp_path / "stub"
+    stub.mkdir(exist_ok=True)
+    pauses = stub / "pauses"
+    (stub / "sleep").write_text('#!/bin/sh\necho "$1" >> "%s"\n' % pauses)
+    (stub / "sleep").chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if k.lower() not in ("http_proxy", "https_proxy", "all_proxy")}
+    env["PATH"] = "%s%s%s" % (stub, os.pathsep, env.get("PATH", ""))
+    r = subprocess.run(["bash", str(root / "launcher/windows/fetch.sh"), str(path), SHA256, *urls],
+                       capture_output=True, text=True, env=env)
+    return r, pauses.read_text().split() if pauses.exists() else []
+
+
+def down():
+    """A URL on 127.0.0.1 where nothing listens: a server that is down."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return "http://127.0.0.1:%d/file" % s.getsockname()[1]
+
+
+def test_fetch_sh_goes_to_the_next_source(server, tmp_path):
+    # The first source down, as archive.ubuntu.com was for GitHub's runners on
+    # 11 November 2026: the second gives the file on the first try.
+    path = tmp_path / "file"
+    r, pauses = fetch_sh(tmp_path, path, down(), server["url"])
+    assert r.returncode == 0, r.stderr
+    assert path.read_bytes() == BODY
+    assert (server["gets"], pauses) == (1, [])
+    assert not (tmp_path / "file.part").exists()
+    assert r.stdout == "fetch.sh: file from %s\n" % server["url"]
+
+
+def test_fetch_sh_tries_again_after_a_failure(server, tmp_path):
+    server["answers"] = [503, 504]
+    path = tmp_path / "file"
+    r, pauses = fetch_sh(tmp_path, path, server["url"])
+    assert r.returncode == 0, r.stderr
+    assert path.read_bytes() == BODY
+    assert (server["gets"], pauses) == (3, ["10", "20"])
+
+
+def test_fetch_sh_tries_each_source_each_try(server, tmp_path):
+    server["answers"] = [503] * 5
+    path = tmp_path / "file"
+    r, pauses = fetch_sh(tmp_path, path, down(), server["url"])
+    assert r.returncode == 1
+    assert "5 tries at each source failed" in r.stderr
+    assert (server["gets"], pauses) == (5, ["10", "20", "30", "40"])
+    assert not path.exists() and not (tmp_path / "file.part").exists()
+
+
+def test_fetch_sh_passes_over_a_source_with_another_file(server, tmp_path):
+    other = tmp_path / "other"
+    other.write_bytes(b"another file")
+    path = tmp_path / "file"
+    r, pauses = fetch_sh(tmp_path, path, other.as_uri(), server["url"])
+    assert r.returncode == 0, r.stderr
+    assert path.read_bytes() == BODY
+    assert "not the file with SHA-256" in r.stderr
+    assert (server["gets"], pauses) == (1, [])
+
+
+def test_fetch_sh_checks_a_kept_file(server, tmp_path):
+    path = tmp_path / "file"
+    path.write_bytes(BODY)
+    assert fetch_sh(tmp_path, path, server["url"])[0].returncode == 0
+    path.write_bytes(b"not it")
+    assert fetch_sh(tmp_path, path, server["url"])[0].returncode != 0
+    assert server["gets"] == 0
 
 
 # A leak in apu_mix's lock case (known bug 30), as GCC 11's LeakSanitizer
