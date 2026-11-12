@@ -1,7 +1,8 @@
 /*
- * 2D upscaling's passes (nv2a_upscale.h): Super-xBR, written in our GLSL
- * from Hyllian's published shaders, super-xbr-pass0.glsl, -pass1.glsl and
- * -pass2.glsl (libretro's glsl-shaders, xbr/shaders/super-xbr/), at their
+ * Upscaling's passes (nv2a_upscale.h), for 2D art and 3D textures alike:
+ * Super-xBR, written in our GLSL from Hyllian's published shaders,
+ * super-xbr-pass0.glsl, -pass1.glsl and -pass2.glsl (libretro's
+ * glsl-shaders, xbr/shaders/super-xbr/), at their
  * defaults: mode 0 ("Normal"), edge strength 0.6, filter weight 1 and full
  * anti-ringing. What is ours: the texels read whole (texelFetch) at the
  * source's wrap instead of sampled, colour premultiplied by alpha and edges
@@ -36,8 +37,8 @@
 #include "nv2a_backend.h"         /* NV2A_GLSL_VERSION */
 
 const char *const nv2a_up_pass_names[NV2A_UP_PASSES] = {
-    "2D upscaling pass 0", "2D upscaling pass 1", "2D upscaling pass 2",
-    "2D upscaling store", "2D upscaling copy",
+    "upscaling pass 0", "upscaling pass 1", "upscaling pass 2",
+    "upscaling store", "upscaling copy",
 };
 
 /* One triangle over the target; the fragment stages work from gl_FragCoord,
@@ -60,6 +61,9 @@ static const char glsl_vs[] =
     "uniform ivec2 upWrap;\n" \
     "uniform int upPremul;\n" \
     "uniform int upShift;\n" \
+    "uniform int upKeep;\n" \
+    "uniform int upMagLin;\n" \
+    "uniform int upLevel;\n" \
     "out vec4 upOut;\n" \
     "int up_wrap(int p, int n, int mode)\n{\n" \
     "    if (mode == 1) return (p + 4 * n) % n;\n" \
@@ -177,9 +181,23 @@ static const char glsl_pass2[] =
 
 /* Straight alpha again. Where the copy is clear (an alpha that stores as
  * 0) its colour is the game's own texel's under it, as a clear texel's
- * colour still shows where a linear filter blends it with its neighbours. */
+ * colour still shows where a linear filter blends it with its neighbours.
+ *
+ * With upKeep, the alpha is the game's own instead: its level 0 at the
+ * centre of each texel of the copy, as the sampler magnifies it (upMagLin:
+ * the four texels around it, blended; else the one it falls in), at the
+ * source's wrap. That is what a draw sampled there before, so a cut-out's
+ * edge stays where the title drew it; only the colour is Super-xBR's. */
 static const char glsl_store[] =
     GLSL_HEAD
+    "float up_kept_alpha(ivec2 p)\n{\n"
+    "    if (upMagLin == 0) return up_at(upAux, p >> upShift).a;\n"
+    "    vec2 g = (vec2(p) + 0.5) / float(1 << upShift) - 0.5;\n"
+    "    ivec2 i = ivec2(floor(g));\n"
+    "    vec2 f = g - vec2(i);\n"
+    "    return mix(mix(up_at(upAux, i).a, up_at(upAux, i + ivec2(1, 0)).a, f.x),\n"
+    "               mix(up_at(upAux, i + ivec2(0, 1)).a, up_at(upAux, i + ivec2(1, 1)).a, f.x), f.y);\n"
+    "}\n"
     "void main()\n{\n"
     "    ivec2 p = ivec2(gl_FragCoord.xy);\n"
     "    vec4 c = texelFetch(upSrc, p, 0);\n"
@@ -187,12 +205,14 @@ static const char glsl_store[] =
     "        upOut = vec4(texelFetch(upAux, p >> upShift, 0).rgb, 0.0);\n"
     "    else\n"
     "        upOut = vec4(clamp(c.rgb / c.a, 0.0, 1.0), c.a);\n"
+    "    if (upKeep != 0) upOut.a = up_kept_alpha(p);\n"
     "}\n";
 
+/* Level upLevel of the game's texture, as it is. */
 static const char glsl_copy[] =
     GLSL_HEAD
     "void main()\n{\n"
-    "    upOut = texelFetch(upSrc, ivec2(gl_FragCoord.xy), 0);\n"
+    "    upOut = texelFetch(upSrc, ivec2(gl_FragCoord.xy), upLevel);\n"
     "}\n";
 
 const char *nv2a_up_glsl(int pass, int fragment)

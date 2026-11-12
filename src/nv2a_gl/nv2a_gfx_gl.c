@@ -1756,7 +1756,7 @@ static uint32_t glx_target_smaa(uint32_t h)
     return g_sm.out;
 }
 
-/* ---- 2D upscaling ---------------------------------------------------------
+/* ---- Upscaling ------------------------------------------------------------
  *
  * tex_upscale (nv2a_backend.h): Super-xBR's passes (nv2a_upscale.h) drawn
  * into images of our own, one triangle each, as SMAA's are, and stored into
@@ -1773,6 +1773,7 @@ static uint32_t glx_target_smaa(uint32_t h)
 static struct {
     GLuint prog[NV2A_UP_PASSES];
     GLint  wrap_loc[NV2A_UP_PASSES], premul_loc[NV2A_UP_PASSES], shift_loc[NV2A_UP_PASSES];
+    GLint  keep_loc[NV2A_UP_PASSES], maglin_loc[NV2A_UP_PASSES], level_loc[NV2A_UP_PASSES];
     GLuint vao, fbo;
     GLint  side_max;                    /* the largest side a level may have */
     int    bad;                         /* the passes would not build */
@@ -1793,6 +1794,9 @@ static int up_build(void)
         g_up.wrap_loc[p] = glGetUniformLocation(g, "upWrap");
         g_up.premul_loc[p] = glGetUniformLocation(g, "upPremul");
         g_up.shift_loc[p] = glGetUniformLocation(g, "upShift");
+        g_up.keep_loc[p] = glGetUniformLocation(g, "upKeep");
+        g_up.maglin_loc[p] = glGetUniformLocation(g, "upMagLin");
+        g_up.level_loc[p] = glGetUniformLocation(g, "upLevel");
     }
     glGenVertexArrays(1, &g_up.vao);
     glGenFramebuffers(1, &g_up.fbo);
@@ -1800,7 +1804,7 @@ static int up_build(void)
     glGetIntegerv(GL_MAX_VIEWPORT_DIMS, vp);
     if (vp[0] < g_up.side_max) g_up.side_max = vp[0];
     if (vp[1] < g_up.side_max) g_up.side_max = vp[1];
-    fprintf(stderr, "  [GL] 2D upscaling: built in %.0f ms, sides up to %d\n",
+    fprintf(stderr, "  [GL] upscaling: built in %.0f ms, sides up to %d\n",
             glx_now_ms() - t0, (int)g_up.side_max);
     return 1;
 }
@@ -1818,9 +1822,12 @@ static GLuint up_image(uint32_t w, uint32_t h)
     return t;
 }
 
-/* Pass p into level `level` of `out`, w x h, reading src (and aux). */
+/* Pass p into level `level` of `out`, w x h, reading src (and aux); the
+ * store keeping the game's alpha (keep), the copy reading src's level
+ * `src_level`. */
 static void up_pass(int p, GLuint out, GLint level, uint32_t w, uint32_t h,
-                    GLuint src, GLuint aux, int premul, int shift, const Nv2aSampler *s)
+                    GLuint src, GLuint aux, int premul, int shift, int keep, int src_level,
+                    const Nv2aSampler *s)
 {
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, out, level);
     glViewport(0, 0, (GLsizei)w, (GLsizei)h);
@@ -1828,23 +1835,26 @@ static void up_pass(int p, GLuint out, GLint level, uint32_t w, uint32_t h,
     glUniform2i(g_up.wrap_loc[p], s->wrap_s < 3 ? s->wrap_s : 0, s->wrap_t < 3 ? s->wrap_t : 0);
     glUniform1i(g_up.premul_loc[p], premul);
     glUniform1i(g_up.shift_loc[p], shift);
+    glUniform1i(g_up.keep_loc[p], keep);
+    glUniform1i(g_up.maglin_loc[p], s->mag_linear != 0);
+    glUniform1i(g_up.level_loc[p], src_level);
     smaa_bind(UP_UNIT, src);
     smaa_bind(UP_UNIT + 1, aux);
     glDrawArrays(GL_TRIANGLES, 0, 3);
 }
 
 static uint32_t glx_tex_upscale(uint32_t tex, uint32_t w, uint32_t h, int factor,
-                                const Nv2aSampler *s)
+                                int keep_alpha, const Nv2aSampler *s)
 {
     static const GLint wrap_of[3] = { GL_CLAMP_TO_EDGE, GL_REPEAT, GL_MIRRORED_REPEAT };
     int steps = factor == 2 ? 1 : factor == 4 ? 2 : factor == 8 ? 3 : 0, k;
     GLuint out = 0, cur;
-    GLint l;
+    GLint l, chain;
 
     if (!tex || !steps || !w || !h || !s || g_up.bad) return 0;
     if (!g_up.prog[NV2A_UP_PASSES - 1] && !up_build()) {
         g_up.bad = 1;
-        fprintf(stderr, "  [GL] 2D upscaling: no programs; the game's own art is kept\n");
+        fprintf(stderr, "  [GL] upscaling: no programs; the game's own textures are kept\n");
         glActiveTexture(GL_TEXTURE0 + SCRATCH_UNIT);
         glUseProgram(prog_ok(g_cur_prog) ? g_prog[g_cur_prog - 1].prog : 0);
         return 0;
@@ -1853,16 +1863,21 @@ static uint32_t glx_tex_upscale(uint32_t tex, uint32_t w, uint32_t h, int factor
      || (uint64_t)h * (uint32_t)factor > (uint64_t)g_up.side_max)
         return 0;
 
-    /* The copy: every level, the last the game's size, then those below it. */
+    /* The copy: every level, the last new one the game's size, then the
+     * title's own chain below it where it has one (`chain` levels of it,
+     * its level 0 among them). */
+    chain = s->mip && s->levels > 1 ? (GLint)s->levels : 1;
     glGenTextures(1, &out);
     if (!out) return 0;
     scratch_bind(out);
-    for (l = 0; l <= steps; l++)
-        glTexImage2D(GL_TEXTURE_2D, l, GL_RGBA8, (GLsizei)((w * (uint32_t)factor) >> l),
-                     (GLsizei)((h * (uint32_t)factor) >> l), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    for (l = 0; l < steps + chain; l++) {
+        uint32_t lw = (w * (uint32_t)factor) >> l, lh = (h * (uint32_t)factor) >> l;
+        glTexImage2D(GL_TEXTURE_2D, l, GL_RGBA8, (GLsizei)(lw ? lw : 1), (GLsizei)(lh ? lh : 1),
+                     0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    }
     /* Only those levels, or a level but the first can't be drawn into. */
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, steps);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, steps + chain - 1);
 
     glDisable(GL_BLEND);
     glDisable(GL_DEPTH_TEST);
@@ -1881,27 +1896,36 @@ static uint32_t glx_tex_upscale(uint32_t tex, uint32_t w, uint32_t h, int factor
         uint32_t cw = w << (k - 1), ch = h << (k - 1);
         GLuint d = up_image(cw, ch), m = up_image(2 * cw, 2 * ch), n = up_image(2 * cw, 2 * ch);
         int premul = k == 1;
-        up_pass(NV2A_UP_PASS0, d, 0, cw, ch, cur, 0, premul, 0, s);
-        up_pass(NV2A_UP_PASS1, m, 0, 2 * cw, 2 * ch, cur, d, premul, 0, s);
-        up_pass(NV2A_UP_PASS2, n, 0, 2 * cw, 2 * ch, m, 0, 0, 0, s);
-        up_pass(NV2A_UP_STORE, out, steps - k, 2 * cw, 2 * ch, n, (GLuint)tex, 0, k, s);
+        up_pass(NV2A_UP_PASS0, d, 0, cw, ch, cur, 0, premul, 0, 0, 0, s);
+        up_pass(NV2A_UP_PASS1, m, 0, 2 * cw, 2 * ch, cur, d, premul, 0, 0, 0, s);
+        up_pass(NV2A_UP_PASS2, n, 0, 2 * cw, 2 * ch, m, 0, 0, 0, 0, 0, s);
+        up_pass(NV2A_UP_STORE, out, steps - k, 2 * cw, 2 * ch, n, (GLuint)tex, 0, k,
+                keep_alpha != 0, 0, s);
         glDeleteTextures(1, &d);
         glDeleteTextures(1, &m);
         if (cur != (GLuint)tex) glDeleteTextures(1, &cur);
         cur = n;
     }
     if (cur != (GLuint)tex) glDeleteTextures(1, &cur);
-    up_pass(NV2A_UP_COPY, out, steps, w, h, (GLuint)tex, 0, 0, 0, s);
+    /* The game's own levels, as they are: its level 0, then its chain. */
+    for (l = 0; l < chain; l++) {
+        uint32_t lw = w >> l, lh = h >> l;
+        up_pass(NV2A_UP_COPY, out, steps + l, lw ? lw : 1, lh ? lh : 1, (GLuint)tex, 0, 0, 0,
+                0, (int)l, s);
+    }
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
 
     /* How it is sampled: s's filters and wrap, over the levels. */
     scratch_bind(out);
     if (s->mip) {
-        /* The game's chain below its own size, made from it as the driver
-         * made the game's: from the last level, which is the game's. */
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 1000);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, steps);
-        glGenerateMipmap(GL_TEXTURE_2D);
+        /* With no chain of the title's, the one below the game's size made
+         * from it, as the driver made the game's: from the last new level,
+         * which is the game's. */
+        if (chain == 1) {
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 1000);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, steps);
+            glGenerateMipmap(GL_TEXTURE_2D);
+        }
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
                         s->mip == 1 ? (s->min_linear ? GL_LINEAR_MIPMAP_NEAREST : GL_NEAREST_MIPMAP_NEAREST)

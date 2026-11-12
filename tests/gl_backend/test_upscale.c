@@ -1,6 +1,6 @@
 /* Run with: python tests/gl_backend/run.py
  *
- * 2D upscaling's copy in the OpenGL backend (tex_upscale in
+ * Upscaling's copy in the OpenGL backend (tex_upscale in
  * src/nv2a_gl/nv2a_gfx_gl.c, its passes in nv2a_upscale_glsl.c), through the
  * device interface on a headless EGL context (context.h):
  *
@@ -18,11 +18,17 @@
  *    rises;
  *  - wrap: with repeat, the copy of a picture moved round by (5, 3) is the
  *    copy moved round by (10, 6), texel for texel;
+ *  - the title's own chain, from RGBA8 and from DXT1: below the new levels,
+ *    the game's levels, each texel for texel, and no more;
+ *  - the game's alpha kept: each new level's alpha the game's as the sampler
+ *    magnifies it (nearest and linear, at repeat), and its colour Super-xBR's
+ *    as without it;
  *  - and what is refused (another factor, a side over the device's
  *    largest), with the target being drawn into and its viewport as they
  *    were, and no GL error.
  */
 #include "context.h"
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include "nv2a_backend.h"
@@ -78,7 +84,7 @@ static void levels(uint32_t src, uint32_t w, uint32_t h, int factor,
                    const Nv2aSampler *s, const char *what)
 {
     int steps = factor == 2 ? 1 : factor == 4 ? 2 : 3, l;
-    uint32_t t = G->tex_upscale(src, w, h, factor, s);
+    uint32_t t = G->tex_upscale(src, w, h, factor, 0, s);
     uint8_t *want, *got;
     char msg[160];
     snprintf(msg, sizeof msg, "%s at %dx: made", what, factor);
@@ -134,7 +140,7 @@ static void ramp(int ax, int ay, int factor, const char *what)
             p[3] = 255;
         }
     src = G->tex_new(N, N, px, &s);
-    t = G->tex_upscale(src, N, N, factor, &s);
+    t = G->tex_upscale(src, N, N, factor, 0, &s);
     check(src && t, "a ramp's copy made");
     got = read_level(t, 0);
     for (y = margin; y < n - margin; y++)
@@ -177,7 +183,7 @@ static void alpha_edge(int factor)
             p[3] = x < N / 2 ? 255 : 0;
         }
     src = G->tex_new(N, N, px, &s);
-    t = G->tex_upscale(src, N, N, factor, &s);
+    t = G->tex_upscale(src, N, N, factor, 0, &s);
     check(src && t, "the alpha edge's copy made");
     got = read_level(t, 0);
     for (y = 0; y < n; y++)
@@ -218,8 +224,8 @@ static void wrap(int factor)
             memcpy(b + (((y + DY) % N) * N + (x + DX) % N) * 4, a + (y * N + x) * 4, 4);
     ta = G->tex_new(N, N, a, &s);
     tb = G->tex_new(N, N, b, &s);
-    ua = G->tex_upscale(ta, N, N, factor, &s);
-    ub = G->tex_upscale(tb, N, N, factor, &s);
+    ua = G->tex_upscale(ta, N, N, factor, 0, &s);
+    ub = G->tex_upscale(tb, N, N, factor, 0, &s);
     check(ua && ub, "the wrap test's copies made");
     ga = read_level(ua, 0);
     gb = read_level(ub, 0);
@@ -234,6 +240,92 @@ static void wrap(int factor)
     free(ga);
     free(gb);
     G->tex_free(ua); G->tex_free(ub); G->tex_free(ta); G->tex_free(tb);
+}
+
+/* The title's own chain under the copy: level steps + l is the game's level
+ * l, texel for texel, and the copy ends with the game's last. */
+static void title_chain(uint32_t src, uint32_t w, uint32_t h, int factor,
+                        const Nv2aSampler *s, const char *what)
+{
+    int steps = factor == 2 ? 1 : factor == 4 ? 2 : 3, l;
+    uint32_t t = G->tex_upscale(src, w, h, factor, 1, s);
+    char msg[160];
+    snprintf(msg, sizeof msg, "%s at %dx: made", what, factor);
+    check(t != 0, msg);
+    for (l = 0; l < s->levels; l++) {
+        GLint sw, sh, cw, ch;
+        uint8_t *want, *got;
+        level_size(src, l, &sw, &sh);
+        level_size(t, steps + l, &cw, &ch);
+        snprintf(msg, sizeof msg, "%s at %dx: level %d is the game's level %d (%dx%d, it is %dx%d)",
+                 what, factor, steps + l, l, (int)sw, (int)sh, (int)cw, (int)ch);
+        check(sw == cw && sh == ch, msg);
+        want = read_level(src, l);
+        got = read_level(t, steps + l);
+        check(!memcmp(want, got, (size_t)sw * sh * 4), msg);
+        free(want);
+        free(got);
+    }
+    snprintf(msg, sizeof msg, "%s at %dx: %d levels and no more, mipmapped as asked", what,
+             factor, steps + s->levels);
+    check(param(t, GL_TEXTURE_MAX_LEVEL) == steps + s->levels - 1
+          && param(t, GL_TEXTURE_MIN_FILTER) == (s->min_linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR),
+          msg);
+    printf("ok: %s at %dx: the game's %d levels under the copy's %d\n", what, factor,
+           (int)s->levels, steps);
+    G->tex_free(t);
+}
+
+/* The game's alpha kept: the same copy's colour as without, and each new
+ * level's alpha the game's level 0 as `mag` magnifies it, at repeat. */
+static void kept_alpha(int factor, int mag)
+{
+    enum { N = 16 };
+    static uint8_t px[N * N * 4];
+    Nv2aSampler s = { 1, (uint8_t)mag, 0, 1, 1, 0, 0 };
+    int steps = factor == 2 ? 1 : factor == 4 ? 2 : 3, l, x, y, worst = 0;
+    uint32_t src, a, b;
+    char msg[160];
+    srand(11);
+    for (x = 0; x < N * N * 4; x++) px[x] = (uint8_t)rand();
+    for (x = 0; x < N * N; x++)                 /* clear, opaque and between */
+        px[x * 4 + 3] = (uint8_t)((x * 7) % 5 == 0 ? 0 : (x * 7) % 5 == 1 ? 128 : 255);
+    src = G->tex_new(N, N, px, &s);
+    a = G->tex_upscale(src, N, N, factor, 0, &s);
+    b = G->tex_upscale(src, N, N, factor, 1, &s);
+    check(src && a && b, "the kept alpha's copies made");
+    for (l = 0; l < steps; l++) {
+        int n = (N * factor) >> l, f = factor >> l;
+        uint8_t *ga = read_level(a, l), *gb = read_level(b, l);
+        for (y = 0; y < n; y++)
+            for (x = 0; x < n; x++) {
+                const uint8_t *pa = ga + ((size_t)y * n + x) * 4, *pb = gb + ((size_t)y * n + x) * 4;
+                double want, gx = (x + 0.5) / f - 0.5, gy = (y + 0.5) / f - 0.5;
+                int d;
+                if (!mag) {
+                    want = px[(((y / f) % N) * N + (x / f) % N) * 4 + 3];
+                } else {
+                    int ix = (int)floor(gx), iy = (int)floor(gy);
+                    double fx = gx - ix, fy = gy - iy;
+                    #define A(i, j) (double)px[((((j) + N) % N) * N + (((i) + N) % N)) * 4 + 3]
+                    want = (A(ix, iy) * (1 - fx) + A(ix + 1, iy) * fx) * (1 - fy)
+                         + (A(ix, iy + 1) * (1 - fx) + A(ix + 1, iy + 1) * fx) * fy;
+                    #undef A
+                }
+                snprintf(msg, sizeof msg, "kept alpha at %dx, %s, level %d: texel %d,%d's colour as without",
+                         factor, mag ? "linear" : "nearest", l, x, y);
+                check(!memcmp(pa, pb, 3), msg);
+                d = abs((int)pb[3] - (int)(want + 0.5));
+                if (d > worst) worst = d;
+            }
+        free(ga);
+        free(gb);
+    }
+    snprintf(msg, sizeof msg, "kept alpha at %dx, %s: the game's alpha as magnified (out by %d at most)",
+             factor, mag ? "linear" : "nearest", worst);
+    check(worst <= 1, msg);
+    printf("ok: %s\n", msg);
+    G->tex_free(a); G->tex_free(b); G->tex_free(src);
 }
 
 int main(void)
@@ -296,22 +388,44 @@ int main(void)
     wrap(2);
     wrap(4);
     wrap(8);
+    kept_alpha(2, 0);
+    kept_alpha(4, 0);
+    kept_alpha(2, 1);
+    kept_alpha(4, 1);
+    kept_alpha(8, 1);
+
+    {   /* The title's own chain: 32x16 has six levels, 16x16 five. */
+        static uint8_t chain[(32 * 16 + 16 * 8 + 8 * 4 + 4 * 2 + 2 + 1) * 4];
+        Nv2aSampler own = { 1, 1, 2, 1, 1, 0, 6 }, own_dxt = { 1, 1, 2, 1, 1, 0, 5 };
+        for (i = 0; i < sizeof chain; i++) chain[i] = (uint8_t)rand();
+        t = G->tex_new(32, 16, chain, &own);
+        title_chain(t, 32, 16, 2, &own, "RGBA 32x16 with the title's chain");
+        title_chain(t, 32, 16, 4, &own, "RGBA 32x16 with the title's chain");
+        title_chain(t, 32, 16, 8, &own, "RGBA 32x16 with the title's chain");
+        G->tex_free(t);
+        dxt = G->tex_new_dxt(16, 16, 1, blocks, &own_dxt);
+        if (dxt) {
+            title_chain(dxt, 16, 16, 2, &own_dxt, "DXT1 16x16 with the title's chain");
+            title_chain(dxt, 16, 16, 4, &own_dxt, "DXT1 16x16 with the title's chain");
+            G->tex_free(dxt);
+        }
+    }
 
     t = G->tex_new(32, 16, px, &lin);
-    check(G->tex_upscale(t, 32, 16, 3, &lin) == 0, "3x is refused");
-    check(G->tex_upscale(t, 32, 16, 16, &lin) == 0, "16x is refused");
-    check(G->tex_upscale(0, 32, 16, 2, &lin) == 0, "no texture is refused");
+    check(G->tex_upscale(t, 32, 16, 3, 0, &lin) == 0, "3x is refused");
+    check(G->tex_upscale(t, 32, 16, 16, 0, &lin) == 0, "16x is refused");
+    check(G->tex_upscale(0, 32, 16, 2, 0, &lin) == 0, "no texture is refused");
     G->tex_free(t);
     {
         GLint max = 0;
         glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max);
         wide = calloc((size_t)max / 4 + 1, 4);
         t = G->tex_new((uint32_t)max / 4 + 1, 1, wide, &lin);
-        check(t && G->tex_upscale(t, (uint32_t)max / 4 + 1, 1, 4, &lin) == 0,
+        check(t && G->tex_upscale(t, (uint32_t)max / 4 + 1, 1, 4, 0, &lin) == 0,
               "a side over the device's largest is refused");
         G->tex_free(t);
         t = G->tex_new((uint32_t)max / 8 + 1, 1, wide, &lin);
-        check(t && G->tex_upscale(t, (uint32_t)max / 8 + 1, 1, 8, &lin) == 0,
+        check(t && G->tex_upscale(t, (uint32_t)max / 8 + 1, 1, 8, 0, &lin) == 0,
               "a side over the device's largest is refused at 8x");
         G->tex_free(t);
         free(wide);
@@ -323,6 +437,6 @@ int main(void)
           "the target being drawn into, and its viewport, as they were");
     printf("ok: refused where it should be; the target and viewport left as they were\n");
     G->target_free(rt);
-    printf("gl_backend: 2D upscaling's copy passes\n");
+    printf("gl_backend: upscaling's copy passes\n");
     return 0;
 }

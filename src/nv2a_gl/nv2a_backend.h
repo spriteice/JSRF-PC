@@ -407,13 +407,17 @@ typedef struct Nv2aGfx {
      * none. */
     void     (*fill_strip)(uint32_t rt, uint32_t x1, uint32_t src, uint32_t r0, uint32_t r1);
 
-    /* 2D upscaling (nv2a_upscale.h): a new texture made from `tex`, which
+    /* Upscaling (nv2a_upscale.h): a new texture made from `tex`, which
      * tex_new or tex_new_dxt made w x h with sampler `s`, by Super-xBR's
      * passes on the device. Level 0 is `factor` (2, 4 or 8) times its size,
      * each level after it half the one before, and the last of them (level 1
      * at 2x, 2 at 4x, 3 at 8x) holds `tex`'s own level 0 as it is, so a draw
      * that shows it no larger than the title did samples what it did. With
-     * `s->mip`, the levels below the game's size follow, made from it.
+     * `s->mip`, the levels below the game's size follow: the title's own
+     * chain, level for level as `tex` holds it, where `s->levels` says it
+     * has one; else made from the game's level 0. With `keep_alpha`, every
+     * new level's alpha is the game's as `s` magnifies it, so a cut-out's
+     * edges stay where they were; else Super-xBR's, which 2D art wants.
      * Sampled with `s`'s filters and wrap, mipmapped whatever `s->mip` says:
      * a nearest filter takes the nearest level, a linear one blends two.
      * `tex` is left as it was, and the backend as the next draw expects it. 0
@@ -421,7 +425,7 @@ typedef struct Nv2aGfx {
      * largest, the passes not built, or the device out of memory. NULL where
      * the backend has none. */
     uint32_t (*tex_upscale)(uint32_t tex, uint32_t w, uint32_t h, int factor,
-                            const Nv2aSampler *s);
+                            int keep_alpha, const Nv2aSampler *s);
 } Nv2aGfx;
 
 /* The implementation: OpenGL's. */

@@ -182,8 +182,12 @@ int nv2a_up_second_line(char *buf, size_t n, const Nv2aUpSecond *s);
  *          pass 1's, a half texel back, which puts the image where the
  *          source was.
  *   STORE  pass 2's image into a level of the copy: straight alpha again,
- *          with the colour of the game's own texel where the copy is clear.
- *   COPY   the game's own texels into the copy's last level, as they are.
+ *          with the colour of the game's own texel where the copy is clear;
+ *          or, keeping the game's alpha, that alpha as the sampler
+ *          magnifies it, under Super-xBR's colour.
+ *   COPY   a level of the game's own texels into a level of the copy, as
+ *          they are: its level 0 under the new levels, then the rest of the
+ *          title's own chain where it has one.
  *
  * The passes work on colour premultiplied by alpha, in half floats, so a
  * clear texel's colour never bleeds into its neighbours, and find edges in
@@ -193,8 +197,10 @@ int nv2a_up_second_line(char *buf, size_t n, const Nv2aUpSecond *s);
  * Uniforms: samplers upSrc and upAux (pass 1: pass 0's image; STORE: the
  * game's texture), upWrap (the source's wrap on s and t: 0 clamp to edge,
  * 1 repeat, 2 mirrored repeat), upPremul (1: upSrc is the game's texture,
- * straight alpha, premultiplied as it is read) and upShift (STORE: how many
- * halvings from the copy's level to the game's size). */
+ * straight alpha, premultiplied as it is read), upShift (STORE: how many
+ * halvings from the copy's level to the game's size), upKeep and upMagLin
+ * (STORE: 1 to keep the game's alpha, and whether it is magnified linearly)
+ * and upLevel (COPY: the game's level to copy). */
 enum { NV2A_UP_PASS0, NV2A_UP_PASS1, NV2A_UP_PASS2, NV2A_UP_STORE, NV2A_UP_COPY,
        NV2A_UP_PASSES };
 

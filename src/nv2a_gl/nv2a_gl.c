@@ -4223,7 +4223,7 @@ static void up_take(void)
         texels = nv2a_up_texels(g_tcache[k].w, g_tcache[k].h, f);
         if (spent && spent + texels > NV2A_UP_TEXELS_A_FLIP) continue;
         sampler_of_key(g_tcache[k].sampling, &smp);
-        copy = G->tex_upscale ? G->tex_upscale(g_tcache[k].tex, g_tcache[k].w, g_tcache[k].h, f, &smp) : 0;
+        copy = G->tex_upscale ? G->tex_upscale(g_tcache[k].tex, g_tcache[k].w, g_tcache[k].h, f, 0, &smp) : 0;
         if (!copy) {
             g_tcache[k].up = UP_FAILED;
             g_up_sec.failed++;
