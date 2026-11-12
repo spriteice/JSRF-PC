@@ -6,8 +6,9 @@ kernel_thread.c, unchanged. kernel_bridge.c doesn't link on its own.
 Takes bridge_resolve_handle, bridge_NtSuspendThread, bridge_NtResumeThread,
 guest_lock_hand_over_to_resumed and kernel_call_blocks from
 src/kernel/kernel_bridge.c, and xbox_thread_guest_priority,
-xbox_thread_is_current, xbox_NtSuspendThread and xbox_NtResumeThread from
-src/kernel/kernel_thread.c, all verbatim, and builds them with
+xbox_thread_is_current, xbox_NtSuspendThread and xbox_NtResumeThread, with
+the suspend and resume they call, from src/kernel/kernel_thread.c, all
+verbatim, and builds them with
 src/platform/win32_compat.c's threads, against a guest lock that is a plain
 mutex and a hand-over that is recorded rather than made (test_main.c). POSIX
 only (win32_compat.c is the Linux side); requires GCC on PATH.
@@ -109,7 +110,8 @@ static void guest_lock_hand_over(int even_if_none_queued,
     + "\n"
     + line(thread, r"^static int\s+guest_priority_get\(HANDLE h\)\s+\{ return GetThreadPriority\(h\); \}$")
     + cut(thread, "/* The priority the title gave a thread (the guest lock asks it). */", "LONG __stdcall xbox_KeSetBasePriorityThread")
-    + cut(thread, "NTSTATUS __stdcall xbox_NtSuspendThread(", "/* ================================================================\n * Worker stack slices")
+    + cut(thread, "/* ============================================================================\n * NtSuspendThread / NtResumeThread",
+          "/* ================================================================\n * Worker stack slices")
     + (here / "test_main.c").read_text(encoding="utf-8"))
 
 with tempfile.TemporaryDirectory(prefix="guest_suspend-") as directory:

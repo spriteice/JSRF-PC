@@ -159,6 +159,16 @@ NTSTATUS PsCreateSystemThreadEx(
 );
 ```
 
+A thread that suspends itself (NtSuspendThread) stops at once and gives the
+guest lock up. A suspend aimed at another thread is counted, and that thread
+stops only at its next checkpoint, on entry to a recompiled function, with the
+guest lock given up and none of the runtime's own locks held
+(`kernel_thread.c`). Linux has always done that; Windows has since known bug
+49, where Windows' own `SuspendThread` stopped CRI's spinner thread inside the
+guest heap's lock as it started, and the game hung before the Sega logo.
+`RECOMP_SUSPEND_REAL=1` makes a suspend of another thread stop it where it is,
+on both.
+
 ## Synchronization
 
 Full implementations of:

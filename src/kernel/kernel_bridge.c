@@ -456,6 +456,7 @@ static DWORD WINAPI bridge_thread_main(LPVOID param)
      * stack is still ours to give back. */
     xbox_FreeThreadStack(g_thread_stack_top);
     g_thread_stack_top = 0;
+    xbox_thread_suspend_forget();
     return 0;
 }
 
@@ -2079,6 +2080,7 @@ static void bridge_PsTerminateSystemThread(void)
          * to do it. */
         xbox_FreeThreadStack(g_thread_stack_top);
         g_thread_stack_top = 0;
+        xbox_thread_suspend_forget();   /* a suspend counted against it */
         ExitThread(exit_status);
     }
 }
@@ -5708,22 +5710,20 @@ static void guest_lock_hand_over_to_resumed(void)
  */
 void xbox_guest_lock_yield_now(void)
 {
-    /* Stop here if another guest thread has suspended this one.
+    /* Stop here if another guest thread has suspended this one: a suspend of
+     * another thread is counted, and this is where it takes effect
+     * (kernel_thread.c says why).
      *
      * Checked before the time slice and outside the guest lock, both
      * deliberately: a suspend should take effect at once rather than at the
      * next slice boundary, and a thread that parked while holding the lock
      * that serialises guest execution would stop every other guest thread
      * with it. */
-    {
-        extern int  w32_suspend_pending(void)    __attribute__((weak));
-        extern void w32_suspend_checkpoint(void) __attribute__((weak));
-        if (w32_suspend_pending && w32_suspend_pending()) {
-            int held = t_guest_holds;
-            if (held) xbox_guest_lock_release();
-            w32_suspend_checkpoint();
-            if (held) xbox_guest_lock_acquire();
-        }
+    if (xbox_thread_suspend_pending()) {
+        int held = t_guest_holds;
+        if (held) xbox_guest_lock_release();
+        xbox_thread_suspend_checkpoint();
+        if (held) xbox_guest_lock_acquire();
     }
     if (!t_guest_holds) return;
     /* The slice runs from when this thread took the lock over from another,

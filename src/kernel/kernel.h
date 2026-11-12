@@ -629,6 +629,13 @@ NTSTATUS __stdcall xbox_NtWaitForSingleObjectEx(HANDLE Handle, KPROCESSOR_MODE W
 NTSTATUS __stdcall xbox_NtWaitForMultipleObjectsEx(ULONG Count, HANDLE Handles[], ULONG WaitType, BOOLEAN Alertable, PLARGE_INTEGER Timeout);
 NTSTATUS __stdcall xbox_NtSuspendThread(HANDLE ThreadHandle, PULONG PreviousSuspendCount);
 NTSTATUS __stdcall xbox_NtResumeThread(HANDLE ThreadHandle, PULONG PreviousSuspendCount);
+/* A suspend of another thread is counted, and the thread stops at its next
+ * checkpoint (kernel_thread.c): whether the calling thread has one to stop
+ * for, stopping there until it is resumed, and dropping its count when it
+ * ends. */
+int      xbox_thread_suspend_pending(void);
+void     xbox_thread_suspend_checkpoint(void);
+void     xbox_thread_suspend_forget(void);
 NTSTATUS __stdcall xbox_NtClearEvent(HANDLE EventHandle);
 NTSTATUS __stdcall xbox_NtCreateMutant(PHANDLE MutantHandle, PXBOX_OBJECT_ATTRIBUTES ObjectAttributes, BOOLEAN InitialOwner);
 NTSTATUS __stdcall xbox_NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount);
