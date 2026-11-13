@@ -27,8 +27,6 @@ contains no game files.
 - **True widescreen:** 16:10, 16:9, 21:9, or Match screen. The picture is
   drawn as wide as the shape, so neither axis is stretched, and the HUD and
   menus are laid out across the screen.
-- **HUD scale:** The HUD at 0.5× to 1.5× its size, each piece keeping its
-  place at the screen's edge, or turned off.
 - **Draw distance:** Crowds, spray cans, props, traffic, and the police and
   their vehicles drawn up to four times further, or an unlimited distance. Far
   buildings keeps the city's buildings from popping in.
