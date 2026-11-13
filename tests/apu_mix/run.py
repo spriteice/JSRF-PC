@@ -36,7 +36,7 @@ cases = {
 failed = 0
 with tempfile.TemporaryDirectory(prefix="apu_mix-") as directory:
     exe = str(pathlib.Path(directory) / "test.exe")
-    command = cc + ["-std=gnu11", "-Isrc/apu", "-Isrc", "-Isrc/nv2a",
+    command = cc + ["-std=gnu11", "-Isrc/apu", "-Isrc",
                "src/apu/apu_vp.c", "src/apu/apu_dsp.c",
                "src/apu/apu_channels.c", "src/apu/apu_gpfx.c",
                "tests/apu_mix/test_main.c", "-o", exe]

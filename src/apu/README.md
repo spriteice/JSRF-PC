@@ -43,7 +43,8 @@ The sound goes out through SDL2's audio (`apu_sdl.c`), on Linux and Windows, at 
 | `apu_reverb.h`, `apu_hrtf.h` | JSRF-PC's reverb, and the 3D voices placed from their HRTF settings |
 | `apu_sdl.c`, `apu_xaudio2.h` | The output, with SDL2's audio, behind the entry points apu_xaudio2.h declares (named for the toolkit's XAudio2 output) |
 | `apu_channels.c`, `apu_channels.h` | The two sides of the sound, in the log (Developer > Logging > RECOMP_APU_CHANNELS) |
-| `apu_shim.h` | QEMU compatibility (threads, atomics, clocks), on src/nv2a's `qemu_shim.h` |
+| `apu_shim.h` | QEMU compatibility (threads, atomics, clocks), on `qemu_shim.h` |
+| `qemu_shim.h` | The QEMU types xemu's code is written against (below) |
 | `apu_debug.h` | Debug logging macros |
 | `fpconv.h` | IEEE 754 float/int conversion utilities |
 
@@ -74,9 +75,32 @@ Offset      Name                   Description
 
 Full register definitions in `apu_regs.h`.
 
+## The QEMU shim
+
+xemu's code is written for QEMU's types, and `qemu_shim.h` gives it those,
+with C11 equivalents and the Win32 primitives (`src/platform` provides them
+on Linux), so the code compiles standalone. `apu_shim.h` includes it.
+
+| QEMU Type | Replacement | Notes |
+|-----------|-------------|-------|
+| `hwaddr` | `uint64_t` | Hardware address |
+| `MemoryRegion` | Struct with size + opaque | MMIO region stub |
+| `PCIDevice` | Struct with devfn + config space | PCI device stub |
+| `QemuMutex` | Struct holding a `CRITICAL_SECTION` | Win32 mutex |
+| `QemuCond` | Struct holding a `CONDITION_VARIABLE` | Win32 condition variable |
+| `QemuThread` | Struct holding a `HANDLE` | Win32 thread |
+| `qemu_irq` | `int` | Interrupt stub |
+
+Helper macros:
+```c
+muldiv64(a, b, c)    // 128-bit multiply-divide (uses _umul128 on MSVC)
+ctz32(val)            // Count trailing zeros
+GET_MASK(v, mask)     // Extract masked field
+SET_MASK(v, mask, val)// Set masked field
+```
+
 ## Dependencies
 
-- `qemu_shim.h` (from `../nv2a/`) — QEMU type abstraction layer
 - src/platform — the Win32 primitives, on POSIX on Linux
 - SDL2 — the sound output
 - `kernel32` and `winmm`, on Windows

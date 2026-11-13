@@ -16,9 +16,9 @@
 #pragma once
 
 /* ============================================================
- * Pull in base QEMU type shims from NV2A extraction
+ * Pull in the base QEMU type shims, beside this file
  * ============================================================ */
-#include "../nv2a/qemu_shim.h"
+#include "qemu_shim.h"
 
 #include <math.h>
 

@@ -28,7 +28,6 @@ Where code goes 2).
 | `nv2a_gl/` | `xbox_nv2a_gl` | The renderer | What the game sends the NV2A, the console's GPU, drawn with OpenGL: its methods, shaders and textures, and the window. | `xbox_kernel`, `xboxrecomp` |
 | `menu/` | `xbox_menu` | The in-game menu | The menu (F1, or Back on a pad), with Dear ImGui over the renderer's window. Any part of the engine adds rows to it (`menu.h`). | `xbox_nv2a_gl` |
 | `d3d/` | `xbox_d3d8`, headers only | The renderer | The Xbox's D3D8 types, and the NV2A's texture swizzling. | `xboxrecomp` |
-| `nv2a/` | none, a header | The device models | `qemu_shim.h`, the QEMU types xemu's APU code is written against. Its [README](nv2a/README.md). | `apu/`'s include path |
 
 ## Outside src/
 

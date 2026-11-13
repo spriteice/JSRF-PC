@@ -20,11 +20,6 @@ add_library(xbox_apu STATIC ${XBOX_APU_SOURCES})
 
 target_include_directories(xbox_apu PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-# qemu_shim.h, the QEMU types xemu's APU code is written against, is in nv2a/
-target_include_directories(xbox_apu PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../nv2a
-)
-
 # The platform layer (on Linux, Win32 primitives on POSIX), SDL2's audio and
 # libm.
 find_package(SDL2 REQUIRED)

@@ -31,7 +31,7 @@ if sorted(prefixes) != sorted(["  [APU] ", "  [LOCK] APU: ", "  [FROZEN] APU: "]
 
 with tempfile.TemporaryDirectory(prefix="apu_debug_line-") as directory:
     exe = str(pathlib.Path(directory) / "test.exe")
-    command = cc + ["-std=gnu11", "-O2", "-Isrc/apu", "-Isrc", "-Isrc/nv2a",
+    command = cc + ["-std=gnu11", "-O2", "-Isrc/apu", "-Isrc",
                     "tests/apu_debug_line/test_main.c", "src/apu/apu_core.c",
                     "src/apu/apu_vp.c", "src/apu/apu_dsp.c",
                     "src/apu/apu_channels.c", "src/apu/apu_gpfx.c", "-o", exe]

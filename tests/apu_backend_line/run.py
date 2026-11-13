@@ -29,7 +29,7 @@ if sys.platform != "win32":
 ok = True
 with tempfile.TemporaryDirectory(prefix="apu_backend_line-") as directory:
     exe = str(pathlib.Path(directory) / "test.exe")
-    command = cc + ["-std=gnu11", "-O2", "-Isrc/apu", "-Isrc", "-Isrc/nv2a",
+    command = cc + ["-std=gnu11", "-O2", "-Isrc/apu", "-Isrc",
                     "tests/apu_backend_line/test_main.c", "src/apu/apu_core.c",
                     "src/apu/apu_vp.c", "src/apu/apu_dsp.c",
                     "src/apu/apu_channels.c", "src/apu/apu_gpfx.c", "-o", exe]

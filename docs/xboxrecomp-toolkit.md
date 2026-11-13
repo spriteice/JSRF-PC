@@ -282,7 +282,7 @@ xboxrecomp/
 │   ├── d3d/                     # xbox_d3d8   - D3D8 → D3D11 graphics
 │   ├── audio/                   # xbox_dsound - DirectSound compat
 │   ├── apu/                     # xbox_apu    - MCPX APU emulation (xemu)
-│   ├── nv2a/                    # qemu_shim.h - the QEMU types the APU's xemu code uses
+│   ├── nv2a/                    # xbox_nv2a   - NV2A GPU emulation (xemu)
 │   ├── input/                   # xbox_input  - Gamepad → XInput
 │   └── video/                   # xbox_video  - FMV playback + framebuffer window
 ├── include/xbox/                # Public umbrella header (xboxrecomp.h)

@@ -176,7 +176,7 @@ Direct leak of 48 byte(s) in 1 object(s) allocated from:
     #0 0x7fd35f2bd887 in __interceptor_malloc %s
     #1 0x5655202d524d in cv_lazy_init src/platform/win32_compat.c:129
     #2 0x5655202d6e0d in InitializeConditionVariable src/platform/win32_compat.c:139
-    #3 0x5655202d2d66 in qemu_cond_init src/apu/../nv2a/qemu_shim.h:130
+    #3 0x5655202d2d66 in qemu_cond_init src/apu/qemu_shim.h:130
     #4 0x5655202d2d66 in main tests/apu_mix/test_main.c:186
     #5 0x7fd35e8edd8f  (/lib/x86_64-linux-gnu/libc.so.6+0x29d8f)
 

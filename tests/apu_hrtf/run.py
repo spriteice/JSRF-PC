@@ -34,7 +34,7 @@ with tempfile.TemporaryDirectory(prefix="apu_hrtf-") as directory:
         # apu_state.h brings the APU's shims, which leave these two unused
         subprocess.run(cc + ["-std=gnu11", "-O2", "-Wall", "-Wextra",
                         "-Wno-unused-variable", "-Wno-cast-function-type", *flags,
-                        "-Isrc/apu", "-Isrc", "-Isrc/nv2a", "tests/apu_hrtf/test_main.c",
+                        "-Isrc/apu", "-Isrc", "tests/apu_hrtf/test_main.c",
                         "-o", exe, "-lm", "-pthread"], cwd=root, check=True)
         return exe
 

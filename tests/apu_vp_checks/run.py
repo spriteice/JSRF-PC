@@ -35,7 +35,7 @@ want = collections.Counter({
 
 with tempfile.TemporaryDirectory(prefix="apu_vp_checks-") as directory:
     exe = str(pathlib.Path(directory) / "test.exe")
-    command = cc + ["-std=gnu11", "-O2", "-DNDEBUG", "-Isrc/apu", "-Isrc", "-Isrc/nv2a",
+    command = cc + ["-std=gnu11", "-O2", "-DNDEBUG", "-Isrc/apu", "-Isrc",
                     "src/apu/apu_vp.c", "src/apu/apu_dsp.c",
                     "src/apu/apu_channels.c", "src/apu/apu_gpfx.c",
                     "tests/apu_vp_checks/test_main.c", "-o", exe]
