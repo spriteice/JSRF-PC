@@ -27,6 +27,7 @@ import time
 from . import config
 from .translator import BatchTranslator
 from .output import write_summary, print_stats, generate_header
+from .workers import Workers, write_share
 
 # Where this repository keeps the generated code and the functions written by
 # hand: port/CMakeLists.txt's JSRF_GEN_DIR, and port/recomp_manual.c (from
@@ -197,6 +198,15 @@ def _report_unimplemented(stats):
         print(f"    ... and {len(ranked) - 20} more", file=sys.stderr)
 
 
+def _parse_share(text):
+    """--share K/N: share K of N, 0 < K < N."""
+    k, _, n = text.partition("/")
+    k, n = int(k), int(n)
+    if not 0 < k < n:
+        raise argparse.ArgumentTypeError(f"no share {text}")
+    return k, n
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Xbox x86 -> C Static Recompiler")
@@ -225,6 +235,16 @@ def main():
     parser.add_argument("--gen-dir",
                         help="Output dir for split generated files "
                              "(default: port/recomp/gen)")
+    parser.add_argument("--jobs", type=int, default=1, metavar="N",
+                        help="With --split, translate on N processes: this "
+                             "one and N-1 more, each loading the data "
+                             "itself, so each costs the memory of one (about "
+                             "0.7 GB for a whole game). The files are the "
+                             "same for any N. Default 1")
+    # A share's own process (tools/recomp/workers.py): translate share K of
+    # N and write the results to a file, instead of writing the files.
+    parser.add_argument("--share", type=_parse_share, help=argparse.SUPPRESS)
+    parser.add_argument("--share-out", help=argparse.SUPPRESS)
     parser.add_argument("--disasm-dir",
                         help="Directory holding tools.disasm output "
                              "(default: tools/disasm/output)")
@@ -297,6 +317,13 @@ def main():
                         help="Address of __SEH_epilog (hex). Auto-detected if omitted")
 
     args = parser.parse_args()
+
+    # The other shares' processes start now, so their loading happens while
+    # this one loads.
+    workers = None
+    if (args.split and args.jobs > 1 and not args.share
+            and not (args.list_categories or args.function or args.header)):
+        workers = Workers(sys.argv[1:], args.jobs)
 
     # Reset on every CLI invocation, including one with no manual file.
     from . import translator as translator_module
@@ -515,12 +542,19 @@ def main():
                   + (f"; {len(wrap & known)} wrapped as sub_X_gen" if wrap else ""),
                   file=sys.stderr)
 
+        if args.share:
+            k, n = args.share
+            write_share(args.share_out,
+                        translator.translate_batch_share(funcs, k, n, manual))
+            return
+
         stats = translator.translate_batch_split(
             funcs,
             output_dir=gen_dir,
             chunk_size=args.split,
             verbose=args.verbose,
             manual=manual,
+            workers=workers,
         )
 
         t_translate = time.time() - t0

@@ -61,7 +61,9 @@ a fresh Ubuntu 24.04; the dependency script also knows Debian, Arch, and Fedora.
        --exclude-manual port/recomp_manual.c --gen-dir port/recomp/gen
    ```
 
-   The last command should report `0 failed`.
+   The last command should report `0 failed`. With `--jobs N` added, it
+   translates on N processes, a third faster with four; each loads the data
+   itself, about 0.7 GB, and the files are the same for any N.
 
 5. **Build the engine.**
 

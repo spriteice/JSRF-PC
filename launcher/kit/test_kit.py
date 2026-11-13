@@ -234,6 +234,18 @@ def test_refuses_another_python(tmp_path):
     assert "error: run with the tools' own Python" in p.stdout
 
 
+def test_translate_jobs(monkeypatch):
+    monkeypatch.setattr(be.os, "cpu_count", lambda: 16)
+    monkeypatch.setattr(be, "memory_free_mb", lambda: 64000)
+    assert be.translate_jobs(0)[0] == be.TRANSLATE_JOBS_MAX == 4
+    monkeypatch.setattr(be, "memory_free_mb", lambda: 2 * be.COMPILE_MB + 100)
+    assert be.translate_jobs(0)[0] == 2
+    monkeypatch.setattr(be.os, "cpu_count", lambda: 1)
+    monkeypatch.setattr(be, "memory_free_mb", lambda: 64000)
+    assert be.translate_jobs(0)[0] == 1
+    assert be.translate_jobs(3)[0] == 3 and be.translate_jobs(9)[0] == 4
+
+
 # The Windows kit's link (3ddb1a9-bar1), less the engine's own objects.
 WIN_LINK = ["-s", "-O3", "-DNDEBUG", "-Wl,--stack,0x800000", "{kit}/obj/main.c.obj", "{gen_objs}",
             "-o", "{out}", "-lwinmm", "-ldbghelp", "{kit}/lib/libxbox_kernel.a", "{kit}/lib/libSDL2.dll.a",

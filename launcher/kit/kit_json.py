@@ -235,13 +235,16 @@ def main():
         # every player's engine must be the same bytes wherever it was built.
         "link": ["-s"] + out_args,
         "engine": "bin/jsrf_recomp" if a.system == "linux" else "engine/jsrf_recomp.exe",
+        # {xbe} the game's default.xbe, {gen} the generated code's folder,
+        # {jobs} how many processes translate (build_engine.py's
+        # translate_jobs; the files are the same for any).
         "pipeline": [
             ["tools.xbe_parser", "{xbe}", "--json", "game_files/default_analysis.json"],
             ["tools.disasm", "{xbe}"],
             ["tools.func_id", "{xbe}"],
             ["tools.abi_analysis", "{xbe}"],
             ["tools.recomp", "{xbe}", "--all", "--split", "1000", "--back-edge-yield",
-             "--exclude-manual", "port/recomp_manual.c", "--gen-dir", "{gen}"],
+             "--exclude-manual", "port/recomp_manual.c", "--gen-dir", "{gen}", "--jobs", "{jobs}"],
         ],
     }
     with open(os.path.join(kit, "kit.json"), "w", encoding="utf-8", newline="\n") as f:

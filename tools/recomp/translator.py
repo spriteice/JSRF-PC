@@ -3486,9 +3486,66 @@ class BatchTranslator:
 
         return all_stats
 
+    # A share's functions (tools/recomp/workers.py): chunk i of the functions
+    # translated goes to share i % n. Small enough that the shares of a
+    # title's functions come out about even, as neighbours are alike in size.
+    SHARE_CHUNK = 64
+
+    def _split_todo(self, func_list, manual):
+        """translate_batch_split's functions, and the ones it translates."""
+        func_list = [item for item in func_list
+                     if item[0] not in self.translator.owned_function_starts]
+        manual = set(manual or ())
+        # Hand the set to the lifter so a *direct* call to a replaced
+        # function routes through recomp_lookup_manual too. Without this
+        # the override only took effect through a function pointer, and
+        # every direct caller silently reached the generated body.
+        self.translator.lifter.manual_functions = manual
+        todo = [item for item in func_list if item[0] not in manual]
+        return func_list, manual, todo
+
+    @classmethod
+    def share_of(cls, todo, k, n):
+        """Share k of n of the functions to translate."""
+        return [item for i, item in enumerate(todo)
+                if (i // cls.SHARE_CHUNK) % n == k]
+
+    def translate_share(self, todo, verbose=False):
+        """Translate each of todo's functions, and give back what each gave:
+        (addr, code, referenced_calls, unimplemented), the last two the part
+        of the lifter's tallies that function added. The tallies themselves
+        are left as they were; translate_batch_split adds the parts up."""
+        import sys
+
+        lifter = self.translator.lifter
+        tallies = lifter.referenced_calls, lifter.unimplemented
+        results = []
+        try:
+            for i, (addr, func_info) in enumerate(todo):
+                if verbose and (i % 500 == 0 or i == len(todo) - 1):
+                    name = _func_ident(
+                        addr, func_info.get("name", f"sub_{addr:08X}"))
+                    print(f"  [{i+1}/{len(todo)}] Translating {name}...",
+                          file=sys.stderr)
+                lifter.referenced_calls, lifter.unimplemented = {}, {}
+                code = self.translator.translate_function(addr, func_info)
+                results.append((addr, code, lifter.referenced_calls,
+                                lifter.unimplemented))
+        finally:
+            lifter.referenced_calls, lifter.unimplemented = tallies
+        return results
+
+    def translate_batch_share(self, func_list, k, n, manual=None):
+        """What share k of n of translate_batch_split(func_list,
+        manual=manual) translates, as translate_share gives it: the work of
+        a share's own process (tools/recomp/workers.py)."""
+        _, _, todo = self._split_todo(func_list, manual)
+        return self.translate_share(self.share_of(todo, k, n))
+
     def translate_batch_split(self, func_list, output_dir, chunk_size=1000,
                               header_name="recomp_funcs.h",
-                              prefix="recomp", verbose=False, manual=None):
+                              prefix="recomp", verbose=False, manual=None,
+                              workers=None):
         """
         Translate functions into multiple .c files + a shared header.
 
@@ -3505,23 +3562,34 @@ class BatchTranslator:
         is how a game replaces a recompiled XDK routine (a D3D8 entry point,
         say) with one that drives the host runtime instead of the hardware.
 
+        workers: a tools/recomp/workers.py Workers translating shares 1 to
+        n-1 on processes of their own; this one translates share 0. The files
+        are the same, byte for byte, for any number of shares.
+
         Returns dict with stats and list of generated files.
         """
         import sys
 
         os.makedirs(output_dir, exist_ok=True)
 
-        func_list = [item for item in func_list
-                     if item[0] not in self.translator.owned_function_starts]
-        manual = set(manual or ())
-        # Hand the set to the lifter so a *direct* call to a replaced
-        # function routes through recomp_lookup_manual too. Without this
-        # the override only took effect through a function pointer, and
-        # every direct caller silently reached the generated body.
-        self.translator.lifter.manual_functions = manual
+        func_list, manual, todo = self._split_todo(func_list, manual)
         manual_decls = {}
 
-        # Translate all functions first, collecting results
+        n = workers.n if workers else 1
+        if n > 1:
+            print(f"  translating on {n} processes", file=sys.stderr)
+        translated = {}
+        for addr, code, refs, unimpl in self.translate_share(
+                self.share_of(todo, 0, n), verbose=verbose):
+            translated[addr] = code, refs, unimpl
+        for k, results in (workers.collect() if workers else ()):
+            if results is None:
+                results = self.translate_share(self.share_of(todo, k, n))
+            for addr, code, refs, unimpl in results:
+                translated[addr] = code, refs, unimpl
+        lifter = self.translator.lifter
+
+        # The results, in the functions' order
         translations = []
         stats = {
             "total": len(func_list),
@@ -3530,18 +3598,26 @@ class BatchTranslator:
             "total_lines": 0,
         }
 
-        for i, (addr, func_info) in enumerate(func_list):
+        for addr, func_info in func_list:
             name = _func_ident(addr, func_info.get("name", f"sub_{addr:08X}"))
-            if verbose and (i % 500 == 0 or i == len(func_list) - 1):
-                print(f"  [{i+1}/{len(func_list)}] Translating {name}...",
-                      file=sys.stderr)
 
             if addr in manual:
                 # Hand-written elsewhere: declare it, emit nothing.
                 manual_decls[addr] = name
                 continue
 
-            code = self.translator.translate_function(addr, func_info)
+            if addr not in translated:
+                # Not in any share's list, which a share's process could only
+                # make if it read other data: translated here.
+                [(_, code, refs, unimpl)] = self.translate_share(
+                    [(addr, func_info)])
+                translated[addr] = code, refs, unimpl
+            # The lifter's tallies, added up in the functions' order, as
+            # translating them one after another adds them.
+            code, refs, unimpl = translated[addr]
+            lifter.referenced_calls.update(refs)
+            for m, addrs in unimpl.items():
+                lifter.unimplemented.setdefault(m, []).extend(addrs)
             if code:
                 translations.append((addr, name, code))
                 stats["translated"] += 1

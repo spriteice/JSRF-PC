@@ -12,11 +12,12 @@ never the system's:
 With the kit (kit.json beside this file, made by launcher/kit/make_kit.sh)
 and the tools (<root>/tools: Python with capstone and Zig), it translates the
 game into C with the pipeline (the five steps of docs/building-on-linux.md,
-step 4), checks the generated code's hash, compiles it with Zig on every core,
-links it with the engine's own code from the kit, checks the engine's hash, and
-puts the engine in place: written beside the old one, then moved over it, so a
-failed build leaves the old engine as it was. While it translates, Zig builds
-the C runtime the link needs into its cache (WarmLink).
+step 4; the last on up to 4 processes), checks the generated code's hash,
+compiles it with Zig on every core, links it with the engine's own code from
+the kit, checks the engine's hash, and puts the engine in place: written beside
+the old one, then moved over it, so a failed build leaves the old engine as it
+was. While it translates, Zig builds the C runtime the link needs into its
+cache (WarmLink).
 
 Everything it runs is a program in the tools or the kit, by its full path, with
 an environment of its own: nothing from the system's PATH, Python or compilers.
@@ -62,13 +63,14 @@ WIN = sys.platform == "win32"
 # device's are measured against: b2's three first starts there (9 November,
 # test build 22a5376-b2), with tools.disasm's and tools.recomp's scaled by
 # what decoding each instruction once gained them in the sandbox (110.9 to
-# 56.5 s and 62.1 to 29.0 s).
+# 56.5 s and 62.1 to 29.0 s), and tools.recomp's again by what translating
+# on 4 processes gained it there (29.9 to 19.7 s).
 PIPELINE_SECONDS = {
     "tools.xbe_parser": 0.2,
     "tools.disasm": 67.0,
     "tools.func_id": 1.6,
     "tools.abi_analysis": 1.3,
-    "tools.recomp": 35.3,
+    "tools.recomp": 23.3,
 }
 # The link's, by the system the kit is for, with Zig's C runtime already
 # built while translating (WarmLink): Windows' on the PC was 14.8 to 16.4 s,
@@ -86,6 +88,11 @@ SPEED_MIN_SECONDS = 10.0
 # 8 MB, measured on the Windows PC's Linux VM: 534 MB at its peak), so each
 # compile at once is given 0.75 GB of the memory free.
 COMPILE_MB = 750
+# Processes translating at once (tools.recomp --jobs, tools/recomp/workers.py):
+# each loads the data itself and holds about 0.7 GB at its peak, so each is
+# given a compile's share of the memory free. Past 4 the loop they share is
+# under 4 s (14 s on one, in the sandbox), so more save less than 2 s.
+TRANSLATE_JOBS_MAX = 4
 # About how fast one compile goes with the others beside it, at the PC's
 # translating speed: the compile's first estimate, divided by the device's
 # speed (device_speed); from the first files done, the files' own speed. A
@@ -138,6 +145,13 @@ def memory_free_mb():
     except (OSError, ValueError, AttributeError):
         pass
     return 0
+
+
+def translate_jobs(asked):
+    """How many processes translate at once: as many as compile_jobs would
+    compile, at most TRANSLATE_JOBS_MAX."""
+    jobs, why = compile_jobs(asked, TRANSLATE_JOBS_MAX)
+    return min(jobs, TRANSLATE_JOBS_MAX), why
 
 
 def warm_link_commands(zig, info, values, tmp):
@@ -481,6 +495,8 @@ def main():
     t_all = time.monotonic()
     values = {"kit": kit, "root": root, "gen": gen, "gen_root": gen_root}
     warming = WarmLink(warm_link_commands(zig, info, values, tmp), tmp, env)
+    tjobs, twhy = translate_jobs(a.jobs)
+    say("translating on %d processes (%s)" % (tjobs, twhy))
     pipeline = info["pipeline"]
     link_pc = LINK_SECONDS[info["system"]]
     # Before translating has made them, the generated files as the PC's were.
@@ -503,7 +519,8 @@ def main():
             s = left_of(secs, time.monotonic() - t_step)
             return s, s + later
         steps.step(estimate, "Translating the game (%s)" % module)
-        cmd = [exe, "-E", "-s", "-m"] + fill(step, {"xbe": "game_files/default.xbe", "gen": gen})
+        cmd = [exe, "-E", "-s", "-m"] + fill(step, {"xbe": "game_files/default.xbe", "gen": gen,
+                                                     "jobs": str(tjobs)})
         rc, out, took = run(cmd, work, env, True)
         if rc != 0:
             fail("%s stopped (exit %d)" % (module, rc))
