@@ -28,7 +28,7 @@ set -euo pipefail
 # The base image, by digest, which launcher/images.sh reads from here.
 # shellcheck disable=SC2034
 BASE=ubuntu:22.04@sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11
-SNAPSHOT=20261101T000000Z
+SNAPSHOT=20261113T000000Z
 
 linux=(
     clang=1:14.0-55~exp2 cmake=3.22.1-1ubuntu1.22.04.2 ninja-build=1.10.1-1
@@ -46,7 +46,7 @@ linux=(
     libasound2-dev=1.2.6.1-1ubuntu1.2 libsamplerate0-dev=0.2.2-1build1
     libdrm-dev=2.4.113-2~ubuntu0.22.04.1 libgbm-dev=23.2.1-1ubuntu3.1~22.04.4
     libudev-dev=249.11-0ubuntu3.23 libdbus-1-dev=1.12.20-2ubuntu4.1
-    libssl-dev=3.0.2-0ubuntu1.30 libepoxy-dev=1.5.10-1
+    libepoxy-dev=1.5.10-1
 )
 windows=(
     cmake=3.22.1-1ubuntu1.22.04.2 ninja-build=1.10.1-1 python3=3.10.6-1~22.04.1
@@ -86,7 +86,7 @@ for archive in "https://snapshot.ubuntu.com/ubuntu/$SNAPSHOT" http://archive.ubu
     printf 'deb %s %s main universe\n' "$archive" jammy "$archive" jammy-updates \
         "$archive" jammy-security > /etc/apt/sources.list
     if "${apt[@]}" update && "${apt[@]}" install -y --no-install-recommends \
-            ca-certificates=20260816ubuntu0.22.04.1 "${want[@]}"; then
+            ca-certificates=20260816ubuntu0.22.04.2 "${want[@]}"; then
         from="$archive"
         break
     fi
