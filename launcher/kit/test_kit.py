@@ -234,6 +234,47 @@ def test_refuses_another_python(tmp_path):
     assert "error: run with the tools' own Python" in p.stdout
 
 
+# The Windows kit's link (3ddb1a9-bar1), less the engine's own objects.
+WIN_LINK = ["-s", "-O3", "-DNDEBUG", "-Wl,--stack,0x800000", "{kit}/obj/main.c.obj", "{gen_objs}",
+            "-o", "{out}", "-lwinmm", "-ldbghelp", "{kit}/lib/libxbox_kernel.a", "{kit}/lib/libSDL2.dll.a",
+            "-lkernel32", "-lm", "-lopengl32", "-Wl,--subsystem,windows", "-L{kit}/lib",
+            "{kit}/lib/libwinpthread.dll.a"]
+
+
+def test_warm_link_asks_for_what_the_link_asks_for(tmp_path):
+    # Zig's cache holds the C runtime by target and flags, so the warm-up
+    # links with the engine link's flags and -l libraries, and none of its
+    # files: no objects, archives or output of its own. And it links an
+    # object, as the engine's link does: a link that compiles a C source
+    # builds Windows' MinGW runtime for other settings.
+    info = {"link": WIN_LINK, "link_driver": "cc", "target": "x86_64-windows-gnu", "system": "windows"}
+    values = {"kit": "K", "root": "R", "gen": "G", "gen_root": "GR"}
+    compile_cmd, link_cmd = be.warm_link_commands("zig", info, values, str(tmp_path))
+    src, obj, out = (str(tmp_path / n) for n in ("warm_link.c", "warm_link.obj", "warm_link.exe"))
+    assert compile_cmd == ["zig", "cc", "-target", "x86_64-windows-gnu", "-c", src, "-o", obj]
+    assert link_cmd == ["zig", "cc", "-target", "x86_64-windows-gnu", "-s", "-O3", "-DNDEBUG",
+                        "-Wl,--stack,0x800000", "-lwinmm", "-ldbghelp", "-lkernel32", "-lm", "-lopengl32",
+                        "-Wl,--subsystem,windows", "-LK/lib", obj, "-o", out]
+    assert not any(a.endswith(".c") for a in link_cmd)
+    assert "int main" in (tmp_path / "warm_link.c").read_text()
+
+
+def test_a_warm_link_that_fails_is_only_reported(tmp_path):
+    warm = be.WarmLink([[str(tmp_path / "no-zig"), "cc"]], str(tmp_path), {})
+    warm.join()
+    assert warm.rc != 0 and warm.out
+    fail = [sys.executable, "-c", "import sys; print('no'); sys.exit(3)"]
+    never = [sys.executable, "-c", "open('ran', 'w')"]
+    warm = be.WarmLink([fail, never], str(tmp_path), dict(os.environ))
+    warm.join()
+    assert warm.rc == 3 and "no" in warm.out
+    assert not (tmp_path / "ran").exists()       # the link isn't tried once the compile failed
+    ok = [sys.executable, "-c", "print('ok')"]
+    warm = be.WarmLink([ok, ok], str(tmp_path), dict(os.environ))
+    warm.join()
+    assert warm.rc == 0 and warm.took > 0
+
+
 # ---- set_expected.py ----
 
 A, B, C = "a" * 64, "b" * 64, "c" * 64

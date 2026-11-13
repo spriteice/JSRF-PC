@@ -15,7 +15,8 @@ game into C with the pipeline (the five steps of docs/building-on-linux.md,
 step 4), checks the generated code's hash, compiles it with Zig on every core,
 links it with the engine's own code from the kit, checks the engine's hash, and
 puts the engine in place: written beside the old one, then moved over it, so a
-failed build leaves the old engine as it was.
+failed build leaves the old engine as it was. While it translates, Zig builds
+the C runtime the link needs into its cache (WarmLink).
 
 Everything it runs is a program in the tools or the kit, by its full path, with
 an environment of its own: nothing from the system's PATH, Python or compilers.
@@ -69,9 +70,13 @@ PIPELINE_SECONDS = {
     "tools.abi_analysis": 1.3,
     "tools.recomp": 35.3,
 }
-# The link's, by the system the kit is for: Windows' on the PC (14.8 to 16.4
-# s), Linux's on the Ally X at its usual speed (2.0 to 2.9 s).
-LINK_SECONDS = {"windows": 16.0, "linux": 3.0}
+# The link's, by the system the kit is for, with Zig's C runtime already
+# built while translating (WarmLink): Windows' on the PC was 14.8 to 16.4 s,
+# about 13 of them the runtime's build, and 0.2 s with it built (test build
+# 2987e4f-speed2); Linux's on the Ally X at its usual speed 2.0 to 2.9 s,
+# almost all of it the runtime's (2.8 s in the sandbox, where the engine's
+# link then took 0.1 s; 0.7 s in WSL on the PC, from the Windows drive).
+LINK_SECONDS = {"windows": 0.5, "linux": 0.5}
 # The device's speed is measured over the steps done once they come to this
 # many of the PC's seconds: xbe_parser's fraction of a second says nothing.
 SPEED_MIN_SECONDS = 10.0
@@ -133,6 +138,61 @@ def memory_free_mb():
     except (OSError, ValueError, AttributeError):
         pass
     return 0
+
+
+def warm_link_commands(zig, info, values, tmp):
+    """WarmLink's two commands: a one-line program (written to tmp) compiled to
+    an object, then that object linked for the engine's target, with the
+    engine link's flags and the libraries it names by -l, but none of its
+    files.
+
+    The program is linked as an object, as the engine's link links objects: a
+    link that compiles a C source too has Zig build Windows' MinGW runtime
+    (mingw32.lib) for other settings, and the engine's link then built its own
+    again (in the sandbox, 11.3 s after a 12.9 s warm-up, against 0.1 s after
+    this one; test build 2987e4f-speed1's Windows link on the PC, 9.3 s)."""
+    src = os.path.join(tmp, "warm_link.c")
+    with open(src, "w", encoding="utf-8", newline="\n") as f:
+        f.write("int main(void) { return 0; }\n")
+    win = info["system"] == "windows"
+    obj = os.path.join(tmp, "warm_link" + (".obj" if win else ".o"))
+    args = fill(info["link"], dict(values, gen_objs=[], out=""))
+    flags = [x for i, x in enumerate(args)
+             if x.startswith("-") and x != "-o" and (i == 0 or args[i - 1] != "-o")]
+    out = os.path.join(tmp, "warm_link" + (".exe" if win else ""))
+    return [[zig, "cc", "-target", info["target"], "-c", src, "-o", obj],
+            [zig, info["link_driver"], "-target", info["target"]] + flags + [obj, "-o", out]]
+
+
+class WarmLink(threading.Thread):
+    """Runs warm_link_commands' commands, one after the other, as soon as it's
+    made; join() waits for them, then rc and took say how they went (rc the
+    first that failed).
+
+    Zig builds the C runtime a target needs (Windows' MinGW runtime, the
+    import libraries the -l flags name, compiler_rt) into its cache the first
+    time it links for it: 13 s for Windows and 3 s for Linux in the sandbox,
+    almost all of the PC's 12 to 16 s link. Started as translating starts, it
+    is done long before the engine's link, which then finds it all in the
+    cache (0.1 s). It asks for what the engine's link asks for, so the cache
+    holds the same build; if it fails, the engine's link builds it as before.
+    """
+
+    def __init__(self, cmds, cwd, env):
+        super().__init__(daemon=True)
+        self.cmds, self.cwd, self.env = cmds, cwd, env
+        self.rc, self.out, self.took = None, "", 0.0
+        self.start()
+
+    def run(self):
+        for cmd in self.cmds:
+            try:
+                rc, out, took = run(cmd, self.cwd, self.env, False)
+            except OSError as e:
+                rc, out, took = -1, str(e), 0.0
+            self.rc, self.out, self.took = rc, out, self.took + took
+            if rc != 0:
+                return
 
 
 def compile_jobs(asked, files):
@@ -419,6 +479,8 @@ def main():
     shutil.copyfile(a.xbe, os.path.join(work, "game_files", "default.xbe"))
     say("default.xbe %s" % sha256_file(os.path.join(work, "game_files", "default.xbe")))
     t_all = time.monotonic()
+    values = {"kit": kit, "root": root, "gen": gen, "gen_root": gen_root}
+    warming = WarmLink(warm_link_commands(zig, info, values, tmp), tmp, env)
     pipeline = info["pipeline"]
     link_pc = LINK_SECONDS[info["system"]]
     # Before translating has made them, the generated files as the PC's were.
@@ -460,7 +522,6 @@ def main():
                      key=lambda n: (-os.path.getsize(os.path.join(gen, n)), n))
     sizes = {n: os.path.getsize(os.path.join(gen, n)) for n in sources}
     jobs, why = compile_jobs(a.jobs, len(sources))
-    values = {"kit": kit, "root": root, "gen": gen, "gen_root": gen_root}
     flags = fill(info["compile"], values)
     k = device_speed(done_steps)
     first_per_s = COMPILE_BYTES_PER_S / k
@@ -516,6 +577,14 @@ def main():
         s = left_of(link_s, time.monotonic() - t_link)
         return s, s
     steps.step(link_estimate, "Linking the engine")
+    warming.join()   # long done, as a rule: it ran while translating
+    if warming.rc == 0:
+        say("Zig's C runtime, built while translating: %.1f s" % warming.took)
+    else:
+        say("Zig's C runtime wasn't built while translating (exit %s), so the link builds it:"
+            % warming.rc)
+        for line in warming.out.splitlines()[-10:]:
+            say("  " + line)
     engine = os.path.join(root, *info["engine"].split("/"))
     os.makedirs(os.path.dirname(engine), exist_ok=True)
     new = engine + ".new"
