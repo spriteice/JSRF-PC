@@ -66,6 +66,8 @@ def folders(tmp_path):
             function("sub_00011600_gen", 0x11600, body(0x11600, 1)),                   # wrapped, changes
             function("SomeLibraryCall", 0x11700, body(0x11700, 1)),                   # named, banner address
             moved,
+            function("sub_00011A00", 0x11A00, body(0x11A00)),                          # renamed, same code
+            function("sub_00011B00", 0x11B00, body(0x11B00, 1)),                       # renamed, changes
         ]),
         "recomp_0001.c": split_file([
             "void NamedInTheTable(void)\n{\n    g_eax = 7;\n}\n\n",                       # named, table address
@@ -87,6 +89,8 @@ def folders(tmp_path):
             "void NamedInTheTable(void)\n{\n    g_eax = 9;\n}\n\n",
             "void NoAddressAnywhere(void)\n{\n    g_eax = 10;\n}\n\n",
             function("sub_00011900", 0x11900, body(0x11900)),                          # added
+            function("sub_00011A00_gen", 0x11A00, body(0x11A00)),
+            function("sub_00011B00_gen", 0x11B00, body(0x11B00, 2)),
         ]),
         "recomp_dispatch.c": dispatch([(0x11000, "sub_00011000"), (0x11800, "NamedInTheTable"),
                                        (0x11900, "sub_00011900")]),
@@ -97,20 +101,24 @@ def folders(tmp_path):
 def test_counts_and_addresses(tmp_path):
     kept, new = folders(tmp_path)
     out = gen_diff.compare(kept, new)
-    assert (out["kept"], out["new"]) == (10, 10)
+    assert (out["kept"], out["new"]) == (12, 12)
     # 11000, 11100 (moved to another file) and 11400 (its spacing) are the
-    # same; 11300's banner changed; the one with no address is counted.
-    assert out["count"] == {"the same": 3, "code changed": 5, "comments only": 1, "added": 1, "removed": 1}
-    assert out["at"]["code changed"] == [0x11200, 0x11600, 0x11700, 0x11800]
+    # same; 11300's banner changed; 11A00 and 11B00 became sub_X_gen, and
+    # 11B00's code changed too; the one with no address is counted.
+    assert out["count"] == {"the same": 3, "code changed": 6, "comments only": 1, "renamed": 1,
+                            "added": 1, "removed": 1}
+    assert out["at"]["code changed"] == [0x11200, 0x11600, 0x11700, 0x11800, 0x11B00]
+    assert out["at"]["renamed"] == [0x11A00]
     assert out["at"]["added"] == [0x11900] and out["at"]["removed"] == [0x11500]
     assert out["no address"] == 1
-    assert out["other"] == {"recomp_0000.c": (2, 0), "recomp_0001.c": (0, 2), "recomp_dispatch.c": (2, 2)}
+    assert out["other"] == {"recomp_0000.c": (4, 0), "recomp_0001.c": (0, 4), "recomp_dispatch.c": (2, 2)}
 
 
 def test_the_report_names_nothing_of_the_code(tmp_path):
     kept, new = folders(tmp_path)
     text = gen_diff.report(gen_diff.compare(kept, new))
-    assert "code changed: 0x00011200 0x00011600 0x00011700 0x00011800" in text
+    assert "code changed: 0x00011200 0x00011600 0x00011700 0x00011800 0x00011B00" in text
+    assert "renamed: 0x00011A00" in text
     assert "added: 0x00011900" in text and "removed: 0x00011500" in text
     assert "  with no address:     1 (in the counts, never listed)" in text
     for leak in ("SomeLibraryCall", "NamedInTheTable", "NoAddressAnywhere", "sub_", "g_eax", "game_engine"):
@@ -120,7 +128,7 @@ def test_the_report_names_nothing_of_the_code(tmp_path):
 def test_the_same_code_is_the_same(tmp_path):
     kept, _ = folders(tmp_path)
     out = gen_diff.compare(kept, kept)
-    assert out["count"]["the same"] == out["kept"] == 10 and sum(out["count"].values()) == 10
+    assert out["count"]["the same"] == out["kept"] == 12 and sum(out["count"].values()) == 12
     assert not (any(out["at"].values()) or out["other"])
     assert "outside the functions: the same" in gen_diff.report(out)
 
@@ -130,7 +138,7 @@ def test_main(tmp_path):
     printed = io.StringIO()
     with contextlib.redirect_stdout(printed):
         assert gen_diff.main(["gen_diff", str(kept), str(new)]) == 0
-    assert printed.getvalue().startswith("generated code: 10 functions kept, 10 new")
+    assert printed.getvalue().startswith("generated code: 12 functions kept, 12 new")
     with contextlib.redirect_stderr(io.StringIO()):
         assert gen_diff.main(["gen_diff", str(kept), str(tmp_path / "missing")]) == 2
         (tmp_path / "empty").mkdir()

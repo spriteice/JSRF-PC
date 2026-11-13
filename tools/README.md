@@ -294,11 +294,15 @@ Each function is found by its definition in whichever file holds it, and
 compared by its code, with its comments and spacing left out. It prints
 counts and addresses only, never the code or a function's name, so its
 report can go in a build's TESTING.md: how many functions are the same,
-changed, changed only in their comments, added and removed, the addresses
-of those changed, added and removed, and how many declarations and tables
-outside the functions differ, by file. A function is known by the address
-in its name, its banner's `Original:` line, or its dispatch-table entry,
-and one with none of those is counted but never listed.
+changed, changed only in their comments, renamed, added and removed, the
+addresses of those changed, renamed, added and removed, and how many
+declarations and tables outside the functions differ, by file. A function
+is known by the address in its name, its banner's `Original:` line, or its
+dispatch-table entry, and one with none of those is counted but never
+listed. One found under another name at the same address, as
+`sub_XXXXXXXX` becomes `sub_XXXXXXXX_gen` when `port/recomp_manual.c` wraps
+it, is renamed, not removed and added; if its code changed too, apart from
+its name, it counts as changed.
 docs/build-and-test-reference.md (What is kept between builds) says when it
 runs. It needs only Python's standard library, and its test,
 `tools/test_gen_diff.py`, runs on folders it makes up.

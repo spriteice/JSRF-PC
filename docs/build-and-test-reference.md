@@ -189,8 +189,10 @@ When the generated code is made again because the hash of what makes it
 changed, compare it with the kept copy the change's base used:
 `python3 tools/gen_diff.py <kept> <new>` (tools/README.md). It
 counts the functions that are the same, changed, changed only in their
-comments, added and removed, and lists the addresses of those changed,
-added and removed, never their code or names, so its report goes in
+comments, renamed (as `sub_XXXXXXXX` becomes `sub_XXXXXXXX_gen` when
+`port/recomp_manual.c` wraps it), added and removed, and lists the
+addresses of those changed, renamed, added and removed, never their code
+or names, so its report goes in
 TESTING.md (Test checklist, Built from). Each function it lists is
 accounted for there before delivery, as the package comparison's
 differences are: by what the change does, one reason covering as many
