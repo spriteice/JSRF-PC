@@ -43,6 +43,12 @@ MAP = ["[DRAW] Far buildings: the map has 7 areas; lists name 6 of them, 1 a cop
        "[DRAW] area 4: fog 500 to 5000, density 1, a copy of area 0, (400, 0, 0) away",
        "[DRAW] area 6: fog 700 to 7000, density 1"]
 
+# The Misc group's log (test_main.c, check_misc): object 0's first line, and
+# the line that says a map's log stops.
+MISC_FIRST = "[DRAW] Misc group 01E5E1C0: model 2C40, in area 0, at 0 places"
+MISC_STOP = "[DRAW] Misc group: 2048 lines on this map, the most; no more until the next map"
+MISC_SECOND = "[DRAW] Misc group 01E5E760: model 2C50, in area 1, at 0 places"
+
 # case: (settings file or None for none, log lines it must print[, environment])
 cases = {
     "default": (None, ["[DRAW] objects at 2x (settings)", "[DRAW] Far buildings on (settings)"]),
@@ -73,11 +79,18 @@ cases = {
     "far_log_2x": ("drawdistance=1\nfarbuildings=1\n",
                    ["[DRAW] t=5.1 2x, a frame's objects (past 1x's distance): crowds 1.0 (0.0), pickups 0.0 (0.0)",
                     "attached part 0.0 (0.0); " + AREAS]),
+    "far_misc": ("farbuildings=1\n", [MISC_FIRST, MISC_FIRST.replace("at 0", "at 1"),
+                                       MISC_FIRST.replace("at 0", "at 2"),
+                                       "[DRAW] Misc group 01E80EA0: model 3250, in area 6, at 1 places",
+                                       "[DRAW] Misc group 01E80EA0: model 3250, in area 6, at 2 places",
+                                       "[DRAW] Misc group 01E5FDE0: model 2C90, in area 6, at 0 places",
+                                       MISC_STOP, "[DRAW] Far buildings off (the menu)",
+                                       "[DRAW] Far buildings on (the menu)"]),
 }
-# Cases that must not print a line: none of the map's for Far buildings off,
-# and no copies drawn without JSRF_DRAW_COPIES.
+# Cases that must not print a line: none of the map's or the Misc group's for
+# Far buildings off, and no copies drawn without JSRF_DRAW_COPIES.
 unwanted = {
-    "far_off": ["[DRAW] Far buildings:", "[DRAW] area"],
+    "far_off": ["[DRAW] Far buildings:", "[DRAW] area", "[DRAW] Misc group"],
     "far_on": ["JSRF_DRAW_COPIES"],
     "off": ["[DRAW] Far buildings:"],
 }
@@ -107,6 +120,24 @@ with tempfile.TemporaryDirectory(prefix="draw-distance-") as directory:
             raise SystemExit(f"{name}: not one [DRAW] line in five seconds:\n" + run.stderr)
         if name == "far_on" and run.stderr.count("[DRAW] Far buildings: the map") != 2:
             raise SystemExit("far_on: the map not logged once each:\n" + run.stderr)
+        if name == "far_misc":
+            # On the first map 99 models and areas once each and 68 new highs;
+            # on the second the most, 2048, and the line saying so once; then
+            # the first map again, object 0 named again; then, Far buildings
+            # off and on, object 1 named once on the second map, after Far
+            # buildings has read it. b2's log, which remembered 64 objects,
+            # wrote each object every frame: 18,000 lines on the first map.
+            lines = run.stderr.splitlines()
+            named = sum(line.startswith("[DRAW] Misc group 0") for line in lines)
+            if (named, lines.count(MISC_STOP), lines.count(MISC_FIRST)) != (167 + 2048 + 1 + 1, 1, 3):
+                raise SystemExit(f"far_misc: {named} Misc group lines, {lines.count(MISC_STOP)} stops and "
+                                 f"{lines.count(MISC_FIRST)} of object 0's first; wanted 2217, 1 and 3")
+            if lines.count(MISC_SECOND) != 3:
+                raise SystemExit(f"far_misc: object 1 named {lines.count(MISC_SECOND)} times; wanted 3, "
+                                 "once a map, and once after Far buildings was turned on")
+            for high in ("at 1 places", "at 2 places"):
+                if lines.count(MISC_FIRST.replace("at 0 places", high)) != 1:
+                    raise SystemExit(f"far_misc: object 0 not named once {high}")
         if name == "pick":
             kept = path.read_text()
             if "drawdistance=3\n" not in kept or "game_dir=/games/jsrf\n" not in kept:

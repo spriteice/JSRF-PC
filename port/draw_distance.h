@@ -105,4 +105,16 @@ int draw_area_copy(const DrawArea *a, const DrawArea *b, float d[3]);
 void draw_buildings_widen(const DrawArea *areas, int n, const float eye[3],
                           uint32_t set[DRAW_SET_WORDS], double now, unsigned frame);
 
+/* The Misc group's objects (recomp_manual.c, "draw distance"), the best
+ * candidate for the birds: one model drawn at many places, in one area. With
+ * Far buildings on, each draw of one, for the log: the object, its model, the
+ * area it is in and the places it is drawn at. The log names each model once
+ * for each area it is drawn in, and again when its places rise past the most
+ * it was named with, up to DRAW_MISC_LINES lines a map, and then says it
+ * stops. A new map (draw_buildings_widen's first call on it) starts again.
+ * After Far buildings is turned on from the menu, the log waits for
+ * draw_buildings_widen's next call, which says which map it is. */
+#define DRAW_MISC_LINES 2048
+void draw_misc_drawn(uint32_t object, uint32_t model, uint32_t area, uint32_t places);
+
 #endif

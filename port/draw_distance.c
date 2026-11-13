@@ -140,6 +140,50 @@ void draw_distance_drawn(int gate, int past, double now, unsigned frame)
     draw_log(now, frame);
 }
 
+/* ---- the Misc group's log ------------------------------------------------ */
+
+/* What the log has said on this map: each (area, model) it named, with the
+ * most places it gave. A slot is taken only with a line, so the table, twice
+ * the lines, is never full. */
+#define MISC_BITS  12
+#define MISC_SLOTS (1u << MISC_BITS)
+#if MISC_SLOTS < 2 * DRAW_MISC_LINES
+#  error "the Misc group's table must be twice its lines"
+#endif
+static struct { uint32_t area, model, places; int used; } s_misc[MISC_SLOTS];
+static unsigned s_misc_lines;   /* written on this map; one more once it has stopped */
+/* Far buildings has read the map since it was last turned on or off: until
+ * then the table may be another map's, so the log waits. */
+static volatile int s_misc_map;
+
+static void misc_forget(void)
+{
+    memset(s_misc, 0, sizeof s_misc);
+    s_misc_lines = 0;
+}
+
+void draw_misc_drawn(uint32_t object, uint32_t model, uint32_t area, uint32_t places)
+{
+    uint32_t i = ((model ^ area * 0x9E3779B9u) * 2654435761u) >> (32 - MISC_BITS);
+    if (!s_far || !s_misc_map || s_misc_lines > DRAW_MISC_LINES) return;
+    while (s_misc[i].used && (s_misc[i].area != area || s_misc[i].model != model))
+        i = (i + 1) & (MISC_SLOTS - 1);
+    if (s_misc[i].used && places <= s_misc[i].places) return;
+    if (s_misc_lines == DRAW_MISC_LINES) {
+        fprintf(stderr, "[DRAW] Misc group: %d lines on this map, the most; no more until the next map\n",
+                DRAW_MISC_LINES);
+        s_misc_lines++;
+        return;
+    }
+    s_misc[i].used = 1;
+    s_misc[i].area = area;
+    s_misc[i].model = model;
+    s_misc[i].places = places;
+    s_misc_lines++;
+    fprintf(stderr, "[DRAW] Misc group %08X: model %X, in area %u, at %u places\n",
+            object, model, area, places);
+}
+
 /* ---- Far buildings ------------------------------------------------------- */
 
 #define COPY_NORMAL 1e-3f       /* a normal's x, y or z: the same within this */
@@ -266,6 +310,7 @@ static void map_take(const DrawArea *a, int n, uint32_t key)
     float off[DRAW_AREAS_MAX][3];
     unsigned e;
     memset(&s_map, 0, sizeof s_map);
+    misc_forget();      /* area numbers are the map's own */
     s_map.built = 1;
     s_map.n = n;
     s_map.key = key;
@@ -341,6 +386,7 @@ void draw_buildings_widen(const DrawArea *areas, int n, const float eye[3],
     if (n > DRAW_AREAS_MAX) n = DRAW_AREAS_MAX;
     key = map_key(areas, n);
     if (!s_map.built || s_map.n != n || s_map.key != key) map_take(areas, n, key);
+    s_misc_map = 1;
     game = set_count(set);
     /* The areas to add, nearest the eye first, so that of two copies the
      * nearer is drawn. */
@@ -387,6 +433,7 @@ static void menu_step_pick(int i)
 static int  menu_far(void) { return s_far; }
 static void menu_far_flip(void)
 {
+    s_misc_map = 0;     /* the map may change while it is off */
     s_far = !s_far;
     fprintf(stderr, "[DRAW] Far buildings %s (the menu)\n", s_far ? "on" : "off");
     nv_window_pref_set_num("farbuildings", s_far);

@@ -5960,22 +5960,12 @@ void sub_001BAA50(void)
 }
 
 /* sub_000402C0 and sub_00040300, the Misc group's draws: with Far buildings
- * on, the log names each object's model once, to tell which are the birds. */
+ * on, each object's model, area and places go to the log (draw_misc_drawn),
+ * to tell which are the birds. */
 static void dd_misc(uint32_t self)
 {
-    static uint32_t seen[64][2];
-    static unsigned next;
-    uint32_t model;
-    unsigned i;
     if (!draw_far_buildings() || !dd_guest(self, MISC_AREA + 4)) return;
-    model = dd_u32(self + MISC_MODEL);
-    for (i = 0; i < 64; i++)
-        if (seen[i][0] == self && seen[i][1] == model) return;
-    seen[next][0] = self;
-    seen[next][1] = model;
-    next = (next + 1) % 64;
-    fprintf(stderr, "[DRAW] Misc group %08X: model %X, in area %u, at %u places\n",
-            self, model, dd_u32(self + MISC_AREA), dd_u32(self + MISC_PLACES));
+    draw_misc_drawn(self, dd_u32(self + MISC_MODEL), dd_u32(self + MISC_AREA), dd_u32(self + MISC_PLACES));
 }
 extern void sub_000402C0_gen(void);
 void sub_000402C0(void)

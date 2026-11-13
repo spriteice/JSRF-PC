@@ -19,6 +19,9 @@
  * made-up map here has their shape (a street of five areas, the last a copy
  * of the first, with a copy of the first no list names and an area the shape
  * of the second elsewhere), and the sets the game would make from three eyes.
+ * The Misc group's log is given the draws of a place with more objects than
+ * b2's log remembered, which wrote a line for every draw there, and a draw
+ * just after Far buildings is turned on, before it has read the map.
  */
 #include <float.h>
 #include <math.h>
@@ -260,6 +263,72 @@ static void check_far(void)
     printf("far buildings: every listed area, the nearer of two copies\n");
 }
 
+/* ---- the Misc group's log ------------------------------------------------ */
+
+#define MISC_OBJECT(i) (0x01E5E1C0u + 0x5A0u * (uint32_t)(i))
+#define MISC_MODEL(i)  (0x2C40u + 0x10u * (uint32_t)(i))
+
+/* A map's set from area 0, so that Far buildings takes it: the first call on
+ * a map starts the Misc group's log again. */
+static void misc_map(int n)
+{
+    uint32_t set[DRAW_SET_WORDS];
+    game_set(set, 0);
+    draw_buildings_widen(s_areas, n, NULL, set, 0.0, 0);
+}
+
+/* The game's draws, as the place that flooded b2's log draws them: 100
+ * objects (more than the 64 b2's log kept), each drawn twice a frame for 180
+ * frames, in areas 0 to 6, each with a model of its own but objects 98 and 99,
+ * which have object 97's, in its area. Every third object's places rise, to 1
+ * at frame 60 and 2 at frame 120; object 0's fall back to 1 at frame 150.
+ * Object 5 goes from area 5 to area 6 at frame 90. run.py checks the lines:
+ * 99 models and areas named once, and 68 new highs. */
+static void misc_place(void)
+{
+    int f, i, twice;
+    for (f = 0; f < 180; f++)
+        for (i = 0; i < 100; i++)
+            for (twice = 0; twice < 2; twice++) {
+                int m = i < 98 ? i : 97;
+                uint32_t places = i % 3 ? 0 : f >= 120 ? 2 : f >= 60 ? 1 : 0;
+                uint32_t area = (uint32_t)(m % 7);
+                if (i == 0 && f >= 150) places = 1;
+                if (i == 5 && f >= 90) area = 6;
+                draw_misc_drawn(MISC_OBJECT(i), MISC_MODEL(m), area, places);
+            }
+}
+
+static void check_misc(void)
+{
+    int i;
+    CHECK(draw_far_buildings());
+    map_make();
+    misc_map(AREAS);
+    misc_place();
+    /* Another map: each named again. Then more models than a map's lines:
+     * the log stops, says so once, and says nothing more on this map, not
+     * even a new high. */
+    misc_map(AREAS - 1);
+    for (i = 0; i < 10; i++) draw_misc_drawn(MISC_OBJECT(i), MISC_MODEL(i), (uint32_t)(i % 7), 0);
+    for (i = 0; i < 3000; i++) draw_misc_drawn(MISC_OBJECT(i), 0x100000u + (uint32_t)i, 1, 0);
+    draw_misc_drawn(MISC_OBJECT(0), MISC_MODEL(0), 0, 5);
+    /* The first map again: a new map to the log, which starts again. */
+    misc_map(AREAS);
+    draw_misc_drawn(MISC_OBJECT(0), MISC_MODEL(0), 0, 0);
+    /* Off and on from the menu, the game on another map by then, and a draw
+     * there before Far buildings has read it: the log waits for the map, so
+     * object 1 is named once on it, not once before and again after. */
+    s_far_row.run();
+    draw_misc_drawn(MISC_OBJECT(1), MISC_MODEL(1), 1, 0);
+    s_far_row.run();
+    CHECK(draw_far_buildings());
+    draw_misc_drawn(MISC_OBJECT(1), MISC_MODEL(1), 1, 0);
+    misc_map(AREAS - 1);
+    draw_misc_drawn(MISC_OBJECT(1), MISC_MODEL(1), 1, 0);
+    printf("misc: each model once an area, again at a new high, at most %d lines a map\n", DRAW_MISC_LINES);
+}
+
 int main(int argc, char **argv)
 {
     const char *c = argc > 1 ? argv[1] : "";
@@ -335,8 +404,11 @@ int main(int argc, char **argv)
         game_set(set, 0);
         draw_buildings_widen(s_areas, AREAS, NULL, set, 0.0, 0);
         CHECK(set[0] == (AREA(0) | AREA(1)));
+        /* And no Misc group lines. */
+        misc_place();
     }
     if (!strcmp(c, "far_on")) check_far();
+    if (!strcmp(c, "far_misc")) check_misc();
     if (!strcmp(c, "far_copies")) {
         /* JSRF_DRAW_COPIES: from area 0, 4 too. */
         CHECK(draw_far_buildings());
