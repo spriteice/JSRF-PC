@@ -235,6 +235,10 @@ def main():
     parser.add_argument("--gen-dir",
                         help="Output dir for split generated files "
                              "(default: port/recomp/gen)")
+    parser.add_argument("--split-bytes", type=int, metavar="BYTES",
+                        help="With --split, a file also ends once its code "
+                             "reaches BYTES, so the files are alike in size "
+                             "and a compile on every core ends sooner")
     parser.add_argument("--jobs", type=int, default=1, metavar="N",
                         help="With --split, translate on N processes: this "
                              "one and N-1 more, each loading the data "
@@ -555,6 +559,7 @@ def main():
             verbose=args.verbose,
             manual=manual,
             workers=workers,
+            chunk_bytes=args.split_bytes,
         )
 
         t_translate = time.time() - t0

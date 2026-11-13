@@ -24,6 +24,20 @@ import subprocess
 import sys
 
 PIPELINE = ["xbe_parser", "disasm", "func_id", "abi_analysis", "recomp"]
+# The pipeline's commands, as docs/building-on-linux.md (step 4) runs them,
+# so a player's first start makes the same files as a test build
+# (test_kit.py holds the two together): {xbe} the game's default.xbe, {gen}
+# the generated code's folder, {jobs} how many processes translate
+# (build_engine.py's translate_jobs; the files are the same for any).
+PIPELINE_COMMANDS = [
+    ["tools.xbe_parser", "{xbe}", "--json", "game_files/default_analysis.json"],
+    ["tools.disasm", "{xbe}"],
+    ["tools.func_id", "{xbe}"],
+    ["tools.abi_analysis", "{xbe}"],
+    ["tools.recomp", "{xbe}", "--all", "--split", "1000", "--split-bytes", "1000000",
+     "--back-edge-yield", "--exclude-manual", "port/recomp_manual.c", "--gen-dir", "{gen}",
+     "--jobs", "{jobs}"],
+]
 
 
 def die(msg):
@@ -235,17 +249,7 @@ def main():
         # every player's engine must be the same bytes wherever it was built.
         "link": ["-s"] + out_args,
         "engine": "bin/jsrf_recomp" if a.system == "linux" else "engine/jsrf_recomp.exe",
-        # {xbe} the game's default.xbe, {gen} the generated code's folder,
-        # {jobs} how many processes translate (build_engine.py's
-        # translate_jobs; the files are the same for any).
-        "pipeline": [
-            ["tools.xbe_parser", "{xbe}", "--json", "game_files/default_analysis.json"],
-            ["tools.disasm", "{xbe}"],
-            ["tools.func_id", "{xbe}"],
-            ["tools.abi_analysis", "{xbe}"],
-            ["tools.recomp", "{xbe}", "--all", "--split", "1000", "--back-edge-yield",
-             "--exclude-manual", "port/recomp_manual.c", "--gen-dir", "{gen}", "--jobs", "{jobs}"],
-        ],
+        "pipeline": PIPELINE_COMMANDS,
     }
     with open(os.path.join(kit, "kit.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(info, f, indent=1)

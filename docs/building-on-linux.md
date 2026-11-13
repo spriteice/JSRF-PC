@@ -57,8 +57,8 @@ a fresh Ubuntu 24.04; the dependency script also knows Debian, Arch, and Fedora.
    python3 -m tools.disasm game_files/default.xbe
    python3 -m tools.func_id game_files/default.xbe
    python3 -m tools.abi_analysis game_files/default.xbe
-   python3 -m tools.recomp game_files/default.xbe --all --split 1000 --back-edge-yield \
-       --exclude-manual port/recomp_manual.c --gen-dir port/recomp/gen
+   python3 -m tools.recomp game_files/default.xbe --all --split 1000 --split-bytes 1000000 \
+       --back-edge-yield --exclude-manual port/recomp_manual.c --gen-dir port/recomp/gen
    ```
 
    The last command should report `0 failed`. With `--jobs N` added, it

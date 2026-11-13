@@ -3215,6 +3215,29 @@ class FunctionTranslator:
         return regs
 
 
+def split_chunks(translations, count, size=None):
+    """translations, (addr, name, code) in order, cut into the generated
+    files: a file ends at `count` functions, or, with size, once its code
+    reaches `size` bytes.
+
+    By count alone the files came out from 1 to 8 MB, as functions differ in
+    size from one part of a title to another. A compile on many cores then
+    lasts as long as the biggest file takes, after the others are done. Cut
+    by size, the files are alike and the cores finish together. The work is
+    the same: the files hold the same functions in the same order.
+    """
+    chunks, chunk, held = [], [], 0
+    for item in translations:
+        chunk.append(item)
+        held += len(item[2])
+        if len(chunk) >= count or (size and held >= size):
+            chunks.append(chunk)
+            chunk, held = [], 0
+    if chunk:
+        chunks.append(chunk)
+    return chunks
+
+
 class BatchTranslator:
     """Translates multiple functions and writes C source files."""
 
@@ -3545,7 +3568,7 @@ class BatchTranslator:
     def translate_batch_split(self, func_list, output_dir, chunk_size=1000,
                               header_name="recomp_funcs.h",
                               prefix="recomp", verbose=False, manual=None,
-                              workers=None):
+                              workers=None, chunk_bytes=None):
         """
         Translate functions into multiple .c files + a shared header.
 
@@ -3561,6 +3584,9 @@ class BatchTranslator:
         are still declared and still count as defined for stub purposes. This
         is how a game replaces a recompiled XDK routine (a D3D8 entry point,
         say) with one that drives the host runtime instead of the hardware.
+
+        chunk_bytes: a file also ends once its code reaches this many
+        bytes (--split-bytes), so the files compile in about the same time.
 
         workers: a tools/recomp/workers.py Workers translating shares 1 to
         n-1 on processes of their own; this one translates share 0. The files
@@ -3749,8 +3775,7 @@ class BatchTranslator:
 
         # Split translations into chunks and write .c files
         generated_files = [header_path]
-        chunks = [translations[i:i+chunk_size]
-                  for i in range(0, len(translations), chunk_size)]
+        chunks = split_chunks(translations, chunk_size, chunk_bytes)
 
         # Remove chunk files a previous, larger run left behind. Projects glob
         # gen/*.c into their build, so a stale chunk keeps compiling: it still
@@ -3918,6 +3943,8 @@ class BatchTranslator:
         stats["files"] = generated_files
         stats["num_chunks"] = len(chunks)
         stats["chunk_size"] = chunk_size
+        if chunk_bytes:
+            stats["chunk_bytes"] = chunk_bytes
         return stats
 
     def _write_dispatch_table(self, translations, output_path, header_name):

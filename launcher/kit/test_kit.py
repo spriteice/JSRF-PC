@@ -11,6 +11,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import shlex
 import shutil
 import subprocess
 import sys
@@ -343,3 +344,25 @@ def test_set_expected_refuses(tmp_path, over, says):
     p = _set(kit, _stamp(tmp_path, **over))
     assert p.returncode != 0 and says in p.stderr
     assert (kit / "expected.txt").read_text() == before
+
+
+# ---- kit_json.py ----
+
+def test_the_pipeline_is_the_linux_builds():
+    # A test build makes its generated code by docs/building-on-linux.md and
+    # a player's first start by the kit's commands; the kit's expected hash
+    # holds only if the two make the same files.
+    kj = _load("kit_json")
+    doc = (HERE.parents[1] / "docs" / "building-on-linux.md").read_text(encoding="utf-8")
+    text = doc.replace("\\\n", " ")
+    steps = ["tools." + name for name in kj.PIPELINE]
+    doc_cmds = [shlex.split(line.strip())[2:] for line in text.splitlines()
+                if line.strip().startswith("python3 -m tools.")]
+    doc_cmds = [cmd for cmd in doc_cmds if cmd[0] in steps]
+    fill = {"{xbe}": "game_files/default.xbe", "{gen}": "port/recomp/gen"}
+    kit_cmds = [[fill.get(a, a) for a in cmd] for cmd in kj.PIPELINE_COMMANDS]
+    # How many processes translate changes nothing in the files.
+    for cmd in kit_cmds:
+        if "--jobs" in cmd:
+            del cmd[cmd.index("--jobs"):cmd.index("--jobs") + 2]
+    assert doc_cmds == kit_cmds

@@ -84,9 +84,12 @@ LINK_SECONDS = {"windows": 0.5, "linux": 0.5}
 SPEED_MIN_SECONDS = 10.0
 
 
-# The biggest generated file takes about 0.55 GB to compile (recomp_0000.c,
-# 8 MB, measured on the Windows PC's Linux VM: 534 MB at its peak), so each
-# compile at once is given 0.75 GB of the memory free.
+# Each compile at once is given 0.75 GB of the memory free. Cut at 1,000
+# functions, the biggest generated file took about 0.55 GB to compile
+# (recomp_0000.c, 8 MB, measured on the Windows PC's Linux VM: 534 MB at its
+# peak); cut at 1 MB, the biggest take about 0.16 GB (the sandbox's: 131 and
+# 159 MB), so this errs high now, and is what translate_jobs gives each
+# process.
 COMPILE_MB = 750
 # Processes translating at once (tools.recomp --jobs, tools/recomp/workers.py):
 # each loads the data itself and holds about 0.7 GB at its peak, so each is
@@ -104,12 +107,11 @@ TRANSLATE_JOBS_MAX = 4
 # ahead and crawling.
 COMPILE_BYTES_PER_S = 60000
 # The generated code's C files, for the compile's part of the estimates
-# while translating hasn't made them yet: about 43.5 MB in 12 files, the
-# biggest (recomp_0000.c) 8 MB (players-pc-build/measure: 43.9 MB with its
-# two headers).
-GEN_FILES = 12
-GEN_BYTES = 43500000
-GEN_LARGEST_BYTES = 8000000
+# while translating hasn't made them yet: cut at 1 MB (tools.recomp
+# --split-bytes), 44.6 MB in 46 files, the biggest 1.12 MB (the sandbox's).
+GEN_FILES = 46
+GEN_BYTES = 44600000
+GEN_LARGEST_BYTES = 1120000
 # A step past its estimate is taken to need a part OVERRUN more of what it
 # has run, and its line is said again every OVERRUN_EVERY seconds, so the bar
 # slows but never stops: disasm took 206 s on the Ally X at its lowest TDP,
