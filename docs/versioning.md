@@ -16,7 +16,7 @@ A release's git tag and the version it shows are both its name.
 
 - **No "v" in our tags.** Upstream tags its releases `v0.5.4`; ours have no
   "v", so the two never mix. This fork's older tags, `v0.5.3a` and
-  `v0.5.3a-rc`, were deleted on 9 November 2026, and their changes are listed
+  `v0.5.3a-rc`, were deleted on 10 November 2026, and their changes are listed
   in b1's changelog entry. Upstream's tags are never changed.
 - **One tag per release,** on the commit the release is built from.
 - **The release checklist before the tag:** every release goes through
