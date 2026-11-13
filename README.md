@@ -43,18 +43,6 @@ contains no game files.
   reverb.
 - **Anti-aliasing:** MSAA and SMAA _(JuMatt)_, alone or together.
 - **Anisotropic filtering:** Sharper textures at an angle.
-- **2D upscaling:** Sharper menus, text and HUD at high render scales, drawn
-  from copies of the game's art made with Super-xBR.
-- **3D upscaling:** Sharper walls, ground, signs and characters close up,
-  drawn from copies of the game's textures made with Super-xBR.
-- **Graffiti upscaling:** Sharper graffiti tags, drawn from Super-xBR copies
-  of their own.
-- **Upscale sharpness:** Soft, Normal or Sharp edges in all three upscalings'
-  copies.
-- **Edge strength:** Soft, Normal or Strong: how faint a diagonal edge all
-  three upscalings' copies follow.
-- **Upscaling cleanup:** DXT deblock and De-dither, each on or off, smooth
-  the textures' block steps and dither before they are upscaled.
 - **Performance:** Smooth frame pacing and optimised engine/renderer on both
   Linux and Windows.
 - **Portable mode:** Everything in one folder that can be moved.
