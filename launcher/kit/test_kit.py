@@ -149,6 +149,10 @@ def test_compile_left():
 # step 8), in COMPILE_BYTES_PER_S; the pool's order is the files' own.
 ALLY_X_B2_TRANSLATING = [("tools.xbe_parser", 0.2), ("tools.disasm", 206.4), ("tools.func_id", 3.4),
                          ("tools.abi_analysis", 2.4), ("tools.recomp", 132.5)]
+# The PC's times for the same translating (b2's), which the Ally X's are
+# measured against here: build_engine.py's are for the tools as they are now.
+PC_B2_TRANSLATING = {"tools.xbe_parser": 0.2, "tools.disasm": 131.5, "tools.func_id": 1.6,
+                     "tools.abi_analysis": 1.3, "tools.recomp": 75.6}
 PC_COMPILE_S = [("recomp_0002.c", 44.1), ("recomp_0004.c", 43.6), ("recomp_0001.c", 40.3),
                 ("recomp_0000.c", 39.2), ("recomp_0006.c", 28.7), ("recomp_0003.c", 28.0),
                 ("recomp_0005.c", 22.4), ("recomp_0008.c", 17.2), ("recomp_0007.c", 12.0),
@@ -159,7 +163,7 @@ def test_compile_estimated_again_from_its_files():
     """Known bug 46: on b2's Ally X build, the compile's first file finished at
     81.8 s, after its 73 s estimate, and b2 said the rest would take 10 s; it
     took 143.7 s. Now the rest is estimated from that file's own speed."""
-    k = be.device_speed([(be.PIPELINE_SECONDS[m], t) for m, t in ALLY_X_B2_TRANSLATING])
+    k = be.device_speed([(PC_B2_TRANSLATING[m], t) for m, t in ALLY_X_B2_TRANSLATING])
     assert k == pytest.approx(344.9 / 210.2)
     size = {n: t * be.COMPILE_BYTES_PER_S for n, t in PC_COMPILE_S}
     order = [n for n, _ in PC_COMPILE_S]

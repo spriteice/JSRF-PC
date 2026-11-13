@@ -88,3 +88,15 @@ if __name__ == "__main__":
         if name.startswith("test_"):
             fn()
     print("ok")
+
+
+def test_a_section_is_cut_once():
+    # The passes ask for a section's bytes tens of thousands of times.
+    img, sec = _image(TAIL, virtual_size=len(TAIL) + 8)
+    first = img.get_section_data(sec)
+    assert img.get_section_data(sec) is first
+    # Another layout, or other file bytes, is cut again.
+    sec.virtual_size = len(TAIL)
+    assert img.get_section_data(sec) == TAIL
+    img.raw_data = bytes(len(TAIL)) + b"\xcc" * 64
+    assert img.get_section_data(sec) == bytes(len(TAIL))

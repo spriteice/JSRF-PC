@@ -57,15 +57,17 @@ WIN = sys.platform == "win32"
 # ---- The bar's estimates: the PC's times, scaled by this device's own speed
 # as its steps finish.
 
-# Each translating step's time on the Windows PC (i7-10700K; b2's three
-# first starts there, 9 November, from test build 22a5376-b2), the times
-# this device's are measured against.
+# Each translating step's time on the Windows PC (i7-10700K), the times this
+# device's are measured against: b2's three first starts there (9 November,
+# test build 22a5376-b2), with tools.disasm's and tools.recomp's scaled by
+# what decoding each instruction once gained them in the sandbox (110.9 to
+# 56.5 s and 62.1 to 29.0 s).
 PIPELINE_SECONDS = {
     "tools.xbe_parser": 0.2,
-    "tools.disasm": 131.5,
+    "tools.disasm": 67.0,
     "tools.func_id": 1.6,
     "tools.abi_analysis": 1.3,
-    "tools.recomp": 75.6,
+    "tools.recomp": 35.3,
 }
 # The link's, by the system the kit is for: Windows' on the PC (14.8 to 16.4
 # s), Linux's on the Ally X at its usual speed (2.0 to 2.9 s).

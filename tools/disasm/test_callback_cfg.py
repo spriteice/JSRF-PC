@@ -257,3 +257,16 @@ def test_table_entry_after_padding_may_tail_jump_out(pad, accepted):
     detector = FunctionDetector(engine, image, None, LabelManager())
     detector.detect_all([text])
     assert (BASE + 16 in detector.functions) == accepted
+
+
+def test_probes_share_one_decoder():
+    # Each probe used to decode its gap afresh; the passes probe the same
+    # gaps again and again.
+    body = b"\x40" * 32 + b"\xc3"
+    engine, _ = _engine(body)
+    assert engine.probes_as_callback_body(BASE, BASE + len(body))
+    decoder = engine._cfg_decoder
+    kept = len(decoder._decoded)
+    assert kept == 33
+    assert engine.probes_as_callback_body(BASE, BASE + len(body))
+    assert engine._cfg_decoder is decoder and len(decoder._decoded) == kept

@@ -140,6 +140,10 @@ class DisasmEngine:
         # Function starts proven never to return. A call into one ends its
         # block; see mark_no_return().
         self.no_return: Set[int] = set()
+        # The recomp's decoder, made on first use by probes_as_callback_body.
+        # One for the engine, so that an address the probes have decoded
+        # once is not decoded again by the next probe over the same bytes.
+        self._cfg_decoder = None
 
     def _classify_instruction(self, cs_insn: CsInsn) -> Instruction:
         """Convert a Capstone instruction to our Instruction type."""
@@ -743,7 +747,9 @@ class DisasmEngine:
         # A weak table word may name a suffix after its owner's cmp.
         if require_entry_frame and self.reads_flags_on_entry(addr, upper):
             return False
-        decoder = Disassembler()
+        decoder = self._cfg_decoder
+        if decoder is None:
+            decoder = self._cfg_decoder = Disassembler()
         entries = {addr}
         tables = {}
         indirect_tails = set()

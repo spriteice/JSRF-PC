@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from typing import Optional
 from capstone import Cs, CS_ARCH_X86, CS_MODE_32, CS_OP_IMM, CS_OP_MEM
 
+from .config import MAX_INSN_LEN
+
 
 # LOOP family: ECX is the counter, not a flag. They branch, so they end a
 # block like any other conditional jump, but they need their own lifting.
@@ -147,13 +149,66 @@ def _parse_operand(cs, cs_op, insn_obj):
         return Operand(type="reg", reg=_reg_names.get(cs_op.reg, f"r{cs_op.reg}"))
 
 
+_NOT_DECODED = object()
+
+
 class Disassembler:
-    """Capstone-based x86-32 disassembler."""
+    """Capstone-based x86-32 disassembler.
+
+    Each instruction is decoded once per Disassembler. The passes that find
+    functions and jump tables, and the translation itself, walk the same
+    bytes again and again (tools.disasm's probes and tools.recomp's passes
+    each decode a function's body 3 to 4 times), and decoding with Capstone's
+    detail was most of their time. An instruction is a pure function of its
+    address and the bytes there, so each decode is kept, keyed by both, and
+    handed to every later walk that reaches it.
+
+    The Instructions handed out are shared between walks: nothing may change
+    one after _decode_instruction has made it.
+
+    They are all kept, about 1 KB each, 0.5 GB for a whole game. Keeping only
+    the latest 16,384 made the translation as slow as before: its passes walk
+    every function before they walk any again.
+    """
 
     def __init__(self):
         self._cs = Cs(CS_ARCH_X86, CS_MODE_32)
         self._cs.detail = True
         _init_reg_names(self._cs)
+        # (address, the bytes there up to MAX_INSN_LEN) -> Instruction, or
+        # None where Capstone decodes nothing.
+        self._decoded = {}
+
+    def _decode_at(self, raw_bytes, start_va, size, addr):
+        """The instruction at addr, as Capstone decodes raw_bytes[:size]
+        (whose first byte is at start_va) from there; None where it can't.
+
+        Only the bytes an instruction can span are read, and a walk's window
+        ends at size: an instruction that would run past it doesn't decode
+        here, as it wouldn't in Capstone's decode of the window. The window's
+        bytes are in the key, so a shorter window is a decode of its own.
+        """
+        off = addr - start_va
+        window = raw_bytes[off:min(off + MAX_INSN_LEN, size)]
+        key = (addr, window)
+        insn = self._decoded.get(key, _NOT_DECODED)
+        if insn is _NOT_DECODED:
+            insn = None
+            for cs_insn in self._cs.disasm(window, addr, 1):
+                insn = self._decode_instruction(cs_insn)
+            self._decoded[key] = insn
+        return insn
+
+    def _walk(self, raw_bytes, start_va, size, addr):
+        """The instructions from addr on, one after another, as Capstone's
+        decode of raw_bytes[addr - start_va:size] gives them: it stops at the
+        first it can't decode."""
+        while True:
+            insn = self._decode_at(raw_bytes, start_va, size, addr)
+            if insn is None:
+                return
+            yield insn
+            addr = insn.end_address
 
     def _decode_instruction(self, cs_insn):
         """Convert one Capstone instruction into the translator model."""
@@ -222,8 +277,8 @@ class Disassembler:
             return []
 
         decoded = {}
-        for cs_insn in self._cs.disasm(raw_bytes[:size], start_va):
-            decoded[cs_insn.address] = self._decode_instruction(cs_insn)
+        for insn in self._walk(raw_bytes, start_va, size, start_va):
+            decoded[insn.address] = insn
 
         for point in sorted(resync or ()):
             if not (start_va <= point < end_va) or point in decoded:
@@ -231,9 +286,8 @@ class Disassembler:
             for addr in [a for a, i in decoded.items()
                          if a < point < a + i.size]:
                 del decoded[addr]
-            for cs_insn in self._cs.disasm(raw_bytes[point - start_va:size],
-                                           point):
-                if cs_insn.address in decoded:
+            for insn in self._walk(raw_bytes, start_va, size, point):
+                if insn.address in decoded:
                     break          # rejoined a stream we already have
                 # The misaligned stream did not only straddle `point`: until
                 # it rejoins, every instruction it decoded starts *inside* one
@@ -242,10 +296,9 @@ class Disassembler:
                 # memcpy the `44` inside `mov [edi+ecx*4-0x1C], eax` survived
                 # as `inc esp`, so every short copy returned with esp one byte
                 # off and popped garbage into the caller's esi and edi.
-                for inner in range(cs_insn.address + 1,
-                                   cs_insn.address + cs_insn.size):
+                for inner in range(insn.address + 1, insn.end_address):
                     decoded.pop(inner, None)
-                decoded[cs_insn.address] = self._decode_instruction(cs_insn)
+                decoded[insn.address] = insn
 
         return [decoded[a] for a in sorted(decoded)]
 
@@ -265,13 +318,11 @@ class Disassembler:
             entry = worklist.pop()
             if not (start_va <= entry < end_va) or entry in decoded:
                 continue
-            offset = entry - start_va
-            for cs_insn in self._cs.disasm(raw_bytes[offset:size], entry):
-                if cs_insn.address != entry and cs_insn.address in stop_addresses:
+            for insn in self._walk(raw_bytes, start_va, size, entry):
+                if insn.address != entry and insn.address in stop_addresses:
                     break
-                if cs_insn.address >= end_va or cs_insn.address in decoded:
+                if insn.address >= end_va or insn.address in decoded:
                     break
-                insn = self._decode_instruction(cs_insn)
                 decoded[insn.address] = insn
 
                 if (insn.is_cond_jump and insn.jump_target is not None

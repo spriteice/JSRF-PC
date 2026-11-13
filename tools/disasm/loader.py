@@ -70,6 +70,10 @@ class BinaryImage:
     # Lookup tables built after loading
     _section_by_name: Dict[str, SectionInfo] = field(default_factory=dict, repr=False)
     _thunk_to_import: Dict[int, KernelImport] = field(default_factory=dict, repr=False)
+    # get_section_data's results: the section's layout -> (the raw_data
+    # they were cut from, the bytes).
+    _section_data: Dict[tuple, tuple] = field(default_factory=dict, repr=False,
+                                              compare=False)
 
     def __post_init__(self):
         self._section_by_name = {s.name: s for s in self.sections}
@@ -137,13 +141,23 @@ class BinaryImage:
         Code sections get just enough of the fill to finish an instruction
         that starts in the file bytes (an x86 instruction is at most 15
         bytes); more would hand the sweeps zeros to decode as code.
+
+        The bytes are cut once per section and handed out again after that:
+        the passes ask for a section tens of thousands of times, and copying
+        a megabyte each time was seconds of the disassembly.
         """
+        key = (section.raw_addr, section.raw_size, section.virtual_size,
+               section.executable)
+        hit = self._section_data.get(key)
+        if hit is not None and hit[0] is self.raw_data:
+            return hit[1]
         data = self.raw_data[section.raw_addr:section.raw_addr + section.raw_size]
         # A BSS-only section (no file bytes) has nothing to finish.
         if (section.executable and section.raw_size > 0
                 and section.virtual_size > section.raw_size):
             data += bytes(min(section.virtual_size - section.raw_size,
                               MAX_INSN_LEN - 1))
+        self._section_data[key] = (self.raw_data, data)
         return data
 
     def get_kernel_import_at_thunk(self, thunk_addr: int) -> Optional[KernelImport]:
