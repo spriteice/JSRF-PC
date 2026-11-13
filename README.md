@@ -21,8 +21,6 @@ contains no game files.
 
 - **In-game menu:** F1, or Back on a controller, for the display, graphics,
   audio, controller, and developer settings.
-- **Presets:** Xbox mode, the game as the Xbox runs it; JSRF-PC default; or
-  Max quality, with the graphics at their most. File > Presets.
 - **Resolution scaling:** 1× to 6×. 3× by default.
 - **True widescreen:** 16:10, 16:9, 21:9, or Match screen. The picture is
   drawn as wide as the shape, so neither axis is stretched, and the HUD and
