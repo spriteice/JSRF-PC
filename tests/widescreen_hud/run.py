@@ -16,7 +16,11 @@ import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
 cc = shlex.split(os.environ.get("CC", "gcc"))
-LOG = "[WIDE] HUD piece 0, the health bar (sub_001060B0): marked for the right edge"
+LOG = "[WIDE] HUD piece 0, the health bar (sub_001060B0): marked for the right edge, at the top"
+LOGS = ("[WIDE] HUD piece 1, the gauge (sub_0010D480): marked for the right edge, at the bottom",
+        "[WIDE] HUD piece 9, the rolling number (sub_0010A750): marked for the left edge, at the top",
+        "[WIDE] HUD piece 11, the HUD's sign (sub_000FC370): marked, in the middle",
+        "[WIDE] HUD piece 12, the counter in the middle (sub_00104AB0): marked, in the middle")
 TEXT = ("[WIDE] HUD piece 7, the score: its text drawn with it",
         "[WIDE] HUD piece 10, the sliding message: its text drawn with it")
 
@@ -39,6 +43,9 @@ with tempfile.TemporaryDirectory(prefix="widescreen_hud-") as directory:
     # on make-space says once that it left no room.
     if text.count(LOG) != 1:
         sys.exit(f"widescreen_hud: the piece's log line came {text.count(LOG)} times, not once")
+    for line in LOGS:
+        if text.count(line) != 1:
+            sys.exit(f"widescreen_hud: {line!r} came {text.count(line)} times, not once")
     for line in TEXT:
         if text.count(line) != 1:
             sys.exit(f"widescreen_hud: {line!r} came {text.count(line)} times, not once")

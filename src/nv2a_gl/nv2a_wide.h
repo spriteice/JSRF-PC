@@ -182,11 +182,15 @@ float nv2a_wide_overlay_shift(float centre, float half, float s);
  * widened with the scene, but shown only in the light grid, not over the
  * dark grid along its top (NV2A_WIDE_LINES_TOP), and the pause map's yellow
  * lines (nv2a_wide_lines) are carried out past the wide screen's edges. It
- * moves nothing. */
+ * moves nothing. MIDDLE is a HUD piece in the middle of the screen (the
+ * HUD's signs, its counter there): widescreen leaves it where it is, as an
+ * unmarked draw, and only Display > HUD scale reads the side, to size the
+ * piece about the screen's centre (nv2a_hud_scale.h). */
 enum { NV2A_WIDE_HUD_LEFT = -1, NV2A_WIDE_HUD_NONE = 0, NV2A_WIDE_HUD_RIGHT = 1,
        NV2A_WIDE_HUD_ACROSS = 2, NV2A_WIDE_HUD_WHOLE = 3, NV2A_WIDE_HUD_LEFT_HALF = 4,
        NV2A_WIDE_HUD_RIGHT_HALF = 5, NV2A_WIDE_HUD_FILL = 6, NV2A_WIDE_HUD_OVER = 7,
-       NV2A_WIDE_HUD_BARS = 8, NV2A_WIDE_HUD_STRIP = 9, NV2A_WIDE_HUD_LINES = 10 };
+       NV2A_WIDE_HUD_BARS = 8, NV2A_WIDE_HUD_STRIP = 9, NV2A_WIDE_HUD_LINES = 10,
+       NV2A_WIDE_HUD_MIDDLE = 11 };
 
 /* Whether a draw between the marks of a part whose bars go across
  * (NV2A_WIDE_HUD_BARS), of n vertices whose positions come in w wide and h
@@ -275,8 +279,22 @@ float nv2a_wide_lines_coord(float c, float span);
 #define NV2A_WIDE_HUD_ANCHOR      4u
 #define NV2A_WIDE_HUD_FROM_ANCHOR 8u
 
+/* A mark's flags for a HUD piece that Display > HUD scale sizes
+ * (nv2a_hud_scale.h): NV2A_WIDE_HUD_SIZED, with NV2A_WIDE_HUD_LOW for one
+ * at the bottom of the screen, which is sized about the margin's bottom
+ * corner on its side rather than its top one; a MIDDLE piece is sized about
+ * the screen's centre. They go with a side of LEFT, RIGHT or MIDDLE and
+ * NV2A_WIDE_HUD_OWN_VIEW, never with a menu's flags
+ * (NV2A_WIDE_HUD_ON_GRID, _ANCHOR and _FROM_ANCHOR): a sized piece's mark is
+ * NV2A_WIDE_HUD_SIZED_TAG's, in which the bit that is ON_GRID's in the
+ * others is LOW's. */
+#define NV2A_WIDE_HUD_SIZED       16u
+#define NV2A_WIDE_HUD_LOW         32u
+#define NV2A_WIDE_HUD_SIZED_TAG   0x48530000u   /* "HS" */
+
 /* The mark's value for piece (0 to 255, which the log names), side and
- * flags (any of the NV2A_WIDE_HUD_ flags above, or 0). */
+ * flags (any of the NV2A_WIDE_HUD_ flags above, or 0). With
+ * NV2A_WIDE_HUD_SIZED, a menu's flags are left out. */
 uint32_t nv2a_wide_hud_mark(unsigned piece, int side, unsigned flags);
 
 /* A value read on NV2A_WIDE_HUD_METHOD as a mark: 1, with its piece, side

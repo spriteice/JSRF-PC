@@ -34,8 +34,12 @@ static int nv_window_pref_num(const char *key, double *v)
 }
 #endif
 
-/* The rows go right under the window's Render scale (nv2a_gl.c). */
-#define DRAW_UNDER     "Render scale (Restart)"
+/* The rows go right under the window's HUD submenu (nv2a_gl.c), its last
+ * row: Display's order is Fullscreen, Render scale, Aspect ratio, HUD, then
+ * these two (spriteice, 12 November 2026: "Render scale up", on the card at
+ * 06:19 UTC, and HUD scaling "as it's own submenu under aspect ratio", at
+ * 09:37 UTC, named HUD on the card at 09:43 UTC). */
+#define DRAW_UNDER     "HUD"
 #define DRAW_LOG_EVERY 5.0      /* seconds between [DRAW] lines */
 
 static const char *const k_names[DRAW_DISTANCE_STEPS] = { "1x", "2x", "3x", "4x", "Unlimited" };
@@ -410,7 +414,7 @@ void draw_distance_start(void)
     if (s_copies) fprintf(stderr, "[DRAW] JSRF_DRAW_COPIES: an area's copies drawn too\n");
 #if defined(XBOXRECOMP_MENU)
     {
-        /* Rows are drawn in the order added, and the window adds Render scale
+        /* Rows are drawn in the order added, and the window adds HUD
          * once it is up, after this: so the rows name the one they go under,
          * and keep their order there. */
         const XBOX_MENU_ITEM rows[] = {

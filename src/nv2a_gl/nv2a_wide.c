@@ -115,15 +115,18 @@ float nv2a_wide_overlay_shift(float centre, float half, float s)
 
 /* A mark's side in its value's low four bits, with the own-viewport flag in
  * the byte's top bit, the on-the-grid flag in the bit under it, the anchor
- * flag under that and the from-the-anchor flag under that. */
+ * flag under that and the from-the-anchor flag under that. A sized HUD
+ * piece's mark (NV2A_WIDE_HUD_SIZED_TAG) has the bottom flag in the
+ * on-the-grid flag's bit, and neither anchor flag. */
 enum { WIDE_HUD_CODE_NONE, WIDE_HUD_CODE_LEFT, WIDE_HUD_CODE_RIGHT, WIDE_HUD_CODE_ACROSS,
        WIDE_HUD_CODE_WHOLE, WIDE_HUD_CODE_LEFT_HALF, WIDE_HUD_CODE_RIGHT_HALF,
        WIDE_HUD_CODE_FILL, WIDE_HUD_CODE_OVER, WIDE_HUD_CODE_BARS, WIDE_HUD_CODE_STRIP,
-       WIDE_HUD_CODE_LINES };
+       WIDE_HUD_CODE_LINES, WIDE_HUD_CODE_MIDDLE };
 #define WIDE_HUD_CODE_OWN_VIEW    0x80u
 #define WIDE_HUD_CODE_ON_GRID     0x40u
 #define WIDE_HUD_CODE_ANCHOR      0x20u
 #define WIDE_HUD_CODE_FROM_ANCHOR 0x10u
+#define WIDE_HUD_CODE_LOW         WIDE_HUD_CODE_ON_GRID
 #define WIDE_HUD_CODE_SIDE        0x0Fu
 
 uint32_t nv2a_wide_hud_mark(unsigned piece, int side, unsigned flags)
@@ -137,8 +140,13 @@ uint32_t nv2a_wide_hud_mark(unsigned piece, int side, unsigned flags)
                   : side == NV2A_WIDE_HUD_OVER ? WIDE_HUD_CODE_OVER
                   : side == NV2A_WIDE_HUD_BARS ? WIDE_HUD_CODE_BARS
                   : side == NV2A_WIDE_HUD_STRIP ? WIDE_HUD_CODE_STRIP
-                  : side == NV2A_WIDE_HUD_LINES ? WIDE_HUD_CODE_LINES : WIDE_HUD_CODE_NONE;
+                  : side == NV2A_WIDE_HUD_LINES ? WIDE_HUD_CODE_LINES
+                  : side == NV2A_WIDE_HUD_MIDDLE ? WIDE_HUD_CODE_MIDDLE : WIDE_HUD_CODE_NONE;
     if (flags & NV2A_WIDE_HUD_OWN_VIEW) code |= WIDE_HUD_CODE_OWN_VIEW;
+    if (flags & NV2A_WIDE_HUD_SIZED) {
+        if (flags & NV2A_WIDE_HUD_LOW) code |= WIDE_HUD_CODE_LOW;
+        return NV2A_WIDE_HUD_SIZED_TAG | ((uint32_t)(piece & 0xFFu) << 8) | code;
+    }
     if (flags & NV2A_WIDE_HUD_ON_GRID) code |= WIDE_HUD_CODE_ON_GRID;
     if (flags & NV2A_WIDE_HUD_ANCHOR) code |= WIDE_HUD_CODE_ANCHOR;
     if (flags & NV2A_WIDE_HUD_FROM_ANCHOR) code |= WIDE_HUD_CODE_FROM_ANCHOR;
@@ -148,7 +156,10 @@ uint32_t nv2a_wide_hud_mark(unsigned piece, int side, unsigned flags)
 int nv2a_wide_hud_read(uint32_t value, unsigned *piece, int *side, unsigned *flags)
 {
     uint32_t code = value & WIDE_HUD_CODE_SIDE;
-    if ((value & 0xFFFF0000u) != NV2A_WIDE_HUD_TAG || code > WIDE_HUD_CODE_LINES) return 0;
+    int sized = (value & 0xFFFF0000u) == NV2A_WIDE_HUD_SIZED_TAG;
+    if (((value & 0xFFFF0000u) != NV2A_WIDE_HUD_TAG && !sized) || code > WIDE_HUD_CODE_MIDDLE)
+        return 0;
+    if (sized && (value & (WIDE_HUD_CODE_ANCHOR | WIDE_HUD_CODE_FROM_ANCHOR))) return 0;
     *piece = (value >> 8) & 0xFFu;
     *side = code == WIDE_HUD_CODE_LEFT ? NV2A_WIDE_HUD_LEFT
           : code == WIDE_HUD_CODE_RIGHT ? NV2A_WIDE_HUD_RIGHT
@@ -160,11 +171,15 @@ int nv2a_wide_hud_read(uint32_t value, unsigned *piece, int *side, unsigned *fla
           : code == WIDE_HUD_CODE_OVER ? NV2A_WIDE_HUD_OVER
           : code == WIDE_HUD_CODE_BARS ? NV2A_WIDE_HUD_BARS
           : code == WIDE_HUD_CODE_STRIP ? NV2A_WIDE_HUD_STRIP
-          : code == WIDE_HUD_CODE_LINES ? NV2A_WIDE_HUD_LINES : NV2A_WIDE_HUD_NONE;
-    *flags = ((value & WIDE_HUD_CODE_OWN_VIEW) ? NV2A_WIDE_HUD_OWN_VIEW : 0u)
-           | ((value & WIDE_HUD_CODE_ON_GRID) ? NV2A_WIDE_HUD_ON_GRID : 0u)
-           | ((value & WIDE_HUD_CODE_ANCHOR) ? NV2A_WIDE_HUD_ANCHOR : 0u)
-           | ((value & WIDE_HUD_CODE_FROM_ANCHOR) ? NV2A_WIDE_HUD_FROM_ANCHOR : 0u);
+          : code == WIDE_HUD_CODE_LINES ? NV2A_WIDE_HUD_LINES
+          : code == WIDE_HUD_CODE_MIDDLE ? NV2A_WIDE_HUD_MIDDLE : NV2A_WIDE_HUD_NONE;
+    *flags = ((value & WIDE_HUD_CODE_OWN_VIEW) ? NV2A_WIDE_HUD_OWN_VIEW : 0u);
+    if (sized)
+        *flags |= NV2A_WIDE_HUD_SIZED | ((value & WIDE_HUD_CODE_LOW) ? NV2A_WIDE_HUD_LOW : 0u);
+    else
+        *flags |= ((value & WIDE_HUD_CODE_ON_GRID) ? NV2A_WIDE_HUD_ON_GRID : 0u)
+                | ((value & WIDE_HUD_CODE_ANCHOR) ? NV2A_WIDE_HUD_ANCHOR : 0u)
+                | ((value & WIDE_HUD_CODE_FROM_ANCHOR) ? NV2A_WIDE_HUD_FROM_ANCHOR : 0u);
     return 1;
 }
 

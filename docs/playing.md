@@ -123,9 +123,15 @@ input goes to the menu.
   as far as the graphics card goes. The one ticked is the one your settings
   match, if any. Full screen and the free camera's own settings stay as you set
   them.
-- **Display:** Full screen, the aspect ratio, the render scale (1× to 6×), the
-  draw distance, Far buildings, and two submenus at the end: Skips, with Skip
-  intro, and Enhancements, with Music info in pause and See through fix. The
+- **Display:** Full screen, the render scale (1× to 6×), the aspect ratio,
+  the HUD submenu, the draw distance, Far buildings, and two submenus at the
+  end: Skips, with Skip intro, and Enhancements, with Music info in pause and
+  See through fix. In HUD, HUD scale draws the HUD at 0.5× to 1.5× its size
+  (1× the default), a tenth at each − or +, each piece keeping its distance
+  from the screen's edges; Disable HUD hides it. Both change at once, and are
+  kept as `hudscale=` (0.5 to 1.5) and `hudoff=` (1 for hidden) in the
+  settings file. In split screen the HUD keeps its own size, though Disable
+  HUD still hides it. The
   aspect ratio is 4:3 (the Xbox's own, widescreen off), 16:10, 16:9, 21:9, or
   Match screen, the shape of the display the window is on, the default. It changes at once, and is kept as
   `aspect=` (with `widescreen=` for on or off) in the settings file. Draw

@@ -30,7 +30,10 @@
  *      so two presses come back to Match screen.
  *  12. A HUD mark reads back as its piece, side and flags, a menu part's
  *      across the width among them, and a value that isn't one (D3D's own
- *      no-operation values among them) doesn't.
+ *      no-operation values among them) doesn't. So does a mark of a piece
+ *      HUD scale sizes, at the left, the right or the middle, at the top or
+ *      the bottom, in its own tag ("HS"), with a menu's flags left out; one
+ *      in that tag with an anchor's bits doesn't.
  *  13. Between a HUD piece's marks, a draw moves to its side's edge: a piece
  *      at the 4:3 edge lands on the screen's edge at every wide shape,
  *      squeezed 2D and widened 3D alike, and keeps its distance from it
@@ -358,17 +361,27 @@ static void hud_marks(void)
                                  NV2A_WIDE_HUD_ACROSS, NV2A_WIDE_HUD_WHOLE,
                                  NV2A_WIDE_HUD_LEFT_HALF, NV2A_WIDE_HUD_RIGHT_HALF,
                                  NV2A_WIDE_HUD_FILL, NV2A_WIDE_HUD_OVER, NV2A_WIDE_HUD_BARS,
-                                 NV2A_WIDE_HUD_STRIP, NV2A_WIDE_HUD_LINES };
+                                 NV2A_WIDE_HUD_STRIP, NV2A_WIDE_HUD_LINES, NV2A_WIDE_HUD_MIDDLE };
     static const unsigned flags[] = { 0u, NV2A_WIDE_HUD_OWN_VIEW, NV2A_WIDE_HUD_ON_GRID,
                                       NV2A_WIDE_HUD_OWN_VIEW | NV2A_WIDE_HUD_ON_GRID,
                                       NV2A_WIDE_HUD_ANCHOR, NV2A_WIDE_HUD_FROM_ANCHOR,
                                       NV2A_WIDE_HUD_ANCHOR | NV2A_WIDE_HUD_FROM_ANCHOR,
                                       NV2A_WIDE_HUD_OWN_VIEW | NV2A_WIDE_HUD_ON_GRID
                                       | NV2A_WIDE_HUD_ANCHOR | NV2A_WIDE_HUD_FROM_ANCHOR };
-    /* past the last side, with each flag and all of them; not tagged */
-    static const uint32_t others[] = { 0u, 1u, 2u, 5u, 8u, 9u, 0x4855000Cu, 0x4855008Cu,
-                                       0x4855004Cu, 0x485500CCu, 0x4855001Du, 0x4855002Eu,
-                                       0x485500FFu, 0x48560001u, 0x00000102u, 0xFFFFFFFFu };
+    /* HUD scale's: a sized piece, at the left, the right or the middle */
+    static const int sized_sides[] = { NV2A_WIDE_HUD_LEFT, NV2A_WIDE_HUD_RIGHT, NV2A_WIDE_HUD_MIDDLE };
+    static const unsigned sized_flags[] = { NV2A_WIDE_HUD_SIZED,
+                                            NV2A_WIDE_HUD_SIZED | NV2A_WIDE_HUD_LOW,
+                                            NV2A_WIDE_HUD_SIZED | NV2A_WIDE_HUD_OWN_VIEW,
+                                            NV2A_WIDE_HUD_SIZED | NV2A_WIDE_HUD_OWN_VIEW
+                                            | NV2A_WIDE_HUD_LOW };
+    /* past the last side, with each flag and all of them; not tagged; in
+     * HUD scale's tag, past the last side or with an anchor's bits */
+    static const uint32_t others[] = { 0u, 1u, 2u, 5u, 8u, 9u, 0x4855000Du, 0x4855008Du,
+                                       0x4855004Du, 0x485500CDu, 0x4855001Du, 0x4855002Eu,
+                                       0x485500FFu, 0x48560001u, 0x00000102u, 0xFFFFFFFFu,
+                                       0x4853000Du, 0x485300CFu, 0x48530021u, 0x48530012u,
+                                       0x485300B1u, 0x48520001u };
     unsigned i, j, k, piece, fl;
     int side;
     for (i = 0; i < sizeof pieces / sizeof pieces[0]; i++)
@@ -379,6 +392,25 @@ static void hud_marks(void)
                                          &piece, &side, &fl));
                 CHECK(piece == pieces[i] && side == sides[j] && fl == flags[k]);
             }
+    for (i = 0; i < sizeof pieces / sizeof pieces[0]; i++)
+        for (j = 0; j < sizeof sized_sides / sizeof sized_sides[0]; j++)
+            for (k = 0; k < sizeof sized_flags / sizeof sized_flags[0]; k++) {
+                uint32_t v = nv2a_wide_hud_mark(pieces[i], sized_sides[j], sized_flags[k]);
+                piece = 999; side = 9; fl = 99;
+                CHECK((v & 0xFFFF0000u) == NV2A_WIDE_HUD_SIZED_TAG);
+                CHECK(nv2a_wide_hud_read(v, &piece, &side, &fl));
+                CHECK(piece == pieces[i] && side == sized_sides[j] && fl == sized_flags[k]);
+                /* a menu's flags with them are left out */
+                CHECK(nv2a_wide_hud_mark(pieces[i], sized_sides[j], sized_flags[k]
+                                         | NV2A_WIDE_HUD_ON_GRID | NV2A_WIDE_HUD_ANCHOR
+                                         | NV2A_WIDE_HUD_FROM_ANCHOR) == v);
+            }
+    /* the health bar (piece 0, right, at the top), the gauge (piece 1, right,
+     * at the bottom), the counter in the middle (piece 12) */
+    CHECK(nv2a_wide_hud_mark(0, NV2A_WIDE_HUD_RIGHT, NV2A_WIDE_HUD_SIZED) == 0x48530002u);
+    CHECK(nv2a_wide_hud_mark(1, NV2A_WIDE_HUD_RIGHT, NV2A_WIDE_HUD_SIZED | NV2A_WIDE_HUD_LOW)
+          == 0x48530142u);
+    CHECK(nv2a_wide_hud_mark(12, NV2A_WIDE_HUD_MIDDLE, NV2A_WIDE_HUD_SIZED) == 0x48530C0Cu);
     CHECK(nv2a_wide_hud_mark(0, NV2A_WIDE_HUD_RIGHT, 0) != nv2a_wide_hud_mark(0, NV2A_WIDE_HUD_LEFT, 0));
     CHECK(nv2a_wide_hud_mark(0, NV2A_WIDE_HUD_LEFT, 0)
           != nv2a_wide_hud_mark(0, NV2A_WIDE_HUD_LEFT, NV2A_WIDE_HUD_OWN_VIEW));

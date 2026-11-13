@@ -264,16 +264,16 @@ int main(int argc, char **argv)
 {
     const char *c = argc > 1 ? argv[1] : "";
     draw_distance_start();
-    /* Two rows, in one call: a choice under Render scale on the Display
+    /* Two rows, in one call: a choice under HUD on the Display
      * page, showing the setting, then a toggle. */
     CHECK(s_rows == 2);
     CHECK(s_far_row.menu == XBOX_MENU_DISPLAY && s_far_row.kind == XBOX_ITEM_TOGGLE && !s_far_row.last);
     CHECK(!strcmp(s_far_row.label, "Far buildings") && !s_far_row.confirm && s_far_row.run);
-    CHECK(s_far_row.under && !strcmp(s_far_row.under, "Render scale (Restart)"));
+    CHECK(s_far_row.under && !strcmp(s_far_row.under, "HUD"));
     CHECK(s_far_row.state() == draw_far_buildings());
     CHECK(s_row.menu == XBOX_MENU_DISPLAY && s_row.kind == XBOX_ITEM_CHOICE && !s_row.last);
     CHECK(!strcmp(s_row.label, "Draw distance") && !s_row.confirm);
-    CHECK(s_row.under && !strcmp(s_row.under, "Render scale (Restart)"));
+    CHECK(s_row.under && !strcmp(s_row.under, "HUD"));
     CHECK(s_row.nchoices == DRAW_DISTANCE_STEPS);
     /* Each with a hint, a sentence short enough for the strip (menu.h). */
     CHECK(s_row.hint && strlen(s_row.hint) <= MENU_HINT_LONGEST && s_row.hint[strlen(s_row.hint) - 1] == '.');

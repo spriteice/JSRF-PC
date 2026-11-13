@@ -1,7 +1,8 @@
-/* The HUD at the screen's edges in widescreen: the game's half
- * (widescreen_hud.h). Plain C on guest memory, so a test links it
- * (tests/widescreen_hud). */
+/* The HUD at the screen's edges in widescreen, and at Display > HUD
+ * scale's size: the game's half (widescreen_hud.h). Plain C on guest
+ * memory, so a test links it (tests/widescreen_hud). */
 #include "widescreen_hud.h"
+#include "widescreen_menus.h"
 #include "nv2a_wide.h"
 #include "platform/recomp_check.h"
 
@@ -9,7 +10,7 @@
 
 const WideHudPiece widescreen_hud_pieces[WIDE_HUD_PIECES] = {
     [WIDE_HUD_HEALTH]  = { 0x001060B0u, "the health bar", NV2A_WIDE_HUD_RIGHT, 0 },
-    [WIDE_HUD_GAUGE]   = { 0x0010D480u, "the gauge", NV2A_WIDE_HUD_RIGHT, 0 },
+    [WIDE_HUD_GAUGE]   = { 0x0010D480u, "the gauge", NV2A_WIDE_HUD_RIGHT, NV2A_WIDE_HUD_LOW },
     [WIDE_HUD_CAN]     = { 0x0010DC60u, "the spray can and its count", NV2A_WIDE_HUD_RIGHT, 0 },
     [WIDE_HUD_BOOST]   = { 0x00109B70u, "the boost icon", NV2A_WIDE_HUD_RIGHT, 0 },
     [WIDE_HUD_DIGIT]   = { 0x00102DB0u, "a digit and its icon", NV2A_WIDE_HUD_RIGHT, 0 },
@@ -21,7 +22,12 @@ const WideHudPiece widescreen_hud_pieces[WIDE_HUD_PIECES] = {
                            NV2A_WIDE_HUD_OWN_VIEW },
     [WIDE_HUD_MESSAGE] = { 0x001045D0u, "the sliding message", NV2A_WIDE_HUD_LEFT,
                            WIDE_HUD_TEXT },
+    [WIDE_HUD_SIGN]    = { 0x000FC370u, "the HUD's sign", NV2A_WIDE_HUD_MIDDLE, 0 },
+    [WIDE_HUD_COUNTER] = { 0x00104AB0u, "the counter in the middle", NV2A_WIDE_HUD_MIDDLE, 0 },
 };
+
+/* A piece's flags that its start mark carries to the renderer. */
+#define WIDE_HUD_MARK_FLAGS (NV2A_WIDE_HUD_OWN_VIEW | NV2A_WIDE_HUD_LOW)
 
 /* The piece whose text the font call draws at once, while it runs, or -1. */
 static int s_text_piece = -1;
@@ -61,13 +67,19 @@ int widescreen_hud_begin(uint8_t *mem, uint32_t device, int piece, int on,
     p = &widescreen_hud_pieces[piece];
     if (!widescreen_hud_push(mem, device,
                              nv2a_wide_hud_mark((unsigned)piece, p->side,
-                                                p->flags & NV2A_WIDE_HUD_OWN_VIEW),
+                                                NV2A_WIDE_HUD_SIZED
+                                                | (p->flags & WIDE_HUD_MARK_FLAGS)),
                              make_space))
         return 0;
     if (!told[piece]) {
         told[piece] = 1;
-        fprintf(stderr, "[WIDE] HUD piece %d, %s (sub_%08X): marked for the %s edge\n",
-                piece, p->name, p->va, p->side < 0 ? "left" : "right");
+        if (p->side == NV2A_WIDE_HUD_MIDDLE)
+            fprintf(stderr, "[WIDE] HUD piece %d, %s (sub_%08X): marked, in the middle\n",
+                    piece, p->name, p->va);
+        else
+            fprintf(stderr, "[WIDE] HUD piece %d, %s (sub_%08X): marked for the %s edge, at "
+                    "the %s\n", piece, p->name, p->va, p->side < 0 ? "left" : "right",
+                    (p->flags & NV2A_WIDE_HUD_LOW) ? "bottom" : "top");
     }
     if (p->flags & WIDE_HUD_TEXT) s_text_piece = piece;
     return 1;
@@ -93,4 +105,10 @@ int widescreen_hud_text_now(void)
                 piece, widescreen_hud_pieces[piece].name);
     }
     return 1;
+}
+
+int widescreen_hud_sign(uint8_t *mem, uint32_t sign)
+{
+    if (!sign) return 0;
+    return (*guest32(mem, sign + WIDE_MENU_SIGN_FLAGS) & WIDE_HUD_SIGN_FLAG) != 0;
 }

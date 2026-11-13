@@ -36,6 +36,7 @@
 #include "nv2a_scale.h"
 #include "nv2a_fit.h"
 #include "nv2a_wide.h"
+#include "nv2a_hud_scale.h"
 #include "nv2a_seethru.h"
 #include "nv2a_upscale.h"
 #include "nv2a_hash.h"
@@ -1080,6 +1081,7 @@ static struct {
     float    wide_shift;
     float    wide_across;
     float    wide_off;
+    float    hud_size[3];
     uint32_t fbo_w, fbo_h;      /* the surface size vpSurface and vpRect hold */
     uint32_t psh_c[NV2A_PSH_NCONSTS];   /* the combiner constants, as words */
     int      psh_ok;                    /* ... and whether the program has them */
@@ -1215,6 +1217,22 @@ static const Nv2aUpClean *up_clean(uint32_t k, Nv2aUpClean *c)
     nv2a_up_clean_of(g_up_clean_now, g_tcache[k].format, c);
     return c;
 }
+
+/*
+ * Display > HUD (nv2a_hud_scale.h): the HUD scale in tenths, from the
+ * window's hudscale= setting, 1x unless set otherwise
+ * (NV2A_HUD_TENTHS_DEFAULT); and Disable HUD, from hudoff=, off unless set.
+ * Either can change while the game runs (the in-game menu), and the next HUD
+ * piece drawn takes it.
+ */
+static volatile int g_hud_tenths = NV2A_HUD_TENTHS_DEFAULT;
+static volatile int g_hud_off;
+
+/* For the game side (port/recomp_manual.c): whether the HUD is drawn at
+ * another size than its own, or not at all, so that its pieces are marked
+ * at 4:3 too (port/widescreen_hud.h). */
+int nv2a_hud_sized(void);
+int nv2a_hud_sized(void) { return g_hud_off || g_hud_tenths != NV2A_HUD_TENTHS_DEFAULT; }
 
 /* ---- helpers ------------------------------------------------------------ */
 
@@ -2045,28 +2063,74 @@ void nv_window_restart(void)
     sdl_restart(sdl_is_fullscreen());
 }
 
+/* Display > HUD (nv2a_hud_scale.h), a submenu right under Aspect ratio
+ * (spriteice, 12 November 2026: "can we have HUD scaling as it's own submenu
+ * under aspect ratio", at 09:37 UTC, and its name on the card at 09:43 UTC,
+ * "HUD"): HUD scale, the HUD's pieces at 0.5x to 1.5x their size, a tenth a
+ * step with - and + as Controller's sensitivity has, kept as hudscale= (0.5
+ * to 1.5); then Disable HUD, which draws none of them, kept as hudoff= (1,
+ * or 0). Each is taken by the next piece drawn. Draw distance's rows go
+ * under the submenu (port/draw_distance.c). */
+#define SDL_HUD_GROUP "HUD"
+static double sdl_hud_scale(void) { return g_hud_tenths / 10.0; }
+static void sdl_hud_scale_set(double v)
+{
+    char key[16];
+    int t = nv2a_hud_parse(v);
+    if (t < 0) return;
+    g_hud_tenths = t;
+    fprintf(stderr, "  [HUD] HUD scale %.1fx (the menu)\n", t / 10.0);
+    snprintf(key, sizeof key, "%g", t / 10.0);
+    sdl_cfg_put("hudscale", key);
+}
+static int  sdl_hud_off(void) { return g_hud_off; }
+static void sdl_hud_off_flip(void)
+{
+    g_hud_off = !g_hud_off;
+    fprintf(stderr, "  [HUD] HUD %s (the menu)\n", g_hud_off ? "disabled" : "shown");
+    sdl_cfg_set("hudoff", g_hud_off);
+}
+
 static void sdl_menu_display(void)
 {
+    /* Fullscreen, Render scale, Aspect ratio, then the HUD submenu
+     * (spriteice, 12 November 2026: "Render scale up", on the card at 06:19
+     * UTC, and the submenu under Aspect ratio, at 09:37 UTC). The presets
+     * (File > Presets) leave how the window sits to the player; Xbox mode is
+     * the console's 4:3 at its 640x480. */
+    const XBOX_MENU_ITEM fullscreen = {
+        .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Fullscreen",
+        .state = sdl_is_fullscreen, .run = sdl_choose_fullscreen,
+        .presets = XBOX_PRESETS_OWN,
+        .hint = "The window becomes fullscreen." };
+    const XBOX_MENU_ITEM scale = {
+        .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Render scale (Restart)",
+        .state = sdl_scale_now, .pick = sdl_scale_pick,
+        .choices = g_scale_names, .nchoices = NV2A_SCALE_MAX,
+        .confirm = "Apply selection and restart, losing unsaved progress?",
+        .presets = XBOX_PRESETS_SET, .keep = sdl_scale_keep_choice,
+        .preset = { 0, NV2A_SCALE_DEFAULT - 1, NV2A_SCALE_MAX - 1 },  /* 1x, 3x, 6x */
+        .hint = "The game's drawn resolution, shown for your aspect ratio. GPU heavy." };
     const XBOX_MENU_ITEM rows[] = {
-        /* The presets (File > Presets) leave how the window sits to the
-         * player; Xbox mode is the console's 4:3 at its 640x480. */
-        { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Fullscreen",
-          .state = sdl_is_fullscreen, .run = sdl_choose_fullscreen,
-          .presets = XBOX_PRESETS_OWN,
-          .hint = "The window becomes fullscreen." },
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Aspect ratio",
           .state = sdl_aspect_now, .pick = sdl_aspect_pick,
           .choices = nv2a_wide_shape_names, .nchoices = NV2A_WIDE_SHAPES,
           .presets = XBOX_PRESETS_SET,
           .preset = { NV2A_WIDE_SHAPE_4_3, SDL_CFG_SHAPE_DEFAULT, SDL_CFG_SHAPE_DEFAULT },
           .hint = "Adjusts the aspect ratio. Menus, HUD, and effects adjust to match." },
-        { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Render scale (Restart)",
-          .state = sdl_scale_now, .pick = sdl_scale_pick,
-          .choices = g_scale_names, .nchoices = NV2A_SCALE_MAX,
-          .confirm = "Apply selection and restart, losing unsaved progress?",
-          .presets = XBOX_PRESETS_SET, .keep = sdl_scale_keep_choice,
-          .preset = { 0, NV2A_SCALE_DEFAULT - 1, NV2A_SCALE_MAX - 1 },  /* 1x, 3x, 6x */
-          .hint = "The game's drawn resolution, shown for your aspect ratio. GPU heavy." },
+        { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_GROUP, .label = SDL_HUD_GROUP,
+          .hint = "Resizes the HUD, or turns it off." },
+        /* The HUD at its own size, and shown, in every preset. */
+        { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_NUMBER, .label = "HUD scale",
+          .group = SDL_HUD_GROUP, .value = sdl_hud_scale, .set = sdl_hud_scale_set,
+          .min = NV2A_HUD_SCALE_MIN, .max = NV2A_HUD_SCALE_MAX, .step = NV2A_HUD_SCALE_STEP,
+          .format = "%.1fx", .presets = XBOX_PRESETS_SET,
+          .preset = { NV2A_HUD_SCALE_DEFAULT, NV2A_HUD_SCALE_DEFAULT, NV2A_HUD_SCALE_DEFAULT },
+          .hint = "Resizes the HUD, from 0.5x to 1.5x its size." },
+        { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Disable HUD",
+          .group = SDL_HUD_GROUP, .state = sdl_hud_off, .run = sdl_hud_off_flip,
+          .presets = XBOX_PRESETS_SET, .preset = { 0, 0, 0 },
+          .hint = "Hides the HUD." },
     };
     /* Display's two submenus, at its foot whatever is added later (menu.h,
      * last), for rows from elsewhere: Skips, then Enhancements. */
@@ -2076,11 +2140,11 @@ static void sdl_menu_display(void)
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_ENHANCEMENTS, .last = 1,
           .hint = "Improves the game beyond the original Xbox version." },
     };
-    int n = (int)(sizeof rows / sizeof rows[0]);
+    sdl_scale_names();                      /* Render scale's names, for the shape now */
+    xbox_MenuAdd(&fullscreen, 1);
     /* A new scale is a restart, which not every port can do (F9 asks the same). */
-    if (!recomp_restart_self) n--;          /* Render scale, the last row */
-    sdl_scale_names();                      /* its names, for the shape now */
-    xbox_MenuAdd(rows, n);
+    if (recomp_restart_self) xbox_MenuAdd(&scale, 1);
+    xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
     xbox_MenuAdd(groups, (int)(sizeof groups / sizeof groups[0]));
 }
 
@@ -5814,10 +5878,18 @@ static uint32_t g_wide_slab_clip[4];  /* the right-hand copy's clip, raster pixe
 /* The HUD piece being drawn, from the game side's marks (nv2a_wide.h,
  * NV2A_WIDE_HUD_METHOD): its side, NV2A_WIDE_HUD_NONE between pieces, which
  * one, for the log, and its flags (NV2A_WIDE_HUD_OWN_VIEW,
- * NV2A_WIDE_HUD_ON_GRID). */
+ * NV2A_WIDE_HUD_ON_GRID, NV2A_WIDE_HUD_SIZED, NV2A_WIDE_HUD_LOW). A sized
+ * piece is sized only where its start mark found the viewport spanning the
+ * frame (g_hud_whole, nv2a_wide_hud_whole_view): one player's HUD, not a
+ * split screen's, whose pieces each sit in their player's view. */
 static int g_hud_side = NV2A_WIDE_HUD_NONE;
 static unsigned g_hud_piece;
 static unsigned g_hud_flags;
+static int g_hud_whole;
+/* This draw's size, from HUD scale (nv2a_hud_scale.h), set in do_draw: the
+ * shader's hudSize, its size less one (0, as for every other draw, at the
+ * game's own size), and the anchor it is sized about, in NDC. */
+static float g_hud_size[3];
 /* Whether a plain menu has drawn in this frame so far, from the game side's
  * mark (NV2A_WIDE_HUD_FILL), and which, for the log: from the mark on, its
  * full-screen art is fitted into the 4:3 screen (do_draw), and at the flip
@@ -6922,6 +6994,20 @@ static void do_draw_body(void)
           }
       } }
 
+    /* Display > HUD > Disable HUD (nv2a_hud_scale.h): nothing between the
+     * marks of a HUD piece the HUD scale sizes is drawn, 2D, 3D and text
+     * alike, in any view. After the sticky attributes above, which the
+     * hardware fetches whether or not the draw is made. The first draw left
+     * out of each piece is logged. */
+    if ((g_hud_flags & NV2A_WIDE_HUD_SIZED) && g_hud_off) {
+        static unsigned char told[256];
+        if (!told[g_hud_piece & 0xFFu]) {
+            told[g_hud_piece & 0xFFu] = 1;
+            fprintf(stderr, "[HUD] piece %u: not drawn (HUD disabled)\n", g_hud_piece);
+        }
+        return;
+    }
+
     if (!S.attr[0].size) { S.skipped_no_pos++; return; }
     /* RECOMP_GL_NO_TEX1: drop every draw that has a second texture stage.
      * JSRF paints its cel shading as a second blended pass over the same
@@ -7633,8 +7719,8 @@ static void do_draw_body(void)
                                             : "3D drawn as it is");
             }
         }
-    } else if (g_hud_side != NV2A_WIDE_HUD_NONE && nv2a_wide_scene()
-        && nv2a_wide_frame_sized(S.clip_w, S.clip_h) && framed == 0.0f) {
+    } else if (g_hud_side != NV2A_WIDE_HUD_NONE && g_hud_side != NV2A_WIDE_HUD_MIDDLE
+        && nv2a_wide_scene() && nv2a_wide_frame_sized(S.clip_w, S.clip_h) && framed == 0.0f) {
         int screen = draw_screen_space(slot);
         int own = screen && (g_hud_flags & NV2A_WIDE_HUD_OWN_VIEW)
                && fabsf(S.u.vp_scale[0]) > 1e-6f;
@@ -7645,6 +7731,51 @@ static void do_draw_body(void)
             g_wide_shift = (g_hud_flags & NV2A_WIDE_HUD_ON_GRID)
                 ? nv2a_wide_hud_grid_shift(g_hud_side, g_wide_s, g_wide_squeeze, centre)
                 : nv2a_wide_hud_shift(g_hud_side, g_wide_s, g_wide_squeeze, centre);
+        }
+    }
+    /*
+     * Display > HUD > HUD scale (nv2a_hud_scale.h): between the marks of a
+     * HUD piece it sizes, in one player's view, each draw -- 2D and 3D
+     * alike, after any move to its edge above -- is drawn at its size about
+     * the inner corner of the HUD's margin on the piece's side, at the top
+     * or the bottom (the screen's centre for a piece in the middle), by the
+     * shader's hudSize, and its window clip with it (below). The margin
+     * across is the squeeze's share of the title's where the piece was moved
+     * to the wide screen's edge. Each piece is logged at each size, with its
+     * first screen-space draw's extent, so a log shows each piece's corner.
+     */
+    g_hud_size[0] = g_hud_size[1] = g_hud_size[2] = 0.0f;
+    if ((g_hud_flags & NV2A_WIDE_HUD_SIZED) && g_hud_whole
+        && nv2a_wide_frame_sized(S.clip_w, S.clip_h)) {
+        int tenths = g_hud_tenths;
+        float k = nv2a_hud_size(tenths);
+        if (k != 1.0f) {
+            static unsigned char told[256];
+            int moved = g_wide_hud == NV2A_WIDE_HUD_LEFT || g_wide_hud == NV2A_WIDE_HUD_RIGHT;
+            nv2a_hud_anchor(g_hud_side, (g_hud_flags & NV2A_WIDE_HUD_LOW) != 0,
+                            moved ? g_wide_s : 1.0f, &g_hud_size[1], &g_hud_size[2]);
+            g_hud_size[0] = k - 1.0f;
+            if (told[g_hud_piece & 0xFFu] != (unsigned char)tenths
+                && (!draw_screen_space(slot) || (!vc_vb && attr_at[0] >= 0))) {
+                char ext[96] = ", 3D";
+                told[g_hud_piece & 0xFFu] = (unsigned char)tenths;
+                if (draw_screen_space(slot)) {
+                    float lo = 1e30f, hi = -1e30f, ylo = 1e30f, yhi = -1e30f;
+                    uint32_t k4;
+                    for (k4 = 0; k4 < out_n; k4++) {
+                        const float *p4 = &vbuf[(size_t)k4 * stride_floats + (uint32_t)attr_at[0]];
+                        if (p4[0] < lo) lo = p4[0];
+                        if (p4[0] > hi) hi = p4[0];
+                        if (p4[1] < ylo) ylo = p4[1];
+                        if (p4[1] > yhi) yhi = p4[1];
+                    }
+                    snprintf(ext, sizeof ext, ", its 2D at x %.0f..%.0f, y %.0f..%.0f",
+                             (double)lo, (double)hi, (double)ylo, (double)yhi);
+                }
+                fprintf(stderr, "[HUD] piece %u: drawn at %.1fx about (%.3f, %.3f) in NDC%s%s\n",
+                        g_hud_piece, (double)k, (double)g_hud_size[1],
+                        (double)g_hud_size[2], moved ? ", at the wide screen's edge" : "", ext);
+            }
         }
     }
     /*
@@ -8095,6 +8226,7 @@ static void do_draw_body(void)
      || g_last.wide_shift != g_wide_shift
      || g_last.wide_across != g_wide_across
      || g_last.wide_off != g_wide_off
+     || memcmp(g_last.hud_size, g_hud_size, sizeof g_hud_size)
      || g_last.fbo_w != g_fbo_w || g_last.fbo_h != g_fbo_h) {
         /* The viewport, whenever it or the surface it is on changes: vpSurface
          * and vpRect hold the surface's size, and a title can draw to a
@@ -8129,11 +8261,13 @@ static void do_draw_body(void)
         uni1f(NV2A_U_WIDESHIFT, g_wide_shift);
         uni1f(NV2A_U_WIDEACROSS, g_wide_across);
         uni1f(NV2A_U_WIDEOFF, g_wide_off);
+        G->uniform_f(NV2A_U_HUDSIZE, g_hud_size, 1);
         memcpy(g_last.vp_scale, vp_scale_eff, sizeof vp_scale_eff);
         memcpy(g_last.vp_off, S.u.vp_off, sizeof S.u.vp_off);
         g_last.wide_shift = g_wide_shift;
         g_last.wide_across = g_wide_across;
         g_last.wide_off = g_wide_off;
+        memcpy(g_last.hud_size, g_hud_size, sizeof g_hud_size);
         g_last.fbo_w = g_fbo_w; g_last.fbo_h = g_fbo_h;
     }
 
@@ -8463,6 +8597,14 @@ static void do_draw_body(void)
           } else if ((g_wide_squeeze || g_wide_shift != 0.0f) && !g_wide_whole
                      && g_wide_half == NV2A_WIDE_HUD_NONE) {
               nv2a_wide_clip_x(g_fbo_w, g_wide_s, &cx0, &cx1);
+              clip = 1;
+          }
+          /* A HUD piece at HUD scale's size (do_draw, hudSize): its clip
+           * sized with it, about the same point, so a strip that cuts off
+           * what moves past its edges still does. */
+          if (g_hud_size[0] != 0.0f) {
+              nv2a_hud_clip(g_fbo_w, g_fbo_h, 1.0f + g_hud_size[0], g_hud_size[1],
+                            g_hud_size[2], &cx0, &cy0, &cx1, &cy1);
               clip = 1;
           }
           /* A menu's 3D map, its yellow lines with it: from the grey bar's
@@ -13647,11 +13789,14 @@ static void gl_method(uint32_t method, uint32_t param)
                   g_wide_strip = piece + 1u;
               } else {
                   g_hud_side = side; g_hud_piece = piece; g_hud_flags = flags;
+                  g_hud_whole = nv2a_wide_hud_whole_view(S.u.vp_scale[0]);
                   /* A part over a filled frame's sides moves nothing to an
                    * edge: the frame is still filled, under it. Nor does a
-                   * part whose bars go across, or the pause map. */
+                   * part whose bars go across, the pause map, or a HUD
+                   * piece in the middle. */
                   if (side != NV2A_WIDE_HUD_NONE && side != NV2A_WIDE_HUD_OVER
-                      && side != NV2A_WIDE_HUD_BARS && side != NV2A_WIDE_HUD_LINES)
+                      && side != NV2A_WIDE_HUD_BARS && side != NV2A_WIDE_HUD_LINES
+                      && side != NV2A_WIDE_HUD_MIDDLE)
                       g_wide_moved = 1;
               }
           } else {
@@ -14163,6 +14308,30 @@ static void seethru_start(void)
 #endif
 }
 
+/* Display > HUD from the start: the window's hudscale=, else 1x
+ * (NV2A_HUD_TENTHS_DEFAULT), a number from 0.5 to 1.5 taken to the nearest
+ * tenth; any other is 1x, and the log says so. And hudoff=: the HUD
+ * disabled for 1 (any number but 0), shown without it. Their rows are the
+ * window's (sdl_menu_display). */
+static void hud_start(void)
+{
+    int tenths = NV2A_HUD_TENTHS_DEFAULT, off = 0;
+#if defined(NV2A_GL_USE_SDL)
+    double v = 0.0;
+    int got = nv_window_pref_num("hudscale", &v);
+    int t = got > 0 ? nv2a_hud_parse(v) : -1;
+    if (t >= 0) tenths = t;
+    else if (got)
+        fprintf(stderr, "  [HUD] hudscale= isn't from 0.5 to 1.5: 1.0x\n");
+    v = 0.0;
+    off = nv_window_pref_num("hudoff", &v) > 0 && v != 0.0;
+#endif
+    g_hud_tenths = tenths;
+    g_hud_off = off;
+    fprintf(stderr, "  [HUD] HUD scale %.1fx, the HUD %s (settings)\n", tenths / 10.0,
+            off ? "disabled" : "shown");
+}
+
 /* 2D upscaling from the start: the window's setting, else 4x
  * (NV2A_UP_DEFAULT). Its menu row, Menus and HUD, is Upscaling's first
  * (gfx_init). */
@@ -14265,6 +14434,7 @@ static int gfx_init(uint32_t w, uint32_t h)
     up_sharp_start();
     up_edge_start();
     up_clean_start();
+    hud_start();
 #if defined(XBOXRECOMP_MENU)
     sdl_menu_smaa();
     sdl_menu_msaa();

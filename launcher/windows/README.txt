@@ -94,6 +94,15 @@ Full screen and the free camera's own settings stay as you set them. The game
 restarts if the render scale, the shader cache or the audio effects change,
 so save first.
 
+Display > HUD in the in-game menu has HUD scale, which draws the HUD at
+0.5x to 1.5x its size (1x, the default), a tenth at each - or +, and
+Disable HUD, which hides it. Each piece keeps its distance from the screen's
+edges and grows or shrinks from there; the signs and the counter in the
+middle of the screen grow or shrink in place. Both change straight away, and
+are remembered as hudscale= (0.5 to 1.5) and hudoff= (1 for hidden) in the
+settings file. In split screen the HUD keeps its own size, though Disable HUD
+still hides it.
+
 Display > Draw distance in the in-game menu is how far away the game draws
 the things in its world: crowds, spray cans, props you can knock over,
 traffic, the police and the race's checkpoints. 1x is the game's own

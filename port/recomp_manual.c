@@ -4263,17 +4263,22 @@ void sub_00042EE0(void)
  * widescreen gives the HUD a wider screen to be at the edges of. So these
  * overrides mark the start and the end of a piece's draws in D3D's push
  * buffer (widescreen_hud_begin and _end), and the renderer moves what is
- * drawn between the marks to the piece's side (nv2a_wide.h). The marks are
+ * drawn between the marks to the piece's side (nv2a_wide.h). Display > HUD
+ * scale sizes what is drawn between them too, or draws none of it
+ * (nv2a_hud_scale.h), so they are written whenever the scene is widened or
+ * the HUD isn't at the game's own size (nv2a_hud_sized). The marks are
  * written as D3D writes a method (sub_0018EC80): at its device's put
  * pointer, after its make-space call sub_001916B0 when the pointer is at the
  * limit, which takes no arguments and returns the new put pointer. In 4:3,
- * and on the screens the game keeps 4:3, nothing is marked. The font call's
+ * and on the screens the game keeps 4:3, with the HUD at its own size,
+ * nothing is marked. The font call's
  * override, after them, has a piece's text drawn with the piece rather than
  * later with all the text (widescreen_hud.h). tests/widescreen_hud checks
  * the pieces, the marks and how they are written, and the text's way; that
  * each piece then sits at the edge needs the game and the whole renderer,
  * which is the test build's HUD step. */
 #include "widescreen_hud.h"
+extern int nv2a_hud_sized(void);
 #define D3D_MAKE_SPACE 0x001916B0u      /* D3D's make-space call (no arguments) */
 extern void sub_001916B0(void);
 static uint32_t d3d_make_space(void)
@@ -4283,7 +4288,7 @@ static uint32_t d3d_make_space(void)
 static int wide_hud_begin(int piece)
 {
     return widescreen_hud_begin((uint8_t *)g_xbox_mem_offset, MEM32(D3D_DEVICE), piece,
-                                nv2a_wide_scene(), d3d_make_space);
+                                nv2a_wide_scene() || nv2a_hud_sized(), d3d_make_space);
 }
 static void wide_hud_end(int piece, int marked)
 {
@@ -4293,9 +4298,10 @@ static void wide_hud_end(int piece, int marked)
 /* Each piece's function, as the HUD manager's walk calls it (its class's
  * slot +0xC, with this in ecx): its draws between its marks. The classes
  * are the HUD's own, made only by the HUD manager (sub_00108870 and
- * sub_001077D0). The HUD's signs, such as the stop sign, aren't marked:
- * their models put them in the middle of the screen, where they stay (the
- * street pause menu's area name, also a sign, goes with that menu, below). */
+ * sub_001077D0). The HUD's own signs, such as the stop sign, are marked in
+ * the middle, where their models put them and they stay, for HUD scale
+ * alone (the street pause menu's area name, also a sign, goes with that
+ * menu, below). */
 /* sub_001060B0: the health bar and its border (class 0x1D1F98), at the top
  * right. */
 extern void sub_001060B0_gen(void);
@@ -4393,6 +4399,18 @@ void sub_001045D0(void)
     int marked = wide_hud_begin(WIDE_HUD_MESSAGE);
     sub_001045D0_gen();
     wide_hud_end(WIDE_HUD_MESSAGE, marked);
+}
+/* sub_00104AB0: a label and a three-digit number in the middle of the
+ * screen (class 0x1D1F18), shown for two seconds when the number changes.
+ * The HUD manager makes it (sub_001047B0, from sub_001077D0), under the
+ * narrow root 0x1163 rather than itself; it stays in the middle in
+ * widescreen, and is marked there for HUD scale (NV2A_WIDE_HUD_MIDDLE). */
+extern void sub_00104AB0_gen(void);
+void sub_00104AB0(void)
+{
+    int marked = wide_hud_begin(WIDE_HUD_COUNTER);
+    sub_00104AB0_gen();
+    wide_hud_end(WIDE_HUD_COUNTER, marked);
 }
 /* ---- the menus laid out for widescreen (widescreen_menus.h) ------------------
  * The game lays its menus out for a 4:3 screen, and in widescreen they sit
@@ -4677,7 +4695,8 @@ void sub_0005CB90(void) { wide_menu_node(sub_0005CB90_gen, 0x0005CB90u); }
  * another area, a sign of the arrow's object's, goes there too, the arrow
  * staying where it is. The result screens' banners, YOU WIN, CLEARED, GAME
  * OVER and YOU LOSE, are signs the result flow makes, and go to the right
- * edge. The HUD's own signs, such as the stop sign, stay in the middle. */
+ * edge. The HUD's own signs, such as the stop sign, stay in the middle,
+ * marked there for HUD scale (widescreen_hud_sign, WIDE_HUD_SIGN). */
 extern void sub_000FC370_gen(void);
 void sub_000FC370(void)
 {
@@ -4687,7 +4706,11 @@ void sub_000FC370(void)
                                 &piece)
         : NV2A_WIDE_HUD_NONE;
     int marked = side != NV2A_WIDE_HUD_NONE && wide_menu_mark(piece, side);
+    int hud = side == NV2A_WIDE_HUD_NONE
+           && widescreen_hud_sign((uint8_t *)g_xbox_mem_offset, g_ecx)
+           && wide_hud_begin(WIDE_HUD_SIGN);
     sub_000FC370_gen();
+    wide_hud_end(WIDE_HUD_SIGN, hud);
     wide_menu_unmark(piece, marked);
 }
 /* sub_000F7F00: the draw of a header (class 0x1D0770, this in ecx), which

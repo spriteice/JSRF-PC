@@ -373,6 +373,7 @@ NV2A_GLSL_VERSION
 "uniform float wideShift; // widescreen: a framed 3D view moved toward the centre, pixels\n"
 "uniform float wideAcross; // widescreen: a menu part stretched across the width, its x scale less one\n"
 "uniform float wideOff; // widescreen: the side fill's copy of a draw, its x offset (NDC)\n"
+"uniform vec3 hudSize; // HUD scale: a HUD piece's size less one, and the point it is sized about (NDC)\n"
 "uniform int  fogEnable; // NV097_SET_FOG_ENABLE\n"
 "uniform int  fogMode;   // NV097_SET_FOG_MODE: 0 linear, 1 exp, 2 exp2, +4 the _ABS forms\n"
 "uniform vec2 fogParam;  // NV097_SET_FOG_PARAMS 0 and 1\n"
@@ -611,6 +612,8 @@ static void emit_viewport_epilogue(SB *sb, int ff)
             "    ndc.w = oPos.w;\n"
             "    gl_Position = vec4(ndc.xyz * ndc.w, ndc.w);\n"
             "    gl_Position.x = gl_Position.x * (1.0 + wideAcross) + wideOff * gl_Position.w;\n"
+            "    gl_Position.xy = gl_Position.xy * (1.0 + hudSize.x)\n"
+            "                   - hudSize.yz * (hudSize.x * gl_Position.w);\n"
             "    oFogC = nv_fog(oFog.x);\n"
             "    gl_PointSize = max(oPts.x, 1.0);\n");
         return;
@@ -727,6 +730,11 @@ static void emit_viewport_epilogue(SB *sb, int ff)
         "    // screen, magnified about the column it carries out\n"
         "    // (nv2a_wide_fill_copy), with wideOff; 0 for every other draw.\n"
         "    gl_Position.x = gl_Position.x * (1.0 + wideAcross) + wideOff * gl_Position.w;\n"
+        "    // A HUD piece at HUD scale's size, sized about its anchor\n"
+        "    // (nv2a_hud_scale.h): x and y times 1 + hudSize.x, the anchor\n"
+        "    // (hudSize.yz) staying where it is; 0 for every other draw.\n"
+        "    gl_Position.xy = gl_Position.xy * (1.0 + hudSize.x)\n"
+        "                   - hudSize.yz * (hudSize.x * gl_Position.w);\n"
         "    oFogC = nv_fog(oFog.x);\n"
         "    gl_PointSize = max(oPts.x, 1.0);\n");
 }

@@ -48,6 +48,7 @@ const Nv2aUniformDesc nv2a_uniform_desc[NV2A_U_COUNT] = {
     V("ffRevZ",     VEC4,  1),
     V("wideAcross", FLOAT, 1),
     V("wideOff",    FLOAT, 1),
+    V("hudSize",    VEC3,  1),
     /* fragment stage */
     F("drawTint",   VEC4,  1),
     F("fogColor",   VEC4,  1),

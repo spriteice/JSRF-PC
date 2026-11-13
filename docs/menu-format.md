@@ -13,7 +13,7 @@ in `port/music_info.c`, Audio in `port/audio.c`, Controller in
 `menu.h`). A row can instead go right below another row of its menu, which it
 names, whichever of the two was added first
 (`under` in `menu.h`): rows added as the game starts can sit among the
-window's, as Draw distance and Far buildings sit under Render scale, in the
+window's, as Draw distance and Far buildings sit under the HUD submenu, in the
 order they were added, or among another module's, as Default cam fix sits
 under Controller's Free camera. If no row has that name, it goes at the end of
 its menu, above the last row, and the log says so once.
