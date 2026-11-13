@@ -20,6 +20,20 @@ typedef struct js_download_item {
 typedef void (*js_update_fn)(void *ctx, double frac_from, double frac_to, int secs,
                              const char *text, const char *log);
 
+/* The bar, as the window draws it: where its step started, easing towards
+ * where it ends over about secs seconds. Times are in seconds, on the
+ * caller's own clock. */
+typedef struct js_bar {
+    double from, to;
+    int secs;
+    double since;      /* when the step started */
+} js_bar;
+
+/* A step, as js_update_fn gives it (from < 0: no change). */
+void js_bar_set(js_bar *b, double now, double from, double to, int secs);
+/* Where the bar is now: 0 to 1. */
+double js_bar_at(const js_bar *b, double now);
+
 /* Where a step reports, and the flag that stops it (the window's close). */
 typedef struct js_progress {
     js_update_fn update;

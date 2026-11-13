@@ -36,9 +36,7 @@ typedef void (JS_GLAPI *gl_clear_fn)(unsigned);
 /* What the worker tells the window, under g_mu. */
 struct Shared {
     SDL_mutex *mu;
-    double from, to;      /* the bar: from, moving towards to... */
-    int secs;             /* ...over about this many seconds */
-    Uint64 since;         /* when that step started */
+    js_bar bar;
     char text[512];       /* what is happening, for the player */
     char lines[8][256];   /* the log's last lines */
     int nlines;
@@ -48,16 +46,17 @@ struct Shared {
 };
 static Shared g;
 
+/* The window's clock, in seconds, for the bar. */
+static double seconds(void)
+{
+    return (double)SDL_GetTicks64() / 1000.0;
+}
+
 static void on_update(void *ctx, double from, double to, int secs, const char *text, const char *log)
 {
     (void)ctx;
     SDL_LockMutex(g.mu);
-    if (from >= 0) {
-        g.from = from;
-        g.to = to >= 0 ? to : from;
-        g.secs = secs;
-        g.since = SDL_GetTicks64();
-    }
+    js_bar_set(&g.bar, seconds(), from, to, secs);
     if (text) { strncpy(g.text, text, sizeof g.text - 1); g.text[sizeof g.text - 1] = 0; }
     if (log) {
         if (g.nlines == 8) { memmove(g.lines[0], g.lines[1], sizeof g.lines[0] * 7); g.nlines = 7; }
@@ -80,20 +79,13 @@ static int worker(void *arg)
     return 0;
 }
 
-/* The bar: where the step started, easing towards where it ends, never
- * quite there until the next step says so. */
 static float bar_now(void)
 {
     double f;
     SDL_LockMutex(g.mu);
-    f = g.from;
-    if (g.to > g.from && g.secs > 0) {
-        double t = (double)(SDL_GetTicks64() - g.since) / 1000.0 / g.secs;
-        double e = t < 1 ? t * 0.9 : 0.9 + 0.09 * (1 - 1 / (1 + (t - 1)));
-        f = g.from + (g.to - g.from) * e;
-    }
+    f = js_bar_at(&g.bar, seconds());
     SDL_UnlockMutex(g.mu);
-    return (float)(f < 0 ? 0 : f > 1 ? 1 : f);
+    return (float)f;
 }
 
 enum Step { ASK, WORK, FAILED, MISMATCH, FINISH, DONE };
@@ -254,7 +246,7 @@ extern "C" int jsrf_setup_run(jsrf_setup *s)
                 job.download = !local;
                 job.prog.update = on_update;
                 job.prog.cancel = &g.cancel;
-                g.from = g.to = 0;
+                js_bar_set(&g.bar, seconds(), 0, 0, 0);
                 g.finished = 0;
                 snprintf(g.text, sizeof g.text, "%s", local ? "Starting" : "Downloading the tools");
                 th = SDL_CreateThread(worker, "setup", &job);

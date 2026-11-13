@@ -3,9 +3,10 @@
  * network: SHA-256, the key=value files, when the engine is ready and when the
  * setup must run, the tools folder's mark, unpacking the tools' Python (and
  * refusing what would land outside its folder), a download that fails (tried
- * again after a wait, which closing the window stops), what Delete takes, running a
- * program with only the environment given, and the whole first start the
- * console's way, with a stand-in for the tools' Python.
+ * again after a wait, which closing the window stops), the bar's easing,
+ * what Delete takes, running a program with only the environment given, and
+ * the whole first start the console's way, with a stand-in for the tools'
+ * Python.
  *
  *   test <work dir>
  *
@@ -268,6 +269,31 @@ static void test_download_again(void)
               "  and closing the window in the wait stops it at once");
     }
     check(!js_is_file(dest) && !js_is_file(part), "  nothing of it left");
+}
+
+/* ---- the bar ---- */
+
+static int close_to(double a, double b)
+{
+    return a > b - 1e-9 && a < b + 1e-9;
+}
+
+static void test_bar(void)
+{
+    js_bar b;
+    memset(&b, 0, sizeof b);
+    js_bar_set(&b, 100, 0.2, 0.6, 4);
+    check(close_to(js_bar_at(&b, 100), 0.2), "the bar: a step starts where it says");
+    check(close_to(js_bar_at(&b, 102), 0.2 + 0.4 * 0.45) && close_to(js_bar_at(&b, 104), 0.2 + 0.4 * 0.9),
+          "  eases towards its end, 90% of the way at its time");
+    check(js_bar_at(&b, 1e9) < 0.6 && js_bar_at(&b, 1e9) > 0.2 + 0.4 * 0.98,
+          "  and creeps on after it, never quite there");
+    js_bar_set(&b, 105, -1, 0.9, 10);
+    check(close_to(js_bar_at(&b, 104), 0.2 + 0.4 * 0.9), "  an update with no position changes nothing");
+    js_bar_set(&b, 106, 0.5, -1, 0);
+    check(close_to(js_bar_at(&b, 200), 0.5), "  a position with no end stays there");
+    js_bar_set(&b, 107, 1.5, 2.0, 1);
+    check(close_to(js_bar_at(&b, 107), 1.0), "  and never past the whole");
 }
 
 /* ---- unpacking ---- */
@@ -581,6 +607,7 @@ int main(int argc, char **argv)
     test_ready();
     test_tools();
     test_download_again();
+    test_bar();
     test_untar();
     test_delete();
 #ifndef _WIN32

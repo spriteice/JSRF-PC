@@ -1116,6 +1116,30 @@ int jsrf_setup_needed(const char *root)
     return js_is_file(p) && !jsrf_setup_engine_ready(root);
 }
 
+/* ---- the bar ----------------------------------------------------------------------------- */
+
+void js_bar_set(js_bar *b, double now, double from, double to, int secs)
+{
+    if (from < 0) return;
+    b->from = from;
+    b->to = to >= 0 ? to : from;
+    b->secs = secs;
+    b->since = now;
+}
+
+/* Where the step started, easing towards where it ends, never quite there
+ * until the next step says so. */
+double js_bar_at(const js_bar *b, double now)
+{
+    double f = b->from;
+    if (b->to > b->from && b->secs > 0) {
+        double t = (now - b->since) / b->secs;
+        double e = t < 1 ? t * 0.9 : 0.9 + 0.09 * (1 - 1 / (1 + (t - 1)));
+        f = b->from + (b->to - b->from) * e;
+    }
+    return f < 0 ? 0 : f > 1 ? 1 : f;
+}
+
 /* ---- the first start's steps ------------------------------------------------------------- */
 
 static void job_log(js_job *j, const char *text)
