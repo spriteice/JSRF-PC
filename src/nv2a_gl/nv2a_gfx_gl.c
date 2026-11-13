@@ -421,13 +421,13 @@ static size_t glx_tex_level(GLint l, uint32_t w, uint32_t h, int dxt, const void
     return n;
 }
 
-/* tex_new's and tex_new_dxt's texture: RGBA8 texels, or DXT blocks. */
+/* tex_new's and tex_new_dxt's texture: RGBA8 texels, or DXT blocks, and
+ * the chain s says. Its levels only: how it is sampled is the binding's
+ * (glx_texture). */
 static uint32_t glx_tex_make(uint32_t w, uint32_t h, int dxt, const void *rgba,
                              const Nv2aSampler *s)
 {
-    static const GLint wrap_of[3] = { GL_CLAMP_TO_EDGE, GL_REPEAT, GL_MIRRORED_REPEAT };
     GLuint t = 0;
-    GLenum mn, mg;
     size_t n;
 
     glGenTextures(1, &t);
@@ -435,7 +435,7 @@ static uint32_t glx_tex_make(uint32_t w, uint32_t h, int dxt, const void *rgba,
     scratch_bind(t);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     n = glx_tex_level(0, w, h, dxt, rgba);
-    mg = s->mag_linear ? GL_LINEAR : GL_NEAREST;
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
     if (s->mip && s->levels > 1 && rgba) {
         /* The title's own chain, level after level as rgba holds it. */
         const uint8_t *p = (const uint8_t *)rgba + n;
@@ -445,31 +445,13 @@ static uint32_t glx_tex_make(uint32_t w, uint32_t h, int dxt, const void *rgba,
             hl = hl > 1 ? hl / 2 : 1;
             p += glx_tex_level((GLint)l, wl, hl, dxt, p);
         }
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, (GLint)s->levels - 1);
     } else if (s->mip) {
         glGenerateMipmap(GL_TEXTURE_2D);
-    }
-    if (s->mip) {
-        mn = s->mip == 1 ? (s->min_linear ? GL_LINEAR_MIPMAP_NEAREST : GL_NEAREST_MIPMAP_NEAREST)
-                         : (s->min_linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR);
-        if (s->aniso > 1) {
-            /* Asked once: a driver without the extension flags the query as
-             * an error, and every upload repeating it would pin errors on
-             * the draws the GL error check looks at. */
-            static GLfloat cap = -1.0f;
-            GLfloat a = (GLfloat)s->aniso;
-            if (cap < 0.0f) { cap = 1.0f; glGetFloatv(0x84FF, &cap); }   /* MAX_TEXTURE_MAX_ANISOTROPY */
-            if (a > cap) a = cap;
-            if (a > 1.0f) glTexParameterf(GL_TEXTURE_2D, 0x84FE, a);
-        }
     } else {
-        mn = s->min_linear ? GL_LINEAR : GL_NEAREST;
+        /* Level 0 alone, whole under any filter. */
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
     }
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, (GLint)mn);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, (GLint)mg);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap_of[s->wrap_s < 3 ? s->wrap_s : 0]);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_of[s->wrap_t < 3 ? s->wrap_t : 0]);
     return t;
 }
 
@@ -879,10 +861,94 @@ static int glx_uniform_f_part(int id, int first, const float *v, int n)
     return 1;
 }
 
-static void glx_texture(int unit, uint32_t tex)
+/*
+ * Samplers: how a stage samples its texture, bound beside it at each draw
+ * (glx_texture), as on the console, where the filters and wrap are the
+ * stage's and one texture is sampled any number of ways. One sampler object
+ * for each way of sampling asked for, made the first time and kept: the
+ * title samples in a few dozen. A texture holds only its levels
+ * (glx_tex_make, glx_tex_upscale), so it is held once however its draws
+ * sample it.
+ */
+#define MAX_SAMPLERS 256
+#define SAMPLER_UNITS 4                 /* the texture stages */
+static struct { uint32_t key; GLuint smp; } g_smp[MAX_SAMPLERS];
+static int      g_nsmp;
+static GLuint   g_unit_smp[SAMPLER_UNITS];  /* bound to each stage now */
+static int      g_unit_smp_ok;              /* ... and whether that is known */
+
+/* A way of sampling as one number: the parts a sampler object holds. A
+ * copy's `above` only where the draw samples without mipmaps, as with them
+ * the whole chain is sampled. */
+static uint32_t sampler_key_of(const Nv2aSampler *s)
 {
+    return (uint32_t)(s->min_linear != 0) | (uint32_t)(s->mag_linear != 0) << 1
+         | (uint32_t)(s->mip & 3) << 2 | (uint32_t)(s->wrap_s & 3) << 4
+         | (uint32_t)(s->wrap_t & 3) << 6 | (uint32_t)(s->mip ? s->aniso : 0) << 8
+         | (uint32_t)(s->mip ? 0 : s->above & 7) << 16;
+}
+
+/* The sampler object for s, made the first time; 0, the texture's own
+ * sampling, where the table is full or the device made none. */
+static GLuint sampler_for(const Nv2aSampler *s)
+{
+    static const GLint wrap_of[3] = { GL_CLAMP_TO_EDGE, GL_REPEAT, GL_MIRRORED_REPEAT };
+    uint32_t key = sampler_key_of(s);
+    GLuint smp = 0;
+    GLint mn;
+    int i;
+    for (i = 0; i < g_nsmp; i++)
+        if (g_smp[i].key == key) return g_smp[i].smp;
+    if (g_nsmp == MAX_SAMPLERS) {
+        static int said;
+        if (!said++)
+            fprintf(stderr, "  [GL] more than %d ways of sampling: the rest sampled as made\n",
+                    MAX_SAMPLERS);
+        return 0;
+    }
+    glGenSamplers(1, &smp);
+    if (!smp) return 0;
+    if (s->mip)
+        mn = s->mip == 1 ? (s->min_linear ? GL_LINEAR_MIPMAP_NEAREST : GL_NEAREST_MIPMAP_NEAREST)
+                         : (s->min_linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR);
+    else if (s->above) {
+        /* A copy without the title's mipmaps: its own levels, down to the
+         * game's and no further. */
+        mn = s->min_linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_NEAREST;
+        glSamplerParameterf(smp, GL_TEXTURE_MAX_LOD, (GLfloat)s->above);
+    } else
+        mn = s->min_linear ? GL_LINEAR : GL_NEAREST;
+    glSamplerParameteri(smp, GL_TEXTURE_MIN_FILTER, mn);
+    glSamplerParameteri(smp, GL_TEXTURE_MAG_FILTER, s->mag_linear ? GL_LINEAR : GL_NEAREST);
+    glSamplerParameteri(smp, GL_TEXTURE_WRAP_S, wrap_of[s->wrap_s < 3 ? s->wrap_s : 0]);
+    glSamplerParameteri(smp, GL_TEXTURE_WRAP_T, wrap_of[s->wrap_t < 3 ? s->wrap_t : 0]);
+    if (s->mip && s->aniso > 1) {
+        GLfloat a = (GLfloat)s->aniso, cap = (GLfloat)glx_aniso_max();
+        if (a > cap) a = cap;
+        if (a > 1.0f) glSamplerParameterf(smp, 0x84FE, a);   /* MAX_ANISOTROPY */
+    }
+    g_smp[g_nsmp].key = key;
+    g_smp[g_nsmp++].smp = smp;
+    return smp;
+}
+
+static void glx_texture(int unit, uint32_t tex, const Nv2aSampler *s)
+{
+    GLuint smp = s ? sampler_for(s) : 0;
     glActiveTexture((GLenum)(GL_TEXTURE0 + unit));
     glBindTexture(GL_TEXTURE_2D, (GLuint)tex);
+    if (unit < 0 || unit >= SAMPLER_UNITS) {
+        glBindSampler((GLuint)unit, smp);
+        return;
+    }
+    if (!g_unit_smp_ok) {
+        memset(g_unit_smp, 0xFF, sizeof g_unit_smp);
+        g_unit_smp_ok = 1;
+    }
+    if (g_unit_smp[unit] != smp) {
+        glBindSampler((GLuint)unit, smp);
+        g_unit_smp[unit] = smp;
+    }
 }
 
 /* A swizzle, so the shaders stay as they are: core since GL 3.3 and ES 3.0. */
@@ -962,6 +1028,7 @@ static GLenum gl_stencil_op(uint32_t v)
 
 static void glx_state_invalidate(void)
 {
+    g_unit_smp_ok = 0;
     g_last.depth_test = g_last.depth_func = g_last.depth_mask = -1;
     g_last.blend_enable = g_last.blend_src = g_last.blend_dst = -1;
     g_last_cm_reset = 1;
@@ -1866,7 +1933,6 @@ static uint32_t glx_tex_upscale(uint32_t tex, uint32_t w, uint32_t h, int factor
                                 int keep_alpha, float weight, float edge,
                                 const struct Nv2aUpClean *clean, const Nv2aSampler *s)
 {
-    static const GLint wrap_of[3] = { GL_CLAMP_TO_EDGE, GL_REPEAT, GL_MIRRORED_REPEAT };
     int steps = factor == 2 ? 1 : factor == 4 ? 2 : factor == 8 ? 3 : 0, k;
     GLuint out = 0, cur;
     GLint l, chain, vao = 0;
@@ -1951,33 +2017,17 @@ static uint32_t glx_tex_upscale(uint32_t tex, uint32_t w, uint32_t h, int factor
     }
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
 
-    /* How it is sampled: s's filters and wrap, over the levels. */
-    scratch_bind(out);
-    if (s->mip) {
-        /* With no chain of the title's, the one below the game's size made
-         * from it, as the driver made the game's: from the last new level,
-         * which is the game's. */
-        if (chain == 1) {
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 1000);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, steps);
-            glGenerateMipmap(GL_TEXTURE_2D);
-        }
+    /* With s->mip and no chain of the title's, the one below the game's
+     * size made from it, as the driver made the game's: from the last new
+     * level, which is the game's. How the copy is sampled is the binding's
+     * (glx_texture, with its new levels as Nv2aSampler's `above`). */
+    if (s->mip && chain == 1) {
+        scratch_bind(out);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 1000);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, steps);
+        glGenerateMipmap(GL_TEXTURE_2D);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-                        s->mip == 1 ? (s->min_linear ? GL_LINEAR_MIPMAP_NEAREST : GL_NEAREST_MIPMAP_NEAREST)
-                                    : (s->min_linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR));
-        if (s->aniso > 1) {
-            GLfloat a = (GLfloat)s->aniso, cap = (GLfloat)glx_aniso_max();
-            if (a > cap) a = cap;
-            if (a > 1.0f) glTexParameterf(GL_TEXTURE_2D, 0x84FE, a);   /* MAX_ANISOTROPY */
-        }
-    } else {
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-                        s->min_linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_NEAREST);
     }
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, s->mag_linear ? GL_LINEAR : GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap_of[s->wrap_s < 3 ? s->wrap_s : 0]);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_of[s->wrap_t < 3 ? s->wrap_t : 0]);
 
     /* Back as the title's next draw expects it, as after SMAA. */
     glActiveTexture(GL_TEXTURE0 + SCRATCH_UNIT);

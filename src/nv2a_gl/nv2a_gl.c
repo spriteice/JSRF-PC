@@ -1108,9 +1108,9 @@ static struct {
     uint32_t last_draw;     /* when this entry was last looked up */
     uint32_t tex;           /* the device's texture */
     uint32_t va, serial;    /* read from: where, and the allocation (contig_serial) */
-    uint32_t sampling;      /* how it is sampled (sampler_key): part of what it is */
+    uint32_t sampling;      /* how the draw that took it for a row samples it
+                             * (sampler_key, up_took): its copies' (copy_sampler) */
     int      bias;          /* uploaded as a bump source (g_upload_bias_bg) */
-    int      aniso;         /* has mipmaps, so takes the setting (tex_aniso) */
     int      used;
     size_t   held;          /* bytes handed to the device: RGBA8, or DXT as stored */
     uint8_t  up;            /* 2D upscaling: UP_NONE, ... (up_note, up_take) */
@@ -1122,6 +1122,8 @@ static struct {
                              * upscaling copies' recency, where `drawn` counts passes */
     uint32_t asked;         /* the frame a graffiti copy at a draw was last tried
                              * for it, plus one; 0 not yet (upg_capture) */
+    uint8_t  above;         /* `tex` a copy: its levels above the game's size (1 at
+                             * 2x, 2 at 4x, 3 at 8x), as Nv2aSampler's; 0 the game's */
 } g_tcache[TEX_CACHE];
 /* A texture's part in 2D, 3D or graffiti upscaling: not taken yet
  * (UP_NONE); taken by the rule and waiting for its copy (UP_WANTED); never
@@ -1133,10 +1135,10 @@ enum { UP_NONE, UP_WANTED, UP_NEVER, UP_MADE, UP_FAILED };
 /* The census lines a texture has had: the 2D verdict's, and that of a draw
  * that is neither kind of 2D but has depth off (nv2a_up_census_wants); the
  * 3D verdict's, and that of a draw with the depth test off
- * (nv2a_up3_census_wants); and the graffiti verdict's and its depth-off
- * line (nv2a_upg_census_wants). */
+ * (nv2a_up3_census_wants); the graffiti verdict's and its depth-off line
+ * (nv2a_upg_census_wants); and its copy drawn another way (up_other_way). */
 enum { UP_SAID_VERDICT = 1, UP_SAID_NOT_2D = 2, UP_SAID_3D = 4, UP_SAID_3D_DEPTH = 8,
-       UP_SAID_G = 16, UP_SAID_G_DEPTH = 32 };
+       UP_SAID_G = 16, UP_SAID_G_DEPTH = 32, UP_SAID_OTHER = 64 };
 
 /*
  * Anisotropic filtering: the most samples a texture with mipmaps is given
@@ -4060,8 +4062,10 @@ static uint32_t surface_texture_for(const TexStage *t, float *sx, float *sy, int
 }
 
 /* The cache slot upload_texture_inner's texture came from, for the bind
- * loop to note how the draw binds it (up_note); -1 for none. */
+ * loop to note how the draw binds it (up_note); -1 for none. And how the
+ * draw samples it (tex_sampler), which the bind loop binds it with. */
 static int g_tex_slot = -1;
+static Nv2aSampler g_tex_smp;
 
 static uint32_t upload_texture(const TexStage *t)
 {
@@ -4152,6 +4156,15 @@ static void up3_bind(Nv2aUp3Bind *b, int k, int screen, int over, int mode, int 
 }
 
 static int up_blue_alpha(void);
+static uint32_t sampler_key(const Nv2aSampler *s);
+static void sampler_of_key(uint32_t key, Nv2aSampler *s);
+
+/* A row took the texture in slot k at this draw: its copy is made with the
+ * wrap and magnification this draw samples it with (copy_sampler). */
+static void up_took(int k)
+{
+    g_tcache[k].sampling = sampler_key(&g_tex_smp);
+}
 
 /* A 3D census line (nv2a_up3_census_line), with whether the draw's combiner
  * uses blue-to-alpha. */
@@ -4203,6 +4216,7 @@ static void up2_note(int k, int screen, int over, int mode, int alpha_only)
         if (v == NV2A_UP_TAKEN) {
             g_tcache[k].up = UP_WANTED;
             g_up_sec.taken++;
+            up_took(k);
             if (g_tcache[k].up3 == UP_WANTED || g_tcache[k].up3 == UP_FAILED
              || g_tcache[k].up3 == UP_MADE) {
                 if (g_up_log) {
@@ -4247,7 +4261,7 @@ static void up3_note(int k, int screen, int over, int mode, int alpha_only)
     up3_bind(&b, k, screen, over, mode, alpha_only);
     v = nv2a_up3_rule(&b);
     if (g_tcache[k].up3 == UP_NONE) {
-        if (v == NV2A_UP3_TAKEN) { g_tcache[k].up3 = UP_WANTED; g_up3_sec.taken++; }
+        if (v == NV2A_UP3_TAKEN) { g_tcache[k].up3 = UP_WANTED; g_up3_sec.taken++; up_took(k); }
         else if (nv2a_up3_of_texture(v)) g_tcache[k].up3 = UP_NEVER;
     }
     said = v == NV2A_UP3_NO_DEPTH ? UP_SAID_3D_DEPTH : UP_SAID_3D;
@@ -4298,7 +4312,7 @@ static void upg_note(int k, int screen, int over, int mode, int alpha_only)
     up3_bind(&b, k, screen, over, mode, alpha_only);
     v = nv2a_upg_rule(&b);
     if (g_tcache[k].upg == UP_NONE) {
-        if (v == NV2A_UP3_TAKEN) { g_tcache[k].upg = UP_WANTED; g_upg_sec.taken++; }
+        if (v == NV2A_UP3_TAKEN) { g_tcache[k].upg = UP_WANTED; g_upg_sec.taken++; up_took(k); }
         else if (nv2a_up3_of_texture(v)) g_tcache[k].upg = UP_NEVER;
     }
     /* A texture of the 3D rule's size is never in this census. */
@@ -4324,6 +4338,31 @@ static void up_note(int k, int screen, int over, int mode, int alpha_only)
     up2_note(k, screen, over, mode, alpha_only);
     up3_note(k, screen, over, mode, alpha_only);
     upg_note(k, screen, over, mode, alpha_only);
+}
+
+/* With RECOMP_GL_UPSCALE_LOG, once a texture: its copy, made with the wrap
+ * and magnification of the draw that took it (copy_sampler), drawn by one
+ * that wraps or magnifies it another way, which then samples a copy whose
+ * edges, and kept alpha, were made for the other. The draw being made
+ * binds the texture in slot k as g_tex_smp says. */
+static void up_other_way(int k)
+{
+    static const char *const wrap[3] = { "clamped", "repeated", "mirrored" };
+    Nv2aSampler made;
+    const Nv2aSampler *now = &g_tex_smp;
+    if (g_up_log <= 0 || k < 0 || !g_tcache[k].above || (g_tcache[k].up_said & UP_SAID_OTHER))
+        return;
+    sampler_of_key(g_tcache[k].sampling, &made);
+    if (made.wrap_s == now->wrap_s && made.wrap_t == now->wrap_t
+     && made.mag_linear == now->mag_linear)
+        return;
+    g_tcache[k].up_said |= UP_SAID_OTHER;
+    fprintf(stderr, "[UPSCALE] copy of %08X %ux%u drawn another way: made %s and %s, magnified %s; "
+                    "drawn %s and %s, magnified %s, into %08X\n",
+            g_tcache[k].offset, g_tcache[k].w, g_tcache[k].h,
+            wrap[made.wrap_s % 3], wrap[made.wrap_t % 3], made.mag_linear ? "linearly" : "nearest",
+            wrap[now->wrap_s % 3], wrap[now->wrap_t % 3], now->mag_linear ? "linearly" : "nearest",
+            S.color_offset);
 }
 static uint64_t vc_hash(const void *data, size_t n, uint64_t seed);   /* the vertex cache's, below */
 /* The bytes a texture's decode reads from its base level. */
@@ -4439,6 +4478,18 @@ static void tcache_verify(void)
 
 /* How a texture is sampled, from its stage's registers: filtering and
  * wrapping, for `nlev` levels of the title's chain (tex_title_levels). */
+/* RECOMP_GL_MIPMAP=1: a chain the device makes for every texture without
+ * one of the title's (tex_sampler, tex_chain), to compare. */
+static int tex_want_mips(void)
+{
+    static int want_mips = -1;
+    if (want_mips < 0) {
+        const char *v = getenv("RECOMP_GL_MIPMAP");
+        want_mips = v ? atoi(v) : 0;
+    }
+    return want_mips;
+}
+
 static void tex_sampler(const TexStage *t, uint32_t nlev, Nv2aSampler *out)
 {
     Nv2aSampler smp;
@@ -4470,11 +4521,7 @@ static void tex_sampler(const TexStage *t, uint32_t nlev, Nv2aSampler *out)
     {
         uint32_t minf = (t->filter >> 16) & 0xF;
         uint32_t magf = (t->filter >> 24) & 0xF;
-        static int want_mips = -1;
-        if (want_mips < 0) {
-            const char *v = getenv("RECOMP_GL_MIPMAP");
-            want_mips = v ? atoi(v) : 0;
-        }
+        int want_mips = tex_want_mips();
 
         /* A generated chain is not the title's chain, and on this title's art
          * that difference is not small.
@@ -4551,18 +4598,23 @@ static void tex_sampler(const TexStage *t, uint32_t nlev, Nv2aSampler *out)
 }
 
 /*
- * The sampler as one number, for the texture cache to tell two apart.
+ * The sampler as one number, as an entry keeps it: the way its copies are
+ * made (copy_sampler), and for the census to tell two ways apart.
  *
- * A device texture is made with its sampling (Nv2aSampler) and keeps it, so
- * the cache has to treat one picture sampled two ways as two textures. It did
- * not: whichever draw uploaded a texture first fixed its wrapping and filtering
- * for every draw after it. The characters are shaded through one shared
- * texture of tone ramps -- a coordinate from the light on the surface picks
- * the tone -- which some of their materials address clamped and some wrapped.
- * A ramp read past its end then came back from the far side of the picture
- * where the title asked for its edge, or the other way round, depending on
- * which material happened to be drawn first in the session: a face or an arm
- * in another material's tones.
+ * How a texture is sampled is each draw's, bound beside it (the device's
+ * texture()), as each of the console's stages has its own filters and wrap.
+ * It was once part of the texture: a device texture was made with its
+ * sampling and kept it, and the cache first found a texture by where it was
+ * and what it looked like alone, so whichever draw uploaded it first fixed
+ * its wrapping and filtering for every draw after it. The characters are
+ * shaded through one shared texture of tone ramps -- a coordinate from the
+ * light on the surface picks the tone -- which some of their materials
+ * address clamped and some wrapped, so a face or an arm came out in another
+ * material's tones. The sampling then became part of what a texture was in
+ * the cache, and one picture sampled two ways was held, and upscaled, twice:
+ * the garage's graffiti sheet, drawn into the picker's picture and into its
+ * preview, took two of the three graffiti copies there. Now each draw's own
+ * sampling goes with its binding, and the picture is held once.
  */
 static uint32_t sampler_key(const Nv2aSampler *s)
 {
@@ -4583,20 +4635,45 @@ static void sampler_of_key(uint32_t key, Nv2aSampler *s)
     s->levels = (uint8_t)(key >> 16 & 0xFF);
 }
 
-/* At the flip: a level of anisotropy asked for since the last one. How a
- * texture is sampled is part of what it is in the cache (sampler_key), so
- * every texture held that takes the level is dropped, and made again at the
- * new one when next drawn. */
+/* The chain a texture with nlev of the title's levels holds, into c's mip
+ * and levels, as tex_new takes them: the title's own where it has one, or
+ * with RECOMP_GL_MIPMAP one the device makes; else level 0 alone. The
+ * picture's, whichever way its draws sample it. */
+static void tex_chain(uint32_t nlev, Nv2aSampler *c)
+{
+    c->mip = (uint8_t)(nlev > 1 || tex_want_mips() ? 2 : 0);
+    c->levels = (uint8_t)(nlev > 1 ? nlev : 0);
+}
+
+/* The sampler a copy of the texture in slot k is made with (tex_upscale):
+ * the wrap Super-xBR reads its neighbours at and the magnification the
+ * game's alpha is kept by, of the draw that took it for a row (its
+ * `sampling`, up_took), over the chain the texture holds. Every
+ * draw then samples the copy its own way. */
+static void copy_sampler(uint32_t k, Nv2aSampler *s)
+{
+    sampler_of_key(g_tcache[k].sampling, s);
+    tex_chain(g_tcache[k].levels, s);
+    s->above = 0;
+}
+
+/* A copy at factor f's levels above the game's size (Nv2aSampler's
+ * `above`): 1 at 2x, 2 at 4x, 3 at 8x. */
+static uint8_t copy_above(int f)
+{
+    return (uint8_t)(f >= 8 ? 3 : f >= 4 ? 2 : 1);
+}
+
+/* At the flip: a level of anisotropy asked for since the last one, which
+ * every draw of a mipmapped texture samples with from now on (tex_aniso):
+ * how a texture is sampled is the draw's, so nothing is made again. */
 static void aniso_take(void)
 {
     int want = g_aniso_want, was = g_aniso_now;
-    uint32_t k, n = 0;
     if (want == was) return;
     g_aniso_now = want;
-    for (k = 0; k < TEX_CACHE; k++)
-        if (g_tcache[k].tex && g_tcache[k].aniso) { tcache_drop(k); n++; }
-    fprintf(stderr, "  [GL] anisotropic filtering: %dx from present %u (was %dx), %u textures made again\n",
-            want, S.flips, was, n);
+    fprintf(stderr, "  [GL] anisotropic filtering: %dx from present %u (was %dx), at every draw\n",
+            want, S.flips, was);
 }
 
 /* An entry's part in the 3D row or, with `graffiti`, the graffiti row. */
@@ -4697,6 +4774,7 @@ static uint64_t world_make(uint32_t k, int graffiti, int *ft, const Nv2aSampler 
     g_prof.tex_held_bytes += (unsigned long long)bytes;
     g_tcache[k].tex = copy;
     g_tcache[k].held = (size_t)bytes;
+    g_tcache[k].above = copy_above(*ft);
     *world_of(k, graffiti) = UP_MADE;
     g_up3_held[*n].bytes = bytes;
     g_up3_held[*n].idle = 0;
@@ -4727,7 +4805,7 @@ static uint64_t world_take(int graffiti, uint64_t spent)
         if (!ft) continue;
         texels = nv2a_up_texels(g_tcache[k].w, g_tcache[k].h, ft);
         if (spent && spent + texels > NV2A_UP_TEXELS_A_FLIP) continue;
-        sampler_of_key(g_tcache[k].sampling, &smp);
+        copy_sampler(k, &smp);
         bytes = nv2a_up_bytes(g_tcache[k].w, g_tcache[k].h, ft, smp.mip != 0, smp.levels);
         if (bytes >= waits) continue;
         /* The row's copies held, once a flip, when there is one to make. */
@@ -4768,7 +4846,7 @@ static void upg_capture(uint32_t k)
     }
     ft = nv2a_upg_factor(g_tcache[k].w, g_tcache[k].h, g_upg_now);
     if (!ft) return;
-    sampler_of_key(g_tcache[k].sampling, &smp);
+    copy_sampler(k, &smp);
     n = world_held(1, &held);
     r = nv2a_up3_room(g_up3_held, n, held,
                       nv2a_up_bytes(g_tcache[k].w, g_tcache[k].h, ft, smp.mip != 0, smp.levels),
@@ -5006,7 +5084,7 @@ static void up_take(void)
         if (g_tcache[k].up3 == UP_MADE) { tcache_drop(k); continue; }
         texels = nv2a_up_texels(g_tcache[k].w, g_tcache[k].h, f);
         if (spent && spent + texels > NV2A_UP_TEXELS_A_FLIP) continue;
-        sampler_of_key(g_tcache[k].sampling, &smp);
+        copy_sampler(k, &smp);
         copy = G->tex_upscale ? G->tex_upscale(g_tcache[k].tex, g_tcache[k].w, g_tcache[k].h, f, 0,
                                                up_weight(), up_edge(), up_clean(k, &c), &smp) : 0;
         if (!copy) {
@@ -5020,6 +5098,7 @@ static void up_take(void)
         g_prof.tex_held_bytes += (unsigned long long)bytes;
         g_tcache[k].tex = copy;
         g_tcache[k].held = (size_t)bytes;
+        g_tcache[k].above = copy_above(f);
         g_tcache[k].up = UP_MADE;
         spent += texels;
         g_up_sec.made++;
@@ -5105,11 +5184,10 @@ static uint32_t upload_texture_inner(const TexStage *t)
     uint32_t va = resolve(t->offset);
     const uint8_t *src = guest(va);
     uint32_t w = t->width, h = t->height, i, hash, key, bytes, nlev, sampling;
-    int other_sampling = 0;
     uint32_t tex;
     uint8_t *rgba = NULL;
     size_t rgba_bytes = 0;      /* handed over: RGBA8, or DXT as it is */
-    Nv2aSampler smp;
+    Nv2aSampler smp, chain;     /* how this draw samples it; the chain it holds */
     int slot = -1, stale = -1, tomb = -1, dxt = 0;
     double start, dec;
 
@@ -5117,6 +5195,9 @@ static uint32_t upload_texture_inner(const TexStage *t)
     nlev = tex_title_levels(t, w, h);
     tex_sampler(t, nlev, &smp);
     sampling = sampler_key(&smp);
+    g_tex_smp = smp;
+    memset(&chain, 0, sizeof chain);
+    tex_chain(nlev, &chain);
 
     /* Same routing census as the vertex arrays, for textures: a texture at
      * a heap VA below the arena mark is decoded from the window instead. */
@@ -5137,7 +5218,9 @@ static uint32_t upload_texture_inner(const TexStage *t)
       } }
 
     /* Cache on where it came from and what it looks like: the sample, at every
-     * lookup, and the whole content once in a while (tcache_verify).
+     * lookup, and the whole content once in a while (tcache_verify). Not on
+     * how the draw samples it, which goes with the binding (sampler_key), so
+     * a picture sampled two ways is one entry.
      *
      * A changed texture is uploaded over its old entry; a new entry would
      * leave the old picture behind, never looked up again, until the table
@@ -5152,7 +5235,7 @@ static uint32_t upload_texture_inner(const TexStage *t)
         if (g_tcache[k].used && g_tcache[k].offset == t->offset
          && g_tcache[k].format == t->color && g_tcache[k].w == w
          && g_tcache[k].h == h && g_tcache[k].bias == g_upload_bias_bg
-         && g_tcache[k].levels == nlev && g_tcache[k].sampling == sampling) {
+         && g_tcache[k].levels == nlev) {
             if (g_tcache[k].hash != hash) {
                 /* The sample changed. Not this frame's: upload over it,
                  * unless a later entry already holds the new picture. */
@@ -5165,9 +5248,6 @@ static uint32_t upload_texture_inner(const TexStage *t)
             g_tex_slot = (int)k;
             return g_tcache[k].tex;
         }
-        if (g_tcache[k].used && g_tcache[k].offset == t->offset && g_tcache[k].format == t->color
-         && g_tcache[k].w == w && g_tcache[k].h == h && g_tcache[k].sampling != sampling)
-            other_sampling = 1;
         if (!g_tcache[k].used) { slot = (int)k; break; }
         if (!g_tcache[k].tex && tomb < 0) tomb = (int)k;   /* see tcache_drop */
     }
@@ -5204,8 +5284,8 @@ static uint32_t upload_texture_inner(const TexStage *t)
     start = mono_now();
 
     /* DXT as it is, where the device takes it (tex_dxt_direct). */
-    if (fmt_is_dxt(t->color) && tex_dxt_direct(&smp)) {
-        tex = G->tex_new_dxt(w, h, t->color == 0x0C ? 1 : t->color == 0x0E ? 3 : 5, src, &smp);
+    if (fmt_is_dxt(t->color) && tex_dxt_direct(&chain)) {
+        tex = G->tex_new_dxt(w, h, t->color == 0x0C ? 1 : t->color == 0x0E ? 3 : 5, src, &chain);
         if (tex) {
             uint32_t l, wl = w, hl = h;
             for (l = 0; l < nlev; l++) {
@@ -5339,21 +5419,20 @@ static uint32_t upload_texture_inner(const TexStage *t)
             }
         } }
     }
-    tex = G->tex_new(w, h, rgba, &smp);
+    tex = G->tex_new(w, h, rgba, &chain);
     free(rgba);
     if (!tex) return 0;
 
 made:
     /* How much of the city has a chain, once a while: uploads with one,
      * and the levels they carried. */
-    { static unsigned long n, with, lv, twice;
+    { static unsigned long n, with, lv;
       n++;
       if (nlev > 1) { with++; lv += nlev; }
-      if (other_sampling) twice++;
       if (n == 200 || n % 2000 == 0)
           fprintf(stderr, "  [GL] mipmaps: %lu of %lu textures uploaded with the title's own "
-                          "chain (%.1f levels each); %lu a second time, sampled another way\n",
-                  with, n, with ? (double)lv / with : 0.0, twice); }
+                          "chain (%.1f levels each)\n",
+                  with, n, with ? (double)lv / with : 0.0); }
     /* Made: what it took, decoding and the rest apart (see g_tmake). */
     { double dt = mono_now() - start;
       g_hf.tex_s += dt;
@@ -5375,7 +5454,6 @@ made:
     g_tcache[slot].sampling = sampling;
     g_tcache[slot].hash = hash; g_tcache[slot].tex = tex;
     g_tcache[slot].bias = g_upload_bias_bg;
-    g_tcache[slot].aniso = smp.mip != 0;
     g_tcache[slot].va = va; g_tcache[slot].serial = contig_serial(va);
     g_tcache[slot].content = tex_content(t->color, h, t->pitch, src, bytes);
     g_tcache[slot].drawn = S.flips;
@@ -5386,6 +5464,7 @@ made:
     g_tcache[slot].up_said = 0;
     g_tcache[slot].born = g_tcache[slot].seen = S.frames;
     g_tcache[slot].asked = 0;
+    g_tcache[slot].above = 0;
     g_tex_slot = slot;
     return tex;
 }
@@ -8286,6 +8365,8 @@ static void do_draw_body(void)
             uint32_t tex = 0;
             float sx = 1.0f, sy = 1.0f;
             int flip;
+            Nv2aSampler bsmp;                   /* how the draw samples a texture */
+            const Nv2aSampler *bound = NULL;    /* ... NULL for a surface's own */
 
             int sslot = -1;
 
@@ -8304,6 +8385,12 @@ static void do_draw_body(void)
                         /* A graffiti copy made for this draw (upg_capture). */
                         if (g_tex_slot >= 0 && g_tcache[g_tex_slot].tex)
                             tex = g_tcache[g_tex_slot].tex;
+                        /* Sampled as the draw asks, over a copy's levels
+                         * where the entry holds one. */
+                        bsmp = g_tex_smp;
+                        bsmp.above = g_tex_slot >= 0 ? g_tcache[g_tex_slot].above : 0;
+                        bound = &bsmp;
+                        up_other_way(g_tex_slot);
                         if (g_tex_slot >= 0 && g_up_log > 0
                          && (g_tcache[g_tex_slot].w > NV2A_UP_SIDE_MAX
                           || g_tcache[g_tex_slot].h > NV2A_UP_SIDE_MAX))
@@ -8317,7 +8404,7 @@ static void do_draw_body(void)
                     }
                 }
             }
-            G->texture(st, tex);
+            G->texture(st, tex, bound);
             /* A surface sampled as a format with no alpha bits reads alpha 1
              * on the console, as decode_texel gives it from memory. Our
              * targets are RGBA8 and keep the alpha every draw wrote, which

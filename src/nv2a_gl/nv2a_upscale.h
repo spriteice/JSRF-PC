@@ -445,8 +445,8 @@ int nv2a_upg_census_line(char *buf, size_t n, uint32_t addr, uint32_t fmt,
                          const Nv2aUp3Bind *b, int vp, int verdict);
 
 /* The setting a new install starts with: 4x, as 3D upscaling's: about
- * 85 MB a sheet, and the garage picker's three copies well under
- * NV2A_UPG_HELD_MAX. */
+ * 85 MB a sheet, and the garage picker's two copies (its sheet and the
+ * chosen design) well under NV2A_UPG_HELD_MAX. */
 #define NV2A_UPG_DEFAULT 4
 
 /* The longest side a graffiti copy may have: a 1024 sheet at 8x. Every
@@ -461,7 +461,10 @@ int nv2a_upg_factor(uint32_t w, uint32_t h, int factor);
 
 /* The most bytes the graffiti copies may hold on the device, together, apart
  * from the 3D copies: 1 GB. A sheet's copy with its chain is 21 MB at 2x,
- * 85 MB at 4x and 341 MB at 8x, and a scene has shown three sheets at most. */
+ * 85 MB at 4x and 341 MB at 8x, and a scene has shown two at most: the
+ * garage picker's sheet and design. (It held three until a picture sampled
+ * two ways was held, and copied, once: the picker samples its sheet two
+ * ways.) */
 #define NV2A_UPG_HELD_MAX (1024ull * 1024 * 1024)
 
 /* The summary line for a second of graffiti work, "[UPSCALE] graffiti 2x:

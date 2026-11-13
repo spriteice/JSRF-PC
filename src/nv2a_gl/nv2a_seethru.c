@@ -447,6 +447,8 @@ static SeeProg *prog_at(uint32_t h)
 static struct {
     uint32_t prog;
     uint32_t tex[SEE_UNITS];
+    Nv2aSampler smp[SEE_UNITS];         /* how each is sampled ... */
+    uint8_t  own[SEE_UNITS];            /* ... or 1: as it was made (texture()'s NULL) */
     int8_t   opaque[SEE_UNITS];         /* -1: not set since the texture was */
     Nv2aRenderState rs;
     int      rs_ok;
@@ -511,6 +513,8 @@ typedef struct {
     uint32_t nuni;
     uint8_t  had[NV2A_U_COUNT];         /* which those are */
     uint32_t tex[SEE_UNITS];
+    Nv2aSampler smp[SEE_UNITS];
+    uint8_t  own[SEE_UNITS];
     int8_t   opaque[SEE_UNITS];
     Nv2aRenderState rs;
     int      vkind;
@@ -608,6 +612,8 @@ int nv2a_seethru_hold_begin(void)
         h->had[id] = 1;
     }
     memcpy(h->tex, F.tex, sizeof h->tex);
+    memcpy(h->smp, F.smp, sizeof h->smp);
+    memcpy(h->own, F.own, sizeof h->own);
     memcpy(h->opaque, F.opaque, sizeof h->opaque);
     h->rs = F.rs;
     h->vkind = F.vkind;
@@ -696,7 +702,7 @@ static void restore(void)
     }
     if (F.prog) D->prog_use(F.prog);
     for (u = 0; u < SEE_UNITS; u++) {
-        D->texture(u, F.tex[u]);
+        D->texture(u, F.tex[u], F.own[u] ? NULL : &F.smp[u]);
         if (F.opaque[u] >= 0 && D->texture_opaque) D->texture_opaque(u, F.opaque[u]);
     }
     D->state_invalidate();
@@ -744,7 +750,7 @@ static void replay(const Held *h)
         p->gpu[id] = g_zero;
     }
     for (u = 0; u < SEE_UNITS; u++) {
-        D->texture(u, h->tex[u]);
+        D->texture(u, h->tex[u], h->own[u] ? NULL : &h->smp[u]);
         if (h->opaque[u] >= 0 && D->texture_opaque) D->texture_opaque(u, h->opaque[u]);
     }
     D->state(&h->rs);
@@ -994,11 +1000,16 @@ static int w_uniform_f_part(int id, int first, const float *v, int n)
     return ok;
 }
 
-static void w_texture(int unit, uint32_t tex)
+static void w_texture(int unit, uint32_t tex, const Nv2aSampler *s)
 {
     hold_break("a texture changed");
-    D->texture(unit, tex);
-    if (unit >= 0 && unit < SEE_UNITS) { F.tex[unit] = tex; F.opaque[unit] = -1; }
+    D->texture(unit, tex, s);
+    if (unit >= 0 && unit < SEE_UNITS) {
+        F.tex[unit] = tex;
+        F.own[unit] = !s;
+        if (s) F.smp[unit] = *s;
+        F.opaque[unit] = -1;
+    }
 }
 
 static void w_texture_opaque(int unit, int opaque)

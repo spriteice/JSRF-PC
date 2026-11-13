@@ -49,7 +49,7 @@ static void cover(uint32_t rt, uint32_t prog, uint32_t tex, int opaque)
     rs.stencil_op[0] = rs.stencil_op[1] = rs.stencil_op[2] = 0x1E00;   /* KEEP */
     G->target_bind(rt);
     G->prog_use(prog);
-    G->texture(0, tex);
+    G->texture(0, tex, NULL);
     if (tex) {
         G->texture_opaque(0, opaque);
         G->uniform_i(NV2A_U_TEX0, 0);

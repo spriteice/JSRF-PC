@@ -1,7 +1,8 @@
 /*
  * The see-through fix (src/nv2a_gl/nv2a_seethru.c) on a device of the test's
  * own, which keeps what it has been given (the program in use, each
- * program's uniforms, the textures, the state, the vertices, the target) and
+ * program's uniforms, the textures and how each is sampled, the state, the
+ * vertices, the target) and
  * logs each draw as it would come out, with what it would be drawn with, and
  * the clears, binds and reads around them. Each case drives it as nv2a_gl.c's
  * do_draw_body and do_clear do, and checks the log and what the device holds
@@ -32,6 +33,7 @@ static struct {
     float    c[NPROG][NV2A_VSH_NUM_CONSTS][4];  /* the constants, whole */
     int      c_whole, c_part;                   /* how they were sent */
     uint32_t tex[4];
+    int      wrap[4];               /* each unit's sampler's wrap on s; -1 the texture's own */
     int      opaque[NTEX];          /* each texture's own, as GL's swizzle */
     Nv2aRenderState rs;
     int      vk;                    /* 0 vertices(), 1 a buffer */
@@ -81,7 +83,11 @@ static int  d_uniform_f_part(int id, int first, const float *v, int n)
     return 1;
 }
 static void d_prog_use(uint32_t p) { dev.prog = p; }
-static void d_texture(int unit, uint32_t tex) { dev.tex[unit] = tex; }
+static void d_texture(int unit, uint32_t tex, const Nv2aSampler *s)
+{
+    dev.tex[unit] = tex;
+    dev.wrap[unit] = s ? s->wrap_s : -1;
+}
 static void d_texture_opaque(int unit, int o) { dev.opaque[dev.tex[unit]] = o; }
 static void d_state(const Nv2aRenderState *rs) { dev.rs = *rs; }
 static void d_state_invalidate(void) { dev.invalidated++; }
@@ -125,6 +131,7 @@ static void d_draw_rec(uint32_t count, int indexed)
                  dev.uf[p][NV2A_U_ALPHAREF][0], rs->depth_write, rs->depth_func);
     if (rs->blend_enable) e += sprintf(e, "%X", rs->blend_src); else *e++ = '-', *e = 0;
     if (t) e += sprintf(e, " T%u", t);
+    if (t && dev.wrap[0] > 0) e += sprintf(e, " W%d", dev.wrap[0]);
     if (t && dev.opaque[t]) e += sprintf(e, " o");
     if (dev.uf[p][NV2A_U_FOGCOLOR][0] != 0.0f) e += sprintf(e, " f%g", dev.uf[p][NV2A_U_FOGCOLOR][0]);
     if (dev.uf[p][NV2A_U_WIDEOFF][0] != 0.0f) e += sprintf(e, " w%g", dev.uf[p][NV2A_U_WIDEOFF][0]);
@@ -222,21 +229,22 @@ typedef struct {
     int      wide;              /* 1: a widescreen copy; 2: its offset set while held, put back after */
     int      reads, breaks;
     float    c1, c100;          /* constants 1 and 100, sent as the front half sends them */
+    int      wrap;              /* how its texture is sampled: its wrap on s */
 } Spec;
 
 static Spec glass(float v)
 {
-    Spec s = { v, 0, 0, 1, 0.5f, 0, 4, 0, 1, 5, -1, 1, 1, 0x203, 0x302, 0, 0, 3, 1, 0, 0, 0, 0, 0 };
+    Spec s = { v, 0, 0, 1, 0.5f, 0, 4, 0, 1, 5, -1, 1, 1, 0x203, 0x302, 0, 0, 3, 1, 0, 0, 0, 0, 0, 0 };
     return s;
 }
 static Spec solid(float v)
 {
-    Spec s = { v, 0, 0, 2, 1, 0, 4, 0, 1, 6, -1, 1, 1, 0x203, 0, 0, 0, 3, 1, 0, 0, 0, 0, 0 };
+    Spec s = { v, 0, 0, 2, 1, 0, 4, 0, 1, 6, -1, 1, 1, 0x203, 0, 0, 0, 3, 1, 0, 0, 0, 0, 0, 0 };
     return s;
 }
 static Spec hud(float v)
 {
-    Spec s = { v, 0, 0, 3, 1, 0, 4, 0, 1, 7, -1, 0, 0, 0x203, 0x302, 0, 0, 3, 1, 0, 0, 0, 0, 0 };
+    Spec s = { v, 0, 0, 3, 1, 0, 4, 0, 1, 7, -1, 0, 0, 0x203, 0x302, 0, 0, 3, 1, 0, 0, 0, 0, 0, 0 };
     return s;
 }
 
@@ -307,7 +315,12 @@ static int fh_draw(Spec s)
     }
     g_fh[s.prog].set = 1;
     if (s.reads) G->target_texture(dev.rt);
-    G->texture(0, s.tex);
+    {
+        Nv2aSampler smp;
+        memset(&smp, 0, sizeof smp);
+        smp.wrap_s = (uint8_t)s.wrap;
+        G->texture(0, s.tex, &smp);
+    }
     if (s.opaque >= 0) G->texture_opaque(0, s.opaque);
     memset(&rs, 0, sizeof rs);
     rs.depth_test = s.zt; rs.depth_write = s.zw; rs.depth_func = s.zf;
@@ -332,7 +345,7 @@ static int fh_draw(Spec s)
         G->uniform_i(NV2A_U_ALPHAFUNC, s.af | NV2A_PSH_ALPHA_SEE);
     }
     if (how != NV2A_SEE_KEEP) held = nv2a_seethru_hold_begin();
-    if (s.breaks) G->texture(1, 9);
+    if (s.breaks) G->texture(1, 9, NULL);
     if (s.wide == 2) uni1f(NV2A_U_WIDEOFF, 1.0f);
     fh_draw_n(&rs, s.wide == 1);
     if (held) nv2a_seethru_hold_end();
@@ -431,6 +444,25 @@ static void cases_hold(void)
                " | v1 p1 t0.5 a36/0 z0/203 b302 T5"
                " | CLEAR 3");
     expect_device("split");
+
+    /* Each texture as its own draw samples it: the glass's colour, drawn at
+     * the clear, wraps as the glass asked, not as the wall drawn since. */
+    start("samplers");
+    s = glass(1); s.wrap = 1;
+    fh_draw(s);
+    s = solid(2); s.wrap = 2;
+    fh_draw(s);
+    fh_clear(3);
+    expect_log("samplers", "v1 p1 t0.5 a20/0 z1/203 b302 T5 W1"
+               " | v2 p2 t1 a4/0 z1/203 b- T6 W2"
+               " | v1 p1 t0.5 a36/0 z0/203 b302 T5 W1"
+               " | CLEAR 3");
+    expect_device("samplers");
+    if (dev.tex[0] != 6 || dev.wrap[0] != 2) {
+        fprintf(stderr, "FAIL samplers: unit 0 holds %u, wrapped %d, not the wall's 6, wrapped 2\n",
+                dev.tex[0], dev.wrap[0]);
+        g_fail = 1;
+    }
 
     /* Each half with the depth function the title asked for: the pixels
      * are the one's or the other's. */
@@ -718,7 +750,7 @@ static void cases_hold(void)
                " | v3 p3 t1 a4/0 z0/203 b302 T7"
                " | v1 p1 t0.5 a36/0 z0/203 b302 T5"
                " | CLEAR 3");
-    G->texture(1, 0);
+    G->texture(1, 0, NULL);
 
     /* Off: as the title draws them. */
     start("off");

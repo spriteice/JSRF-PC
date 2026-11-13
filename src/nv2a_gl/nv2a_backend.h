@@ -154,9 +154,14 @@ typedef struct Nv2aRenderState {
     float    poly_factor, poly_units;
 } Nv2aRenderState;
 
-/* How a texture is sampled. Set when it is created and kept with it, which is
- * what OpenGL's texture-object parameters did and what the front half's
- * texture cache was written against. */
+/* How a texture is sampled: the binding's, not the texture's, as on the
+ * console, where each texture stage has its own filters and wrap
+ * (NV097_SET_TEXTURE_FILTER and _ADDRESS) and one texture in memory is
+ * sampled any number of ways. texture() binds a texture with one, so the
+ * front half holds a picture once however its draws sample it. tex_new,
+ * tex_new_dxt and tex_upscale read only what it says about the texels:
+ * `mip` and `levels`, the chain the texture holds, and tex_upscale its wrap
+ * and magnification too (below). */
 typedef struct {
     uint8_t min_linear, mag_linear;
     uint8_t mip;             /* 0 none (sample level 0), 1 nearest, 2 linear */
@@ -167,6 +172,13 @@ typedef struct {
      * one after another -- the title's own chain. 0 or 1: the base level
      * only, and the device makes the rest of the chain itself. */
     uint8_t levels;
+    /* For texture(): how many levels the bound texture holds above the
+     * game's size, a copy tex_upscale made (1 at 2x, 2 at 4x, 3 at 8x); 0
+     * for one tex_new or tex_new_dxt made. A copy is sampled with mipmaps
+     * whatever `mip` says: a nearest filter takes the nearest level, a
+     * linear one blends two, and without `mip` none below the game's own,
+     * level `above`. */
+    uint8_t above;
 } Nv2aSampler;
 
 /* Primitive types, after the front half has expanded quads into triangles. */
@@ -263,7 +275,9 @@ typedef struct Nv2aGfx {
     int      (*target_read_depth)(uint32_t rt, uint32_t pw, uint32_t ph,
                                   float *out);
 
-    /* Textures: w x h RGBA8 texels, row 0 first, sampled as `s` says. */
+    /* Textures: w x h RGBA8 texels, row 0 first, and the chain `s->mip`
+     * and `s->levels` say: the title's own after them, one the device
+     * makes, or none. How it is sampled is texture()'s. */
     uint32_t (*tex_new)(uint32_t w, uint32_t h, const void *rgba,
                         const Nv2aSampler *s);
     void     (*tex_free)(uint32_t tex);
@@ -285,7 +299,11 @@ typedef struct Nv2aGfx {
     void     (*uniform_f)(int id, const float *v, int n);
     void     (*uniform_i)(int id, int v);
 
-    void     (*texture)(int unit, uint32_t tex);
+    /* Bind `tex` to `unit` (0 to 3, the texture stages), sampled as `s`
+     * says: its filters, wrap, mipmaps and anisotropy, and `above` for a
+     * copy. NULL for a target's colour (target_texture, target_snapshot),
+     * which is sampled linearly and clamped. */
+    void     (*texture)(int unit, uint32_t tex, const Nv2aSampler *s);
     void     (*state)(const Nv2aRenderState *rs);
     /* Forget what state was last set: the next state() applies all of it. */
     void     (*state_invalidate)(void);
@@ -371,7 +389,7 @@ typedef struct Nv2aGfx {
     int      (*samples)(int n);
 
     /* Anisotropic filtering: the most this device samples with (1: none).
-     * A texture is given its level by tex_new (Nv2aSampler's aniso). NULL
+     * A binding is given its level by texture() (Nv2aSampler's aniso). NULL
      * where the backend has none. */
     int      (*aniso_max)(void);
 
@@ -390,7 +408,7 @@ typedef struct Nv2aGfx {
 
     /* A DXT1, DXT3 or DXT5 texture (`dxt` 1, 3 or 5) as the title stored
      * it: w x h texels in 4x4 blocks, and with `s->levels` the rest of the
-     * chain, each level's blocks after the last's. Sampled as tex_new's.
+     * chain, each level's blocks after the last's. As tex_new's otherwise.
      * 0 where the device does not take them as they are, and the front half
      * decodes them for tex_new instead. NULL where the backend has none. */
     uint32_t (*tex_new_dxt)(uint32_t w, uint32_t h, int dxt, const void *blocks,
@@ -411,16 +429,17 @@ typedef struct Nv2aGfx {
     void     (*fill_strip)(uint32_t rt, uint32_t x1, uint32_t src, uint32_t r0, uint32_t r1);
 
     /* Upscaling (nv2a_upscale.h): a new texture made from `tex`, which
-     * tex_new or tex_new_dxt made w x h with sampler `s`, by Super-xBR's
+     * tex_new or tex_new_dxt made w x h with the chain `s` says, by Super-xBR's
      * passes on the device. Level 0 is `factor` (2, 4 or 8) times its size,
      * each level after it half the one before, and the last of them (level 1
      * at 2x, 2 at 4x, 3 at 8x) holds `tex`'s own level 0 as it is, so a draw
      * that shows it no larger than the title did samples what it did. With
      * `s->mip`, the levels below the game's size follow: the title's own
      * chain, level for level as `tex` holds it, where `s->levels` says it
-     * has one; else made from the game's level 0. With `keep_alpha`, every
-     * new level's alpha is the game's as `s` magnifies it, so a cut-out's
-     * edges stay where they were; else Super-xBR's, which 2D art wants.
+     * has one; else made from the game's level 0. Super-xBR reads its
+     * neighbours at `s`'s wrap. With `keep_alpha`, every new level's alpha is
+     * the game's as `s` magnifies it, so a cut-out's edges stay where they
+     * were; else Super-xBR's, which 2D art wants.
      * `weight` is Super-xBR's filter weight, from 0 to 1.5 (1 its author's;
      * nv2a_up_sharp_weight), higher for crisper edges; any other is taken
      * as 1. `edge` is its edge strength, from 0 to 5 (0.6 its author's;
@@ -430,8 +449,7 @@ typedef struct Nv2aGfx {
      * Cleanup), and the new levels made from that; NULL or none: from the
      * texture as it is. The game's own levels are copied as they are either
      * way.
-     * Sampled with `s`'s filters and wrap, mipmapped whatever `s->mip` says:
-     * a nearest filter takes the nearest level, a linear one blends two.
+     * Bound with texture() and `above` its new levels (Nv2aSampler).
      * `tex` is left as it was, and the backend as the next draw expects it. 0
      * where it cannot be made: another factor, a side over the device's
      * largest, the passes not built, or the device out of memory. NULL where

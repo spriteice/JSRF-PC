@@ -69,8 +69,8 @@ static void same(uint32_t tex, int l, uint32_t w, uint32_t h, uint32_t fmt,
 int main(void)
 {
     static uint8_t blocks[4096];
-    Nv2aSampler chain = { 1, 1, 2, 1, 1, 1, 4 }, plain = { 1, 1, 0, 1, 1, 1, 0 };
-    Nv2aSampler made = { 1, 1, 2, 1, 1, 1, 0 };
+    Nv2aSampler chain = { 1, 1, 2, 1, 1, 1, 4, 0 }, plain = { 1, 1, 0, 1, 1, 1, 0, 0 };
+    Nv2aSampler made = { 1, 1, 2, 1, 1, 1, 0, 0 };
     uint32_t t, i, three = 0;
     GLint max = -1;
 

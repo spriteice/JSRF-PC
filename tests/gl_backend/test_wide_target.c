@@ -84,7 +84,7 @@ static void right_half(const uint32_t *sc)
     if (sc) { rs.scissor_enable = 1; memcpy(rs.scissor, sc, sizeof rs.scissor); }
     G->target_bind(rt);
     G->prog_use(fill);
-    G->texture(0, 0);
+    G->texture(0, 0, NULL);
     G->state(&rs);
     G->vertices(&v[0][0], 6, 4, attr_at, 0, no_const);
     G->draw(NV2A_PRIM_TRIANGLES, 6);

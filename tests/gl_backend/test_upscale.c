@@ -81,6 +81,22 @@ static GLint param(uint32_t tex, GLenum p)
     return v;
 }
 
+/* How a copy with `steps` new levels is sampled, bound to stage 0 as `s`
+ * says (texture(), Nv2aSampler's `above`): the bound sampler's p. */
+static GLfloat sampled(uint32_t copy, const Nv2aSampler *s, int steps, GLenum p)
+{
+    Nv2aSampler b = *s;
+    GLint smp = 0;
+    GLfloat v = -1.0f;
+    b.above = (uint8_t)steps;
+    G->texture(0, copy, &b);
+    glActiveTexture(GL_TEXTURE0);
+    glGetIntegerv(GL_SAMPLER_BINDING, &smp);
+    if (smp) glGetSamplerParameterfv((GLuint)smp, p, &v);
+    G->texture(0, 0, NULL);
+    return v;
+}
+
 /* Level l of tex, RGBA8, malloc'd. */
 static uint8_t *read_level(uint32_t tex, int l)
 {
@@ -122,13 +138,19 @@ static void levels(uint32_t src, uint32_t w, uint32_t h, int factor,
         level_size(t, steps + 1, &lw, &lh);
         snprintf(msg, sizeof msg, "%s at %dx: the chain goes on below the source's size", what, factor);
         check(lw == (GLint)(w / 2) && lh == (GLint)(h / 2) && param(t, GL_TEXTURE_MAX_LEVEL) >= steps + 1
-              && param(t, GL_TEXTURE_MIN_FILTER) == (s->min_linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR),
+              && sampled(t, s, steps, GL_TEXTURE_MIN_FILTER)
+                 == (GLfloat)(s->min_linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR)
+              && sampled(t, s, steps, GL_TEXTURE_MAX_LOD) >= 1000.0f,
               msg);
     } else {
-        snprintf(msg, sizeof msg, "%s at %dx: levels 0 to %d, mipmapped", what, factor, steps);
+        snprintf(msg, sizeof msg, "%s at %dx: levels 0 to %d, mipmapped down to the game's",
+                 what, factor, steps);
         check(param(t, GL_TEXTURE_MAX_LEVEL) == steps
-              && param(t, GL_TEXTURE_MIN_FILTER) == (s->min_linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_NEAREST)
-              && param(t, GL_TEXTURE_MAG_FILTER) == (s->mag_linear ? GL_LINEAR : GL_NEAREST),
+              && sampled(t, s, steps, GL_TEXTURE_MIN_FILTER)
+                 == (GLfloat)(s->min_linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_NEAREST)
+              && sampled(t, s, steps, GL_TEXTURE_MAG_FILTER)
+                 == (GLfloat)(s->mag_linear ? GL_LINEAR : GL_NEAREST)
+              && sampled(t, s, steps, GL_TEXTURE_MAX_LOD) == (GLfloat)steps,
               msg);
     }
     printf("ok: %s at %dx: %u levels, the last the source's\n", what, factor, steps + 1);
@@ -141,7 +163,7 @@ static void ramp(int ax, int ay, int factor, float weight, float edge, const cha
 {
     enum { N = 24 };
     static uint8_t px[N * N * 4];
-    Nv2aSampler s = { 1, 1, 0, 0, 0, 0, 0 };
+    Nv2aSampler s = { 1, 1, 0, 0, 0, 0, 0, 0 };
     uint32_t src, t;
     uint8_t *got;
     int x, y, worst = 0, n = N * factor, margin = 4 * factor;
@@ -189,7 +211,7 @@ static void weight(int factor)
     enum { N = 16, DARK = 40, LIGHT = 220 };
     static const float w[4] = { 0.5f, 1.0f, 1.5f, 9.0f };
     static uint8_t px[N * N * 4];
-    Nv2aSampler s = { 1, 1, 0, 0, 0, 0, 0 };
+    Nv2aSampler s = { 1, 1, 0, 0, 0, 0, 0, 0 };
     uint32_t src, t;
     uint8_t *got[4];
     double crisp[4];
@@ -249,7 +271,7 @@ static void edge(int factor)
     enum { N = 16, BACK = 100, LINE = 110 };
     static const float e[4] = { 1.8f, 0.6f, 0.2f, 9.0f };
     static uint8_t px[N * N * 4];
-    Nv2aSampler s = { 1, 1, 0, 0, 0, 0, 0 };
+    Nv2aSampler s = { 1, 1, 0, 0, 0, 0, 0, 0 };
     uint32_t src, t;
     uint8_t *got[4];
     double along[4];
@@ -366,7 +388,7 @@ static int blocks_none(int x, int y) { (void)y; return 100 + 6 * x; }
 
 static void clean(int factor)
 {
-    Nv2aSampler s = { 1, 1, 0, 0, 0, 0, 0 };
+    Nv2aSampler s = { 1, 1, 0, 0, 0, 0, 0, 0 };
     /* A grey's steps in X1R5G5B5 (DXT's red and blue). */
     Nv2aUpClean none = { 0, { 1.0f / 31, 1.0f / 31, 1.0f / 31 } };
     Nv2aUpClean dither = { NV2A_UP_DEDITHER, { 1.0f / 31, 1.0f / 31, 1.0f / 31 } };
@@ -459,7 +481,7 @@ static void alpha_edge(int factor)
 {
     enum { N = 16 };
     static uint8_t px[N * N * 4];
-    Nv2aSampler s = { 1, 1, 0, 0, 0, 0, 0 };
+    Nv2aSampler s = { 1, 1, 0, 0, 0, 0, 0, 0 };
     uint32_t src, t;
     uint8_t *got;
     int x, y, n = N * factor;
@@ -502,7 +524,7 @@ static void wrap(int factor)
 {
     enum { N = 16, DX = 5, DY = 3 };
     static uint8_t a[N * N * 4], b[N * N * 4];
-    Nv2aSampler s = { 1, 1, 0, 1, 1, 0, 0 };
+    Nv2aSampler s = { 1, 1, 0, 1, 1, 0, 0, 0 };
     uint32_t ta, tb, ua, ub;
     uint8_t *ga, *gb;
     int x, y, n = N * factor, i;
@@ -559,7 +581,8 @@ static void title_chain(uint32_t src, uint32_t w, uint32_t h, int factor,
     snprintf(msg, sizeof msg, "%s at %dx: %d levels and no more, mipmapped as asked", what,
              factor, steps + s->levels);
     check(param(t, GL_TEXTURE_MAX_LEVEL) == steps + s->levels - 1
-          && param(t, GL_TEXTURE_MIN_FILTER) == (s->min_linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR),
+          && sampled(t, s, steps, GL_TEXTURE_MIN_FILTER)
+             == (GLfloat)(s->min_linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR),
           msg);
     printf("ok: %s at %dx: the game's %d levels under the copy's %d\n", what, factor,
            (int)s->levels, steps);
@@ -572,7 +595,7 @@ static void kept_alpha(int factor, int mag)
 {
     enum { N = 16 };
     static uint8_t px[N * N * 4];
-    Nv2aSampler s = { 1, (uint8_t)mag, 0, 1, 1, 0, 0 };
+    Nv2aSampler s = { 1, (uint8_t)mag, 0, 1, 1, 0, 0, 0 };
     int steps = factor == 2 ? 1 : factor == 4 ? 2 : 3, l, x, y, worst = 0;
     uint32_t src, a, b;
     char msg[160];
@@ -621,8 +644,8 @@ static void kept_alpha(int factor, int mag)
 int main(void)
 {
     static uint8_t px[32 * 16 * 4], blocks[4096];
-    Nv2aSampler lin = { 1, 1, 0, 0, 0, 0, 0 }, near = { 0, 0, 0, 0, 0, 0, 0 };
-    Nv2aSampler mip = { 1, 1, 2, 0, 0, 0, 0 }, plain = { 1, 1, 0, 1, 1, 1, 0 };
+    Nv2aSampler lin = { 1, 1, 0, 0, 0, 0, 0, 0 }, near = { 0, 0, 0, 0, 0, 0, 0, 0 };
+    Nv2aSampler mip = { 1, 1, 2, 0, 0, 0, 0, 0 }, plain = { 1, 1, 0, 1, 1, 1, 0, 0 };
     uint32_t t, dxt, rt, i, *wide;
     GLint fbo0 = -1, fbo1 = -2, vp0[4], vp1[4];
 
@@ -703,7 +726,7 @@ int main(void)
 
     {   /* The title's own chain: 32x16 has six levels, 16x16 five. */
         static uint8_t chain[(32 * 16 + 16 * 8 + 8 * 4 + 4 * 2 + 2 + 1) * 4];
-        Nv2aSampler own = { 1, 1, 2, 1, 1, 0, 6 }, own_dxt = { 1, 1, 2, 1, 1, 0, 5 };
+        Nv2aSampler own = { 1, 1, 2, 1, 1, 0, 6, 0 }, own_dxt = { 1, 1, 2, 1, 1, 0, 5, 0 };
         for (i = 0; i < sizeof chain; i++) chain[i] = (uint8_t)rand();
         t = G->tex_new(32, 16, chain, &own);
         title_chain(t, 32, 16, 2, &own, "RGBA 32x16 with the title's chain");
