@@ -19,6 +19,9 @@
  * made-up map here has their shape (a street of five areas, the last a copy
  * of the first, with a copy of the first no list names and an area the shape
  * of the second elsewhere), and the sets the game would make from three eyes.
+ * The map's shadow passes are given the widened set in the game's memory, as
+ * the game's are, and must see the widened set with Far shadows on, or its
+ * own set with it off.
  * The Misc group's log is given the draws of a place with more objects than
  * b2's log remembered, which wrote a line for every draw there, and a draw
  * just after Far buildings is turned on, before it has read the map.
@@ -33,12 +36,21 @@
 
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); exit(1); } } while (0)
 
-static XBOX_MENU_ITEM s_row, s_far_row;
-static int s_rows;
+static XBOX_MENU_ITEM s_row, s_group_row, s_far_row, s_shadow_row;
+static int s_rows, s_at[4];     /* each one's place in the call, from 1 */
 void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count)
 {
-    if (count > 0) s_row = items[0];
-    if (count > 1) s_far_row = items[1];
+    int i;
+    for (i = 0; i < count; i++) {
+        const char *l = items[i].label ? items[i].label : "";
+        XBOX_MENU_ITEM *to = !strcmp(l, "Draw distance") ? &s_row
+                           : !strcmp(l, "Building distance") ? &s_group_row
+                           : !strcmp(l, "Far buildings") ? &s_far_row
+                           : !strcmp(l, "Far shadows") ? &s_shadow_row : NULL;
+        if (!to) continue;
+        *to = items[i];
+        s_at[to == &s_row ? 0 : to == &s_group_row ? 1 : to == &s_far_row ? 2 : 3] = s_rows + i + 1;
+    }
     s_rows += count;
 }
 
@@ -237,6 +249,49 @@ static void check_copies(void)
     printf("copies: area 4 of area 0, (400, 0, 0) away\n");
 }
 
+/* The map's shadow passes (recomp_manual.c, sub_0006BA80): the game's memory
+ * holds the widened set, and a pass reads it as the game's does. */
+static uint32_t s_live[DRAW_SET_WORDS], s_seen[DRAW_SET_WORDS];
+static int s_passes;
+static void shadow_pass(void)
+{
+    memcpy(s_seen, s_live, sizeof s_seen);
+    s_passes++;
+}
+
+/* Two calls of the shadow passes (the game's pass switch sends its passes 17
+ * and 18 to sub_0006BA80), from area 0 with Far buildings on: with Far
+ * shadows off, each sees only the game's own areas, 0 and 1, so no area Far
+ * buildings added has its volume counted (known bug 52); on, each sees the
+ * widened set, as b2's did. After each the widened set is back for what
+ * draws next. */
+static void check_shadow_passes(void)
+{
+    uint32_t game[DRAW_SET_WORDS];
+    const uint32_t wide = AREA(0) | AREA(1) | AREA(2) | AREA(3) | AREA(6);
+    int w, passes = s_passes;
+    game_set(game, 0);
+    memcpy(s_live, game, sizeof s_live);
+    draw_buildings_widen(s_areas, AREAS, NULL, s_live, 0.0, 0);
+    CHECK(s_live[0] == wide);
+    for (w = 0; w < 2; w++) {
+        memset(s_seen, 0xFF, sizeof s_seen);
+        draw_buildings_shadows(s_live, game, shadow_pass);
+        if (draw_far_shadows()) CHECK(s_seen[0] == wide);
+        else CHECK(!memcmp(s_seen, game, sizeof s_seen) && s_seen[0] == (AREA(0) | AREA(1)));
+        CHECK(s_live[0] == wide);
+    }
+    for (w = 1; w < DRAW_SET_WORDS; w++) CHECK(!s_live[w] && !s_seen[w]);
+    CHECK(s_passes == passes + 2);
+}
+
+static void check_shadows(void)
+{
+    CHECK(!draw_far_shadows());
+    check_shadow_passes();
+    printf("far buildings: the shadows from the game's own areas\n");
+}
+
 static void check_far(void)
 {
     CHECK(draw_far_buildings());
@@ -253,6 +308,7 @@ static void check_far(void)
     CHECK(widened(2, 240, 1) == (AREA(0) | AREA(1) | AREA(2) | AREA(3) | AREA(6)));
     /* No eye: in the areas' order. */
     CHECK(widened(2, 0, 0) == (AREA(0) | AREA(1) | AREA(2) | AREA(3) | AREA(6)));
+    check_shadows();
     /* Another map, without area 6: worked out again, and logged again. */
     {
         uint32_t set[DRAW_SET_WORDS];
@@ -329,25 +385,53 @@ static void check_misc(void)
     printf("misc: each model once an area, again at a new high, at most %d lines a map\n", DRAW_MISC_LINES);
 }
 
+/* Far shadows on, as by default: the shadows from the widened set; then the
+ * row, off at once (and kept, which run.py checks): the game's own. */
+static void check_far_shadows(void)
+{
+    CHECK(draw_far_buildings() && draw_far_shadows() && s_shadow_row.state());
+    map_make();
+    check_shadow_passes();
+    s_shadow_row.run();
+    CHECK(!draw_far_shadows() && !s_shadow_row.state());
+    check_shadow_passes();
+    printf("far shadows: the shadows from the widened set, then the game's again\n");
+}
+
 int main(int argc, char **argv)
 {
     const char *c = argc > 1 ? argv[1] : "";
     draw_distance_start();
-    /* Two rows, in one call: a choice under HUD on the Display
-     * page, showing the setting, then a toggle. */
-    CHECK(s_rows == 2);
+    /* Four rows, in one call, on the Display page: a choice under HUD,
+     * showing the setting, then the Building distance submenu under HUD
+     * too, below it, and in the submenu two toggles, Far buildings then Far
+     * shadows. */
+    CHECK(s_rows == 4 && s_at[0] == 1 && s_at[1] == 2 && s_at[2] == 3 && s_at[3] == 4);
+    CHECK(s_group_row.menu == XBOX_MENU_DISPLAY && s_group_row.kind == XBOX_ITEM_GROUP && !s_group_row.last);
+    CHECK(s_group_row.under && !strcmp(s_group_row.under, "HUD") && !s_group_row.group);
+    CHECK(s_group_row.presets == XBOX_PRESETS_UNSAID);   /* a submenu is no setting (menu.h) */
     CHECK(s_far_row.menu == XBOX_MENU_DISPLAY && s_far_row.kind == XBOX_ITEM_TOGGLE && !s_far_row.last);
-    CHECK(!strcmp(s_far_row.label, "Far buildings") && !s_far_row.confirm && s_far_row.run);
-    CHECK(s_far_row.under && !strcmp(s_far_row.under, "HUD"));
+    CHECK(!s_far_row.confirm && s_far_row.run);
+    CHECK(s_far_row.group && !strcmp(s_far_row.group, "Building distance") && !s_far_row.under);
     CHECK(s_far_row.state() == draw_far_buildings());
+    CHECK(s_shadow_row.menu == XBOX_MENU_DISPLAY && s_shadow_row.kind == XBOX_ITEM_TOGGLE && !s_shadow_row.last);
+    CHECK(!s_shadow_row.confirm && s_shadow_row.run);
+    CHECK(s_shadow_row.group && !strcmp(s_shadow_row.group, "Building distance") && !s_shadow_row.under);
+    CHECK(s_shadow_row.state() == draw_far_shadows());
     CHECK(s_row.menu == XBOX_MENU_DISPLAY && s_row.kind == XBOX_ITEM_CHOICE && !s_row.last);
-    CHECK(!strcmp(s_row.label, "Draw distance") && !s_row.confirm);
+    CHECK(!s_row.confirm && !s_row.group);
     CHECK(s_row.under && !strcmp(s_row.under, "HUD"));
     CHECK(s_row.nchoices == DRAW_DISTANCE_STEPS);
     /* Each with a hint, a sentence short enough for the strip (menu.h). */
     CHECK(s_row.hint && strlen(s_row.hint) <= MENU_HINT_LONGEST && s_row.hint[strlen(s_row.hint) - 1] == '.');
+    CHECK(s_group_row.hint && strlen(s_group_row.hint) <= MENU_HINT_LONGEST &&
+          s_group_row.hint[strlen(s_group_row.hint) - 1] == '.');
     CHECK(s_far_row.hint && strlen(s_far_row.hint) <= MENU_HINT_LONGEST &&
           s_far_row.hint[strlen(s_far_row.hint) - 1] == '.');
+    /* Far shadows' gives the pop-in it saves and the glitches it can cause. */
+    CHECK(s_shadow_row.hint && strlen(s_shadow_row.hint) <= MENU_HINT_LONGEST &&
+          s_shadow_row.hint[strlen(s_shadow_row.hint) - 1] == '.' && strstr(s_shadow_row.hint, "pop-in") &&
+          strstr(s_shadow_row.hint, "glitches"));
     CHECK(!strcmp(s_row.choices[0], "1x") && !strcmp(s_row.choices[3], "4x"));
     CHECK(!strcmp(s_row.choices[DRAW_DISTANCE_UNLIMITED], "Unlimited"));
     CHECK(s_row.state() == draw_distance_step());
@@ -357,13 +441,17 @@ int main(int argc, char **argv)
     CHECK(s_row.presets == XBOX_PRESETS_SET && !s_row.keep && s_far_row.presets == XBOX_PRESETS_SET && !s_far_row.keep);
     CHECK(s_row.preset[XBOX_PRESET_XBOX] == 0 && s_row.preset[XBOX_PRESET_MAX] == DRAW_DISTANCE_UNLIMITED);
     CHECK(s_far_row.preset[XBOX_PRESET_XBOX] == 0 && s_far_row.preset[XBOX_PRESET_MAX] == 1);
+    CHECK(s_shadow_row.presets == XBOX_PRESETS_SET && !s_shadow_row.keep);
+    CHECK(s_shadow_row.preset[XBOX_PRESET_XBOX] == 0 && s_shadow_row.preset[XBOX_PRESET_MAX] == 1);
     if (!strcmp(c, "default"))
         CHECK(s_row.preset[XBOX_PRESET_JSRF_PC] == draw_distance_step() &&
-              s_far_row.preset[XBOX_PRESET_JSRF_PC] == draw_far_buildings());
+              s_far_row.preset[XBOX_PRESET_JSRF_PC] == draw_far_buildings() &&
+              s_shadow_row.preset[XBOX_PRESET_JSRF_PC] == draw_far_shadows());
     if (!strcmp(c, "off")) check_step(0);
     /* None, or one the row doesn't have: 2x, the default. */
     if (!strcmp(c, "default") || !strncmp(c, "bad", 3)) check_step(1);
     if (!strcmp(c, "default")) CHECK(draw_far_buildings() && s_far_row.state());   /* on by default */
+    if (!strcmp(c, "default")) CHECK(draw_far_shadows() && s_shadow_row.state());    /* on by default */
     if (!strcmp(c, "2x")) check_step(1);
     if (!strcmp(c, "3x")) check_step(2);
     if (!strcmp(c, "4x")) check_step(3);
@@ -409,6 +497,7 @@ int main(int argc, char **argv)
     }
     if (!strcmp(c, "far_on")) check_far();
     if (!strcmp(c, "far_misc")) check_misc();
+    if (!strcmp(c, "far_shadows")) check_far_shadows();
     if (!strcmp(c, "far_copies")) {
         /* JSRF_DRAW_COPIES: from area 0, 4 too. */
         CHECK(draw_far_buildings());
@@ -431,10 +520,17 @@ int main(int argc, char **argv)
         CHECK(draw_far_buildings());
         map_make();
         for (f = 0; f < 50; f++) {
-            uint32_t set[DRAW_SET_WORDS];
+            uint32_t set[DRAW_SET_WORDS], game[DRAW_SET_WORDS];
             game_set(set, 0);
+            memcpy(game, set, sizeof game);
             draw_buildings_widen(s_areas, AREAS, NULL, set, 0.05 + f * 0.1, (unsigned)f);
             if (draw_distance_step()) draw_distance_drawn(DRAW_CROWDS, 0, 0.05 + f * 0.1, (unsigned)f);
+            /* Two calls of the shadow passes a frame, from the game's areas,
+             * or with Far shadows from all. */
+            memcpy(s_live, set, sizeof s_live);
+            draw_buildings_shadows(s_live, game, shadow_pass);
+            draw_buildings_shadows(s_live, game, shadow_pass);
+            CHECK(!memcmp(s_seen, draw_far_shadows() ? set : game, sizeof s_seen));
         }
         fflush(stderr);
         draw_distance_drawn(DRAW_GATES, 0, 5.1, 50);     /* not a gate: no line */

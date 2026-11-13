@@ -1,6 +1,7 @@
-/* Draw distance and Far buildings (draw_distance.h): drawdistance= and
- * farbuildings= in the settings file, or Display > Draw distance and Display >
- * Far buildings.
+/* Draw distance, Far buildings and Far shadows (draw_distance.h):
+ * drawdistance=, farbuildings= and farshadows= in the settings file, or
+ * Display > Draw distance, and Far buildings and Far shadows in Display >
+ * Building distance.
  *
  * Read once, at start (draw_distance_start). The menu's rows change them at
  * once and keep them in the settings file; they run on the window's thread,
@@ -8,7 +9,8 @@
  * every distance a gate cuts or fades at by the same number, so each kind of
  * object keeps its own distances in proportion, and a fade keeps its length
  * in proportion too. Far buildings adds areas to the set the camera makes,
- * from the map's own visible lists. */
+ * from the map's own visible lists, and Far shadows gives them the map's
+ * shadows too. */
 #include <float.h>
 #include <math.h>
 #include <stdio.h>
@@ -36,10 +38,15 @@ static int nv_window_pref_num(const char *key, double *v)
 
 /* The rows go right under the window's HUD submenu (nv2a_gl.c), its last
  * row: Display's order is Fullscreen, Render scale, Aspect ratio, HUD, then
- * these two (spriteice, 12 November 2026: "Render scale up", on the card at
- * 06:19 UTC, and HUD scaling "as it's own submenu under aspect ratio", at
- * 09:37 UTC, named HUD on the card at 09:43 UTC). */
+ * Draw distance and Building distance (spriteice, 12 November 2026: "Render
+ * scale up", on the card at 06:19 UTC, and HUD scaling "as it's own submenu
+ * under aspect ratio", at 09:37 UTC, named HUD on the card at 09:43 UTC).
+ * Building distance is a submenu of Far buildings, then Far shadows, on by
+ * default, its hint giving the glitches it can cause (spriteice, 13 November
+ * 2026, 10:17 UTC, and 11:59 UTC: "the pop in reduction is worth the
+ * glitches"). */
 #define DRAW_UNDER     "HUD"
+#define DRAW_GROUP     "Building distance"
 #define DRAW_LOG_EVERY 5.0      /* seconds between [DRAW] lines */
 
 static const char *const k_names[DRAW_DISTANCE_STEPS] = { "1x", "2x", "3x", "4x", "Unlimited" };
@@ -48,6 +55,7 @@ static const char *const k_gates[DRAW_GATES] = {
 
 static volatile int s_step;
 static volatile int s_far;      /* Far buildings */
+static volatile int s_shadows_far;  /* Far shadows */
 static int s_copies;            /* JSRF_DRAW_COPIES: an area's copies drawn too */
 
 int draw_distance_step(void)
@@ -58,6 +66,11 @@ int draw_distance_step(void)
 int draw_far_buildings(void)
 {
     return s_far;
+}
+
+int draw_far_shadows(void)
+{
+    return s_shadows_far;
 }
 
 float draw_distance_far(float game)
@@ -95,12 +108,15 @@ float draw_distance_fade(float d, float game_far, float game_per)
 static unsigned long s_drawn[DRAW_GATES], s_past[DRAW_GATES];
 static int s_objects;           /* a gate has counted since the line */
 static double s_sets, s_game, s_added, s_copied;   /* Far buildings' sets since the line */
+static unsigned long s_shadows;     /* shadow passes drawn from the game's set since the line */
+static unsigned long s_shadows_all; /* and from the widened set (Far shadows) */
 static double s_since = -1;     /* the time the counts start from; -1: not yet */
 static unsigned s_since_frame;
 
 /* Every 5 seconds: each gate's objects a frame, and how many of them past
  * 1x's distance, while a step is on; and, while Far buildings is, the areas
- * of a set the camera makes. */
+ * of a set the camera makes, and the shadow passes a frame drawn from the
+ * game's own set and from the widened one (Far shadows). */
 static void draw_log(double now, unsigned frame)
 {
     char line[640];
@@ -121,12 +137,15 @@ static void draw_log(double now, unsigned frame)
     }
     if (s_sets > 0 && len > 0 && len < (int)sizeof line)
         snprintf(line + len, sizeof line - len,
-                 "%s Far buildings, a set's areas: the game's %.1f, added %.1f, copies %s %.1f",
+                 "%s Far buildings, a set's areas: the game's %.1f, added %.1f, copies %s %.1f; "
+                 "shadow passes a frame: %.1f from the game's areas, %.1f from all (Far shadows)",
                  s_objects ? ";" : ",", s_game / s_sets, s_added / s_sets,
-                 s_copies ? "drawn too" : "left out", s_copied / s_sets);
+                 s_copies ? "drawn too" : "left out", s_copied / s_sets,
+                 (double)s_shadows / frames, (double)s_shadows_all / frames);
     fprintf(stderr, "%s\n", line);
     s_objects = 0;
     s_sets = s_game = s_added = s_copied = 0;
+    s_shadows = s_shadows_all = 0;
     s_since = now;
     s_since_frame = frame;
 }
@@ -419,6 +438,22 @@ void draw_buildings_widen(const DrawArea *areas, int n, const float eye[3],
     draw_log(now, frame);
 }
 
+void draw_buildings_shadows(uint32_t set[DRAW_SET_WORDS], const uint32_t game[DRAW_SET_WORDS],
+                            void (*run)(void))
+{
+    uint32_t wide[DRAW_SET_WORDS];
+    if (s_shadows_far) {
+        run();
+        s_shadows_all++;
+        return;
+    }
+    memcpy(wide, set, sizeof wide);
+    memcpy(set, game, sizeof wide);
+    run();
+    memcpy(set, wide, sizeof wide);
+    s_shadows++;
+}
+
 /* ---- the settings -------------------------------------------------------- */
 
 #if defined(XBOXRECOMP_MENU)
@@ -437,6 +472,13 @@ static void menu_far_flip(void)
     s_far = !s_far;
     fprintf(stderr, "[DRAW] Far buildings %s (the menu)\n", s_far ? "on" : "off");
     nv_window_pref_set_num("farbuildings", s_far);
+}
+static int  menu_shadows(void) { return s_shadows_far; }
+static void menu_shadows_flip(void)
+{
+    s_shadows_far = !s_shadows_far;
+    fprintf(stderr, "[DRAW] Far shadows %s (the menu)\n", s_shadows_far ? "on" : "off");
+    nv_window_pref_set_num("farshadows", s_shadows_far);
 }
 #endif
 
@@ -457,13 +499,16 @@ void draw_distance_start(void)
     fprintf(stderr, "[DRAW] objects at %s (settings)\n", k_names[s_step]);
     s_far = nv_window_pref_num("farbuildings", &v) > 0 ? v != 0 : DRAW_FAR_DEFAULT;
     fprintf(stderr, "[DRAW] Far buildings %s (settings)\n", s_far ? "on" : "off");
+    s_shadows_far = nv_window_pref_num("farshadows", &v) > 0 ? v != 0 : DRAW_SHADOWS_DEFAULT;
+    fprintf(stderr, "[DRAW] Far shadows %s (settings)\n", s_shadows_far ? "on" : "off");
     s_copies = copies && strcmp(copies, "0") != 0;
     if (s_copies) fprintf(stderr, "[DRAW] JSRF_DRAW_COPIES: an area's copies drawn too\n");
 #if defined(XBOXRECOMP_MENU)
     {
         /* Rows are drawn in the order added, and the window adds HUD
-         * once it is up, after this: so the rows name the one they go under,
-         * and keep their order there. */
+         * once it is up, after this: so Draw distance and the Building
+         * distance submenu name the row they go under, and keep their order
+         * there; Far buildings and Far shadows go in the submenu. */
         const XBOX_MENU_ITEM rows[] = {
             /* File > Presets: the game's own distances and areas in Xbox
              * mode, the defaults, and the most in Max quality. */
@@ -473,10 +518,18 @@ void draw_distance_start(void)
               .presets = XBOX_PRESETS_SET,
               .preset = { 0, DRAW_DISTANCE_DEFAULT, DRAW_DISTANCE_UNLIMITED },     /* 1x, 2x, Unlimited */
               .hint = "Sets how far crowds, vehicles, props, and police are drawn. CPU heavy." },
+            { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_GROUP, .label = DRAW_GROUP,
+              .under = DRAW_UNDER, .hint = "Draws the map's far buildings, and their shadows." },
             { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Far buildings",
-              .state = menu_far, .run = menu_far_flip, .under = DRAW_UNDER,
+              .state = menu_far, .run = menu_far_flip, .group = DRAW_GROUP,
               .presets = XBOX_PRESETS_SET, .preset = { 0, DRAW_FAR_DEFAULT, 1 },
               .hint = "Draws the whole map, eliminating building pop-in. CPU heavy." },
+            /* On by default: less pop-in is worth the glitches it can cause
+             * (known bug 52). */
+            { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Far shadows",
+              .state = menu_shadows, .run = menu_shadows_flip, .group = DRAW_GROUP,
+              .presets = XBOX_PRESETS_SET, .preset = { 0, DRAW_SHADOWS_DEFAULT, 1 },
+              .hint = "Reduces building shadow pop-in, at the cost of minor visual glitches." },
         };
         xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
     }

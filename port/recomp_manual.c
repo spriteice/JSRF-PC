@@ -5823,6 +5823,8 @@ void sub_000E3BB0(void)
  * the override adds every area some list names (draw_buildings_widen) after
  * the game's own set is made, and the frame's draw (sub_00012C80) puts the
  * game's set back after it, so the next frame's updates see the game's own.
+ * The map's shadows (sub_0006BA80, below) are drawn from the widened set
+ * while Far shadows is on, and from the game's own while it is off.
  * The game draws its backdrop first, centred on the eye, and it writes depth
  * at its own size, which would hide the areas added beyond it: on, its loop
  * in sub_0006B6A0 draws without depth writes, between the matrix calls before
@@ -5914,6 +5916,25 @@ void sub_00012C80(void)
         memcpy((uint8_t *)g_xbox_mem_offset + AREA_SET + AREA_SET_BITS, s_game_set, sizeof s_game_set);
         s_set_widened = 0;
     }
+}
+
+/* sub_0006BA80, thiscall on the map task's +0x44: the map's shadows. The map
+ * task's pass switch (sub_00074CB0) sends its passes 17 and 18 here while
+ * task 9 is there; in play the [DRAW] line counts one call a frame while the
+ * set is widened. It draws the pieces of type 2 (+0x44) of every area in the
+ * set, untextured: the map's shadow volumes, which the stencil counts. With
+ * the set widened and Far shadows on, they are drawn from it, as b2 drew
+ * them; with Far shadows off, from the game's own set, and the widened one
+ * is put back after (draw_buildings_shadows), as the far areas' volumes take
+ * the shadow off the walls in front of them (known bug 52). Nothing is wrong
+ * in this function: the cause is the widening, and this is where Far
+ * buildings keeps it from the shadows while Far shadows is off. */
+extern void sub_0006BA80_gen(void);
+void sub_0006BA80(void)
+{
+    if (!s_set_widened) { sub_0006BA80_gen(); return; }
+    draw_buildings_shadows((uint32_t *)((uint8_t *)g_xbox_mem_offset + AREA_SET + AREA_SET_BITS),
+                           s_game_set, sub_0006BA80_gen);
 }
 
 /* The device's depth writes on or off, as the game sets them. */

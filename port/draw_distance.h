@@ -10,15 +10,26 @@
  * checkpoints, props and traffic, the Enemy bank's kinds (police, tanks), and
  * one attached part.
  *
- * Display > Far buildings, kept as farbuildings= (0, off, or 1, the default):
+ * Display > Building distance, a submenu right below Draw distance, holds two
+ * rows. Far buildings, kept as farbuildings= (0, off, or 1, the default):
  * the buildings aren't cut by distance but by area. Each frame the camera
  * makes the set of the map's areas to draw, the ones the visible list of the
  * area it is in names, and nothing outside the set is drawn: neither the
  * area's buildings nor the objects in it. On, the set also has every area some
  * other area's list names; never one no list names. It changes at once.
  *
+ * Far shadows, below it, kept as farshadows= (0, off, or 1, the default): on,
+ * the map's shadows are drawn from the set Far buildings makes too, as b2
+ * drew them, so the areas it adds have their shadows and a far street's
+ * shadows don't pop in as you come near, at the cost of minor visual
+ * glitches: patches of light in the shadows (known bug 52). Off, they are
+ * drawn from the game's own set (draw_buildings_shadows), and an area only
+ * Far buildings adds has no shadows until the game draws it itself. It does
+ * nothing with Far buildings off. It changes at once.
+ *
  * The hooks are in recomp_manual.c, under "draw distance"; the steps' maths,
- * the settings, the areas added and the [DRAW] log are here. */
+ * the settings, the areas added, the shadows' set and the [DRAW] log are
+ * here. */
 #ifndef JSRF_DRAW_DISTANCE_H
 #define JSRF_DRAW_DISTANCE_H
 
@@ -26,13 +37,15 @@
 
 #define DRAW_DISTANCE_STEPS     5   /* 1x, 2x, 3x, 4x, Unlimited */
 #define DRAW_DISTANCE_UNLIMITED 4
-/* The defaults, with no drawdistance= or farbuildings= in the settings:
- * 2x, and Far buildings on. */
+/* The defaults, with no drawdistance=, farbuildings= or farshadows= in the
+ * settings: 2x, Far buildings on, and Far shadows on. */
 #define DRAW_DISTANCE_DEFAULT   1
 #define DRAW_FAR_DEFAULT        1
+#define DRAW_SHADOWS_DEFAULT    1
 
 /* At start, before the game runs: reads the settings and adds the in-game
- * menu's two Display rows. */
+ * menu's Display rows: Draw distance, then the Building distance submenu with
+ * Far buildings and Far shadows. */
 void draw_distance_start(void);
 
 /* The step: 0 (1x, the game's own) to DRAW_DISTANCE_UNLIMITED. */
@@ -73,6 +86,9 @@ void draw_distance_drawn(int gate, int past, double now, unsigned frame);
 /* Far buildings: nonzero while on. */
 int draw_far_buildings(void);
 
+/* Far shadows: nonzero while on. */
+int draw_far_shadows(void);
+
 #define DRAW_AREAS_MAX 256                      /* the game's set: a bit an area */
 #define DRAW_SET_WORDS (DRAW_AREAS_MAX / 32)
 
@@ -104,6 +120,21 @@ int draw_area_copy(const DrawArea *a, const DrawArea *b, float d[3]);
  * areas; now and frame are for the [DRAW] line, as draw_distance_drawn's. */
 void draw_buildings_widen(const DrawArea *areas, int n, const float eye[3],
                           uint32_t set[DRAW_SET_WORDS], double now, unsigned frame);
+
+/* With Far buildings on, the map's shadows: with Far shadows on, runs run()
+ * with set as it is, the widened set; off, runs run() with set holding game,
+ * the set the game made, and puts set back as it was after it. The game
+ * draws its shadows as volumes it counts in the stencil buffer, and a surface
+ * is in shadow where the count isn't 0. That is right only for volumes whole
+ * along every line of sight from the eye, which the game's own set gives it.
+ * The volumes of areas only the widened set has, far off or behind what the
+ * eye sees, take the shadow off the walls in front of them in patches that
+ * move with the camera (known bug 52, on Chuo Street's halfpipe). Far shadows
+ * off, an area only Far buildings adds is drawn without its own shadows until
+ * the list of the area the eye is in names it. Each call counts for the
+ * [DRAW] line. */
+void draw_buildings_shadows(uint32_t set[DRAW_SET_WORDS], const uint32_t game[DRAW_SET_WORDS],
+                            void (*run)(void));
 
 /* The Misc group's objects (recomp_manual.c, "draw distance"), the best
  * candidate for the birds: one model drawn at many places, in one area. With

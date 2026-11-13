@@ -1,4 +1,4 @@
-"""Compile draw distance's and Far buildings' settings, steps, areas and log and the settings file code, and drive them without the game.
+"""Compile draw distance's, Far buildings' and Far shadows' settings, steps, areas and log and the settings file code, and drive them without the game.
 
 Cut by text: the settings file code from src/nv2a_gl/nv2a_gl.c,
 unchanged. nv2a_gl.c doesn't link on its own.
@@ -10,7 +10,8 @@ does; test_main.c stands in for the menu. Each case gets its own settings
 file, passed as JSRF_SETTINGS_FILE, and its own run, since the setting is
 read once. The gates are the game's code: test_main.c's stand-ins read
 their constants as the game's do (recomp_manual.c, "draw distance"); the
-areas are a made-up map's.
+areas are a made-up map's, and the shadow passes' set is checked as the
+game's memory would hold it.
 Requires GCC on PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
 """
@@ -37,7 +38,8 @@ source = """
 """ + settings + (root / "tests/draw_distance/test_main.c").read_text(encoding="utf-8")
 
 LOG = "[DRAW] t=5.1 2x, a frame's objects (past 1x's distance): crowds 3.0 (1.0), pickups 0.0 (0.0)"
-AREAS = "Far buildings, a set's areas: the game's 2.0, added 3.0, copies left out 1.0"
+AREAS = ("Far buildings, a set's areas: the game's 2.0, added 3.0, copies left out 1.0; "
+         "shadow passes a frame: 2.0 from the game's areas, 0.0 from all (Far shadows)")
 MAP = ["[DRAW] Far buildings: the map has 7 areas; lists name 6 of them, 1 a copy of another; no list names 5 (a copy of area 0, (0, 500, 0) away)",
        "[DRAW] area 0: fog 100 to 1000, density 1",
        "[DRAW] area 4: fog 500 to 5000, density 1, a copy of area 0, (400, 0, 0) away",
@@ -51,7 +53,8 @@ MISC_SECOND = "[DRAW] Misc group 01E5E760: model 2C50, in area 1, at 0 places"
 
 # case: (settings file or None for none, log lines it must print[, environment])
 cases = {
-    "default": (None, ["[DRAW] objects at 2x (settings)", "[DRAW] Far buildings on (settings)"]),
+    "default": (None, ["[DRAW] objects at 2x (settings)", "[DRAW] Far buildings on (settings)",
+                       "[DRAW] Far shadows on (settings)"]),
     "off": ("drawdistance=0\nfarbuildings=0\n", ["[DRAW] objects at 1x (settings)"]),
     "2x": ("drawdistance=1\n", ["[DRAW] objects at 2x (settings)"]),
     "3x": ("drawdistance=2\n", ["[DRAW] objects at 3x (settings)"]),
@@ -68,15 +71,19 @@ cases = {
     "log": ("drawdistance=1\nfarbuildings=0\n", [LOG, "props and traffic 2.0 (0.0), enemies 0.0 (0.0), "
                                       "attached part 0.0 (0.0)"]),
     "far_off": ("farbuildings=0\n", ["[DRAW] Far buildings off (settings)"]),
-    "far_on": ("farbuildings=1\n", ["[DRAW] Far buildings on (settings)", *MAP,
+    "far_on": ("farbuildings=1\nfarshadows=0\n", ["[DRAW] Far buildings on (settings)", *MAP,
                                     "[DRAW] Far buildings: the map has 6 areas; lists name 5 of them, "
                                     "1 a copy of another; no list names 5 (a copy of area 0, (0, 500, 0) away)"]),
     "far_copies": ("farbuildings=1\n", ["[DRAW] JSRF_DRAW_COPIES: an area's copies drawn too", *MAP],
                    {"JSRF_DRAW_COPIES": "1"}),
     "far_flip": ("game_dir=/games/jsrf\nfarbuildings=0\n",
                  ["[DRAW] Far buildings off (settings)", "[DRAW] Far buildings on (the menu)", MAP[0]]),
-    "far_log": ("drawdistance=0\nfarbuildings=1\n", ["[DRAW] t=5.1 1x, " + AREAS]),
-    "far_log_2x": ("drawdistance=1\nfarbuildings=1\n",
+    "far_log": ("drawdistance=0\nfarbuildings=1\nfarshadows=0\n", ["[DRAW] t=5.1 1x, " + AREAS]),
+    "far_log_shadows": ("drawdistance=0\nfarbuildings=1\n",
+                        ["[DRAW] t=5.1 1x, " + AREAS.replace("2.0 from the game's areas, 0.0", "0.0 from the game's areas, 2.0")]),
+    "far_shadows": ("game_dir=/games/jsrf\nfarbuildings=1\n",
+                    ["[DRAW] Far shadows on (settings)", "[DRAW] Far shadows off (the menu)"]),
+    "far_log_2x": ("drawdistance=1\nfarbuildings=1\nfarshadows=0\n",
                    ["[DRAW] t=5.1 2x, a frame's objects (past 1x's distance): crowds 1.0 (0.0), pickups 0.0 (0.0)",
                     "attached part 0.0 (0.0); " + AREAS]),
     "far_misc": ("farbuildings=1\n", [MISC_FIRST, MISC_FIRST.replace("at 0", "at 1"),
@@ -116,7 +123,7 @@ with tempfile.TemporaryDirectory(prefix="draw-distance-") as directory:
         for line in unwanted.get(name, []):
             if line in run.stderr:
                 raise SystemExit(f"{name}: '{line}' in the log:\n{run.stderr}")
-        if name in ("log", "far_log", "far_log_2x") and run.stderr.count("[DRAW] t=") != 1:
+        if name in ("log", "far_log", "far_log_2x", "far_log_shadows") and run.stderr.count("[DRAW] t=") != 1:
             raise SystemExit(f"{name}: not one [DRAW] line in five seconds:\n" + run.stderr)
         if name == "far_on" and run.stderr.count("[DRAW] Far buildings: the map") != 2:
             raise SystemExit("far_on: the map not logged once each:\n" + run.stderr)
@@ -146,5 +153,10 @@ with tempfile.TemporaryDirectory(prefix="draw-distance-") as directory:
             kept = path.read_text()
             if "farbuildings=1\n" not in kept or "game_dir=/games/jsrf\n" not in kept:
                 raise SystemExit("far_flip: the row did not keep farbuildings=1 alone:\n" + kept)
+        if name == "far_shadows":
+            kept = path.read_text()
+            if ("farshadows=0\n" not in kept or "farbuildings=1\n" not in kept
+                    or "game_dir=/games/jsrf\n" not in kept):
+                raise SystemExit("far_shadows: the row did not keep farshadows=0 alone:\n" + kept)
         print(run.stdout.strip())
 print("draw distance: all", len(cases), "cases pass")
