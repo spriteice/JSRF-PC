@@ -1,6 +1,6 @@
 """The kit's scripts without the game or the tools: build_engine.py's parts
-(the generated code's hash, unpacking a wheel, how many compiles at once and
-for how long, the commands filled in, the programs' environment, and refusing
+(the generated code's hash, unpacking a wheel, how many compiles at once,
+the bar's estimates and step lines, the commands filled in, the programs' environment, and refusing
 any Python but the tools'), and set_expected.py putting a build's hashes in a
 kit. The whole build runs with the game on a PC (launcher/kit/make_kit.sh,
 launcher/firststart/package.sh, docs/release-checklist.md), and the setup that
@@ -101,12 +101,106 @@ def test_compile_jobs(monkeypatch):
     assert be.compile_jobs(0, 40)[0] == 1
 
 
-def test_compile_estimate():
+def test_pipeline_seconds_for_every_step():
+    kj = _load("kit_json")
+    assert set(be.PIPELINE_SECONDS) == {"tools." + n for n in kj.PIPELINE}
+    assert set(be.LINK_SECONDS) == {"linux", "windows"}
+
+
+def test_device_speed():
+    assert be.device_speed([]) == 1.0
+    assert be.device_speed([(0.2, 0.1)]) == 1.0                      # too little of the PC's time to say
+    assert be.device_speed([(131.5, 90.7)]) == pytest.approx(90.7 / 131.5)
+    assert be.device_speed([(0.2, 0.2), (131.5, 206.4)]) == pytest.approx(206.6 / 131.7)
+
+
+def test_compile_per_s():
     per_s = be.COMPILE_BYTES_PER_S
-    assert be.compile_estimate([], 8) == 1
-    assert be.compile_estimate([per_s * 10], 8) == 11                       # one file: its own time
-    assert be.compile_estimate([per_s * 10] * 16, 2) == 81                  # many: shared out
-    assert be.compile_estimate([per_s * 50, per_s, per_s], 8) == 51         # the biggest decides
+    assert be.compile_per_s([], 1234.0) == 1234.0
+    assert be.compile_per_s([(per_s * 2, 0.1)], 1234.0) == 1234.0        # 2 s of work: too little to say
+    assert be.compile_per_s([(per_s * 20, 40.0), (per_s * 2, 0.1)], 1234.0) == pytest.approx(per_s * 22 / 40.1)
+
+
+def test_left_of():
+    assert be.left_of(10.0, 0.0) == 10.0
+    assert be.left_of(10.0, 4.0) == 6.0
+    # Past its estimate a step still needs a part of what it has run, so the
+    # bar never holds still: the PC's first start of 3ddb1a9-bar1 had three
+    # files due at once, 4.7 s before the last finished.
+    assert be.left_of(10.0, 40.0) == pytest.approx(40.0 * be.OVERRUN)
+    assert be.left_of(10.0, 40.0) > 0
+
+
+def test_compile_left():
+    per_s = 100.0
+    assert be.compile_left([], [], 8, per_s) == 0
+    assert be.compile_left([], [1000], 8, per_s) == 10                   # one file: its own time
+    assert be.compile_left([], [1000] * 16, 2, per_s) == 80              # many: two at a time
+    assert be.compile_left([], [5000, 100, 100], 8, per_s) == 50         # the biggest decides
+    assert be.compile_left([(1000, 4)], [], 8, per_s) == 6               # running: what it has left
+    assert be.compile_left([(1000, 30)], [], 8, per_s) == pytest.approx(30 * be.OVERRUN)  # past its time
+    assert be.compile_left([(1000, 4), (300, 0)], [500], 2, per_s) == 8  # waiting: on the first free
+
+
+# b2's release build on the Ally X, at its lowest power (its build.log, from
+# test build 22a5376-b2's step 8): translating, and the compile,
+# 8 at once, estimated at 73 s and taking 225.5 s. The files aren't here, so
+# each one's size is stood in by its compile time on the PC (12 at once, b2's
+# step 8), in COMPILE_BYTES_PER_S; the pool's order is the files' own.
+ALLY_X_B2_TRANSLATING = [("tools.xbe_parser", 0.2), ("tools.disasm", 206.4), ("tools.func_id", 3.4),
+                         ("tools.abi_analysis", 2.4), ("tools.recomp", 132.5)]
+PC_COMPILE_S = [("recomp_0002.c", 44.1), ("recomp_0004.c", 43.6), ("recomp_0001.c", 40.3),
+                ("recomp_0000.c", 39.2), ("recomp_0006.c", 28.7), ("recomp_0003.c", 28.0),
+                ("recomp_0005.c", 22.4), ("recomp_0008.c", 17.2), ("recomp_0007.c", 12.0),
+                ("recomp_0009.c", 8.5), ("recomp_dispatch.c", 0.7), ("recomp_stubs_unresolved.c", 0.5)]
+
+
+def test_compile_estimated_again_from_its_files():
+    """Known bug 46: on b2's Ally X build, the compile's first file finished at
+    81.8 s, after its 73 s estimate, and b2 said the rest would take 10 s; it
+    took 143.7 s. Now the rest is estimated from that file's own speed."""
+    k = be.device_speed([(be.PIPELINE_SECONDS[m], t) for m, t in ALLY_X_B2_TRANSLATING])
+    assert k == pytest.approx(344.9 / 210.2)
+    size = {n: t * be.COMPILE_BYTES_PER_S for n, t in PC_COMPILE_S}
+    order = [n for n, _ in PC_COMPILE_S]
+    first = be.COMPILE_BYTES_PER_S / k
+    assert be.compile_left([], [size[n] for n in order], 8, first) == pytest.approx(44.1 * k)
+    now = 81.8
+    done = [(size["recomp_0008.c"], 81.8)]
+    running = [(size[n], now) for n in order[:8] if n != "recomp_0008.c"]
+    waiting = [size[n] for n in order[8:]]
+    left = be.compile_left(running, waiting, 8, be.compile_per_s(done, first))
+    assert 100 < left < 200
+
+
+def test_step_lines(capsys):
+    be.say_step(131.46, 300.04, "Translating the game (tools.disasm)")
+    be.say_step(5.0, 2.0, "Linking the engine")                     # never less left than the step
+    assert capsys.readouterr().out == ("step 131.5 300.0 Translating the game (tools.disasm)\n"
+                                       "step 5.0 5.0 Linking the engine\n")
+
+
+def test_steps_said_again_past_their_estimate(capsys, monkeypatch):
+    """A step that runs past its estimate has its line said again with what
+    its estimate says then; one that doesn't, isn't."""
+    monkeypatch.setattr(be, "OVERRUN_EVERY", 0.05)
+    calls = []
+
+    def late():
+        calls.append(1)
+        return (0.01, 0.5) if len(calls) == 1 else (0.02, 0.3)
+    steps = be.Steps()
+    steps.step(late, "Translating the game (tools.disasm)")
+    deadline = be.time.monotonic() + 5
+    while len(calls) < 3 and be.time.monotonic() < deadline:
+        be.time.sleep(0.01)
+    steps.step(lambda: (60.0, 90.0), "Compiling (12 files, 8 at once)")
+    be.time.sleep(0.2)
+    steps.stop()
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "step 0.0 0.5 Translating the game (tools.disasm)"
+    assert out[1:-1] and all(line == "step 0.0 0.3 Translating the game (tools.disasm)" for line in out[1:-1])
+    assert out[-1] == "step 60.0 90.0 Compiling (12 files, 8 at once)"   # not due again within 0.2 s
 
 
 def test_fill():

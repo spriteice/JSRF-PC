@@ -14,23 +14,29 @@ typedef struct js_download_item {
     uint64_t size;   /* 0: not known ahead */
 } js_download_item;
 
-/* How the worker reports: frac_from and frac_to are fractions of the whole
- * (-1 for no change); the bar moves from one towards the other over about
- * secs seconds. text is for the player, log for the log (either NULL). */
-typedef void (*js_update_fn)(void *ctx, double frac_from, double frac_to, int secs,
+/* How the worker reports, the bar's part in fractions of the whole (-1 for
+ * none). at: where the bar is known to be (a download's bytes), which it
+ * moves to at once if it is behind, and holds at if it is ahead, as the bar
+ * never goes back. end: a step starts, or its estimate changes: from where
+ * the bar is, it eases towards end, and takes the part of the way that secs
+ * (the step's seconds, from now) is of left (the seconds until the bar is to
+ * reach end, the step's own among them; 0 or less: secs). So when an
+ * estimate turns out wrong, the next one changes the bar's speed, never its
+ * place. text is for the player, log for the log (either NULL). */
+typedef void (*js_update_fn)(void *ctx, double at, double end, double secs, double left,
                              const char *text, const char *log);
 
 /* The bar, as the window draws it: where its step started, easing towards
- * where it ends over about secs seconds. Times are in seconds, on the
+ * where the step ends over about secs seconds. Times are in seconds, on the
  * caller's own clock. */
 typedef struct js_bar {
     double from, to;
-    int secs;
+    double secs;
     double since;      /* when the step started */
 } js_bar;
 
-/* A step, as js_update_fn gives it (from < 0: no change). */
-void js_bar_set(js_bar *b, double now, double from, double to, int secs);
+/* An update, as js_update_fn gives it. */
+void js_bar_move(js_bar *b, double now, double at, double end, double secs, double left);
 /* Where the bar is now: 0 to 1. */
 double js_bar_at(const js_bar *b, double now);
 

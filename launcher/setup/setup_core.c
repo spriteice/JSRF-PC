@@ -451,7 +451,7 @@ static int dl_tick(dl_state *d)
             sfmt(t, sizeof t, "Downloading the tools: %s, %.1f of %.1f MB", d->name,
                  d->done / 1e6, d->total / 1e6);
             d->p->update(d->p->ctx, d->f0 + (d->f1 - d->f0) * (double)d->done / (double)d->total,
-                         -1, 0, t, NULL);
+                         -1, 0, 0, t, NULL);
         }
     }
     return 0;
@@ -658,7 +658,7 @@ int js_download(const char *url, const char *dest, const char *sha256, uint64_t 
             char t[600];
             int w = g_download_waits[tries - 1];
             sfmt(t, sizeof t, "Downloading the tools: %s, trying again in %d s", name, w);
-            if (p) p->update(p->ctx, frac0, -1, 0, t, NULL);
+            if (p) p->update(p->ctx, frac0, -1, 0, 0, t, NULL);
             if (js_pause(p, w)) { sfmt(err, errlen, "cancelled"); break; }
         }
         memset(&d, 0, sizeof d);
@@ -673,7 +673,7 @@ int js_download(const char *url, const char *dest, const char *sha256, uint64_t 
         if (rc != 0 && p) {
             char t[600];
             sfmt(t, sizeof t, "download try %d of %d failed: %s", tries + 1, JS_DOWNLOAD_TRIES, err);
-            p->update(p->ctx, -1, -1, 0, NULL, t);
+            p->update(p->ctx, -1, -1, 0, 0, NULL, t);
         }
     }
     if (rc != 0) {
@@ -706,7 +706,7 @@ int js_download(const char *url, const char *dest, const char *sha256, uint64_t 
     if (p) {
         char t[300];
         sfmt(t, sizeof t, "downloaded %s, SHA-256 %s", name, hex);
-        p->update(p->ctx, frac1, -1, 0, NULL, t);
+        p->update(p->ctx, frac1, -1, 0, 0, NULL, t);
     }
     return 0;
 }
@@ -1118,13 +1118,21 @@ int jsrf_setup_needed(const char *root)
 
 /* ---- the bar ----------------------------------------------------------------------------- */
 
-void js_bar_set(js_bar *b, double now, double from, double to, int secs)
+/* As setup_job.h's js_update_fn: a known position only ever moves the bar
+ * on, and a step eases from wherever it is. */
+void js_bar_move(js_bar *b, double now, double at, double end, double secs, double left)
 {
-    if (from < 0) return;
-    b->from = from;
-    b->to = to >= 0 ? to : from;
-    b->secs = secs;
+    double p;
+    if (at < 0 && end < 0) return;
+    p = js_bar_at(b, now);
+    if (at > p) p = at;
+    b->from = b->to = p;
+    b->secs = 0;
     b->since = now;
+    if (end > p && secs > 0) {
+        b->to = p + (end - p) * (left > secs ? secs / left : 1.0);
+        b->secs = secs;
+    }
 }
 
 /* Where the step started, easing towards where it ends, never quite there
@@ -1145,18 +1153,19 @@ double js_bar_at(const js_bar *b, double now)
 static void job_log(js_job *j, const char *text)
 {
     if (j->log) { fputs(text, j->log); fputc('\n', j->log); fflush(j->log); }
-    if (j->prog.update) j->prog.update(j->prog.ctx, -1, -1, 0, NULL, text);
+    if (j->prog.update) j->prog.update(j->prog.ctx, -1, -1, 0, 0, NULL, text);
 }
 
+/* The build's lines (launcher/kit/build_engine.py): "step <seconds>
+ * <seconds left> <text>" moves the bar on towards the build's end. */
 static void job_line(void *ctx, const char *text)
 {
     js_job *j = (js_job *)ctx;
-    double a, b;
-    int secs, n = 0;
+    double secs, left;
+    int n = 0;
     if (j->log) { fputs(text, j->log); fputc('\n', j->log); fflush(j->log); }
-    if (sscanf(text, "step %lf %lf %d %n", &a, &b, &secs, &n) == 3 && n > 0) {
-        double base = j->base, span = 1.0 - j->base;
-        j->prog.update(j->prog.ctx, base + span * a, base + span * b, secs, text + n, NULL);
+    if (sscanf(text, "step %lf %lf %n", &secs, &left, &n) == 2 && n > 0) {
+        j->prog.update(j->prog.ctx, -1, 1.0, secs, left, text + n, NULL);
         return;
     }
     if (!strncmp(text, "done ", 5)) {
@@ -1164,7 +1173,7 @@ static void job_line(void *ctx, const char *text)
     } else if (!strncmp(text, "error: ", 7)) {
         sfmt(j->err, sizeof j->err, "%s", text + 7);
     }
-    j->prog.update(j->prog.ctx, -1, -1, 0, NULL, text);
+    j->prog.update(j->prog.ctx, -1, -1, 0, 0, NULL, text);
 }
 
 static int fail_job(js_job *j, const char *fmt, ...)
@@ -1315,7 +1324,7 @@ int js_job_run(js_job *j)
             }
             at += s;
         }
-        j->prog.update(j->prog.ctx, share_dl, JS_DOWNLOAD_SHARE, 15, "Unpacking the tools", NULL);
+        j->prog.update(j->prog.ctx, share_dl, JS_DOWNLOAD_SHARE, 15, 15, "Unpacking the tools", NULL);
         if (js_untar_gz(wpaths[0], tools, j->err, sizeof j->err)) return fail_job(j, "%s", j->err);
         for (i = 1; i < JS_NDOWNLOADS; i++) { wheels[nw++] = "--install-wheel"; wheels[nw++] = wpaths[i]; }
         wheels[nw++] = "--install-only";
@@ -1333,7 +1342,7 @@ int js_job_run(js_job *j)
     }
     if (!js_tools_ready(j->s->root)) return fail_job(j, "the tools folder isn't whole: %s", tools);
 
-    j->prog.update(j->prog.ctx, j->base, j->base, 0, "Reading the game", NULL);
+    j->prog.update(j->prog.ctx, j->base, -1, 0, 0, "Reading the game", NULL);
     {
         /* The tests without the game (tests/setup) give made-up generated
          * code instead, which the build takes in place of translating;
@@ -1360,7 +1369,7 @@ int js_job_run(js_job *j)
         sfmt(t, sizeof t, "engine_sha256=%s\n", j->engine_sha);
         js_write_text(p, t);
     }
-    j->prog.update(j->prog.ctx, 1.0, 1.0, 0, "The engine is built", NULL);
+    j->prog.update(j->prog.ctx, 1.0, -1, 0, 0, "The engine is built", NULL);
     return 0;
 }
 
@@ -1409,10 +1418,25 @@ uint64_t js_tools_size(const char *root)
 
 /* ---- the console's way ---------------------------------------------------------------- */
 
-static void con_update(void *ctx, double from, double to, int secs, const char *text, const char *log)
+/* Seconds on a clock that only goes forward, for the console's bar. */
+static double js_seconds(void)
 {
-    (void)ctx; (void)to; (void)secs;
-    if (text) printf("[%3d%%] %s\n", from >= 0 ? (int)(from * 100) : -1, text);
+#ifdef _WIN32
+    return (double)GetTickCount64() / 1000.0;
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+#endif
+}
+
+/* The bar as the window would show it, where each line is printed. */
+static void con_update(void *ctx, double at, double end, double secs, double left, const char *text, const char *log)
+{
+    js_bar *bar = (js_bar *)ctx;
+    double now = js_seconds();
+    js_bar_move(bar, now, at, end, secs, left);
+    if (text) printf("[%3d%%] %s\n", (int)(js_bar_at(bar, now) * 100), text);
     else if (log && getenv("JSRF_SETUP_VERBOSE")) printf("       %s\n", log);
     fflush(stdout);
 }
@@ -1421,6 +1445,7 @@ int jsrf_setup_run_console(jsrf_setup *s)
 {
     static js_job job;
     static volatile int cancel;
+    static js_bar bar;
     const char *ans = getenv("JSRF_SETUP_ANSWER");
     const char *keep = getenv("JSRF_SETUP_TOOLS");
     const char *mm = getenv("JSRF_SETUP_MISMATCH");
@@ -1435,6 +1460,8 @@ int jsrf_setup_run_console(jsrf_setup *s)
     job.download = !local;
     job.prog.update = con_update;
     job.prog.cancel = &cancel;
+    memset(&bar, 0, sizeof bar);
+    job.prog.ctx = &bar;
     rc = js_job_run(&job);
     if (job.log) { fclose(job.log); job.log = NULL; }
     if (rc != 0) {

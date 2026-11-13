@@ -23,16 +23,24 @@ It writes only under <root>/build (the generated code, the objects, the
 pipeline's work), <root>/tools/zig-cache (Zig's cache) and the engine.
 
 Its output, line by line, for the setup's progress bar:
-  step <from> <to> <seconds> <text>   a step starts: the bar goes from <from>
-                                      towards <to> (fractions of the build) over
-                                      about <seconds>
+  step <seconds> <seconds left> <text>   a step starts, or its estimate
+                                         changes (a file compiled, or every
+                                         few seconds once the step has run
+                                         past it): it should take about
+                                         <seconds> from now, and the whole
+                                         build <seconds left>, the step's own
+                                         among them
   done <engine sha256> <match|mismatch|unknown> <gen sha256> <match|mismatch|unknown>
-anything else is the log. Exit 0 when the engine was built, 2 when it wasn't
+anything else is the log. The bar goes on from where it is, never back
+(launcher/setup, js_bar_move), and takes the step's part of what is left of
+it, so the estimates set its speed, and a wrong one changes its speed, never
+its place. Exit 0 when the engine was built, 2 when it wasn't
 (its last lines say why).
 """
 import argparse
 import concurrent.futures
 import hashlib
+import heapq
 import json
 import os
 import shutil
@@ -40,33 +48,63 @@ import stat
 import subprocess
 import sys
 import sysconfig
+import threading
 import time
 import zipfile
 
 WIN = sys.platform == "win32"
 
-# How the build's time is shared out, from the Windows PC's first start
-# (players-pc-build/FINDINGS.md: translating 210 s, compiling 45 s on 16
-# threads); the bar moves by these whatever the PC.
-SHARES = [
-    ("tools.xbe_parser", 0.01, 2),
-    ("tools.disasm", 0.48, 130),
-    ("tools.func_id", 0.01, 2),
-    ("tools.abi_analysis", 0.01, 2),
-    ("tools.recomp", 0.29, 76),
-]
-COMPILE = (0.80, 0.96)
-LINK = (0.96, 1.00)
+# ---- The bar's estimates: the PC's times, scaled by this device's own speed
+# as its steps finish.
+
+# Each translating step's time on the Windows PC (i7-10700K; b2's three
+# first starts there, 9 November, from test build 22a5376-b2), the times
+# this device's are measured against.
+PIPELINE_SECONDS = {
+    "tools.xbe_parser": 0.2,
+    "tools.disasm": 131.5,
+    "tools.func_id": 1.6,
+    "tools.abi_analysis": 1.3,
+    "tools.recomp": 75.6,
+}
+# The link's, by the system the kit is for: Windows' on the PC (14.8 to 16.4
+# s), Linux's on the Ally X at its usual speed (2.0 to 2.9 s).
+LINK_SECONDS = {"windows": 16.0, "linux": 3.0}
+# The device's speed is measured over the steps done once they come to this
+# many of the PC's seconds: xbe_parser's fraction of a second says nothing.
+SPEED_MIN_SECONDS = 10.0
 
 
 # The biggest generated file takes about 0.55 GB to compile (recomp_0000.c,
 # 8 MB, measured on the Windows PC's Linux VM: 534 MB at its peak), so each
 # compile at once is given 0.75 GB of the memory free.
 COMPILE_MB = 750
-# About how fast one compile goes with the others beside it: on the Ally X,
-# 8 at once, recomp_0002.c (6.3 MB) took 52.9 s, the longest, and the whole
-# compile 52.9 s (9 November); this gives it 72 s.
-COMPILE_BYTES_PER_S = 110000
+# About how fast one compile goes with the others beside it, at the PC's
+# translating speed: the compile's first estimate, divided by the device's
+# speed (device_speed); from the first files done, the files' own speed. A
+# compile on all cores slows more than translating on one where the power is
+# limited: on the Ally X 45 to 69 KB/s in its three first starts with logs
+# (b2's at its lowest TDP, b2-firststart-test2's two at its usual), on the PC
+# 155 to 160 (Windows) and 97 (WSL). The Ally X's, so that there the bar errs
+# slow, and speeds up once the files' own speed is known, rather than running
+# ahead and crawling.
+COMPILE_BYTES_PER_S = 60000
+# The generated code's C files, for the compile's part of the estimates
+# while translating hasn't made them yet: about 43.5 MB in 12 files, the
+# biggest (recomp_0000.c) 8 MB (players-pc-build/measure: 43.9 MB with its
+# two headers).
+GEN_FILES = 12
+GEN_BYTES = 43500000
+GEN_LARGEST_BYTES = 8000000
+# A step past its estimate is taken to need a part OVERRUN more of what it
+# has run, and its line is said again every OVERRUN_EVERY seconds, so the bar
+# slows but never stops: disasm took 206 s on the Ally X at its lowest TDP,
+# against the PC's 131.5, and the files compile at their own speeds, a third
+# apart (the PC's first start of 3ddb1a9-bar1: recomp_0000.c 211 KB/s,
+# recomp_0002.c 149 KB/s), so the files' average leaves the slowest due at
+# once.
+OVERRUN = 0.05
+OVERRUN_EVERY = 5.0
 
 
 def memory_free_mb():
@@ -107,19 +145,96 @@ def compile_jobs(asked, files):
     return jobs, "%d cores, %s free" % (cores, ("%d MB" % free) if free else "memory unknown")
 
 
-def compile_estimate(sizes, jobs):
-    """Seconds the compile should take, for the bar: the biggest file's time,
-    or all of them shared over the compiles at once, whichever is longer."""
-    if not sizes:
-        return 1
-    one = max(sizes) / COMPILE_BYTES_PER_S
-    shared = sum(sizes) / COMPILE_BYTES_PER_S / max(1, jobs)
-    return int(max(one, shared)) + 1
+def device_speed(done):
+    """This device's time against the PC's (2.0: it takes twice as long), from
+    the steps done, each (the PC's seconds, this device's): 1 until they come
+    to SPEED_MIN_SECONDS of the PC's."""
+    pc = sum(p for p, _ in done)
+    here = sum(h for _, h in done)
+    return here / pc if pc >= SPEED_MIN_SECONDS and here > 0 else 1.0
+
+
+def compile_per_s(done, first):
+    """Bytes a second one compile goes here: the files done's, each (size,
+    seconds), once they are SPEED_MIN_SECONDS of work at
+    COMPILE_BYTES_PER_S; first until then."""
+    size = sum(n for n, _ in done)
+    took = sum(t for _, t in done)
+    return size / took if size / COMPILE_BYTES_PER_S >= SPEED_MIN_SECONDS and took > 0 else first
+
+
+def left_of(secs, ran):
+    """Seconds a step estimated at secs still needs once it has run ran: the
+    rest of secs, or, past it, OVERRUN of what it has run."""
+    return max(secs - ran, ran * OVERRUN)
+
+
+def compile_left(running, waiting, jobs, per_s):
+    """Seconds until the compile ends, as the pool runs it, each file taking
+    its size over per_s: each file running, (size, seconds it has run), ends
+    when that has run (left_of, if it already has), and the files waiting
+    (their sizes, in the pool's order) each start as the first compile ends."""
+    ends = [left_of(size / per_s, ran) for size, ran in running]
+    ends += [0.0] * max(0, jobs - len(ends))
+    heapq.heapify(ends)
+    for size in waiting:
+        heapq.heappush(ends, heapq.heappop(ends) + size / per_s)
+    return max(ends) if ends else 0.0
+
+
+def say_step(secs, left, text):
+    """A step line for the setup's bar (the format at the top)."""
+    say("step %.1f %.1f %s" % (secs, max(secs, left), text))
+
+
+class Steps:
+    """The bar's step lines. step(estimate, text) says one, estimate() giving
+    (seconds, seconds left) from now; once the step has run past its seconds,
+    its line is said again every OVERRUN_EVERY seconds with what estimate()
+    gives then, until the next step or stop()."""
+
+    def __init__(self):
+        self.lock = threading.Condition()
+        self.estimate = None
+        self.text = ""
+        self.due = 0.0
+        self.stopped = False
+        self.thread = threading.Thread(target=self._watch, daemon=True)
+        self.thread.start()
+
+    def step(self, estimate, text):
+        with self.lock:
+            secs, left = estimate()
+            say_step(secs, left, text)
+            self.estimate, self.text = estimate, text
+            self.due = time.monotonic() + max(secs, OVERRUN_EVERY)
+            self.lock.notify()
+
+    def stop(self):
+        with self.lock:
+            self.stopped = True
+            self.lock.notify()
+        self.thread.join()
+
+    def _watch(self):
+        with self.lock:
+            while not self.stopped:
+                wait = self.due - time.monotonic() if self.estimate else None
+                if wait is None or wait > 0:
+                    self.lock.wait(wait)
+                    continue
+                secs, left = self.estimate()
+                say_step(secs, left, self.text)
+                self.due = time.monotonic() + OVERRUN_EVERY
+
+
+_saying = threading.Lock()
 
 
 def say(line):
-    sys.stdout.write(line + "\n")
-    sys.stdout.flush()
+    with _saying:
+        sys.stdout.write(line + "\n")
+        sys.stdout.flush()
 
 
 def fail(msg):
@@ -301,20 +416,35 @@ def main():
     os.makedirs(os.path.join(work, "game_files"), exist_ok=True)
     shutil.copyfile(a.xbe, os.path.join(work, "game_files", "default.xbe"))
     say("default.xbe %s" % sha256_file(os.path.join(work, "game_files", "default.xbe")))
-    at = 0.0
     t_all = time.monotonic()
-    for (module, share, secs), step in zip(SHARES, info["pipeline"]):
+    pipeline = info["pipeline"]
+    link_pc = LINK_SECONDS[info["system"]]
+    # Before translating has made them, the generated files as the PC's were.
+    gen_before = [GEN_LARGEST_BYTES] + [(GEN_BYTES - GEN_LARGEST_BYTES) / (GEN_FILES - 1)] * (GEN_FILES - 1)
+    jobs_before = compile_jobs(a.jobs, GEN_FILES)[0]
+    done_steps = []   # (the PC's seconds, this device's) for each step done
+    steps = Steps()
+    for i, step in enumerate(pipeline):
+        module = step[0]
         if a.test_gen:
-            say("step %.3f %.3f %d Translating the game (%s)" % (at, at + share, 0, module))
-            at += share
+            say_step(0, 0, "Translating the game (%s)" % module)
             continue
-        say("step %.3f %.3f %d Translating the game (%s)" % (at, at + share, secs, module))
+        k = device_speed(done_steps)
+        secs = PIPELINE_SECONDS[module] * k
+        later = (sum(PIPELINE_SECONDS[x[0]] for x in pipeline[i + 1:]) * k
+                 + compile_left([], gen_before, jobs_before, COMPILE_BYTES_PER_S / k) + link_pc * k)
+        t_step = time.monotonic()
+
+        def estimate(secs=secs, later=later, t_step=t_step):
+            s = left_of(secs, time.monotonic() - t_step)
+            return s, s + later
+        steps.step(estimate, "Translating the game (%s)" % module)
         cmd = [exe, "-E", "-s", "-m"] + fill(step, {"xbe": "game_files/default.xbe", "gen": gen})
         rc, out, took = run(cmd, work, env, True)
         if rc != 0:
             fail("%s stopped (exit %d)" % (module, rc))
         say("%s: %.1f s" % (module, took))
-        at += share
+        done_steps.append((PIPELINE_SECONDS[module], took))
     if a.test_gen:
         for n in os.listdir(a.test_gen):
             shutil.copyfile(os.path.join(a.test_gen, n), os.path.join(gen, n))
@@ -326,27 +456,42 @@ def main():
     # ---- 2. Compiling, every core the memory allows, the biggest files first.
     sources = sorted((n for n in os.listdir(gen) if n.endswith(".c")),
                      key=lambda n: (-os.path.getsize(os.path.join(gen, n)), n))
+    sizes = {n: os.path.getsize(os.path.join(gen, n)) for n in sources}
     jobs, why = compile_jobs(a.jobs, len(sources))
     values = {"kit": kit, "root": root, "gen": gen, "gen_root": gen_root}
     flags = fill(info["compile"], values)
-    est = compile_estimate([os.path.getsize(os.path.join(gen, n)) for n in sources], jobs)
-    say("compiling %d files, %d at once (%s), about %d s" % (len(sources), jobs, why, est))
-    say("step %.3f %.3f %d Compiling (%d files, %d at once)" % (COMPILE[0], COMPILE[1], est, len(sources), jobs))
+    k = device_speed(done_steps)
+    first_per_s = COMPILE_BYTES_PER_S / k
+    link_s = link_pc * k
+    est = compile_left([], [sizes[n] for n in sources], jobs, first_per_s)
+    say("compiling %d files (%.1f MB, the biggest %.1f MB), %d at once (%s), about %.0f s"
+        % (len(sources), sum(sizes.values()) / 1e6, max(sizes.values(), default=0) / 1e6, jobs, why, est))
+    say("compiling, biggest first: %s" % ", ".join("%s %d" % (n, sizes[n]) for n in sources))
+    started = {}    # when each file's compile started, by the pool's threads
+    finished = {}   # each file compiled: (size, seconds), by this thread with steps.lock held
+
+    def compile_estimate():
+        now = time.monotonic()
+        running = [(sizes[n], now - started[n]) for n in sources if n in started and n not in finished]
+        waiting = [sizes[n] for n in sources if n not in started]
+        s = compile_left(running, waiting, jobs, compile_per_s(list(finished.values()), first_per_s))
+        return s, s + link_s
+    steps.step(compile_estimate, "Compiling (%d files, %d at once)" % (len(sources), jobs))
 
     def compile_one(name):
+        started[name] = time.monotonic()
         o = os.path.join(objs, name[:-2] + ".o")
         cmd = [zig, "cc", "-target", info["target"]] + flags + ["-w", "-c", os.path.join(gen, name), "-o", o]
         return name, o, run(cmd, work, env, False)
 
-    done, failed = 0, []
+    failed = []
     gen_objs = {}
     t_cc = time.monotonic()
     with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
-        # Each file counted as it finishes, whichever it is, so the bar
-        # doesn't wait on the biggest.
+        # Each file counted as it finishes, whichever it is, and the rest
+        # estimated again from the files' own speed so far.
         for fut in concurrent.futures.as_completed([pool.submit(compile_one, n) for n in sources]):
             name, o, (rc, out, took) = fut.result()
-            done += 1
             if rc != 0:
                 failed.append(name)
                 say("%s failed:" % name)
@@ -355,15 +500,20 @@ def main():
             else:
                 gen_objs[name] = o
                 say("%s: %.1f s" % (name, took))
-            frac = COMPILE[0] + (COMPILE[1] - COMPILE[0]) * done / max(1, len(sources))
-            left = max(10, int(est - (time.monotonic() - t_cc)))
-            say("step %.3f %.3f %d Compiling (%d of %d files done)" % (frac, COMPILE[1], left, done, len(sources)))
+            with steps.lock:
+                finished[name] = (sizes[name], took)
+            steps.step(compile_estimate, "Compiling (%d of %d files done)" % (len(finished), len(sources)))
     if failed:
         fail("%d files didn't compile: %s" % (len(failed), ", ".join(failed)))
     say("compiling: %.1f s" % (time.monotonic() - t_cc))
 
     # ---- 3. Linking, and the engine put in place.
-    say("step %.3f %.3f %d Linking the engine" % (LINK[0], LINK[1], 20))
+    t_link = time.monotonic()
+
+    def link_estimate():
+        s = left_of(link_s, time.monotonic() - t_link)
+        return s, s
+    steps.step(link_estimate, "Linking the engine")
     engine = os.path.join(root, *info["engine"].split("/"))
     os.makedirs(os.path.dirname(engine), exist_ok=True)
     new = engine + ".new"
@@ -375,6 +525,7 @@ def main():
     values["out"] = new
     cmd = [zig, info["link_driver"], "-target", info["target"]] + fill(info["link"], values)
     rc, out, took = run(cmd, work, env, True)
+    steps.stop()
     if rc != 0 or not os.path.isfile(new):
         fail("the link stopped (exit %d)" % rc)
     say("linking: %.1f s" % took)

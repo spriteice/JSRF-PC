@@ -39,14 +39,14 @@ with open(os.path.join(build, "py-args.txt"), "w") as f:
 with open(os.path.join(build, "py-env.txt"), "w") as f:
     f.write("".join("%%s=%%s\n" %% kv for kv in sorted(os.environ.items())))
 mode = open(os.path.join(root, "mode.txt")).read().strip()
-print("step 0 0.5 2 Translating")
+print("step 2 4 Translating")
 if mode == "error":
     print("error: the stand-in stopped")
     sys.exit(1)
 os.makedirs(os.path.join(build, "generated"), exist_ok=True)
 with open(os.path.join(build, "generated", "x.c"), "w") as f:
     f.write("/* made up */\n")
-print("step 0.5 1 2 Compiling")
+print("step 2 2 Compiling")
 os.makedirs(os.path.join(root, "bin"), exist_ok=True)
 engine = b"the stand-in engine\n"
 with open(os.path.join(root, "bin", "jsrf_recomp"), "wb") as f:

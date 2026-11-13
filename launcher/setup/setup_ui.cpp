@@ -52,11 +52,11 @@ static double seconds(void)
     return (double)SDL_GetTicks64() / 1000.0;
 }
 
-static void on_update(void *ctx, double from, double to, int secs, const char *text, const char *log)
+static void on_update(void *ctx, double at, double end, double secs, double left, const char *text, const char *log)
 {
     (void)ctx;
     SDL_LockMutex(g.mu);
-    js_bar_set(&g.bar, seconds(), from, to, secs);
+    js_bar_move(&g.bar, seconds(), at, end, secs, left);
     if (text) { strncpy(g.text, text, sizeof g.text - 1); g.text[sizeof g.text - 1] = 0; }
     if (log) {
         if (g.nlines == 8) { memmove(g.lines[0], g.lines[1], sizeof g.lines[0] * 7); g.nlines = 7; }
@@ -246,7 +246,7 @@ extern "C" int jsrf_setup_run(jsrf_setup *s)
                 job.download = !local;
                 job.prog.update = on_update;
                 job.prog.cancel = &g.cancel;
-                js_bar_set(&g.bar, seconds(), 0, 0, 0);
+                memset(&g.bar, 0, sizeof g.bar);
                 g.finished = 0;
                 snprintf(g.text, sizeof g.text, "%s", local ? "Starting" : "Downloading the tools");
                 th = SDL_CreateThread(worker, "setup", &job);

@@ -3,10 +3,10 @@
  * network: SHA-256, the key=value files, when the engine is ready and when the
  * setup must run, the tools folder's mark, unpacking the tools' Python (and
  * refusing what would land outside its folder), a download that fails (tried
- * again after a wait, which closing the window stops), the bar's easing,
- * what Delete takes, running a program with only the environment given, and
- * the whole first start the console's way, with a stand-in for the tools'
- * Python.
+ * again after a wait, which closing the window stops), the bar (never back,
+ * each step taking its part of the rest), what Delete takes, running a
+ * program with only the environment given, and the whole first start the
+ * console's way, with a stand-in for the tools' Python.
  *
  *   test <work dir>
  *
@@ -224,10 +224,10 @@ struct dl_seen {
     volatile int cancel;
 };
 
-static void dl_update(void *ctx, double from, double to, int secs, const char *text, const char *log)
+static void dl_update(void *ctx, double at, double end, double secs, double left, const char *text, const char *log)
 {
     struct dl_seen *s = (struct dl_seen *)ctx;
-    (void)from; (void)to; (void)secs;
+    (void)at; (void)end; (void)secs; (void)left;
     if (log && strstr(log, "download try 1 of 4 failed")) s->failed_try = 1;
     if (log && strstr(log, "no libcurl.so.4")) s->no_curl = 1;
     /* The first wait: the window is closed then, as a player might. */
@@ -281,19 +281,52 @@ static int close_to(double a, double b)
 static void test_bar(void)
 {
     js_bar b;
+    double before;
     memset(&b, 0, sizeof b);
-    js_bar_set(&b, 100, 0.2, 0.6, 4);
-    check(close_to(js_bar_at(&b, 100), 0.2), "the bar: a step starts where it says");
+    js_bar_move(&b, 100, 0.2, 0.6, 4, 4);
+    check(close_to(js_bar_at(&b, 100), 0.2), "the bar: a step from where it is known to be");
     check(close_to(js_bar_at(&b, 102), 0.2 + 0.4 * 0.45) && close_to(js_bar_at(&b, 104), 0.2 + 0.4 * 0.9),
           "  eases towards its end, 90% of the way at its time");
     check(js_bar_at(&b, 1e9) < 0.6 && js_bar_at(&b, 1e9) > 0.2 + 0.4 * 0.98,
           "  and creeps on after it, never quite there");
-    js_bar_set(&b, 105, -1, 0.9, 10);
-    check(close_to(js_bar_at(&b, 104), 0.2 + 0.4 * 0.9), "  an update with no position changes nothing");
-    js_bar_set(&b, 106, 0.5, -1, 0);
-    check(close_to(js_bar_at(&b, 200), 0.5), "  a position with no end stays there");
-    js_bar_set(&b, 107, 1.5, 2.0, 1);
-    check(close_to(js_bar_at(&b, 107), 1.0), "  and never past the whole");
+    js_bar_move(&b, 104, -1, -1, 0, 0);
+    check(close_to(js_bar_at(&b, 106), 0.2 + 0.4 * 0.93), "  a line with nothing for the bar changes nothing");
+
+    /* A step takes its part of what is left: its seconds over the seconds
+     * left, from where the bar is. */
+    memset(&b, 0, sizeof b);
+    js_bar_move(&b, 0, 0.2, -1, 0, 0);
+    js_bar_move(&b, 0, -1, 1.0, 10, 40);
+    check(close_to(js_bar_at(&b, 10), 0.2 + 0.8 * 0.25 * 0.9), "  a step of 10 s in 40 left: a quarter of the rest");
+    before = js_bar_at(&b, 5);
+    js_bar_move(&b, 5, -1, 1.0, 100, 100);
+    check(close_to(js_bar_at(&b, 5), before) && close_to(js_bar_at(&b, 105), before + (1 - before) * 0.9),
+          "  a new estimate changes the bar's speed, not its place");
+    before = js_bar_at(&b, 50);
+    js_bar_move(&b, 50, -1, 1.0, 0, 30);
+    check(close_to(js_bar_at(&b, 80), before), "  a step of no time holds it");
+
+    /* Known positions: ahead, the bar goes there at once; behind, it holds
+     * (a download tried again starts its file over). */
+    memset(&b, 0, sizeof b);
+    js_bar_move(&b, 0, 0.05, -1, 0, 0);
+    check(close_to(js_bar_at(&b, 1), 0.05), "  a known position ahead: there at once");
+    js_bar_move(&b, 1, 0.01, -1, 0, 0);
+    check(close_to(js_bar_at(&b, 2), 0.05), "  a known position behind: held, never back");
+    js_bar_move(&b, 2, 1.5, -1, 0, 0);
+    check(close_to(js_bar_at(&b, 2), 1.0), "  and never past the whole");
+
+    /* Known bug 46, b2's Ally X build: the compile, estimated at 73 s, ran
+     * the bar to 94.6% before its first file finished at 81.8 s, and that
+     * file's line said 81.3%, easing to the compile's end (96%) over 10 s. A
+     * line can't take the bar back now: given as a known position, 81.3%
+     * behind the bar holds it. */
+    memset(&b, 0, sizeof b);
+    js_bar_move(&b, 0, 0.80, 0.96, 73, 73);
+    before = js_bar_at(&b, 81.8);
+    js_bar_move(&b, 81.8, 0.813, 0.96, 10, 10);
+    check(before > 0.94 && js_bar_at(&b, 81.8) >= before && js_bar_at(&b, 91.8) >= before,
+          "  b2's Ally X compile: its first file's line doesn't take the bar back (known bug 46)");
 }
 
 /* ---- unpacking ---- */
@@ -546,7 +579,7 @@ static void test_console(void)
               "console: Python's environment its own: no PATH, HOME in build/tmp, nothing of the launcher's");
         at(gen, sizeof gen, "gen");
     }
-    check(file_has("c-keep/build/build.log", "step 0.5 1 2 Compiling"), "console: the build's lines in build/build.log");
+    check(file_has("c-keep/build/build.log", "step 2 2 Compiling"), "console: the build's lines in build/build.log");
 
     package("c-delete", want);
     setenv("JSRF_DECOY", "set", 1);
