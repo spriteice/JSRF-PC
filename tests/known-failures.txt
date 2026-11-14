@@ -8,6 +8,3 @@
 # (docs/release-checklist.md). The failure is reported on the run but
 # doesn't fail it; any other failure of the same test does. A bug's lines
 # come out with the change that fixes it.
-
-apu_pacing | apu_pacing *: frames too far apart (*) | b3 | known bug 22, the APU's frames late after the machine stalls: about 1 run in 6 in CI's containers (10 of 60), each after a gap of 44 to 90 ms between frames. Cause not found yet.
-apu_pacing | apu_pacing *: * frames a second, not 1500 | b3 | known bug 22 (above).

@@ -450,7 +450,7 @@ between builds).
 
 ### Repeated runs
 
-A known failure that comes and goes, such as known bugs 19 and 22, or a
+A known failure that comes and goes, as known bugs 19 and 22 were, or a
 race the sanitizer finds only sometimes (bug 20), is measured by running
 its test many times: at least 20 runs, reporting how many failed and how.
 A fix for one is shown by the same count with and without it, on the same
