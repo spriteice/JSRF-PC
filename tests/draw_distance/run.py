@@ -38,12 +38,20 @@ source = """
 """ + settings + (root / "tests/draw_distance/test_main.c").read_text(encoding="utf-8")
 
 LOG = "[DRAW] t=5.1 2x, a frame's objects (past 1x's distance): crowds 3.0 (1.0), pickups 0.0 (0.0)"
-AREAS = ("Far buildings, a set's areas: the game's 2.0, added 3.0, copies left out 1.0; "
-         "shadow passes a frame: 2.0 from the game's areas, 0.0 from all (Far shadows)")
-MAP = ["[DRAW] Far buildings: the map has 7 areas; lists name 6 of them, 1 a copy of another; no list names 5 (a copy of area 0, (0, 500, 0) away)",
-       "[DRAW] area 0: fog 100 to 1000, density 1",
-       "[DRAW] area 4: fog 500 to 5000, density 1, a copy of area 0, (400, 0, 0) away",
-       "[DRAW] area 6: fog 700 to 7000, density 1"]
+# Far buildings 3x and Far shadows Off from the bottom of test_main.c's map:
+# the game's 2 areas, 4 added (areas 2, 3, 4 and the side street, 9), and the
+# shadows from the game's own.
+AREAS = ("Far buildings 3x, a set's areas: the game's 2.0, added 4.0; "
+         "Far shadows Off, shadow passes a frame 2.0, each adding 0.0 areas")
+
+
+def map_lines(step):
+    """The lines test_main.c's map gives at a step: the map, with the one area
+    no list names, and the fog of each listed area, the first and the last."""
+    return [f"[DRAW] Far buildings {step}: the map has 11 areas; lists name 10 of them; no list names 10",
+            "[DRAW] area 0: fog 100 to 1000, density 1",
+            "[DRAW] area 9: fog 1000 to 10000, density 1"]
+
 
 # The Misc group's log (test_main.c, check_misc): object 0's first line, and
 # the line that says a map's log stops.
@@ -51,11 +59,11 @@ MISC_FIRST = "[DRAW] Misc group 01E5E1C0: model 2C40, in area 0, at 0 places"
 MISC_STOP = "[DRAW] Misc group: 2048 lines on this map, the most; no more until the next map"
 MISC_SECOND = "[DRAW] Misc group 01E5E760: model 2C50, in area 1, at 0 places"
 
-# case: (settings file or None for none, log lines it must print[, environment])
+# case: (settings file or None for none, log lines it must print)
 cases = {
-    "default": (None, ["[DRAW] objects at 2x (settings)", "[DRAW] Far buildings on (settings)",
-                       "[DRAW] Far shadows on (settings)"]),
-    "off": ("drawdistance=0\nfarbuildings=0\n", ["[DRAW] objects at 1x (settings)"]),
+    "default": (None, ["[DRAW] objects at 2x (settings)", "[DRAW] Far buildings 3x (settings)",
+                       "[DRAW] Far shadows 3x (settings)"]),
+    "off": ("drawdistance=0\nfarbuildingsahead=0\n", ["[DRAW] objects at 1x (settings)"]),
     "2x": ("drawdistance=1\n", ["[DRAW] objects at 2x (settings)"]),
     "3x": ("drawdistance=2\n", ["[DRAW] objects at 3x (settings)"]),
     "4x": ("drawdistance=3\n", ["[DRAW] objects at 4x (settings)"]),
@@ -68,38 +76,74 @@ cases = {
     "bad_nan": ("drawdistance=nan\n", ["drawdistance=nan is not 0 to 4; using 1"]),
     "pick": ("game_dir=/games/jsrf\ndrawdistance=0\n",
              ["[DRAW] objects at 1x (settings)", "[DRAW] objects at 4x (the menu)"]),
-    "log": ("drawdistance=1\nfarbuildings=0\n", [LOG, "props and traffic 2.0 (0.0), enemies 0.0 (0.0), "
-                                      "attached part 0.0 (0.0)"]),
-    "far_off": ("farbuildings=0\n", ["[DRAW] Far buildings off (settings)"]),
-    "far_on": ("farbuildings=1\nfarshadows=0\n", ["[DRAW] Far buildings on (settings)", *MAP,
-                                    "[DRAW] Far buildings: the map has 6 areas; lists name 5 of them, "
-                                    "1 a copy of another; no list names 5 (a copy of area 0, (0, 500, 0) away)"]),
-    "far_copies": ("farbuildings=1\n", ["[DRAW] JSRF_DRAW_COPIES: an area's copies drawn too", *MAP],
-                   {"JSRF_DRAW_COPIES": "1"}),
-    "far_flip": ("game_dir=/games/jsrf\nfarbuildings=0\n",
-                 ["[DRAW] Far buildings off (settings)", "[DRAW] Far buildings on (the menu)", MAP[0]]),
-    "far_log": ("drawdistance=0\nfarbuildings=1\nfarshadows=0\n", ["[DRAW] t=5.1 1x, " + AREAS]),
-    "far_log_shadows": ("drawdistance=0\nfarbuildings=1\n",
-                        ["[DRAW] t=5.1 1x, " + AREAS.replace("2.0 from the game's areas, 0.0", "0.0 from the game's areas, 2.0")]),
-    "far_shadows": ("game_dir=/games/jsrf\nfarbuildings=1\n",
-                    ["[DRAW] Far shadows on (settings)", "[DRAW] Far shadows off (the menu)"]),
-    "far_log_2x": ("drawdistance=1\nfarbuildings=1\nfarshadows=0\n",
+    "log": ("drawdistance=1\nfarbuildingsahead=0\n", [LOG, "props and traffic 2.0 (0.0), enemies 0.0 (0.0), "
+                                                      "attached part 0.0 (0.0)"]),
+    # Far buildings' and Far shadows' steps, each from its own key.
+    "far_off": ("farbuildingsahead=0\n", ["[DRAW] Far buildings Off (settings)"]),
+    "reach_1x": ("farbuildingsahead=1\n", ["[DRAW] Far buildings 1x (settings)", *map_lines("1x")]),
+    "reach_2x": ("farbuildingsahead=2\n", ["[DRAW] Far buildings 2x (settings)", *map_lines("2x")]),
+    "reach_3x": ("farbuildingsahead=3\nfarshadowsahead=2\n",
+                 ["[DRAW] Far buildings 3x (settings)", "[DRAW] Far shadows 2x (settings)", *map_lines("3x"),
+                  "[DRAW] Far buildings 3x: the map has 10 areas; lists name 10 of them\n"]),
+    "reach_all": ("farbuildingsahead=4\nfarshadowsahead=4\n",
+                  ["[DRAW] Far buildings All (settings)", "[DRAW] Far shadows All (settings)",
+                   *map_lines("All")]),
+    # A key the rows don't have: 3x, the default, and the log says so.
+    "far_bad": ("farbuildingsahead=5\nfarshadowsahead=1.5\n",
+                ["[DRAW] settings: farbuildingsahead=5 is not 0 to 4; using 3",
+                 "[DRAW] settings: farshadowsahead=1.5 is not 0 to 4; using 3",
+                 "[DRAW] Far buildings 3x (settings)", "[DRAW] Far shadows 3x (settings)"]),
+    "far_bad_word": ("farbuildingsahead=far\nfarbuildings=0\n",
+                     ["[DRAW] settings: farbuildingsahead is not a number; using 3",
+                      "[DRAW] Far buildings 3x (settings)"]),
+    # The toggles kept before b2.1-hotfix, with no key of the new: 0 Off, and
+    # 1, which drew every listed area, the default, 3x.
+    "legacy_on": ("farbuildings=1\nfarshadows=1\n",
+                  ["[DRAW] Far buildings 3x (settings)", "[DRAW] Far shadows 3x (settings)"]),
+    "legacy_off": ("farbuildings=0\nfarshadows=0\n",
+                   ["[DRAW] Far buildings Off (settings)", "[DRAW] Far shadows Off (settings)"]),
+    "legacy_mixed": ("farbuildings=1\nfarshadows=0\n",
+                     ["[DRAW] Far buildings 3x (settings)", "[DRAW] Far shadows Off (settings)"]),
+    "far_pick": ("game_dir=/games/jsrf\nfarbuildingsahead=0\nfarbuildings=1\n",
+                 ["[DRAW] Far buildings Off (settings)", "[DRAW] Far buildings 2x (the menu)", *map_lines("2x")]),
+    "shadows_pick": ("game_dir=/games/jsrf\n",
+                     ["[DRAW] Far shadows 3x (settings)", "[DRAW] Far shadows 1x (the menu)"]),
+    "shadows": ("game_dir=/games/jsrf\n",
+                ["[DRAW] Far buildings 1x (the menu)", "[DRAW] Far shadows All (the menu)",
+                 "[DRAW] Far buildings All (the menu)", "[DRAW] Far shadows Off (the menu)"]),
+    "far_log": ("drawdistance=0\nfarshadowsahead=0\n", ["[DRAW] t=5.1 1x, " + AREAS]),
+    "far_log_shadows": ("drawdistance=0\n",
+                        ["[DRAW] t=5.1 1x, " + AREAS.replace("Off, shadow passes a frame 2.0, each adding 0.0",
+                                                             "3x, shadow passes a frame 2.0, each adding 4.0")]),
+    "far_log_1x": ("drawdistance=0\nfarshadowsahead=1\n",
+                   ["[DRAW] t=5.1 1x, " + AREAS.replace("Off, shadow passes a frame 2.0, each adding 0.0",
+                                                        "1x, shadow passes a frame 2.0, each adding 1.0")]),
+    "far_log_2x": ("drawdistance=1\nfarshadowsahead=0\n",
                    ["[DRAW] t=5.1 2x, a frame's objects (past 1x's distance): crowds 1.0 (0.0), pickups 0.0 (0.0)",
                     "attached part 0.0 (0.0); " + AREAS]),
-    "far_misc": ("farbuildings=1\n", [MISC_FIRST, MISC_FIRST.replace("at 0", "at 1"),
-                                       MISC_FIRST.replace("at 0", "at 2"),
-                                       "[DRAW] Misc group 01E80EA0: model 3250, in area 6, at 1 places",
-                                       "[DRAW] Misc group 01E80EA0: model 3250, in area 6, at 2 places",
-                                       "[DRAW] Misc group 01E5FDE0: model 2C90, in area 6, at 0 places",
-                                       MISC_STOP, "[DRAW] Far buildings off (the menu)",
-                                       "[DRAW] Far buildings on (the menu)"]),
+    "far_misc": ("farbuildingsahead=3\n", [MISC_FIRST, MISC_FIRST.replace("at 0", "at 1"),
+                                           MISC_FIRST.replace("at 0", "at 2"),
+                                           "[DRAW] Misc group 01E80EA0: model 3250, in area 6, at 1 places",
+                                           "[DRAW] Misc group 01E80EA0: model 3250, in area 6, at 2 places",
+                                           "[DRAW] Misc group 01E5FDE0: model 2C90, in area 6, at 0 places",
+                                           MISC_STOP, "[DRAW] Far buildings Off (the menu)",
+                                           "[DRAW] Far buildings 3x (the menu)"]),
 }
 # Cases that must not print a line: none of the map's or the Misc group's for
-# Far buildings off, and no copies drawn without JSRF_DRAW_COPIES.
+# Far buildings off, and no fog line for the area no list names.
 unwanted = {
-    "far_off": ["[DRAW] Far buildings:", "[DRAW] area", "[DRAW] Misc group"],
-    "far_on": ["JSRF_DRAW_COPIES"],
-    "off": ["[DRAW] Far buildings:"],
+    "far_off": ["[DRAW] Far buildings Off:", "[DRAW] area", "[DRAW] Misc group"],
+    "off": ["[DRAW] Far buildings Off:"],
+    "reach_1x": ["[DRAW] area 10:"],
+    "reach_all": ["[DRAW] area 10:"],
+    "legacy_on": ["[DRAW] settings:"],
+}
+# The pickers: each keeps its own key, and nothing else of Far buildings' or
+# Far shadows', with the file's other keys as they were.
+kept_after = {
+    "far_pick": (["farbuildingsahead=2\n", "farbuildings=1\n", "game_dir=/games/jsrf\n"], ["farshadowsahead"]),
+    "shadows_pick": (["farshadowsahead=1\n", "game_dir=/games/jsrf\n"], ["farbuildingsahead"]),
+    "shadows": (["farbuildingsahead=4\n", "farshadowsahead=0\n", "game_dir=/games/jsrf\n"], []),
 }
 
 with tempfile.TemporaryDirectory(prefix="draw-distance-") as directory:
@@ -108,12 +152,11 @@ with tempfile.TemporaryDirectory(prefix="draw-distance-") as directory:
     command = cc + ["-std=c11", "-DNV2A_GL_USE_SDL=1", "-DXBOXRECOMP_MENU=1",
                     "-Iport", "-Isrc/menu", "-x", "c", "-", "port/draw_distance.c", "-lm", "-o", exe]
     subprocess.run(command, cwd=root, input=source, text=True, check=True)
-    for name, (text, logs, *extra) in cases.items():
+    for name, (text, logs) in cases.items():
         path = work / (name + ".cfg")
         if text is not None:
             path.write_bytes(text.encode())
-        env = {k: v for k, v in os.environ.items() if k != "JSRF_DRAW_COPIES"}
-        env.update(*extra, JSRF_SETTINGS_FILE=str(path))
+        env = dict(os.environ, JSRF_SETTINGS_FILE=str(path))
         run = subprocess.run([exe, name], env=env, capture_output=True, text=True, timeout=10)
         if run.returncode != 0:
             raise SystemExit(f"{name}: exit {run.returncode}\n{run.stdout}{run.stderr}")
@@ -123,10 +166,10 @@ with tempfile.TemporaryDirectory(prefix="draw-distance-") as directory:
         for line in unwanted.get(name, []):
             if line in run.stderr:
                 raise SystemExit(f"{name}: '{line}' in the log:\n{run.stderr}")
-        if name in ("log", "far_log", "far_log_2x", "far_log_shadows") and run.stderr.count("[DRAW] t=") != 1:
+        if name.startswith("far_log") and run.stderr.count("[DRAW] t=") != 1:
             raise SystemExit(f"{name}: not one [DRAW] line in five seconds:\n" + run.stderr)
-        if name == "far_on" and run.stderr.count("[DRAW] Far buildings: the map") != 2:
-            raise SystemExit("far_on: the map not logged once each:\n" + run.stderr)
+        if name.startswith("reach_") and run.stderr.count(": the map has") != 2:
+            raise SystemExit(f"{name}: the two maps not logged once each:\n" + run.stderr)
         if name == "far_misc":
             # On the first map 99 models and areas once each and 68 new highs;
             # on the second the most, 2048, and the line saying so once; then
@@ -149,14 +192,10 @@ with tempfile.TemporaryDirectory(prefix="draw-distance-") as directory:
             kept = path.read_text()
             if "drawdistance=3\n" not in kept or "game_dir=/games/jsrf\n" not in kept:
                 raise SystemExit("pick: the row did not keep drawdistance=3 alone:\n" + kept)
-        if name == "far_flip":
+        if name in kept_after:
             kept = path.read_text()
-            if "farbuildings=1\n" not in kept or "game_dir=/games/jsrf\n" not in kept:
-                raise SystemExit("far_flip: the row did not keep farbuildings=1 alone:\n" + kept)
-        if name == "far_shadows":
-            kept = path.read_text()
-            if ("farshadows=0\n" not in kept or "farbuildings=1\n" not in kept
-                    or "game_dir=/games/jsrf\n" not in kept):
-                raise SystemExit("far_shadows: the row did not keep farshadows=0 alone:\n" + kept)
+            want, never = kept_after[name]
+            if any(line not in kept for line in want) or any(key in kept for key in never):
+                raise SystemExit(f"{name}: the file is not {want} without {never}:\n" + kept)
         print(run.stdout.strip())
 print("draw distance: all", len(cases), "cases pass")

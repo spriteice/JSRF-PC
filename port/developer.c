@@ -94,7 +94,6 @@ static const DevSwitch k_logging[] = {
     { "RECOMP_WAITLOG", "1" },
 };
 static const DevSwitch k_engine[] = {
-    { "JSRF_DRAW_COPIES", "1" },            /* Far buildings draws an area's copies too (port/draw_distance.c) */
     { "RECOMP_APU_MIX", "xemu" },           /* each voice's own sides, not the mixbins folded */
     { "RECOMP_GL_SEETHRU_HOLD", "0" },      /* see-through pixels in place, not held back (nv2a_seethru.h) */
     { "RECOMP_GL_STENCILVIS", "1" },        /* the stencil buffer in place of the shadows */

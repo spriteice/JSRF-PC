@@ -1,5 +1,5 @@
 /* Draw distance, Far buildings and Far shadows (draw_distance.h):
- * drawdistance=, farbuildings= and farshadows= in the settings file, or
+ * drawdistance=, farbuildingsahead= and farshadowsahead= in the settings file, or
  * Display > Draw distance, and Far buildings and Far shadows in Display >
  * Building distance.
  *
@@ -12,9 +12,7 @@
  * from the map's own visible lists, and Far shadows gives them the map's
  * shadows too. */
 #include <float.h>
-#include <math.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include "draw_distance.h"
 #if defined(XBOXRECOMP_MENU)
@@ -44,19 +42,25 @@ static int nv_window_pref_num(const char *key, double *v)
  * Building distance is a submenu of Far buildings, then Far shadows, on by
  * default, its hint giving the glitches it can cause (spriteice, 13 November
  * 2026, 10:17 UTC, and 11:59 UTC: "the pop in reduction is worth the
- * glitches"). */
+ * glitches"). Each is a choice of how far, Off to All, since known bug
+ * 57 (spriteice, 14 November 2026: "A choice of how far" on the card at 15:21
+ * UTC, and at 15:22 UTC "apply the choice of how far to far shadows too"). */
 #define DRAW_UNDER     "HUD"
 #define DRAW_GROUP     "Building distance"
 #define DRAW_LOG_EVERY 5.0      /* seconds between [DRAW] lines */
 
 static const char *const k_names[DRAW_DISTANCE_STEPS] = { "1x", "2x", "3x", "4x", "Unlimited" };
+/* Off, 1x to 3x (that many crossings ahead) and All (every listed area), the
+ * same for both rows (spriteice, 14 November 2026, 15:24 UTC: "Off, 1x, 2x,
+ * 3x, All"). */
+static const char *const k_far_names[DRAW_FAR_STEPS] = { "Off", "1x", "2x", "3x", "All" };
 static const char *const k_gates[DRAW_GATES] = {
     "crowds", "pickups", "checkpoints", "props and traffic", "enemies", "attached part" };
 
 static volatile int s_step;
-static volatile int s_far;      /* Far buildings */
-static volatile int s_shadows_far;  /* Far shadows */
-static int s_copies;            /* JSRF_DRAW_COPIES: an area's copies drawn too */
+static volatile int s_far;      /* Far buildings' step */
+static volatile int s_shadows_far;  /* Far shadows' step */
+static int s_widened;           /* the step the game's set was last widened to */
 
 int draw_distance_step(void)
 {
@@ -107,16 +111,15 @@ float draw_distance_fade(float d, float game_far, float game_per)
 
 static unsigned long s_drawn[DRAW_GATES], s_past[DRAW_GATES];
 static int s_objects;           /* a gate has counted since the line */
-static double s_sets, s_game, s_added, s_copied;   /* Far buildings' sets since the line */
-static unsigned long s_shadows;     /* shadow passes drawn from the game's set since the line */
-static unsigned long s_shadows_all; /* and from the widened set (Far shadows) */
+static double s_sets, s_game, s_added;     /* Far buildings' sets since the line */
+static double s_shadows, s_shadows_added;  /* shadow passes, and the areas each adds to the game's */
 static double s_since = -1;     /* the time the counts start from; -1: not yet */
 static unsigned s_since_frame;
 
 /* Every 5 seconds: each gate's objects a frame, and how many of them past
  * 1x's distance, while a step is on; and, while Far buildings is, the areas
- * of a set the camera makes, and the shadow passes a frame drawn from the
- * game's own set and from the widened one (Far shadows). */
+ * of a set the camera makes and the areas it adds, and the shadow passes a
+ * frame and the areas each adds to the game's set (Far shadows). */
 static void draw_log(double now, unsigned frame)
 {
     char line[640];
@@ -137,15 +140,15 @@ static void draw_log(double now, unsigned frame)
     }
     if (s_sets > 0 && len > 0 && len < (int)sizeof line)
         snprintf(line + len, sizeof line - len,
-                 "%s Far buildings, a set's areas: the game's %.1f, added %.1f, copies %s %.1f; "
-                 "shadow passes a frame: %.1f from the game's areas, %.1f from all (Far shadows)",
-                 s_objects ? ";" : ",", s_game / s_sets, s_added / s_sets,
-                 s_copies ? "drawn too" : "left out", s_copied / s_sets,
-                 (double)s_shadows / frames, (double)s_shadows_all / frames);
+                 "%s Far buildings %s, a set's areas: the game's %.1f, added %.1f; "
+                 "Far shadows %s, shadow passes a frame %.1f, each adding %.1f areas",
+                 s_objects ? ";" : ",", k_far_names[s_far], s_game / s_sets, s_added / s_sets,
+                 k_far_names[s_shadows_far], s_shadows / frames,
+                 s_shadows > 0 ? s_shadows_added / s_shadows : 0.0);
     fprintf(stderr, "%s\n", line);
     s_objects = 0;
-    s_sets = s_game = s_added = s_copied = 0;
-    s_shadows = s_shadows_all = 0;
+    s_sets = s_game = s_added = 0;
+    s_shadows = s_shadows_added = 0;
     s_since = now;
     s_since_frame = frame;
 }
@@ -210,11 +213,6 @@ void draw_misc_drawn(uint32_t object, uint32_t model, uint32_t area, uint32_t pl
 
 /* ---- Far buildings ------------------------------------------------------- */
 
-#define COPY_NORMAL 1e-3f       /* a normal's x, y or z: the same within this */
-#define COPY_SLACK  0.5         /* a plane's place: the same within this, plus... */
-#define COPY_SLACK_PER 1e-4     /* ...this much of the offset's length */
-#define COPY_MIN    1.0         /* an offset shorter than this is the same place */
-
 static int set_has(const uint32_t *set, int i) { return (set[i >> 5] >> (i & 31)) & 1u; }
 static void set_add(uint32_t *set, int i) { set[i >> 5] |= 1u << (i & 31); }
 static int set_count(const uint32_t *set)
@@ -224,89 +222,14 @@ static int set_count(const uint32_t *set)
     return n;
 }
 
-/* Plane i of a volume: its point and its normal. */
-static const float *plane_at(const float *v, int i) { return v + 3 * i; }
-static const float *plane_normal(const float *v, int i) { return v + 18 + 3 * i; }
-
-/* Nonzero when each of b's 6 planes is a's moved by d. */
-static int planes_moved(const float *a, const float *b, const double d[3])
-{
-    double slack = COPY_SLACK + COPY_SLACK_PER * sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
-    int i, k;
-    for (i = 0; i < 6; i++) {
-        const float *pa = plane_at(a, i), *pb = plane_at(b, i);
-        const float *na = plane_normal(a, i), *nb = plane_normal(b, i);
-        double moved = 0, along = 0;
-        for (k = 0; k < 3; k++) {
-            if (fabsf(na[k] - nb[k]) > COPY_NORMAL) return 0;
-            moved += (double)na[k] * ((double)pb[k] - pa[k]);
-            along += (double)na[k] * d[k];
-        }
-        if (fabs(moved - along) > slack) return 0;
-    }
-    return 1;
-}
-
-int draw_area_copy(const DrawArea *a, const DrawArea *b, float d[3])
-{
-    double m[3][3] = { { 0 } }, r[3] = { 0 }, x[3], det;
-    unsigned c;
-    int i, j, k;
-    if (!a->volume || !b->volume || a->ncells != b->ncells) return 0;
-    if (a->ncells && (!a->cells || !b->cells)) return 0;
-    /* The offset that moves a's planes onto b's, the nearest by least
-     * squares: each plane says how far it moved along its normal. */
-    for (i = 0; i < 6; i++) {
-        const float *n = plane_normal(a->volume, i), *pa = plane_at(a->volume, i);
-        const float *pb = plane_at(b->volume, i);
-        double moved = 0;
-        for (k = 0; k < 3; k++) moved += (double)n[k] * ((double)pb[k] - pa[k]);
-        for (j = 0; j < 3; j++) {
-            for (k = 0; k < 3; k++) m[j][k] += (double)n[j] * n[k];
-            r[j] += (double)n[j] * moved;
-        }
-    }
-    det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
-    if (fabs(det) < 1e-6) return 0;     /* the normals don't fix a place */
-    for (j = 0; j < 3; j++) {
-        double t[3][3];
-        memcpy(t, m, sizeof t);
-        for (k = 0; k < 3; k++) t[k][j] = r[k];
-        x[j] = (t[0][0] * (t[1][1] * t[2][2] - t[1][2] * t[2][1])
-              - t[0][1] * (t[1][0] * t[2][2] - t[1][2] * t[2][0])
-              + t[0][2] * (t[1][0] * t[2][1] - t[1][1] * t[2][0])) / det;
-    }
-    if (sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]) < COPY_MIN) return 0;
-    if (!planes_moved(a->volume, b->volume, x)) return 0;
-    for (c = 0; c < a->ncells; c++)
-        if (!planes_moved(a->cells + 36 * c, b->cells + 36 * c, x)) return 0;
-    for (k = 0; k < 3; k++) d[k] = (float)x[k];
-    return 1;
-}
-
 /* What Far buildings keeps of a map, worked out on the first call on it:
- * the areas some list names, each area's list, each one's copies, and its
- * middle. */
+ * the areas some list names, and each area's list. */
 static struct {
     int      built, n;
     uint32_t key;
     uint32_t listed[DRAW_SET_WORDS];
     uint32_t list[DRAW_AREAS_MAX][DRAW_SET_WORDS];
-    uint32_t copy[DRAW_AREAS_MAX][DRAW_SET_WORDS];
-    float    middle[DRAW_AREAS_MAX][3];
 } s_map;
-
-/* Nonzero when some area's list names both i and j: the game draws them
- * together. */
-static int named_together(int i, int j)
-{
-    int a;
-    for (a = 0; a < s_map.n; a++)
-        if (set_has(s_map.list[a], i) && set_has(s_map.list[a], j)) return 1;
-    return 0;
-}
 
 /* The map, told from another: FNV-1a over its areas' volumes and lists. */
 static uint32_t map_key(const DrawArea *a, int n)
@@ -319,7 +242,6 @@ static uint32_t map_key(const DrawArea *a, int n)
     for (i = 0; i < n; i++) {
         if (a[i].volume)
             for (k = 0; k < 36; k++) { memcpy(&w, &a[i].volume[k], 4); MIX(w); }
-        MIX(a[i].ncells);
         MIX(a[i].nlist);
         for (k = 0; a[i].list && k < a[i].nlist; k++) MIX(a[i].list[k]);
     }
@@ -330,116 +252,74 @@ static uint32_t map_key(const DrawArea *a, int n)
 static void map_take(const DrawArea *a, int n, uint32_t key)
 {
     char line[2048];
-    int i, j, k, len, listed = 0, copies = 0, first[DRAW_AREAS_MAX];
-    float off[DRAW_AREAS_MAX][3];
+    int i, k, len, listed = 0;
     unsigned e;
     memset(&s_map, 0, sizeof s_map);
     misc_forget();      /* area numbers are the map's own */
     s_map.built = 1;
     s_map.n = n;
     s_map.key = key;
-    for (i = 0; i < n; i++) {
-        first[i] = -1;
+    for (i = 0; i < n; i++)
         for (e = 0; a[i].list && e < a[i].nlist; e++)
             if (a[i].list[e] < (uint32_t)n) {
                 set_add(s_map.listed, (int)a[i].list[e]);
                 set_add(s_map.list[i], (int)a[i].list[e]);
             }
-        for (k = 0; k < 3 && a[i].volume; k++) {
-            for (j = 0; j < 6; j++) s_map.middle[i][k] += plane_at(a[i].volume, j)[k];
-            s_map.middle[i][k] /= 6.0f;
-        }
-    }
-    /* Only the areas a list names can be in a set; and two areas the game
-     * draws together aren't copies to leave out, whatever their shapes (a
-     * street of areas the same size). */
-    for (i = 0; i < n; i++) {
-        if (!set_has(s_map.listed, i)) continue;
-        listed++;
-        for (j = i + 1; j < n; j++) {
-            float d[3];
-            if (!set_has(s_map.listed, j) || !draw_area_copy(&a[i], &a[j], d) || named_together(i, j))
-                continue;
-            set_add(s_map.copy[i], j);
-            set_add(s_map.copy[j], i);
-            if (first[j] < 0) { first[j] = i; memcpy(off[j], d, sizeof d); }
-        }
-    }
-    for (i = 0; i < n; i++) copies += first[i] >= 0;
-    if (copies == 1)
-        len = snprintf(line, sizeof line, "[DRAW] Far buildings: the map has %d areas; lists name %d of "
-                       "them, 1 a copy of another", n, listed);
-    else
-        len = snprintf(line, sizeof line, "[DRAW] Far buildings: the map has %d areas; lists name %d of "
-                       "them, %d copies of others", n, listed, copies);
-    /* An area no list names is never drawn; the line says which of them
-     * are copies of an area that is, so a log tells what that rule keeps
-     * hidden (a street built twice, its far copy in no list). */
-    for (i = 0, k = 0; i < n && len > 0 && len < (int)sizeof line; i++) {
-        float d[3];
-        if (set_has(s_map.listed, i)) continue;
-        len += snprintf(line + len, sizeof line - len, "%s %d", k++ ? "," : "; no list names", i);
-        for (j = 0; j < n && len > 0 && len < (int)sizeof line; j++)
-            if (set_has(s_map.listed, j) && draw_area_copy(&a[j], &a[i], d)) {
-                len += snprintf(line + len, sizeof line - len, " (a copy of area %d, (%.0f, %.0f, %.0f) away)",
-                                j, d[0], d[1], d[2]);
-                break;
-            }
-    }
+    for (i = 0; i < n; i++) listed += set_has(s_map.listed, i);
+    len = snprintf(line, sizeof line, "[DRAW] Far buildings %s: the map has %d areas; lists name %d of them",
+                   k_far_names[s_far], n, listed);
+    /* An area no list names is never drawn. */
+    for (i = 0, k = 0; i < n && len > 0 && len < (int)sizeof line; i++)
+        if (!set_has(s_map.listed, i))
+            len += snprintf(line + len, sizeof line - len, "%s %d", k++ ? "," : "; no list names", i);
     fprintf(stderr, "%s\n", line);
-    for (i = 0; i < n; i++) {
-        if (!set_has(s_map.listed, i)) continue;
-        if (first[i] >= 0)
-            fprintf(stderr, "[DRAW] area %d: fog %g to %g, density %g, a copy of area %d, (%.0f, %.0f, %.0f) away\n",
-                    i, a[i].fog_start, a[i].fog_end, a[i].fog_density, first[i],
-                    off[i][0], off[i][1], off[i][2]);
-        else
+    for (i = 0; i < n; i++)
+        if (set_has(s_map.listed, i))
             fprintf(stderr, "[DRAW] area %d: fog %g to %g, density %g\n",
                     i, a[i].fog_start, a[i].fog_end, a[i].fog_density);
+}
+
+/* Widens set to step: for 1 to 3, as many crossings ahead, each adding the
+ * areas the lists of the areas the last one added name, from set itself;
+ * for the whole map, every area some list names. s_map is the map's. */
+static void set_reach(uint32_t set[DRAW_SET_WORDS], int step)
+{
+    uint32_t from[DRAW_SET_WORDS], next[DRAW_SET_WORDS];
+    int i, w, cross;
+    if (step >= DRAW_FAR_WHOLE) {
+        for (w = 0; w < DRAW_SET_WORDS; w++) set[w] |= s_map.listed[w];
+        return;
+    }
+    memcpy(from, set, sizeof from);
+    for (cross = 0; cross < step; cross++) {
+        memcpy(next, set, sizeof next);
+        for (i = 0; i < s_map.n; i++)
+            if (set_has(from, i))
+                for (w = 0; w < DRAW_SET_WORDS; w++) next[w] |= s_map.list[i][w];
+        for (w = 0; w < DRAW_SET_WORDS; w++) {
+            from[w] = next[w] & ~set[w];
+            set[w] = next[w];
+        }
     }
 }
 
-void draw_buildings_widen(const DrawArea *areas, int n, const float eye[3],
-                          uint32_t set[DRAW_SET_WORDS], double now, unsigned frame)
+void draw_buildings_widen(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WORDS],
+                          double now, unsigned frame)
 {
-    int order[DRAW_AREAS_MAX];
-    float dist[DRAW_AREAS_MAX];
-    int i, j, k = 0, game, added = 0, copied = 0;
+    int game, reach = s_far;
     uint32_t key;
-    if (!s_far || !areas || n <= 0) return;
+    s_widened = 0;
+    if (!reach || !areas || n <= 0) return;
     if (n > DRAW_AREAS_MAX) n = DRAW_AREAS_MAX;
     key = map_key(areas, n);
     if (!s_map.built || s_map.n != n || s_map.key != key) map_take(areas, n, key);
     s_misc_map = 1;
     game = set_count(set);
-    /* The areas to add, nearest the eye first, so that of two copies the
-     * nearer is drawn. */
-    for (i = 0; i < n; i++) {
-        float d2 = 0;
-        if (!set_has(s_map.listed, i) || set_has(set, i)) continue;
-        for (j = 0; eye && j < 3; j++) {
-            float t = eye[j] - s_map.middle[i][j];
-            d2 += t * t;
-        }
-        for (j = k++; j > 0 && dist[j - 1] > d2; j--) { dist[j] = dist[j - 1]; order[j] = order[j - 1]; }
-        dist[j] = d2;
-        order[j] = i;
-    }
-    for (j = 0; j < k; j++) {
-        int w, copy = 0;
-        i = order[j];
-        for (w = 0; w < DRAW_SET_WORDS; w++) copy |= (s_map.copy[i][w] & set[w]) != 0;
-        if (copy) {
-            copied++;
-            if (!s_copies) continue;
-        }
-        set_add(set, i);
-        added++;
-    }
+    set_reach(set, reach);
+    s_widened = reach;
     s_sets++;
     s_game += game;
-    s_added += added;
-    s_copied += copied;
+    s_added += set_count(set) - game;
     draw_log(now, frame);
 }
 
@@ -447,16 +327,20 @@ void draw_buildings_shadows(uint32_t set[DRAW_SET_WORDS], const uint32_t game[DR
                             void (*run)(void))
 {
     uint32_t wide[DRAW_SET_WORDS];
-    if (s_shadows_far) {
+    int reach = s_widened, step = s_shadows_far;     /* the set's own, should a row change between */
+    if (step > reach) step = reach;
+    s_shadows++;
+    s_shadows_added += set_count(set) - set_count(game);
+    if (step == reach) {      /* the set Far buildings made */
         run();
-        s_shadows_all++;
         return;
     }
     memcpy(wide, set, sizeof wide);
     memcpy(set, game, sizeof wide);
+    set_reach(set, step);
+    s_shadows_added -= set_count(wide) - set_count(set);
     run();
     memcpy(set, wide, sizeof wide);
-    s_shadows++;
 }
 
 /* ---- the settings -------------------------------------------------------- */
@@ -471,25 +355,44 @@ static void menu_step_pick(int i)
     nv_window_pref_set_num("drawdistance", i);
 }
 static int  menu_far(void) { return s_far; }
-static void menu_far_flip(void)
+static void menu_far_pick(int i)
 {
+    if (i < 0 || i >= DRAW_FAR_STEPS) return;
     s_misc_map = 0;     /* the map may change while it is off */
-    s_far = !s_far;
-    fprintf(stderr, "[DRAW] Far buildings %s (the menu)\n", s_far ? "on" : "off");
-    nv_window_pref_set_num("farbuildings", s_far);
+    s_far = i;
+    fprintf(stderr, "[DRAW] Far buildings %s (the menu)\n", k_far_names[i]);
+    nv_window_pref_set_num("farbuildingsahead", i);
 }
 static int  menu_shadows(void) { return s_shadows_far; }
-static void menu_shadows_flip(void)
+static void menu_shadows_pick(int i)
 {
-    s_shadows_far = !s_shadows_far;
-    fprintf(stderr, "[DRAW] Far shadows %s (the menu)\n", s_shadows_far ? "on" : "off");
-    nv_window_pref_set_num("farshadows", s_shadows_far);
+    if (i < 0 || i >= DRAW_FAR_STEPS) return;
+    s_shadows_far = i;
+    fprintf(stderr, "[DRAW] Far shadows %s (the menu)\n", k_far_names[i]);
+    nv_window_pref_set_num("farshadowsahead", i);
 }
 #endif
 
+/* A step from the settings, key= 0 to 4. With no key=, the toggle kept before
+ * b2.1-hotfix, legacy=: Off for 0, and def for 1 rather than All, which was
+ * what on drew (known bug 57). */
+static int far_setting(const char *key, const char *legacy, int def)
+{
+    double v;
+    int r = nv_window_pref_num(key, &v);
+    if (r > 0 && v >= 0 && v < DRAW_FAR_STEPS && v == (int)v) return (int)v;
+    if (r > 0)
+        fprintf(stderr, "[DRAW] settings: %s=%g is not 0 to %d; using %d\n", key, v,
+                DRAW_FAR_STEPS - 1, def);
+    else if (r < 0)
+        fprintf(stderr, "[DRAW] settings: %s is not a number; using %d\n", key, def);
+    else if (nv_window_pref_num(legacy, &v) > 0)
+        return v != 0 ? def : 0;
+    return def;
+}
+
 void draw_distance_start(void)
 {
-    const char *copies = getenv("JSRF_DRAW_COPIES");
     double v;
     int r = nv_window_pref_num("drawdistance", &v);
     s_step = DRAW_DISTANCE_DEFAULT;
@@ -502,12 +405,10 @@ void draw_distance_start(void)
         fprintf(stderr, "[DRAW] settings: drawdistance is not a number; using %d\n",
                 DRAW_DISTANCE_DEFAULT);
     fprintf(stderr, "[DRAW] objects at %s (settings)\n", k_names[s_step]);
-    s_far = nv_window_pref_num("farbuildings", &v) > 0 ? v != 0 : DRAW_FAR_DEFAULT;
-    fprintf(stderr, "[DRAW] Far buildings %s (settings)\n", s_far ? "on" : "off");
-    s_shadows_far = nv_window_pref_num("farshadows", &v) > 0 ? v != 0 : DRAW_SHADOWS_DEFAULT;
-    fprintf(stderr, "[DRAW] Far shadows %s (settings)\n", s_shadows_far ? "on" : "off");
-    s_copies = copies && strcmp(copies, "0") != 0;
-    if (s_copies) fprintf(stderr, "[DRAW] JSRF_DRAW_COPIES: an area's copies drawn too\n");
+    s_far = far_setting("farbuildingsahead", "farbuildings", DRAW_FAR_DEFAULT);
+    fprintf(stderr, "[DRAW] Far buildings %s (settings)\n", k_far_names[s_far]);
+    s_shadows_far = far_setting("farshadowsahead", "farshadows", DRAW_SHADOWS_DEFAULT);
+    fprintf(stderr, "[DRAW] Far shadows %s (settings)\n", k_far_names[s_shadows_far]);
 #if defined(XBOXRECOMP_MENU)
     {
         /* Rows are drawn in the order added, and the window adds HUD
@@ -516,7 +417,8 @@ void draw_distance_start(void)
          * there; Far buildings and Far shadows go in the submenu. */
         const XBOX_MENU_ITEM rows[] = {
             /* File > Presets: the game's own distances and areas in Xbox
-             * mode, the defaults, and the most in Max quality. */
+             * mode, the defaults, and the most in Max quality, but for Far
+             * buildings and Far shadows, 3x there (docs/menu-format.md). */
             { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Draw distance",
               .state = menu_step, .pick = menu_step_pick,
               .choices = k_names, .nchoices = DRAW_DISTANCE_STEPS, .under = DRAW_UNDER,
@@ -524,17 +426,23 @@ void draw_distance_start(void)
               .preset = { 0, DRAW_DISTANCE_DEFAULT, DRAW_DISTANCE_UNLIMITED },     /* 1x, 2x, Unlimited */
               .hint = "Sets how far crowds, vehicles, props, and police are drawn. CPU heavy." },
             { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_GROUP, .label = DRAW_GROUP,
-              .under = DRAW_UNDER, .hint = "Draws the whole map and its shadows to eliminate pop-in." },
-            { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Far buildings",
-              .state = menu_far, .run = menu_far_flip, .group = DRAW_GROUP,
-              .presets = XBOX_PRESETS_SET, .preset = { 0, DRAW_FAR_DEFAULT, 1 },
-              .hint = "Draws the whole map, eliminating building pop-in. CPU heavy." },
-            /* On by default: less pop-in is worth the glitches it can cause
-             * (known bug 52). */
-            { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Far shadows",
-              .state = menu_shadows, .run = menu_shadows_flip, .group = DRAW_GROUP,
-              .presets = XBOX_PRESETS_SET, .preset = { 0, DRAW_SHADOWS_DEFAULT, 1 },
-              .hint = "Eliminates building shadow pop-in, at the cost of minor glitches." },
+              .under = DRAW_UNDER, .hint = "Draws more of the map and its shadows to reduce pop-in." },
+            /* The hints since known bug 57 (spriteice, 14 November 2026,
+             * 15:32 UTC, on the card: "Use the proposed hints"). */
+            { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Far buildings",
+              .state = menu_far, .pick = menu_far_pick, .group = DRAW_GROUP,
+              .choices = k_far_names, .nchoices = DRAW_FAR_STEPS,
+              .presets = XBOX_PRESETS_SET,
+              .preset = { 0, DRAW_FAR_DEFAULT, DRAW_FAR_MAX_QUALITY },     /* Off, 3x, 3x */
+              .hint = "Sets how many areas ahead buildings are drawn. CPU heavy." },
+            /* 3x by default: less pop-in is worth the glitches it can cause
+             * (known bug 52). Never further than Far buildings. */
+            { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Far shadows",
+              .state = menu_shadows, .pick = menu_shadows_pick, .group = DRAW_GROUP,
+              .choices = k_far_names, .nchoices = DRAW_FAR_STEPS,
+              .presets = XBOX_PRESETS_SET,
+              .preset = { 0, DRAW_SHADOWS_DEFAULT, DRAW_FAR_MAX_QUALITY },     /* Off, 3x, 3x */
+              .hint = "Sets how many areas ahead shadows are drawn. Minor glitches." },
         };
         xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
     }

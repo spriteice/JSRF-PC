@@ -118,12 +118,13 @@ input goes to the menu.
   4:3 at 1×, with everything JSRF-PC adds to how it looks and plays turned off,
   but the audio effects, which are the console's own. JSRF-PC default is the
   settings a new install starts with. Max quality is JSRF-PC default with the
-  render scale, draw distance, Far buildings, Far shadows, anisotropic filtering, Upscaling's
+  render scale, draw distance, anisotropic filtering, Upscaling's
   Menus and HUD, Textures and Graffiti, and both anti-aliasings at their most,
-  as far as the graphics card goes. A preset sets every setting but
-  Developer's: each one also puts the game full screen, Upscaling's Cleanup
-  as a new install has it, and the free camera's own settings back to their
-  defaults. The one ticked is the one your settings match, if any.
+  as far as the graphics card goes, and Far buildings and Far shadows at 3x.
+  A preset sets every setting but Developer's: each one also puts the game
+  full screen, Upscaling's Cleanup as a new install has it, and the free
+  camera's own settings back to their defaults. The one ticked is the one
+  your settings match, if any.
 - **Display:** Full screen, the render scale (1× to 6×), the aspect ratio,
   the HUD submenu, the draw distance, the Building distance submenu (Far
   buildings and Far shadows), and two submenus at the end: Skips, with Skip intro, and Enhancements, with Music info in pause and
@@ -142,17 +143,25 @@ input goes to the menu.
   to four times them, and Unlimited as far as the camera sees. It changes at once, costs
   more the further it goes, and is kept as `drawdistance=` (0 for 1x to 4 for
   Unlimited) in the settings file. Above 2x it will struggle on weak hardware.
-  In Building distance, Far buildings draws every part of the map the game
-  ever shows, with the things in it, not only the part it shows from where the
-  camera is. A part it never shows stays hidden, such as the second copy of
-  Dogenzaka Hill's street. On by default; it changes at once, costs more, and
-  is kept as `farbuildings=` (1 or 0) in the settings file. Far shadows, below
-  it, draws the shadows of the parts Far buildings adds too, so they don't pop
-  in as you come near, at the cost of minor visual glitches, such as patches
-  of light in shadows that move with the camera. Off, those parts have no
-  shadows until you're near enough for the game to show them itself. On by
-  default; it does nothing with Far buildings off, changes at once, and is
-  kept as `farshadows=` (1 or 0) in the settings file. Skip intro leaves out the
+  In Building distance, Far buildings draws more of the map, with the things
+  in it, so buildings further off don't pop in as you come near. The game
+  splits each map into areas, and draws only the ones the area the camera is
+  in lists. Off is the game's own; 1x, 2x and 3x (the default) draw what the
+  game would show from the areas one, two or three areas ahead; and All draws
+  every area the game ever shows, which can put a part of the map in view
+  where the game never shows it, such as the top of Dogenzaka Hill in the sky
+  at its bottom. It changes at once, costs more the further it goes, and is
+  kept as `farbuildingsahead=` (0 for Off to 4 for All) in the settings file.
+  Far shadows, below it, draws the shadows of the areas Far buildings adds
+  too, as many areas ahead as its own choice, Off to All, and never further
+  than Far buildings, so they don't pop in as you come near, at the cost of
+  minor visual glitches, such as patches of light in shadows that move with
+  the camera. Off, those areas have no shadows until you're near enough for
+  the game to show them itself. 3x by default; it does nothing with Far
+  buildings off, changes at once, and is kept as `farshadowsahead=` (0 for
+  Off to 4 for All) in the settings file. Before b2.1-hotfix the two were on
+  or off, kept as `farbuildings=` and `farshadows=`: until you choose again,
+  1 there reads as 3x and 0 as Off. Skip intro leaves out the
   logos and the graffiti disclaimer the game opens with, and starts at the
   title screen's loading. Off by default, so the intro plays as on the Xbox.
   It is kept as `skipintro=` in the settings file. Music info in pause shows

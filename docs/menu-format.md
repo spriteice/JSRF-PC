@@ -148,7 +148,10 @@ Graffiti, Sharpness, Edge strength, then Cleanup, a row of two ticks.
   sound, and the shader cache, which changes nothing on screen.
   **JSRF-PC default** is the settings a new install starts with. **Max
   quality** is JSRF-PC default with each graphics and display setting that
-  has a most at its most: the last choice, or the most the device has.
+  has a most at its most: the last choice, or the most the device has. Far
+  buildings and Far shadows are the exception, at 3x, not All: All draws
+  parts of a map the game never shows from where the camera is, such as
+  Dogenzaka Hill's top in its sky.
 - The tick is on the preset whose value every row it sets has now, and on
   none when one differs. A new install is at JSRF-PC default.
 - Choosing one asks first, as a (Restart) row does. OK sets each row

@@ -5820,11 +5820,13 @@ void sub_000E3BB0(void)
  * from the eye (sub_0006A970: the first area holding the eye, then the areas
  * its visible list names, a bit each in 8 words at 0x20C6C8), and the map's
  * passes, and the objects that test their area, draw only what is in it. On,
- * the override adds every area some list names (draw_buildings_widen) after
- * the game's own set is made, and the frame's draw (sub_00012C80) puts the
- * game's set back after it, so the next frame's updates see the game's own.
- * The map's shadows (sub_0006BA80, below) are drawn from the widened set
- * while Far shadows is on, and from the game's own while it is off.
+ * the override adds what the game would draw from the areas as many
+ * crossings ahead as Far buildings' step, or every listed area at All
+ * (draw_buildings_widen), after the game's own set is made, and the frame's
+ * draw (sub_00012C80) puts the game's set back after it, so the next frame's
+ * updates see the game's own. The map's shadows (sub_0006BA80, below) are
+ * drawn from the game's set widened as far as Far shadows' step, never
+ * further than Far buildings'.
  * The game draws its backdrop first, centred on the eye, and it writes depth
  * at its own size, which would hide the areas added beyond it: on, its loop
  * in sub_0006B6A0 draws without depth writes, between the matrix calls before
@@ -5838,15 +5840,11 @@ void sub_000E3BB0(void)
 #define MAP_AREAS       0x04u       /* the map: its areas, and how many */
 #define MAP_COUNT       0x08u
 #define AREA_SIZE       0x154u
-#define AREA_CELLS      0x90u       /* volumes of 0x90 bytes, as the area's own at +0 */
-#define AREA_NCELLS     0x94u
-#define AREA_CELLS_MAX  4096u       /* more is not a count */
 #define AREA_LIST       0x98u       /* the areas it shows, a dword each */
 #define AREA_NLIST      0x9Cu
 #define AREA_FOG_START  0xDCu       /* floats, to device +0x140 (sub_0006BBA0) */
 #define AREA_FOG_END    0xE0u
 #define AREA_FOG_DENSITY 0xE4u
-#define VOLUME_SIZE     0x90u
 #define DD_DEVICE       0x251D6Cu   /* -> the game's device (vtable 0x1E0F00) */
 #define DD_ZWRITE_SLOT  0x130u      /* (device, on): NV2A SET_DEPTH_MASK */
 #define DD_ZWRITE_NOW   0x19E1E0u   /* what it was set to last */
@@ -5873,12 +5871,9 @@ static int dd_areas(DrawArea *out)
     if (!n || !dd_guest(table, n * AREA_SIZE)) return 0;
     for (i = 0; i < n; i++) {
         uint32_t a = table + i * AREA_SIZE;
-        uint32_t cells = dd_u32(a + AREA_CELLS), ncells = dd_u32(a + AREA_NCELLS);
         uint32_t list = dd_u32(a + AREA_LIST), nlist = dd_u32(a + AREA_NLIST);
         DrawArea *o = &out[i];
         o->volume = dd_float(a);
-        o->ncells = ncells <= AREA_CELLS_MAX && dd_guest(cells, ncells * VOLUME_SIZE) ? ncells : 0;
-        o->cells = o->ncells ? dd_float(cells) : NULL;
         o->nlist = nlist <= DRAW_AREAS_MAX && dd_guest(list, nlist * 4) ? nlist : 0;
         o->list = o->nlist ? (const uint32_t *)((const uint8_t *)g_xbox_mem_offset + list) : NULL;
         o->fog_start = *dd_float(a + AREA_FOG_START);
@@ -5894,7 +5889,7 @@ extern void sub_0006A970_gen(void);
 void sub_0006A970(void)
 {
     static DrawArea areas[DRAW_AREAS_MAX];
-    uint32_t self = g_ecx, eye = dd_u32(g_esp + 4);
+    uint32_t self = g_ecx;
     uint32_t *set = (uint32_t *)((uint8_t *)g_xbox_mem_offset + AREA_SET + AREA_SET_BITS);
     int n;
     sub_0006A970_gen();
@@ -5903,8 +5898,7 @@ void sub_0006A970(void)
     if (!n) return;
     memcpy(s_game_set, set, sizeof s_game_set);
     s_set_widened = 1;
-    draw_buildings_widen(areas, n, dd_guest(eye, 0xC) ? dd_float(eye) : NULL, set,
-                         pad_now(), nv2a_gl_flips());
+    draw_buildings_widen(areas, n, set, pad_now(), nv2a_gl_flips());
 }
 
 /* sub_00012C80, the frame's draw: the game's set back after it. */
@@ -5923,12 +5917,13 @@ void sub_00012C80(void)
  * task 9 is there; in play the [DRAW] line counts one call a frame while the
  * set is widened. It draws the pieces of type 2 (+0x44) of every area in the
  * set, untextured: the map's shadow volumes, which the stencil counts. With
- * the set widened and Far shadows on, they are drawn from it, as b2 drew
- * them; with Far shadows off, from the game's own set, and the widened one
- * is put back after (draw_buildings_shadows), as the far areas' volumes take
- * the shadow off the walls in front of them (known bug 52). Nothing is wrong
- * in this function: the cause is the widening, and this is where Far
- * buildings keeps it from the shadows while Far shadows is off. */
+ * the set widened, they are drawn from the game's set widened as far as Far
+ * shadows' step, which is the widened set itself when the two rows are at
+ * the same step, and from the game's own with Far shadows off; the widened
+ * set is put back after (draw_buildings_shadows), as the far areas' volumes
+ * take the shadow off the walls in front of them (known bug 52). Nothing is
+ * wrong in this function: the cause is the widening, and this is where Far
+ * buildings keeps it from the shadows as far as Far shadows says. */
 extern void sub_0006BA80_gen(void);
 void sub_0006BA80(void)
 {

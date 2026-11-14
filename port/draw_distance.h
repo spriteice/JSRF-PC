@@ -11,21 +11,32 @@
  * one attached part.
  *
  * Display > Building distance, a submenu right below Draw distance, holds two
- * rows. Far buildings, kept as farbuildings= (0, off, or 1, the default):
+ * rows. Far buildings, kept as farbuildingsahead= (0 to 4, 3 the default):
  * the buildings aren't cut by distance but by area. Each frame the camera
  * makes the set of the map's areas to draw, the ones the visible list of the
  * area it is in names, and nothing outside the set is drawn: neither the
- * area's buildings nor the objects in it. On, the set also has every area some
- * other area's list names; never one no list names. It changes at once.
+ * area's buildings nor the objects in it. Off (0) is the game's set. 1x to 3x
+ * (1 to 3) add what the game would draw from the areas that many crossings
+ * ahead: the areas the lists of the areas in the set name, then theirs
+ * (draw_buildings_widen). All (4) adds every area some list names, which
+ * draws what the game never shows from where the eye is, such as Dogenzaka
+ * Hill's top in its bottom's sky (known bug 57). An area no list names is
+ * never added. It changes at once.
  *
- * Far shadows, below it, kept as farshadows= (0, off, or 1, the default): on,
- * the map's shadows are drawn from the set Far buildings makes too, as b2
- * drew them, so the areas it adds have their shadows and a far street's
+ * Far shadows, below it, kept as farshadowsahead= (the same steps, 3 the
+ * default): the map's shadows are drawn from the game's set widened the same
+ * way, as far as Far buildings goes and no further (draw_buildings_shadows),
+ * so the areas Far buildings adds have their shadows and a far street's
  * shadows don't pop in as you come near, at the cost of minor visual
- * glitches: patches of light in the shadows (known bug 52). Off, they are
- * drawn from the game's own set (draw_buildings_shadows), and an area only
- * Far buildings adds has no shadows until the game draws it itself. It does
- * nothing with Far buildings off. It changes at once.
+ * glitches: patches of light in the shadows (known bug 52), from the shadow
+ * volumes of areas the game doesn't draw from where the eye is. Off, the
+ * shadows come from the game's own set, and an area only Far buildings adds
+ * has no shadows until the game draws it itself. It does nothing with Far
+ * buildings off. It changes at once.
+ *
+ * Before b2.1-hotfix the two rows were toggles, kept as farbuildings= and
+ * farshadows= (1 on, 0 off, on drawing the whole map): with no step of its
+ * own in the settings, a row takes Off for 0 and its default for 1.
  *
  * The hooks are in recomp_manual.c, under "draw distance"; the steps' maths,
  * the settings, the areas added, the shadows' set and the [DRAW] log are
@@ -37,11 +48,21 @@
 
 #define DRAW_DISTANCE_STEPS     5   /* 1x, 2x, 3x, 4x, Unlimited */
 #define DRAW_DISTANCE_UNLIMITED 4
-/* The defaults, with no drawdistance=, farbuildings= or farshadows= in the
- * settings: 2x, Far buildings on, and Far shadows on. */
+/* Far buildings' and Far shadows' steps: Off, 1x to 3x (crossings ahead),
+ * and All (every listed area). */
+#define DRAW_FAR_STEPS          5
+#define DRAW_FAR_WHOLE          4
+/* The defaults, with nothing for them in the settings: 2x, and Far buildings
+ * and Far shadows 3x (spriteice, 14 November 2026: "3 areas ahead" on the
+ * card at 15:22 UTC, and at 15:23 UTC "with 3 areas ahead being the default"
+ * for Far shadows; named 3x at 15:24 UTC). */
 #define DRAW_DISTANCE_DEFAULT   1
-#define DRAW_FAR_DEFAULT        1
-#define DRAW_SHADOWS_DEFAULT    1
+#define DRAW_FAR_DEFAULT        3
+#define DRAW_SHADOWS_DEFAULT    3
+/* File > Presets > Max quality's step for both: 3x, not All, which draws
+ * what the game never shows from where the eye is (known bug 57; spriteice,
+ * 14 November 2026, 15:42 UTC, on the card: "3x, like JSRF-PC default"). */
+#define DRAW_FAR_MAX_QUALITY    3
 
 /* At start, before the game runs: reads the settings and adds the in-game
  * menu's Display rows: Draw distance, then the Building distance submenu with
@@ -83,56 +104,55 @@ enum {
  * how many of them past the game's distance. */
 void draw_distance_drawn(int gate, int past, double now, unsigned frame);
 
-/* Far buildings: nonzero while on. */
+/* Far buildings' step: 0 while off, to DRAW_FAR_WHOLE. */
 int draw_far_buildings(void);
 
-/* Far shadows: nonzero while on. */
+/* Far shadows' step: 0 while off, to DRAW_FAR_WHOLE. */
 int draw_far_shadows(void);
 
 #define DRAW_AREAS_MAX 256                      /* the game's set: a bit an area */
 #define DRAW_SET_WORDS (DRAW_AREAS_MAX / 32)
 
 /* An area of the map, as the game keeps it: its volume, 6 planes, the 6
- * points first and then the 6 normals, x, y and z each; its cells, smaller
- * volumes of the same shape inside it, one after another; the areas its
+ * points first and then the 6 normals, x, y and z each; the areas its
  * visible list names, by number; and its fog. */
 typedef struct {
     const float    *volume;
-    const float    *cells;
-    unsigned        ncells;
     const uint32_t *list;
     unsigned        nlist;
     float           fog_start, fog_end, fog_density;
 } DrawArea;
 
-/* Nonzero when b is a copy of a: its volume and each of its cells are a's
- * moved by one offset, at least 1 long, which goes in d. */
-int draw_area_copy(const DrawArea *a, const DrawArea *b, float d[3]);
-
 /* With Far buildings on, after the game has made set (bit i for area i) from
- * the eye: adds every area some list names, nearest the eye first, but not a
- * copy of one the set has by then, where a copy is an area of the same shape
- * moved (draw_area_copy) that no list names together with it. That is a
- * safeguard: the game builds some stretches of a map twice and draws only
- * one, and on the maps seen the copy is an area no list names (Dogenzaka
- * Hill's far end), which is never added anyway. With JSRF_DRAW_COPIES set,
- * the copies too. Never takes an area out. The first call on a map logs its
- * areas; now and frame are for the [DRAW] line, as draw_distance_drawn's. */
-void draw_buildings_widen(const DrawArea *areas, int n, const float eye[3],
-                          uint32_t set[DRAW_SET_WORDS], double now, unsigned frame);
+ * the eye: adds what the game would draw from the areas as many crossings
+ * ahead as its step, from one area into another through the visible lists:
+ * each crossing adds the areas the lists of the areas the last one added
+ * name. The lists say what is seen from where, and also what never is:
+ * Dogenzaka Hill is one turn of a spiral, its top right above its bottom,
+ * and the game never draws the one from the other. By the lists the top is 8
+ * crossings from the bottom, so 1x to 3x never reach it; All adds every
+ * area some list names, the top in the bottom's sky too (known bug 57;
+ * dogenzaka-sky/DIAGNOSIS.md has the maps' areas, and the two other maps
+ * with an area over one the game never draws it from, Stg23 and Stg32, both
+ * more than 3 crossings away). Never takes an area out, and never adds one
+ * no list names. The first call on a map logs its areas; now and frame are
+ * for the [DRAW] line, as draw_distance_drawn's. */
+void draw_buildings_widen(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WORDS],
+                          double now, unsigned frame);
 
-/* With Far buildings on, the map's shadows: with Far shadows on, runs run()
- * with set as it is, the widened set; off, runs run() with set holding game,
- * the set the game made, and puts set back as it was after it. The game
- * draws its shadows as volumes it counts in the stencil buffer, and a surface
- * is in shadow where the count isn't 0. That is right only for volumes whole
- * along every line of sight from the eye, which the game's own set gives it.
- * The volumes of areas only the widened set has, far off or behind what the
- * eye sees, take the shadow off the walls in front of them in patches that
- * move with the camera (known bug 52, on Chuo Street's halfpipe). Far shadows
- * off, an area only Far buildings adds is drawn without its own shadows until
- * the list of the area the eye is in names it. Each call counts for the
- * [DRAW] line. */
+/* With Far buildings on, the map's shadows: runs run() with set holding
+ * game, the set the game made, widened as draw_buildings_widen widens it to
+ * Far shadows' step or Far buildings', the nearer, and puts set back as it
+ * was after it; with the two at the same step, set is already that. Off
+ * (step 0), the game's own set. The game draws its shadows as volumes it
+ * counts in the stencil buffer, and a surface is in shadow where the count
+ * isn't 0. That is right only for volumes whole along every line of sight
+ * from the eye, which the game's own set gives it. The volumes of areas only
+ * a widened set has, far off or behind what the eye sees, take the shadow
+ * off the walls in front of them in patches that move with the camera (known
+ * bug 52, on Chuo Street's halfpipe). An area Far buildings adds and Far
+ * shadows doesn't is drawn without its own shadows until Far shadows' step
+ * reaches it. Each call counts for the [DRAW] line. */
 void draw_buildings_shadows(uint32_t set[DRAW_SET_WORDS], const uint32_t game[DRAW_SET_WORDS],
                             void (*run)(void));
 
