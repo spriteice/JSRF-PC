@@ -120,9 +120,10 @@ input goes to the menu.
   settings a new install starts with. Max quality is JSRF-PC default with the
   render scale, draw distance, Far buildings, Far shadows, anisotropic filtering, Upscaling's
   Menus and HUD, Textures and Graffiti, and both anti-aliasings at their most,
-  as far as the graphics card goes. The one ticked is the one your settings
-  match, if any. Full screen and the free camera's own settings stay as you set
-  them.
+  as far as the graphics card goes. A preset sets every setting but
+  Developer's: each one also puts the game full screen, Upscaling's Cleanup
+  as a new install has it, and the free camera's own settings back to their
+  defaults. The one ticked is the one your settings match, if any.
 - **Display:** Full screen, the render scale (1× to 6×), the aspect ratio,
   the HUD submenu, the draw distance, the Building distance submenu (Far
   buildings and Far shadows), and two submenus at the end: Skips, with Skip intro, and Enhancements, with Music info in pause and
@@ -272,5 +273,5 @@ These are in the in-game menu, under Graphics.
     smooths the dot patterns of 16-bit and DXT textures. Each leaves larger
     differences, edges in the picture, as they are, and neither changes a
     texture's see-through parts. Changing either makes every copy again,
-    which can pause the game for a moment. Both off by default; File > Presets
-    leaves them as you set them.
+    which can pause the game for a moment. Both off by default, and in each of
+    File > Presets.

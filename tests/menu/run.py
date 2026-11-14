@@ -74,13 +74,18 @@ with tempfile.TemporaryDirectory(prefix="menu-") as tmp:
         sys.exit(run.returncode)
     # The rows that say the wrong thing about File > Presets, said in the log
     # (menu.cpp's take_queued) once a check, as a row without a hint is: the
-    # first that says nothing, and the first a preset can't set (the button
-    # after it isn't said, but is left alone too, or the test would have
-    # failed setting it). And a preset's lines, one a row it changes.
-    for line in ["Says nothing: nothing said about presets",
+    # first that says nothing (Last row, the first of the rows standing in
+    # for the other menus', which say nothing), and the first a preset can't
+    # set (the button and the row of too many ticks after it aren't said, but
+    # are left alone too, or the test would have failed setting them). And a
+    # preset's lines, one a row it changes: a row of ticks' by the ticks'
+    # names, or none.
+    for line in ["Last row: nothing said about presets",
                  "Asks, keeps nothing: asks first, and keeps nothing for a preset",
                  "[MENU] preset: Scale (Restart) to 1x, from the next start",
-                 "[MENU] preset: Filtering to 4x\n"]:
+                 "[MENU] preset: Filtering to 4x\n",
+                 "[MENU] preset: Cleanup to none\n",
+                 "[MENU] preset: Cleanup to Deblock, Dedither\n"]:
         if run.stderr.count(line) != 1:
             sys.exit(f"menu: {line!r} is in the log {run.stderr.count(line)} times, not once")
     # Submenus are no setting, so say nothing about presets, and aren't told.

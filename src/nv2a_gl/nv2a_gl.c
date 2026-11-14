@@ -2100,12 +2100,14 @@ static void sdl_menu_display(void)
     /* Fullscreen, Render scale, Aspect ratio, then the HUD submenu
      * (spriteice, 12 November 2026: "Render scale up", on the card at 06:19
      * UTC, and the submenu under Aspect ratio, at 09:37 UTC). The presets
-     * (File > Presets) leave how the window sits to the player; Xbox mode is
-     * the console's 4:3 at its 640x480. */
+     * (File > Presets) set every row: full screen in each, as the console
+     * filled the TV and a new install starts; Xbox mode is the console's 4:3
+     * at its 640x480. */
     const XBOX_MENU_ITEM fullscreen = {
         .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Fullscreen",
         .state = sdl_is_fullscreen, .run = sdl_choose_fullscreen,
-        .presets = XBOX_PRESETS_OWN,
+        .presets = XBOX_PRESETS_SET,
+        .preset = { 1, SDL_CFG_FULLSCREEN_DEFAULT, SDL_CFG_FULLSCREEN_DEFAULT },
         .hint = "The window becomes fullscreen." };
     const XBOX_MENU_ITEM scale = {
         .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Render scale (Restart)",
@@ -2388,9 +2390,7 @@ static void sdl_menu_up_edge(void)
 /* Graphics > Upscaling > Cleanup: DXT deblock and De-dither, each ticked on
  * or off, for the three rows' copies, taken at the next flip and kept as
  * upscale_deblock= and upscale_dedither= (0 or 1). Added after Edge strength
- * (gfx_init), so it is the submenu's last row. The presets leave it as the
- * player has it: a submenu of ticks is no setting a preset sets (menu.h,
- * presets), and with the rows Off, as Xbox mode has them, it does nothing. */
+ * (gfx_init), so it is the submenu's last row. */
 static int  sdl_up_clean_now(void) { return (int)g_up_clean_want; }
 static void sdl_up_clean_pick(int i)
 {
@@ -2401,11 +2401,15 @@ static void sdl_up_clean_pick(int i)
 }
 static void sdl_menu_up_clean(void)
 {
+    /* The presets (File > Presets): both off in Xbox mode, which has no
+     * copies to clean, and JSRF-PC default's in the other two: the ticks
+     * have no most for Max quality to raise. */
     const XBOX_MENU_ITEM row = {
         .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLES, .label = "Cleanup",
         .state = sdl_up_clean_now, .pick = sdl_up_clean_pick, .choices = nv2a_up_clean_names,
         .nchoices = NV2A_UP_CLEANS,
-        .presets = XBOX_PRESETS_OWN,
+        .presets = XBOX_PRESETS_SET,
+        .preset = { 0, NV2A_UP_CLEAN_DEFAULT, NV2A_UP_CLEAN_DEFAULT },
         .group = XBOX_GROUP_UPSCALING,
         .hint = "Cleans upscaled textures slightly." };
     if (G->tex_upscale) xbox_MenuAdd(&row, 1);

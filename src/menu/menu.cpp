@@ -66,11 +66,13 @@ static void take_queued(void)
     queue_unlock();
     g_under_told.resize(g_items.Size, 0);
     /* Every row but a separator says what it does, briefly (menu.h, hint).
-     * Every row of Display, Graphics, Audio and Controller says what File >
-     * Presets does with it (menu.h, presets). One the presets set is a
-     * TOGGLE, a CHOICE with choices or a NUMBER, and one that asks first (for
-     * a restart) keeps its value instead (keep), so a preset restarts the
-     * game once, at the end: any other is left to the player. */
+     * Every row of Display, Graphics, Audio and Controller gives its value in
+     * each of File > Presets' presets (menu.h, presets). One the presets set
+     * is a TOGGLE, a CHOICE with choices, a NUMBER or a row of ticks
+     * (TOGGLES) with no more than a bit of an int each, and one that asks
+     * first (for a restart) is a TOGGLE or a CHOICE that keeps its value
+     * instead (keep), so a preset restarts the game once, at the end. Any
+     * other is told once, and no preset sets it. */
     for (int i = from; i < g_items.Size; i++) {
         const XBOX_MENU_ITEM &it = g_items[i];
         const char *name = it.label ? it.label : "a row";
@@ -80,13 +82,14 @@ static void take_queued(void)
                 || it.kind == XBOX_ITEM_GROUP || it.menu == XBOX_MENU_FILE || it.menu == XBOX_MENU_DEVELOPER;
         int settable = it.presets != XBOX_PRESETS_SET
                     || ((it.kind == XBOX_ITEM_TOGGLE || (it.kind == XBOX_ITEM_CHOICE && it.nchoices > 0)
-                         || it.kind == XBOX_ITEM_NUMBER)
-                        && (!it.confirm || (it.keep && it.kind != XBOX_ITEM_NUMBER)));
+                         || it.kind == XBOX_ITEM_NUMBER
+                         || (it.kind == XBOX_ITEM_TOGGLES && it.nchoices > 0 && it.nchoices <= MENU_PRESET_TICKS))
+                        && (!it.confirm || (it.keep && (it.kind == XBOX_ITEM_TOGGLE || it.kind == XBOX_ITEM_CHOICE))));
         RECOMP_CHECK(hinted, "%s: %s", name, it.hint ? "its hint is too long" : "no hint");
         RECOMP_CHECK(said, "%s: nothing said about presets", name);
         if (!RECOMP_CHECK(settable, "%s: %s", name,
                           it.confirm ? "asks first, and keeps nothing for a preset" : "not a setting a preset can set"))
-            g_items[i].presets = XBOX_PRESETS_OWN;
+            g_items[i].presets = XBOX_PRESETS_UNSAID;
         /* A submenu goes in its menu, not in another (menu.h, group). */
         RECOMP_CHECK(it.kind != XBOX_ITEM_GROUP || !it.group, "%s: a submenu in a submenu", name);
     }
@@ -147,26 +150,46 @@ static void chosen(const XBOX_MENU_ITEM *it, int pick)
 
 /* ---- File > Presets (menu.h) ---------------------------------------------- */
 
-/* A row's value now, as preset[] gives it. */
+/* A row of ticks' every tick, as state() gives them (bit i for choice i). */
+static int row_ticks(const XBOX_MENU_ITEM &it)
+{
+    return (int)((1u << it.nchoices) - 1);
+}
+
+/* A row's value now, as preset[] gives it: a row of ticks' those it has. */
 static double row_now(const XBOX_MENU_ITEM &it)
 {
     switch (it.kind) {
-    case XBOX_ITEM_TOGGLE: return it.state() != 0;
-    case XBOX_ITEM_CHOICE: return it.state();
-    default:               return it.value();
+    case XBOX_ITEM_TOGGLE:  return it.state() != 0;
+    case XBOX_ITEM_CHOICE:  return it.state();
+    case XBOX_ITEM_TOGGLES: return it.state() & row_ticks(it);
+    default:                return it.value();
     }
 }
 
 /* Preset p's value for a row, within the row's own: a choice it has, a
- * number from min to max. */
+ * number from min to max, ticks it has. */
 static double row_preset(const XBOX_MENU_ITEM &it, int p)
 {
     double v = it.preset[p];
     switch (it.kind) {
-    case XBOX_ITEM_TOGGLE: return v != 0;
-    case XBOX_ITEM_CHOICE: return v < 0 ? 0 : v > it.nchoices - 1 ? it.nchoices - 1 : floor(v);
-    default:               return v < it.min ? it.min : v > it.max ? it.max : v;
+    case XBOX_ITEM_TOGGLE:  return v != 0;
+    case XBOX_ITEM_CHOICE:  return v < 0 ? 0 : v > it.nchoices - 1 ? it.nchoices - 1 : floor(v);
+    case XBOX_ITEM_TOGGLES: return v < 0 ? 0 : v > row_ticks(it) ? row_ticks(it) : floor(v);
+    default:                return v < it.min ? it.min : v > it.max ? it.max : v;
     }
+}
+
+/* What a preset's line in the log says a row of ticks goes to: the ticks it
+ * has, by name, or none. */
+static void ticks_shown(const XBOX_MENU_ITEM &it, int ticks, char *shown, size_t n)
+{
+    size_t at = 0;
+    shown[0] = 0;
+    for (int i = 0; i < it.nchoices && at < n; i++)
+        if ((ticks >> i) & 1)
+            at += (size_t)snprintf(shown + at, n - at, "%s%s", at ? ", " : "", it.choices[i]);
+    if (!shown[0]) snprintf(shown, n, "none");
 }
 
 /* The row is at preset p's value: a number within what floating point
@@ -195,7 +218,7 @@ extern "C" int menu_preset_now(void)
 extern "C" int menu_preset_apply(int p)
 {
     int restart = 0;
-    char shown[32];
+    char shown[128];
     if (p < 0 || p >= XBOX_PRESETS) return 0;
     /* By index: no row's own function adds rows, but nothing is assumed. */
     for (int i = 0; i < g_items.Size; i++) {
@@ -205,6 +228,7 @@ extern "C" int menu_preset_apply(int p)
         v = row_preset(it, p);
         if (it.kind == XBOX_ITEM_CHOICE) snprintf(shown, sizeof shown, "%s", it.choices[(int)v]);
         else if (it.kind == XBOX_ITEM_TOGGLE) snprintf(shown, sizeof shown, "%s", v != 0 ? "on" : "off");
+        else if (it.kind == XBOX_ITEM_TOGGLES) ticks_shown(it, (int)v, shown, sizeof shown);
         else snprintf(shown, sizeof shown, it.format, v);
         fprintf(stderr, "[MENU] preset: %s to %s%s\n", it.label, shown, it.keep ? ", from the next start" : "");
         if (it.keep) {
@@ -212,7 +236,13 @@ extern "C" int menu_preset_apply(int p)
             restart = 1;
         } else if (it.kind == XBOX_ITEM_TOGGLE) it.run();
         else if (it.kind == XBOX_ITEM_CHOICE)   it.pick((int)v);
-        else                                    it.set(v);
+        else if (it.kind == XBOX_ITEM_TOGGLES) {
+            /* Each tick that differs, through the row's own pick, as
+             * choosing it would. */
+            int differ = (int)row_now(it) ^ (int)v;
+            for (int i = 0; i < it.nchoices; i++)
+                if ((differ >> i) & 1) it.pick(i);
+        } else                                  it.set(v);
     }
     return restart;
 }

@@ -19,7 +19,8 @@
  *     static const XBOX_MENU_ITEM rows[] = {
  *         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE,
  *           .label = "Fullscreen", .state = is_fullscreen, .run = toggle_fullscreen,
- *           .presets = XBOX_PRESETS_OWN, .hint = "The window becomes fullscreen." },
+ *           .presets = XBOX_PRESETS_SET, .preset = { 1, 1, 1 },
+ *           .hint = "The window becomes fullscreen." },
  *     };
  *     xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
  *     #endif
@@ -71,19 +72,20 @@ typedef enum {
     XBOX_PRESETS
 } XBOX_PRESET;
 
-/* What the presets do with a row (XBOX_MENU_ITEM's presets). */
+/* What the presets do with a row (XBOX_MENU_ITEM's presets). A preset sets
+ * every setting but Developer's: each row of Display, Graphics, Audio and
+ * Controller gives its value in each preset, and the log says so once for
+ * one that doesn't, which no preset then sets. */
 typedef enum {
     XBOX_PRESETS_UNSAID,    /* nothing said: File's and Developer's rows, which
-                             * no preset sets. Any other row says which it is:
-                             * the log says so once for one that doesn't      */
-    XBOX_PRESETS_SET,       /* each preset sets it, to its value in preset[]   */
-    XBOX_PRESETS_OWN        /* the player's own: no preset changes it          */
+                             * no preset sets                                 */
+    XBOX_PRESETS_SET        /* each preset sets it, to its value in preset[]   */
 } XBOX_PRESETS_USE;
 
 /* A preset's value for a row that has no fixed most, as Max quality's
- * anisotropic filtering: past a choice's last, or a number's max, it is the
- * last or the max -- the most the device has, which can stop short of the
- * names a row could show. */
+ * anisotropic filtering: past a choice's last, a number's max, or a row of
+ * ticks' every tick, it is the last, the max or every tick -- the most the
+ * device has, which can stop short of the names a row could show. */
 #define XBOX_PRESET_MOST 1e9
 
 /* state, run, pick, text, value, set and keep are called on the window's
@@ -127,9 +129,11 @@ typedef struct XBOX_MENU_ITEM {
     const char     *hint;
     /* File > Presets (docs/menu-format.md): whether the presets set the
      * row, and its value in each, in XBOX_PRESET's order -- a TOGGLE's 0 or
-     * 1, a CHOICE's index, a NUMBER's value, each within the row's own
-     * (XBOX_PRESET_MOST). The owner gives them beside the row, from the same
-     * constants its setting uses, so JSRF-PC default's are the defaults. */
+     * 1, a CHOICE's index, a NUMBER's value, a TOGGLES' ticks as state()
+     * gives them (bit i for choice i, at most MENU_PRESET_TICKS of them),
+     * each within the row's own (XBOX_PRESET_MOST). The owner gives them
+     * beside the row, from the same constants its setting uses, so JSRF-PC
+     * default's are the defaults. */
     XBOX_PRESETS_USE presets;
     double          preset[XBOX_PRESETS];
     /* A (Restart) row the presets set, a TOGGLE or a CHOICE, whose run or
@@ -161,6 +165,10 @@ typedef struct XBOX_MENU_ITEM {
 
 /* Two lines at 640 x 480, beside the pad's buttons. */
 #define MENU_HINT_LONGEST 70
+
+/* The most ticks a row of them (XBOX_ITEM_TOGGLES) can have for File >
+ * Presets to set it: a bit of state()'s int each. */
+#define MENU_PRESET_TICKS 31
 
 /* Adds rows to the end of their menus (above any `last` row), or under the
  * row each names, copied: the table can be on the caller's stack. Any

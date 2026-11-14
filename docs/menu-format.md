@@ -155,19 +155,19 @@ Graffiti, Sharpness, Edge strength, then Cleanup, a row of two ticks.
   through its own function, as choosing that row would, and saves it as the
   row does. A (Restart) row keeps its value instead, and the game restarts
   once, after them all, if one changed.
-- **Every row of Display, Graphics, Audio and Controller**, in a submenu or
-  not, gives its value in each preset where it's added (`presets` and
-  `preset` in `menu.h`), with JSRF-PC default's from the constant its own
-  default comes from, so the preset moves with the default. Or it says it's
-  the player's own (`XBOX_PRESETS_OWN`): Fullscreen, which is how the window
-  sits, not how the game looks, and the free camera's tuning (Auto centre,
-  Invert X and Y, Sensitivity X and Y, Deadzone), which matters only with
-  the free camera on. A (Restart) row the presets set also has `keep`, which
-  keeps a value for the next start without restarting. A row that says
-  nothing, or that asks first with no `keep`, is told once in the log and
-  left alone, as a row with no hint is told. File's and Developer's rows are
-  never set, and a submenu (`XBOX_ITEM_GROUP`) is no setting, so says
-  nothing.
+- **A preset sets every setting but Developer's.** Every row of Display,
+  Graphics, Audio and Controller, in a submenu or not, gives its value in
+  each preset where it's added (`presets` and `preset` in `menu.h`), with
+  JSRF-PC default's from the constant its own default comes from, so the
+  preset moves with the default. That takes in Fullscreen, full screen in
+  each, and the free camera's tuning, at its defaults in each. A row of
+  ticks (`XBOX_ITEM_TOGGLES`), as Upscaling's Cleanup, gives the ticks it
+  has in each, and a preset changes each tick that differs, as choosing it
+  would. A (Restart) row the presets set also has `keep`, which keeps a
+  value for the next start without restarting. A row that says nothing, or
+  that asks first with no `keep`, is told once in the log and left alone,
+  as a row with no hint is told. File's and Developer's rows are never set,
+  and a submenu (`XBOX_ITEM_GROUP`) is no setting, so says nothing.
 - The tests of the modules that add rows check their values, and that
   JSRF-PC default's is what a start with no settings gives.
 

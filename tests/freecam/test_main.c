@@ -98,14 +98,20 @@ int main(int argc, char **argv)
     if (!strcmp(c, "off")) {
         /* File > Presets: Free camera off in Xbox mode, and JSRF-PC
          * default's and Max quality's what a start with no key gives; the
-         * rest of the page is the player's own. */
-        int i;
+         * rest of the page, how the free camera handles, what a start with
+         * no key gives in every preset. */
+        int i, p;
         assert(s_nrows > 1 && !strcmp(s_rows[0].label, "Free camera"));
         assert(s_rows[0].presets == XBOX_PRESETS_SET && !s_rows[0].keep);
         assert(s_rows[0].preset[XBOX_PRESET_XBOX] == 0);
         assert(s_rows[0].preset[XBOX_PRESET_JSRF_PC] == freecam_on());
         assert(s_rows[0].preset[XBOX_PRESET_MAX] == freecam_on());
-        for (i = 1; i < s_nrows; i++) assert(s_rows[i].presets == XBOX_PRESETS_OWN);
+        for (i = 1; i < s_nrows; i++) {
+            const XBOX_MENU_ITEM *r = &s_rows[i];
+            double now = r->kind == XBOX_ITEM_NUMBER ? r->value() : r->state();
+            assert(r->presets == XBOX_PRESETS_SET && !r->keep);
+            for (p = 0; p < XBOX_PRESETS; p++) assert(fabs(r->preset[p] - now) < 1e-9);
+        }
         /* No key: off, and the game's eye stands, its reset too. */
         assert(!freecam_on());
         assert(!frame(32767, 0, eye));
