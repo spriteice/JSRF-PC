@@ -56,11 +56,12 @@ pack"), then wait for my approval. A pre-approved thread doesn't wait
 
 1. Run `git status` and `git diff --cached --stat`, and confirm that nothing
    on the project rules' "never in the repo" list is staged. If .gitignore
-   doesn't cover it, tell me. The list is for what is committed: the
-   history already holds Claude session links in 131 commit messages, 124
-   of them the toolkit's own from August and September and 7 of ours from
-   21 and 22 October, none since. Every tag from b1 on holds them, so they
-   stay.
+   doesn't cover it, tell me. Then run the push gate on what is staged and
+   on the proposed message (Workflow, The push gate): it prints nothing
+   when all is well. The list is for what is committed: the history
+   already holds Claude session links in 131 commit messages, 124 of them
+   the toolkit's own from August and September and 7 of ours from 21 and
+   22 October, none since. Every tag from b1 on holds them, so they stay.
 2. Show me the full diff.
 3. Show me the proposed commit message.
 4. For a fix: the root cause and the model behind it (Where code goes, 1),
@@ -284,20 +285,37 @@ carries an unsigned one. A thread's sandbox signs each commit made with
 `commit.gpgsign` on), and a rebase onto a newer `origin/main` signs the
 commits it moves. Never make a commit with plain `git commit-tree`, which
 doesn't sign (`git commit-tree -S` does), or with signing turned off
-(`--no-gpg-sign`, `-c commit.gpgsign=false`). Just before a push, check
-that each commit going onto `main` is signed: this prints nothing when all
-are.
-
-```
-for c in $(git rev-list origin/main..main); do
-  git cat-file -p "$c" | grep -q '^gpgsig ' || echo "unsigned: $c"
-done
-```
+(`--no-gpg-sign`, `-c commit.gpgsign=false`). The push gate's run just
+before a push checks that each commit going onto `main` is signed (The
+push gate, below).
 
 If one isn't, or the sandbox can't sign, don't push, and don't turn signing
 off: tell me, and the commit is made again, signed, on my say. The history
 holds commits pushed unsigned before this rule, the last of them on
 11 November (13 of ours, and most of upstream's); they stay.
+
+**The push gate.** `.github/ci/push_gate.py` checks, the same way each
+time, what a thread would otherwise check from memory. Its words file is
+the shared folder's `release-prep/never-in-the-repo.txt`, one word or
+phrase a line: words the repository can't hold, which is why the file is
+kept outside it. It is run twice for each commit:
+
+- **Before the commit,** on what is staged and the proposed message
+  (Before every commit, 1):
+  `python3 .github/ci/push_gate.py --words <file> --staged --message <file>`
+- **Just before the push,** on each commit `main` is ahead of
+  `origin/main` by: `python3 .github/ci/push_gate.py --words <file>`
+
+It refuses a Claude session link, a session's id or a `Claude-Session:`
+line; a word from the words file; a file .gitignore keeps out; an unsigned
+commit; an `origin/main` here that isn't GitHub's `main` at that moment,
+or a `main` that isn't ahead of it in a straight line; and a change to
+README.md or the packages' README.txt outside a release's own commits,
+which pass `--release` (the project instructions, section 4). Only what a
+commit adds is checked. It prints nothing when all is well, and otherwise
+a line for each thing it found, never the word itself. Without the words
+file it checks nothing, and fails. What it finds is never worked around:
+the commit is changed, or I'm told.
 
 **Taking turns on `main`.** Every push to `main`, from any thread,
 pre-approved or not, takes its turn in the shared folder's
@@ -315,8 +333,8 @@ pre-approved or not, takes its turn in the shared folder's
 - **On its turn:** if `origin/main` has moved since its checks, its
   commits move onto it (asking me first, unless the thread is
   pre-approved) and their checks run again (Several items at once). Then
-  it checks they're signed (Signed commits, above), and pushes. Nothing
-  else is pushed meanwhile, so its checks can't go stale.
+  it runs the push gate (above), and pushes. Nothing else is pushed
+  meanwhile, so its checks can't go stale.
 - **The turn ends** when GitHub's run of `.github/workflows/ci.yml` on its
   push has passed. A failure there is fixed on the same turn, and a job that
   failed because a server was down is run again until the server is back

@@ -759,12 +759,13 @@ what it links to beside it. In this order:
   and every step still untested, with the device it needs (project rules,
   Workflow 5).
 - **The six checks** (project rules, Before every commit), each with its
-  result: what's staged; the diff, with its SHA-256 and whether it is the
-  test build's byte for byte (or, in a batch, its item's part of it); the
-  commit message; the root cause, its model and the regression test, or
-  for a feature where it lives; each added or edited document, rendered
-  whole; and each CI job with its log, the Windows tests' on the PC among
-  them.
+  result: what's staged, and the push gate's run on it and the proposed
+  message (project rules, Workflow, The push gate); the diff, with its
+  SHA-256 and whether it is the test build's byte for byte (or, in a
+  batch, its item's part of it); the commit message; the root cause, its
+  model and the regression test, or for a feature where it lives; each
+  added or edited document, rendered whole; and each CI job with its log,
+  the Windows tests' on the PC among them.
 
 Nothing it needs is left to another message or file I haven't been
 pointed to.

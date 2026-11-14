@@ -4,8 +4,8 @@ at each of a file's sources, how tests/run_all.py names a
 sanitizer's leak, checks that each known bug names its release and counts
 what each tsan.supp entry hides, how count_warnings.py counts a build's
 warnings, how coverage.py adds up the tests' line counts, how
-launcher/images.sh names each image, and when llvm_mingw.py uses its copy
-again."""
+launcher/images.sh names each image, when llvm_mingw.py uses its copy
+again, and what push_gate.py refuses before a commit or a push."""
 
 import hashlib
 import http.server
@@ -27,6 +27,7 @@ import fetch  # noqa: E402
 import llvm_mingw  # noqa: E402
 import count_warnings  # noqa: E402
 import coverage  # noqa: E402
+import push_gate  # noqa: E402
 
 spec = importlib.util.spec_from_file_location("run_all", root / "tests" / "run_all.py")
 run_all = importlib.util.module_from_spec(spec)
@@ -423,3 +424,174 @@ def test_llvm_mingw_uses_a_whole_checked_copy_again(tmp_path, monkeypatch, capsy
     assert llvm_mingw.main([d]) == 0                        # fetched and unpacked again
     assert (len(fetched), len(unpacked)) == (2, 3)
     assert capsys.readouterr().out.split() == [bin_path] * 5
+
+
+# push_gate.py, on a repository made here with a bare "origin" beside it.
+# What it must refuse is put together from pieces, so that this file, which
+# the gate reads like any other, holds none of it whole.
+LINK = "https://claude" + ".ai/code/" + "session_" + "01Ab" * 6
+TRAILER = "Claude-" + "Session" + ": see the thread"
+WORD = "Zebedee"
+GIT_ENV = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_AUTHOR_NAME": "A Tester", "GIT_AUTHOR_EMAIL": "tester@example.invalid",
+           "GIT_COMMITTER_NAME": "A Tester", "GIT_COMMITTER_EMAIL": "tester@example.invalid"}
+
+
+def run_git(repo, *args, stdin=None):
+    done = subprocess.run(("git",) + args, cwd=repo, env={**os.environ, **GIT_ENV},
+                          input=stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert done.returncode == 0, done.stderr.decode()
+    return done.stdout.decode()
+
+
+@pytest.fixture
+def gate(tmp_path, monkeypatch):
+    """A clone on main, one commit behind nothing: `commit` adds one (signed
+    unless told otherwise, by a gpgsig header the way git writes one, which
+    is all the gate looks for), and `run` gives the gate's exit code and
+    lines."""
+    for name, value in GIT_ENV.items():
+        monkeypatch.setenv(name, value)
+    origin, work = tmp_path / "origin.git", tmp_path / "work"
+    run_git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
+    run_git(tmp_path, "init", "-q", "-b", "main", str(work))
+    (work / ".gitignore").write_text("*.log\nport/recomp/\n")
+    (work / "README.md").write_text("The game.\n")
+    (work / "a.c").write_text("int a;\n")
+    run_git(work, "add", "-A")
+    run_git(work, "commit", "-q", "-m", "The start")
+    run_git(work, "remote", "add", "origin", str(origin))
+    run_git(work, "push", "-q", "origin", "main")
+    run_git(work, "fetch", "-q", "origin")
+    words = tmp_path / "words.txt"
+    words.write_text("# words the repository mustn't hold\n%s\n" % WORD)
+    monkeypatch.chdir(work)
+
+    class Gate:
+        repo = work
+        remote = origin
+        words_file = words
+
+        @staticmethod
+        def commit(message, signed=True, force=()):
+            run_git(work, "add", "-A")
+            for path in force:
+                run_git(work, "add", "-f", path)
+            run_git(work, "commit", "-q", "-m", message)
+            if signed:
+                raw = run_git(work, "cat-file", "-p", "HEAD")
+                header, _, body = raw.partition("\n\n")
+                header += ("\ngpgsig -----BEGIN SSH SIGNATURE-----\n made for the test\n"
+                           " -----END SSH SIGNATURE-----")
+                new = run_git(work, "hash-object", "-t", "commit", "-w", "--stdin",
+                              stdin=(header + "\n\n" + body).encode()).strip()
+                run_git(work, "update-ref", "refs/heads/main", new)
+
+        @staticmethod
+        def run(*args, capsys):
+            code = push_gate.main(["--words", str(words)] + list(args))
+            return code, capsys.readouterr().out.splitlines()
+
+    return Gate
+
+
+def test_push_gate_says_nothing_of_a_signed_clean_commit(gate, capsys):
+    (gate.repo / "a.c").write_text("int a;\nint session_table;\n")
+    gate.commit("Engine: a second int\n\nCo-Authored-By: Claude <noreply@anthropic.com>")
+    assert gate.run(capsys=capsys) == (0, [])
+
+
+def test_push_gate_finds_an_unsigned_commit(gate, capsys):
+    (gate.repo / "a.c").write_text("int b;\n")
+    gate.commit("Engine: b", signed=False)
+    code, lines = gate.run(capsys=capsys)
+    assert code == 1 and len(lines) == 1 and lines[0].endswith(": unsigned")
+
+
+@pytest.mark.parametrize("message, what", [
+    ("Engine: b\n\n" + LINK, "a Claude link"),
+    ("Engine: b\n\n" + TRAILER, "a Claude-Session line"),
+    ("Engine: b, as %s asked" % WORD.lower(), "1 of the words file's words"),
+])
+def test_push_gate_reads_each_message(gate, capsys, message, what):
+    (gate.repo / "a.c").write_text("int b;\n")
+    gate.commit(message)
+    code, lines = gate.run(capsys=capsys)
+    assert code == 1 and any(line.endswith("its message has " + what) for line in lines)
+    assert WORD.lower() not in "\n".join(lines).lower()
+
+
+def test_push_gate_reads_what_a_commit_adds_not_what_it_takes_out(gate, capsys):
+    (gate.repo / "a.c").write_text("int a; /* for %s */\n" % WORD)
+    gate.commit("Engine: a comment")
+    code, lines = gate.run(capsys=capsys)
+    assert code == 1 and lines == [lines[0]] and "a.c adds 1 of the words" in lines[0]
+    # The next push takes the word out again: nothing to say of that commit.
+    run_git(gate.repo, "push", "-q", "origin", "main")
+    run_git(gate.repo, "fetch", "-q", "origin")
+    (gate.repo / "a.c").write_text("int a;\n")
+    gate.commit("Engine: the comment goes")
+    assert gate.run(capsys=capsys) == (0, [])
+
+
+def test_push_gate_finds_a_file_gitignore_keeps_out(gate, capsys):
+    (gate.repo / "last-run.log").write_text("a log\n")
+    (gate.repo / "port" / "recomp" / "gen").mkdir(parents=True)
+    (gate.repo / "port" / "recomp" / "gen" / "f.c").write_text("int f;\n")
+    gate.commit("Oops", force=("last-run.log", "port/recomp/gen/f.c"))
+    code, lines = gate.run(capsys=capsys)
+    assert code == 1
+    assert sorted(line.split(": ", 1)[1] for line in lines) == [
+        "last-run.log is a file .gitignore keeps out",
+        "port/recomp/gen/f.c is a file .gitignore keeps out"]
+
+
+def test_push_gate_keeps_the_readme_for_a_release(gate, capsys):
+    (gate.repo / "README.md").write_text("The game, with a new feature.\n")
+    gate.commit("Renderer: a new feature")
+    code, lines = gate.run(capsys=capsys)
+    assert code == 1 and "README.md changes" in lines[0]
+    assert gate.run("--release", capsys=capsys) == (0, [])
+
+
+def test_push_gate_asks_the_remote_for_main(gate, capsys, tmp_path):
+    other = tmp_path / "other"
+    run_git(tmp_path, "clone", "-q", str(gate.remote), str(other))
+    (other / "b.c").write_text("int b;\n")
+    run_git(other, "add", "-A")
+    run_git(other, "commit", "-q", "-m", "Someone else's push")
+    run_git(other, "push", "-q", "origin", "main")
+    (gate.repo / "a.c").write_text("int c;\n")
+    gate.commit("Engine: c")
+    code, lines = gate.run(capsys=capsys)
+    assert code == 1 and "on the remote it is" in lines[0]
+
+
+def test_push_gate_with_nothing_to_push(gate, capsys):
+    code, lines = gate.run(capsys=capsys)
+    assert code == 1 and "nothing to push" in lines[0]
+
+
+def test_push_gate_on_what_is_staged(gate, capsys, tmp_path):
+    message = tmp_path / "message.txt"
+    message.write_text("Engine: d\n")
+    (gate.repo / "a.c").write_text("int d;\n")
+    run_git(gate.repo, "add", "-A")
+    assert gate.run("--staged", "--message", str(message), capsys=capsys) == (0, [])
+    message.write_text("Engine: d\n\n" + LINK + "\n")
+    (gate.repo / "notes.txt").write_text("thanks, %s\n" % WORD)
+    run_git(gate.repo, "add", "-A")
+    code, lines = gate.run("--staged", "--message", str(message), capsys=capsys)
+    assert code == 1 and lines == [
+        "staged: its message has a Claude link",
+        "staged: its message has a session's id",
+        "staged: notes.txt adds 1 of the words file's words"]
+
+
+def test_push_gate_checks_nothing_without_its_words(gate, capsys):
+    gate.words_file.write_text("# none\n")
+    code, lines = gate.run(capsys=capsys)
+    assert code == 1 and "nothing was checked" in lines[0]
+    gate.words_file.unlink()
+    code, lines = gate.run(capsys=capsys)
+    assert code == 1 and "nothing was checked" in lines[0]
