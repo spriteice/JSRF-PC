@@ -313,6 +313,9 @@ static int over_at(uint32_t surf, uint32_t frame)
  * vertex count) an outline has followed. */
 #define OL_RING 32
 #define OL_KEYS 4096            /* a power of two */
+/* A key's slot, by Fibonacci hashing: the key times 2^64 over the golden
+ * ratio, whose high bits (from bit 40) are the slot. */
+#define OL_HASH 0x9E3779B97F4A7C15ull
 static struct { uint64_t key; uint32_t verts; } g_ol_ring[OL_RING];
 static int      g_ol_n;
 static uint64_t g_ol_keys[OL_KEYS];
@@ -320,7 +323,7 @@ static uint32_t g_ol_learnt;
 
 static uint32_t ol_hash(uint64_t key)
 {
-    return (uint32_t)(key * 0x9E3779B97F4A7C15ull >> 40) & (OL_KEYS - 1);
+    return (uint32_t)(key * OL_HASH >> 40) & (OL_KEYS - 1);
 }
 
 static int ol_has(uint64_t key)

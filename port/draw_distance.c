@@ -169,6 +169,11 @@ void draw_distance_drawn(int gate, int past, double now, unsigned frame)
 #if MISC_SLOTS < 2 * DRAW_MISC_LINES
 #  error "the Misc group's table must be twice its lines"
 #endif
+/* A pair's slot, by Fibonacci hashing: the area times 2^32 over the golden
+ * ratio, mixed into the model, then the pair times Knuth's prime near it,
+ * whose top MISC_BITS bits are the slot. */
+#define MISC_HASH_AREA 0x9E3779B9u
+#define MISC_HASH_PAIR 2654435761u
 static struct { uint32_t area, model, places; int used; } s_misc[MISC_SLOTS];
 static unsigned s_misc_lines;   /* written on this map; one more once it has stopped */
 /* Far buildings has read the map since it was last turned on or off: until
@@ -183,7 +188,7 @@ static void misc_forget(void)
 
 void draw_misc_drawn(uint32_t object, uint32_t model, uint32_t area, uint32_t places)
 {
-    uint32_t i = ((model ^ area * 0x9E3779B9u) * 2654435761u) >> (32 - MISC_BITS);
+    uint32_t i = ((model ^ area * MISC_HASH_AREA) * MISC_HASH_PAIR) >> (32 - MISC_BITS);
     if (!s_far || !s_misc_map || s_misc_lines > DRAW_MISC_LINES) return;
     while (s_misc[i].used && (s_misc[i].area != area || s_misc[i].model != model))
         i = (i + 1) & (MISC_SLOTS - 1);
