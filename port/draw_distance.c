@@ -524,7 +524,7 @@ void draw_distance_start(void)
               .preset = { 0, DRAW_DISTANCE_DEFAULT, DRAW_DISTANCE_UNLIMITED },     /* 1x, 2x, Unlimited */
               .hint = "Sets how far crowds, vehicles, props, and police are drawn. CPU heavy." },
             { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_GROUP, .label = DRAW_GROUP,
-              .under = DRAW_UNDER, .hint = "Draws the map's far buildings, and their shadows." },
+              .under = DRAW_UNDER, .hint = "Draws the whole map and its shadows to eliminate pop-in." },
             { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Far buildings",
               .state = menu_far, .run = menu_far_flip, .group = DRAW_GROUP,
               .presets = XBOX_PRESETS_SET, .preset = { 0, DRAW_FAR_DEFAULT, 1 },
@@ -534,7 +534,7 @@ void draw_distance_start(void)
             { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Far shadows",
               .state = menu_shadows, .run = menu_shadows_flip, .group = DRAW_GROUP,
               .presets = XBOX_PRESETS_SET, .preset = { 0, DRAW_SHADOWS_DEFAULT, 1 },
-              .hint = "Reduces building shadow pop-in, at the cost of minor visual glitches." },
+              .hint = "Eliminates building shadow pop-in, at the cost of minor glitches." },
         };
         xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
     }

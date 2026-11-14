@@ -58,7 +58,7 @@ void camwall_start(void)
             .state = menu_on, .run = menu_flip, .under = CAMWALL_UNDER,
             /* File > Presets: the Xbox's own camera in Xbox mode. */
             .presets = XBOX_PRESETS_SET, .preset = { 0, CAMWALL_DEFAULT, CAMWALL_DEFAULT },
-            .hint = "Keeps the game's own camera from showing through walls." };
+            .hint = "Fixes the default camera clipping through walls, mostly in widescreen." };
         xbox_MenuAdd(&row, 1);
     }
 #endif

@@ -2121,14 +2121,14 @@ static void sdl_menu_display(void)
           .preset = { NV2A_WIDE_SHAPE_4_3, SDL_CFG_SHAPE_DEFAULT, SDL_CFG_SHAPE_DEFAULT },
           .hint = "Adjusts the aspect ratio. Menus, HUD, and effects adjust to match." },
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_GROUP, .label = SDL_HUD_GROUP,
-          .hint = "Resizes the HUD, or turns it off." },
+          .hint = "Resizes the HUD or turns it off." },
         /* The HUD at its own size, and shown, in every preset. */
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_NUMBER, .label = "HUD scale",
           .group = SDL_HUD_GROUP, .value = sdl_hud_scale, .set = sdl_hud_scale_set,
           .min = NV2A_HUD_SCALE_MIN, .max = NV2A_HUD_SCALE_MAX, .step = NV2A_HUD_SCALE_STEP,
           .format = "%.1fx", .presets = XBOX_PRESETS_SET,
           .preset = { NV2A_HUD_SCALE_DEFAULT, NV2A_HUD_SCALE_DEFAULT, NV2A_HUD_SCALE_DEFAULT },
-          .hint = "Resizes the HUD, from 0.5x to 1.5x its size." },
+          .hint = "Resizes the HUD from 0.5x to 1.5x." },
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Disable HUD",
           .group = SDL_HUD_GROUP, .state = sdl_hud_off, .run = sdl_hud_off_flip,
           .presets = XBOX_PRESETS_SET, .preset = { 0, 0, 0 },
@@ -2138,7 +2138,7 @@ static void sdl_menu_display(void)
      * last), for rows from elsewhere: Skips, then Enhancements. */
     static const XBOX_MENU_ITEM groups[] = {
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_SKIPS, .last = 1,
-          .hint = "Leaves out parts of the game, such as the intro." },
+          .hint = "Time-saving skips." },
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_ENHANCEMENTS, .last = 1,
           .hint = "Improves the game beyond the original Xbox version." },
     };
@@ -2276,7 +2276,7 @@ static void sdl_menu_up(void)
      * (4x), and 8x in Max quality. */
     const XBOX_MENU_ITEM rows[] = {
         { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_UPSCALING, .last = 1,
-          .hint = "Sharpens the game's art and textures at higher render scales." },
+          .hint = "Sharpens textures subtly with Super-xBR. Can cause minor hitching." },
         { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Menus and HUD",
           .state = sdl_up_now, .pick = sdl_up_pick, .choices = sdl_up_names,
           .nchoices = NV2A_UP_CHOICES,
@@ -2355,7 +2355,7 @@ static void sdl_menu_up_sharp(void)
         .presets = XBOX_PRESETS_SET,
         .preset = { NV2A_UP_SHARP_DEFAULT, NV2A_UP_SHARP_DEFAULT, NV2A_UP_SHARP_DEFAULT },
         .group = XBOX_GROUP_UPSCALING,
-        .hint = "How crisp the upscaled edges are. Normal is Super-xBR's own." };
+        .hint = "How crisp the upscaled edges are." };
     if (G->tex_upscale) xbox_MenuAdd(&row, 1);
 }
 
@@ -2379,7 +2379,7 @@ static void sdl_menu_up_edge(void)
         .presets = XBOX_PRESETS_SET,
         .preset = { NV2A_UP_EDGE_DEFAULT, NV2A_UP_EDGE_DEFAULT, NV2A_UP_EDGE_DEFAULT },
         .group = XBOX_GROUP_UPSCALING,
-        .hint = "How faint a diagonal the upscaling follows. Normal is Super-xBR's own." };
+        .hint = "How faint a diagonal the upscaling follows." };
     if (G->tex_upscale) xbox_MenuAdd(&row, 1);
 }
 
@@ -2405,7 +2405,7 @@ static void sdl_menu_up_clean(void)
         .nchoices = NV2A_UP_CLEANS,
         .presets = XBOX_PRESETS_OWN,
         .group = XBOX_GROUP_UPSCALING,
-        .hint = "Smooths out DXT blocks and dither before upscaling." };
+        .hint = "Cleans upscaled textures slightly." };
     if (G->tex_upscale) xbox_MenuAdd(&row, 1);
 }
 #endif
