@@ -95,10 +95,17 @@ static int nv_window_pref_num(const char *key, double *v)
 }
 #endif
 
+/* The tuning with no keys in the settings: neither way inverted, auto centre
+ * off, 5 either way, and a 15% deadzone. */
+#define FREECAM_INVERT_DEFAULT   0
+#define FREECAM_CENTRE_DEFAULT   0
+#define FREECAM_SENS_DEFAULT     5.0
+#define FREECAM_DEADZONE_DEFAULT 0.15
 static struct {
     int invert_x, invert_y, centre;     /* centre: auto centre's level, 0 off */
     double sens_x, sens_y, deadzone;
-} s_cfg = { 0, 0, 0, 5.0, 5.0, 0.15 };       /* the defaults */
+} s_cfg = { FREECAM_INVERT_DEFAULT, FREECAM_INVERT_DEFAULT, FREECAM_CENTRE_DEFAULT,
+            FREECAM_SENS_DEFAULT, FREECAM_SENS_DEFAULT, FREECAM_DEADZONE_DEFAULT };
 /* Off with no freecam= in the settings: the game's own camera. */
 #define FREECAM_ON_DEFAULT 0
 static volatile int s_on;

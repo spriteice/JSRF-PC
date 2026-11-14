@@ -1414,6 +1414,8 @@ static int gl_init_common(uint32_t w, uint32_t h)
 static void pres_start(void);        /* the presenter, below */
 static volatile int g_presenter;     /* ... and whether it runs */
 static int  sdl_cfg_get(const char *key, int def); /* the settings file, below */
+/* Full screen until the player chooses, and fullscreen= keeps their choice. */
+#define SDL_CFG_FULLSCREEN_DEFAULT 1
 #if defined(XBOXRECOMP_MENU)
 static void sdl_menu_display(void);  /* the in-game menu's rows, below */
 #endif
@@ -1466,7 +1468,7 @@ static int gl_init(uint32_t w, uint32_t h)
          * full screen until they choose, unless RECOMP_FULLSCREEN says
          * otherwise: the launchers' --fullscreen, or a new scale's restart
          * (sdl_restart_at). */
-        if ((e = getenv("RECOMP_FULLSCREEN")) && *e ? atoi(e) : sdl_cfg_get("fullscreen", 1))
+        if ((e = getenv("RECOMP_FULLSCREEN")) && *e ? atoi(e) : sdl_cfg_get("fullscreen", SDL_CFG_FULLSCREEN_DEFAULT))
             flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
         g_window = SDL_CreateWindow("JSRF-PC",
                                     SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
@@ -14501,7 +14503,8 @@ static void up_clean_start(void)
 {
     unsigned c = NV2A_UP_CLEAN_DEFAULT;
 #if defined(NV2A_GL_USE_SDL)
-    c = nv2a_up_clean(sdl_cfg_get("upscale_deblock", 0), sdl_cfg_get("upscale_dedither", 0));
+    c = nv2a_up_clean(sdl_cfg_get("upscale_deblock", (NV2A_UP_CLEAN_DEFAULT & NV2A_UP_DEBLOCK) != 0),
+                      sdl_cfg_get("upscale_dedither", (NV2A_UP_CLEAN_DEFAULT & NV2A_UP_DEDITHER) != 0));
 #endif
     g_up_clean_now = g_up_clean_want = c;
     fprintf(stderr, "  [GL] upscale cleanup: %s from the settings\n", nv2a_up_clean_said(c));
