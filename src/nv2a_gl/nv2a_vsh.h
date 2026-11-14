@@ -113,6 +113,29 @@ typedef struct {
 int nv2a_vsh_decode(const uint32_t *tokens, int count, Nv2aVshProgram *out);
 
 /*
+ * Which of the texture coordinates oT0..oT3 a decoded program works out,
+ * rather than passing on the mesh's own: bit n for oTn.
+ *
+ * A program's inputs have no fixed meaning. This title's programs take a
+ * model's own coordinates from v2, v4 or v5 as well as v9 to v12, and their
+ * bone indices and normals from v1 to v3, so what the program does with a
+ * value tells them apart, not where it comes from. A coordinate is the
+ * mesh's own when it is made from inputs and constants by copying, scaling
+ * and offsetting (MOV, MUL, ADD, MAD, MIN, MAX). It is worked out when the
+ * position goes into it -- an input the program makes oPos from, or oPos
+ * read back -- or a constant read at an address that differs from vertex to
+ * vertex (a bone's), or when a value that differs from vertex to vertex goes
+ * through a dot product (a transform or a light: DP3, DP4, DPH, DST), a
+ * comparison (SLT, SGE) or one of the ILU's functions (RCP, RCC, RSQ, EXP,
+ * LOG, LIT). So a texture matrix in a program counts as worked out; the
+ * title's programs seen so far copy or offset their coordinates instead. A
+ * coordinate the program never writes is the hardware's (0, 0, 0, 1), a
+ * constant. 3D upscaling leaves a texture sampled through a worked-out
+ * coordinate (nv2a_upscale.h).
+ */
+uint8_t nv2a_vsh_tex_made(const Nv2aVshProgram *p);
+
+/*
  * Emit GLSL 330 core for a decoded program.
  *
  * Conventions the backend must match:

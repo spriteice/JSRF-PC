@@ -204,6 +204,7 @@ const char *const nv2a_up3_verdict_names[NV2A_UP3_VERDICTS] = {
     "the draw has the depth test off",
     "the 2D rule took it",
     "its stage doesn't sample it as a plain 2D texture",
+    "its coordinates are worked out by the draw",
     "it is linear",
     ("a side is under " UP_STR(NV2A_UP3_SIDE_MIN)),
     ("it is larger than " UP_STR(NV2A_UP_SIDE_MAX)),
@@ -216,8 +217,9 @@ const char *const nv2a_up3_verdict_names[NV2A_UP3_VERDICTS] = {
 /* The 3D rule for textures up to side_max a side, too_big the verdict past
  * it: the 3D rule's own, and the graffiti rule's for larger, which weighs
  * neither the draw nor the layout where the draw is into a picture the title
- * keeps (kept_any). */
-static int up3_rule_upto(const Nv2aUp3Bind *b, uint32_t side_max, int too_big, int kept_any)
+ * keeps (kept_any), nor where its coordinates come from (weigh_made). */
+static int up3_rule_upto(const Nv2aUp3Bind *b, uint32_t side_max, int too_big, int kept_any,
+                         int weigh_made)
 {
     int any = kept_any && b->kept;
     if (!any && (b->screen || b->over)) return NV2A_UP3_2D_DRAW;
@@ -225,6 +227,7 @@ static int up3_rule_upto(const Nv2aUp3Bind *b, uint32_t side_max, int too_big, i
     if (b->taken_2d) return NV2A_UP3_TAKEN_2D;
     if (b->mode != NV2A_UP3_MODE_PROJECT2D && b->mode != NV2A_UP3_MODE_PROJECT3D)
         return NV2A_UP3_MODE;
+    if (weigh_made && b->made) return NV2A_UP3_MADE;
     if (!any && b->layout == NV2A_UP_LINEAR) return NV2A_UP3_LINEAR_TEX;
     if (b->w < (uint32_t)NV2A_UP3_SIDE_MIN || b->h < (uint32_t)NV2A_UP3_SIDE_MIN)
         return NV2A_UP3_TOO_SMALL;
@@ -236,7 +239,7 @@ static int up3_rule_upto(const Nv2aUp3Bind *b, uint32_t side_max, int too_big, i
 
 int nv2a_up3_rule(const Nv2aUp3Bind *b)
 {
-    return up3_rule_upto(b, NV2A_UP_SIDE_MAX, NV2A_UP3_TOO_BIG, 0);
+    return up3_rule_upto(b, NV2A_UP_SIDE_MAX, NV2A_UP3_TOO_BIG, 0, 1);
 }
 
 int nv2a_up3_of_texture(int verdict)
@@ -354,7 +357,7 @@ int nv2a_upg_rule(const Nv2aUp3Bind *b)
 {
     if (b->w <= (uint32_t)NV2A_UP_SIDE_MAX && b->h <= (uint32_t)NV2A_UP_SIDE_MAX)
         return NV2A_UPG_NOT_GRAFFITI;
-    return up3_rule_upto(b, NV2A_UPG_SIDE_MAX, NV2A_UPG_TOO_BIG, 1);
+    return up3_rule_upto(b, NV2A_UPG_SIDE_MAX, NV2A_UPG_TOO_BIG, 1, 0);
 }
 
 int nv2a_upg_census_wants(const Nv2aUp3Bind *b, int verdict)

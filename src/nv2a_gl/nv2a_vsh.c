@@ -160,6 +160,180 @@ int nv2a_vsh_decode(const uint32_t *tokens, int count, Nv2aVshProgram *out)
     return n;
 }
 
+/*
+ * Worked-out texture coordinates (nv2a_vsh.h), followed component by
+ * component through the temporaries in the order the program runs, as the
+ * interpreter runs it (nv2a_vsh_interp.c): sources are read before anything
+ * is written, R12 is oPos (read and written), a dot product's every
+ * component reads all it multiplies, the ILU's scalar operations read
+ * source C's x (LIT its x, y and w), and ARL's address goes to every later
+ * read of c[A0 + n].
+ *
+ * Each component of each value carries a set of bits, and vsh_flow runs
+ * the program with one of two meanings for them. VSH_INPUTS: bit n for vn,
+ * to find the position's inputs, those oPos is made from. VSH_MADE:
+ * VSH_VERT for a value that differs from vertex to vertex, and VSH_WORKED
+ * for one worked out. The position's inputs, oPos read back and a constant
+ * at a per-vertex address (a bone's) are worked out from the start; a
+ * per-vertex value becomes worked out through a dot product, a comparison
+ * or one of the ILU's functions.
+ */
+enum { VSH_INPUTS, VSH_MADE };
+#define VSH_VERT   1u
+#define VSH_WORKED 2u
+
+typedef struct { uint32_t k[4]; } VshVal;           /* x, y, z, w */
+
+typedef struct {
+    int      how;               /* VSH_INPUTS or VSH_MADE */
+    uint32_t pos_inputs;        /* VSH_MADE: the position's inputs, bit n for vn */
+    VshVal   temp[12], opos, tex[4];
+    uint32_t a0;                /* what A0's address is made from */
+} VshFlow;
+
+/* Source s of instruction ins as it is read: through its swizzle, from the
+ * register it selects. */
+static VshVal flow_src(const VshFlow *f, const Nv2aVshInsn *ins, const Nv2aSrc *s)
+{
+    VshVal reg = { { 0, 0, 0, 0 } }, v;
+    uint32_t b = 0;
+    int k;
+    switch (s->type) {
+    case NV2A_PARAM_R:
+        if (s->index < 12) reg = f->temp[s->index];
+        else if (f->how == VSH_INPUTS) reg = f->opos;               /* R12: oPos */
+        else b = VSH_VERT | VSH_WORKED;
+        break;
+    case NV2A_PARAM_V:
+        b = f->how == VSH_INPUTS ? 1u << ins->input_index
+          : VSH_VERT | ((f->pos_inputs >> ins->input_index) & 1u ? VSH_WORKED : 0u);
+        break;
+    case NV2A_PARAM_C:
+        if (ins->rel_addr)
+            b = f->how == VSH_INPUTS ? f->a0
+              : (f->a0 & VSH_VERT) ? VSH_VERT | VSH_WORKED : 0u;
+        break;
+    default:
+        break;
+    }
+    if (b) for (k = 0; k < 4; k++) reg.k[k] = b;
+    for (k = 0; k < 4; k++) v.k[k] = reg.k[s->swz[k] & 3];
+    return v;
+}
+
+/* Every component the same: the union of v's x, y, z and w where `use`
+ * (bit 0 x .. bit 3 w) has them. */
+static VshVal flow_all(VshVal v, unsigned use)
+{
+    VshVal r;
+    uint32_t u = 0;
+    int k;
+    for (k = 0; k < 4; k++) if ((use >> k) & 1u) u |= v.k[k];
+    for (k = 0; k < 4; k++) r.k[k] = u;
+    return r;
+}
+
+static VshVal flow_or(VshVal a, VshVal b)
+{
+    int k;
+    for (k = 0; k < 4; k++) a.k[k] |= b.k[k];
+    return a;
+}
+
+/* A dot product, a comparison or a function: what differs from vertex to
+ * vertex in it is worked out. */
+static VshVal flow_worked(const VshFlow *f, VshVal v)
+{
+    int k;
+    if (f->how == VSH_MADE)
+        for (k = 0; k < 4; k++) if (v.k[k] & VSH_VERT) v.k[k] |= VSH_WORKED;
+    return v;
+}
+
+/* v into dst, under the instruction's mask (bit 3 x .. bit 0 w). */
+static void flow_put(VshVal *dst, VshVal v, unsigned mask)
+{
+    int k;
+    for (k = 0; k < 4; k++) if ((mask >> (3 - k)) & 1u) dst->k[k] = v.k[k];
+}
+
+static void vsh_flow(VshFlow *f, const Nv2aVshProgram *p)
+{
+    static const VshVal none = { { 0, 0, 0, 0 } };
+    int i;
+    for (i = 0; i < p->length; i++) {
+        const Nv2aVshInsn *ins = &p->insns[i];
+        VshVal a = flow_src(f, ins, &ins->src[0]);
+        VshVal b = flow_src(f, ins, &ins->src[1]);
+        VshVal c = flow_src(f, ins, &ins->src[2]);
+        VshVal mac = none, ilu = none, ab;
+        int did_mac = 1, did_ilu = 1;
+        switch (ins->mac) {
+        case NV2A_MAC_MOV: mac = a; break;
+        case NV2A_MAC_MUL: case NV2A_MAC_MIN: case NV2A_MAC_MAX: mac = flow_or(a, b); break;
+        case NV2A_MAC_ADD: mac = flow_or(a, c); break;
+        case NV2A_MAC_MAD: mac = flow_or(flow_or(a, b), c); break;
+        case NV2A_MAC_SLT: case NV2A_MAC_SGE: mac = flow_worked(f, flow_or(a, b)); break;
+        case NV2A_MAC_DP3: mac = flow_worked(f, flow_all(flow_or(a, b), 0x7u)); break;
+        case NV2A_MAC_DPH:
+            mac = flow_worked(f, flow_or(flow_all(a, 0x7u), flow_all(b, 0xFu))); break;
+        case NV2A_MAC_DP4: mac = flow_worked(f, flow_all(flow_or(a, b), 0xFu)); break;
+        case NV2A_MAC_DST:                  /* (1, a.y * b.y, a.z, b.w) */
+            ab = flow_or(a, b);
+            mac.k[1] = ab.k[1]; mac.k[2] = a.k[2]; mac.k[3] = b.k[3];
+            mac = flow_worked(f, mac);
+            break;
+        case NV2A_MAC_ARL: f->a0 = a.k[0]; did_mac = 0; break;
+        default: did_mac = 0; break;
+        }
+        switch (ins->ilu) {
+        case NV2A_ILU_MOV: ilu = c; break;
+        case NV2A_ILU_RCP: case NV2A_ILU_RCC: case NV2A_ILU_RSQ:
+        case NV2A_ILU_EXP: case NV2A_ILU_LOG: ilu = flow_worked(f, flow_all(c, 0x1u)); break;
+        case NV2A_ILU_LIT:                  /* (1, x, from x, y and w, 1) */
+            ilu.k[1] = c.k[0];
+            ilu.k[2] = flow_all(c, 0xBu).k[0];
+            ilu = flow_worked(f, ilu);
+            break;
+        default: did_ilu = 0; break;
+        }
+        if (did_mac && ins->mac_mask)
+            flow_put(ins->mac_temp == 12 ? &f->opos : &f->temp[ins->mac_temp % 12], mac,
+                     ins->mac_mask);
+        if (did_ilu && ins->ilu_mask)
+            flow_put(ins->ilu_temp == 12 ? &f->opos : &f->temp[ins->ilu_temp % 12], ilu,
+                     ins->ilu_mask);
+        if (ins->out_is_oreg && ins->out_mask) {
+            VshVal v = ins->out_from_ilu ? ilu : mac;
+            if (ins->out_reg == NV2A_OREG_POS)
+                flow_put(&f->opos, v, ins->out_mask);
+            else if (ins->out_reg >= NV2A_OREG_TEX0 && ins->out_reg <= NV2A_OREG_TEX3)
+                flow_put(&f->tex[ins->out_reg - NV2A_OREG_TEX0], v, ins->out_mask);
+        }
+    }
+}
+
+uint8_t nv2a_vsh_tex_made(const Nv2aVshProgram *p)
+{
+    VshFlow f;
+    uint32_t pos_inputs;
+    uint8_t made = 0;
+    int n, k;
+    /* First the position's inputs, then what is worked out. */
+    memset(&f, 0, sizeof f);
+    f.how = VSH_INPUTS;
+    vsh_flow(&f, p);
+    pos_inputs = flow_all(f.opos, 0xFu).k[0];
+    memset(&f, 0, sizeof f);
+    f.how = VSH_MADE;
+    f.pos_inputs = pos_inputs;
+    vsh_flow(&f, p);
+    for (n = 0; n < 4; n++)
+        for (k = 0; k < 4; k++)
+            if (f.tex[n].k[k] & VSH_WORKED) made |= (uint8_t)(1u << n);
+    return made;
+}
+
 /* ---- small string builder ----------------------------------------------- */
 
 typedef struct { char *buf; int cap, pos; int overflow; } SB;

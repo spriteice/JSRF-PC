@@ -845,6 +845,7 @@ static struct {
     uint32_t last_draw; /* for eviction, if a title ever does fill this */
     uint32_t prog;      /* the device's program; it knows where each uniform is */
     uint16_t inputs;
+    uint8_t  tex_made;  /* bit n: the draw works oTn out, not the mesh's own (3D upscaling) */
     uint8_t  uses_a0;   /* indexes the constant file through the address register */
     uint8_t  a0_input;  /* the v register the index comes from, 0xFF if unknown */
     uint32_t csync;     /* constants stamped before this it already has; 0 none */
@@ -3538,6 +3539,12 @@ static int ff_program_for_current(void)
     g_pcache[slot].last_draw = S.draws;
     g_pcache[slot].prog = prog;
     g_pcache[slot].inputs = f.inputs_read;
+    /* A stage whose coordinates any texgen makes: not the vertex's own. */
+    { int s, c;
+      for (s = 0; s < 4; s++)
+          for (c = 0; c < 4; c++)
+              if (f.texgen[s][c] != NV2A_TEXGEN_OFF)
+                  g_pcache[slot].tex_made |= (uint8_t)(1u << s); }
     g_pcache[slot].dis = (dump_slot() >= 0 || dump_big() > 0)
                        ? strdup("  (fixed-function transform, no microcode)\n")
                        : NULL;
@@ -3712,6 +3719,7 @@ static int program_for_current(void)
     g_pcache[slot].prog   = prog;
     g_pcache[slot].csync  = 0;     /* a new program has no constants yet */
     g_pcache[slot].inputs = vp.inputs_read;
+    g_pcache[slot].tex_made = nv2a_vsh_tex_made(&vp);
     /* Which input feeds the address register.
      *
      * The bone index is not always in the same place. One family of this
@@ -4142,8 +4150,10 @@ static int up_layout(int k)
 }
 
 /* The 3D rule's record of a binding of the texture in cache slot k, to a
- * stage of texture mode `mode`, alpha-only or not. */
-static void up3_bind(Nv2aUp3Bind *b, int k, int screen, int over, int mode, int alpha_only)
+ * stage of texture mode `mode`, alpha-only or not, through coordinates the
+ * draw works out (`made`) or the mesh's own. */
+static void up3_bind(Nv2aUp3Bind *b, int k, int screen, int over, int mode, int alpha_only,
+                     int made)
 {
     b->screen = screen;
     b->over = over;
@@ -4159,6 +4169,7 @@ static void up3_bind(Nv2aUp3Bind *b, int k, int screen, int over, int mode, int 
     b->alpha_only = alpha_only;
     b->taken_2d = g_tcache[k].up == UP_WANTED || g_tcache[k].up == UP_MADE
                || g_tcache[k].up == UP_FAILED;
+    b->made = made;
 }
 
 static int up_blue_alpha(void);
@@ -4200,7 +4211,7 @@ static void up3_say(int k, const Nv2aUp3Bind *b, int verdict)
  * first is its no more, and a 3D copy already made is dropped at the flip
  * (up_take). Nothing is asked with both rows off and the census not logged.
  */
-static void up2_note(int k, int screen, int over, int mode, int alpha_only)
+static void up2_note(int k, int screen, int over, int mode, int alpha_only, int made)
 {
     Nv2aUpBind b;
     int v, said;
@@ -4227,7 +4238,7 @@ static void up2_note(int k, int screen, int over, int mode, int alpha_only)
              || g_tcache[k].up3 == UP_MADE) {
                 if (g_up_log) {
                     Nv2aUp3Bind b3;
-                    up3_bind(&b3, k, screen, over, mode, alpha_only);
+                    up3_bind(&b3, k, screen, over, mode, alpha_only, made);
                     up3_say(k, &b3, NV2A_UP3_TAKEN_2D);
                 }
                 if (g_tcache[k].up3 != UP_MADE) g_tcache[k].up3 = UP_NEVER;
@@ -4257,14 +4268,14 @@ static void up2_note(int k, int screen, int over, int mode, int alpha_only)
  * the verdict on the texture, and a draw with depth off of one the rule
  * would take with it on.
  */
-static void up3_note(int k, int screen, int over, int mode, int alpha_only)
+static void up3_note(int k, int screen, int over, int mode, int alpha_only, int made)
 {
     Nv2aUp3Bind b;
     int v, said;
     if (!g_up_log && !g_up3_now) return;
     if (g_tcache[k].up3 != UP_NONE && (!g_up_log || (g_tcache[k].up_said & UP_SAID_3D)))
         return;
-    up3_bind(&b, k, screen, over, mode, alpha_only);
+    up3_bind(&b, k, screen, over, mode, alpha_only, made);
     v = nv2a_up3_rule(&b);
     if (g_tcache[k].up3 == UP_NONE) {
         if (v == NV2A_UP3_TAKEN) { g_tcache[k].up3 = UP_WANTED; g_up3_sec.taken++; up_took(k); }
@@ -4306,7 +4317,7 @@ static void upg_capture(uint32_t k);   /* below, with world_take */
  * RECOMP_GL_UPSCALE_LOG, the census (nv2a_upg_census_wants), once an
  * entry, with whether the draw's combiner uses blue-to-alpha.
  */
-static void upg_note(int k, int screen, int over, int mode, int alpha_only)
+static void upg_note(int k, int screen, int over, int mode, int alpha_only, int made)
 {
     Nv2aUp3Bind b;
     int v, said;
@@ -4315,7 +4326,7 @@ static void upg_note(int k, int screen, int over, int mode, int alpha_only)
         upg_capture((uint32_t)k);
         return;
     }
-    up3_bind(&b, k, screen, over, mode, alpha_only);
+    up3_bind(&b, k, screen, over, mode, alpha_only, made);
     v = nv2a_upg_rule(&b);
     if (g_tcache[k].upg == UP_NONE) {
         if (v == NV2A_UP3_TAKEN) { g_tcache[k].upg = UP_WANTED; g_upg_sec.taken++; up_took(k); }
@@ -4336,14 +4347,16 @@ static void upg_note(int k, int screen, int over, int mode, int alpha_only)
 }
 
 /* A draw binding the texture in cache slot k (-1 for none) to a stage of
- * texture mode `mode`, alpha-only or not: the three rules' notes. */
-static void up_note(int k, int screen, int over, int mode, int alpha_only)
+ * texture mode `mode`, alpha-only or not, through coordinates the draw
+ * works out (`made`, the program's tex_made) or the mesh's own: the three
+ * rules' notes. */
+static void up_note(int k, int screen, int over, int mode, int alpha_only, int made)
 {
     if (g_up_log < 0) g_up_log = getenv("RECOMP_GL_UPSCALE_LOG") ? 1 : 0;
     if (k < 0) return;
-    up2_note(k, screen, over, mode, alpha_only);
-    up3_note(k, screen, over, mode, alpha_only);
-    upg_note(k, screen, over, mode, alpha_only);
+    up2_note(k, screen, over, mode, alpha_only, made);
+    up3_note(k, screen, over, mode, alpha_only, made);
+    upg_note(k, screen, over, mode, alpha_only, made);
 }
 
 /* With RECOMP_GL_UPSCALE_LOG, once a texture: its copy, made with the wrap
@@ -8387,7 +8400,8 @@ static void do_draw_body(void)
                     g_upload_bias_bg = 0;
                     if (tex) {
                         up_note(g_tex_slot, draw_screen_space(slot), over,
-                                S.psh.tex_mode[st], S.psh.tex_alpha_only[st]);
+                                S.psh.tex_mode[st], S.psh.tex_alpha_only[st],
+                                (g_pcache[slot].tex_made >> st) & 1);
                         /* A graffiti copy made for this draw (upg_capture). */
                         if (g_tex_slot >= 0 && g_tcache[g_tex_slot].tex)
                             tex = g_tcache[g_tex_slot].tex;

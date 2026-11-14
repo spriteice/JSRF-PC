@@ -34,11 +34,24 @@
  *      after, everything) are over after that clear; the world before it
  *      isn't, nor a frame that starts with a clear of depth alone, nor
  *      anything after the next clear of colour.
+ *
+ * 3D upscaling also leaves a texture its draw reads through coordinates it
+ * works out, not the mesh's own (known bug 58): the characters' tone ramps,
+ * looked up by the light on the surface. Which of a vertex program's
+ * coordinates it works out, src/nv2a_gl/nv2a_vsh.c's nv2a_vsh_tex_made, is
+ * tested here on hand-made programs, one as this title's skinned models'
+ * (known bug 58's fix taking their own textures with the ramps, in test
+ * build 1e4a1df-hotfix1): copied, scaled or offset from any input and
+ * constants is the mesh's; from the position, oPos read back, a constant at
+ * an address the vertex set, or a per-vertex value through a dot product, a
+ * comparison or one of the ILU's functions is worked out, component by
+ * component.
  */
 #include <stdio.h>
 #include <string.h>
 
 #include "nv2a_upscale.h"
+#include "nv2a_vsh.h"
 
 static int s_failures;
 
@@ -474,14 +487,27 @@ static void textures_3d(void)
     b = wall();
     b.alpha_only = 1;                            /* a shadow's mask */
     CHECK(nv2a_up3_rule(&b) == NV2A_UP3_ALPHA_ONLY);
+    /* The characters' tone ramps: one level, 64 or 32 a side, read through
+     * a coordinate made from the light on the surface. */
+    b = wall();
+    b.w = 64; b.h = 64; b.levels = 1; b.depth_write = 0; b.made = 1;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_MADE);
+    CHECK(nv2a_up3_of_texture(NV2A_UP3_MADE));
+    b.made = 0;                                  /* the same through the mesh's own */
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_TAKEN);
+    b = wall();
+    b.made = 1;                                  /* an environment map, by texgen */
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_MADE);
     /* The first reason that applies is the one given: the draw's first,
      * then the 2D rule's, then how the stage samples it, then the texture. */
     b = wall();
     b.taken_2d = 1; b.mode = 3; b.layout = NV2A_UP_LINEAR; b.w = 4; b.bump = 1; b.alpha_only = 1;
     CHECK(nv2a_up3_rule(&b) == NV2A_UP3_TAKEN_2D);
-    b.taken_2d = 0;
+    b.taken_2d = 0; b.made = 1;
     CHECK(nv2a_up3_rule(&b) == NV2A_UP3_MODE);
     b.mode = NV2A_UP3_MODE_PROJECT2D;
+    CHECK(nv2a_up3_rule(&b) == NV2A_UP3_MADE);
+    b.made = 0;
     CHECK(nv2a_up3_rule(&b) == NV2A_UP3_LINEAR_TEX);
     b.layout = NV2A_UP_DXT;
     CHECK(nv2a_up3_rule(&b) == NV2A_UP3_TOO_SMALL);
@@ -550,6 +576,11 @@ static void lines_3d(void)
     CHECK(!strcmp(buf, "[UPSCALE] 3D left 00C40000 256x256 fmt 0C DXT, 9 levels, stage mode 17 "
                        "(draw: vp, depth tested and written): its stage doesn't sample it as a "
                        "plain 2D texture\n"));
+    b = wall();
+    b.w = 64; b.h = 64; b.levels = 1; b.depth_write = 0; b.made = 1;
+    nv2a_up3_census_line(buf, sizeof buf, 0x01401000u, 0x0C, &b, 1, NV2A_UP3_MADE);
+    CHECK(!strcmp(buf, "[UPSCALE] 3D left 01401000 64x64 fmt 0C DXT, 1 level, stage PROJECT2D "
+                       "(draw: vp, depth tested): its coordinates are worked out by the draw\n"));
     b = wall();
     b.depth_test = 0; b.depth_write = 0;
     nv2a_up3_census_line(buf, sizeof buf, 0x00C40000u, 0x0C, &b, 0, NV2A_UP3_NO_DEPTH);
@@ -715,6 +746,9 @@ static void rule_g(void)
     CHECK(nv2a_upg_rule(&b) == NV2A_UP3_BUMP);
     b = sheet(); b.alpha_only = 1;
     CHECK(nv2a_upg_rule(&b) == NV2A_UP3_ALPHA_ONLY);
+    /* Where a sheet's coordinates come from isn't graffiti's to weigh. */
+    b = sheet(); b.made = 1;
+    CHECK(nv2a_upg_rule(&b) == NV2A_UP3_TAKEN);
     /* Into a picture the title keeps, not the frame, neither the draw nor
      * the layout matters: the garage picker draws its design flat into its
      * preview's surface. The texture's other reasons still do; the 3D rule
@@ -847,6 +881,183 @@ static void second(void)
                        "40 copies held, 42.0 MB\n"));
 }
 
+/* ---- Worked-out coordinates (nv2a_vsh_tex_made) ----------------------------- */
+
+static Nv2aVshProgram s_vp;
+
+/* A source of bank t (NV2A_PARAM_R, _V or _C), register r for a temporary,
+ * read through swizzle `swz` ("xyzw", "xxxx", ...). */
+static Nv2aSrc src(int t, int r, const char *swz)
+{
+    Nv2aSrc s;
+    int k;
+    memset(&s, 0, sizeof s);
+    s.type = (uint8_t)t;
+    s.index = (uint8_t)r;
+    for (k = 0; k < 4; k++) s.swz[k] = (uint8_t)(swz[k] == 'x' ? 0 : swz[k] == 'y' ? 1
+                                                 : swz[k] == 'z' ? 2 : 3);
+    return s;
+}
+
+/* An instruction appended to s_vp: the MAC's op, or the ILU's where `ilu`
+ * isn't NOP, on A, B and C, with the input and constant registers the
+ * instruction carries; its value into temporary `temp` (-1 none) and output
+ * `oreg` (-1 none), each under mask m (bit 3 x .. bit 0 w). */
+static Nv2aVshInsn *insn(Nv2aMacOp mac, Nv2aIluOp ilu, Nv2aSrc a, Nv2aSrc b, Nv2aSrc c,
+                         int v, int cidx, int temp, int oreg, uint8_t m)
+{
+    Nv2aVshInsn *in = &s_vp.insns[s_vp.length++];
+    memset(in, 0, sizeof *in);
+    in->mac = mac;
+    in->ilu = ilu;
+    in->src[0] = a; in->src[1] = b; in->src[2] = c;
+    in->input_index = (uint8_t)v;
+    in->const_index = (int16_t)cidx;
+    if (temp >= 0) {
+        if (ilu != NV2A_ILU_NOP) { in->ilu_temp = (uint8_t)temp; in->ilu_mask = m; }
+        else { in->mac_temp = (uint8_t)temp; in->mac_mask = m; }
+    }
+    if (oreg >= 0) {
+        in->out_is_oreg = 1;
+        in->out_from_ilu = ilu != NV2A_ILU_NOP;
+        in->out_reg = (uint8_t)oreg;
+        in->out_mask = m;
+    }
+    return in;
+}
+
+#define NONE src(NV2A_PARAM_NONE, 0, "xyzw")
+#define V(swz) src(NV2A_PARAM_V, 0, swz)
+#define C(swz) src(NV2A_PARAM_C, 0, swz)
+#define R(r, swz) src(NV2A_PARAM_R, r, swz)
+#define T(n) (NV2A_OREG_TEX0 + (n))
+
+#define OPOS NV2A_OREG_POS
+
+/* The position from v0, through c[100] to c[103], into oPos. */
+static void position(void)
+{
+    int r;
+    for (r = 0; r < 4; r++)
+        insn(NV2A_MAC_DP4, NV2A_ILU_NOP, V("xyzw"), C("xyzw"), NONE, 0, 100 + r, -1, OPOS,
+             (uint8_t)(0x8u >> r));
+}
+
+static void tex_made(void)
+{
+    Nv2aVshInsn *in;
+    int r;
+    /* The mesh's own, from whichever input holds it: copied, offset, and
+     * scaled and offset twice over from a constant table (as this title's
+     * flat models' are, from v2). */
+    memset(&s_vp, 0, sizeof s_vp);
+    position();
+    insn(NV2A_MAC_MOV, NV2A_ILU_NOP, V("xyyy"), NONE, NONE, 4, 0, -1, T(0), 0xC);
+    insn(NV2A_MAC_ADD, NV2A_ILU_NOP, V("xyyy"), NONE, C("zwww"), 5, 100, -1, T(2), 0xC);
+    insn(NV2A_MAC_MOV, NV2A_ILU_NOP, C("xyzw"), NONE, NONE, 0, 98, 3, -1, 0xF);
+    insn(NV2A_MAC_MAD, NV2A_ILU_NOP, V("xxxx"), R(3, "xyyy"), C("xyyy"), 2, 99, 4, -1, 0xC);
+    insn(NV2A_MAC_MAD, NV2A_ILU_NOP, V("yyyy"), R(3, "zwww"), R(4, "xyyy"), 2, 0, -1, T(1), 0xC);
+    insn(NV2A_MAC_MOV, NV2A_ILU_NOP, V("xyzw"), NONE, NONE, 9, 0, -1, T(3), 0xF);
+    CHECK(nv2a_vsh_tex_made(&s_vp) == 0);
+    /* As this title's skinned models do (the characters', the crowds' and
+     * the vehicles'): the bone from v2, the position and the normal (v3)
+     * through it, the tone from the normal against the light into oT1, and
+     * the model's own coordinates from v4 into oT0 and, offset, from v5
+     * into oT2. Only oT1 is worked out. */
+    memset(&s_vp, 0, sizeof s_vp);
+    insn(NV2A_MAC_MUL, NV2A_ILU_NOP, V("xyzw"), C("xxxx"), NONE, 2, 96, 2, -1, 0xC);
+    insn(NV2A_MAC_ARL, NV2A_ILU_NOP, R(2, "xxxx"), NONE, NONE, 0, 0, -1, -1, 0);
+    for (r = 0; r < 4; r++) {
+        in = insn(NV2A_MAC_DP4, NV2A_ILU_NOP, V("xyzw"), C("xyzw"), NONE, 0, 107 + r, 3, -1,
+                  (uint8_t)(0x8u >> r));
+        in->rel_addr = 1;
+    }
+    for (r = 0; r < 3; r++) {
+        in = insn(NV2A_MAC_DP3, NV2A_ILU_NOP, V("xyzw"), C("xyzw"), NONE, 3, 107 + r, 4, -1,
+                  (uint8_t)(0x8u >> r));
+        in->rel_addr = 1;
+    }
+    insn(NV2A_MAC_NOP, NV2A_ILU_MOV, NONE, NONE, V("xyyy"), 4, 0, -1, T(0), 0xC);
+    insn(NV2A_MAC_ADD, NV2A_ILU_NOP, V("xyyy"), NONE, C("xyyy"), 5, 100, -1, T(2), 0xC);
+    for (r = 0; r < 4; r++)
+        insn(NV2A_MAC_DP4, NV2A_ILU_NOP, R(3, "xyzw"), C("xyzw"), NONE, 0, 103 + r, -1, OPOS,
+             (uint8_t)(0x8u >> r));
+    insn(NV2A_MAC_DP3, NV2A_ILU_NOP, R(4, "xyzw"), C("xyzw"), NONE, 0, 102, 6, -1, 0x8);
+    insn(NV2A_MAC_MAD, NV2A_ILU_NOP, R(6, "xxxx"), C("xyyy"), C("zwww"), 0, 99, -1, T(1), 0xC);
+    CHECK(nv2a_vsh_tex_made(&s_vp) == 0x2);
+    /* The position copied, whichever input holds it; and oPos read back as
+     * R12. */
+    memset(&s_vp, 0, sizeof s_vp);
+    position();
+    insn(NV2A_MAC_MOV, NV2A_ILU_NOP, V("xyzw"), NONE, NONE, 0, 0, -1, T(0), 0xF);
+    insn(NV2A_MAC_MOV, NV2A_ILU_NOP, R(12, "xyzw"), NONE, NONE, 0, 0, -1, T(3), 0xF);
+    CHECK(nv2a_vsh_tex_made(&s_vp) == 0x9);
+    /* Through a dot product: the normal against the light, or a matrix;
+     * constants alone stay constant. */
+    memset(&s_vp, 0, sizeof s_vp);
+    position();
+    insn(NV2A_MAC_DP3, NV2A_ILU_NOP, V("xyzw"), C("xyzw"), NONE, 3, 40, -1, T(1), 0x8);
+    insn(NV2A_MAC_DP4, NV2A_ILU_NOP, V("xyzw"), C("xyzw"), NONE, 9, 30, -1, T(2), 0x8);
+    insn(NV2A_MAC_DP4, NV2A_ILU_NOP, C("xyzw"), C("xyzw"), NONE, 0, 31, -1, T(3), 0x8);
+    CHECK(nv2a_vsh_tex_made(&s_vp) == 0x6);
+    /* Component by component: r0.xy the mesh's, r0.zw the light's. */
+    memset(&s_vp, 0, sizeof s_vp);
+    insn(NV2A_MAC_MOV, NV2A_ILU_NOP, V("xyzw"), NONE, NONE, 4, 0, 0, -1, 0xC);
+    insn(NV2A_MAC_DP3, NV2A_ILU_NOP, V("xyzw"), C("xyzw"), NONE, 3, 40, 0, -1, 0x3);
+    insn(NV2A_MAC_MOV, NV2A_ILU_NOP, R(0, "xyzw"), NONE, NONE, 0, 0, -1, T(2), 0xC);
+    CHECK(nv2a_vsh_tex_made(&s_vp) == 0);
+    insn(NV2A_MAC_MOV, NV2A_ILU_NOP, R(0, "zwzw"), NONE, NONE, 0, 0, -1, T(1), 0xC);
+    CHECK(nv2a_vsh_tex_made(&s_vp) == 0x2);
+    /* ... and a later write of the mesh's over it takes it back. */
+    insn(NV2A_MAC_MOV, NV2A_ILU_NOP, V("xyzw"), NONE, NONE, 5, 0, 0, -1, 0xF);
+    insn(NV2A_MAC_MOV, NV2A_ILU_NOP, R(0, "xyzw"), NONE, NONE, 0, 0, -1, T(1), 0xF);
+    CHECK(nv2a_vsh_tex_made(&s_vp) == 0);
+    /* A dot product reads every component it multiplies, and only those:
+     * r1.xyz constants, r1.w the mesh's. */
+    memset(&s_vp, 0, sizeof s_vp);
+    insn(NV2A_MAC_MOV, NV2A_ILU_NOP, C("xyzw"), NONE, NONE, 0, 5, 1, -1, 0xE);
+    insn(NV2A_MAC_MOV, NV2A_ILU_NOP, V("xyzw"), NONE, NONE, 4, 0, 1, -1, 0x1);
+    insn(NV2A_MAC_DP3, NV2A_ILU_NOP, R(1, "xyzw"), C("xyzw"), NONE, 0, 6, -1, T(0), 0x8);
+    CHECK(nv2a_vsh_tex_made(&s_vp) == 0);
+    insn(NV2A_MAC_DP4, NV2A_ILU_NOP, R(1, "xyzw"), C("xyzw"), NONE, 0, 6, -1, T(0), 0x8);
+    CHECK(nv2a_vsh_tex_made(&s_vp) == 0x1);
+    /* A constant at an address the vertex set (a bone's), or the program. */
+    memset(&s_vp, 0, sizeof s_vp);
+    insn(NV2A_MAC_ARL, NV2A_ILU_NOP, V("xxxx"), NONE, NONE, 1, 0, -1, -1, 0);
+    in = insn(NV2A_MAC_MOV, NV2A_ILU_NOP, C("xyzw"), NONE, NONE, 0, 10, -1, T(3), 0xF);
+    in->rel_addr = 1;
+    CHECK(nv2a_vsh_tex_made(&s_vp) == 0x8);
+    memset(&s_vp, 0, sizeof s_vp);
+    insn(NV2A_MAC_ARL, NV2A_ILU_NOP, C("xxxx"), NONE, NONE, 0, 7, -1, -1, 0);
+    in = insn(NV2A_MAC_MOV, NV2A_ILU_NOP, C("xyzw"), NONE, NONE, 0, 10, -1, T(3), 0xF);
+    in->rel_addr = 1;
+    CHECK(nv2a_vsh_tex_made(&s_vp) == 0);
+    /* The ILU's functions read source C's x alone: r1.x a constant, r1.y
+     * the mesh's. */
+    memset(&s_vp, 0, sizeof s_vp);
+    insn(NV2A_MAC_MOV, NV2A_ILU_NOP, C("xyzw"), NONE, NONE, 0, 5, 1, -1, 0x8);
+    insn(NV2A_MAC_MOV, NV2A_ILU_NOP, V("xyzw"), NONE, NONE, 4, 0, 1, -1, 0x7);
+    insn(NV2A_MAC_NOP, NV2A_ILU_RCP, NONE, NONE, R(1, "xyzw"), 0, 0, 2, -1, 0xF);
+    insn(NV2A_MAC_MUL, NV2A_ILU_NOP, V("xyzw"), R(2, "xyzw"), NONE, 4, 0, -1, T(0), 0xF);
+    CHECK(nv2a_vsh_tex_made(&s_vp) == 0);
+    insn(NV2A_MAC_NOP, NV2A_ILU_RCP, NONE, NONE, R(1, "yxxx"), 0, 0, 2, -1, 0xF);
+    insn(NV2A_MAC_MUL, NV2A_ILU_NOP, V("xyzw"), R(2, "xyzw"), NONE, 4, 0, -1, T(0), 0xF);
+    CHECK(nv2a_vsh_tex_made(&s_vp) == 0x1);
+    /* An output straight from the ILU: a copy, then a function. */
+    memset(&s_vp, 0, sizeof s_vp);
+    insn(NV2A_MAC_NOP, NV2A_ILU_MOV, NONE, NONE, V("xyzw"), 4, 0, -1, T(2), 0xF);
+    CHECK(nv2a_vsh_tex_made(&s_vp) == 0);
+    insn(NV2A_MAC_NOP, NV2A_ILU_RSQ, NONE, NONE, V("xyzw"), 4, 0, -1, T(2), 0xF);
+    CHECK(nv2a_vsh_tex_made(&s_vp) == 0x4);
+    /* A comparison. */
+    memset(&s_vp, 0, sizeof s_vp);
+    insn(NV2A_MAC_SGE, NV2A_ILU_NOP, V("xyzw"), C("xyzw"), NONE, 4, 96, -1, T(3), 0xF);
+    CHECK(nv2a_vsh_tex_made(&s_vp) == 0x8);
+    /* None written: the hardware's (0, 0, 0, 1). */
+    memset(&s_vp, 0, sizeof s_vp);
+    CHECK(nv2a_vsh_tex_made(&s_vp) == 0);
+}
+
 int main(void)
 {
     taken();
@@ -874,6 +1085,7 @@ int main(void)
     rule_g();
     census_g();
     factor_g();
+    tex_made();
     if (s_failures) {
         printf("upscale: %d failed\n", s_failures);
         return 1;

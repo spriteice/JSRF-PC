@@ -255,7 +255,8 @@ These are in the in-game menu, under Graphics.
     graphics card makes in a level's first moments, a few a frame. They show
     where a surface is close enough to the camera for its texture to be
     enlarged, at any render scale and more so the higher it is. Distant
-    surfaces, and cut-out edges such as fences, look as they always have. No
+    surfaces, cut-out edges such as fences, and the characters' light and
+    shadow look as they always have. No
     copy is larger than 2048 a side, so 8× enlarges the larger textures 4×. The
     copies take up to 4 GB of the graphics card's memory, 1 to 2.5 GB at 4× in
     play; whatever doesn't fit keeps the game's own textures. 4× by default.

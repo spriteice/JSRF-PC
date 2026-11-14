@@ -38,7 +38,8 @@
  * Its rule (nv2a_up3_rule) takes a texture that a draw with the depth test
  * on, of neither kind of 2D, binds to a stage that samples it as a plain 2D
  * texture (PROJECT2D or PROJECT3D: not a cube map, a bump target or a
- * dot-product mode), when the texture is swizzled or DXT, NV2A_UP3_SIDE_MIN
+ * dot-product mode) through the mesh's own coordinates, when the texture is
+ * swizzled or DXT, NV2A_UP3_SIDE_MIN
  * to NV2A_UP_SIDE_MAX a side (smaller is a ramp or a dot), not a bump
  * source, not alpha-only (its colour reads as white) and not one the 2D rule
  * took: an entry holds one copy, and the 2D rule wins. Its copy keeps the
@@ -49,6 +50,17 @@
  * frame last shown, so one the title rewrites every frame is never copied.
  * A copy is at most NV2A_UP3_OUT_MAX a side (nv2a_up3_factor), and the
  * copies held stay under NV2A_UP3_HELD_MAX bytes (nv2a_up3_room).
+ *
+ * The mesh's own coordinates, not ones the draw works out (nv2a_vsh_tex_made
+ * for a vertex program, texgen for the fixed function): a texture read
+ * through coordinates made from the light, the normal or the position is a
+ * table looked up, not a picture on a surface. The characters' light and
+ * shadow are such a table: their materials pick a tone from one shared
+ * texture of tone ramps by the light on the surface. Taken, its copy is
+ * sampled across its new levels, which a pixel picks by how fast the light
+ * changes across its triangle, not by distance, and Super-xBR's levels hold
+ * other tones than the game's where tones and ramps meet, so neighbouring
+ * triangles come out in different tones (known bug 58).
  *
  * Graffiti upscaling: the graffiti tags, which the title builds into
  * sheets of 1024 x 1024, 16 tags of 256 x 256 each (the graffiti cache's
@@ -325,6 +337,8 @@ typedef struct {
     int      alpha_only;                /* A8: its colour reads as white */
     int      taken_2d;                  /* the 2D rule took it */
     int      blue_alpha;                /* the draw's combiner uses blue-to-alpha (the census's) */
+    int      made;                      /* the draw works the stage's coordinates out, from more
+                                         * than the mesh's own (nv2a_vsh_tex_made, texgen) */
 } Nv2aUp3Bind;
 
 /* The 3D rule's verdict: taken, or the first thing that leaves it. The
@@ -336,6 +350,7 @@ enum {
     NV2A_UP3_NO_DEPTH,      /* the draw has the depth test off */
     NV2A_UP3_TAKEN_2D,      /* the 2D rule took it */
     NV2A_UP3_MODE,          /* its stage doesn't sample it as a plain 2D texture */
+    NV2A_UP3_MADE,          /* its stage's coordinates are worked out by the draw */
     NV2A_UP3_LINEAR_TEX,    /* addressed in texels */
     NV2A_UP3_TOO_SMALL,     /* a side under NV2A_UP3_SIDE_MIN */
     NV2A_UP3_TOO_BIG,       /* a side over NV2A_UP_SIDE_MAX */
@@ -426,7 +441,9 @@ int nv2a_up3_second_line(char *buf, size_t n, const Nv2aUpSecond *s);
 
 /* The graffiti rule: the verdict on binding b. First NV2A_UPG_NOT_GRAFFITI
  * for a texture at most NV2A_UP_SIDE_MAX a side, the 3D rule's to weigh;
- * then the 3D rule's verdicts, with NV2A_UPG_TOO_BIG for a side over
+ * then the 3D rule's verdicts but NV2A_UP3_MADE, which the sheets, drawn
+ * by their tags' own coordinates in every census, have never needed, with
+ * NV2A_UPG_TOO_BIG for a side over
  * NV2A_UPG_SIDE_MAX, but none about the draw or the texture's layout where
  * it is into a picture the title keeps (b->kept): there a flat draw, one
  * with depth off, or a linear texture is taken too. So the two rules never take the same texture, and the
