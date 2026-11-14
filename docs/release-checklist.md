@@ -38,8 +38,8 @@ progressing, however rarely it happens.
 - A critical bug is fixed and tested before the release build (step 7).
   One found in testing (step 8) stops the release until it's fixed.
 - The gate has no waiver. The maintainer can decide that a bug isn't
-  critical, with the reason written in known-bugs.md, but not ship one that
-  is.
+  critical, with the reason written in known-bugs/notes.md, but not ship
+  one that is.
 - The one exception is a hotfix that fixes a critical bug. It can ship
   while other critical bugs from the release it replaces are still open,
   if it adds none and lists them as known issues.

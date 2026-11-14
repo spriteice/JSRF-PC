@@ -394,7 +394,12 @@ between builds).
 - **Before a commit,** the jobs the project rules' check 6 gives it run
   on its tree (project rules, Before every commit, 6). Its rows for
   Markdown hold only while no job or test reads a Markdown file, so a
-  change that makes one read it names that file here:
+  change that makes one read it names that file here. One is named:
+  docs/building-on-linux.md, which `launcher/kit/test_kit.py` reads in
+  the GCC job's tool tests, to check that the kit's pipeline commands are
+  the doc's. Those rows don't hold for a commit that changes it: with
+  nothing but Markdown changed, it still gets the GCC job on its exact
+  tree before it.
   - **In the cloud:** every job but Build image and the Windows tests is
     a script in `.github/ci`, run in the build image by
     `.github/ci/docker.sh`, so the same commands run there as on GitHub:
