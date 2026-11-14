@@ -23,7 +23,7 @@ In order, with where each step is said in full:
    the last tested packages (Building 4, Compatibility checks).
 5. **Deliver:** the folder in `test-builds/`, with TESTING.md, its test
    list, and REPORT.md for a change (Delivery package, Test checklist,
-   Test list).
+   Test list), or less for a light build (Light builds).
 6. **Read back:** my results and every log in full, and every step still
    untested, per device (Test list; project rules, Workflow 5).
 
@@ -134,7 +134,8 @@ against the kept copy (What is kept between builds).
   thread's own claim once the PC is free: the Windows package's start
   check and idle run (Compatibility checks, Windows: it starts, and
   Windows: the idle run) and its setup for testing (Delivery package),
-  and the Windows tests before a commit (CI).
+  and the Windows tests before a commit where Windows could differ (CI,
+  Before a commit).
   Repeated runs wait for it too, as their counts are compared on one
   machine (Repeated runs).
 - **Delivery:** the Linux package is delivered as soon as its checks pass,
@@ -343,7 +344,7 @@ between builds).
 | Address and undefined-behaviour sanitizers | Every engine test, built with GCC's AddressSanitizer, its leak check included, and UndefinedBehaviorSanitizer (`tests/run_all.py --asan`). |
 | Recompiler conformance tests | The recompiler's lifter against the CPU: each snippet in `tools/conformance` assembled by GCC and run, then lifted and its C run beside it, and the two compared (`python3 -m tools.conformance`), in the 32-bit conformance image (`launcher/image-386.sh`, linux/386). The corpus phase, which needs MSVC, is skipped. |
 | Windows build and package | The Windows package, made by `launcher/windows/build.sh` as the release is, and the package check; the build's warnings. |
-| Windows tests | The engine tests that run on Windows, on GitHub's Windows Server 2022, built with llvm-mingw. Before a commit, on my Windows PC. |
+| Windows tests | The engine tests that run on Windows, on GitHub's Windows Server 2022, built with llvm-mingw. Before a commit where Windows could differ, on my Windows PC too (Before a commit, below). |
 
 - **Known bugs:** a test that fails today in a known way is listed in
   `tests/known-failures.txt`, a race the thread sanitizer finds today in
@@ -377,13 +378,10 @@ between builds).
   it fails nothing, and nothing keeps it. A test that builds a piece cut
   out of a file by text (project rules, How it's written, "Tests link the
   code they test") counts towards the piece, not the file.
-- **Before a commit,** every job runs on the commit's exact tree, except
-  for a commit that changes only Markdown files, whose CI is GitHub's run
-  on its push, and for one moved since its run onto commits that change
-  only Markdown files, whose run stands (project rules, Before every
-  commit, 6, and Several items at once). Both hold only while no job or
-  test reads a Markdown file, so a change that makes one read it names
-  that file here:
+- **Before a commit,** the jobs the project rules' check 6 gives it run
+  on its tree (project rules, Before every commit, 6). Its rows for
+  Markdown hold only while no job or test reads a Markdown file, so a
+  change that makes one read it names that file here:
   - **In the cloud:** every job but Build image and the Windows tests is
     a script in `.github/ci`, run in the build image by
     `.github/ci/docker.sh`, so the same commands run there as on GitHub:
@@ -413,6 +411,14 @@ between builds).
     PC runs Windows 11, not GitHub's Windows Server 2022, so GitHub's run on
     the push is still the one that counts. A pre-approved thread reads
     that run when it ends (Review pack).
+
+    They run there only where Windows could differ: the commit, or one
+    pushed with it, changes the platform layer (`src/platform/`), the
+    kernel's threads, timers or locks (`src/kernel/`), anything in
+    `launcher/`, code built only for Windows (under `_WIN32`), how the
+    tests are built or run, or a test that starts threads or measures
+    time. When unsure, it could. For any other commit, GitHub's Windows
+    tests on its push are its Windows tests, and its review pack says so.
   - **When a server is down:** if the cloud can't get its build images
     because a server is down (GitHub's registry, or, for an image not
     published yet, both of Ubuntu's archives), its jobs run on my Windows
@@ -568,7 +574,7 @@ One folder per build, named `<date>-<commit>-<topic>` (as in
 `2026-10-23-ce20630-menu-cleanup`). It is made in `Building\` on the PC,
 or in the sandbox while another thread has the PC (When the PC is busy),
 and kept in the shared folder's `test-builds/`, which stays the record,
-holding:
+holding (a light build holds less: Light builds):
 
 - `JSRF-PC-<version>-linux-x86_64.tar.gz` and
   `JSRF-PC-<version>-windows-x86_64.zip`: the two package.sh outputs,
@@ -632,9 +638,9 @@ test-lists/README.md has its path.
 - **Switches:** each logging switch, and any other Developer switch, the
   test needs on each device, with its value. On the PC they are set for me
   (Delivery package); on the Ally X the step says which to tick.
-- **Saved runs:** in a pre-approved thread (project rules, Pre-approved
-  threads), each step names the saved run that tests it, from the shared
-  folder's `input-playback/RUNS.md`, or says that I test it by hand.
+- **Saved runs:** in a pre-approved thread (docs/pre-approved-threads.md),
+  each step names the saved run that tests it, from the shared folder's
+  `input-playback/RUNS.md`, or says that I test it by hand.
 - **Order:** one platform at a time, starting with the work's target
   platform. That is Linux (the Ally X) unless the work is for Windows, such
   as a Windows bug. Its steps come first, and testing stays on it, through
@@ -696,7 +702,30 @@ One test build can carry several ready items, so I test them in one go.
 - **The commits** are still one for each item (project rules, How it's
   written 2), proposed in turn once that item's steps have passed, in the
   order the build applied them, so the last commit's tree is the one I
-  tested. Each has its own CI run on its own tree.
+  tested. Each has its CI on its own tree, as the project rules' check 6
+  gives it (Before every commit, 6).
+
+## Light builds
+
+While I'm judging how something looks or feels, a build between those that
+could be committed can be light: what I look at, with less around it. It
+is offered on a card, and I choose.
+
+- **It has:** the generated code (0 failed); the package for the device I
+  test on, with its SHA-256 and the package check (Compatibility checks);
+  the engine and tool tests (Building, 4); for the Windows package, the
+  start check, one idle run and the copy of my portable folder (Delivery
+  package); and a NOTE.md of a few lines: the version, what changed since
+  the last build, and what to look at.
+- **It leaves out:** the other system's package, the comparison with the
+  last tested package, TESTING.md and its test list, REPORT.md, and any
+  further idle run.
+- **It proves nothing for a commit.** The build that is to be committed
+  gets everything, as any test build does, and the commit is its tree,
+  byte for byte. My logs from a light build are still read in full
+  (project rules, Workflow 5), against its NOTE.md.
+- **Never light:** a fix for a crash, a hang, a freeze or a lost save; a
+  change to the recompiler, the kernel or the build; a release.
 
 ## Test list
 
@@ -719,8 +748,8 @@ every device's testing, and you read my answers from my Claude folder.
 - **My results count as my message** (project rules, Workflow 5): a step I
   marked Fail, Skip, or nothing hasn't passed, and one I marked Pass still
   has its log read in full. Record them in TESTING.md's notes, as before.
-  In a pre-approved thread, they are what lets a commit through (project
-  rules, Pre-approved threads).
+  In a pre-approved thread, they are what lets a commit through
+  (docs/pre-approved-threads.md).
 
 ## Change report (REPORT.md)
 
@@ -765,18 +794,19 @@ what it links to beside it. In this order:
   batch, its item's part of it); the commit message; the root cause, its
   model and the regression test, or for a feature where it lives; each
   added or edited document, rendered whole; and each CI job with its log,
-  the Windows tests' on the PC among them.
+  the Windows tests' on the PC among them where Windows could differ (CI,
+  Before a commit).
 
 Nothing it needs is left to another message or file I haven't been
 pointed to.
 
-In a pre-approved thread (project rules, Pre-approved threads), the pack
+In a pre-approved thread (docs/pre-approved-threads.md), the pack
 is the commit's record, written the same way before the commit. What I'm
 asking becomes what is committed and pushed, on which `origin/main`, and
 under which pre-approval (my words and their time). If `origin/main` moved
 after its tests, the pack also gives the commits it now goes onto, the
-check both ways and its answer (project rules, Pre-approved threads,
-Alongside other threads), and what ran again on the new tree. GitHub's run
+check both ways and its answer (docs/pre-approved-threads.md, Alongside
+other threads), and what ran again on the new tree. GitHub's run
 on the push is added when it ends.
 
 ## Optional habit

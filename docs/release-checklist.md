@@ -67,7 +67,8 @@ progressing, however rarely it happens.
 
 5. **Rules review:** everything since the last release is checked against
    the project's rules. It looks for game files, generated code, or logs in
-   the repo, session links in commit messages, band-aid fixes, address
+   the repo, session links in commit messages, a README a player reads
+   changed outside a release's own commits, band-aid fixes, address
    lists, sleeps, and docs that break the writing rules. It flags code that
    makes up in one layer for a bug in another, and any mechanism that had a
    second fix with no review of it (docs/project-rules.md, Where code goes 2
@@ -91,14 +92,20 @@ progressing, however rarely it happens.
 
 6. **README and docs:** checked against the release and the writing rules.
    Each change updated its own docs when it was made, so this catches what
-   was missed, and adds what only the release brings.
+   was missed, and adds what only the release brings. The READMEs a
+   player reads change only here and in step 7 (docs/project-rules.md,
+   "Docs change with the code"), from the "For the README" lines in the
+   release's backlog rows. Their commits, and the push that carries them,
+   pass the push gate with `--release` (docs/project-rules.md, Workflow,
+   The push gate).
    - **README.md:** the features, the download links and latest version, the
      status and known issues, and the credits, with JuMatt's at the top.
    - **docs/:** anything the release changes, such as new keys or menu rows
      in docs/playing.md.
    - **Both packages' README.txt,** in `launcher/linux/` and
-     `launcher/windows/`. They ship inside the packages, so they must be
-     right before the build.
+     `launcher/windows/`, with what `launcher/firststart/readme.py` adds to
+     them for the packages without the engine. They ship inside the
+     packages, so they must be right before the build.
    - **The changelog entry** in CHANGELOG-JSRF-PC.md, as docs/versioning.md
      says. It goes in the commit the release is built from.
    - **The release text,** from the release notes template. Its lists are
@@ -204,7 +211,7 @@ Only on the maintainer's say-so.
 
 ## If a release is broken
 
-A published tag is never moved. The fix goes in the next bug fix release,
+A published tag is never moved. The fix goes in the next release,
 and until then the published release text lists the problem as a known
 issue. The exception is a hotfix, on the maintainer's say-so: it ships the
 fix straight away, as a release of its own (docs/versioning.md). It carries

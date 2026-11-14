@@ -16,6 +16,11 @@ PC-IN-USE.md and PC-HISTORY.md, is the exception: it is in
 use the PC read it too (docs/build-and-test-reference.md, When the PC is
 busy).
 
+Times in records and files are UTC, and say so, as in "14:02 UTC": the
+shared folder's records, a review pack, and a test build's TESTING.md and
+REPORT.md. Times told to me in a reply or on a card are in my zone (the
+project instructions, section 1).
+
 ## At a glance: a commit
 
 In order, with where each step is said in full:
@@ -58,10 +63,9 @@ pack"), then wait for my approval. A pre-approved thread doesn't wait
    on the project rules' "never in the repo" list is staged. If .gitignore
    doesn't cover it, tell me. Then run the push gate on what is staged and
    on the proposed message (Workflow, The push gate): it prints nothing
-   when all is well. The list is for what is committed: the history
-   already holds Claude session links in 131 commit messages, 124 of them
-   the toolkit's own from August and September and 7 of ours from 21 and
-   22 October, none since. Every tag from b1 on holds them, so they stay.
+   when all is well. The list is for what is committed now: what the
+   history already holds (session links in older commit messages, and in
+   every tag from b1 on) stays.
 2. Show me the full diff.
 3. Show me the proposed commit message.
 4. For a fix: the root cause and the model behind it (Where code goes, 1),
@@ -71,21 +75,37 @@ pack"), then wait for my approval. A pre-approved thread doesn't wait
    written).
 5. For any added or edited document (README, docs/, changelog, release
    notes): the whole document rendered as Markdown, not only its diff.
-6. CI passes for the commit's exact tree, or for its tree before it was moved
-   onto commits that change only Markdown files (Workflow, Several items at
-   once): every job in `.github/workflows/ci.yml`, those that run in the build
-   images in the cloud, and the Windows tests on my Windows PC
-   (docs/build-and-test-reference.md, "CI"). GitHub runs every job again on
-   the push, and a failure there is fixed in the next commit, before anything
-   else is pushed. A job that fails before its checks run, because a download
-   failed (a server down: GitHub's registry or GitHub itself, a toolchain or
-   library download, or Ubuntu's archives for a new build image), is not the
-   commit's failure. The thread that pushed runs the failed jobs again
-   (GitHub's Re-run failed jobs, not the whole run) until the server is back,
-   however long that takes, and nothing else is pushed until they pass. A
-   commit that changes only Markdown files (`*.md`) is the exception: no job's
-   result depends on them, so GitHub's run on its push is its CI. Its review
-   pack says so, and the run is added when it ends.
+6. CI passes for the commit, as the first row that fits it in the tables
+   below gives it. "Every job" is each job in `.github/workflows/ci.yml`:
+   those that run in the build images in the cloud, and the Windows tests
+   on my Windows PC where Windows could differ
+   (docs/build-and-test-reference.md, "CI", Before a commit).
+
+   | The commit | CI before it |
+   |---|---|
+   | Changes only Markdown files (`*.md`) | None: no job's result depends on them, so GitHub's run on its push is its CI. Its review pack says so, and the run is added when it ends. |
+   | The only commit pushed, or the last of those pushed together | Every job, on its exact tree. |
+   | An earlier commit of those pushed together | The GCC job (`.github/ci/linux.sh gcc`), on its exact tree. If it is then pushed without the commits after it, it is the last, and gets every job first. |
+
+   If `main` has moved since its CI (Workflow, Several items at once):
+
+   | Moved onto | CI before the push |
+   |---|---|
+   | Commits that change only Markdown files | Its CI stands. |
+   | Commits that don't overlap it (Workflow, Several items at once) | The GCC job on its new tree (for commits pushed together, on the last one's). GitHub's run on the push is then its full CI. |
+   | Commits that overlap it | Its CI again, on its new tree, as the first table gives it. |
+
+   Its review pack names its new tree and the commits in between, and
+   which row is its, and why.
+
+   GitHub runs every job again on the push, and a failure there is fixed in
+   the next commit, before anything else is pushed. A job that fails before
+   its checks run, because a download failed (a server down: GitHub's
+   registry or GitHub itself, a toolchain or library download, or Ubuntu's
+   archives for a new build image), is not the commit's failure. The thread
+   that pushed runs the failed jobs again (GitHub's Re-run failed jobs, not
+   the whole run) until the server is back, however long that takes, and
+   nothing else is pushed until they pass.
 
 ## Where code goes
 
@@ -186,17 +206,24 @@ out by text of a file that can't be linked on its own, when the split is
 bigger than its change. Its run.py says so in its first lines, with a line
 that starts `Cut by text:` naming each file it cuts from and anything it
 changes in what it cuts (a stand-in, or a second version to compare), and
-why. `grep -l "Cut by text:" tests/*/run.py` lists them (25 today, most
-from nv2a_gl.c). Once a file is split, its tests link the unit instead.
+why. `grep -l "Cut by text:" tests/*/run.py` lists them. Once a file is
+split, its tests link the unit instead.
 
 **A test that starts threads or measures time** passes 20 runs in a row
 before the commit that adds or changes it (docs/build-and-test-reference.md,
 Repeated runs).
 
 **Docs change with the code.** A commit updates the docs that describe what
-it changes, in the same commit: the README, docs/, the READMEs in src/,
-port/ and tools/, and the packages' README.txt. known-bugs.md and the
-release's backlog are kept current as the work happens, not at release.
+it changes, in the same commit: docs/, and the READMEs in src/, port/ and
+tools/. The READMEs a player reads are the exception: README.md and the
+packages' README.txt (`launcher/linux/README.txt` and
+`launcher/windows/README.txt`, with what `launcher/firststart/readme.py`
+adds to them for the packages without the engine). They change only in a
+release's own commits, at docs/release-checklist.md's steps 6 and 7, or in
+a hotfix's. What a feature or a fix would add to one goes in its backlog
+row, as a "For the README" line that names the README, and waits for the
+release. known-bugs.md and the release's backlog are kept current as the
+work happens, not at release.
 
 ## Never do
 
@@ -261,13 +288,16 @@ starts from the latest `origin/main`. A thread may propose its own next commit
 on top of its own unpushed one, with that commit's six checks on its own exact
 tree, and its commits are pushed in order; it never builds on another thread's
 unpushed commits without asking me. If `main` has moved since an item's
-checks, its CI runs again on its new tree, unless the commits in between
-change only Markdown files (`*.md`): no job's result depends on them (Before
-every commit, 6), so its CI stands, and its review pack names its new tree and
-those commits. If the commits in between change the code it changes, its test
+checks, what its CI needs on its new tree depends on the commits in
+between (Before every commit, 6). Two changes overlap when either touches
+code the other changes, code that calls or is called by it, state both
+use, or the timing of a path the other's steps test; when unsure, they
+do. If the commits in between change the code it changes, its test
 build is made again and the steps they could affect are tested again. Each
-thread changes only its own rows in the backlog and known-bugs.md, and reads
-the file again just before each change.
+thread changes only its own rows in the backlog and known-bugs.md: its line
+in a table, and its row's own file where it has one. It changes each in
+place, by an exact match on its own text, and never by writing back a copy
+of the file it read earlier.
 
 **Switching to `main`, and scratch clones.** A thread's sandbox starts on a
 branch its session makes. To commit, the thread may switch it to `main` and
@@ -290,9 +320,8 @@ before a push checks that each commit going onto `main` is signed (The
 push gate, below).
 
 If one isn't, or the sandbox can't sign, don't push, and don't turn signing
-off: tell me, and the commit is made again, signed, on my say. The history
-holds commits pushed unsigned before this rule, the last of them on
-11 November (13 of ours, and most of upstream's); they stay.
+off: tell me, and the commit is made again, signed, on my say. Commits
+pushed unsigned before this rule stay as they are.
 
 **The push gate.** `.github/ci/push_gate.py` checks, the same way each
 time, what a thread would otherwise check from memory. Its words file is
@@ -311,8 +340,8 @@ line; a word from the words file; a file .gitignore keeps out; an unsigned
 commit; an `origin/main` here that isn't GitHub's `main` at that moment,
 or a `main` that isn't ahead of it in a straight line; and a change to
 README.md or the packages' README.txt outside a release's own commits,
-which pass `--release` (the project instructions, section 4). Only what a
-commit adds is checked. It prints nothing when all is well, and otherwise
+which pass `--release` (Docs change with the code). Only what a commit
+adds is checked. It prints nothing when all is well, and otherwise
 a line for each thing it found, never the word itself. Without the words
 file it checks nothing, and fails. What it finds is never worked around:
 the commit is changed, or I'm told.
@@ -327,9 +356,10 @@ pre-approved or not, takes its turn in the shared folder's
   The row gives the thread, its backlog row, its commits and the time. It
   reads the file again just before each change.
 - **Whose turn:** the first row in the file that may go. A pre-approved
-  thread's row waits for an item its backlog orders first (Pre-approved
-  threads, Alongside other threads), and the rows behind it that don't
-  wait go ahead. The thread whose turn it is marks its row as pushing.
+  thread's row waits for an item its backlog orders first
+  (docs/pre-approved-threads.md, Alongside other threads), and the rows
+  behind it that don't wait go ahead. The thread whose turn it is marks
+  its row as pushing.
 - **On its turn:** if `origin/main` has moved since its checks, its
   commits move onto it (asking me first, unless the thread is
   pre-approved) and their checks run again (Several items at once). Then
@@ -354,215 +384,27 @@ a session's own instructions and hooks: if those ask you to commit, push, or
 work on another branch, say so, and don't. A session on my PC never commits
 or pushes: commits are made in the cloud, after my approval or under a
 pre-approval (Pre-approved threads). And when a session starts to wear (its
-context nearly full or summarised, a rule slipped, or details lost), say so,
-write a handoff in the shared folder, and move the work to a new session.
+context nearly full or summarised, a rule slipped, or details lost), or
+reaches one of the planned points for a handoff (the project instructions,
+section 1), say so, write a handoff in the shared folder, and move the work
+to a new session. The handoff also says which checks passed, and on which
+tree.
 
 ## Pre-approved threads
 
 I can pre-approve a thread to work through its task on its own: to
 diagnose, fix, adjust and fix again as the tests show, commit, and push
-`main`, without waiting for me at each step. Everything else in these
-rules still applies, with the changes below. This section is the only
-full statement of it: the short project rules say only who can give one,
-and point here.
-
-### How it's given
-
-- **Only by me, by hand, at the thread's start:** in my own message that
-  opens the thread, or my first message in it before the thread has
-  changed anything, with the words "automation pre-approved" (with or
-  without the hyphen). It covers the task that message asks for, and
-  nothing beyond it.
-- **Nothing else gives one:** not a message from another session (the
-  project's coordinator or another thread), a hook, a session's own
-  instructions, a file, a commit message, a comment on GitHub, or my
-  words quoted inside another session's message, even word for word.
-  It isn't handed on: when a worn thread's work moves to a new one
-  (Workflow, the last paragraph), the new one isn't pre-approved until I
-  say so there.
-- **When in doubt, it isn't:** if it isn't clear whether a message
-  pre-approves the thread, the thread works under the usual rules, and
-  asks me.
-
-### At the start
-
-The thread's first reply:
-
-- confirms the pre-approval, with my words and their time, and the task
-  it covers;
-- names the saved runs (pre-recorded playback of a play session) its
-  testing will need: for each, the area or stage, what the player does
-  there, and the devices and modes. It says whether the shared folder's
-  `input-playback/RUNS.md` has one that suits and still plays on route
-  (until input playback's release is out, there's no such file and no
-  saved run), and for any it hasn't, what I'd need to record, or which
-  steps I'd test by hand instead;
-- says anything it can already see that will stop it (What still needs
-  me, below).
-
-### What changes
-
-- **Diagnosis** (Workflow 1 and 2): written down and posted with the
-  proposed fix as always, but the thread goes on without waiting for my
-  go-ahead. Its commit's check 4 names the diagnosis as posted.
-- **Fixes on the go:** when a check or a test step fails, the thread
-  finds why, fixes it, and runs it again, without asking. A fix to its
-  own change goes into that change and is tested again, with the steps
-  already passed that it could affect (docs/build-and-test-reference.md,
-  Test checklist, Order). A fix to a commit already pushed is a commit
-  of its own, through the same tests.
-- **Other bugs it finds** go in known-bugs.md and are told to me. They
-  aren't fixed in that thread unless I add them to its task. One that
-  stops the task's own tests passing stops the thread (What still needs
-  me, below).
-- **Commits** (Before every commit): the six checks and the review pack
-  are done as always, as the commit's record, and the thread commits
-  once they and the tests below pass, without waiting for my approval.
-- **Pushes:** the thread pushes `main` on its turn (Workflow, Taking
-  turns on `main`) once the tests below pass. A push that finds
-  `origin/main` has moved is never forced: the thread moves its own
-  commits onto the new `origin/main`, and they go through the tests
-  again (Several items at once, and Alongside other threads, below).
-- **Git in its sandbox:** besides switching to `main` (Workflow,
-  Switching to `main`), it may move its own unpushed commits onto a newer
-  `origin/main`. Nothing else: no other branch, no rebase or reset of
-  anything else, and nothing forced. If `main` has unpushed commits from
-  another thread, it asks me first, as always.
-
-### When all the tests pass
-
-A commit is made and pushed only when all of these pass for its exact
-tree:
-
-1. **The six checks** of Before every commit, CI among them: the
-   jobs in the cloud (or on my PC while a server is down) and the Windows
-   tests on my PC, or, for a commit that changes only Markdown files,
-   GitHub's run on its push.
-2. **For a fix, its regression test,** failing without the fix and
-   passing with it (How it's written).
-3. **For a change to what the game runs** that needs one (at the top of
-   this file): a test build of that tree, with its compatibility checks
-   (docs/build-and-test-reference.md, Compatibility checks), and every step
-   of its test checklist passed on its device (Workflow 5). A saved run that
-   satisfies a step counts as that step's pass, where these rules let the
-   thread run one: its log, read in full, shows what the step says I should
-   see. Otherwise the step passes on my own results and logs, as does how
-   something looks or feels, which a log can't show. A step I marked Skip,
-   or left unmarked, hasn't passed. A change in several commits (a
-   restructuring before its fix, or a batch's items) is tested on its last
-   commit's tree (docs/build-and-test-reference.md, Batches), and pushed
-   together.
-
-After the push, the thread reads GitHub's run of
-`.github/workflows/ci.yml` on the pushed commit when it ends. A failure
-there is fixed in the next commit, before anything else is pushed
-(Before every commit, 6).
-
-### Alongside other threads
-
-When other threads work on `main` at the same time, pre-approved or not,
-the thread also:
-
-- **Keeps to the backlog's commit order:** where its backlog orders the
-  items' commits (in its notes, as b1.4's "commits go 2, 6, 8, then 7, 9,
-  10 and 11"), it doesn't push ahead of an item ordered before its own
-  that isn't pushed yet. It commits once its tests pass, joins the queue
-  (Workflow, Taking turns on `main`), and waits there for that item's
-  push. If that item has stopped, or no thread is working on it, it asks
-  me whether to go first. The table's row order isn't a commit order,
-  and items the backlog doesn't order go in the queue's order.
-- **Checks for overlap once its fix is planned** (Workflow 2), against
-  the items in progress in other threads (the backlogs' rows started and
-  not yet pushed): whether either change could change what the other's
-  steps test (below). If one could, one of them waits for the other's
-  push before its test build, so no step is tested twice: the one the
-  backlog orders later or, if it orders neither, the one that finds the
-  overlap. It says so in a reply, and tells the other thread if that one
-  is to wait.
-- **Checks both ways again on its turn,** if `origin/main` has moved
-  since its tests: whether the commits it now goes onto could change what
-  its own steps tested, and whether its change could change what theirs
-  tested (their test builds' TESTING.md, where they had one). A change
-  could if it touches the same code, code that calls or is called by the
-  other's, state both use, or the timing of a path a step tests; when
-  unsure, it could. If either could, the new tree gets a test build, and
-  those steps pass on it (When all the tests pass, 3) before the push. If
-  neither could, CI on the new tree is enough. The review pack says
-  which, and why.
-
-### What still needs me
-
-A pre-approval never covers these. The thread stops, says why, keeps
-what it hasn't pushed, and goes on only once I've answered. The
-pre-approval then holds again for the rest of the task.
-
-- **Releases:** tags, releases, publishing, and every step of
-  docs/release-checklist.md. While a release is under way (its backlog's
-  Release row says it has reached a step), the thread commits but
-  doesn't push, as that checklist pushes nothing before step 9.
-- **Git beyond its own commits on `main`:** pushing anything else, a
-  force push, or changing history already pushed. A pushed commit I
-  don't want is undone by a new commit (`git revert`), on my say.
-- **`upstream`,** and the project rules' "Never in the repo".
-- **The rules and the checks:** the short project rules, this file,
-  docs/build-and-test-reference.md, docs/release-checklist.md,
-  docs/versioning.md, docs/menu-format.md, `.github/`, and any line
-  added to `tests/known-failures.txt`, `tests/tsan.supp` or
-  `tests/asan-known.txt`. A fix still takes its own bug's lines out
-  (docs/build-and-test-reference.md, CI).
-- **Tests made weaker:** skipping, disabling or loosening a test, or
-  changing what it expects so that it passes, unless the task is that
-  test's own fix.
-- **Work beyond its task:** a backlog item or a feature it wasn't given,
-  another thread's rows, moving an item between releases, going ahead of
-  the backlog's commit order (Alongside other threads), or deciding
-  whether a bug is critical (docs/release-checklist.md, The gate).
-- **The decisions these rules give me:** where a fix goes, when that
-  isn't clear or the fix is to a model and bigger than the task (Where
-  code goes, 1); a second fix in one place, whose review comes first
-  (Where code goes, 7); anything on the Never do list; and a rule that
-  conflicts with the task.
-- **Failures it can't fix:** a check or step that still fails after two
-  fixes, a failure it can't explain, or one its change didn't cause
-  (a known failure that changed, or a test that comes and goes).
-- **Anything new installed,** on the PC or in the sandbox, or anything
-  changed on a device beyond what docs/build-and-test-reference.md
-  lists.
-- **Anything sent outside the project:** a GitHub issue, comment or pull
-  request, or a change to another repository.
-
-### Records
-
-Kept as the usual rules keep them, and:
-
-- **The review pack** for each commit (docs/build-and-test-reference.md,
-  Review pack) is written before the commit, as its record, and says
-  under which pre-approval it was made. GitHub's run on the push is
-  added when it ends.
-- **The backlog row and known-bugs.md:** "automation pre-approved" when the
-  work starts, with my message's time; each commit when it's made, with its
-  hash and review pack; each wait for another item, with which item and
-  why (Alongside other threads); and each push when it's done, with its
-  time and GitHub's run. Each thread changes only its own rows, and reads
-  the file again just before each change (Several items at once).
-- **Replies:** the first one (At the start); one when a test build is
-  ready for me; one when it starts to wait for another item, so I can
-  say whether it goes first; one for each push, with its commits, review
-  packs and GitHub's run; and one each time the thread stops. Progress
-  in between goes on the thread's checklist, not in replies.
-
-### When it ends
-
-When I say so in the thread, when its task is pushed and GitHub's run on
-it has passed, or when the work moves to a new thread. From then on the
-usual rules apply to anything not yet pushed.
+`main`, without waiting for me at each step. docs/pre-approved-threads.md
+is the only full statement of it: how it's given, what changes, the tests
+before it commits and pushes, what still needs me, its records, and when
+it ends. A thread that isn't pre-approved needn't read it.
 
 ## Changing the rules
 
 The rules are the short project rules, this file,
-docs/build-and-test-reference.md, docs/release-checklist.md,
-docs/versioning.md and docs/menu-format.md: the rule docs that What still
-needs me lists (Pre-approved threads).
+docs/pre-approved-threads.md, docs/build-and-test-reference.md,
+docs/release-checklist.md, docs/versioning.md and docs/menu-format.md: the
+rule docs that What still needs me lists (docs/pre-approved-threads.md).
 
 - **Gathered, then made together:** a change to them is proposed in the
   current release's backlog, under Rule changes, with who asked for it

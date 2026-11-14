@@ -9,7 +9,8 @@ JSRF-PC releases are betas until 1.0.
 - **b1.1-hotfix:** An urgent fix to a release, named after it with
   `-hotfix`. It is a release of its own, on its own tag: see
   [GitHub releases](#github-releases).
-- **b2:** The next feature release, with b2.1 and so on for its bug fixes.
+- **b2:** The next feature release, with b2.1 and so on for the smaller
+  releases after it, fixes or features.
 - **1.0:** The final release.
 
 A release's git tag and the version it shows are both its name.
@@ -48,7 +49,9 @@ A release's git tag and the version it shows are both its name.
 - **"Beta"** appears only in the release title, the release text, and the
   changelog.
 - **Files:** `JSRF-PC-b1-linux-x86_64.tar.gz` and
-  `JSRF-PC-b1-windows-x86_64.zip`.
+  `JSRF-PC-b1-windows-x86_64.zip` and, from b2, the tools archive for each
+  system, `JSRF-PC-tools-linux-x86_64.tar.gz` and
+  `JSRF-PC-tools-windows-x86_64.zip`, whose names carry no version.
 - **First line:** thanks JuMatt, with a link, for the original port,
   JSRF Unleashed.
 - **Known issues:** the release text lists them, so testers don't report
