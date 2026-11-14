@@ -3,8 +3,10 @@
 How a change to JSRF-PC is placed, written, checked, and proposed. It is
 written by the maintainer ("I") for whoever makes the change ("you"), and
 goes with the short project rules: the project instructions in Project
-settings, which every thread is given. A session on my PC isn't given them,
-so its brief says what it needs from them. docs/build-and-test-reference.md
+settings, which every thread is given. A session on my PC isn't given them:
+it is started in `Building\` and follows the standing rules kept there,
+`Building\CLAUDE.md`, the part of these rules a session there needs, and
+its instructions say the rest. docs/build-and-test-reference.md
 covers building, testing, and the change report. Every choice or approval
 these rules leave to me is asked for on a card in the thread (the project
 instructions, section 1), never only in a reply's text. A path these docs

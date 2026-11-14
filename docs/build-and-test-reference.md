@@ -70,6 +70,15 @@ files move between them, and what the PC has installed.
   Python for the checkout and the Windows tests, each at the version
   building-on-pc/README.md lists. Anything else, or another version, is
   asked for first.
+- **The standing rules and scripts:** a session is started in `Building\`,
+  where it is given `Building\CLAUDE.md` by itself: the part of the rules
+  a session there needs, so a run's instructions carry only the run. The
+  Windows tests' steps are kept once, in `Building\scripts\`, and a run of
+  them is its run file, `RUN.txt` in the run's folder: the base, each diff
+  with its SHA-256, and each tree's hash and test count
+  (building-on-pc/README.md has its lines). Neither is edited for a run:
+  each changes only on a card, tried on Linux first where it can be, and
+  every run records the SHA-256 of the scripts it ran.
 - **The checkout:** `Building\src`, a clone of this repository that is only
   built from, with `core.autocrlf` off so the files are as the repository
   has them. It is never reset or cleaned, as the PC's permission check
@@ -99,9 +108,13 @@ files move between them, and what the PC has installed.
   reports it. It never runs that command again, or another to the same
   end. The thread then asks me on a card whether to accept it in the
   Claude app or to change the step.
-- **One job at a time on each machine:** a build, a CI job or a repeated
+- **One run at a time on each machine:** a build, a CI job or a repeated
   run never shares the PC with another, as load changes what timing tests
-  find. The cloud's jobs run one after another too.
+  find. Within one build, the steps that don't depend on each other run
+  at the same time: its Windows tests beside the build in `jsrf-build`,
+  and its two packages together. An idle run and a repeated run are
+  always alone on the machine. The cloud's jobs run one after another
+  too.
 
 ### When the PC is busy
 
@@ -400,7 +413,8 @@ between builds).
     Docker and sets both. The Windows job's downloads may be
     kept between runs too; each job's builds and tests still run from
     scratch.
-  - **On my Windows PC:** the Windows tests, as GitHub runs them: the
+  - **On my Windows PC:** the Windows tests, as GitHub runs them, by the
+    standing scripts (On my PC, The standing rules and scripts): the
     Python version in ci.yml, llvm-mingw from `.github/ci/llvm_mingw.py`
     (in `Building\cache\llvm-mingw-tests`, where a zip with its SHA-256
     isn't downloaded again, nor a copy unpacked whole from it unpacked
