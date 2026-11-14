@@ -4,6 +4,58 @@ What changed in each JSRF-PC version, newest first. Upstream JSRF Unleashed's
 own changes are in
 [its changelog](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/blob/main/CHANGELOG.md).
 
+## b2.1 (beta) — 14 November 2026
+
+### Added
+
+- **Upscaling:** Graphics > Upscaling draws the menus and HUD, the 3D world's
+  textures, and the graffiti tags from sharper copies made with Super-xBR, at
+  2×, 4× (the default), or 8×, tuned by Sharpness, Edge strength, and Cleanup.
+  The copies are made on the fly, so minor hitching may occur at higher scales.
+- **See through fix:** Characters and moving objects now show through glass
+  and water, tinted by them, where the Xbox hides them. It is in Display >
+  Enhancements, on by default.
+- **HUD scale:** Display > HUD draws the HUD at 0.5× to 1.5× its size, each
+  piece keeping its place at the screen's edge, and Disable HUD hides it.
+- **Presets:** File > Presets sets many settings at once: Xbox mode, the game
+  as the Xbox runs it; JSRF-PC default, the settings a new install starts
+  with; or Max quality, with the graphics at their most.
+- **Far shadows:** Display > Building distance > Far shadows draws the
+  shadows of the buildings Far buildings adds, so they don't pop in as you
+  come near, at the cost of minor glitches. On by default.
+- **Default cam fix:** Controller > Default cam fix turns b2's fix for the
+  game's camera clipping through walls on or off. On by default; off, the
+  camera is as on the Xbox.
+- **Menu hints:** A line along the bottom of the in-game menu says what the
+  row you're on does, beside the buttons to press.
+
+### Fixed
+
+- **Graffiti camera:** With the free camera off, tagging a parked bus, a
+  truck, or a column could turn the camera first-person. The game frames the
+  shot itself again, as on the Xbox.
+- **Garage menu arrows:** In widescreen, the yellow arrows along the bottom of
+  the garage's System and Graffiti menus could overlap. They now stay in
+  line.
+- **Black screen before the Sega logo:** On a busy PC, the game could stop for
+  good at a black screen before the Sega logo. _(Windows)_
+- **First-start progress bar:** The bar could jump back and forth while the
+  engine was built. It now only moves forward, at your PC's own pace.
+- **Log size with Far buildings:** With Far buildings on, `last-run.log` could
+  grow by over 100 MB in one street. It now stays small.
+
+### Changed
+
+- **Menu look:** The in-game menu and the first start's window use the
+  original Xbox's greens, with rounder, roomier rows. The menu dims the game
+  behind it, and fades in and out.
+- **Faster first start:** Building the engine at the first start is about
+  twice as fast on a desktop PC, about 2 minutes, and takes about 2.5 minutes
+  on a ROG Xbox Ally X.
+- **Menu rows moved:** Skip intro is now in Display > Skips, Music info in
+  pause in Display > Enhancements, and Far buildings in Display > Building
+  distance. Your settings for them stay as they were.
+
 ## b2 (beta) — 9 November 2026
 
 ### Added

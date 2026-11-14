@@ -20,16 +20,27 @@ contains no game files.
 ## Features
 
 - **In-game menu:** F1, or Back on a controller, for the display, graphics,
-  audio, controller, and developer settings.
+  audio, controller, and developer settings, with a hint for every row.
+- **Presets:** Xbox mode, the game as the Xbox runs it; JSRF-PC default; or
+  Max quality, with the graphics at their most. File > Presets.
 - **Resolution scaling:** 1× to 6×. 3× by default.
 - **True widescreen:** 16:10, 16:9, 21:9, or Match screen. The picture is
   drawn as wide as the shape, so neither axis is stretched, and the HUD and
   menus are laid out across the screen.
+- **HUD scale:** The HUD at 0.5× to 1.5× its size, each piece keeping its
+  place at the screen's edge, or turned off.
 - **Draw distance:** Crowds, spray cans, props, traffic, and the police and
   their vehicles drawn up to four times further, or an unlimited distance. Far
-  buildings keeps the city's buildings from popping in.
+  buildings keeps the city's buildings from popping in, and Far shadows draws
+  the buildings' shadows.
+- **Upscaling:** Sharper menus, HUD, textures, and graffiti, drawn from copies
+  of the game's art made with Super-xBR on the fly, with settings for their
+  sharpness, edge strength, and cleanup.
 - **Music info in pause:** The song playing, its title and artist, drawn in
   the pause menus using the game's font and styling. Can be toggled at any
+  time.
+- **See through fix:** Characters and moving objects seen through glass and
+  water, tinted by them, where the original hides them. Can be toggled at any
   time.
 - **Free camera:** Modern right-stick camera controls, with various settings,
   and smooth geometry tracking to keep the camera out of walls. The graffiti cam
@@ -45,14 +56,14 @@ contains no game files.
 
 ## Download
 
-The latest release is **b2**.
+The latest release is **b2.1**.
 
 | Platform | File |
 |---|---|
-| Linux x86_64: SteamOS, Ubuntu 22.04+, and most modern distros. | [JSRF-PC-b2-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b2/JSRF-PC-b2-linux-x86_64.tar.gz) |
-| Windows 10 or 11, x86_64. | [JSRF-PC-b2-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b2/JSRF-PC-b2-windows-x86_64.zip) |
-| Linux tools, to build the engine without downloading (optional). | [JSRF-PC-tools-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b2/JSRF-PC-tools-linux-x86_64.tar.gz) |
-| Windows tools, to build the engine without downloading (optional). | [JSRF-PC-tools-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b2/JSRF-PC-tools-windows-x86_64.zip) |
+| Linux x86_64: SteamOS, Ubuntu 22.04+, and most modern distros. | [JSRF-PC-b2.1-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b2.1/JSRF-PC-b2.1-linux-x86_64.tar.gz) |
+| Windows 10 or 11, x86_64. | [JSRF-PC-b2.1-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b2.1/JSRF-PC-b2.1-windows-x86_64.zip) |
+| Linux tools, to build the engine without downloading (optional). | [JSRF-PC-tools-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b2.1/JSRF-PC-tools-linux-x86_64.tar.gz) |
+| Windows tools, to build the engine without downloading (optional). | [JSRF-PC-tools-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b2.1/JSRF-PC-tools-windows-x86_64.zip) |
 
 See the [changelog](CHANGELOG-JSRF-PC.md) for what changed in each version,
 and the [releases](https://github.com/spriteice/JSRF-PC/releases) page for
@@ -130,6 +141,7 @@ still in beta.
   - Some elements half a pixel out of place.
   - Black screenshots on Windows.
   - Graffiti menu icons on some AMD graphics on Windows.
+  - Pale patches along Chuo Street's halfpipe with Far shadows on.
 
 **Found a bug?** [Open an issue](https://github.com/spriteice/JSRF-PC/issues)
 and attach the `last-run.log` from that run.
@@ -184,4 +196,6 @@ under LGPL-2.1-or-later. The releases up to b1.4 were MIT, and stay so. See
   which none of the graphics or audio would exist.
 - [Dear ImGui](https://github.com/ocornut/imgui): the library the in-game menu
   is built with.
+- [Super-xBR](https://github.com/libretro/glsl-shaders) by Hyllian: the
+  upscaling the sharper menus, textures, and graffiti are drawn with.
 - Smilebit and SEGA, who made the game.

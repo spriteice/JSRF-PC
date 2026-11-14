@@ -33,7 +33,7 @@ builds the engine from your own copy of the game, once. It asks first:
 
 Yes goes on: it asks where the game is (as in Playing above), translates the
 game's default.xbe into C, and compiles it, with one progress bar. It takes a
-few minutes (3 to 5 on the PCs tested). No closes the window, and the game
+few minutes (2 to 3 on the PCs tested). No closes the window, and the game
 doesn't start. Only the tools in the tools folder are used, whatever else is
 on the PC, and nothing is installed: it all stays in this folder.
 
@@ -63,7 +63,7 @@ the engine from your own copy of the game, once. It asks first:
 
 Yes goes on: it asks where the game is (as in Playing above), translates the
 game's default.xbe into C, and compiles it, with one progress bar. It takes a
-few minutes (3 to 5 on the PCs tested). No closes the window, and the game
+few minutes (2 to 3 on the PCs tested). No closes the window, and the game
 doesn't start. Only the tools in the tools folder are used, whatever else is
 on the PC, and nothing is installed: it all stays in this folder.
 

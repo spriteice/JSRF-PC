@@ -192,6 +192,8 @@ py -3 -m tools.recomp game_files/default.xbe --all --split 1000
 |------|-------------|
 | `--all` | Recompile all detected functions |
 | `--split N` | Split output into files of N functions each |
+| `--split-bytes BYTES` | With `--split`, a file also ends once its code reaches BYTES, so the files are alike in size and a compile on every core ends sooner (JSRF-PC: `1000000`) |
+| `--jobs N` | With `--split`, translate on N processes, each loading the data itself (about 0.7 GB each for a whole game); the files are the same for any N. Default 1 |
 | `--gen-dir DIR` | Where the split files go (JSRF-PC: `port/recomp/gen`) |
 | `--exclude-manual FILE` | Leave out the functions FILE defines by hand (JSRF-PC: `port/recomp_manual.c`) |
 | `--back-edge-yield` | Let a guest thread busy in a loop hand the CPU to the others |

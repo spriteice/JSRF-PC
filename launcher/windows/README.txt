@@ -85,14 +85,14 @@ Keyboard (by key position, so W A S D on QWERTY is Z Q S D on AZERTY):
 File > Presets in the in-game menu sets many settings at once. Xbox mode is
 the game as the Xbox runs it: 4:3 at 1x, with everything JSRF-PC adds to how
 it looks and plays turned off, but the audio effects, which are the console's
-own. JSRF-PC default is the settings a new install starts with. Max quality
-is JSRF-PC default with the render scale, draw distance, Far buildings,
-anisotropic filtering, Upscaling's Menus and HUD, Textures and Graffiti, and
-both anti-aliasings at their most, as far as the graphics card goes: it asks
-a lot of the computer. The one ticked is the one your settings match, if any.
-Full screen and the free camera's own settings stay as you set them. The game
-restarts if the render scale, the shader cache or the audio effects change,
-so save first.
+own. JSRF-PC default is the settings a new install starts with. Max quality is
+JSRF-PC default with the render scale, draw distance, Far buildings, Far
+shadows, anisotropic filtering, Upscaling's Menus and HUD, Textures and
+Graffiti, and both anti-aliasings at their most, as far as the graphics card
+goes: it asks a lot of the computer. The one ticked is the one your settings
+match, if any. Full screen and the free camera's own settings stay as you set
+them. The game restarts if the render scale, the shader cache or the audio
+effects change, so save first.
 
 Display > HUD in the in-game menu has HUD scale, which draws the HUD at
 0.5x to 1.5x its size (1x, the default), a tenth at each - or +, and
@@ -111,24 +111,32 @@ far as the camera sees. It changes straight away, asks more of the computer the
 further it goes, and is remembered as drawdistance= in the settings file (0
 for 1x to 4 for Unlimited). Above 2x it will struggle on weak hardware.
 
-Display > Far buildings in the in-game menu draws every part of the map the
-game ever shows, with the things in it, not only the part it shows from where
-the camera is. A part it never shows stays hidden, such as the second copy of
-Dogenzaka Hill's street. On by default. It changes straight away, asks more
-of the computer, and is remembered as farbuildings= in the settings file
-(1 or 0).
+Display > Building distance > Far buildings in the in-game menu draws every
+part of the map the game ever shows, with the things in it, not only the part
+it shows from where the camera is. A part it never shows stays hidden, such
+as the second copy of Dogenzaka Hill's street. On by default. It changes
+straight away, asks more of the computer, and is remembered as farbuildings=
+in the settings file (1 or 0).
 
-Display > Skips > Skip intro in the in-game menu leaves out the logos and
-the graffiti disclaimer the game opens with: it starts at the title
-screen's loading. Off by default, so the intro plays as on the Xbox. It is remembered
+Display > Building distance > Far shadows, below Far buildings, draws the
+shadows of the parts Far buildings adds too, so they don't pop in as you
+come near, at the cost of minor visual glitches, such as patches of light in
+shadows that move with the camera. Off, those parts have no shadows until
+you're near enough for the game to show them itself. On by default. It does
+nothing with Far buildings off, changes straight away, and is remembered as
+farshadows= in the settings file (1 or 0).
+
+Display > Skips > Skip intro in the in-game menu leaves out the logos and the
+graffiti disclaimer the game opens with: it starts at the title screen's
+loading. Off by default, so the intro plays as on the Xbox. It is remembered
 as skipintro= in the settings file (0 or 1).
 
 Display > Enhancements > Music info in pause in the in-game menu shows the
-song playing, its number, title and artist, in both pause menus, on the
-left, above Rotate map.
-It follows the songs of the street mixes too, and shows nothing for the
-title's and the story's own music. On by default. It changes straight away,
-and is remembered as musicinpause= in the settings file (0 or 1).
+song playing, its number, title and artist, in both pause menus, on the left,
+above Rotate map. It follows the songs of the street mixes too, and shows
+nothing for the title's and the story's own music. On by default. It changes
+straight away, and is remembered as musicinpause= in the settings file
+(0 or 1).
 
 Display > Enhancements > See through fix in the in-game menu shows
 characters and dynamic world objects through glass and water, tinted by
