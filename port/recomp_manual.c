@@ -2704,14 +2704,31 @@ void sub_001C3E14(void)
     }
     g_eax = 0; g_esp += 4 + 8;
 }
-/* XInputSetState(h, feedback) */
+/* XInputSetState(h, feedback)
+ *
+ * The feedback block is a 0x42-byte header, then the two motors' speeds, a
+ * word each. The XDK's own XInputSetState (the code at this address) writes
+ * the pad's USB report header, its number and length (00 06), into the
+ * header's last two bytes and sends the six bytes from there: the report the
+ * pad takes, 00 06 then the left motor then the right. So the speeds are at
+ * +0x42 and +0x44; +0x40 is the report header, which nothing but the XDK
+ * writes (JSRF zeroes the block as it sets its pad up, at 0x00167DF5). Read at
+ * +0x40 and +0x42, the pad's big left motor never ran and its small right
+ * one played the game's left strength. JSRF's pad update (sub_00167180) sets
+ * both speeds at +0x42 in one write and calls this only when they change:
+ * the input layer holds them until then (xbox_InputSetState). */
+#define XPP_FEEDBACK_STATUS 0x00u     /* Header.dwStatus */
+#define XPP_FEEDBACK_EVENT  0x04u     /* Header.hEvent */
+#define XPP_FEEDBACK_LEFT   0x42u     /* Rumble.wLeftMotorSpeed, after the header */
+#define XPP_FEEDBACK_RIGHT  0x44u     /* Rumble.wRightMotorSpeed */
 void sub_001C3E85(void)
 {
     uint32_t fb = GARG(2); uint8_t *m = (uint8_t *)g_xbox_mem_offset;
     if (fb) {
-        uint32_t ev = *(uint32_t *)(m + fb + 4);
-        *(uint32_t *)(m + fb) = 0;                    /* Header.dwStatus = ERROR_SUCCESS */
-        XBOX_VIBRATION v = { *(uint16_t *)(m + fb + 0x40), *(uint16_t *)(m + fb + 0x42) };
+        uint32_t ev = *(uint32_t *)(m + fb + XPP_FEEDBACK_EVENT);
+        *(uint32_t *)(m + fb + XPP_FEEDBACK_STATUS) = 0;  /* ERROR_SUCCESS */
+        XBOX_VIBRATION v = { *(uint16_t *)(m + fb + XPP_FEEDBACK_LEFT),
+                             *(uint16_t *)(m + fb + XPP_FEEDBACK_RIGHT) };
         xbox_InputSetState(GARG(1) & 3, &v);
         if (ev) { static int once; if (!once++) fprintf(stderr, "[PAD] XInputSetState with hEvent=%08X (not signalled)\n", ev); }
     }

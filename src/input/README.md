@@ -17,6 +17,7 @@ Maps the Xbox controller API to the host's pads, through SDL2's GameController A
 |------|---------|
 | `xinput_xbox.h` | Public header — types, button constants, function prototypes |
 | `xinput_device.c` | Implementation: SDL2's GameController and the window's keyboard, as the Xbox gamepad's state |
+| `rumble_hold.c`, `rumble_hold.h` | When to send the vibration the game set to the host's pad, so it holds as the console's does (no SDL in it, for tests/rumble) |
 
 ## Quick Start
 
@@ -56,7 +57,9 @@ void xbox_InputInit(void);
 // Poll controller state (returns 0 on success, non-zero if disconnected)
 DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState);
 
-// Set vibration motors
+// Set vibration motors: held at these speeds until set again, as the
+// console's pad holds them (sent again before SDL's time for them runs out,
+// and to a pad found later)
 DWORD xbox_InputSetState(DWORD dwPort, const XBOX_VIBRATION *pVibration);
 
 // Check if controller is connected

@@ -165,10 +165,13 @@ static int host_pad_off(void)
 /* ======================================================================== */
 
 #include <SDL.h>
+#include "rumble_hold.h"
 
 static SDL_GameController *g_pads[XBOX_MAX_CONTROLLERS];
 static BOOL  g_controller_connected[XBOX_MAX_CONTROLLERS];
 static DWORD g_packet[XBOX_MAX_CONTROLLERS];
+static RumbleHold g_rumble[XBOX_MAX_CONTROLLERS];   /* each port's motors (rumble_hold.h) */
+static void rumble_send(DWORD port);
 
 /* Open the attached game controllers into free slots, in the order SDL lists
  * them, and let go of any that went away -- so a pad plugged in (or paired)
@@ -299,6 +302,7 @@ DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
         if (c && SDL_GameControllerGetAttached(c)) {
             SDL_GameControllerUpdate();
             have_pad = 1;
+            rumble_send(dwPort);            /* held: see xbox_InputSetState */
             if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_DPAD_UP))    out |= XBOX_GAMEPAD_DPAD_UP;
             if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_DPAD_DOWN))  out |= XBOX_GAMEPAD_DPAD_DOWN;
             if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_DPAD_LEFT))  out |= XBOX_GAMEPAD_DPAD_LEFT;
@@ -356,17 +360,40 @@ DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
     return ERROR_SUCCESS;
 }
 
+/* Vibration, as the game last set it, sent to the pad in the slot when it is
+ * due (rumble_hold.h): when it changes, to a pad that hasn't had it, and
+ * again before SDL's time for it runs out. SDL's rumble lasts a set time,
+ * and the game sets the motors only when they change, so a vibration sent
+ * for a second at each call stopped after a second. */
+static void rumble_send(DWORD port)
+{
+    SDL_GameController *c = g_pads[port];
+    if (c && rumble_hold_due(&g_rumble[port],
+                             (long)SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(c)),
+                             input_now()))
+        SDL_GameControllerRumble(c, g_rumble[port].left, g_rumble[port].right, RUMBLE_HOLD_MS);
+}
+
 DWORD xbox_InputSetState(DWORD dwPort, const XBOX_VIBRATION *pVibration)
 {
-    SDL_GameController *c;
     if (dwPort >= XBOX_MAX_CONTROLLERS || !pVibration)
         return ERROR_DEVICE_NOT_CONNECTED;
-    c = g_pads[dwPort];
-    if (!c) return g_controller_connected[dwPort] ? ERROR_SUCCESS : ERROR_DEVICE_NOT_CONNECTED;
-    /* SDL rumble needs a duration; refresh for ~1s on each call (the game
-     * polls vibration continuously). */
-    SDL_GameControllerRumble(c, pVibration->wLeftMotorSpeed,
-                             pVibration->wRightMotorSpeed, 1000);
+    /* The first changes, so a log shows the game asking: enough for a few
+     * trips to the game's options screen, whose Vibration on buzzes four
+     * changes each time, and the hurts after them. */
+    if (pVibration->wLeftMotorSpeed != g_rumble[dwPort].left
+     || pVibration->wRightMotorSpeed != g_rumble[dwPort].right) {
+        static int said;
+        if (said < 64) {
+            said++;
+            fprintf(stderr, "[PAD] vibration %u: left %u, right %u%s\n", (unsigned)dwPort,
+                    pVibration->wLeftMotorSpeed, pVibration->wRightMotorSpeed,
+                    said == 64 ? " (no more of these)" : "");
+        }
+    }
+    rumble_hold_set(&g_rumble[dwPort], pVibration->wLeftMotorSpeed, pVibration->wRightMotorSpeed);
+    rumble_send(dwPort);
+    if (!g_pads[dwPort]) return g_controller_connected[dwPort] ? ERROR_SUCCESS : ERROR_DEVICE_NOT_CONNECTED;
     return ERROR_SUCCESS;
 }
 
