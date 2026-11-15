@@ -87,13 +87,15 @@ File > Presets in the in-game menu sets many settings at once. Xbox mode is
 the game as the Xbox runs it: 4:3 at 1x, with everything JSRF-PC adds to how
 it looks and plays turned off, but the audio effects, which are the console's
 own. JSRF-PC default is the settings a new install starts with. Max quality is
-JSRF-PC default with the render scale, draw distance, Far buildings, Far
-shadows, anisotropic filtering, Upscaling's Menus and HUD, Textures and
-Graffiti, and both anti-aliasings at their most, as far as the graphics card
-goes: it asks a lot of the computer. The one ticked is the one your settings
-match, if any. Full screen and the free camera's own settings stay as you set
-them. The game restarts if the render scale, the shader cache or the audio
-effects change, so save first.
+JSRF-PC default with the render scale, draw distance, anisotropic filtering,
+Upscaling's Menus and HUD, Textures and Graffiti, and both anti-aliasings at
+their most, as far as the graphics card goes, and Far buildings and Far
+shadows at 3x: it asks a lot of the computer. A preset sets every setting but
+Developer's: each one also puts the game full screen, Upscaling's Cleanup as
+a new install has it, and the free camera's own settings back to their
+defaults. The one ticked is the one your settings match, if any. The game
+restarts if the render scale, the shader cache or the audio effects change,
+so save first.
 
 Display > HUD in the in-game menu has HUD scale, which draws the HUD at
 0.5x to 1.5x its size (1x, the default), a tenth at each - or +, and
@@ -112,20 +114,27 @@ far as the camera sees. It changes straight away, asks more of the computer the
 further it goes, and is remembered as drawdistance= in the settings file (0
 for 1x to 4 for Unlimited). Above 2x it will struggle on weak hardware.
 
-Display > Building distance > Far buildings in the in-game menu draws every
-part of the map the game ever shows, with the things in it, not only the part
-it shows from where the camera is. A part it never shows stays hidden, such
-as the second copy of Dogenzaka Hill's street. On by default. It changes
-straight away, asks more of the computer, and is remembered as farbuildings=
-in the settings file (1 or 0).
+Display > Building distance > Far buildings in the in-game menu draws more
+of the map, with the things in it, so buildings further off don't pop in as
+you come near. The game splits each map into areas, and draws only the ones
+the area the camera is in lists. Off is the game's own; 1x, 2x and 3x (the
+default) draw what the game would show from the areas one, two or three
+areas ahead; and All draws every area the game ever shows, which can put a
+part of the map in view where the game never shows it, such as the top of
+Dogenzaka Hill in the sky at its bottom. It changes straight away, asks more
+of the computer the further it goes, and is remembered as farbuildingsahead=
+in the settings file (0 for Off to 4 for All).
 
 Display > Building distance > Far shadows, below Far buildings, draws the
-shadows of the parts Far buildings adds too, so they don't pop in as you
-come near, at the cost of minor visual glitches, such as patches of light in
-shadows that move with the camera. Off, those parts have no shadows until
-you're near enough for the game to show them itself. On by default. It does
-nothing with Far buildings off, changes straight away, and is remembered as
-farshadows= in the settings file (1 or 0).
+shadows of the areas Far buildings adds too, as many areas ahead as its own
+choice, Off to All, and never further than Far buildings, so they don't pop
+in as you come near, at the cost of minor visual glitches, such as patches
+of light in shadows that move with the camera. Off, those areas have no
+shadows until you're near enough for the game to show them itself. 3x by
+default. It does nothing with Far buildings off, changes straight away, and
+is remembered as farshadowsahead= in the settings file (0 for Off to 4 for
+All). Before b2.1-hotfix the two were on or off, remembered as farbuildings=
+and farshadows=: until you choose again, 1 there reads as 3x and 0 as Off.
 
 Display > Skips > Skip intro in the in-game menu leaves out the logos and the
 graffiti disclaimer the game opens with: it starts at the title screen's
@@ -219,7 +228,7 @@ De-dither smooths the dot patterns of 16-bit and DXT textures. Each leaves
 larger differences, edges in the picture, as they are, and neither changes a
 texture's see-through parts. A change takes effect straight away, with no
 restart, making every copy again, which can pause the game for a moment.
-File > Presets leaves them as you set them. They are remembered as
+Each preset in File > Presets turns both off. They are remembered as
 upscale_deblock= and upscale_dedither= in the settings file (0 or 1).
 
 Graphics > Shader cache in the in-game menu (on by default) keeps the shaders

@@ -4,6 +4,35 @@ What changed in each JSRF-PC version, newest first. Upstream JSRF Unleashed's
 own changes are in
 [its changelog](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/blob/main/CHANGELOG.md).
 
+## b2.1-hotfix (beta) — 14 November 2026
+
+A hotfix to b2.1.
+
+### Fixed
+
+- **Buildings in Dogenzaka Hill's sky:** With Far buildings on, the top of
+  Dogenzaka Hill showed in the sky over its bottom. At 3×, the new default,
+  it no longer does.
+- **Patches on characters with Textures upscaling:** With Graphics >
+  Upscaling > Textures on, the characters' light and shadow could break into
+  patches, triangle by triangle. They now keep the game's own tones, and the
+  rest of their textures are still upscaled.
+- **Chuo Street's halfpipe:** The bright patches along it with Far shadows on
+  are gone at 3×, the new default.
+
+### Changed
+
+- **Presets:** Each preset in File > Presets now sets every setting but
+  Developer's. It also puts the game full screen, Upscaling's Cleanup as a
+  new install has it, and the free camera's own settings back to their
+  defaults.
+- **Far buildings and Far shadows:** Each is now a choice of how far ahead to
+  draw, in Display > Building distance: Off, 1×, 2×, 3× (the default), or
+  All, which is b2.1's Far buildings. Far shadows never reaches further than
+  Far buildings, and your b2.1 setting carries over, on as 3×.
+- **Draw copies:** Developer > Engine switches > JSRF_DRAW_COPIES, which did
+  nothing, is gone.
+
 ## b2.1 (beta) — 14 November 2026
 
 ### Added
