@@ -208,6 +208,13 @@ input goes to the menu.
     after its release, or released through the wrong call. While it is on,
     the memory the game releases is kept back, out of reach, until the game
     needs that space again; where the game's memory goes doesn't change.
+    RECOMP_INPUT_LATENCY logs how long each press on the first controller or
+    the keyboard takes to reach the screen, a line each: when the game read
+    it, when the first frame drawn after that was reached, handed over, and
+    swapped, and on Linux the display's next refresh after that, the soonest
+    it can be seen. For a key, also how long before the read the window took
+    it in. Every 10 s, each of those steps' median and worst. What the
+    compositor and the screen add after that isn't in it.
   - **Engine switches:** Turn parts of the engine off, or change how they
     work, to compare.
   - **Performance:** What the engine does for speed, each on by default

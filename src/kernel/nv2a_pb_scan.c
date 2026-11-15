@@ -70,6 +70,15 @@ static int s_scan_enabled = -1;
 static volatile uint32_t *s_get;
 void nv2a_pb_scan_keep_get(volatile uint32_t *get) { s_get = get; }
 
+/* The address of the command being run, physical as DMA_PUT, kept while the
+ * input latency log asks (nv2a_latency.h, which places each flip by it): as
+ * GET is, each command's as the walk reaches it, and inside a call the
+ * call's. Read on the walk's own thread, by the method it runs. */
+static int      s_keep_at;
+static uint32_t s_at;
+void nv2a_pb_scan_keep_at(int on) { s_keep_at = on; }
+uint32_t nv2a_pb_scan_at(void) { return s_at; }
+
 /* An index from (subchannel, method) straight to the inventory slot.
  *
  * This function used to walk the inventory looking for the pair, and it runs
@@ -241,6 +250,8 @@ uint32_t nv2a_pb_scan(uint32_t start_va, uint32_t end_va)
         uint32_t w;
         if (s_get && !s_in_sub)
             __atomic_store_n(s_get, va & 0x0FFFFFFFu, __ATOMIC_SEQ_CST);
+        if (s_keep_at && !s_in_sub)
+            s_at = va & 0x0FFFFFFFu;
         w = *(const uint32_t *)(mem + va);
         va += 4;
         words++;

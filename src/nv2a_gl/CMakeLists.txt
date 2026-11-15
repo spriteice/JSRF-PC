@@ -19,6 +19,7 @@ set(NV2A_GL_SOURCES
     nv2a_seethru.c              # the see-through fix: which draws are split, and the held-back list
     nv2a_upscale.c              # 2D, 3D and graffiti upscaling: which textures each takes, and the caps
     nv2a_upscale_glsl.c         # upscaling: Super-xBR's passes, for the device
+    nv2a_latency.c              # the input latency log: presses to the frames that show them
 )
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     # The display's refreshes as the kernel counts them, for frame pacing

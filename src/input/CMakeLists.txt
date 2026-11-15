@@ -1,6 +1,6 @@
 # Xbox Input → the host's pads, through SDL2's GameController API
 
-add_library(xbox_input STATIC xinput_device.c rumble_hold.c)
+add_library(xbox_input STATIC xinput_device.c rumble_hold.c input_press.c)
 
 target_include_directories(xbox_input PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 

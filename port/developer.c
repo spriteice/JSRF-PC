@@ -88,6 +88,7 @@ static const DevSwitch k_logging[] = {
     { "RECOMP_GL_UPSCALE_LOG", "1" },       /* 2D, 3D and graffiti upscaling's census: what their rules take (nv2a_upscale.h) */
     { "RECOMP_GL_VERBOSE", "1" },
     { "RECOMP_HEAP_GUARD", "1" },           /* released memory held, and its misuse said (src/kernel/xbox_heap.c) */
+    { "RECOMP_INPUT_LATENCY", "1" },        /* each press's way to the screen (src/nv2a_gl/nv2a_latency.h) */
     { "RECOMP_KERNEL_IO", "1" },
     { "RECOMP_LOCK_WATCH", "1" },
     { "RECOMP_USB_TRACE", "1" },

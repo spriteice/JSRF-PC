@@ -387,6 +387,12 @@ void xbox_Nv2aRegisterWritten(uint32_t addr, unsigned size)
     }
 }
 
+uint32_t xbox_Nv2aDmaPut(void)
+{
+    if (!g_nv2a_memory) return 0;
+    return *(volatile uint32_t *)((char *)g_nv2a_memory + NV2A_USER_DMA_PUT) & 0x0FFFFFFFu;
+}
+
 static void nv2a_queue_report(void)
 {
     static int said_stale;

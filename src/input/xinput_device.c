@@ -8,6 +8,7 @@
  */
 
 #include "xinput_xbox.h"
+#include "input_press.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -109,15 +110,19 @@ static int input_script(DWORD port, XBOX_INPUT_STATE *pState)
  * the keys are OR-ed over whatever the controller reported: nothing held
  * changes nothing. Only available in a windowed run -- there is no keyboard
  * to read otherwise -- so the symbol is weak (the SDL window's, nv2a_gl.c).
- * Returns 1 if a key was held. */
-static int kb_merge(DWORD dwPort, WORD *out, unsigned char analog[8], short axes[4])
+ * Returns 1 if a key was held, and *held the keys held as the latency log
+ * counts them (input_press.h). */
+static int kb_merge(DWORD dwPort, WORD *out, unsigned char analog[8], short axes[4],
+                    uint32_t *held)
 {
     extern int nv_window_keys(unsigned short *b, unsigned char *a)
         __attribute__((weak));
     unsigned short kb = 0;
     unsigned char ka[8] = { 0 };
     int i;
+    *held = 0;
     if (!(nv_window_keys && dwPort == 0 && nv_window_keys(&kb, ka))) return 0;
+    *held = input_press_keys(kb, ka);
     if (kb & 0x0001u) *out |= XBOX_GAMEPAD_DPAD_UP;
     if (kb & 0x0002u) *out |= XBOX_GAMEPAD_DPAD_DOWN;
     if (kb & 0x0004u) *out |= XBOX_GAMEPAD_DPAD_LEFT;
@@ -172,6 +177,7 @@ static BOOL  g_controller_connected[XBOX_MAX_CONTROLLERS];
 static DWORD g_packet[XBOX_MAX_CONTROLLERS];
 static RumbleHold g_rumble[XBOX_MAX_CONTROLLERS];   /* each port's motors (rumble_hold.h) */
 static void rumble_send(DWORD port);
+static void latency_presses(DWORD port, uint32_t pad, uint32_t keys, DWORD pass);
 
 /* Open the attached game controllers into free slots, in the order SDL lists
  * them, and let go of any that went away -- so a pad plugged in (or paired)
@@ -283,6 +289,7 @@ DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
     unsigned char analog[8];
     short axes[4];
     int have_pad = 0;
+    uint32_t pad_held = 0, keys_held = 0;   /* for the latency log */
 
     if (pState && input_script(dwPort, pState)) return ERROR_SUCCESS;
     if (dwPort >= XBOX_MAX_CONTROLLERS || !pState)
@@ -329,11 +336,12 @@ DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
             axes[1] = (short)(-1 - SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTY));
             axes[2] = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_RIGHTX);
             axes[3] = (short)(-1 - SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_RIGHTY));
+            pad_held = input_press_pad(out, analog, axes);
         }
     }
 
     /* The window's keyboard (kb_merge, above). */
-    if (kb_merge(dwPort, &out, analog, axes)) have_pad = 1;
+    if (kb_merge(dwPort, &out, analog, axes, &keys_held)) have_pad = 1;
     menu_gate(dwPort, &out, analog, axes);
 
     if (!have_pad) {
@@ -344,6 +352,7 @@ DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
         fprintf(stderr, "[PAD] controller %u connected\n", (unsigned)dwPort);
     g_controller_connected[dwPort] = TRUE;
     pState->dwPacketNumber = ++g_packet[dwPort];
+    latency_presses(dwPort, pad_held, keys_held, pState->dwPacketNumber);
     pState->Gamepad.wButtons = out;
     pState->Gamepad.bAnalogButtons[XBOX_BUTTON_A]        = analog[0];
     pState->Gamepad.bAnalogButtons[XBOX_BUTTON_B]        = analog[1];
@@ -373,6 +382,28 @@ int xbox_InputKeyboardMove(DWORD dwPort, int *x, int *y)
     *x = ((kb & 0x0008u) ? 1 : 0) - ((kb & 0x0004u) ? 1 : 0);
     *y = ((kb & 0x0001u) ? 1 : 0) - ((kb & 0x0002u) ? 1 : 0);
     return (kb & 0x000Fu) != 0;
+}
+
+/* The input latency log (RECOMP_INPUT_LATENCY): each press on the first
+ * pad or the keyboard (input_press.h) that the game reads while the in-game
+ * menu is shut, handed to the window, which follows it to the screen
+ * (src/nv2a_gl/nv2a_latency.h) and drops it when the log is off. The
+ * window's, so weak, as nv_window_keys is. pass: the read's packet number. */
+static void latency_presses(DWORD port, uint32_t pad, uint32_t keys, DWORD pass)
+{
+    extern void nv_window_latency_press(const char *what, int key, unsigned pass)
+        __attribute__((weak));
+    static uint32_t pad_was, keys_was;
+    uint32_t p = pad & ~pad_was, k = keys & ~keys_was;
+    int i;
+    if (port != 0 || !nv_window_latency_press) return;
+    pad_was = pad;
+    keys_was = keys;
+    if ((!p && !k) || (nv_window_menu_open && nv_window_menu_open() > 0)) return;
+    for (i = 0; i < INPUT_PRESS_PAD; i++)
+        if (p & (1u << i)) nv_window_latency_press(input_press_pad_name(i), -1, (unsigned)pass);
+    for (i = 0; i < INPUT_PRESS_KEYS; i++)
+        if (k & (1u << i)) nv_window_latency_press(NULL, i, (unsigned)pass);
 }
 
 /* Vibration, as the game last set it, sent to the pad in the slot when it is

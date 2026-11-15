@@ -448,6 +448,14 @@ void nv2a_dclock_handed_over(double t)
     }
 }
 
+double nv2a_dclock_next(double t)
+{
+    double last;
+    if (g_dc.state != DC_KEEPING || g_dc.period <= 0.0) return 0.0;
+    last = (double)g_dc.ns * NS;
+    return last + ceil((t - last) / g_dc.period) * g_dc.period;
+}
+
 void nv2a_dclock_report(void)
 {
     if (!g_dc.opened) return;

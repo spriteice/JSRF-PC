@@ -41,6 +41,7 @@
 #include "nv2a_upscale.h"
 #include "nv2a_hash.h"
 #include "nv2a_psh_consts.h"
+#include "nv2a_latency.h"
 
 /*
  * Two ways to get a 3.3 core context.
@@ -721,6 +722,13 @@ float nv2a_wide_aspect(void);
 #if defined(NV2A_GL_USE_SDL)
 static SDL_Window   *g_window;
 static SDL_GLContext g_sdl_ctx;
+/* The input latency log (nv2a_latency.h): the presses read, the flips, and
+ * the frames handed over and swapped. Its flips are placed by the walk's
+ * address (nv2a_pb_scan.c), and its presses by the title's DMA_PUT. */
+static Nv2aLat g_lat;
+uint32_t xbox_Nv2aDmaPut(void);             /* xbox_memory_layout.c */
+uint32_t nv2a_pb_scan_at(void);             /* nv2a_pb_scan.c */
+void     nv2a_pb_scan_keep_at(int on);
 int  nv2a_wide_shape(void);
 void nv2a_set_wide_display(int w, int h);
 #else
@@ -1491,6 +1499,8 @@ static int gl_init(uint32_t w, uint32_t h)
      * thread that runs the GPU. RECOMP_VSYNC=1 asks for it anyway. */
     { const char *v = getenv("RECOMP_VSYNC");
       SDL_GL_SetSwapInterval(v && atoi(v) ? 1 : 0); }
+    /* The input latency log places each flip by its command's address. */
+    if (nv2a_lat_on()) nv2a_pb_scan_keep_at(1);
     /* Or, on Windows, a presenter thread swaps in step with the display. */
     pres_start();
 #if defined(NV2A_DISPLAY_CLOCK)
@@ -1742,6 +1752,26 @@ int nv_window_pref_shape(void)
 static volatile unsigned short g_sdl_kb_buttons;
 static volatile unsigned char  g_sdl_kb_analog[8];
 
+/* For the input latency log (nv2a_latency.h): when the window's events were
+ * last pumped and the time before that (sdl_pump), and as each key went
+ * down, those two: when SDL had it, and the pump it came in after. The keys
+ * in nv_window_keys' order, its 12 bits and then its 8 analog keys, as the
+ * input layer counts them (src/input/input_press.h). */
+#define NV_KEYS      20
+#define NV_KEY_BITS  12
+static volatile double g_sdl_pump_at, g_sdl_pump_before;
+static volatile double g_sdl_kb_at[NV_KEYS], g_sdl_kb_before[NV_KEYS];
+static const char *const g_sdl_key_names[NV_KEYS] = {
+    "W", "S", "A", "D", "Return", "Esc", "Up", "Down", "Left", "Right", "C", "V",
+    "Space or J", "K", "H", "L", "R", "F", "Q", "E",
+};
+
+static void sdl_key_down_at(int k)
+{
+    g_sdl_kb_at[k] = g_sdl_pump_at;
+    g_sdl_kb_before[k] = g_sdl_pump_before;
+}
+
 static void sdl_key(SDL_Scancode sc, int down)
 {
     unsigned short bit = 0;
@@ -1770,10 +1800,18 @@ static void sdl_key(SDL_Scancode sc, int down)
     default: return;
     }
     if (bit) {
+        if (down && !(g_sdl_kb_buttons & bit) && nv2a_lat_on()) {
+            int k = 0;
+            while (!(bit & (1u << k))) k++;
+            sdl_key_down_at(k);
+        }
         if (down) g_sdl_kb_buttons |= bit;
         else      g_sdl_kb_buttons &= (unsigned short)~bit;
     }
-    if (analog >= 0) g_sdl_kb_analog[analog] = down ? 255 : 0;
+    if (analog >= 0) {
+        if (down && !g_sdl_kb_analog[analog] && nv2a_lat_on()) sdl_key_down_at(NV_KEY_BITS + analog);
+        g_sdl_kb_analog[analog] = down ? 255 : 0;
+    }
 }
 
 /* A key the game binds for itself (port/freecam.c's F8), by SDL's name for
@@ -1858,6 +1896,27 @@ int nv_window_keys(unsigned short *buttons, unsigned char *analog)
         if (v) any = 1;
     }
     return any;
+}
+
+/* Asked by the input layer (xinput_device.c) at the game's read of the first
+ * pad, for each press it saw there (src/input/input_press.h): one of the
+ * pad's controls, named (key -1), or one of nv_window_keys' keys, by its
+ * place in NV_KEYS' order. For the input latency log (nv2a_latency.h), with
+ * when SDL had it and where the title's pushbuffer had got to. Defined on
+ * every SDL build, as nv_window_keys is. */
+void nv_window_latency_press(const char *what, int key, unsigned pass);
+void nv_window_latency_press(const char *what, int key, unsigned pass)
+{
+    double now, sdl, before = 0.0;
+    if (!nv2a_lat_on() || key >= NV_KEYS) return;
+    now = sdl = mono_now();
+    if (key >= 0) {
+        what = g_sdl_key_names[key];
+        sdl = g_sdl_kb_at[key];
+        before = g_sdl_kb_before[key];
+        if (sdl <= 0.0 || sdl > now) { sdl = now; before = 0.0; }
+    }
+    nv2a_lat_read(&g_lat, what, key >= 0, pass, sdl, before, now, xbox_Nv2aDmaPut());
 }
 
 static void sdl_toggle_fullscreen(void)
@@ -2443,21 +2502,21 @@ static void sdl_fit(int sw, int sh, float shape, int ww, int wh, int *dw, int *d
 /* The frame, fitted into the window between black bars (sdl_fit). One
  * blit, after halving the frame where it is more than twice the size it is
  * shown at (nv2a_fit.h); every piece of GL state the renderer caches is put
- * back the way it was. */
-static void sdl_present(GLuint src_fbo, int sw, int sh, float shape)
+ * back the way it was. 1 once it is swapped, 0 with nothing to show it in. */
+static int sdl_present(GLuint src_fbo, int sw, int sh, float shape)
 {
     static Nv2aFit fit;                 /* this context's: the GPU thread's */
     GLint vp[4], sbox[4], rfb = 0, dfb = 0;
     GLboolean sc = glIsEnabled(GL_SCISSOR_TEST), cm[4];
     int ww = 0, wh = 0, dw, dh;
-    if (sw <= 0 || sh <= 0) return;
+    if (sw <= 0 || sh <= 0) return 0;
     glGetIntegerv(GL_VIEWPORT, vp);
     glGetIntegerv(GL_SCISSOR_BOX, sbox);
     glGetBooleanv(GL_COLOR_WRITEMASK, cm);
     glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &rfb);
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &dfb);
     SDL_GL_GetDrawableSize(g_window, &ww, &wh);
-    if (ww <= 0 || wh <= 0) return;
+    if (ww <= 0 || wh <= 0) return 0;
     sdl_fit(sw, sh, shape, ww, wh, &dw, &dh);
     glDisable(GL_SCISSOR_TEST);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -2482,6 +2541,7 @@ static void sdl_present(GLuint src_fbo, int sw, int sh, float shape)
           fprintf(stderr, "[WIN] presented #%d: %dx%d frame into %dx%d (%dx%d)\n",
                   said, sw, sh, ww, wh, dw, dh);
       } }
+    return 1;
 }
 
 /* ---- the presenter: frames reach the screen from a thread of their own ---
@@ -2786,6 +2846,7 @@ static int SDLCALL pres_main(void *arg)
         SDL_GL_SwapWindow(g_window);
         glFinish();                     /* the swap done: when the display took it */
         t = mono_now();
+        if (nv2a_lat_on()) nv2a_lat_swapped(&g_lat, serial, t, 0.0);
         SDL_LockMutex(g_gs_mu);
         g_gs_busy = -1;
         SDL_UnlockMutex(g_gs_mu);
@@ -2921,6 +2982,10 @@ static double pres_lock(double base, double *ref, double *refresh)
 static void sdl_pump(void)
 {
     SDL_Event ev;
+    if (nv2a_lat_on()) {                /* when the keys below came in (sdl_key) */
+        g_sdl_pump_before = g_sdl_pump_at;
+        g_sdl_pump_at = mono_now();
+    }
     while (SDL_PollEvent(&ev)) {
 #if defined(XBOXRECOMP_MENU)
         if (xbox_MenuEvent(&ev)) continue;      /* F1, a pad's Back, or the menu's */
@@ -2971,15 +3036,40 @@ static void sdl_pump(void)
 #endif
 }
 
+/* The display's next refresh at or after t, for the input latency log: on
+ * Linux, as the kernel counts them (nv2a_display_clock.c); 0 when not known. */
+static double sdl_next_refresh(double t)
+{
+#if defined(NV2A_DISPLAY_CLOCK)
+    return nv2a_dclock_next(t);
+#else
+    (void)t;
+    return 0.0;
+#endif
+}
+
 /* A finished frame to the window, the way frames go -- handed to the
- * presenter, or presented here -- and then the window's events. */
+ * presenter, or presented here -- and then the window's events. The input
+ * latency log is told when each frame is handed over and, for one presented
+ * here, when its swap ended (the presenter tells it of its own). */
 static void sdl_show(GLuint fbo, int w, int h, float shape)
 {
+    int lat = nv2a_lat_on();
+    double t = lat ? mono_now() : 0.0;
 #if defined(NV2A_SDL_PRESENTER)
-    if (g_presenter == 1) sdl_hand_over(fbo, w, h, shape);
-    else
+    if (g_presenter == 1) {
+        sdl_hand_over(fbo, w, h, shape);
+        if (lat) nv2a_lat_handed(&g_lat, g_gs_serial, t);
+    } else
 #endif
-    sdl_present(fbo, w, h, shape);
+    {
+        static uint64_t swaps;          /* frames handed over here */
+        if (lat) nv2a_lat_handed(&g_lat, ++swaps, t);
+        if (sdl_present(fbo, w, h, shape) && lat) {
+            double end = mono_now();
+            nv2a_lat_swapped(&g_lat, swaps, end, sdl_next_refresh(end));
+        }
+    }
     sdl_pump();
 }
 
@@ -13559,6 +13649,13 @@ static void gl_method(uint32_t method, uint32_t param)
         }
         return;
     }
+
+#if defined(NV2A_GL_USE_SDL)
+    /* A flip reached, for the input latency log (nv2a_latency.h): the case
+     * below then paces its frame and hands it over. */
+    if (method == M_FLIP_STALL && g_window && nv2a_lat_on())
+        nv2a_lat_flip(&g_lat, nv2a_pb_scan_at(), mono_now());
+#endif
 
     switch (method) {
     case M_SET_SURFACE_CLIP_H:

@@ -201,6 +201,10 @@ int xbox_nv2a_intr_write(uint32_t addr, uint32_t val, unsigned size);
 /* A guest write landed in the NV2A's registers (recomp_mmio_write, after the
  * write): the register model answers what has to be answered at once. */
 void xbox_Nv2aRegisterWritten(uint32_t addr, unsigned size);
+/* DMA_PUT as the title last wrote it: the physical address it has sent its
+ * pushbuffer on to (D3D's KickOff), 0 with no register aperture. For the
+ * input latency log (src/nv2a_gl/nv2a_latency.h), on the title's thread. */
+uint32_t xbox_Nv2aDmaPut(void);
 
 int xbox_Nv2aMirrorFence(uint32_t device_ptr_va,
                          uint32_t put_off, uint32_t get_ptr_off);

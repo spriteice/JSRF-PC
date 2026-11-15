@@ -9,7 +9,7 @@
 > out of date there: say so. The generated code is never edited, and a bug
 > is fixed where it starts, not stubbed out or guarded around.
 
-Maps the Xbox controller API to the host's pads, through SDL2's GameController API on Linux and Windows. The original Xbox used `XInputGetState` with a slightly different structure layout than the XInput API on Windows; this layer keeps the Xbox's layout and fills it from SDL2, with the window's keyboard merged in. src/usb's controller (`usb_gamepad.c`) reports that state to the game's own USB driver. While the in-game menu is open it has the pad, and the game sees nothing pressed.
+Maps the Xbox controller API to the host's pads, through SDL2's GameController API on Linux and Windows. The original Xbox used `XInputGetState` with a slightly different structure layout than the XInput API on Windows; this layer keeps the Xbox's layout and fills it from SDL2, with the window's keyboard merged in. src/usb's controller (`usb_gamepad.c`) reports that state to the game's own USB driver. While the in-game menu is open it has the pad, and the game sees nothing pressed. With `RECOMP_INPUT_LATENCY`, each press on the first pad or the keyboard that the game reads is handed to the window, which follows it to the screen (`src/nv2a_gl/nv2a_latency.h`).
 
 ## Files
 
@@ -18,6 +18,7 @@ Maps the Xbox controller API to the host's pads, through SDL2's GameController A
 | `xinput_xbox.h` | Public header — types, button constants, function prototypes |
 | `xinput_device.c` | Implementation: SDL2's GameController and the window's keyboard, as the Xbox gamepad's state |
 | `rumble_hold.c`, `rumble_hold.h` | When to send the vibration the game set to the host's pad, so it holds as the console's does (no SDL in it, for tests/rumble) |
+| `input_press.c`, `input_press.h` | What the input latency log (`RECOMP_INPUT_LATENCY`) counts as a press on the first pad or the keyboard: a control held at a read that wasn't at the one before (no SDL in it, for tests/input_latency) |
 
 ## Quick Start
 

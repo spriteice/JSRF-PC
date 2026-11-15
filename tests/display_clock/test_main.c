@@ -455,6 +455,7 @@ int main(void)
         said = heard();
         check(nv2a_dclock_lock(1.0 / 60.0, 1.0, &ref, &refresh, &at) == 0.0 && !*said,
               "it does not pace, ask the kernel or report");
+        check(nv2a_dclock_next(1.0) == 0.0, "nor know the next refresh");
     }
 
     fresh("one display, 119.95 Hz (an Ally X's panel); SDL says 120", NULL, NULL);
@@ -474,6 +475,11 @@ int main(void)
     printf("  paced by the display from %.2f s\n", t - t0);
     check(t > t0 + 1.0 && t < t0 + 1.6, "from a second and a half at the latest");
     check(fabs(1.0 / g_dc.period - 119.95) < 0.0005, "its rate measured to within 0.0005 Hz");
+    {   /* the input latency log's: a refresh of the display's, the first at or after t */
+        double tn = K.t + 0.004, nx = nv2a_dclock_next(tn), k = (nx - s->base_t) / s->period;
+        check(nx >= tn && nx < tn + g_dc.period && fabs(k - floor(k + 0.5)) * s->period < 0.0001,
+              "the next refresh after a time is the display's, within a refresh of it");
+    }
     v = judge(s, t0 + 3.0, t0 + 29.5, 0.15);
     show("from 3 s", v);
     check(v.paced == v.frames && v.stays[2] == v.frames,

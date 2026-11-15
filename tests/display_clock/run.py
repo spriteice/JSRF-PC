@@ -10,7 +10,8 @@ src/nv2a_gl/nv2a_display_clock.c as it is, with the kernel's side of it
 on them and when they refresh. With it, the part of frame_pace that paces by
 it, taken from src/nv2a_gl/nv2a_gl.c as it is. A game hands over 60 frames a
 second to a compositor that shows the newest finished one at each refresh;
-each case says how many refreshes the frames stayed on screen.
+each case says how many refreshes the frames stayed on screen. And the
+next refresh after a time, which the input latency log asks for.
 
 Linux, with the kernel's headers (linux-libc-dev); requires GCC on PATH.
 CC, when set, is the compiler instead of gcc.

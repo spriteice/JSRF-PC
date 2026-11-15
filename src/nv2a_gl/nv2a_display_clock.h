@@ -29,6 +29,11 @@ double nv2a_dclock_lock(double base, double now, double *ref, double *refresh, d
 /* When frame_pace let the frame go, for the report. */
 void nv2a_dclock_handed_over(double t);
 
+/* For the input latency log (nv2a_latency.h): the first of the display's
+ * refreshes at or after t (mono_now()), as the kernel counts them; 0 while
+ * its counts don't keep time. On the GL thread, as the rest. */
+double nv2a_dclock_next(double t);
+
 /* A line for the last 10 s, from the GL thread's report. */
 void nv2a_dclock_report(void);
 
