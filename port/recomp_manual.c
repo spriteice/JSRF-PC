@@ -5266,9 +5266,9 @@ void sub_000A5070(void)
  * camera (mode 13) is the one mode it leaves be (camwall_mode_on): the game
  * aims that shot at the spot being sprayed, so the surface is right by the
  * target, and the test would bring the eye in to a first-person view.
- * And Default cam fix (camwall_on, Controller's row) turns it off for the
- * game's own eye altogether; the free camera's is kept out of walls either
- * way.
+ * And Default cam fix (camwall_on, its row in Input > Behaviour) turns it
+ * off for the game's own eye altogether; the free camera's is kept out of
+ * walls either way.
  * Each camera keeps its own state (camwall_for): split screen's players',
  * and a scene's shown through another skater's camera. This supplies the
  * line test, the game's own. */

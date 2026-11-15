@@ -2072,10 +2072,10 @@ void nv_window_restart(void)
  * (spriteice, 12 November 2026: "can we have HUD scaling as it's own submenu
  * under aspect ratio", at 09:37 UTC, and its name on the card at 09:43 UTC,
  * "HUD"): HUD scale, the HUD's pieces at 0.5x to 1.5x their size, a tenth a
- * step with - and + as Controller's sensitivity has, kept as hudscale= (0.5
- * to 1.5); then Disable HUD, which draws none of them, kept as hudoff= (1,
- * or 0). Each is taken by the next piece drawn. Draw distance's rows go
- * under the submenu (port/draw_distance.c). */
+ * step with - and + as Input's free camera sensitivity has, kept as
+ * hudscale= (0.5 to 1.5); then Disable HUD, which draws none of them, kept
+ * as hudoff= (1, or 0). Each is taken by the next piece drawn. Draw
+ * distance's rows go under the submenu (port/draw_distance.c). */
 #define SDL_HUD_GROUP "HUD"
 static double sdl_hud_scale(void) { return g_hud_tenths / 10.0; }
 static void sdl_hud_scale_set(double v)

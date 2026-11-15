@@ -13,7 +13,8 @@
 #include <stdint.h>
 
 /* At start, before the game runs: reads the settings, adds the in-game menu's
- * Controller rows and binds F8 and a pad's R3, which turn freecam on or off. */
+ * Free camera submenu, at the top of Input, with its rows, and binds F8 and a
+ * pad's R3, which turn freecam on or off. */
 void freecam_start(void);
 
 /* Once a game frame: freecam steers the camera, and takes the stick, while it

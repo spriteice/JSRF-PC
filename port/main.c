@@ -737,11 +737,11 @@ static int host_main(void)
     /* The Developer menu's switches into the environment, before anything
      * reads them, and the log off if it was left off (port/developer.c). */
     { extern void developer_start(void); developer_start(); }
-    /* The free camera's settings, its rows on the Controller page and F8
-     * (port/freecam.c). */
+    /* The free camera's settings, its rows in Input > Free camera, at the top
+     * of the page, and F8 (port/freecam.c). */
     { extern void freecam_start(void); freecam_start(); }
-    /* Whether the game's own camera is kept out of walls, and its row on the
-     * Controller page, under Free camera (port/camera_walls.c). */
+    /* Whether the game's own camera is kept out of walls, and its row, the
+     * first in Input > Behaviour (port/camera_walls.c). */
     { extern void camwall_start(void); camwall_start(); }
     /* Whether the intro is skipped, and its row in Display > Skips
      * (port/intro.c). */

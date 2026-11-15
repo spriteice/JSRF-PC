@@ -15,11 +15,13 @@
 
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); exit(1); } } while (0)
 
-static XBOX_MENU_ITEM s_row;
+/* The rows it adds: Input's Behaviour submenu, then its row in it. */
+static XBOX_MENU_ITEM s_group, s_row;
 static int s_rows;
 void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count)
 {
-    if (count > 0) s_row = items[0];
+    if (count > 0) s_group = items[0];
+    if (count > 1) s_row = items[1];
     s_rows += count;
 }
 
@@ -27,12 +29,15 @@ int main(int argc, char **argv)
 {
     const char *c = argc > 1 ? argv[1] : "";
     camwall_start();
-    /* One row: a toggle on the Controller page, right below Free camera,
-     * showing the setting, and taking effect at once. */
-    CHECK(s_rows == 1);
-    CHECK(s_row.menu == XBOX_MENU_CONTROLLER && s_row.kind == XBOX_ITEM_TOGGLE && !s_row.last);
+    /* Input's Behaviour submenu, with its hint, then the row in it: a
+     * toggle showing the setting, and taking effect at once. */
+    CHECK(s_rows == 2);
+    CHECK(s_group.menu == XBOX_MENU_INPUT && s_group.kind == XBOX_ITEM_GROUP);
+    CHECK(!strcmp(s_group.label, XBOX_GROUP_BEHAVIOUR) && !strcmp(s_group.label, "Behaviour"));
+    CHECK(s_group.hint && !strcmp(s_group.hint, "Configure the keyboard movement in relation to the camera."));
+    CHECK(s_row.menu == XBOX_MENU_INPUT && s_row.kind == XBOX_ITEM_TOGGLE && !s_row.last);
     CHECK(!strcmp(s_row.label, "Default cam fix") && !s_row.confirm);
-    CHECK(s_row.under && !strcmp(s_row.under, "Free camera"));
+    CHECK(s_row.group && !strcmp(s_row.group, XBOX_GROUP_BEHAVIOUR) && !s_row.under);
     /* A hint, a sentence short enough for the strip (menu.h). */
     CHECK(s_row.hint && strlen(s_row.hint) <= MENU_HINT_LONGEST && s_row.hint[strlen(s_row.hint) - 1] == '.');
     CHECK(s_row.state() == camwall_on());

@@ -29,9 +29,9 @@ Default cam fix (dcamfix=): the same port/camera_walls.c, with the
 settings file code from src/nv2a_gl/nv2a_gl.c verbatim (sdl_cfg_path
 through sdl_cfg_set, with nv_window_pref_num between them), as tests/intro
 does; test_setting.c stands in for the menu. On with no dcamfix= and with
-dcamfix=1, off with dcamfix=0, and its Controller row, under Free camera,
-turning it off at once and keeping dcamfix=0, and off in File > Presets'
-Xbox mode, on in the other two. Each case gets its own settings file,
+dcamfix=1, off with dcamfix=0, and its row, after Input's Behaviour
+submenu (with its hint) and in it, turning it off at once and keeping
+dcamfix=0, and off in File > Presets' Xbox mode, on in the other two. Each case gets its own settings file,
 passed as JSRF_SETTINGS_FILE, and its own run, since the setting is read
 once.
 Requires GCC on PATH, including MinGW on Windows.

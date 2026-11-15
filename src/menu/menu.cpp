@@ -15,7 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char *const k_menu_title[] = { "File", "Display", "Graphics", "Audio", "Controller", "Developer" };
+static const char *const k_menu_title[] = { "File", "Display", "Graphics", "Audio", "Input", "Developer" };
 static_assert(IM_ARRAYSIZE(k_menu_title) == XBOX_MENU_COUNT, "a title for each menu in menu.h");
 
 /* The rows, and the boxes open over them -- by index: rows still arriving
@@ -66,7 +66,7 @@ static void take_queued(void)
     queue_unlock();
     g_under_told.resize(g_items.Size, 0);
     /* Every row but a separator says what it does, briefly (menu.h, hint).
-     * Every row of Display, Graphics, Audio and Controller gives its value in
+     * Every row of Display, Graphics, Audio and Input gives its value in
      * each of File > Presets' presets (menu.h, presets). One the presets set
      * is a TOGGLE, a CHOICE with choices, a NUMBER or a row of ticks
      * (TOGGLES) with no more than a bit of an int each, and one that asks

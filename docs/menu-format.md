@@ -8,15 +8,14 @@ each menu's rows live with the setting they change (File in
 `src/nv2a_gl/nv2a_gl.c`, Display's Draw distance and Building distance, with
 Far buildings and Far shadows, in `port/draw_distance.c`, Skip intro in
 `port/intro.c` and Music info in pause in `port/music_info.c`, Audio in
-`port/audio.c`, Controller in
-`port/freecam.c` and Default cam fix in `port/camera_walls.c`, Developer in
+`port/audio.c`, Input's Free camera in
+`port/freecam.c` and its Default cam fix in `port/camera_walls.c`, Developer in
 `port/developer.c`). A row marked last goes below any added later (`last` in
 `menu.h`). A row can instead go right below another row of its menu, which it
 names, whichever of the two was added first
 (`under` in `menu.h`): rows added as the game starts can sit among the
 window's, as Draw distance and the Building distance submenu sit under the
-HUD submenu, in the order they were added, or among another module's, as
-Default cam fix sits under Controller's Free camera. If no row has that
+HUD submenu, in the order they were added. If no row has that
 name, it goes at the end of its menu, above the last row, and the log says so
 once.
 
@@ -35,6 +34,12 @@ new skip or enhancement goes in one of them, not in Display itself. Graphics
 ends with one, Upscaling, marked last and added by the window too, for the
 rows that draw the game from sharper copies: Menus and HUD, Textures,
 Graffiti, Sharpness, Edge strength, then Cleanup, a row of two ticks.
+Input is two submenus, and nothing else: Free camera, added with its rows by
+`port/freecam.c` (Enable free camera, Auto centre, Invert X, Invert Y,
+Sensitivity X, Sensitivity Y, then Deadzone), then Behaviour, for how the
+game's camera acts: Default cam fix, which `port/camera_walls.c` adds with
+it (`group` in `menu.h`). A new input setting goes in one of them, or in a
+submenu of its own.
 
 ## Wording
 
@@ -159,7 +164,7 @@ Graffiti, Sharpness, Edge strength, then Cleanup, a row of two ticks.
   row does. A (Restart) row keeps its value instead, and the game restarts
   once, after them all, if one changed.
 - **A preset sets every setting but Developer's.** Every row of Display,
-  Graphics, Audio and Controller, in a submenu or not, gives its value in
+  Graphics, Audio and Input, in a submenu or not, gives its value in
   each preset where it's added (`presets` and `preset` in `menu.h`), with
   JSRF-PC default's from the constant its own default comes from, so the
   preset moves with the default. That takes in Fullscreen, full screen in

@@ -43,7 +43,7 @@ typedef enum {
     XBOX_MENU_DISPLAY,
     XBOX_MENU_GRAPHICS,
     XBOX_MENU_AUDIO,
-    XBOX_MENU_CONTROLLER,
+    XBOX_MENU_INPUT,
     XBOX_MENU_DEVELOPER,
     XBOX_MENU_COUNT
 } XBOX_MENU_ID;
@@ -74,8 +74,8 @@ typedef enum {
 
 /* What the presets do with a row (XBOX_MENU_ITEM's presets). A preset sets
  * every setting but Developer's: each row of Display, Graphics, Audio and
- * Controller gives its value in each preset, and the log says so once for
- * one that doesn't, which no preset then sets. */
+ * Input gives its value in each preset, and the log says so once for one
+ * that doesn't, which no preset then sets. */
 typedef enum {
     XBOX_PRESETS_UNSAID,    /* nothing said: File's and Developer's rows, which
                              * no preset sets                                 */
@@ -162,6 +162,13 @@ typedef struct XBOX_MENU_ITEM {
  * and Graffiti (2D, 3D and graffiti upscaling), then Sharpness, Edge
  * strength and Cleanup. */
 #define XBOX_GROUP_UPSCALING    "Upscaling"
+
+/* Input's submenus, in its order: Free camera (port/freecam.c adds it, with
+ * its rows), then Behaviour, for how the game's camera acts (Default cam
+ * fix: port/camera_walls.c adds it with its row). */
+#define XBOX_GROUP_FREECAM      "Free camera"
+#define XBOX_GROUP_BEHAVIOUR    "Behaviour"
+#define XBOX_GROUP_BEHAVIOUR_HINT "Configure the keyboard movement in relation to the camera."
 
 /* Two lines at 640 x 480, beside the pad's buttons. */
 #define MENU_HINT_LONGEST 70

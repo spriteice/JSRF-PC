@@ -60,7 +60,7 @@ struct camwall {
 void camwall_reset(struct camwall *w);
 
 /* Default cam fix: dcamfix= in the settings file (1, the default, or 0),
- * or Controller > Default cam fix, right below Free camera. Read once, at
+ * or Input > Behaviour > Default cam fix. Read once, at
  * start, before the game runs, which also adds the row: it changes the
  * setting at once and keeps it in the settings file, on the window's
  * thread. Off, the game's own eye stands where the game's wall test put it,

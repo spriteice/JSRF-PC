@@ -266,7 +266,8 @@ int freecam_on(void)
 }
 
 #if defined(XBOXRECOMP_MENU)
-/* The in-game menu's Controller page (src/menu/menu.h). A row changes what
+/* The in-game menu's Input page, its Free camera submenu (src/menu/menu.h,
+ * XBOX_GROUP_FREECAM), at the top of the page. A row changes what
  * freecam uses at once and keeps it in the settings file, as F8 keeps
  * freecam=; it runs on the window's thread, as F8 does. The deadzone is
  * shown, and stepped, in percent. */
@@ -288,42 +289,50 @@ static void   menu_dz_set(double v)    { s_cfg.deadzone = v / 100; nv_window_pre
 static void freecam_menu(void)
 {
     const XBOX_MENU_ITEM rows[] = {
+        { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_FREECAM,
+          .hint = "Free camera toggle and settings." },
         /* File > Presets: the game's own camera in Xbox mode, and how the
          * free camera handles at its defaults in each preset. */
-        { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_TOGGLE, .label = "Free camera",
-          .state = menu_on, .run = freecam_flip,
+        { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_TOGGLE, .label = "Enable free camera",
+          .group = XBOX_GROUP_FREECAM, .state = menu_on, .run = freecam_flip,
           .presets = XBOX_PRESETS_SET,
           .preset = { 0, FREECAM_ON_DEFAULT, FREECAM_ON_DEFAULT },
           .hint = "Lets the right stick control the camera." },
-        { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_CHOICE, .label = "Auto centre",
+        { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_CHOICE, .label = "Auto centre",
+          .group = XBOX_GROUP_FREECAM,
           .state = menu_centre, .pick = menu_centre_pick,
           .choices = k_centre_names, .nchoices = FREECAM_CENTRE_LEVELS,
           .presets = XBOX_PRESETS_SET,
           .preset = { FREECAM_CENTRE_DEFAULT, FREECAM_CENTRE_DEFAULT, FREECAM_CENTRE_DEFAULT },
           .hint = "Resets the camera shortly after the right stick rests." },
-        { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_TOGGLE, .label = "Invert X",
+        { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_TOGGLE, .label = "Invert X",
+          .group = XBOX_GROUP_FREECAM,
           .state = menu_inv_x, .run = menu_inv_x_run,
           .presets = XBOX_PRESETS_SET,
           .preset = { FREECAM_INVERT_DEFAULT, FREECAM_INVERT_DEFAULT, FREECAM_INVERT_DEFAULT },
           .hint = "Swaps the camera's left and right." },
-        { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_TOGGLE, .label = "Invert Y",
+        { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_TOGGLE, .label = "Invert Y",
+          .group = XBOX_GROUP_FREECAM,
           .state = menu_inv_y, .run = menu_inv_y_run,
           .presets = XBOX_PRESETS_SET,
           .preset = { FREECAM_INVERT_DEFAULT, FREECAM_INVERT_DEFAULT, FREECAM_INVERT_DEFAULT },
           .hint = "Swaps the camera's up and down." },
-        { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_NUMBER, .label = "Sensitivity X",
+        { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_NUMBER, .label = "Sensitivity X",
+          .group = XBOX_GROUP_FREECAM,
           .value = menu_sens_x, .set = menu_sens_x_set,
           .min = FREECAM_SENS_MIN, .max = FREECAM_SENS_MAX, .step = 1, .format = "%g",
           .presets = XBOX_PRESETS_SET,
           .preset = { FREECAM_SENS_DEFAULT, FREECAM_SENS_DEFAULT, FREECAM_SENS_DEFAULT },
           .hint = "Sets how fast the camera turns left and right." },
-        { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_NUMBER, .label = "Sensitivity Y",
+        { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_NUMBER, .label = "Sensitivity Y",
+          .group = XBOX_GROUP_FREECAM,
           .value = menu_sens_y, .set = menu_sens_y_set,
           .min = FREECAM_SENS_MIN, .max = FREECAM_SENS_MAX, .step = 1, .format = "%g",
           .presets = XBOX_PRESETS_SET,
           .preset = { FREECAM_SENS_DEFAULT, FREECAM_SENS_DEFAULT, FREECAM_SENS_DEFAULT },
           .hint = "Sets how fast the camera turns up and down." },
-        { .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_NUMBER, .label = "Deadzone",
+        { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_NUMBER, .label = "Deadzone",
+          .group = XBOX_GROUP_FREECAM,
           .value = menu_dz, .set = menu_dz_set, .min = 0, .max = 100, .step = 5, .format = "%g%%",
           .presets = XBOX_PRESETS_SET,
           .preset = { FREECAM_DEADZONE_DEFAULT * 100, FREECAM_DEADZONE_DEFAULT * 100,

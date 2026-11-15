@@ -3,7 +3,7 @@
  * What a camera keeps from one frame to the next, the share and the move
  * across, is each camera's own (camwall_for), or the caller's. Default cam
  * fix, whether the game's own eye is kept out of walls, is dcamfix= in the
- * settings file, or the Controller page's row (camwall_start); it runs on
+ * settings file, or its row in Input > Behaviour (camwall_start); it runs on
  * the window's thread, and the follow camera's hook reads it on the
  * game's. */
 #include <math.h>
@@ -28,9 +28,6 @@ static int nv_window_pref_num(const char *key, double *v)
 }
 #endif
 
-/* The row goes right under the free camera's own (port/freecam.c). */
-#define CAMWALL_UNDER "Free camera"
-
 /* On with no dcamfix= in the settings. */
 #define CAMWALL_DEFAULT 1
 
@@ -53,13 +50,17 @@ void camwall_start(void)
     fprintf(stderr, "[CAMWALL] default cam fix %s (settings)\n", s_on ? "on" : "off");
 #if defined(XBOXRECOMP_MENU)
     {
-        const XBOX_MENU_ITEM row = {
-            .menu = XBOX_MENU_CONTROLLER, .kind = XBOX_ITEM_TOGGLE, .label = "Default cam fix",
-            .state = menu_on, .run = menu_flip, .under = CAMWALL_UNDER,
-            /* File > Presets: the Xbox's own camera in Xbox mode. */
-            .presets = XBOX_PRESETS_SET, .preset = { 0, CAMWALL_DEFAULT, CAMWALL_DEFAULT },
-            .hint = "Fixes the default camera clipping through walls, mostly in widescreen." };
-        xbox_MenuAdd(&row, 1);
+        /* The first row of Input > Behaviour, which it adds too (menu.h). */
+        const XBOX_MENU_ITEM rows[] = {
+            { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_BEHAVIOUR,
+              .hint = XBOX_GROUP_BEHAVIOUR_HINT },
+            { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_TOGGLE, .label = "Default cam fix",
+              .group = XBOX_GROUP_BEHAVIOUR, .state = menu_on, .run = menu_flip,
+              /* File > Presets: the Xbox's own camera in Xbox mode. */
+              .presets = XBOX_PRESETS_SET, .preset = { 0, CAMWALL_DEFAULT, CAMWALL_DEFAULT },
+              .hint = "Fixes the default camera clipping through walls, mostly in widescreen." },
+        };
+        xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
     }
 #endif
 }

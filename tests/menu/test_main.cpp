@@ -155,7 +155,7 @@ static const XBOX_MENU_ITEM k_in_after = {
     XBOX_MENU_AUDIO, XBOX_ITEM_TOGGLE, "See through", in_state, see_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
     0, 0, 0, NULL, 0, NULL, "Shows what is behind glass.", NO_PRESETS, "Enhancements" };
 
-/* Numbers, as the Controller menu's: a sensitivity in whole steps, and a
+/* Numbers, as the Input menu's: a sensitivity in whole steps, and a
  * deadzone in 5% steps that starts between two (as the settings file may). */
 static double s_sens = 5, s_dead = 7;
 static int    s_sets;
@@ -177,12 +177,12 @@ static const char *const k_switches[] = { "First (Restart)", "Second (Restart)",
 
 /* File > Presets' rows (menu.h): a toggle, a choice with fewer choices on
  * this device than the presets name, a number kept as a fraction, as
- * Controller > Deadzone, and two (Restart) rows, which keep their values:
- * a choice whose state is the scale this run started at, as Render scale's,
- * and a toggle whose state is what it kept, as Audio effects'. A toggle
- * in a submenu, as Display > Enhancements' See through fix. And a row of
- * two ticks, as Graphics > Upscaling > Cleanup, the first ticked in JSRF-PC
- * default and both in Max quality. */
+ * Input > Free camera > Deadzone, and two (Restart) rows, which keep their
+ * values: a choice whose state is the scale this run started at, as Render
+ * scale's, and a toggle whose state is what it kept, as Audio effects'. A
+ * toggle in a submenu, as Display > Enhancements' See through fix. And a row
+ * of two ticks, as Graphics > Upscaling > Cleanup, the first ticked in
+ * JSRF-PC default and both in Max quality. */
 static int    p_smaa = 1, p_effects = 1, p_glass = 1;
 static int    p_ticks = 1, p_tick_picks;
 static int    p_aniso = 2;              /* 4x: JSRF-PC default's 8x is past this device's most */
@@ -221,7 +221,7 @@ static const XBOX_MENU_ITEM k_presets[] = {
       NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Smooths edges.", XBOX_PRESETS_SET, { 0, 1, 1 }, NULL, NULL },
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_CHOICE, "Filtering", p_aniso_state, NULL, p_aniso_pick, k_p_aniso, 3, NULL, NULL,
       NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sharpens textures.", XBOX_PRESETS_SET, { 0, 3, XBOX_PRESET_MOST }, NULL, NULL },
-    { XBOX_MENU_CONTROLLER, XBOX_ITEM_NUMBER, "Deadzone %", NULL, NULL, NULL, NULL, 0, NULL, NULL,
+    { XBOX_MENU_INPUT, XBOX_ITEM_NUMBER, "Deadzone %", NULL, NULL, NULL, NULL, 0, NULL, NULL,
       p_dz_value, p_dz_set, 0, 100, 5, "%g%%", 0, NULL, "Sets the stick's slack.", XBOX_PRESETS_SET, { 0, 15, 15 }, NULL, NULL },
     { XBOX_MENU_DISPLAY, XBOX_ITEM_CHOICE, "Scale (Restart)", p_scale_state, NULL, p_scale_pick, k_p_scales, 6, NULL,
       P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sets the scale.", XBOX_PRESETS_SET, { 0, 2, XBOX_PRESET_MOST },
@@ -418,7 +418,7 @@ static void click(void)
 
 int main(void)
 {
-    /* Developer first, then Controller, then Display, then File: the order
+    /* Developer first, then Input, then Display, then File: the order
      * on screen is the enum's, not the order rows arrive in. Before them
      * all, Display's last row. */
     const XBOX_MENU_ITEM developer[] = {
@@ -429,10 +429,10 @@ int main(void)
         { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLE, "Asks (Restart)", asked_state, asked_run, NULL, NULL, 0, NULL,
           "The game restarts to apply it.", NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Asks first.", NO_PRESETS, NULL },
     };
-    const XBOX_MENU_ITEM controller[] = {
-        { XBOX_MENU_CONTROLLER, XBOX_ITEM_NUMBER, "Sensitivity", NULL, NULL, NULL, NULL, 0, NULL, NULL,
+    const XBOX_MENU_ITEM input[] = {
+        { XBOX_MENU_INPUT, XBOX_ITEM_NUMBER, "Sensitivity", NULL, NULL, NULL, NULL, 0, NULL, NULL,
           sens_value, sens_set, 1, 10, 1, "%g", 0, NULL, "Sets how fast the camera turns.", NO_PRESETS, NULL },
-        { XBOX_MENU_CONTROLLER, XBOX_ITEM_NUMBER, "Deadzone", NULL, NULL, NULL, NULL, 0, NULL, NULL,
+        { XBOX_MENU_INPUT, XBOX_ITEM_NUMBER, "Deadzone", NULL, NULL, NULL, NULL, 0, NULL, NULL,
           dead_value, dead_set, 0, 100, 5, "%g%%", 0, NULL, "Sets how far the stick moves first.", NO_PRESETS, NULL },
     };
     const XBOX_MENU_ITEM display[] = {
@@ -454,7 +454,7 @@ int main(void)
     xbox_MenuAdd(&k_last, 1);
     xbox_MenuAdd(k_under, 4);
     xbox_MenuAdd(developer, 3);
-    xbox_MenuAdd(controller, 2);
+    xbox_MenuAdd(input, 2);
     xbox_MenuAdd(display, 3);
     xbox_MenuAdd(file, 3);
 
@@ -778,13 +778,13 @@ int main(void)
     fprintf(stderr, "pad Right, A: [%s]\n", open_menu());
     CHECK(strstr(open_menu(), "Display") != NULL);
 
-    /* Numbers. Right to Controller; A opens it on the
+    /* Numbers. Right to Input; A opens it on the
      * first row's -. A: one step down, set once. Right to +, A twice: two
      * steps up. */
     frame(ImGuiKey_GamepadDpadRight); frames(2);
     frame(ImGuiKey_GamepadFaceDown); frames(2);
-    fprintf(stderr, "controller: [%s] %s\n", open_menu(), nav_state());
-    CHECK(strstr(open_menu(), "Controller") != NULL);
+    fprintf(stderr, "input: [%s] %s\n", open_menu(), nav_state());
+    CHECK(strstr(open_menu(), "Input") != NULL);
     CHECK(hint_is("Sets how fast the camera turns."));
     frame(ImGuiKey_GamepadFaceDown); frames(1);
     fprintf(stderr, "sensitivity after -: %g, sets %d\n", s_sens, s_sets);
@@ -803,7 +803,7 @@ int main(void)
     }
     fprintf(stderr, "+ held: %g, sets %d\n", s_sens, s_sets);
     CHECK(s_sens == 10 && s_sets == 7);
-    CHECK(strstr(open_menu(), "Controller") != NULL);
+    CHECK(strstr(open_menu(), "Input") != NULL);
     /* Down to the deadzone's +, from 7 -- between 5 and 10: up goes to 10,
      * then - twice to 5 and 0, and - at 0 sets nothing. */
     frame(ImGuiKey_GamepadDpadDown); frames(1);
@@ -817,9 +817,9 @@ int main(void)
     frame(ImGuiKey_GamepadFaceDown); frames(1);
     fprintf(stderr, "deadzone after - - -: %g, sets at 0: %d\n", s_dead, s_sets);
     CHECK(s_dead == 0 && s_sets == 0);
-    CHECK(strstr(open_menu(), "Controller") != NULL);
+    CHECK(strstr(open_menu(), "Input") != NULL);
 
-    /* Switches. B to Controller's title, Right to the bar's last menu,
+    /* Switches. B to Input's title, Right to the bar's last menu,
      * Developer; A opens it on Log to file, and A flips that, once. */
     s_bare = 0;
     frame(ImGuiKey_GamepadFaceRight); frames(2);

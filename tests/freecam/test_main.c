@@ -3,8 +3,8 @@
  * The free camera without the game: port/freecam.c as it is, reading its keys
  * through the engine's own settings code (taken from src/nv2a_gl/nv2a_gl.c by
  * run.py), with a camera that looks at the origin from 10 units behind it
- * (-z), and the Controller page's rows caught for their File > Presets
- * values. Each case is its own run, as the settings are read once; run.py
+ * (-z), and the Input page's rows caught for their submenu and their File >
+ * Presets values. Each case is its own run, as the settings are read once; run.py
  * writes the settings file and checks the log.
  */
 #include <assert.h>
@@ -34,7 +34,7 @@ void nv_window_pad_hotkey(const char *name, void (*run)(void))
     s_button_run = run;
 }
 
-/* The menu's xbox_MenuAdd: the Controller page's rows, caught. */
+/* The menu's xbox_MenuAdd: the Input page's rows, caught. */
 #define ROWS_MOST 16
 static XBOX_MENU_ITEM s_rows[ROWS_MOST];
 static int s_nrows;
@@ -96,17 +96,28 @@ int main(int argc, char **argv)
     float eye[3];
     freecam_start();
     if (!strcmp(c, "off")) {
-        /* File > Presets: Free camera off in Xbox mode, and JSRF-PC
+        /* The Free camera submenu, with its hint, first; then its rows in
+         * it, in their order. */
+        static const char *const labels[] = { "Enable free camera", "Auto centre", "Invert X",
+                                              "Invert Y", "Sensitivity X", "Sensitivity Y", "Deadzone" };
+        int i, p;
+        assert(s_nrows == 8);
+        assert(s_rows[0].menu == XBOX_MENU_INPUT && s_rows[0].kind == XBOX_ITEM_GROUP);
+        assert(!strcmp(s_rows[0].label, XBOX_GROUP_FREECAM) && !strcmp(s_rows[0].label, "Free camera"));
+        assert(s_rows[0].hint && !strcmp(s_rows[0].hint, "Free camera toggle and settings."));
+        for (i = 1; i < s_nrows; i++) {
+            assert(s_rows[i].menu == XBOX_MENU_INPUT && !strcmp(s_rows[i].label, labels[i - 1]));
+            assert(s_rows[i].group && !strcmp(s_rows[i].group, XBOX_GROUP_FREECAM) && !s_rows[i].under);
+        }
+        /* File > Presets: Enable free camera off in Xbox mode, and JSRF-PC
          * default's and Max quality's what a start with no key gives; the
          * rest of the page, how the free camera handles, what a start with
          * no key gives in every preset. */
-        int i, p;
-        assert(s_nrows > 1 && !strcmp(s_rows[0].label, "Free camera"));
-        assert(s_rows[0].presets == XBOX_PRESETS_SET && !s_rows[0].keep);
-        assert(s_rows[0].preset[XBOX_PRESET_XBOX] == 0);
-        assert(s_rows[0].preset[XBOX_PRESET_JSRF_PC] == freecam_on());
-        assert(s_rows[0].preset[XBOX_PRESET_MAX] == freecam_on());
-        for (i = 1; i < s_nrows; i++) {
+        assert(s_rows[1].presets == XBOX_PRESETS_SET && !s_rows[1].keep);
+        assert(s_rows[1].preset[XBOX_PRESET_XBOX] == 0);
+        assert(s_rows[1].preset[XBOX_PRESET_JSRF_PC] == freecam_on());
+        assert(s_rows[1].preset[XBOX_PRESET_MAX] == freecam_on());
+        for (i = 2; i < s_nrows; i++) {
             const XBOX_MENU_ITEM *r = &s_rows[i];
             double now = r->kind == XBOX_ITEM_NUMBER ? r->value() : r->state();
             assert(r->presets == XBOX_PRESETS_SET && !r->keep);
