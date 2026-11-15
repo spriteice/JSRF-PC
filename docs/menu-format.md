@@ -9,7 +9,8 @@ each menu's rows live with the setting they change (File in
 Far buildings and Far shadows, in `port/draw_distance.c`, Skip intro in
 `port/intro.c` and Music info in pause in `port/music_info.c`, Audio in
 `port/audio.c`, Input's Free camera in
-`port/freecam.c` and its Default cam fix in `port/camera_walls.c`, Developer in
+`port/freecam.c`, and its Default cam fix in `port/camera_walls.c` and
+Keyboard moves in `port/keyboard_move.c`, Developer in
 `port/developer.c`). A row marked last goes below any added later (`last` in
 `menu.h`). A row can instead go right below another row of its menu, which it
 names, whichever of the two was added first
@@ -37,9 +38,11 @@ Graffiti, Sharpness, Edge strength, then Cleanup, a row of two ticks.
 Input is two submenus, and nothing else: Free camera, added with its rows by
 `port/freecam.c` (Enable free camera, Auto centre, Invert X, Invert Y,
 Sensitivity X, Sensitivity Y, then Deadzone), then Behaviour, for how the
-game's camera acts: Default cam fix, which `port/camera_walls.c` adds with
-it (`group` in `menu.h`). A new input setting goes in one of them, or in a
-submenu of its own.
+game's camera and the keys act: Default cam fix, then Keyboard moves. Each of
+those two modules adds Behaviour with its row, and the second adds nothing,
+as a submenu named as one before it in its menu adds nothing (`group` in
+`menu.h`). A new input setting goes in one of them, or in a submenu of its
+own.
 
 ## Wording
 
@@ -76,7 +79,8 @@ submenu of its own.
   (`MENU_HINT_LONGEST`), so it fits in two lines at 640 × 480.
 - A hint names no key, as a label doesn't.
 - The tests of the modules that add rows (tests/audio, camera_walls,
-  draw_distance, intro, music_info, developer) check that each has one.
+  draw_distance, intro, keyboard_move, music_info, developer) check that
+  each has one.
 
 ## (Restart)
 
@@ -168,14 +172,15 @@ submenu of its own.
   each preset where it's added (`presets` and `preset` in `menu.h`), with
   JSRF-PC default's from the constant its own default comes from, so the
   preset moves with the default. That takes in Fullscreen, full screen in
-  each, and the free camera's tuning, at its defaults in each. A row of
-  ticks (`XBOX_ITEM_TOGGLES`), as Upscaling's Cleanup, gives the ticks it
-  has in each, and a preset changes each tick that differs, as choosing it
-  would. A (Restart) row the presets set also has `keep`, which keeps a
-  value for the next start without restarting. A row that says nothing, or
-  that asks first with no `keep`, is told once in the log and left alone,
-  as a row with no hint is told. File's and Developer's rows are never set,
-  and a submenu (`XBOX_ITEM_GROUP`) is no setting, so says nothing.
+  each, the free camera's tuning, at its defaults in each, and Keyboard
+  moves, at Camera in each. A row of ticks (`XBOX_ITEM_TOGGLES`), as
+  Upscaling's Cleanup, gives the ticks it has in each, and a preset changes
+  each tick that differs, as choosing it would. A (Restart) row the presets
+  set also has `keep`, which keeps a value for the next start without
+  restarting. A row that says nothing, or that asks first with no `keep`,
+  is told once in the log and left alone, as a row with no hint is told.
+  File's and Developer's rows are never set, and a submenu
+  (`XBOX_ITEM_GROUP`) is no setting, so says nothing.
 - The tests of the modules that add rows check their values, and that
   JSRF-PC default's is what a start with no settings gives.
 

@@ -1278,6 +1278,7 @@ void sub_0017CAB0(void)
 #include "freecam.h"
 #include "camera_walls.h"
 #include "intro.h"
+#include "keyboard_move.h"
 #define XPP_TYPE_GAMEPAD 0x001BC860u
 #define XPP_HANDLE_BASE  0x58580000u
 
@@ -2692,6 +2693,7 @@ void sub_001C3E14(void)
         g_eax = 0x48F; g_esp += 12; return;
     }
     freecam_pad(h & 3, &s.Gamepad.sThumbRX, &s.Gamepad.sThumbRY);    /* the free camera's, while it steers */
+    kbmove_pad(h & 3, &s.Gamepad.sThumbLX, &s.Gamepad.sThumbLY);     /* the keys', while they steer the skater */
     *(uint32_t *)(m + st) = s.dwPacketNumber;
     *(uint16_t *)(m + st + 4) = s.Gamepad.wButtons;
     memcpy(m + st + 6, s.Gamepad.bAnalogButtons, 8);
@@ -5037,12 +5039,20 @@ void sub_0007D8B0(void)
 #define VIEW_TALL          0.75        /* the frame's height over the width that angle spans */
 #define CHR_DRIVER         0x024u      /* the player manager that built it (sub_00011BD0) */
 #define DRV_CLASS          0x001CD570u /* the player manager's class (sub_000A6980) */
-#define DRV_PAD            0x8ACu      /* its pad's port, or DRV_NO_PAD (sub_000A8370) */
+#define DRV_PAD            0x8ACu      /* its pad: a port 0 to 3, DRV_MAIN_PAD, or DRV_NO_PAD (sub_000A8370) */
+#define DRV_MAIN_PAD       4u          /* the pad the game was started with: the main player's */
+#define GAME_MAIN_PORT     0x251F20u   /* that pad's port, which the game looks up each time (sub_0004EBC0) */
 #define DRV_CONTROL        0x8B4u      /* what moves its skater (sub_000A76E0) */
 #define DRV_NO_PAD         0xFFFFFFFFu
 #define DRV_PAD_PLAYS      0u          /* the pad moves it */
 #define DRV_PAD_RECORDED   2u          /* the pad moves it, and the run is recorded */
 #define DRV_PLAYBACK       1u          /* a recorded run moves it */
+#define CAM_VIEW_EYE       0x044u      /* the eye the view is built from (sub_000A28B0 puts it there) */
+#define CAM_VIEW_TARGET    0x05Cu      /* and what it looks at: up on the stick is from one to the other */
+#define CHR_TURN           0xCC0u      /* its turn on the ground, 0x10000 a turn: +z to (sin, cos) (sub_000A32B0) */
+#define CAM_HEADING        0x228u      /* the heading the controls follow, 0x10000 a turn (sub_000A28B0 sets it) */
+#define CAM_HELD_HEADING   0x234u      /* the heading kept when a mode is switched to (sub_000A58E0) */
+#define CAM_HOLDS          0x238u      /* set while the controls follow that kept heading */
 
 /* Whether the camera follows a skater the pad moves, which the free camera
  * steers. Every skater with a pad builds a camera that follows it
@@ -5085,6 +5095,11 @@ static int cam_pad_steered(const uint8_t *m, uint32_t cam, int say)
                 ? "nothing" : ctl == DRV_PLAYBACK ? "a recording" : "a script", ctl, (int)pad);
     return ok;
 }
+
+/* For each pad port, the player manager its keys steer for, its skater's
+ * camera and the skater, as the camera update last saw them (sub_000A5070),
+ * and when: for the manager's update (sub_000A76E0). */
+static struct { uint32_t drv, cam, who; double at; } s_keys_cam[4];
 
 extern void sub_000A5070_gen(void);
 void sub_000A5070(void)
@@ -5139,6 +5154,28 @@ void sub_000A5070(void)
     sub_000A5070_gen();
     if (gcam) *gcam = sprayed;
     if (look) *look = CAM_MODE_LOOK;
+    /* Keyboard moves (port/keyboard_move.c): the camera's look on the ground
+     * and the skater's turn, for the pad's port, which the keys steer by. The
+     * main player's manager names DRV_MAIN_PAD, not a port: its port is the
+     * game's GAME_MAIN_PORT. And the manager, the camera and the skater, for
+     * the manager's update (sub_000A76E0, below). */
+    if (cam >= 0x10000u && cam + 0x240u < lim && cam_pad_steered(m, cam, 0)) {
+        const float *cf = (const float *)(m + cam);
+        uint32_t who = ((const uint32_t *)(m + cam))[CAM_FOLLOWS / 4];
+        uint32_t drv = *(const uint32_t *)(m + who + CHR_DRIVER);
+        int port = kbmove_game_port(*(const uint32_t *)(m + drv + DRV_PAD),
+                                    *(const uint32_t *)(m + GAME_MAIN_PORT));
+        if (port >= 0) {
+            kbmove_view((unsigned)port,
+                        cf[CAM_VIEW_TARGET / 4] - cf[CAM_VIEW_EYE / 4],           /* x */
+                        cf[CAM_VIEW_TARGET / 4 + 2] - cf[CAM_VIEW_EYE / 4 + 2],   /* z */
+                        *(const uint32_t *)(m + who + CHR_TURN));
+            s_keys_cam[port].drv = drv;
+            s_keys_cam[port].cam = cam;
+            s_keys_cam[port].who = who;
+            s_keys_cam[port].at = pad_now();
+        }
+    }
     if (cam >= 0x10000u && cam + 0x240u < lim)
         s_cam_mode_now = ((const uint32_t *)(m + cam))[0x208 / 4];
     { static int hooks = -1;
@@ -5198,6 +5235,78 @@ void sub_000A5070(void)
             memcpy(last, now, sizeof last);
         }
     }
+}
+
+/* ---- the keys' way, at the player manager's update (port/keyboard_move.c)
+ * sub_000A76E0 is the player manager's update (class DRV_CLASS, its
+ * vtable's second entry). In its pad case (0x000A7940 to 0x000A7B16) it
+ * reads the left stick's angle from the pad driver's table (PAD_TABLE, an
+ * entry for each port and one for the main pad, which PAD_ENTRY_OF names for
+ * each of the manager's pads), and turns it into the way the skater goes,
+ * from the camera's heading (CAM_HEADING): within 60 degrees of straight up
+ * it squares the angle (0x000A7ABF: a soft centre), and while the camera
+ * keeps an old heading (CAM_HOLDS, after it changed mode) it goes the way it
+ * had. Its camera is the one that follows its skater, found by its id
+ * (sub_000128C0); the camera update has it (s_keys_cam). Those two reads,
+ * at 0x000A79BD and 0x000A7A9C, are the only ones of the entry's angle.
+ *
+ * With Keyboard moves at Skater, the keys' stick (kbmove_pad, at the pad
+ * read) pointed the skater's way from the camera's look, which the soft
+ * centre then pulled towards the camera's heading each frame: W held while
+ * the camera swung round turned the skater with it. Here the angle the
+ * update reads is the one that sends the skater the keys' way, worked out
+ * from the camera's heading and the skater's turn as the update finds them
+ * (kbmove_angle), and the pad's own is put back after. The game's code is
+ * right for a stick, and the pad driver's angle is the stick's: it is the
+ * keys' way that the stick can't say exactly, so it is put in where the
+ * game reads it, not made up for in the device model or the pad driver.
+ *
+ * The pad driver is a task of its own: it may write the entry while the
+ * update runs. Then the update reads the pad's angle, the keys' stick, for
+ * that frame, as before; and the pad's angle is put back only if the entry
+ * still holds this one. */
+#define PAD_ENTRY_OF       0x00215770u /* a manager's pad (DRV_PAD, 0 to DRV_MAIN_PAD): its entry in PAD_TABLE, a word each */
+#define PAD_TABLE          0x00251DE4u /* the pad driver's table, an entry for each */
+#define PAD_ENTRY_SIZE     0x40u
+#define PAD_ENTRIES        5u          /* the four ports' and the main pad's */
+#define PAD_ANGLE          0x30u       /* the left stick's angle in an entry, 0x10000 a turn */
+#define KEYS_CAM_FRESH_S   0.1         /* a camera not updated for this long is not the one the update uses */
+
+extern void sub_000A76E0_gen(void);
+void sub_000A76E0(void)
+{
+    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
+    const uint32_t lim = 64u << 20;
+    uint32_t drv = g_ecx, pad = DRV_NO_PAD, entry, cam, who, angle = 0, *at = NULL;
+    uint32_t mine = 0, theirs = 0;
+    int port = -1;
+    if (drv >= 0x10000u && drv + 0x1000u < lim && *(const uint32_t *)(m + drv) == DRV_CLASS) {
+        pad = *(const uint32_t *)(m + drv + DRV_PAD);
+        port = kbmove_game_port(pad, *(const uint32_t *)(m + GAME_MAIN_PORT));
+    }
+    if (port >= 0 && s_keys_cam[port].drv == drv && pad_now() - s_keys_cam[port].at < KEYS_CAM_FRESH_S) {
+        cam = s_keys_cam[port].cam;
+        who = s_keys_cam[port].who;
+        entry = *(const uint32_t *)(m + PAD_ENTRY_OF + pad * 4u);
+        /* The camera still follows the skater this manager moves, by the pad. */
+        if (entry < PAD_ENTRIES && cam >= 0x10000u && cam + 0x240u < lim
+            && who >= 0x10000u && who + 0x1000u < lim
+            && *(const uint32_t *)(m + cam + CAM_FOLLOWS) == who
+            && *(const uint32_t *)(m + who + CHR_DRIVER) == drv && cam_pad_steered(m, cam, 0)
+            && kbmove_angle((unsigned)port, *(const uint32_t *)(m + who + CHR_TURN),
+                            *(const uint32_t *)(m + cam + CAM_HEADING),
+                            *(const uint32_t *)(m + cam + CAM_HOLDS) != 0,
+                            *(const uint32_t *)(m + cam + CAM_HELD_HEADING), &angle)) {
+            at = (uint32_t *)(uintptr_t)(m + PAD_TABLE + entry * PAD_ENTRY_SIZE + PAD_ANGLE);
+            theirs = __atomic_load_n(at, __ATOMIC_RELAXED);
+            mine = angle;
+            __atomic_store_n(at, mine, __ATOMIC_RELAXED);
+        }
+    }
+    g_ecx = drv;
+    sub_000A76E0_gen();
+    if (at)
+        __atomic_compare_exchange_n(at, &mine, theirs, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED);
 }
 
 /* ---- the follow camera's walls, and the free camera (port/camera_walls.c,

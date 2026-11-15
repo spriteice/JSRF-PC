@@ -101,6 +101,14 @@ DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState);
 DWORD xbox_InputSetState(DWORD dwPort, const XBOX_VIBRATION *pVibration);
 
 /**
+ * The window's movement keys on a port, apart from the left stick they also
+ * make: *x is D minus A and *y is W minus S, each -1, 0 or 1. Returns 1 while
+ * one is held and the in-game menu is shut (port/keyboard_move.c steers the
+ * skater with them).
+ */
+int xbox_InputKeyboardMove(DWORD dwPort, int *x, int *y);
+
+/**
  * Check if a controller is connected.
  */
 BOOL xbox_InputIsConnected(DWORD dwPort);

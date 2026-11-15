@@ -360,6 +360,21 @@ DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
     return ERROR_SUCCESS;
 }
 
+/* The movement keys alone (xinput_xbox.h): the bits kb_merge reads. */
+int xbox_InputKeyboardMove(DWORD dwPort, int *x, int *y)
+{
+    extern int nv_window_keys(unsigned short *b, unsigned char *a)
+        __attribute__((weak));
+    unsigned short kb = 0;
+    *x = *y = 0;
+    if (!(nv_window_keys && dwPort == 0)) return 0;
+    if (nv_window_menu_open && nv_window_menu_open() > 0) return 0;
+    nv_window_keys(&kb, NULL);
+    *x = ((kb & 0x0008u) ? 1 : 0) - ((kb & 0x0004u) ? 1 : 0);
+    *y = ((kb & 0x0001u) ? 1 : 0) - ((kb & 0x0002u) ? 1 : 0);
+    return (kb & 0x000Fu) != 0;
+}
+
 /* Vibration, as the game last set it, sent to the pad in the slot when it is
  * due (rumble_hold.h): when it changes, to a pad that hasn't had it, and
  * again before SDL's time for it runs out. SDL's rumble lasts a set time,

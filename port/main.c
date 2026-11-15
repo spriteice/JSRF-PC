@@ -743,6 +743,9 @@ static int host_main(void)
     /* Whether the game's own camera is kept out of walls, and its row, the
      * first in Input > Behaviour (port/camera_walls.c). */
     { extern void camwall_start(void); camwall_start(); }
+    /* Whether the keyboard steers the skater from the way it faces, and its
+     * row in Input > Behaviour, after Default cam fix (port/keyboard_move.c). */
+    { extern void kbmove_start(void); kbmove_start(); }
     /* Whether the intro is skipped, and its row in Display > Skips
      * (port/intro.c). */
     { extern void intro_start(void); intro_start(); }

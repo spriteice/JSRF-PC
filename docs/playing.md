@@ -15,7 +15,10 @@ Esc on the keyboard.
 Keys go by position, so W A S D on a QWERTY keyboard is Z Q S D on an AZERTY
 one.
 
-- **W A S D:** Move (left stick), and the menus.
+- **W A S D:** Move, and the menus. They are the left stick, so W goes away
+  from the camera. With Input > Behaviour > Keyboard moves at Skater, W goes
+  the way the skater faces, however the camera turns, A and D turn it while
+  held, W with A or D turns it wider, and S turns it round.
 - **Arrow keys:** The camera (right stick).
 - **Space or J:** A, to jump.
 - **K:** B.
@@ -123,9 +126,9 @@ input goes to the menu.
   Menus and HUD, Textures and Graffiti, and both anti-aliasings at their most,
   as far as the graphics card goes, and Far buildings and Far shadows at 3x.
   A preset sets every setting but Developer's: each one also puts the game
-  full screen, Upscaling's Cleanup as a new install has it, and the free
-  camera's own settings back to their defaults. The one ticked is the one
-  your settings match, if any.
+  full screen, Upscaling's Cleanup as a new install has it, the free
+  camera's own settings back to their defaults, and Keyboard moves at
+  Camera. The one ticked is the one your settings match, if any.
 - **Display:** Full screen, the render scale (1× to 6×), the aspect ratio,
   the HUD submenu, the draw distance, the Building distance submenu (Far
   buildings and Far shadows), and two submenus at the end: Skips, with Skip intro, and Enhancements, with Music info in pause and
@@ -188,10 +191,15 @@ input goes to the menu.
 - **Input:** Two submenus. Free camera has [the free
   camera](#free-camera)'s own settings: Enable free camera, Auto centre,
   Invert X, Invert Y, Sensitivity X, Sensitivity Y, and Deadzone (15% by
-  default). Behaviour has Default cam fix, which keeps the game's own camera
-  out of walls (Near walls, above). On by default; off, the game's camera is
-  as on the Xbox. It changes at once, and is kept as `dcamfix=` (1 or 0) in
-  the settings file.
+  default). Behaviour has Default cam fix, then Keyboard moves. Default cam
+  fix keeps the game's own camera out of walls (Near walls, above). On by
+  default; off, the game's camera is as on the Xbox. It changes at once,
+  and is kept as `dcamfix=` (1 or 0) in the settings file. Keyboard moves
+  sets how W A S D move the skater ([Keyboard](#keyboard), above): from the
+  way the camera faces (Camera, the default), or from the way the skater
+  faces (Skater), which the camera turning, the free camera or the game's
+  own, doesn't change. It changes at once, and is kept as `keyboard_moves=`
+  (0 Camera, 1 Skater) in the settings file.
 - **Developer:** Settings for testing and bug reports.
   - **Log to file:** Stops or starts writing to `last-run.log` at once.
   - **Logging:** The engine's diagnostic logs, for bug reports.

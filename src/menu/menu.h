@@ -164,8 +164,10 @@ typedef struct XBOX_MENU_ITEM {
 #define XBOX_GROUP_UPSCALING    "Upscaling"
 
 /* Input's submenus, in its order: Free camera (port/freecam.c adds it, with
- * its rows), then Behaviour, for how the game's camera acts (Default cam
- * fix: port/camera_walls.c adds it with its row). */
+ * its rows), then Behaviour, for how the game's camera and the keys act
+ * (Default cam fix, port/camera_walls.c, then Keyboard moves,
+ * port/keyboard_move.c: each adds it with its row, and the second adds
+ * nothing). */
 #define XBOX_GROUP_FREECAM      "Free camera"
 #define XBOX_GROUP_BEHAVIOUR    "Behaviour"
 #define XBOX_GROUP_BEHAVIOUR_HINT "Configure the keyboard movement in relation to the camera."
