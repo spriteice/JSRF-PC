@@ -107,6 +107,7 @@ static void pieces(void)
         { WIDE_HUD_MESSAGE, 0x001045D0u, NV2A_WIDE_HUD_LEFT },
         { WIDE_HUD_SIGN,    0x000FC370u, NV2A_WIDE_HUD_MIDDLE },
         { WIDE_HUD_COUNTER, 0x00104AB0u, NV2A_WIDE_HUD_MIDDLE },
+        { WIDE_HUD_SKIP,    0x000131F0u, NV2A_WIDE_HUD_RIGHT },
     };
     unsigned i, j;
     CHECK(WIDE_HUD_HEALTH == 0);
@@ -116,7 +117,8 @@ static void pieces(void)
         unsigned own = want[i].piece == WIDE_HUD_ROLLING ? NV2A_WIDE_HUD_OWN_VIEW : 0u;
         unsigned text = want[i].piece == WIDE_HUD_SCORE || want[i].piece == WIDE_HUD_MESSAGE
                       ? WIDE_HUD_TEXT : 0u;
-        unsigned low = want[i].piece == WIDE_HUD_GAUGE ? NV2A_WIDE_HUD_LOW : 0u;
+        unsigned low = want[i].piece == WIDE_HUD_GAUGE || want[i].piece == WIDE_HUD_SKIP
+                     ? NV2A_WIDE_HUD_LOW : 0u;
         CHECK(p->va == want[i].va && p->side == want[i].side);
         CHECK(p->name != NULL && p->name[0] != '\0');
         CHECK(p->flags == (own | text | low));
@@ -124,8 +126,8 @@ static void pieces(void)
             CHECK(widescreen_hud_pieces[want[j].piece].va != p->va);
     }
     CHECK((WIDE_HUD_TEXT & (NV2A_WIDE_HUD_OWN_VIEW | NV2A_WIDE_HUD_LOW | NV2A_WIDE_HUD_SIZED)) == 0);
-    /* the middle pieces after the edges' eleven */
-    CHECK(WIDE_HUD_SIGN == 11 && WIDE_HUD_COUNTER == 12 && WIDE_HUD_PIECES == 13);
+    /* the middle pieces after the edges' eleven, then Skip cutscenes' prompt */
+    CHECK(WIDE_HUD_SIGN == 11 && WIDE_HUD_COUNTER == 12 && WIDE_HUD_SKIP == 13 && WIDE_HUD_PIECES == 14);
 }
 
 static void off(void)

@@ -3536,10 +3536,15 @@ static int ev_changed(uint32_t from, uint32_t cmd, uint32_t arg, uint32_t res)
     }
     return 1;
 }
+/* The game's letting go of the display set, held back while it loaded for
+ * the skip prompt's A: done before the game asks about the set again (the
+ * prompt's A, below). */
+static void disp_let_go_held(const char *where);
 extern void sub_000256A0_gen(void);
 void sub_000256A0(void)
 {
     uint32_t from = GARG(0), cmd = GARG(1), arg = GARG(2);
+    disp_let_go_held("before the game's command");
     sub_000256A0_gen();
     if (ev_log_on() && ev_changed(from, cmd | 0x80000000u, arg, g_eax)) {
         fprintf(stderr, "[EVCMD] t=%.2f flip %u cmd %u arg %u (0x%X) -> %u from %08X\n",
@@ -3551,6 +3556,7 @@ extern void sub_000256C0_gen(void);
 void sub_000256C0(void)
 {
     uint32_t from = GARG(0), cmd = GARG(1), arg = GARG(2);
+    disp_let_go_held("before the game's question");
     sub_000256C0_gen();
     if (ev_log_on() && ev_changed(from, cmd, arg, g_eax)) {
         fprintf(stderr, "[EVQRY] t=%.2f flip %u query %u arg %u (0x%X) -> %u from %08X\n",
@@ -3795,7 +3801,9 @@ void sub_00052780(void)
  * whose op is 0xE2..0xF9 is returned and becomes a mode (0xE7 = open a talk).
  * Only op 0xF6 also asks the player (message 0x1AF). JSRF_TALK_LOG=1 dumps
  * the list and the trigger list (header+0x17C / +0x180) once, and logs every
- * entry this returns. */
+ * entry this returns. Where it returns none, a skater preview the game has
+ * no skip for may end here at a second press of A, with Skip cutscenes on
+ * (preview_unskipped, with the other previews' skip below). */
 static void jsrf_dump_entries(const char *what, uint32_t ents, uint32_t n)
 {
     const uint8_t *m = (const uint8_t *)g_xbox_mem_offset;
@@ -3821,6 +3829,7 @@ static void jsrf_dump_entries(const char *what, uint32_t ents, uint32_t n)
     fflush(stderr);
 }
 extern void sub_00057DE0_gen(void);
+static void preview_unskipped(uint32_t runner);  /* Skip cutscenes: a preview the game has no skip for */
 void sub_00057DE0(void)
 {
     static uint32_t dumped;
@@ -3837,6 +3846,7 @@ void sub_00057DE0(void)
         }
     }
     sub_00057DE0_gen();
+    preview_unskipped(self);
     if (on && (int32_t)g_eax >= 0) {
         uint32_t ents = *(const uint32_t *)(m + hdr + 0x18Cu);
         uint32_t cur = *(const uint32_t *)(m + self + 0xFB8u);
@@ -4862,6 +4872,671 @@ void sub_0003D5D0(void)
         return;
     }
     sub_0003D5D0_gen();
+}
+/* ---- Skip cutscenes (cutscene_skip.h) ---------------------------------------
+ * The scene's update, sub_00023790 (class 0x1C4BA8, slot +0x10, this in ecx,
+ * no arguments), plays it frame by frame; at its last frame, and for the
+ * game's own skip of a scene the save has seen (A or Start pressed this
+ * frame, bit 2 or 0 of the word at PAD_PRESSED), it calls the scene's end,
+ * sub_0001E8C0 (thiscall, no arguments): the scene marked seen, the fade
+ * back to play, its actors, sound and resources let go, and the scene and
+ * its holder removed, so the mission's flow carries on. Here, after the
+ * update, a scene that still plays (still the one in the game manager's
+ * slot SCENE_ACTOR, its class, state SCENE_PLAYING) has the frame's A
+ * press counted (cutscene_skip_frame), and at a second press its end is
+ * called as the update calls it, from the update's own call site. With the
+ * option on, that is the one way out of a scene: the game's own skip of a
+ * scene seen before (its seen test, sub_0003A8C0, at 0x238F4) is told "not
+ * seen", so a scene seen before takes the two presses too (spriteice, 13:48
+ * UTC on 16 November 2026: "a single rule with our option ticked only,
+ * without is the games default"). Off, nothing is changed. Nothing
+ * in these functions, the recompiler or the runtime is wrong: this reaches
+ * the end the game already has, sooner. The idea is Miggas's (JSRF-Recomp)
+ * and mstan's (JSRFRecomp), whose code isn't used.
+ *
+ * The prompt is drawn at the end of the frame's draw, sub_000131F0 (the
+ * game manager's, this in ecx, no arguments; its one caller, sub_00013930,
+ * calls it on every frame that draws and then presents), after every view
+ * the game draws, so it is drawn in a scene, when the HUD isn't. (Build 3
+ * drew it after the font's own last pass of the frame, sub_0003C310's pass
+ * 8, which a scene's frames don't run: the presses worked and the prompt
+ * never showed.) The device's BeginScene and EndScene (vtable 0x1E0F00,
+ * +0xB0 and +0xB4, both sub_0014D080) do nothing, so a draw after the
+ * frame's EndScene and before its Present is drawn as any other. Each of the
+ * prompt's pieces goes through sub_0003D610, the font's call that draws at
+ * once (sub_0003D210: its glyphs made, then the font's own draw, passes 7
+ * and 8, which set the blend and textures they need), between marks of a
+ * HUD piece of its own (WIDE_HUD_SKIP): the bottom right, as the gauge, so
+ * widescreen and HUD scale move and size it with the HUD. Each piece's
+ * width is read back from the pen the font leaves (FONT_PEN_X), for the
+ * next frame's places. The first draw, and a frame without the font, are
+ * logged once.
+ *
+ * The A on the prompt is the game's own: the green A button its message
+ * boxes show (spriteice, 11:26 UTC on 16 November 2026: "the xbox green A
+ * button when skipping text dialogue"), drawn as the box draws it
+ * (prompt_a_draw, below). Where the game has no such model loaded, the
+ * font's cap and A are drawn in its place, and the log says so once.
+ * tests/cutscene_skip checks the presses, the fades and the places; that a
+ * scene ends cleanly, and how the prompt looks, need the game: the test
+ * build's steps. */
+#include "cutscene_skip.h"
+#define SCENE_CLASS      0x001C4BA8u  /* the scene's class (its vtable) */
+#define SCENE_STATE      0x88u        /* 0 loading, 1 fading in, 2 playing */
+#define SCENE_PLAYING    2u
+#define SCENE_ACTOR      0x1DDDu      /* the scene's slot in the game manager */
+#define SCENE_END_RA     0x00023915u  /* after the update's own call of sub_0001E8C0 */
+#define SCENE_SEEN_RA    0x000238F9u  /* after the update's call of sub_0003A8C0, for its own skip */
+#define GAME_MANAGER     0x0022FCE0u  /* the pointer to the game manager (MUSIC_OBJECTS) */
+#define GM_ACTORS        0x98u        /* the game manager's actors, one pointer each */
+#define PAD_PRESSED      0x00251EE8u  /* the buttons pressed this frame, as the scene's own skip reads them */
+#define PAD_PRESSED_A    0x04u
+#define FONT_ACTOR       0x1166u      /* the font's slot in the game manager */
+#define FONT_PEN_X       0x0004B118u  /* the font's pen, after a draw at once: its x */
+#define FONT_SPACING     1.1f         /* the font call's third argument, as every menu label passes */
+#define PROMPT_FONT_RA   0x0010057Fu  /* a HUD piece's font call's return: the score's */
+#define PROMPT_SCRATCH   32u          /* below the stack: a piece's text */
+extern void sub_00023790_gen(void);
+extern void sub_0001E8C0(void);
+extern void sub_000131F0_gen(void);
+extern void sub_0003D610(void);
+/* The scene at scene is still the one the game manager has, and plays. */
+static int scene_playing(uint32_t scene)
+{
+    uint32_t gm = MEM32(GAME_MANAGER);
+    return gm && scene && MEM32(gm + GM_ACTORS + SCENE_ACTOR * 4u) == scene
+        && MEM32(scene) == SCENE_CLASS && MEM32(scene + SCENE_STATE) == SCENE_PLAYING;
+}
+void sub_00023790(void)
+{
+    const uint32_t scene = g_ecx;
+    sub_00023790_gen();
+    if (!cutscene_skip_on() || !scene_playing(scene)) return;
+    if (cutscene_skip_frame(scene, (MEM8(PAD_PRESSED) & PAD_PRESSED_A) != 0, jsrf_now())) {
+        const uint32_t sv_ecx = g_ecx;
+        g_ecx = scene;
+        guest_call_cdecl(sub_0001E8C0, SCENE_END_RA, 0, NULL);
+        g_ecx = sv_ecx;
+    }
+}
+
+/* Skater previews (spriteice, 12:58 UTC on 16 November 2026: "skip
+ * cutscenes also cover skater previews (eg watching monster jam skate to
+ * their location in stg10 0121)"). A preview isn't a scene object: the
+ * mission plays it, and its events list holds a command 249 [bit, exit],
+ * the game's own skip of a preview seen before. The events scan,
+ * sub_00057DE0, reaches that entry only while its flags hold (the preview
+ * playing), and there (0x57E82) asks the progress object (0x1EFFB0, in ecx)
+ * through sub_0003A8C0 whether seen bit `bit` of its 512 at +0x34CC is set;
+ * when it is and A or Start is pressed this frame (bit 0 or 2 of 0x251EE8),
+ * it sets the entry's flags and takes exit `exit` (sub_00053FB0), as the
+ * preview's own end goes on. sub_0003A8C0 has two callers: that one, and the
+ * scene's own skip in sub_00023790.
+ *
+ * With Skip cutscenes on, a preview not yet seen is skipped the same way: at
+ * that call, each frame the scan asks, the presses go through the scenes'
+ * two-press timing (cutscene_skip_frame, keyed by the entry, which the scan
+ * holds in esi), and at the second press the answer is "seen", so the scan
+ * takes the entry's exit at that press, as the game's own skip does. The
+ * prompt is the scenes' prompt; it goes when the scan stops asking (the
+ * preview over). A preview already seen takes the two presses too, as a
+ * scene seen before does: with the option on, the answer is "not seen" but
+ * at the second press, so the game's own skip at one press of A or Start
+ * is left out (spriteice, 13:48 UTC: "a single rule with our option ticked
+ * only, without is the games default").
+ *
+ * The game's skip is made for a preview seen before, whose own end has
+ * already set what it sets; a first one hasn't. So at the second press the
+ * preview's end is done first, as if it had played out: its seen bit set,
+ * as its command 210 sets it (sub_0003A890), and the flags of each of the
+ * mission's own ends (command 230 [exit], in the same events list) that
+ * takes the same exit and whose conditions outside the mission's own bank
+ * hold (each through sub_00039D40, as the scan tests them; the mission's
+ * own, M, say how far the preview has played), set through sub_00039D80
+ * as the scan sets them. In the 17 missions with a command 249 that is,
+ * for example, 0121's C128=0, 0463's C19=1 and 3413's C10=1, which the
+ * skip alone would leave unset; in the Stg20 ones, the same flags as
+ * their 249's own. Then the scan takes the 249's exit. */
+#define PREVIEW_SEEN_RA  0x00057E90u  /* the events scan's call of sub_0003A8C0 for command 249 */
+#define RUNNER_SCRIPT    0x1040u      /* the stage script runner's (edi's) mission script */
+#define SCRIPT_EVENTS    0x18Cu       /* its events list, and the count after it */
+#define PROGRESS         0x001EFFB0u  /* the progress object */
+#define EVENTS_TEST_RA   0x00057E22u  /* the scan's own calls' returns: an entry's conditions, */
+#define EVENTS_SET_RA    0x00057ECDu  /* ... and an entry's flags */
+#define SEEN_SET_RA      0x0005B096u  /* command 210's setting of its seen bit */
+extern void sub_00039D40(void);
+extern void sub_00039D80(void);
+extern void sub_0003A890(void);
+static uint32_t progress_call(void (*fn)(void), uint32_t ra, int nargs, const uint32_t *args)
+{
+    const uint32_t sv_ecx = g_ecx;
+    uint32_t r;
+    g_ecx = PROGRESS;
+    r = guest_call_cdecl(fn, ra, nargs, args);
+    g_ecx = sv_ecx;
+    return r;
+}
+static int preview_holds(void *ctx, uint32_t condition_at)
+{
+    uint32_t a[2];
+    (void)ctx;
+    a[0] = condition_at;
+    a[1] = 1;
+    return progress_call(sub_00039D40, EVENTS_TEST_RA, 2, a) != 0;
+}
+/* The preview's own end, for the 249 whose words are at `at` (the entry's
+ * +0x10, as the scan holds it) in runner's script: its seen bit, then the
+ * flags of its own ends (cutscene_skip_preview_ends), all found before
+ * any is set. The number of ends whose flags were set. */
+static int preview_own_end(uint32_t runner, uint32_t at, uint32_t bit)
+{
+    const uint32_t script = MEM32(runner + RUNNER_SCRIPT);
+    const uint32_t list = script ? MEM32(script + SCRIPT_EVENTS) : 0;
+    const uint32_t n = script ? MEM32(script + SCRIPT_EVENTS + 4u) : 0;
+    uint32_t a[2], ends[16];
+    int count, k;
+    a[0] = bit;
+    progress_call(sub_0003A890, SEEN_SET_RA, 1, a);
+    count = cutscene_skip_preview_ends((const uint8_t *)g_xbox_mem_offset, list, n, MEM32(at + 8u),
+                                       preview_holds, NULL, ends, 16);
+    for (k = 0; k < count; k++) {
+        a[0] = MEM32(ends[k] + 8u);
+        a[1] = MEM32(ends[k] + 12u);
+        if (a[1] && a[1] <= CUTSCENE_SKIP_CONDITIONS) progress_call(sub_00039D80, EVENTS_SET_RA, 2, a);
+    }
+    return count;
+}
+extern void sub_0003A8C0_gen(void);
+void sub_0003A8C0(void)
+{
+    const uint32_t ra = MEM32(g_esp), bit = MEM32(g_esp + 4u), entry = g_esi, runner = g_edi;
+    static uint32_t s_preview_told;
+    uint32_t seen;
+    sub_0003A8C0_gen();
+    if (!cutscene_skip_on()) return;
+    if (ra == SCENE_SEEN_RA) {
+        g_eax = 0;      /* the scene's own skip left out: sub_00023790's two presses instead */
+        return;
+    }
+    if (ra != PREVIEW_SEEN_RA) return;
+    seen = g_eax;
+    g_eax = 0;
+    if (entry != s_preview_told) {
+        s_preview_told = entry;
+        fprintf(stderr, "[SKIP] t=%.2f a preview plays (the mission's event 249 at %08X, seen bit %X %s): "
+                "two presses of A skip it\n", jsrf_now(), entry, bit, seen ? "set: seen before" : "not set");
+    }
+    if (cutscene_skip_frame(entry, (MEM8(PAD_PRESSED) & PAD_PRESSED_A) != 0, jsrf_now())) {
+        const int ends = preview_own_end(runner, entry, bit);
+        fprintf(stderr, "[SKIP] t=%.2f the preview ends: seen bit %X set, the flags of %d of its own ends "
+                "(command 230, exit %u) set, and its event 249's exit taken, as the game's own skip takes "
+                "it\n", jsrf_now(), bit, ends, MEM32(entry + 8u));
+        g_eax = 1;
+    }
+}
+
+/* A preview the game has no skip for. 0121's rounds (its first visits,
+ * C123 to C126: the rivals skate to their places) have no command 249 that
+ * holds; only its later visit (C31) has one, and spriteice's example is one
+ * of the rounds. A preview's mission is all preview: its events list (the
+ * one sub_00057DE0 scans) holds only its own ends (command 230 [exit]) and
+ * the game's skips (249), and the mission ends at the first end whose flags
+ * come, the mission's own (M) set as the preview plays out
+ * (cutscene_skip_preview_list). So where no 249 holds, and no scene is
+ * there (the scenes have their own skip; the Stg20 previews' missions play
+ * one in their round with no preview, C420), the two presses go through
+ * the scenes' timing, keyed by that end, and at the second the scan answers
+ * with the end as if its flags had come: the end's entry in the runner's
+ * +0xFB8 and its command returned, as the scan itself does at 0x57EFB, so
+ * the runner's own handling (sub_00057F90, at 0x58026) sets the end's flags
+ * and takes its exit. The end is the first of the list's ends whose
+ * conditions outside the mission's own bank hold
+ * (cutscene_skip_preview_ends, any exit), and only when every such end
+ * takes the same exit; else the preview plays on, and the log says so.
+ * Called from sub_00057DE0's wrapper (the stage's blocking-entry list),
+ * after the scan, when it found nothing. */
+#define RUNNER_END_FOUND 0xFB8u  /* the end the scan found, for sub_00057F90 */
+static int scene_there(void)
+{
+    uint32_t gm = MEM32(GAME_MANAGER);
+    return gm && MEM32(gm + GM_ACTORS + SCENE_ACTOR * 4u) != 0;
+}
+static void preview_unskipped(uint32_t runner)
+{
+    static uint32_t s_told, s_two_told;
+    uint32_t script, list, n, ends[16], exit;
+    int count, k;
+    double now;
+    if ((int32_t)g_eax >= 0 || !cutscene_skip_on() || scene_there()) return;
+    script = MEM32(runner + RUNNER_SCRIPT);
+    list = script ? MEM32(script + SCRIPT_EVENTS) : 0;
+    n = script ? MEM32(script + SCRIPT_EVENTS + 4u) : 0;
+    if (cutscene_skip_preview_list((const uint8_t *)g_xbox_mem_offset, list, n, preview_holds, NULL)
+        != CUTSCENE_SKIP_LIST_PREVIEW)
+        return;
+    count = cutscene_skip_preview_ends((const uint8_t *)g_xbox_mem_offset, list, n,
+                                       CUTSCENE_SKIP_ANY_EXIT, preview_holds, NULL, ends, 16);
+    if (!count) return;
+    now = jsrf_now();
+    exit = MEM32(ends[0] + 0x14u);
+    for (k = 1; k < count; k++) {
+        if (MEM32(ends[k] + 0x14u) == exit) continue;
+        if (s_two_told != ends[0]) {
+            s_two_told = ends[0];
+            fprintf(stderr, "[SKIP] t=%.2f a preview with no skip of the game's own plays, but its ends "
+                    "at %08X and %08X take exits %u and %u: it plays on\n", now, ends[0], ends[k], exit,
+                    MEM32(ends[k] + 0x14u));
+        }
+        return;
+    }
+    if (ends[0] != s_told) {
+        s_told = ends[0];
+        fprintf(stderr, "[SKIP] t=%.2f a preview plays with no skip of the game's own (its end: command "
+                "230 at %08X, exit %u, of %d): two presses of A skip it\n", now, ends[0], exit, count);
+    }
+    if (cutscene_skip_frame(ends[0], (MEM8(PAD_PRESSED) & PAD_PRESSED_A) != 0, now)) {
+        MEM32(runner + RUNNER_END_FOUND) = ends[0];
+        g_eax = CUTSCENE_SKIP_END;
+        fprintf(stderr, "[SKIP] t=%.2f the preview ends: its own end (command 230 at %08X, exit %u) "
+                "found now, as when the preview plays out, for the mission to set its flags and take "
+                "its exit\n", now, ends[0], exit);
+    }
+}
+/* Widths of the prompt's pieces at its own size, as the font last drew
+ * them; before the first draw, a guess (the first frame is drawn clear).
+ * The cap's guess is the line's height times CUTSCENE_SKIP_CAP_SIZE, which
+ * it keeps while the game's A is drawn there and the font's cap isn't. */
+static float s_prompt_width[CUTSCENE_SKIP_PIECES] = { 52.0f, 19.5f, 12.0f, 120.0f };
+static int s_prompt_logged, s_prompt_no_font;
+
+/* ---- The prompt's A: the game's own ----------------------------------------
+ * The message box (class 0x1CC660, made by sub_0006F200 with the box's
+ * flags) loads from the display set, through sub_00025700(10, 0, type, id):
+ * its frame, model 0xFA, and two buttons, models 0x69 and 0x6A (type 1),
+ * with animation 0x11 (type 2). A box that closes at A alone, as
+ * sub_0006F6D0's do (flags 0x0B000000), shows model 0x69, the green A. The
+ * box's draw, sub_0006EC80, at the frame's views' 0x13: the viewport the
+ * whole 640 x 480 (the game's device +0x78, a RECT), the projection 0x222
+ * across (3 degrees: a turn is 0x10000), near 1, far 4000 (+0x7C), a depth
+ * offset of -28.5 (+0x84); a matrix of its own on the game's stack
+ * (sub_001BAA00), moved to the box, 1220 deep, and the A's further to
+ * 1201 deep (sub_001BAA60); the model's draw, sub_00047690 (this the
+ * model, the animation and its frame); the matrix dropped (sub_001BAA50).
+ * The box's update (sub_0006F3A0) steps the frame by 1, back to 0 at the
+ * animation's last (its frame count, a short at +2).
+ *
+ * Here it is drawn the same way at the frame's end, where the font's cap
+ * was, its middle at the cap's middle. The box draws its A beside text at
+ * the font's scale 1; the prompt's text is at CUTSCENE_SKIP_SCALE times
+ * the prompt's size, so the A is that much smaller: 1201 deep divided by
+ * it. Its place is found from the projection the device has just been
+ * given (its focal length, +0x50, and the height's share of it, +0x60).
+ * The frame's own drawing is done, so the depth test passes always and
+ * nothing is written to the depth (D3D's ZFUNC and ZWRITEENABLE, the
+ * device's +0x134 and +0x130). Then all of it is put back: the depth
+ * states, the depth offset, the viewport and the projection. The model
+ * fades with no opacity of its own: it shows while the prompt is half in
+ * or more. JSRF_SKIP_A_MODEL (a number) draws another of the set's models
+ * instead, and JSRF_SKIP_A_SIZE (a factor) another size, for trying them
+ * on the PC without a new build.
+ *
+ * The set (D:\Media\Disp\SprNorm.bin, or SprNorm1 to 4 by sub_00043700's
+ * answer, loaded by sub_000348A0 a step a frame) isn't always there: the
+ * game lets it go for some story scenes (the flow's steps at 0x0007C020
+ * and 0x0007D290, sub_00025740(10, 0)), as for the
+ * garage's first scene after the tutorial, and loads it again where it's
+ * wanted, as the garage's speech boxes want it (the step at 0x0007BFD0:
+ * if sub_000256C0(10, 0) says it isn't loaded and the holder isn't serving
+ * another (sub_00025680, its +0x44), sub_000256A0(10, 0) asks for it).
+ * Where the prompt finds no set, it asks for it the same way, each frame
+ * until it's there; the holder loads it in a few frames, and the cap's
+ * place is left empty meanwhile. After A_WAIT seconds with no set,
+ * the font's cap and A are drawn. The set is left loaded: the game's own
+ * steps let it go where they would have, and its step that loads it finds
+ * it there.
+ *
+ * The holder serves one command at a time, a step a frame from its update
+ * (sub_00025310: the group's step, table 0x1EC0F0, until it answers 1),
+ * and the game never lets the set go while it is loading it: its flow
+ * asks, waits for it, and only later lets it go. The prompt's ask can be
+ * loading when a scene ends and the flow's next step lets the set go
+ * (sub_00025740(10, 0), which would free what the load is still filling).
+ * So that letting go is held back while the set loads, and done as soon
+ * as the holder is done: at the frame's end, or first thing when the game
+ * next asks the holder anything (sub_000256A0, sub_000256C0), so that it
+ * finds the set gone, as it left it.
+ *
+ * spriteice's notes of 13:04 and 13:16 UTC on 2026-11-16: the font's cap
+ * at that first scene, and the speech boxes above the characters there
+ * with their A. */
+#define GAME_DEVICE       0x00251D6Cu /* the pointer to the game's own device (vtable 0x1E0F00) */
+#define DEV_VIEWPORT      0x78u       /* (device, RECT *) */
+#define DEV_PROJECTION    0x7Cu       /* (device, angle, near, far) */
+#define DEV_DEPTH_OFFSET  0x84u       /* (device, offset) */
+#define DEV_Z_WRITE       0x130u      /* (device, D3D's ZWRITEENABLE) */
+#define DEV_Z_FUNC        0x134u      /* (device, D3D's ZFUNC) */
+#define DEV_NEAR          0x40u
+#define DEV_FAR           0x44u
+#define DEV_ANGLE         0x48u
+#define DEV_OFFSET        0x4Cu
+#define DEV_FOCAL         0x50u       /* the viewport's half width over the half angle's tangent */
+#define DEV_TALL          0x60u       /* the height's focal length, as a share of DEV_FOCAL */
+#define VIEW_NOW          0x00264ED0u /* the viewport now: x, y, width, height */
+#define RS_ZFUNC          0x0019E1C4u /* D3D's render state: ZFUNC */
+#define RS_ZWRITE         0x0019E1E0u /* ... and ZWRITEENABLE */
+#define Z_ALWAYS          0x207u      /* D3DCMP_ALWAYS (the GPU's own) */
+#define DISP_ACTOR        7u          /* the display set's holder, in the game manager */
+#define DISP_SET          0x15FCu     /* its loaded set (sub_00034850): */
+#define DISP_MODELS       0x10u       /*   type 1, by id */
+#define DISP_ANIMS        0x18u       /*   type 2, by id */
+#define DISP_GROUP        10u         /* the set's number in the holder's tables (0x1EC068 and on) */
+#define DISP_BUSY         0x44u       /* the holder is serving a command (sub_00025680) */
+#define DISP_SERVING      0x48u       /* ... which (the group), and +0x4C its word */
+#define DISP_ASK_RA       0x0007BFF4u /* the flow's own ask's return (its call at 0x0007BFEF) */
+#define DISP_LET_GO_RA    0x0007D29Cu /* the flow's own letting go's return (its call at 0x0007D297) */
+#define A_WAIT            2.0         /* seconds the prompt waits for the set before the font's cap */
+#define A_MODEL           0x69u
+#define A_ANIM            0x11u
+#define A_DEPTH           1201.0f     /* the box's A, beside text at scale 1 */
+#define BOX_ANGLE         0x222u
+#define BOX_NEAR          1.0f
+#define BOX_FAR           4000.0f
+#define BOX_OFFSET        (-28.5f)
+#define BOX_VIEWPORT_RA   0x0006ECC7u /* the box's own calls' returns */
+#define BOX_PROJECTION_RA 0x0006ECE1u
+#define BOX_OFFSET_RA     0x0006ED1Au
+#define BOX_PUSH_RA       0x0006ED1Fu
+#define BOX_MOVE_RA       0x0006ED67u
+#define BOX_DRAW_RA       0x0006ED87u
+#define BOX_POP_RA        0x0006ED8Cu
+#define BOX_ZERO_RA       0x0006EE5Cu
+extern void sub_001BAA00(void);
+extern void sub_001BAA60(void);
+extern void sub_001BAA50(void);
+extern void sub_00047690(void);
+static uint32_t f32_bits(float f) { uint32_t u; memcpy(&u, &f, sizeof u); return u; }
+static float bits_f32(uint32_t u) { float f; memcpy(&f, &u, sizeof f); return f; }
+/* A call of the game's device's slot `slot`, D3D's way: the device the
+ * first argument. 0 when the slot isn't the game's code. */
+static int prompt_device(uint32_t dev, uint32_t slot, uint32_t ra, int nargs, const uint32_t *args)
+{
+    const uint32_t va = MEM32(MEM32(dev) + slot);
+    recomp_func_t fn = recomp_lookup_manual(va);
+    if (!fn) fn = recomp_lookup(va);
+    if (!fn) return 0;
+    guest_call_cdecl(fn, ra, nargs, args);
+    return 1;
+}
+static uint32_t prompt_env(const char *name, uint32_t fallback)
+{
+    const char *e = getenv(name);
+    return e && *e ? (uint32_t)strtoul(e, NULL, 0) : fallback;
+}
+enum { A_NONE, A_THERE, A_WAITING };
+static float s_a_frame;
+static int s_a_logged;
+static double s_a_since = -1.0;    /* when this showing of the prompt found no set; -1 not */
+static double s_a_asked = -1.0;    /* when the game took the ask, for the set's line; -1 not */
+static int s_a_gave_up;            /* this showing's line said */
+static uint32_t s_want_model = 0xFFFFFFFFu;
+static float s_want_size;
+static int s_let_go_held;          /* the game let the set go while it loaded */
+static uint32_t disp_holder(void)
+{
+    const uint32_t gm = MEM32(GAME_MANAGER);
+    return gm ? MEM32(gm + GM_ACTORS + DISP_ACTOR * 4u) : 0;
+}
+static int disp_loading(uint32_t holder)
+{
+    return holder && MEM32(holder + DISP_BUSY) && MEM32(holder + DISP_SERVING) == DISP_GROUP;
+}
+extern void sub_00025740_gen(void);
+static void disp_let_go_held(const char *where)
+{
+    uint32_t a[2];
+    if (!s_let_go_held || disp_loading(disp_holder())) return;
+    s_let_go_held = 0;
+    a[0] = DISP_GROUP;
+    a[1] = 0;
+    guest_call_cdecl(sub_00025740_gen, DISP_LET_GO_RA, 2, a);
+    fprintf(stderr, "[SKIP] t=%.2f the game's letting go of its display set, held while it loaded, done "
+            "now (%s)\n", jsrf_now(), where);
+}
+/* sub_00025740(group, word): the holder lets a group go (table 0x1EC288). */
+void sub_00025740(void)
+{
+    if (GARG(1) == DISP_GROUP && disp_loading(disp_holder())) {
+        if (!s_let_go_held)
+            fprintf(stderr, "[SKIP] t=%.2f the game lets its display set go while it loads for the prompt's "
+                    "A (from %08X): held until it's loaded\n", jsrf_now(), GARG(0));
+        s_let_go_held = 1;
+        return;
+    }
+    sub_00025740_gen();
+}
+/* The display set's A (JSRF_SKIP_A_MODEL's model, 0x69 by default) and its
+ * animation, asking the game for the set where it isn't loaded, as its
+ * flow asks. A_THERE when there; A_WAITING while the set is asked for, up
+ * to A_WAIT seconds into this showing; A_NONE when there is none to have. */
+static int prompt_a_find(double now, uint32_t *model, uint32_t *anim)
+{
+    const uint32_t holder = disp_holder();
+    const uint32_t set = holder ? MEM32(holder + DISP_SET) : 0;
+    const uint32_t models = set ? MEM32(set + DISP_MODELS) : 0;
+    const uint32_t anims = set ? MEM32(set + DISP_ANIMS) : 0;
+    static int s_no_model;
+    if (s_want_model == 0xFFFFFFFFu) {
+        s_want_model = prompt_env("JSRF_SKIP_A_MODEL", A_MODEL);
+        s_want_size = getenv("JSRF_SKIP_A_SIZE") ? (float)atof(getenv("JSRF_SKIP_A_SIZE")) : 1.0f;
+        if (!(s_want_size > 0.0f)) s_want_size = 1.0f;
+    }
+    *model = models && s_want_model < 0x400u ? MEM32(models + s_want_model * 4u) : 0;
+    *anim = anims ? MEM32(anims + A_ANIM * 4u) : 0;
+    if (*model) {
+        if (s_a_asked >= 0.0)
+            fprintf(stderr, "[SKIP] t=%.2f the game's A: its display set loaded %.2f s after the ask (set "
+                    "%08X)\n", now, now - s_a_asked, set);
+        s_a_since = s_a_asked = -1.0;
+        return A_THERE;
+    }
+    if (!holder || set) {
+        if (!s_no_model++)
+            fprintf(stderr, "[SKIP] t=%.2f the game's A not drawn: no model %X in the display set (holder "
+                    "%08X, set %08X): the font's cap instead\n", now, s_want_model, holder, set);
+        return A_NONE;
+    }
+    /* No set: the flow's ask (sub_000256A0 answers 0 while the holder is
+     * serving another), each frame until it's there. */
+    if (s_a_since < 0.0) {
+        s_a_since = now;
+        s_a_gave_up = 0;
+    }
+    if (!MEM32(holder + DISP_BUSY) && !s_let_go_held) {
+        uint32_t a[2];
+        a[0] = DISP_GROUP;
+        a[1] = 0;
+        if (guest_call_cdecl(sub_000256A0, DISP_ASK_RA, 2, a) && s_a_asked < 0.0) {
+            s_a_asked = now;
+            fprintf(stderr, "[SKIP] t=%.2f the game's A: its display set isn't loaded (holder %08X): asked "
+                    "the game for it, as its flow asks\n", now, holder);
+        }
+    }
+    if (now - s_a_since < A_WAIT) return A_WAITING;
+    if (!s_a_gave_up) {
+        s_a_gave_up = 1;
+        fprintf(stderr, "[SKIP] t=%.2f the game's A not drawn: its display set not loaded %.1f s on (holder "
+                "%08X, %s): the font's cap instead\n", now, now - s_a_since, holder,
+                MEM32(holder + DISP_BUSY) ? "serving a command" : s_a_asked >= 0.0 ? "asked" : "not asked");
+    }
+    return A_NONE;
+}
+/* The game's A, model and anim from prompt_a_find, its middle at cx, cy
+ * on the 640 x 480, at the prompt's size. 1 when drawn. */
+static int prompt_a_draw(uint32_t model, uint32_t anim, float cx, float cy, float size, double now)
+{
+    const uint32_t dev = MEM32(GAME_DEVICE);
+    uint32_t a[4], rect, zfunc, zwrite;
+    uint32_t angle, near_z, far_z, offset, view[4];
+    float focal, tall, depth, x, y;
+    int ok;
+    if (!dev) {
+        if (!s_a_logged++)
+            fprintf(stderr, "[SKIP] t=%.2f the game's A not drawn: no device: the font's cap instead\n", now);
+        return 0;
+    }
+    /* As the device is now, to put back. */
+    angle = MEM32(dev + DEV_ANGLE);
+    near_z = MEM32(dev + DEV_NEAR);
+    far_z = MEM32(dev + DEV_FAR);
+    offset = MEM32(dev + DEV_OFFSET);
+    view[0] = MEM32(VIEW_NOW);
+    view[1] = MEM32(VIEW_NOW + 4u);
+    view[2] = MEM32(VIEW_NOW + 8u);
+    view[3] = MEM32(VIEW_NOW + 12u);
+    zfunc = MEM32(RS_ZFUNC);
+    zwrite = MEM32(RS_ZWRITE);
+    /* The box's view of it. */
+    g_esp -= 16u;
+    rect = g_esp;
+    MEM32(rect) = 0; MEM32(rect + 4u) = 0; MEM32(rect + 8u) = 640u; MEM32(rect + 12u) = 480u;
+    a[0] = dev; a[1] = rect;
+    ok = prompt_device(dev, DEV_VIEWPORT, BOX_VIEWPORT_RA, 2, a);
+    a[1] = BOX_ANGLE; a[2] = f32_bits(BOX_NEAR); a[3] = f32_bits(BOX_FAR);
+    ok = ok && prompt_device(dev, DEV_PROJECTION, BOX_PROJECTION_RA, 4, a);
+    a[1] = f32_bits(BOX_OFFSET);
+    ok = ok && prompt_device(dev, DEV_DEPTH_OFFSET, BOX_OFFSET_RA, 2, a);
+    a[1] = Z_ALWAYS;
+    ok = ok && prompt_device(dev, DEV_Z_FUNC, BOX_OFFSET_RA, 2, a);
+    a[1] = 0;
+    ok = ok && prompt_device(dev, DEV_Z_WRITE, BOX_OFFSET_RA, 2, a);
+    focal = bits_f32(MEM32(dev + DEV_FOCAL));
+    tall = bits_f32(MEM32(dev + DEV_TALL));
+    if (!(tall > 0.5f && tall < 2.0f)) tall = 1.0f;
+    depth = A_DEPTH / (CUTSCENE_SKIP_SCALE * size * s_want_size);
+    if (ok && focal > 0.0f) {
+        x = (cx - 320.0f) * depth / focal;
+        y = (240.0f - cy) * depth / (focal * tall);
+        guest_call_cdecl(sub_001BAA00, BOX_PUSH_RA, 0, NULL);
+        a[0] = f32_bits(x); a[1] = f32_bits(y); a[2] = f32_bits(depth);
+        guest_call_cdecl(sub_001BAA60, BOX_MOVE_RA, 3, a);
+        {
+            const uint32_t sv_ecx = g_ecx;
+            g_ecx = model;
+            a[0] = anim; a[1] = f32_bits(s_a_frame);
+            guest_call_cdecl(sub_00047690, BOX_DRAW_RA, 2, a);
+            g_ecx = sv_ecx;
+        }
+        guest_call_cdecl(sub_001BAA50, BOX_POP_RA, 0, NULL);
+        if (!s_a_logged++)
+            fprintf(stderr, "[SKIP] t=%.2f the game's A drawn: model %X at %08X, animation %08X (%d frames), "
+                    "its middle at %.1f, %.1f, %.0f deep (focal %.1f, height %.3f)\n", now, s_want_model, model,
+                    anim, anim ? (int)(int16_t)MEM16(anim + 2u) : 0, cx, cy, depth, focal, tall);
+    } else if (!s_a_logged++) {
+        fprintf(stderr, "[SKIP] t=%.2f the game's A not drawn: the device's calls aren't the game's code\n", now);
+    }
+    /* Put back. */
+    a[0] = dev;
+    a[1] = zwrite;
+    prompt_device(dev, DEV_Z_WRITE, BOX_ZERO_RA, 2, a);
+    a[1] = zfunc;
+    prompt_device(dev, DEV_Z_FUNC, BOX_ZERO_RA, 2, a);
+    a[1] = offset;
+    prompt_device(dev, DEV_DEPTH_OFFSET, BOX_ZERO_RA, 2, a);
+    MEM32(rect) = view[0]; MEM32(rect + 4u) = view[1];
+    MEM32(rect + 8u) = view[0] + view[2]; MEM32(rect + 12u) = view[1] + view[3];
+    a[1] = rect;
+    prompt_device(dev, DEV_VIEWPORT, BOX_VIEWPORT_RA, 2, a);
+    a[1] = angle; a[2] = near_z; a[3] = far_z;
+    prompt_device(dev, DEV_PROJECTION, BOX_PROJECTION_RA, 4, a);
+    g_esp += 16u;
+    /* The next frame's step of its animation. */
+    if (anim) {
+        const int frames = (int)(int16_t)MEM16(anim + 2u);
+        s_a_frame += 1.0f;
+        if (s_a_frame >= (float)frames - 1.0f) s_a_frame = 0.0f;
+    }
+    return ok && focal > 0.0f;
+}
+static void prompt_draw(void)
+{
+    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
+    CutsceneSkipPlace place[CUTSCENE_SKIP_PIECES];
+    float alpha, size;
+    uint32_t esp = g_esp, text, gm, font, a_model, a_anim;
+    int marked, k, font_cap, a_state;
+    const double now = jsrf_now();
+    static double try_at = -2.0;
+    /* JSRF_SKIP_PROMPT_AT=t: the prompt tried once at t seconds, with no
+     * scene (cutscene_skip_try), so a test run sees it drawn. */
+    if (try_at == -2.0) {
+        const char *e = getenv("JSRF_SKIP_PROMPT_AT");
+        try_at = e && *e ? atof(e) : -1.0;
+    }
+    if (try_at >= 0.0 && now >= try_at) {
+        try_at = -1.0;
+        cutscene_skip_try(now);
+    }
+    disp_let_go_held("at the frame's end");
+    if (!cutscene_skip_prompt(now, &alpha, &size)) {
+        s_a_since = -1.0;
+        return;
+    }
+    gm = MEM32(GAME_MANAGER);
+    font = gm ? MEM32(gm + GM_ACTORS + FONT_ACTOR * 4u) : 0;
+    if (!font) {
+        if (!s_prompt_no_font++)
+            fprintf(stderr, "[SKIP] t=%.2f the prompt not drawn: the game manager has no font\n", now);
+        return;
+    }
+    if (!s_prompt_logged++)
+        fprintf(stderr, "[SKIP] t=%.2f the prompt drawn at the frame's end, with the font at %08X\n",
+                now, font);
+    cutscene_skip_place(size, s_prompt_width, place);
+    marked = wide_hud_begin(WIDE_HUD_SKIP);
+    /* The game's A in the cap's place, while the prompt is half in or more
+     * (its set asked for from the first frame, where it isn't loaded, and
+     * the place left empty while it loads); the font's cap and A, fading
+     * with the words, where the game has no A to draw. */
+    a_state = prompt_a_find(now, &a_model, &a_anim);
+    font_cap = a_state == A_NONE;
+    if (a_state == A_THERE && alpha >= 0.5f)
+        font_cap = !prompt_a_draw(a_model, a_anim,
+                                  place[CUTSCENE_SKIP_CAP].x + s_prompt_width[CUTSCENE_SKIP_CAP] * size * 0.5f,
+                                  CUTSCENE_SKIP_MIDDLE, size, now);
+    g_esp -= PROMPT_SCRATCH;
+    text = g_esp;
+    for (k = 0; k < CUTSCENE_SKIP_PIECES; k++) {
+        const float f[5] = { place[k].x, place[k].y, FONT_SPACING, place[k].scale, place[k].scale };
+        const uint32_t colour = cutscene_skip_colour[k];
+        uint32_t a[7];
+        float pen;
+        if ((k == CUTSCENE_SKIP_CAP || k == CUTSCENE_SKIP_A) && !font_cap) continue;
+        snprintf((char *)m + text, PROMPT_SCRATCH, "%s", cutscene_skip_text[k]);
+        memcpy(&a[0], &f[0], 4);
+        memcpy(&a[1], &f[1], 4);
+        memcpy(&a[2], &f[2], 4);
+        a[3] = ((uint32_t)(alpha * (float)(colour >> 24)) << 24) | (colour & 0x00FFFFFFu);
+        memcpy(&a[4], &f[3], 4);
+        memcpy(&a[5], &f[4], 4);
+        a[6] = text;
+        guest_call_cdecl(sub_0003D610, PROMPT_FONT_RA, 7, a);
+        memcpy(&pen, m + font + FONT_PEN_X, sizeof pen);
+        if (pen > place[k].x && size > 0.0f) s_prompt_width[k] = (pen - place[k].x) / size;
+    }
+    wide_hud_end(WIDE_HUD_SKIP, marked);
+    g_esp = esp;
+}
+void sub_000131F0(void)
+{
+    uint32_t sv_eax, sv_ecx, sv_edx;
+    sub_000131F0_gen();
+    sv_eax = g_eax;
+    sv_ecx = g_ecx;
+    sv_edx = g_edx;
+    prompt_draw();
+    g_eax = sv_eax;
+    g_ecx = sv_ecx;
+    g_edx = sv_edx;
 }
 /* The plain menus (widescreen_menus.h): each one's draw, its class's slot
  * +0xC with this in ecx, marks its frame for the side fill before the menu

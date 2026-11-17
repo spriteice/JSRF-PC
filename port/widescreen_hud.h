@@ -64,6 +64,7 @@ enum {
     WIDE_HUD_MESSAGE,   /* a message that slides in from the left */
     WIDE_HUD_SIGN,      /* one of the HUD's own signs (3D), in the middle */
     WIDE_HUD_COUNTER,   /* a label and a three-digit number, in the middle */
+    WIDE_HUD_SKIP,      /* Skip cutscenes' prompt, at the bottom right (cutscene_skip.h) */
     WIDE_HUD_PIECES
 };
 

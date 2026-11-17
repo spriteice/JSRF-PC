@@ -7,7 +7,8 @@ each menu's rows live with the setting they change (File in
 `src/menu/menu_sdl.cpp`, Display, Graphics and Purge shaders in
 `src/nv2a_gl/nv2a_gl.c`, Display's Draw distance and Building distance, with
 Far buildings and Far shadows, in `port/draw_distance.c`, Skip intro in
-`port/intro.c` and Music info in pause in `port/music_info.c`, Audio in
+`port/intro.c`, Skip cutscenes in `port/cutscene_skip.c` and Music info in
+pause in `port/music_info.c`, Audio in
 `port/audio.c`, Input's Free camera in
 `port/freecam.c`, and its Default cam fix in `port/camera_walls.c` and
 Keyboard moves in `port/keyboard_move.c`, Developer in
@@ -29,12 +30,13 @@ row, and the log says so once. A submenu can sit under a row as other rows
 do: Building distance, with Far buildings and Far shadows, sits under HUD,
 below Draw distance. Display ends with two, both marked last and
 added by the window (`nv2a_gl.c`): Skips, for the parts of the game a player
-can leave out (Skip intro), then Enhancements, for what goes beyond the
-console (Music info in pause, then See through fix, added by the window). A
-new skip or enhancement goes in one of them, not in Display itself. Graphics
-ends with one, Upscaling, marked last and added by the window too, for the
-rows that draw the game from sharper copies: Menus and HUD, Textures,
-Graffiti, Sharpness, Edge strength, then Cleanup, a row of two ticks.
+can leave out (Skip intro, then Skip cutscenes), then Enhancements, for what
+goes beyond the console (Music info in pause, then See through fix, added by
+the window). A new skip or enhancement goes in one of them, not in Display
+itself. Graphics ends with one, Upscaling, marked last and added by the
+window too, for the rows that draw the game from sharper copies: Menus and
+HUD, Textures, Graffiti, Sharpness, Edge strength, then Cleanup, a row of two
+ticks.
 Input is two submenus, and nothing else: Free camera, added with its rows by
 `port/freecam.c` (Enable free camera, Auto centre, Invert X, Invert Y,
 Sensitivity X, Sensitivity Y, then Deadzone), then Behaviour, for how the

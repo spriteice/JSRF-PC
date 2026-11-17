@@ -131,7 +131,7 @@ input goes to the menu.
   Camera. The one ticked is the one your settings match, if any.
 - **Display:** Full screen, the render scale (1× to 6×), the aspect ratio,
   the HUD submenu, the draw distance, the Building distance submenu (Far
-  buildings and Far shadows), and two submenus at the end: Skips, with Skip intro, and Enhancements, with Music info in pause and
+  buildings and Far shadows), and two submenus at the end: Skips, with Skip intro and Skip cutscenes, and Enhancements, with Music info in pause and
   See through fix. In HUD, HUD scale draws the HUD at 0.5× to 1.5× its size
   (1× the default), a tenth at each − or +, each piece keeping its distance
   from the screen's edges; Disable HUD hides it. Both change at once, and are
@@ -168,7 +168,22 @@ input goes to the menu.
   1 there reads as 3x and 0 as Off. Skip intro leaves out the
   logos and the graffiti disclaimer the game opens with, and starts at the
   title screen's loading. Off by default, so the intro plays as on the Xbox.
-  It is kept as `skipintro=` in the settings file. Music info in pause shows
+  It is kept as `skipintro=` in the settings file. Skip cutscenes lets you
+  leave a story scene, or a preview where the camera follows a rival to
+  their place: while one plays, press A (the jump button), and "Press
+  A again to skip" fades in at the bottom right for 3 seconds, with the
+  game's own green A button, as its message boxes show it; press A again
+  while it shows, and the scene ends as it does at its own end (a preview
+  as if it had played out), the story going on from there. With it ticked,
+  that is the one way for every scene and preview, those you've seen
+  before too: the game's own skip of a scene or preview seen before, at one
+  press of A or Start, is left out, and is back when it's off. Previews the
+  game never lets you skip, as in mission 0121's rounds, are covered too.
+  Nothing shows until the first press. The prompt is
+  drawn with the HUD, so Display > HUD's scale sizes it, and with Disable HUD
+  it isn't shown, though two presses still end the scene. Off by default, so
+  scenes play to their end as on the Xbox; it changes at once, and is kept as
+  `skipcutscenes=` (1 or 0) in the settings file. Music info in pause shows
   the song playing, its number, title and artist, in both pause menus, on the
   left, above Rotate map. It follows the songs of the street mixes too, and
   shows nothing for the title's and the story's own music. On by default; it

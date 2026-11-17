@@ -749,6 +749,9 @@ static int host_main(void)
     /* Whether the intro is skipped, and its row in Display > Skips
      * (port/intro.c). */
     { extern void intro_start(void); intro_start(); }
+    /* Whether a cutscene ends at a second press of A, and its row in
+     * Display > Skips, below Skip intro (port/cutscene_skip.c). */
+    { extern void cutscene_skip_start(void); cutscene_skip_start(); }
     /* Whether the game starts at a mission (JSRF_START_MISSION), read once
      * and taken out of the environment (port/missions.c). */
     { extern void missions_start(void); missions_start(); }
