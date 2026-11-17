@@ -26,6 +26,9 @@
  * The Misc group's log is given the draws of a place with more objects than
  * b2's log remembered, which wrote a line for every draw there, and a draw
  * just after Far buildings is turned on, before it has read the map.
+ * Developer > Far buildings test's rows are pressed as the menu presses them,
+ * between the game's sets, and the eye's area is followed through the sets
+ * of the made-up map and of two tiny ones.
  */
 #include <float.h>
 #include <math.h>
@@ -38,20 +41,30 @@
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); exit(1); } } while (0)
 
 static XBOX_MENU_ITEM s_row, s_group_row, s_far_row, s_shadow_row;
-static int s_rows, s_at[4];     /* each one's place in the call, from 1 */
+static XBOX_MENU_ITEM s_test_row, s_leave_row, s_backdrop_row;     /* Developer > Far buildings test */
+static int s_rows, s_at[7];     /* each one's place in the calls, from 1 */
+static int s_calls, s_call_rows[4];     /* the calls, and each one's rows */
 void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count)
 {
-    int i;
+    XBOX_MENU_ITEM *const caught[7] = { &s_row, &s_group_row, &s_far_row, &s_shadow_row,
+                                        &s_test_row, &s_leave_row, &s_backdrop_row };
+    int i, k;
     for (i = 0; i < count; i++) {
         const char *l = items[i].label ? items[i].label : "";
         XBOX_MENU_ITEM *to = !strcmp(l, "Draw distance") ? &s_row
                            : !strcmp(l, "Building distance") ? &s_group_row
                            : !strcmp(l, "Far buildings") ? &s_far_row
-                           : !strcmp(l, "Far shadows") ? &s_shadow_row : NULL;
+                           : !strcmp(l, "Far shadows") ? &s_shadow_row
+                           : !strcmp(l, "Far buildings test") ? &s_test_row
+                           : !strcmp(l, "Leave out area") ? &s_leave_row
+                           : !strcmp(l, "Game's backdrop depth") ? &s_backdrop_row : NULL;
         if (!to) continue;
         *to = items[i];
-        s_at[to == &s_row ? 0 : to == &s_group_row ? 1 : to == &s_far_row ? 2 : 3] = s_rows + i + 1;
+        for (k = 0; k < 7; k++)
+            if (caught[k] == to) s_at[k] = s_rows + i + 1;
     }
+    if (s_calls < 4) s_call_rows[s_calls] = count;
+    s_calls++;
     s_rows += count;
 }
 
@@ -391,6 +404,122 @@ static void check_misc(void)
     printf("misc: each model once an area, again at a new high, at most %d lines a map\n", DRAW_MISC_LINES);
 }
 
+/* ---- Developer > Far buildings test -------------------------------------- */
+
+/* A press of Leave out area's - or +, as the menu gives it: the value a step
+ * below or above, within its bounds. */
+static void leave_press(int by)
+{
+    double v = s_leave_row.value() + by;
+    if (v < s_leave_row.min) v = s_leave_row.min;
+    if (v > s_leave_row.max) v = s_leave_row.max;
+    s_leave_row.set(v);
+}
+
+/* The shadows' set from the bottom, with Far shadows at shadows and the
+ * widened set in the game's memory (check_shadow_passes). */
+static uint32_t shadows_seen(void)
+{
+    uint32_t game[DRAW_SET_WORDS];
+    game_set(game, BOTTOM);
+    memcpy(s_live, game, sizeof s_live);
+    draw_buildings_widen(s_areas, AREAS, s_live, 0.0, 0);
+    draw_buildings_shadows(s_live, game, shadow_pass);
+    return s_seen[0];
+}
+
+/* Two tiny maps for the eye's area: two areas whose lists make the same
+ * set, as two areas side by side can; and a set no area makes. */
+static const uint32_t k_twin_list[] = { 0, 1 };
+static DrawArea s_twins[2];
+static uint32_t widened_twins(void)
+{
+    uint32_t set[DRAW_SET_WORDS] = { AREA(0) | AREA(1) };
+    s_twins[0].list = s_twins[1].list = k_twin_list;
+    s_twins[0].nlist = s_twins[1].nlist = 2;
+    draw_buildings_widen(s_twins, 2, set, 0.0, 0);
+    return set[0];
+}
+
+/* Far buildings 3x from the settings, Far shadows 1x. From the bottom, Far
+ * buildings adds areas 2, 3, 4 and the side street, 9. Each + leaves out the
+ * next of them, from the game's next set (the press is stepped on the
+ * game's thread), and Far shadows leaves it out too; after the last, none
+ * again; - steps back, and from none stays there. An area the game's own set
+ * has is never taken out. A new map starts at none again, and says so. The
+ * backdrop's row flips draw_far_test_backdrop. run.py checks the lines, and
+ * that neither row is kept. */
+static void check_far_test(void)
+{
+    static const int k_steps[] = { 2, 3, 4, SIDE, -1 };
+    uint32_t all = k_from_bottom[3];
+    int i;
+    CHECK(draw_far_buildings() == 3 && draw_far_shadows() == 1);
+    map_make();
+    CHECK(widened(BOTTOM) == all && s_leave_row.value() == -1);
+    for (i = 0; i < 5; i++) {
+        leave_press(1);
+        CHECK(s_leave_row.value() == (i ? k_steps[i - 1] : -1));      /* not yet: the game's next set */
+        CHECK(widened(BOTTOM) == (k_steps[i] < 0 ? all : all & ~AREA(k_steps[i])));
+        CHECK(s_leave_row.value() == k_steps[i]);
+    }
+    leave_press(-1);                    /* from none, stays none */
+    CHECK(widened(BOTTOM) == all && s_leave_row.value() == -1);
+    leave_press(1);
+    leave_press(1);                     /* two before the game's next set count as one */
+    CHECK(widened(BOTTOM) == (all & ~AREA(2)));
+    leave_press(1);
+    CHECK(widened(BOTTOM) == (all & ~AREA(3)));
+    leave_press(-1);
+    CHECK(widened(BOTTOM) == (all & ~AREA(2)) && s_leave_row.value() == 2);
+    /* Far shadows at 1x from the bottom: areas 0 to 2, without 2. */
+    CHECK(shadows_seen() == RUN(0, 1));
+    /* From area 1 the game draws area 2 itself: never taken out. */
+    CHECK(widened(1) & AREA(2));
+    CHECK(s_leave_row.value() == 2);
+    /* A new map: none left out. */
+    misc_map(AREAS - 1);
+    CHECK(s_leave_row.value() == -1);
+    CHECK(!draw_far_test_backdrop() && !s_backdrop_row.state());
+    s_backdrop_row.run();
+    CHECK(draw_far_test_backdrop() && s_backdrop_row.state());
+    s_backdrop_row.run();
+    CHECK(!draw_far_test_backdrop() && !s_backdrop_row.state());
+    printf("far buildings test: each added area left out in turn, none after the last\n");
+}
+
+/* The eye's area through the made-up map's sets, then the tiny maps', at 1x.
+ * run.py checks the lines: a change of area has one, with what Far buildings
+ * adds there, up to DRAW_EYE_LINES between two [DRAW] lines, and the [DRAW]
+ * line says the eye's area, its areas since the line before, and what Far
+ * buildings adds from it. */
+static void check_eye(void)
+{
+    uint32_t set[DRAW_SET_WORDS];
+    int i;
+    CHECK(draw_far_buildings() == 1);
+    map_make();
+    game_set(set, BOTTOM);
+    draw_buildings_widen(s_areas, AREAS, set, 0.0, 0);        /* starts the counts */
+    for (i = 0; i < 25; i++) {          /* 50 changes: 40 lines, the rest not */
+        game_set(set, TOP);
+        draw_buildings_widen(s_areas, AREAS, set, 0.1, 1);
+        game_set(set, BOTTOM);
+        draw_buildings_widen(s_areas, AREAS, set, 0.1, 1);
+    }
+    game_set(set, 4);
+    draw_buildings_widen(s_areas, AREAS, set, 5.1, 50);        /* the [DRAW] line */
+    game_set(set, 4);
+    draw_buildings_widen(s_areas, AREAS, set, 10.2, 100);      /* and the next: area 4 since */
+    /* A set no area's list makes: the area unknown. */
+    memset(set, 0, sizeof set);
+    set[0] = RUN(0, 3);
+    draw_buildings_widen(s_areas, AREAS, set, 10.3, 101);
+    /* Two areas whose lists make the same set: the first, and the log says so. */
+    CHECK(widened_twins() == (AREA(0) | AREA(1)));
+    printf("eye: its area through the sets\n");
+}
+
 int main(int argc, char **argv)
 {
     const char *c = argc > 1 ? argv[1] : "";
@@ -398,8 +527,33 @@ int main(int argc, char **argv)
     /* Four rows, in one call, on the Display page: a choice under HUD,
      * showing the setting, then the Building distance submenu under HUD
      * too, below it, and in the submenu two choices, Far buildings then Far
-     * shadows, each Off, 1x, 2x, 3x or All. */
-    CHECK(s_rows == 4 && s_at[0] == 1 && s_at[1] == 2 && s_at[2] == 3 && s_at[3] == 4);
+     * shadows, each Off, 1x, 2x, 3x or All. Then three in a second call, on
+     * the Developer page: the Far buildings test submenu, and in it Leave
+     * out area, a number from -1 (none) up, and Game's backdrop depth, a
+     * tick, both off; neither set by the presets, as Developer's rows aren't
+     * (docs/menu-format.md). */
+    CHECK(s_calls == 2 && s_call_rows[0] == 4 && s_call_rows[1] == 3);
+    CHECK(s_rows == 7 && s_at[0] == 1 && s_at[1] == 2 && s_at[2] == 3 && s_at[3] == 4);
+    CHECK(s_at[4] == 5 && s_at[5] == 6 && s_at[6] == 7);
+    CHECK(s_test_row.menu == XBOX_MENU_DEVELOPER && s_test_row.kind == XBOX_ITEM_GROUP);
+    CHECK(!s_test_row.group && !s_test_row.under && !s_test_row.last);
+    CHECK(s_leave_row.menu == XBOX_MENU_DEVELOPER && s_leave_row.kind == XBOX_ITEM_NUMBER);
+    CHECK(s_leave_row.group && !strcmp(s_leave_row.group, "Far buildings test"));
+    CHECK(s_leave_row.min == -1 && s_leave_row.max == DRAW_AREAS_MAX - 1 && s_leave_row.step == 1);
+    CHECK(s_leave_row.value && s_leave_row.set && s_leave_row.value() == -1);
+    CHECK(s_backdrop_row.menu == XBOX_MENU_DEVELOPER && s_backdrop_row.kind == XBOX_ITEM_TOGGLE);
+    CHECK(s_backdrop_row.group && !strcmp(s_backdrop_row.group, "Far buildings test"));
+    CHECK(s_backdrop_row.state && s_backdrop_row.run && !s_backdrop_row.state() && !draw_far_test_backdrop());
+    CHECK(s_test_row.presets == XBOX_PRESETS_UNSAID && s_leave_row.presets == XBOX_PRESETS_UNSAID &&
+          s_backdrop_row.presets == XBOX_PRESETS_UNSAID);
+    CHECK(!s_leave_row.confirm && !s_backdrop_row.confirm);
+    {
+        const XBOX_MENU_ITEM *const tests[3] = { &s_test_row, &s_leave_row, &s_backdrop_row };
+        int i;
+        for (i = 0; i < 3; i++)
+            CHECK(tests[i]->hint && strlen(tests[i]->hint) <= MENU_HINT_LONGEST &&
+                  tests[i]->hint[strlen(tests[i]->hint) - 1] == '.');
+    }
     CHECK(s_group_row.menu == XBOX_MENU_DISPLAY && s_group_row.kind == XBOX_ITEM_GROUP && !s_group_row.last);
     CHECK(s_group_row.under && !strcmp(s_group_row.under, "HUD") && !s_group_row.group);
     CHECK(s_group_row.presets == XBOX_PRESETS_UNSAID);   /* a submenu is no setting (menu.h) */
@@ -499,6 +653,8 @@ int main(int argc, char **argv)
     if (!strcmp(c, "reach_3x")) check_reach(3);
     if (!strcmp(c, "reach_all")) check_reach(DRAW_FAR_WHOLE);
     if (!strcmp(c, "far_misc")) check_misc();
+    if (!strcmp(c, "far_test")) check_far_test();
+    if (!strcmp(c, "far_eye")) check_eye();
     if (!strcmp(c, "shadows")) check_shadows();
     if (!strcmp(c, "far_pick")) {
         /* Off from its own key, whatever the old toggle says; then the row:

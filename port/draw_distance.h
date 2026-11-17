@@ -38,6 +38,9 @@
  * farshadows= (1 on, 0 off, on drawing the whole map): with no step of its
  * own in the settings, a row takes Off for 0 and its default for 1.
  *
+ * Developer > Far buildings test holds two rows, not kept, to find which
+ * area Far buildings adds draws what it shouldn't (draw_far_test_backdrop).
+ *
  * The hooks are in recomp_manual.c, under "draw distance"; the steps' maths,
  * the settings, the areas added, the shadows' set and the [DRAW] log are
  * here. */
@@ -167,5 +170,24 @@ void draw_buildings_shadows(uint32_t set[DRAW_SET_WORDS], const uint32_t game[DR
  * draw_buildings_widen's next call, which says which map it is. */
 #define DRAW_MISC_LINES 2048
 void draw_misc_drawn(uint32_t object, uint32_t model, uint32_t area, uint32_t places);
+
+/* Developer > Far buildings test, a submenu of two rows that change at once
+ * and aren't kept, added by draw_distance_start, to find which area Far
+ * buildings adds draws what it shouldn't, such as the buildings floating in
+ * Dogenzaka Hill's sky (known bug 66). Leave out area steps through the
+ * areas Far buildings adds from where the eye is now (+ the next, - the one
+ * before, -1 none), and Far buildings and Far shadows don't add the one
+ * shown, which is still drawn where the game's own set has it; a new map
+ * starts again at none. Game's backdrop depth draws the backdrop with the
+ * depth writes the game sets, not off as Far buildings sets them: nonzero
+ * while ticked, for recomp_manual.c's backdrop hook.
+ * While Far buildings is on, each [DRAW] line also says the eye's area (the
+ * area that makes the game's set: the game doesn't keep its own number for
+ * it), the areas it was in since the line before, what Far buildings adds
+ * from it, and what the two rows are doing; and each change of the eye's
+ * area has a line of its own, up to DRAW_EYE_LINES between two [DRAW] lines,
+ * with what Far buildings adds there. */
+int draw_far_test_backdrop(void);
+#define DRAW_EYE_LINES 40
 
 #endif

@@ -10,7 +10,10 @@
  * object keeps its own distances in proportion, and a fade keeps its length
  * in proportion too. Far buildings adds areas to the set the camera makes,
  * from the map's own visible lists, and Far shadows gives them the map's
- * shadows too. */
+ * shadows too. Developer > Far buildings test holds two rows, not kept, to
+ * find which area Far buildings adds draws what it shouldn't, and the
+ * [DRAW] lines say which area the eye is in and what Far buildings adds from
+ * there (draw_distance.h). */
 #include <float.h>
 #include <stdio.h>
 #include <string.h>
@@ -47,6 +50,7 @@ static int nv_window_pref_num(const char *key, double *v)
  * UTC, and at 15:22 UTC "apply the choice of how far to far shadows too"). */
 #define DRAW_UNDER     "HUD"
 #define DRAW_GROUP     "Building distance"
+#define DRAW_TEST_GROUP "Far buildings test"     /* in Developer */
 #define DRAW_LOG_EVERY 5.0      /* seconds between [DRAW] lines */
 
 static const char *const k_names[DRAW_DISTANCE_STEPS] = { "1x", "2x", "3x", "4x", "Unlimited" };
@@ -61,6 +65,24 @@ static volatile int s_step;
 static volatile int s_far;      /* Far buildings' step */
 static volatile int s_shadows_far;  /* Far shadows' step */
 static int s_widened;           /* the step the game's set was last widened to */
+
+/* Developer > Far buildings test's rows, not kept: the area Far buildings
+ * doesn't add (-1 none), and the backdrop's depth writes as the game sets
+ * them. They change on the window's thread, and are read on the game's. */
+static volatile int s_leave_out = -1;
+static volatile int s_backdrop_game;
+/* Leave out area's press, +1 or -1, until the game's thread steps through
+ * what Far buildings adds from the eye then (leave_step); 0 none. */
+static volatile int s_leave_press;
+/* What the [DRAW] lines say of the eye, worked out on the game's thread: its
+ * area (eye_note; -1 unknown), whether another area makes the same set, the
+ * areas it was in since the last line, and what Far buildings adds from it
+ * now; and its changes logged, and not, since the line. */
+static uint32_t s_added_now[DRAW_SET_WORDS];
+static int s_eye = -1, s_eye_many;
+static uint32_t s_eye_seen[DRAW_SET_WORDS];
+static unsigned s_eye_lines, s_eye_unsaid;
+static void set_print(char *out, int room, const uint32_t *set);
 
 int draw_distance_step(void)
 {
@@ -118,11 +140,13 @@ static unsigned s_since_frame;
 
 /* Every 5 seconds: each gate's objects a frame, and how many of them past
  * 1x's distance, while a step is on; and, while Far buildings is, the areas
- * of a set the camera makes and the areas it adds, and the shadow passes a
- * frame and the areas each adds to the game's set (Far shadows). */
+ * of a set the camera makes and the areas it adds, the shadow passes a frame
+ * and the areas each adds to the game's set (Far shadows), the eye's area,
+ * the areas it was in since the line before, what Far buildings adds from
+ * it, and what Developer > Far buildings test's rows are doing. */
 static void draw_log(double now, unsigned frame)
 {
-    char line[640];
+    char line[2048];
     unsigned frames;
     int len, g;
     if (s_since < 0) { s_since = now; s_since_frame = frame; return; }
@@ -139,13 +163,37 @@ static void draw_log(double now, unsigned frame)
         s_drawn[g] = s_past[g] = 0;
     }
     if (s_sets > 0 && len > 0 && len < (int)sizeof line)
-        snprintf(line + len, sizeof line - len,
-                 "%s Far buildings %s, a set's areas: the game's %.1f, added %.1f; "
-                 "Far shadows %s, shadow passes a frame %.1f, each adding %.1f areas",
-                 s_objects ? ";" : ",", k_far_names[s_far], s_game / s_sets, s_added / s_sets,
-                 k_far_names[s_shadows_far], s_shadows / frames,
-                 s_shadows > 0 ? s_shadows_added / s_shadows : 0.0);
+        len += snprintf(line + len, sizeof line - len,
+                        "%s Far buildings %s, a set's areas: the game's %.1f, added %.1f; "
+                        "Far shadows %s, shadow passes a frame %.1f, each adding %.1f areas",
+                        s_objects ? ";" : ",", k_far_names[s_far], s_game / s_sets, s_added / s_sets,
+                        k_far_names[s_shadows_far], s_shadows / frames,
+                        s_shadows > 0 ? s_shadows_added / s_shadows : 0.0);
+    if (s_sets > 0 && len > 0 && len < (int)sizeof line) {
+        char seen[512], added[512];
+        set_print(seen, sizeof seen, s_eye_seen);
+        set_print(added, sizeof added, s_added_now);
+        if (s_eye >= 0)
+            len += snprintf(line + len, sizeof line - len, "; the eye in area %d%s", s_eye,
+                            s_eye_many ? " (another area's list is the set too)" : "");
+        else
+            len += snprintf(line + len, sizeof line - len,
+                            "; the eye's area unknown (no area's list is the set)");
+        if (len > 0 && len < (int)sizeof line)
+            len += snprintf(line + len, sizeof line - len,
+                            ", in %s since the last line%s; Far buildings adding %s",
+                            seen, s_eye_unsaid ? " (some changes not logged)" : "", added);
+        if (s_leave_out >= 0 && len > 0 && len < (int)sizeof line)
+            len += snprintf(line + len, sizeof line - len, "; Far buildings test: leaving out area %d",
+                            s_leave_out);
+        if (s_backdrop_game && len > 0 && len < (int)sizeof line)
+            snprintf(line + len, sizeof line - len,
+                     "; Far buildings test: the backdrop's depth writes as the game sets them");
+    }
     fprintf(stderr, "%s\n", line);
+    memset(s_eye_seen, 0, sizeof s_eye_seen);
+    if (s_eye >= 0) s_eye_seen[s_eye >> 5] |= 1u << (s_eye & 31);
+    s_eye_lines = s_eye_unsaid = 0;
     s_objects = 0;
     s_sets = s_game = s_added = 0;
     s_shadows = s_shadows_added = 0;
@@ -256,6 +304,17 @@ static void map_take(const DrawArea *a, int n, uint32_t key)
     unsigned e;
     memset(&s_map, 0, sizeof s_map);
     misc_forget();      /* area numbers are the map's own */
+    /* Developer > Far buildings test's Leave out area: area numbers are the
+     * map's own. */
+    if (s_leave_out >= 0)
+        fprintf(stderr, "[DRAW] Far buildings test: a new map, so area %d is no longer left out\n",
+                s_leave_out);
+    s_leave_out = -1;
+    s_leave_press = 0;
+    s_eye = -1;
+    s_eye_many = 0;
+    memset(s_eye_seen, 0, sizeof s_eye_seen);
+    memset(s_added_now, 0, sizeof s_added_now);
     s_map.built = 1;
     s_map.n = n;
     s_map.key = key;
@@ -303,19 +362,117 @@ static void set_reach(uint32_t set[DRAW_SET_WORDS], int step)
     }
 }
 
+/* "2, 11, 12", or "none". */
+static void set_print(char *out, int room, const uint32_t *set)
+{
+    int i, len = 0;
+    out[0] = 0;
+    for (i = 0; i < DRAW_AREAS_MAX && len >= 0 && len < room; i++)
+        if (set_has(set, i)) len += snprintf(out + len, room - len, "%s%d", len ? ", " : "", i);
+    if (!out[0]) snprintf(out, room, "none");
+}
+
+/* Whether set is the one the game makes from an eye in area i: the area and
+ * the areas its list names. s_map is the map's. */
+static int set_from_area(const uint32_t set[DRAW_SET_WORDS], int i)
+{
+    int w, same = set_has(set, i);
+    for (w = 0; same && w < DRAW_SET_WORDS; w++)
+        same = (s_map.list[i][w] | (w == (i >> 5) ? 1u << (i & 31) : 0u)) == set[w];
+    return same;
+}
+
+/* Area a taken out of set, widened from game, unless game has it: what the
+ * game draws itself is never taken away. */
+static void set_leave_out(uint32_t set[DRAW_SET_WORDS], const uint32_t game[DRAW_SET_WORDS], int a)
+{
+    if (a >= 0 && a < DRAW_AREAS_MAX && !set_has(game, a)) set[a >> 5] &= ~(1u << (a & 31));
+}
+
+/* The eye's area, for the log, from the game's set: the area that makes it
+ * (set_from_area). The game's own number for it isn't kept, so where two
+ * areas make the same set, as two areas side by side can, it is the first,
+ * and the log says another fits too. A change of it has a line, up to
+ * DRAW_EYE_LINES between two [DRAW] lines, with what Far buildings adds
+ * there. */
+static void eye_note(const uint32_t set[DRAW_SET_WORDS], double now)
+{
+    int i, w, eye = -1, many = 0;
+    for (i = 0; i < s_map.n; i++) {
+        if (!set_from_area(set, i)) continue;
+        if (eye < 0) eye = i;
+        else many = 1;
+    }
+    if (eye != s_eye) {
+        char added[512];
+        uint32_t adds[DRAW_SET_WORDS];
+        memcpy(adds, set, sizeof adds);
+        set_reach(adds, s_far);
+        for (w = 0; w < DRAW_SET_WORDS; w++) adds[w] &= ~set[w];
+        set_print(added, sizeof added, adds);
+        if (s_eye_lines < DRAW_EYE_LINES) {
+            s_eye_lines++;
+            if (eye >= 0)
+                fprintf(stderr, "[DRAW] the eye at t=%.2f: area %d%s, from %d; Far buildings adds %s there\n",
+                        now, eye, many ? " (another area's list is the set too)" : "", s_eye, added);
+            else
+                fprintf(stderr, "[DRAW] the eye at t=%.2f: no area's list is the set, from %d; "
+                        "Far buildings adds %s\n", now, s_eye, added);
+        } else s_eye_unsaid++;
+    }
+    s_eye = eye;
+    s_eye_many = many;
+    if (eye >= 0) set_add(s_eye_seen, eye);
+}
+
+/* Leave out area's press, on the game's thread, once s_added_now is what Far
+ * buildings adds from the eye now: + the next of those after the one left
+ * out, and none after the last; - the one before, and none before the first.
+ * Logged with the eye's area and what Far buildings adds there. */
+static void leave_step(void)
+{
+    char added[512];
+    int press = s_leave_press, at = s_leave_out, to = -1, i;
+    if (!press) return;
+    s_leave_press = 0;
+    if (press > 0) {
+        for (i = at + 1; i < DRAW_AREAS_MAX; i++)
+            if (set_has(s_added_now, i)) { to = i; break; }
+    } else {
+        for (i = at - 1; i >= 0; i--)
+            if (set_has(s_added_now, i)) { to = i; break; }
+    }
+    s_leave_out = to;
+    set_print(added, sizeof added, s_added_now);
+    if (to >= 0) fprintf(stderr, "[DRAW] Far buildings test: leaving out area %d (the menu)", to);
+    else fprintf(stderr, "[DRAW] Far buildings test: leaving out none (the menu)");
+    if (s_eye >= 0) fprintf(stderr, "; the eye in area %d", s_eye);
+    else fprintf(stderr, "; the eye's area unknown");
+    fprintf(stderr, ", Far buildings %s adding %s\n", k_far_names[s_far], added);
+}
+
 void draw_buildings_widen(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WORDS],
                           double now, unsigned frame)
 {
-    int game, reach = s_far;
-    uint32_t key;
+    int game, reach = s_far, w;
+    uint32_t key, was[DRAW_SET_WORDS];
     s_widened = 0;
-    if (!reach || !areas || n <= 0) return;
+    if (!reach || !areas || n <= 0) {
+        memset(s_added_now, 0, sizeof s_added_now);
+        s_leave_press = 0;      /* nothing added to step through */
+        return;
+    }
     if (n > DRAW_AREAS_MAX) n = DRAW_AREAS_MAX;
     key = map_key(areas, n);
     if (!s_map.built || s_map.n != n || s_map.key != key) map_take(areas, n, key);
     s_misc_map = 1;
     game = set_count(set);
+    memcpy(was, set, sizeof was);
+    eye_note(set, now);
     set_reach(set, reach);
+    for (w = 0; w < DRAW_SET_WORDS; w++) s_added_now[w] = set[w] & ~was[w];
+    leave_step();
+    set_leave_out(set, was, s_leave_out);
     s_widened = reach;
     s_sets++;
     s_game += game;
@@ -338,6 +495,7 @@ void draw_buildings_shadows(uint32_t set[DRAW_SET_WORDS], const uint32_t game[DR
     memcpy(wide, set, sizeof wide);
     memcpy(set, game, sizeof wide);
     set_reach(set, step);
+    set_leave_out(set, game, s_leave_out);
     s_shadows_added -= set_count(wide) - set_count(set);
     run();
     memcpy(set, wide, sizeof wide);
@@ -370,6 +528,39 @@ static void menu_shadows_pick(int i)
     s_shadows_far = i;
     fprintf(stderr, "[DRAW] Far shadows %s (the menu)\n", k_far_names[i]);
     nv_window_pref_set_num("farshadowsahead", i);
+}
+#endif
+
+/* ---- Developer > Far buildings test ------------------------------------ */
+
+int draw_far_test_backdrop(void)
+{
+    return s_backdrop_game;
+}
+
+#if defined(XBOXRECOMP_MENU)
+static double test_leave_value(void)
+{
+    return s_leave_out;
+}
+
+/* A press of - or +: stepped on the game's thread (leave_step), where what
+ * Far buildings adds from the eye is known. */
+static void test_leave_set(double v)
+{
+    if (v != s_leave_out) s_leave_press = v > s_leave_out ? 1 : -1;
+}
+
+static int test_backdrop_state(void)
+{
+    return s_backdrop_game;
+}
+
+static void test_backdrop_flip(void)
+{
+    s_backdrop_game = !s_backdrop_game;
+    fprintf(stderr, "[DRAW] Far buildings test: the backdrop's depth writes %s (the menu)\n",
+            s_backdrop_game ? "as the game sets them" : "off, as Far buildings sets them");
 }
 #endif
 
@@ -444,7 +635,24 @@ void draw_distance_start(void)
               .preset = { 0, DRAW_SHADOWS_DEFAULT, DRAW_FAR_MAX_QUALITY },     /* Off, 3x, 3x */
               .hint = "Sets how many areas ahead shadows are drawn. Minor glitches." },
         };
+        /* Developer > Far buildings test, a submenu of two rows that change at
+         * once and aren't kept, to find which area Far buildings adds draws
+         * what it shouldn't (spriteice, 16 November 2026, 06:01 UTC: "a
+         * great developer option to leave in as well, to diagnose further
+         * issues of the same kind"; known bug 66). */
+        const XBOX_MENU_ITEM tests[] = {
+            { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_GROUP, .label = DRAW_TEST_GROUP,
+              .hint = "Finds which area Far buildings adds draws something out of place." },
+            { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_NUMBER, .label = "Leave out area",
+              .value = test_leave_value, .set = test_leave_set,
+              .min = -1, .max = DRAW_AREAS_MAX - 1, .step = 1, .format = "%.0f", .group = DRAW_TEST_GROUP,
+              .hint = "Leaves out one area Far buildings adds here. -1 is none." },
+            { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_TOGGLE, .label = "Game's backdrop depth",
+              .state = test_backdrop_state, .run = test_backdrop_flip, .group = DRAW_TEST_GROUP,
+              .hint = "Draws the backdrop with the depth writes the game sets." },
+        };
         xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
+        xbox_MenuAdd(tests, (int)(sizeof tests / sizeof tests[0]));
     }
 #endif
 }

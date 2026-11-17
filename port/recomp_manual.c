@@ -6705,7 +6705,8 @@ void sub_000E3BB0(void)
  * at its own size, which would hide the areas added beyond it: on, its loop
  * in sub_0006B6A0 draws without depth writes, between the matrix calls before
  * and after it (sub_001BA8F0, sub_001BAA50), known by their return
- * addresses. Off, all of them run the game's body and nothing else. Nothing
+ * addresses, unless Developer > Far buildings test's Game's backdrop depth
+ * is ticked. Off, all of them run the game's body and nothing else. Nothing
  * is wrong in these functions: the set is the game's design, made from its
  * map's data, and only the drawing is widened. */
 #define AREA_SET        0x20C6C0u   /* the set's maker: +4 the map, +8 the set */
@@ -6832,7 +6833,9 @@ void sub_001BA8F0(void)
 {
     uint32_t ra = dd_u32(g_esp);
     sub_001BA8F0_gen();
-    if (ra == BACKDROP_IN_RET && draw_far_buildings() && s_backdrop_zwrite < 0) {
+    /* Developer > Far buildings test's Game's backdrop depth leaves them as
+     * the game sets them (draw_far_test_backdrop). */
+    if (ra == BACKDROP_IN_RET && draw_far_buildings() && !draw_far_test_backdrop() && s_backdrop_zwrite < 0) {
         s_backdrop_zwrite = (int)(dd_u32(DD_ZWRITE_NOW) != 0);
         dd_zwrite(0, ra);
     }

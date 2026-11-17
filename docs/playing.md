@@ -276,6 +276,15 @@ input goes to the menu.
     starts the game as usual. Character is kept in `developer.cfg`.
   - **Experimental:** Changes to how the game runs, to try out, when there
     are any.
+  - **Far buildings test:** Finds which area Far buildings adds draws
+    something out of place, such as buildings floating in the sky. Stand
+    where it shows, and press + on Leave out area: each press leaves out the
+    next area Far buildings adds from where the camera is, and the log names
+    it, until it is back at -1, none. An area the game draws itself is never
+    left out. Game's backdrop depth draws the backdrop with its depth, as the
+    game does, which hides what Far buildings adds beyond it. Neither is
+    kept: each start, and each new map, begins with none left out. While Far
+    buildings is on, the log also names the area the camera is in.
   - **Purge shaders:** Restarts the game and deletes the shader cache as it
     starts.
 
@@ -284,7 +293,7 @@ input goes to the menu.
   Experimental are kept in `developer.cfg` beside the settings file, and
   apply from the next start.
 
-Everything is remembered. Restart, Exit, a preset, a new render scale, the
+Everything is remembered but Far buildings test. Restart, Exit, a preset, a new render scale, the
 shader cache, Audio effects, and Purge shaders ask first, as anything since
 your last save is lost: all but Exit restart the game, a preset only when it
 changes the render scale, the shader cache or Audio effects. The other rows

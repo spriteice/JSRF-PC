@@ -1,4 +1,4 @@
-"""Compile draw distance's, Far buildings' and Far shadows' settings, steps, areas and log and the settings file code, and drive them without the game.
+"""Compile draw distance's, Far buildings' and Far shadows' settings, steps, areas and log, Developer > Far buildings test's rows, and the settings file code, and drive them without the game.
 
 Cut by text: the settings file code from src/nv2a_gl/nv2a_gl.c,
 unchanged. nv2a_gl.c doesn't link on its own.
@@ -52,6 +52,13 @@ def map_lines(step):
             "[DRAW] area 0: fog 100 to 1000, density 1",
             "[DRAW] area 9: fog 1000 to 10000, density 1"]
 
+
+# What the [DRAW] line adds while Far buildings is on, from the bottom at 3x:
+# the eye's area, its areas since the line before, and what Far buildings adds.
+EYE = "; the eye in area 0, in 0 since the last line; Far buildings adding 2, 3, 4, 9"
+# Developer > Far buildings test (test_main.c, check_far_test): each press
+# with the eye's area and what Far buildings adds there.
+TEST = "(the menu); the eye in area 0, Far buildings 3x adding 2, 3, 4, 9"
 
 # The Misc group's log (test_main.c, check_misc): object 0's first line, and
 # the line that says a map's log stops.
@@ -111,7 +118,7 @@ cases = {
     "shadows": ("game_dir=/games/jsrf\n",
                 ["[DRAW] Far buildings 1x (the menu)", "[DRAW] Far shadows All (the menu)",
                  "[DRAW] Far buildings All (the menu)", "[DRAW] Far shadows Off (the menu)"]),
-    "far_log": ("drawdistance=0\nfarshadowsahead=0\n", ["[DRAW] t=5.1 1x, " + AREAS]),
+    "far_log": ("drawdistance=0\nfarshadowsahead=0\n", ["[DRAW] t=5.1 1x, " + AREAS + EYE]),
     "far_log_shadows": ("drawdistance=0\n",
                         ["[DRAW] t=5.1 1x, " + AREAS.replace("Off, shadow passes a frame 2.0, each adding 0.0",
                                                              "3x, shadow passes a frame 2.0, each adding 4.0")]),
@@ -128,6 +135,25 @@ cases = {
                                            "[DRAW] Misc group 01E5FDE0: model 2C90, in area 6, at 0 places",
                                            MISC_STOP, "[DRAW] Far buildings Off (the menu)",
                                            "[DRAW] Far buildings 3x (the menu)"]),
+    "far_test": ("farbuildingsahead=3\nfarshadowsahead=1\n",
+                 ["[DRAW] the eye at t=0.00: area 0, from -1; Far buildings adds 2, 3, 4, 9 there",
+                  *(f"[DRAW] Far buildings test: leaving out area {a} " + TEST for a in (2, 3, 4, 9)),
+                  "[DRAW] Far buildings test: leaving out none " + TEST,
+                  "[DRAW] the eye at t=0.00: area 1, from 0; Far buildings adds 3, 4, 5, 9 there",
+                  "[DRAW] Far buildings test: a new map, so area 2 is no longer left out",
+                  "[DRAW] Far buildings test: the backdrop's depth writes as the game sets them (the menu)",
+                  "[DRAW] Far buildings test: the backdrop's depth writes off, as Far buildings sets them "
+                  "(the menu)"]),
+    "far_eye": ("farbuildingsahead=1\nfarshadowsahead=0\n",
+                ["[DRAW] the eye at t=0.00: area 0, from -1; Far buildings adds 2 there",
+                 "[DRAW] the eye at t=0.10: area 8, from 0; Far buildings adds 6 there",
+                 "[DRAW] the eye at t=0.10: area 0, from 8; Far buildings adds 2 there",
+                 "; the eye in area 4, in 0, 4, 8 since the last line (some changes not logged); "
+                 "Far buildings adding 2, 6, 9",
+                 "; the eye in area 4, in 4 since the last line; Far buildings adding 2, 6, 9",
+                 "[DRAW] the eye at t=10.30: no area's list is the set, from 4; Far buildings adds 4, 9",
+                 "[DRAW] the eye at t=0.00: area 0 (another area's list is the set too), from -1; "
+                 "Far buildings adds none there"]),
 }
 # Cases that must not print a line: none of the map's or the Misc group's for
 # Far buildings off, and no fog line for the area no list names.
@@ -144,6 +170,8 @@ kept_after = {
     "far_pick": (["farbuildingsahead=2\n", "farbuildings=1\n", "game_dir=/games/jsrf\n"], ["farshadowsahead"]),
     "shadows_pick": (["farshadowsahead=1\n", "game_dir=/games/jsrf\n"], ["farbuildingsahead"]),
     "shadows": (["farbuildingsahead=4\n", "farshadowsahead=0\n", "game_dir=/games/jsrf\n"], []),
+    # Developer > Far buildings test's rows aren't kept.
+    "far_test": (["farbuildingsahead=3\nfarshadowsahead=1\n"], ["leave", "backdrop", "test"]),
 }
 
 with tempfile.TemporaryDirectory(prefix="draw-distance-") as directory:
@@ -168,6 +196,13 @@ with tempfile.TemporaryDirectory(prefix="draw-distance-") as directory:
                 raise SystemExit(f"{name}: '{line}' in the log:\n{run.stderr}")
         if name.startswith("far_log") and run.stderr.count("[DRAW] t=") != 1:
             raise SystemExit(f"{name}: not one [DRAW] line in five seconds:\n" + run.stderr)
+        if name == "far_eye":
+            # 51 changes of the eye's area before the first [DRAW] line, 40 of
+            # them logged; then the line, and three more after it.
+            eyes = run.stderr.count("[DRAW] the eye at t=")
+            if eyes != 40 + 2 or run.stderr.count("[DRAW] t=") != 2:
+                raise SystemExit(f"far_eye: {eyes} lines of the eye's area, wanted 42, and "
+                                 f"{run.stderr.count('[DRAW] t=')} [DRAW] lines, wanted 2:\n" + run.stderr)
         if name.startswith("reach_") and run.stderr.count(": the map has") != 2:
             raise SystemExit(f"{name}: the two maps not logged once each:\n" + run.stderr)
         if name == "far_misc":

@@ -12,8 +12,9 @@ pause in `port/music_info.c`, Audio in
 `port/audio.c`, Input's Free camera in
 `port/freecam.c`, and its Default cam fix in `port/camera_walls.c` and
 Keyboard moves in `port/keyboard_move.c`, Developer in
-`port/developer.c`, with Missions' rows in `port/missions_menu.c`). A row
-marked last goes below any added later (`last` in `menu.h`). A row can instead go right below another row of its menu, which it
+`port/developer.c`, with Missions' rows in `port/missions_menu.c` and its Far
+buildings test in `port/draw_distance.c`). A row marked last goes below any added
+later (`last` in `menu.h`). A row can instead go right below another row of its menu, which it
 names, whichever of the two was added first
 (`under` in `menu.h`): rows added as the game starts can sit among the
 window's, as Draw distance and the Building distance submenu sit under the
