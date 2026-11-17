@@ -129,9 +129,17 @@ static void take_hint(const XBOX_MENU_ITEM *it)
     else if (ImGui::IsItemHovered()) g_hint_pointer = it->hint;
 }
 
+/* A choice or a tick, through the row's own function: pick_with, told its
+ * row, where the row has one (menu.h). */
+static void row_pick(const XBOX_MENU_ITEM &it, int i)
+{
+    if (it.pick_with) it.pick_with(it.data, i);
+    else              it.pick(i);
+}
+
 static void apply(const XBOX_MENU_ITEM *it, int pick)
 {
-    if (pick >= 0) it->pick(pick);
+    if (pick >= 0) row_pick(*it, pick);
     else           it->run();
 }
 
@@ -235,13 +243,13 @@ extern "C" int menu_preset_apply(int p)
             it.keep((int)v);
             restart = 1;
         } else if (it.kind == XBOX_ITEM_TOGGLE) it.run();
-        else if (it.kind == XBOX_ITEM_CHOICE)   it.pick((int)v);
+        else if (it.kind == XBOX_ITEM_CHOICE)   row_pick(it, (int)v);
         else if (it.kind == XBOX_ITEM_TOGGLES) {
             /* Each tick that differs, through the row's own pick, as
              * choosing it would. */
             int differ = (int)row_now(it) ^ (int)v;
             for (int i = 0; i < it.nchoices; i++)
-                if ((differ >> i) & 1) it.pick(i);
+                if ((differ >> i) & 1) row_pick(it, i);
         } else                                  it.set(v);
     }
     return restart;
@@ -427,6 +435,38 @@ static void box_closed(void)
     g_reopen = g_last_menu;
 }
 
+/* ---- the room between the bar and the strip ------------------------------ */
+
+/* Every menu, submenu and list of choices stays in the room between the bar
+ * along the top and the strip along the bottom, over neither, and scrolls
+ * where it is taller. Dear ImGui sizes them to that room already: the
+ * viewport's work area, which the bar and the strip take theirs from (as of
+ * the last frame). But it places them anywhere in the window
+ * (GetPopupAllowedExtentRect), so a list opened low down, or one as tall as
+ * the room, went over the strip. So while the menus are built the viewport
+ * is that room, with the safe area Dear ImGui keeps inside it
+ * (DisplaySafeAreaPadding) added round it: they are placed in the room
+ * itself, as they are sized. The bar is built by then, the strip after, and
+ * the viewport is the whole window again for both. */
+struct menu_room { ImVec2 pos, size; };
+
+static menu_room room_begin(void)
+{
+    ImGuiViewport *vp = ImGui::GetMainViewport();
+    const float safe = ImGui::GetStyle().DisplaySafeAreaPadding.y;
+    const menu_room whole = { vp->Pos, vp->Size };
+    vp->Pos.y = vp->WorkPos.y - safe;
+    vp->Size.y = vp->WorkSize.y + safe * 2;
+    return whole;
+}
+
+static void room_end(const menu_room &whole)
+{
+    ImGuiViewport *vp = ImGui::GetMainViewport();
+    vp->Pos = whole.pos;
+    vp->Size = whole.size;
+}
+
 /* ---- the strip along the bottom: the row's hint, and the buttons --------- */
 
 /* The pad's buttons, or the keys, and what each does in the menu. */
@@ -570,6 +610,7 @@ extern "C" void menu_build(int just_opened, int pad)
         /* A row chosen leaves its menu open: the tick moves where it can be
          * seen, and a pad stays where it was. */
         ImGui::PushItemFlag(ImGuiItemFlags_AutoClosePopups, false);
+        const menu_room whole = room_begin();
         for (m = 0; m < XBOX_MENU_COUNT; m++) {
             if (!menu_has_items(m)) continue;
             if (m == g_reopen) ImGui::OpenPopup(k_menu_title[m]);
@@ -601,6 +642,7 @@ extern "C" void menu_build(int just_opened, int pad)
                 if (it.menu == m && !it.group && !it.under && it.last) draw_row(&it, &cols);
             ImGui::EndMenu();
         }
+        room_end(whole);
         /* The pad to the title it left, as ImGui does when Left / Right run
          * off a menu (EndMenuBar). After the titles: B on the bar has ImGui
          * ask for the bar's first title, and one drawn after this would take

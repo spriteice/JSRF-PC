@@ -52,7 +52,8 @@ typedef enum {
     XBOX_ITEM_ACTION,       /* run() when chosen                              */
     XBOX_ITEM_TOGGLE,       /* ticked while state() is nonzero; run() flips it */
     XBOX_ITEM_CHOICE,       /* a submenu of choices[]; the ticked one is
-                             * state(), pick(i) when another is chosen        */
+                             * state(), pick(i) when another is chosen (or
+                             * pick_with: below)                              */
     XBOX_ITEM_INFO,         /* text() in a box, with OK                       */
     XBOX_ITEM_SEPARATOR,
     XBOX_ITEM_NUMBER,       /* value() in a box, with - and + either side: a
@@ -149,6 +150,12 @@ typedef struct XBOX_MENU_ITEM {
      * in is not shown; one with the label of one before it in its menu adds
      * nothing; and one can't go in another. */
     const char     *group;
+    /* Set: called in place of pick, with data, for rows that share one
+     * function and tell it which row they are -- Developer > Missions'
+     * levels, each a CHOICE of its missions (port/missions_menu.c). data is
+     * the owner's, kept as it is: the menu never reads it. */
+    void          (*pick_with)(const void *data, int index);
+    const void     *data;
 } XBOX_MENU_ITEM;
 
 /* Display's submenus, at its foot (nv2a_gl.c adds them): Skips, for the

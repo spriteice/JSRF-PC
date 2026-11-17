@@ -34,8 +34,11 @@
  * its own function, within what the row has, a row in a submenu as any
  * other, a row of ticks a tick at a time, only those that differ, and a
  * (Restart) row kept, not run, with a restart asked for; and rows that say
- * the wrong thing about presets left alone, and said in the log (run.py). Last, the busy box (menu_build_busy) with no menu, in the
- * middle of the window.
+ * the wrong thing about presets left alone, and said in the log (run.py).
+ * Long lists, at 1920 x 1080 and 640 x 480: every menu and list of
+ * choices between the bar and the strip, scrolling where it is taller,
+ * and a list opened at the room's foot going up to fit. Last, the busy
+ * box (menu_build_busy) with no menu, in the middle of the window.
  */
 #include "menu.h"
 #include "menu_style.h"
@@ -91,7 +94,7 @@ static int  late_state(void)
 static void late_run(void)   { }
 static const XBOX_MENU_ITEM k_late = {
     XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Late", late_state, late_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-    "Came late.", NO_PRESETS, NULL };
+    "Came late.", NO_PRESETS, NULL, NULL, NULL };
 
 /* A row marked last, as Display's submenus: added before the others, and
  * drawn below them all. */
@@ -99,7 +102,7 @@ static int  last_state(void) { s_last_at = ++s_drawn_seq; return 0; }
 static void last_run(void)   { }
 static const XBOX_MENU_ITEM k_last = {
     XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Last row", last_state, last_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 1, NULL,
-    "Starts at the title screen.", NO_PRESETS, NULL };
+    "Starts at the title screen.", NO_PRESETS, NULL, NULL, NULL };
 
 /* Rows placed under another, as Display's Draw distance under Render scale:
  * added in one call before the row they name, and one naming a row that
@@ -113,13 +116,13 @@ static int  under_last_state(void) { s_under_last_at = ++s_drawn_seq; return 0; 
 static void under_run(void)      { }
 static const XBOX_MENU_ITEM k_under[] = {
     { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Under one", under0_state, under_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, "Render scale", "The first under it.", NO_PRESETS, NULL },
+      0, 0, 0, NULL, 0, "Render scale", "The first under it.", NO_PRESETS, NULL, NULL, NULL },
     { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Under two", under1_state, under_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, "Render scale", "The second under it.", NO_PRESETS, NULL },
+      0, 0, 0, NULL, 0, "Render scale", "The second under it.", NO_PRESETS, NULL, NULL, NULL },
     { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Unplaced", unplaced_state, under_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, "No such row", "Has nowhere to go.", NO_PRESETS, NULL },
+      0, 0, 0, NULL, 0, "No such row", "Has nowhere to go.", NO_PRESETS, NULL, NULL, NULL },
     { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Under the last", under_last_state, under_run, NULL, NULL, 0, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, "Last row", "Goes under the last.", NO_PRESETS, NULL },
+      NULL, NULL, 0, 0, 0, NULL, 0, "Last row", "Goes under the last.", NO_PRESETS, NULL, NULL, NULL },
 };
 
 /* Submenus (group), as Display's Skips and Enhancements, in Audio, which
@@ -133,27 +136,78 @@ static void music_run(void)   { s_music_runs++; }
 static void see_run(void)     { s_see_runs++; }
 static const XBOX_MENU_ITEM k_in_first[] = {
     { XBOX_MENU_AUDIO, XBOX_ITEM_TOGGLE, "Skip intro", in_state, skip_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, NULL, "Skips the logos.", NO_PRESETS, "Skips" },
+      0, 0, 0, NULL, 0, NULL, "Skips the logos.", NO_PRESETS, "Skips", NULL, NULL },
     { XBOX_MENU_AUDIO, XBOX_ITEM_TOGGLE, "Music info", in_state, music_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, NULL, "Shows the song.", NO_PRESETS, "Enhancements" },
+      0, 0, 0, NULL, 0, NULL, "Shows the song.", NO_PRESETS, "Enhancements", NULL, NULL },
     { XBOX_MENU_AUDIO, XBOX_ITEM_TOGGLE, "Lost", in_state, under_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, NULL, "Has no submenu to go in.", NO_PRESETS, "Nowhere" },
+      0, 0, 0, NULL, 0, NULL, "Has no submenu to go in.", NO_PRESETS, "Nowhere", NULL, NULL },
     { XBOX_MENU_AUDIO, XBOX_ITEM_TOGGLE, "Effects", in_state, under_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, NULL, "Plays the effects.", NO_PRESETS, NULL },
+      0, 0, 0, NULL, 0, NULL, "Plays the effects.", NO_PRESETS, NULL, NULL, NULL },
 };
 static const XBOX_MENU_ITEM k_groups[] = {
     { XBOX_MENU_AUDIO, XBOX_ITEM_GROUP, "Skips", NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 1, NULL, "Leaves out parts.", NO_PRESETS, NULL },
+      0, 0, 0, NULL, 1, NULL, "Leaves out parts.", NO_PRESETS, NULL, NULL, NULL },
     { XBOX_MENU_AUDIO, XBOX_ITEM_GROUP, "Enhancements", NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 1, NULL, "Goes further.", NO_PRESETS, NULL },
+      0, 0, 0, NULL, 1, NULL, "Goes further.", NO_PRESETS, NULL, NULL, NULL },
     { XBOX_MENU_AUDIO, XBOX_ITEM_GROUP, "Enhancements", NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 1, NULL, "A second of its name.", NO_PRESETS, NULL },
+      0, 0, 0, NULL, 1, NULL, "A second of its name.", NO_PRESETS, NULL, NULL, NULL },
     { XBOX_MENU_AUDIO, XBOX_ITEM_GROUP, "Empty", NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, NULL, "Has nothing in it.", NO_PRESETS, NULL },
+      0, 0, 0, NULL, 0, NULL, "Has nothing in it.", NO_PRESETS, NULL, NULL, NULL },
 };
 static const XBOX_MENU_ITEM k_in_after = {
     XBOX_MENU_AUDIO, XBOX_ITEM_TOGGLE, "See through", in_state, see_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-    0, 0, 0, NULL, 0, NULL, "Shows what is behind glass.", NO_PRESETS, "Enhancements" };
+    0, 0, 0, NULL, 0, NULL, "Shows what is behind glass.", NO_PRESETS, "Enhancements", NULL, NULL };
+/* A choice row that tells its pick which row it is (menu.h, pick_with), as
+ * Developer > Missions' levels do: in Skips, after Skip intro, with no plain
+ * pick and nothing ticked. */
+static int s_with_index = -1, s_with_calls;
+static const void *s_with_data;
+static const char k_with_data[] = "this row";
+static int  with_state(void)                   { return -1; }
+static void with_pick(const void *data, int i) { s_with_data = data; s_with_index = i; s_with_calls++; }
+static const char *const k_with_choices[] = { "0110 (free play)", "0112 (race, Beat)" };
+static XBOX_MENU_ITEM with_row(void)
+{
+    XBOX_MENU_ITEM it = {};
+    it.menu = XBOX_MENU_AUDIO;
+    it.kind = XBOX_ITEM_CHOICE;
+    it.label = "Dogenzaka Hill (stg12)";
+    it.state = with_state;
+    it.choices = k_with_choices;
+    it.nchoices = 2;
+    it.hint = "Tells its pick which row it is.";
+    it.group = "Skips";
+    it.pick_with = with_pick;
+    it.data = k_with_data;
+    return it;
+}
+
+/* Long lists, as Developer > Missions' Character and its levels: in
+ * Developer, added at the end. A choice row with more choices than fit
+ * between the bar and the strip at any size; more rows than fit; and at
+ * their foot a short list, whose choices open beside the room's foot. */
+#define LONG_CHOICES  100
+#define LONG_ROWS     80
+#define SHORT_CHOICES 8
+static char s_long_names[LONG_CHOICES][16], s_row_names[LONG_ROWS][16];
+static const char *s_long_choices[LONG_CHOICES];
+static int  long_state(void) { return -1; }
+static void long_pick(int i) { (void)i; }
+static void long_run(void)   { }
+static XBOX_MENU_ITEM long_row(XBOX_ITEM_KIND kind, const char *label, int nchoices, const char *hint)
+{
+    XBOX_MENU_ITEM it = {};
+    it.menu = XBOX_MENU_DEVELOPER;
+    it.kind = kind;
+    it.label = label;
+    it.state = kind == XBOX_ITEM_TOGGLE ? in_state : long_state;
+    it.run = long_run;
+    it.pick = long_pick;
+    it.choices = s_long_choices;
+    it.nchoices = nchoices;
+    it.hint = hint;
+    return it;
+}
 
 /* Numbers, as the Input menu's: a sensitivity in whole steps, and a
  * deadzone in 5% steps that starts between two (as the settings file may). */
@@ -218,34 +272,34 @@ static const char *k_p_many[MENU_PRESET_TICKS + 1];
 #define P_ASK "Apply selection and restart, losing unsaved progress?"
 static const XBOX_MENU_ITEM k_presets[] = {
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLE, "SMAA", p_smaa_state, p_smaa_run, NULL, NULL, 0, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Smooths edges.", XBOX_PRESETS_SET, { 0, 1, 1 }, NULL, NULL },
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Smooths edges.", XBOX_PRESETS_SET, { 0, 1, 1 }, NULL, NULL, NULL, NULL },
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_CHOICE, "Filtering", p_aniso_state, NULL, p_aniso_pick, k_p_aniso, 3, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sharpens textures.", XBOX_PRESETS_SET, { 0, 3, XBOX_PRESET_MOST }, NULL, NULL },
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sharpens textures.", XBOX_PRESETS_SET, { 0, 3, XBOX_PRESET_MOST }, NULL, NULL, NULL, NULL },
     { XBOX_MENU_INPUT, XBOX_ITEM_NUMBER, "Deadzone %", NULL, NULL, NULL, NULL, 0, NULL, NULL,
-      p_dz_value, p_dz_set, 0, 100, 5, "%g%%", 0, NULL, "Sets the stick's slack.", XBOX_PRESETS_SET, { 0, 15, 15 }, NULL, NULL },
+      p_dz_value, p_dz_set, 0, 100, 5, "%g%%", 0, NULL, "Sets the stick's slack.", XBOX_PRESETS_SET, { 0, 15, 15 }, NULL, NULL, NULL, NULL },
     { XBOX_MENU_DISPLAY, XBOX_ITEM_CHOICE, "Scale (Restart)", p_scale_state, NULL, p_scale_pick, k_p_scales, 6, NULL,
       P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sets the scale.", XBOX_PRESETS_SET, { 0, 2, XBOX_PRESET_MOST },
-      p_scale_keep, NULL },
+      p_scale_keep, NULL, NULL, NULL },
     { XBOX_MENU_AUDIO, XBOX_ITEM_TOGGLE, "Effects (Restart)", p_effects_state, p_effects_run, NULL, NULL, 0, NULL,
-      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Adds the effects.", XBOX_PRESETS_SET, { 1, 1, 1 }, p_effects_keep, NULL },
+      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Adds the effects.", XBOX_PRESETS_SET, { 1, 1, 1 }, p_effects_keep, NULL, NULL, NULL },
     { XBOX_MENU_AUDIO, XBOX_ITEM_TOGGLE, "Glass", p_glass_state, p_glass_run, NULL, NULL, 0, NULL, NULL,
       NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Tints what is behind.", XBOX_PRESETS_SET, { 0, 1, 1 }, NULL,
-      "Enhancements" },
+      "Enhancements", NULL, NULL },
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLES, "Cleanup", p_ticks_state, NULL, p_ticks_pick, k_p_ticks, 2, NULL,
       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Cleans the copies.", XBOX_PRESETS_SET,
-      { 0, 1, XBOX_PRESET_MOST }, NULL, NULL },
+      { 0, 1, XBOX_PRESET_MOST }, NULL, NULL, NULL, NULL },
     /* Three that say the wrong thing, which no preset can set, and are left
      * alone: one that asks first but keeps nothing, told once in the log,
      * then a button and a row of more ticks than an int has bits for, which
      * the same check has told of already (the rows standing in for the
      * other menus', which say nothing, are told too, run.py). */
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLE, "Asks, keeps nothing", p_bad_state, p_bad_run, NULL, NULL, 0, NULL,
-      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Asks first.", XBOX_PRESETS_SET, { 1, 1, 1 }, NULL, NULL },
+      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Asks first.", XBOX_PRESETS_SET, { 1, 1, 1 }, NULL, NULL, NULL, NULL },
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_ACTION, "A button", NULL, p_bad_run, NULL, NULL, 0, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Does a thing.", XBOX_PRESETS_SET, { 1, 1, 1 }, NULL, NULL },
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Does a thing.", XBOX_PRESETS_SET, { 1, 1, 1 }, NULL, NULL, NULL, NULL },
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLES, "Too many ticks", p_bad_state, NULL, p_bad_pick,
       k_p_many, MENU_PRESET_TICKS + 1, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Has too many.",
-      XBOX_PRESETS_SET, { 1, 1, 1 }, NULL, NULL },
+      XBOX_PRESETS_SET, { 1, 1, 1 }, NULL, NULL, NULL, NULL },
 };
 
 /* Widescreen's owner adds a row as it runs, on the window's thread. */
@@ -367,6 +421,29 @@ static int strip_has_a(void)
     return 0;
 }
 
+/* Every menu open, and every list of choices, in the room between the bar
+ * and the strip, over neither; and whether the last one opened scrolls. */
+static int menus_in_room(void)
+{
+    ImGuiWindow *bar = ImGui::FindWindowByName("##MainMenuBar"), *strip = ImGui::FindWindowByName("##hints");
+    float top = bar->Pos.y + bar->Size.y, foot = strip->Pos.y;
+    int in = 1, n = 0;
+    for (const ImGuiPopupData &p : ImGui::GetCurrentContext()->OpenPopupStack) {
+        const ImGuiWindow *w = p.Window;
+        if (!w || !w->Active) continue;
+        n++;
+        fprintf(stderr, "  %s: %.0f to %.0f, the room %.0f to %.0f%s\n", w->Name, w->Pos.y, w->Pos.y + w->Size.y,
+                top, foot, w->ScrollbarY ? ", scrolls" : "");
+        in &= w->Pos.y >= top && w->Pos.y + w->Size.y <= foot;
+    }
+    return n && in;
+}
+static int last_scrolls(void)
+{
+    ImGuiContext &g = *ImGui::GetCurrentContext();
+    return g.OpenPopupStack.Size && g.OpenPopupStack.back().Window && g.OpenPopupStack.back().Window->ScrollbarY;
+}
+
 /* One frame of only the busy box. */
 static void busy_frame(void)
 {
@@ -423,33 +500,33 @@ int main(void)
      * all, Display's last row. */
     const XBOX_MENU_ITEM developer[] = {
         { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLE, "Log to file", log_state, log_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-          "Writes the log to a file.", NO_PRESETS, NULL },
+          "Writes the log to a file.", NO_PRESETS, NULL, NULL, NULL },
         { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLES, "Logging", switches_state, NULL, switch_pick, k_switches, 3, NULL, NULL,
-          NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Adds lines to the log.", NO_PRESETS, NULL },
+          NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Adds lines to the log.", NO_PRESETS, NULL, NULL, NULL },
         { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLE, "Asks (Restart)", asked_state, asked_run, NULL, NULL, 0, NULL,
-          "The game restarts to apply it.", NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Asks first.", NO_PRESETS, NULL },
+          "The game restarts to apply it.", NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Asks first.", NO_PRESETS, NULL, NULL, NULL },
     };
     const XBOX_MENU_ITEM input[] = {
         { XBOX_MENU_INPUT, XBOX_ITEM_NUMBER, "Sensitivity", NULL, NULL, NULL, NULL, 0, NULL, NULL,
-          sens_value, sens_set, 1, 10, 1, "%g", 0, NULL, "Sets how fast the camera turns.", NO_PRESETS, NULL },
+          sens_value, sens_set, 1, 10, 1, "%g", 0, NULL, "Sets how fast the camera turns.", NO_PRESETS, NULL, NULL, NULL },
         { XBOX_MENU_INPUT, XBOX_ITEM_NUMBER, "Deadzone", NULL, NULL, NULL, NULL, 0, NULL, NULL,
-          dead_value, dead_set, 0, 100, 5, "%g%%", 0, NULL, "Sets how far the stick moves first.", NO_PRESETS, NULL },
+          dead_value, dead_set, 0, 100, 5, "%g%%", 0, NULL, "Sets how far the stick moves first.", NO_PRESETS, NULL, NULL, NULL },
     };
     const XBOX_MENU_ITEM display[] = {
         { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Fullscreen", full_state, full_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-          "Fills the screen.", NO_PRESETS, NULL },
+          "Fills the screen.", NO_PRESETS, NULL, NULL, NULL },
         { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Widescreen (16:9)", wide_state, wide_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-          k_wide_hint, NO_PRESETS, NULL },
+          k_wide_hint, NO_PRESETS, NULL, NULL, NULL },
         { XBOX_MENU_DISPLAY, XBOX_ITEM_CHOICE, "Render scale", scale_state, NULL, scale_pick, k_scales, 4, NULL,
           "Apply selection and restart, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-          k_scale_hint, NO_PRESETS, NULL },
+          k_scale_hint, NO_PRESETS, NULL, NULL, NULL },
     };
     const XBOX_MENU_ITEM file[] = {
         { XBOX_MENU_FILE, XBOX_ITEM_INFO, "About", NULL, NULL, NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-          "Shows the version.", NO_PRESETS, NULL },
-        { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL, NULL, NO_PRESETS, NULL },
+          "Shows the version.", NO_PRESETS, NULL, NULL, NULL },
+        { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL, NULL, NO_PRESETS, NULL, NULL, NULL },
         { XBOX_MENU_FILE, XBOX_ITEM_ACTION, "Exit", NULL, exit_run, NULL, NULL, 0, NULL,
-          "Close the game, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Closes the game.", NO_PRESETS, NULL },
+          "Close the game, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Closes the game.", NO_PRESETS, NULL, NULL, NULL },
     };
     xbox_MenuAdd(&k_last, 1);
     xbox_MenuAdd(k_under, 4);
@@ -954,6 +1031,10 @@ int main(void)
     xbox_MenuAdd(k_in_first, 4);
     xbox_MenuAdd(k_groups, 4);
     xbox_MenuAdd(&k_in_after, 1);
+    {
+        XBOX_MENU_ITEM with = with_row();
+        xbox_MenuAdd(&with, 1);
+    }
     s_bare = 0;
     frame(ImGuiKey_GamepadFaceRight); frames(2);
     CHECK(!strcmp(open_menu(), "") && bar_focused());
@@ -1003,6 +1084,21 @@ int main(void)
     CHECK(hint_is("Skips the logos."));
     frame(ImGuiKey_GamepadFaceDown); frames(2);
     CHECK(s_skip_runs == 1 && s_see_runs == 1 && s_music_runs == 0);
+    /* Down, the choice row that tells its pick which row it is; Right into
+     * its choices, the pad on the first, nothing ticked; Down, A: its
+     * pick_with gets its data and the second choice, once. B: back in
+     * Skips. */
+    frame(ImGuiKey_GamepadDpadDown); frames(1);
+    CHECK(hint_is("Tells its pick which row it is."));
+    frame(ImGuiKey_GamepadDpadRight); frames(2);
+    CHECK(strstr(open_menu(), "Dogenzaka Hill (stg12)") != NULL);
+    frame(ImGuiKey_GamepadDpadDown); frames(1);
+    frame(ImGuiKey_GamepadFaceDown); frames(2);
+    fprintf(stderr, "pick_with: %d calls, choice %d, its row's data %s\n", s_with_calls, s_with_index,
+            s_with_data == k_with_data ? "yes" : "no");
+    CHECK(s_with_calls == 1 && s_with_index == 1 && s_with_data == k_with_data);
+    frame(ImGuiKey_GamepadFaceRight); frames(2);
+    CHECK(strstr(open_menu(), "Skips") != NULL);
     frame(ImGuiKey_GamepadFaceRight); frames(2);
     CHECK(strstr(open_menu(), "Audio") != NULL);
     frame(ImGuiKey_GamepadFaceRight); frames(2);
@@ -1092,6 +1188,62 @@ int main(void)
     /* The three that said the wrong thing were never set (run.py finds
      * their lines in the log). */
     CHECK(p_bad_runs == 0);
+
+    /* Long lists (above), at 1920 x 1080 and at 640 x 480: every menu and
+     * list of choices stays between the bar and the strip, and scrolls
+     * where it is taller. From Audio's title, Right, Right: Developer's. A
+     * opens it, on Log to file: it is taller than the room, so it scrolls,
+     * hanging from the bar as before. Down three times, Right: the long
+     * list, beside its row, in the room, scrolling. B; Up four times wraps
+     * to the foot, the short list; Right: its choices, opened beside the
+     * room's foot, go up to stay in it. B, B: Developer's title again. */
+    for (int i = 0; i < LONG_CHOICES; i++) {
+        snprintf(s_long_names[i], sizeof s_long_names[i], "Choice %d", i + 1);
+        s_long_choices[i] = s_long_names[i];
+    }
+    {
+        XBOX_MENU_ITEM it = long_row(XBOX_ITEM_CHOICE, "Long list", LONG_CHOICES, "Has more choices than fit.");
+        xbox_MenuAdd(&it, 1);
+        for (int i = 0; i < LONG_ROWS; i++) {
+            snprintf(s_row_names[i], sizeof s_row_names[i], "Row %d", i + 1);
+            it = long_row(XBOX_ITEM_TOGGLE, s_row_names[i], 0, "One of many rows.");
+            xbox_MenuAdd(&it, 1);
+        }
+        it = long_row(XBOX_ITEM_CHOICE, "Short list", SHORT_CHOICES, "Opens at the foot.");
+        xbox_MenuAdd(&it, 1);
+    }
+    frame(ImGuiKey_GamepadDpadRight); frames(2);
+    frame(ImGuiKey_GamepadDpadRight); frames(2);
+    for (int small = 0; small < 2; small++) {
+        g_display = small ? ImVec2(640.0f, 480.0f) : ImVec2(0.0f, 0.0f);
+        frames(2);
+        frame(ImGuiKey_GamepadFaceDown); frames(2);
+        fprintf(stderr, "long lists at %.0fx%.0f: [%s]\n", io.DisplaySize.x, io.DisplaySize.y, open_menu());
+        CHECK(strstr(open_menu(), "Developer") != NULL && hint_is("Writes the log to a file."));
+        CHECK(menus_in_room() && last_scrolls());
+        {
+            ImGuiWindow *bar = ImGui::FindWindowByName("##MainMenuBar");
+            ImGuiWindow *dev = ImGui::GetCurrentContext()->OpenPopupStack.back().Window;
+            CHECK(dev && dev->Pos.y == bar->Pos.y + bar->Size.y);
+        }
+        for (int i = 0; i < 3; i++) { frame(ImGuiKey_GamepadDpadDown); frames(1); }
+        CHECK(hint_is("Has more choices than fit."));
+        frame(ImGuiKey_GamepadDpadRight); frames(2);
+        CHECK(strstr(open_menu(), "Long list") != NULL);
+        CHECK(menus_in_room() && last_scrolls());
+        frame(ImGuiKey_GamepadFaceRight); frames(2);
+        CHECK(strstr(open_menu(), "Developer") != NULL);
+        for (int i = 0; i < 4; i++) { frame(ImGuiKey_GamepadDpadUp); frames(1); }
+        CHECK(hint_is("Opens at the foot."));
+        frame(ImGuiKey_GamepadDpadRight); frames(2);
+        CHECK(strstr(open_menu(), "Short list") != NULL);
+        CHECK(menus_in_room() && !last_scrolls());
+        frame(ImGuiKey_GamepadFaceRight); frames(2);
+        frame(ImGuiKey_GamepadFaceRight); frames(2);
+        CHECK(!strcmp(open_menu(), "") && bar_focused());
+    }
+    g_display = ImVec2(0.0f, 0.0f);
+    frames(2);
 
     /* The busy box, centred. */
     busy_frame();

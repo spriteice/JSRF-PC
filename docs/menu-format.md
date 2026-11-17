@@ -132,6 +132,9 @@ own.
   green and B in a red as dark, as the pad colours them, and the rest grey
   (`menu_style_cap`). The strip is as tall as the longest hint needs at the
   window's width, so it stays still as the pad moves.
+- Every menu, submenu and list of choices stays between the bar and the
+  strip, over neither: one opened low down goes up to fit, and one taller
+  than the room between them scrolls, with a scroll bar.
 - Colours come from the style alone: nothing in a menu sets one of its own.
 
 ## Behaviour
