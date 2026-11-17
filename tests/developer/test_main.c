@@ -9,8 +9,9 @@
  *
  * Built with the in-game menu too, where xbox_MenuAdd is stood in for: each
  * page of switches is a line in the log, its label then its rows in order,
- * and a line after it with its ticks, a bit for each row. A row without a
- * hint, or with one too long for the strip (menu.h), stops it there.
+ * and a line after it with its ticks, a bit for each row; then a line of the
+ * menu's own rows, its submenus among them, in order. A row without a hint,
+ * or with one too long for the strip (menu.h), stops it there.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,6 +27,10 @@ void developer_restart(void);
 void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count)
 {
     int i, k;
+    fprintf(stderr, "[ROWS]");
+    for (i = 0; i < count; i++)
+        if (!items[i].group && !items[i].under) fprintf(stderr, "%s%s", i ? " | " : " ", items[i].label);
+    fprintf(stderr, "\n");
     for (i = 0; i < count; i++) {
         /* Each with a hint, a sentence short enough for the strip (menu.h). */
         const char *h = items[i].hint;

@@ -1570,7 +1570,8 @@ static void sdl_cfg_path(char *buf, size_t n)
 }
 
 /* A file named `file`, beside the settings file: for a port's own keys
- * apart from the player's settings (port/developer.c keeps developer.cfg). */
+ * apart from the player's settings (port/developer.c keeps developer.cfg),
+ * or a port's own file (nv_window_file_path, below). */
 static void sdl_cfg_beside(char *buf, size_t n, const char *file)
 {
     char *sep;
@@ -1707,6 +1708,15 @@ void nv_window_file_set(const char *file, const char *key, int val)
     sdl_cfg_beside(path, sizeof path, file);
     snprintf(v, sizeof v, "%d", val);
     sdl_cfg_write(path, key, v);
+}
+
+/* The path of a file named `file` beside the settings file (sdl_cfg_beside),
+ * for a port's own file that isn't key=value: port/missions.c's
+ * start-states.txt. "" when there is no settings file. */
+void nv_window_file_path(const char *file, char *buf, size_t n);
+void nv_window_file_path(const char *file, char *buf, size_t n)
+{
+    sdl_cfg_beside(buf, n, file);
 }
 
 /* nv2a_widescreen() asks this when RECOMP_WIDESCREEN is not set. */

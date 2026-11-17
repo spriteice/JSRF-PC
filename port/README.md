@@ -18,6 +18,13 @@ Future* and nothing else, and these two files are its core.
   (docs/project-rules.md, Where code goes 6): a function the lifter got
   wrong is fixed in the recompiler, in `tools/recomp`.
 
+The other files here are the port's own features, each with a comment at
+its top saying what it does and where it reaches the game. Developer >
+Missions, for one, is `missions.c`, which starts the game at a story mission
+through the game flow's update in `recomp_manual.c`, and `missions_menu.c`,
+its rows in the in-game menu, made from the game's own mission files as the
+engine starts.
+
 The bulk of the port — the hundreds of thousands of lines of C the pipeline
 generates from the XBE — is **not** here and will not be: it is derived from a
 copyrighted binary. It is produced on your machine, from your own disc, by the

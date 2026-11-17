@@ -749,6 +749,9 @@ static int host_main(void)
     /* Whether the intro is skipped, and its row in Display > Skips
      * (port/intro.c). */
     { extern void intro_start(void); intro_start(); }
+    /* Whether the game starts at a mission (JSRF_START_MISSION), read once
+     * and taken out of the environment (port/missions.c). */
+    { extern void missions_start(void); missions_start(); }
     /* Whether the pause menus show the song playing, and its row in
      * Display > Enhancements (port/music_info.c). */
     { extern void music_info_start(void); music_info_start(); }
@@ -863,8 +866,17 @@ static int host_main(void)
     /* Step 4: Set game directory for file I/O path translation */
     {
         extern void xbox_path_init(const char *game_dir, const char *save_dir);
+        extern void missions_paths(const char *save_dir);
+        extern void missions_menu_start(const uint8_t *mem, uint32_t size);
         const char *sv = getenv("JSRF_SAVE_DIR");
-        xbox_path_init(game_dir(), (sv && sv[0]) ? sv : "save");
+        const char *save = (sv && sv[0]) ? sv : "save";
+        xbox_path_init(game_dir(), save);
+        /* A run started at a mission: its mission's file checked for, and
+         * its saves apart from the player's (port/missions.c). */
+        missions_paths(save);
+        /* Developer > Missions' rows, from the game's mission files and the
+         * names in its program, now in guest memory (port/missions_menu.c). */
+        missions_menu_start((const uint8_t *)(uintptr_t)g_xbox_mem_offset, (uint32_t)g_xbox_total_ram);
     }
 
     /* Step 5: Initialize kernel bridge (thunk table in Xbox memory) */

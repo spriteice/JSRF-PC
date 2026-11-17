@@ -1,8 +1,9 @@
 /* The Developer menu (menu.h), the last on the bar: Log to file, Logging,
  * the engine's own diagnostic switches, Engine switches, which change what
  * the engine does, to compare one way with the other, Performance, the same
- * for what the engine does for speed, and Experimental, which changes what
- * the game does, for a comparison.
+ * for what the engine does for speed, Missions, which restarts the game at a
+ * story mission (its rows are port/missions_menu.c's), and Experimental,
+ * which changes what the game does, for a comparison.
  *
  * Log to file is logging= in the settings file, on when it is not there. Off,
  * the game's output -- what the launchers keep as last-run.log -- goes to the
@@ -75,6 +76,9 @@ typedef struct { const char *name; const char *on; } DevSwitch;
 static const DevSwitch k_logging[] = {
     { "JSRF_ADX_ERR_LOG", "1" },            /* the sound library's stream errors (port/adx_err.c) */
     { "JSRF_CAM_LOG", "1" },                /* the game's camera (port/recomp_manual.c) */
+    { "JSRF_EVT_LOG", "0.2" },              /* where skaters are posed, every 0.2 s (port/recomp_manual.c) */
+    { "JSRF_FLOW_LOG", "1" },               /* each step a mission's flow reaches (port/recomp_manual.c) */
+    { "JSRF_TALK_LOG", "1" },               /* talks and the event manager's calls (port/recomp_manual.c) */
     { "RECOMP_APU_CHANNELS", "1" },
     { "RECOMP_APU_STATS", "1" },
 #if defined(__linux__) || defined(_WIN32)
@@ -282,6 +286,10 @@ void developer_start(void)
             { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_TOGGLES, .label = "Performance",
               .state = perf_on, .pick = perf_flip, .choices = k_perf_row, .nchoices = DEV_PERF,
               .hint = "Tweaks that improve performance. Turn one off only if you have issues." },
+            /* Right below Performance (spriteice, 15 November 2026), shown
+             * once port/missions_menu.c has put the missions in it. */
+            { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_MISSIONS,
+              .hint = "Restarts the game at a story mission, with the story up to it done." },
             { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_TOGGLES, .label = "Experimental",
               .state = tries_on, .pick = tries_flip, .choices = k_tries_row,
               .nchoices = DEV_TRIES,

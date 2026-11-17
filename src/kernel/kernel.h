@@ -488,6 +488,11 @@ void xbox_kernel_set_ordinal_remap(const unsigned short *map, int count);
 /* Initialize path translation with base directories */
 void xbox_path_init(const char* game_dir, const char* save_dir);
 
+/* After xbox_path_init: the folder for E:\UDATA and E:\TDATA, a title's
+ * saves, in place of the one JSRF_USER_DIR gave (or the game dir), made if
+ * need be. A run that must not touch the player's saves gives its own. */
+void xbox_path_set_user_dir(const char* user_dir);
+
 /*
  * Character type of a translated host path. The Win32 file APIs take wide
  * chars; POSIX takes bytes. kernel_path.c and kernel_file.c are split on

@@ -3,7 +3,9 @@
 Takes src/kernel/kernel_path.c and kernel_file.c as they are; only logging and
 the symbolic-link table are stubbed (test_main.c). The game and save folders
 are fresh temporary ones, and the user folder is left for the path layer to
-make. Requires GCC on PATH, including MinGW on Windows.
+make, as is the save folder's mission-saves, the folder a run started at a
+mission gives after the init (xbox_path_set_user_dir).
+Requires GCC on PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
 """
 import os

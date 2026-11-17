@@ -203,6 +203,16 @@ input goes to the menu.
 - **Developer:** Settings for testing and bug reports.
   - **Log to file:** Stops or starts writing to `last-run.log` at once.
   - **Logging:** The engine's diagnostic logs, for bug reports.
+    JSRF_EVT_LOG=0.2 logs, every 0.2 s, where each skater is posed: the
+    code that posed it, the space it was posed in, its lowest and highest
+    bones, and each character's position.
+    JSRF_FLOW_LOG logs a line each time a mission moves on a step, with the
+    step's number and the mission's: asking for its files, its setup, play,
+    and the hand-over to the next mission.
+    JSRF_TALK_LOG logs the story's events as they run: each talk started,
+    with the code that started it, the mission script's entries and the
+    triggers that fire, every story flag that changes, and the talk zones a
+    character walks into.
     RECOMP_HEAP_GUARD logs the game's mistakes with the memory it releases,
     and where in the game's code each one is: a block released twice, used
     after its release, or released through the wrong call. While it is on,
@@ -230,6 +240,25 @@ input goes to the menu.
     unticked, it spins, as before b1.2. Compressed textures direct hands
     the game's compressed textures to the graphics driver as they are;
     unticked, they are decoded first, as before b1.2.
+  - **Missions:** Restarts the game at a story mission, for testing. It is
+    a developer option, so a mission started this way may not play as it
+    does in the story. Character is who you start as: any of the game's 24
+    characters, Garam among them, Yoyo to begin with, as in a new game.
+    Load game, between two lines below it, restarts the game at the title's
+    Load Game screen, with the saves of the runs started here. Below that,
+    each level, in story order, as "Dogenzaka Hill (stg12)", is a list of
+    its missions, each with its number, its kind and, for a race or a
+    battle, who it is against, as "0252 (flag game, Rapid99)". The garage
+    and Gouji's Tower (stg40), the final fight, are levels of their own, and
+    the missions on sets the game doesn't name are in Other sets, at the
+    foot. Picking one asks first, as anything since your last save is lost,
+    then restarts the game at that mission: the intro and the title are
+    left out, and a new game starts there, with a new game's progress. With
+    a test build's `start-states.txt` beside the settings file, which is
+    made from the game's files and is never in a package, it starts with
+    the story up to that mission done instead. A run started here keeps its saves in `mission-saves` in the save folder,
+    apart from your own, which it never opens. File > Restart afterwards
+    starts the game as usual. Character is kept in `developer.cfg`.
   - **Experimental:** Changes to how the game runs, to try out, when there
     are any.
   - **Purge shaders:** Restarts the game and deletes the shader cache as it

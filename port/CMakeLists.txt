@@ -95,6 +95,8 @@ set(JSRF_SOURCES
     camera_walls.c
     keyboard_move.c
     intro.c
+    missions.c
+    missions_menu.c
     music_info.c
     draw_distance.c
     audio.c

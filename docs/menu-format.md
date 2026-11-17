@@ -11,8 +11,8 @@ Far buildings and Far shadows, in `port/draw_distance.c`, Skip intro in
 `port/audio.c`, Input's Free camera in
 `port/freecam.c`, and its Default cam fix in `port/camera_walls.c` and
 Keyboard moves in `port/keyboard_move.c`, Developer in
-`port/developer.c`). A row marked last goes below any added later (`last` in
-`menu.h`). A row can instead go right below another row of its menu, which it
+`port/developer.c`, with Missions' rows in `port/missions_menu.c`). A row
+marked last goes below any added later (`last` in `menu.h`). A row can instead go right below another row of its menu, which it
 names, whichever of the two was added first
 (`under` in `menu.h`): rows added as the game starts can sit among the
 window's, as Draw distance and the Building distance submenu sit under the
@@ -244,6 +244,14 @@ Dear ImGui
   goes below it. tests/developer checks.
 - Performance comes after Engine switches, so it is above Purge shaders
   (added later, by nv2a_gl.c).
+- Missions is the submenu right below Performance (`XBOX_GROUP_MISSIONS`,
+  added by `port/developer.c`). Its rows are `port/missions_menu.c`'s, made
+  as the engine starts from the game's own files and the names in its
+  program, so nothing of the game's, its missions, levels or characters, is
+  written into the repository. Each level is a choice of its missions, and
+  the levels share one function, which each row tells which level it is
+  (`pick_with` and `data` in `menu.h`). tests/developer and tests/missions
+  check.
 - A new experiment, an environment variable that tries out a change that may
   become the default later, also gets a row, but under Developer >
   Experimental (`k_tries`), with a name of its own in `k_tries_row`.

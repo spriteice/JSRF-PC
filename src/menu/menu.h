@@ -179,6 +179,11 @@ typedef struct XBOX_MENU_ITEM {
 #define XBOX_GROUP_BEHAVIOUR    "Behaviour"
 #define XBOX_GROUP_BEHAVIOUR_HINT "Configure the keyboard movement in relation to the camera."
 
+/* Developer's submenu right below Performance (port/developer.c adds it):
+ * Missions, the game restarted at a story mission (port/missions_menu.c
+ * puts its rows in it). */
+#define XBOX_GROUP_MISSIONS     "Missions"
+
 /* Two lines at 640 x 480, beside the pad's buttons. */
 #define MENU_HINT_LONGEST 70
 

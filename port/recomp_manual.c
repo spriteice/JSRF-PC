@@ -1279,6 +1279,7 @@ void sub_0017CAB0(void)
 #include "camera_walls.h"
 #include "intro.h"
 #include "keyboard_move.h"
+#include "missions.h"
 #define XPP_TYPE_GAMEPAD 0x001BC860u
 #define XPP_HANDLE_BASE  0x58580000u
 
@@ -1817,9 +1818,11 @@ MENU_NAV_WRAP(0007DAE0)
  *
  * The flow object runs the mission sequence: +0x58 the mission id, +0x5C a
  * state indexing the step table at 0x1F9888 (0 asks for the mission file,
- * 1 waits for it, and so on). [FLOW] logs every state change;
+ * 1 waits for it, and so on). JSRF_FLOW_LOG=1 (Developer > Logging): a
+ * [FLOW] line for every state change, with the mission's id.
  * JSRF_FLOW_GOTO="t:id" sets the id and state 0 at t seconds -- how a test
- * gets to a later mission without playing the ones before it. */
+ * gets to a later mission without playing the ones before it; it turns the
+ * [FLOW] lines on too. */
 /* JSRF_MSCRIPT_DUMP=<mission id> (test only): when that mission's flow first
  * reaches state 14 (its setup commands) and again at the first state 15
  * after a state 19 (an event ended and set its flags), list the setup commands ([mission+0x174], count
@@ -2013,8 +2016,10 @@ void sub_00051FC0(void)
  *
  * With Display > Skips > Skip intro on, the task is put at its end before
  * its first update, with the screen's fade black, as the disclaimer leaves
- * it: the game opens at the title's loading, and no card is drawn. [INTRO]
- * logs each card's steps, with the time and the game frame. */
+ * it: the game opens at the title's loading, and no card is drawn. A start
+ * at a mission (port/missions.c) leaves the cards out the same way, whatever
+ * Skip intro says. [INTRO] logs each card's steps, with the time and the
+ * game frame. */
 #define INTRO_STATE        0x098u  /* three to a card: in, held, out; then done */
 #define INTRO_PER_CARD     3u
 #define INTRO_DONE         15u
@@ -2030,12 +2035,12 @@ void sub_0007E360(void)
     uint32_t task = g_ecx, *t, now;
     if (task < 0x10000u || task + INTRO_STATE + 4 > (64u << 20)) { sub_0007E360_gen(); return; }
     t = (uint32_t *)(uintptr_t)(m + task);
-    if (intro_skip() && t[INTRO_STATE / 4] != INTRO_DONE) {
+    if ((intro_skip() || missions_starting()) && t[INTRO_STATE / 4] != INTRO_DONE) {
         const uint32_t black = INTRO_FADE_BLACK;
         t[INTRO_STATE / 4] = INTRO_DONE;
         guest_call_cdecl(sub_00024600, INTRO_FADE_SET_RA, 1, &black);
-        fprintf(stderr, "[INTRO] t=%.2f frame %u: skipped (Display > Skips > Skip intro)\n",
-                pad_now(), s_game_frames);
+        fprintf(stderr, "[INTRO] t=%.2f frame %u: skipped (%s)\n", pad_now(), s_game_frames,
+                missions_starting() ? "a start at a mission" : "Display > Skips > Skip intro");
     }
     sub_0007E360_gen();
     now = t[INTRO_STATE / 4];
@@ -2047,6 +2052,50 @@ void sub_0007E360(void)
                     now / INTRO_PER_CARD + 1, INTRO_DONE / INTRO_PER_CARD, step[now % INTRO_PER_CARD]);
     }
     said = now;
+}
+
+/* ---- the game flow, and a start at a mission (port/missions.c) -------------
+ * sub_0007BDD0 is the update of the game's flow object (its state at +0x48
+ * picks one of 64 functions from the table at 0x20D2B8), once a frame, from
+ * the boot through the title to each chapter's missions. A start at a mission
+ * (JSRF_START_MISSION) changes what follows the boot, a choice the game makes
+ * in this function's states and nowhere else; missions_flow makes it, before
+ * the game's own update. The game's code here is right, and so are the
+ * recompiler and the runtime: this is a feature, not a fix.
+ *
+ * In place of the title (state 0xA), missions_flow makes that state's own
+ * calls but the title's scene task through missions_title, in its order:
+ * the entrances' reset (sub_0004EAF0, cdecl), the progress object's reset
+ * and its table at +0x6F58 (sub_0003AED0 and sub_0003B3C0, thiscall on the
+ * progress object), and the music's fade (sub_001165D0, cdecl, the fade's
+ * length). Each is called with the return address its call in state 0xA's
+ * function (0x7C160) has. */
+#define FLOW_PROGRESS            0x001EFFB0u  /* the progress object, the reset's this */
+#define FLOW_MUSIC_FADE          0x3Cu        /* state 0xA's fade, in frames */
+#define FLOW_ENTRANCES_RA        0x0007C1BDu  /* after state 0xA's call of sub_0004EAF0 */
+#define FLOW_PROGRESS_RESET_RA   0x0007C1FFu  /* ... of sub_0003AED0 */
+#define FLOW_PROGRESS_TABLE_RA   0x0007C209u  /* ... of sub_0003B3C0 */
+#define FLOW_MUSIC_FADE_RA       0x0007C210u  /* ... of sub_001165D0 */
+extern void sub_0004EAF0(void);
+extern void sub_0003AED0(void);
+extern void sub_0003B3C0(void);
+extern void sub_001165D0(void);
+static void missions_title(void)
+{
+    const uint32_t fade = FLOW_MUSIC_FADE;
+    const uint32_t sv_ecx = g_ecx;
+    guest_call_cdecl(sub_0004EAF0, FLOW_ENTRANCES_RA, 0, NULL);
+    g_ecx = FLOW_PROGRESS;
+    guest_call_cdecl(sub_0003AED0, FLOW_PROGRESS_RESET_RA, 0, NULL);
+    guest_call_cdecl(sub_0003B3C0, FLOW_PROGRESS_TABLE_RA, 0, NULL);
+    g_ecx = sv_ecx;
+    guest_call_cdecl(sub_001165D0, FLOW_MUSIC_FADE_RA, 1, &fade);
+}
+extern void sub_0007BDD0_gen(void);
+void sub_0007BDD0(void)
+{
+    missions_flow((uint8_t *)g_xbox_mem_offset, 64u << 20, g_ecx, missions_title, pad_now());
+    sub_0007BDD0_gen();
 }
 
 /* ---- sub_0018E584: D3D's DAC gamma-ramp upload (CMiniport, runs in the
@@ -3078,7 +3127,8 @@ static void jsrf_where(uint32_t fl, uint32_t obj)
  * up axis -- up exactly vertical means a world-space pass), and the posed
  * bones: bone 0, bone 1, the lowest and the highest bone, in that space. Plus,
  * from sub_00080BD0, each character's own position (+0xCA4). Enough to tell a
- * skater posed low (bones under the matrix origin) from one placed low. */
+ * skater posed low (bones under the matrix origin) from one placed low.
+ * Developer > Logging's row sets it to 0.2. */
 static double evt_period = -1;
 static int evt_on(void)
 {
@@ -3428,7 +3478,8 @@ void sub_001A200D(void)
  * sub_00038460 is the event manager's "start talk event N" (virtual, slot 8
  * of the table at 0x1EC068; thiscall, the event number as its one argument;
  * it records N at +0x1578 and the loader state machine at sub_00038890 then
- * reads TE<N>.bin). JSRF_TALK_LOG=1 prints every call with its return
+ * reads TE<N>.bin). JSRF_TALK_LOG=1 (Developer > Logging, as are the
+ * other JSRF_TALK_LOG lines below) prints every call with its return
  * address, so the code that decided to start a talk can be found. Added
  * 23 Sep: Gum's talk (TE002) starts the moment Corn's ends, with Beat still
  * 570 units away from her. */

@@ -4,7 +4,9 @@
  * links U: and T: there -- and E: is Partition1, the game dir, so they land
  * among the game's files. A launcher can give the player's own folder for
  * them instead (JSRF_USER_DIR, the Linux launcher's portable mode). Given one,
- * the saves go there and nothing else moves; without one, nothing moves.
+ * the saves go there and nothing else moves; without one, nothing moves. A
+ * run started at a mission gives another after the init
+ * (xbox_path_set_user_dir), and its saves go there instead.
  */
 #include <assert.h>
 #include <stdio.h>
@@ -70,12 +72,27 @@ static void play(void)
 int main(int argc, char **argv)
 {
     static char env[600];
+    char missions[600];
     const char *game, *save, *user;
 
     assert(argc == 4);
     game = argv[1];
     save = argv[2];
     user = argv[3];
+
+    /* A user dir, then another given after the init, as a run started at a
+     * mission gives its own (port/missions.c): the saves go to the second,
+     * made if need be, and none to the first. */
+    snprintf(env, sizeof(env), "JSRF_USER_DIR=%s", user);
+    putenv(env);
+    snprintf(missions, sizeof(missions), "%s/mission-saves", save);
+    xbox_path_init(game, save);
+    xbox_path_set_user_dir(missions);
+    play();
+    assert(exists(missions, "TDATA/5345000a"));
+    assert(exists(missions, "UDATA/5345000a/99271B32E8BB/JSRFDATA.SAV"));
+    assert(!exists(user, "UDATA") && !exists(user, "TDATA"));
+    assert(!exists(game, "TDATA") && !exists(game, "UDATA"));
 
     /* Given a user dir (not made yet): the saves go there, and only they do. */
     snprintf(env, sizeof(env), "JSRF_USER_DIR=%s", user);

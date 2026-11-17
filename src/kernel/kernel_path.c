@@ -455,6 +455,23 @@ void xbox_path_init(const char* game_dir, const char* save_dir)
              s_game_dir, s_save_dir, s_user_dir);
 }
 
+void xbox_path_set_user_dir(const char* user_dir)
+{
+    WCHAR given[MAX_PATH];
+    size_t len;
+
+    if (!MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, user_dir, -1, given, MAX_PATH))
+        MultiByteToWideChar(CP_ACP, 0, user_dir, -1, given, MAX_PATH);
+    /* A whole path, with backslashes: SHCreateDirectoryExW takes no other. */
+    if (!GetFullPathNameW(given, MAX_PATH, s_user_dir, NULL))
+        wcscpy_s(s_user_dir, MAX_PATH, given);
+    len = wcslen(s_user_dir);
+    if (len > 0 && s_user_dir[len - 1] == L'\\')
+        s_user_dir[len - 1] = L'\0';
+    SHCreateDirectoryExW(NULL, s_user_dir, NULL);
+    xbox_log(XBOX_LOG_INFO, XBOX_LOG_PATH, "Path: user=%S", s_user_dir);
+}
+
 /* The host path the last translation produced.
  *
  * A caller that wants to act on the file a title just opened -- playing an FMV
@@ -790,6 +807,14 @@ void xbox_path_init(const char* game_dir, const char* save_dir)
     }
     xbox_log(XBOX_LOG_INFO, XBOX_LOG_PATH, "Path init: game=%s, save=%s, user=%s",
              s_game_dir, s_save_dir, s_user_dir);
+}
+
+void xbox_path_set_user_dir(const char* user_dir)
+{
+    snprintf(s_user_dir, sizeof(s_user_dir), "%s", user_dir);
+    strip_trailing_slash(s_user_dir);
+    mkdir_p(s_user_dir);
+    xbox_log(XBOX_LOG_INFO, XBOX_LOG_PATH, "Path: user=%s", s_user_dir);
 }
 
 BOOL xbox_translate_path(const char* xbox_path, xbox_host_char* host_path_buf, DWORD buf_size)

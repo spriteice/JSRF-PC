@@ -121,10 +121,24 @@ cases["fence_wait_off"] = (None, "RECOMP_FENCE_WAIT=0\n", {},
 cases["dxt_off"] = (None, "RECOMP_GL_DXT=0\n", {},
                     ["[DEV] RECOMP_GL_DXT=0 from developer.cfg", "started:"], [])
 
-# The game's camera log, the one switch in Logging that port/recomp_manual.c
+# The game's camera log, a switch in Logging that port/recomp_manual.c
 # reads: from developer.cfg into the environment like the others.
 cases["camera_log"] = (None, "JSRF_CAM_LOG=1\n", {},
                        ["[DEV] JSRF_CAM_LOG=1 from developer.cfg", "started:"], [])
+
+# The mission flow's log, each step a mission reaches, which
+# port/recomp_manual.c reads too.
+cases["flow_log"] = (None, "JSRF_FLOW_LOG=1\n", {},
+                     ["[DEV] JSRF_FLOW_LOG=1 from developer.cfg", "started:"], [])
+
+# Talks and the event manager's calls, read by port/recomp_manual.c too.
+cases["talk_log"] = (None, "JSRF_TALK_LOG=1\n", {},
+                     ["[DEV] JSRF_TALK_LOG=1 from developer.cfg", "started:"], [])
+
+# Where skaters are posed, a switch whose value is a period, not 1: ticked,
+# developer.cfg keeps 1, and the environment gets the period, 0.2 s.
+cases["evt_log"] = (None, "JSRF_EVT_LOG=1\n", {},
+                    ["[DEV] JSRF_EVT_LOG=0.2 from developer.cfg", "started:"], [])
 
 # The sound library's stream errors (port/adx_err.c), read by its hooks in
 # port/recomp_manual.c like the camera log.
@@ -165,7 +179,8 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
         env = {k: v for k, v in os.environ.items()
                if k not in (*switches, "RECOMP_CPU_PROFILE", "RECOMP_NV2A_QUEUE", "RECOMP_P_CORES",
                             "RECOMP_PACE_DISPLAY", "RECOMP_FENCE_WAIT", "RECOMP_GL_DXT",
-                            "JSRF_CAM_LOG", "JSRF_ADX_ERR_LOG", "RECOMP_APU_GPFX")}
+                            "JSRF_CAM_LOG", "JSRF_EVT_LOG", "JSRF_FLOW_LOG", "JSRF_TALK_LOG",
+                            "JSRF_ADX_ERR_LOG", "RECOMP_APU_GPFX")}
         env.update(extra, JSRF_SETTINGS_FILE=str(folder / "settings.cfg"))
         log = folder / "last-run.log"
         with open(log, "w") as out:
@@ -195,9 +210,11 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
         env = {k: v for k, v in os.environ.items() if not k.startswith(("RECOMP_", "JSRF_"))}
         env.update(JSRF_SETTINGS_FILE=str(folder / "menu.cfg"))
         run = subprocess.run([menu_exe], env=env, capture_output=True, text=True, timeout=10)
-        pages, ticks = {}, {}
+        pages, ticks, shown = {}, {}, []
         for line in run.stderr.splitlines():
-            if line.startswith("[MENU] "):
+            if line.startswith("[ROWS] "):
+                shown = line[len("[ROWS] "):].split(" | ")
+            elif line.startswith("[MENU] "):
                 label, _, rows = line[len("[MENU] "):].partition(": ")
                 pages[label] = rows.split(" | ")
             elif line.startswith("[TICKS] "):
@@ -205,6 +222,10 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
                 ticks[label] = int(bits)
         if run.returncode != 0 or list(pages) != ["Logging", "Engine switches", "Performance"]:
             raise SystemExit(f"menu: exit {run.returncode}, pages {list(pages)}\n{run.stderr}")
+        # The menu's rows: Missions, a submenu port/missions_menu.c fills,
+        # right below Performance (spriteice, 15 November 2026).
+        if shown != ["Log to file", "Logging", "Engine switches", "Performance", "Missions"]:
+            raise SystemExit(f"menu: the Developer menu's rows are {shown}")
         return pages, ticks
     pages, ticks = menu("")
     perf = ["Use P cores (Restart)"] if linux else []
@@ -225,7 +246,9 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
                         "RECOMP_FENCE_WAIT", "RECOMP_GL_DXT")):
         raise SystemExit(f"menu: Engine switches' rows are {pages['Engine switches']}")
     if any(row not in pages["Logging"]
-           for row in ("RECOMP_GL_TIMELINE (Restart)", "JSRF_ADX_ERR_LOG (Restart)")):
+           for row in ("RECOMP_GL_TIMELINE (Restart)", "JSRF_ADX_ERR_LOG (Restart)",
+                       "JSRF_EVT_LOG=0.2 (Restart)", "JSRF_FLOW_LOG (Restart)",
+                       "JSRF_TALK_LOG (Restart)")):
         raise SystemExit(f"menu: Logging's rows are {pages['Logging']}")
     # Logging's and Engine switches' rows are in alphabetical order by name,
     # word by word: an underscore comes before any letter, as a space would.
