@@ -287,6 +287,28 @@ void recomp_icall_not_code_log(uint32_t va)
     fflush(stderr);
 }
 
+/* ── RCPSS and RSQRTSS ───────────────────────────────────────────────────
+ *
+ * The runtime works out the Xbox's answers (recomp_rcpss and recomp_rsqrtss
+ * in recomp_types.h). One line at the start says whether this processor's
+ * own instructions give the same: they do on Intel's, and not on AMD's, where
+ * the game ran differently before (known bug 60). */
+void recomp_sse_approx_log(void);
+void recomp_sse_approx_log(void)
+{
+#if defined(_M_IX86) || defined(_M_X64) || defined(__i386__) || defined(__x86_64__)
+    unsigned checked, differ = recomp_sse_approx_host_differs(&checked);
+    if (differ)
+        fprintf(stderr, "[SSE] rcpss and rsqrtss: the Xbox's answers, worked out; this "
+                "processor's own differ at %u of %u inputs checked\n", differ, checked);
+    else
+        fprintf(stderr, "[SSE] rcpss and rsqrtss: the Xbox's answers, worked out; this "
+                "processor's own give the same at all %u inputs checked\n", checked);
+#else
+    fprintf(stderr, "[SSE] rcpss and rsqrtss: the Xbox's answers, worked out\n");
+#endif
+}
+
 /* ── Untranslated instructions ───────────────────────────────────────────
  *
  * The lifter emits RECOMP_UNIMPL(text, va) at every instruction it has no

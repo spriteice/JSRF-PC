@@ -330,6 +330,14 @@ C:    xmm0 = _mm_mul_ps(xmm0, xmm1);
 
 In practice, SSE usage in Xbox games is limited. Most math uses x87 FPU.
 
+`rcpss` and `rsqrtss` (and their packed forms) only approximate 1/x and
+1/sqrt(x), and Intel leaves the exact bits to the processor: AMD's answer
+differently from Intel's. JSRF uses them unrefined, so the bits steer its
+physics and depth. The runtime doesn't run the host's instruction:
+`recomp_rcpss` and `recomp_rsqrtss` (templates/runtime/recomp_types.h) work
+out the Pentium III's answers in integers, the same on every processor, and
+an `[SSE]` line at the start says whether the host's own would differ.
+
 ## Jump Tables (Switch Statements)
 
 The disassembler identifies switch statement jump tables. The lifter converts them to C switch statements:

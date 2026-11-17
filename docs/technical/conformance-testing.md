@@ -141,6 +141,11 @@ bytes and nothing noticed. Comparison is bit-exact, including `-0.0` vs `0.0`,
 which is precisely the difference a mis-implemented `MINPS` tie-break gets
 wrong.
 
+`rcpss` and `rsqrtss` are the exception: the lifted side gives the Pentium
+III's (Intel's) answers on every host (docs/pipeline/04-lifting.md, SSE/MMX),
+so their cases match the hardware on an Intel processor and differ on an AMD
+one. tests/sse_approx checks those answers on any machine.
+
 ## What it found
 
 **`stc` / `clc` / `cmc` were unhandled** and lifted to `/* TODO: stc */`, so

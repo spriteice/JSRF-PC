@@ -737,6 +737,9 @@ static int host_main(void)
     /* The Developer menu's switches into the environment, before anything
      * reads them, and the log off if it was left off (port/developer.c). */
     { extern void developer_start(void); developer_start(); }
+    /* Whether this processor's own RCPSS and RSQRTSS give the Xbox's answers,
+     * which the runtime works out either way (port/recomp_manual.c). */
+    { extern void recomp_sse_approx_log(void); recomp_sse_approx_log(); }
     /* The free camera's settings, its rows in Input > Free camera, at the top
      * of the page, and F8 (port/freecam.c). */
     { extern void freecam_start(void); freecam_start(); }

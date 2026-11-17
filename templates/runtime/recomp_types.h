@@ -986,22 +986,101 @@ static inline RecompXmm XMM_CMP_PRED(RecompXmm a, RecompXmm b, int p) {
 }
 /* Packed unary ops; the first argument is unused, as for the binary forms. */
 RECOMP_XMM_LANEWISE(XMM_SQRT,  sqrtf(b.f[i]))
-/* These instructions deliberately approximate and treat denormals as zero.
- * Exact division changes Newton refinement and zero-mask idioms. */
+/* RCPSS and RSQRTSS, with the answers the Xbox's Pentium III gives, on
+ * every host.
+ *
+ * Both instructions approximate, and the game relies on that: exact division
+ * changes its Newton steps and zero-mask idioms, and its vector helpers use
+ * the estimate unrefined (a direction is v * rsqrtss(|v|^2)), so the exact
+ * bits steer its physics. Intel only promises a relative error within
+ * 1.5 * 2^-12 and leaves the bits to the processor. AMD's processors answer
+ * differently inside that bound, so the host's own instructions made the game
+ * run differently on AMD than on the Xbox: the ending's recorded skater left
+ * a ramp a pass early and missed its rail (known bug 60). So the answers are
+ * worked out here, in integers, the same on every host.
+ *
+ * Intel's answer is the exact one for the middle of the input's range,
+ * rounded to 12 significant bits. RCPSS splits each power of two into 2,048
+ * ranges, by the mantissa's top 11 bits; RSQRTSS splits each power of four
+ * into 2 x 1,024, by the exponent's parity and the mantissa's top 10 bits.
+ * tests/sse_approx checks every range against Intel's answers, which an
+ * Intel processor gave for all 2^32 inputs of each.
+ *
+ * As the hardware: a zero or denormal input counts as zero and gives a signed
+ * infinity, an infinity gives a signed zero, a NaN comes back quieted, an
+ * RCPSS answer below the normal range is a signed zero, and RSQRTSS of a
+ * negative number is the default NaN. */
+static inline uint32_t recomp_f32_bits(float f) {
+    uint32_t u; memcpy(&u, &f, sizeof u); return u;
+}
+static inline float recomp_f32_from_bits(uint32_t u) {
+    float f; memcpy(&f, &u, sizeof f); return f;
+}
+#define RECOMP_F32_SIGN     0x80000000u
+#define RECOMP_F32_INF      0x7F800000u
+#define RECOMP_F32_QNAN_BIT 0x00400000u
+#define RECOMP_F32_DEFAULT_NAN 0xFFC00000u  /* the SSE "real indefinite" */
 static inline float recomp_rcpss(float x) {
-#if defined(_M_IX86) || defined(_M_X64) || defined(__i386__) || defined(__x86_64__)
-    return _mm_cvtss_f32(_mm_rcp_ss(_mm_set_ss(x)));
-#else
-    return 1.0f / (fpclassify(x) == FP_SUBNORMAL ? copysignf(0.0f, x) : x);
-#endif
+    uint32_t u = recomp_f32_bits(x), sign = u & RECOMP_F32_SIGN;
+    uint32_t e = (u >> 23) & 0xFFu, range = (u & 0x7FFFFFu) >> 12, mid;
+    if (e == 0xFFu)
+        return recomp_f32_from_bits((u & 0x7FFFFFu) ? (u | RECOMP_F32_QNAN_BIT) : sign);
+    if (e == 0)
+        return recomp_f32_from_bits(sign | RECOMP_F32_INF);
+    if (e >= 253u)  /* 1/x below 2^-126 */
+        return recomp_f32_from_bits(sign);
+    /* The range's middle is (4097 + 2 * range) / 4096, and twice its
+     * reciprocal, 2^25 / mid units of 2^-12, rounded to the nearest. */
+    mid = 4097u + 2u * range;
+    return recomp_f32_from_bits(sign | ((253u - e) << 23)
+                                | ((((1u << 26) + mid) / (2u * mid) - 4096u) << 11));
 }
 static inline float recomp_rsqrtss(float x) {
-#if defined(_M_IX86) || defined(_M_X64) || defined(__i386__) || defined(__x86_64__)
-    return _mm_cvtss_f32(_mm_rsqrt_ss(_mm_set_ss(x)));
-#else
-    return 1.0f / sqrtf(fpclassify(x) == FP_SUBNORMAL ? copysignf(0.0f, x) : x);
-#endif
+    uint32_t u = recomp_f32_bits(x), e = (u >> 23) & 0xFFu;
+    uint32_t odd = !(e & 1u), range = (u & 0x7FFFFFu) >> 13, lo = 4096u, hi = 8192u;
+    uint64_t mid, four_n;
+    if (e == 0xFFu) {
+        if (u & 0x7FFFFFu) return recomp_f32_from_bits(u | RECOMP_F32_QNAN_BIT);
+        return recomp_f32_from_bits((u & RECOMP_F32_SIGN) ? RECOMP_F32_DEFAULT_NAN : 0u);
+    }
+    if (e == 0)
+        return recomp_f32_from_bits((u & RECOMP_F32_SIGN) | RECOMP_F32_INF);
+    if (u & RECOMP_F32_SIGN)
+        return recomp_f32_from_bits(RECOMP_F32_DEFAULT_NAN);
+    /* The range's middle is (2049 + 2 * range) / 2048, times 2 for an odd
+     * power of two. Twice its reciprocal square root, in units of 2^-12, is
+     * sqrt(N / mid) with N = 2^37 (2^36 when odd); the nearest whole number
+     * to it is the largest q with (2q - 1)^2 * mid <= 4N. 4096 <= q < 8192. */
+    mid = 2049u + 2u * range;
+    four_n = (uint64_t)1 << (odd ? 38 : 39);
+    while (hi - lo > 1u) {
+        uint32_t q = (lo + hi) / 2u;
+        uint64_t d = 2u * (uint64_t)q - 1u;
+        if (d * d * mid <= four_n) lo = q; else hi = q;
+    }
+    return recomp_f32_from_bits(((380u - e) >> 1) << 23 | ((lo - 4096u) << 11));
 }
+#if defined(_M_IX86) || defined(_M_X64) || defined(__i386__) || defined(__x86_64__)
+/* For the log at the start: how many of *checked inputs this host's own
+ * RCPSS and RSQRTSS answer differently from the two above. Every 256th
+ * mantissa at exponents 127 and 128, so each range of either is sampled 16
+ * or more times: 0 on an Intel processor. */
+#define RECOMP_SSE_APPROX_STEP 256u
+static inline unsigned recomp_sse_approx_host_differs(unsigned *checked) {
+    unsigned n = 0, m, e;
+    *checked = 0;
+    for (e = 127u; e <= 128u; ++e)
+        for (m = 0; m < 0x800000u; m += RECOMP_SSE_APPROX_STEP) {
+            float x = recomp_f32_from_bits(e << 23 | m);
+            n += recomp_f32_bits(_mm_cvtss_f32(_mm_rcp_ss(_mm_set_ss(x))))
+                 != recomp_f32_bits(recomp_rcpss(x));
+            n += recomp_f32_bits(_mm_cvtss_f32(_mm_rsqrt_ss(_mm_set_ss(x))))
+                 != recomp_f32_bits(recomp_rsqrtss(x));
+            *checked += 2u;
+        }
+    return n;
+}
+#endif
 RECOMP_XMM_LANEWISE(XMM_RSQRT, recomp_rsqrtss(b.f[i]))
 RECOMP_XMM_LANEWISE(XMM_RCP, recomp_rcpss(b.f[i]))
 
