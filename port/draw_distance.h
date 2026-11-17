@@ -21,7 +21,10 @@
  * (draw_buildings_widen). All (4) adds every area some list names, which
  * draws what the game never shows from where the eye is, such as Dogenzaka
  * Hill's top in its bottom's sky (known bug 57). An area no list names is
- * never added. It changes at once.
+ * never added. Nor is an area a map's own rule hides from where the eye is,
+ * where the game hides it on purpose and the lists can't tell: on Dogenzaka
+ * Hill, area 13, up the hill, from the street below it and the corner
+ * between them (known bug 66; draw_buildings_stage). It changes at once.
  *
  * Far shadows, below it, kept as farshadowsahead= (the same steps, 3 the
  * default): the map's shadows are drawn from the game's set widened the same
@@ -142,6 +145,21 @@ typedef struct {
  * for the [DRAW] line, as draw_distance_drawn's. */
 void draw_buildings_widen(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WORDS],
                           double now, unsigned frame);
+
+/* The stage the mission asks for (0x0001000N for Stg1N), from the flow's
+ * steps that ask for it (port/resource_load.c), before its map loads. Far
+ * buildings keeps it with the next map it reads, and that map's own rule, if
+ * it has one, takes an area out of what draw_buildings_widen and
+ * draw_buildings_shadows add while the game's set is the one some areas
+ * make: on Dogenzaka Hill (stage 0x00010002, its 30 areas), area 13, up the
+ * hill, while the game's set is area 0's, the street below it, or area
+ * 16's, the corner between them. The game draws area 13 from areas 13 and 14
+ * only, and from the street its buildings hang in the sky with nothing under
+ * them (known bug 66). Each such rule is kept by hand, for one case seen and
+ * named; the first call on the map logs it. Before any stage,
+ * DRAW_STAGE_NONE, which no rule has. */
+#define DRAW_STAGE_NONE 0xFFFFFFFFu
+void draw_buildings_stage(uint32_t stage);
 
 /* With Far buildings on, the map's shadows: runs run() with set holding
  * game, the set the game made, widened as draw_buildings_widen widens it to

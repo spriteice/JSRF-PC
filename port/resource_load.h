@@ -23,7 +23,9 @@
  * after release from a live block the heap handed out again.
  *
  * The stage each mission asks for is logged too, with what its file said
- * when it loaded, so a mission file written over shows where.
+ * when it loaded, so a mission file written over shows where, and handed to
+ * Far buildings, whose rules for one map know it by its stage
+ * (port/draw_distance.h, draw_buildings_stage).
  * The hooks in port/recomp_manual.c call these. */
 #ifndef JSRF_RESOURCE_LOAD_H
 #define JSRF_RESOURCE_LOAD_H
@@ -53,7 +55,9 @@ void resource_load_graffiti_sheet(int sheet, double t);
 uint32_t resource_load_flow_state(const uint8_t *mem, uint32_t flow);
 
 /* After that step, with the state before it: logs the request once the step
- * has made it. */
-void resource_load_stage_step(const uint8_t *mem, uint32_t flow, uint32_t state_before, double t);
+ * has made it, and returns the stage it asks for (0x0001000N for Stg1N), or
+ * RESOURCE_LOAD_NO_STAGE while it hasn't asked yet. */
+#define RESOURCE_LOAD_NO_STAGE 0xFFFFFFFFu
+uint32_t resource_load_stage_step(const uint8_t *mem, uint32_t flow, uint32_t state_before, double t);
 
 #endif

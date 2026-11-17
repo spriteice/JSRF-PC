@@ -2471,8 +2471,9 @@ void sub_00030690(void) { mission_hook(".dat"); sub_00030690_gen(); }
  * write what was forgotten is logged. The hooks are on those functions, not
  * on the builder's step, as the step can give the guest lock up between a
  * release and its end. sub_0004AC80 and sub_0004ACB0, the flow's steps that
- * ask for its stage, are logged. */
+ * ask for its stage, are logged, and the stage handed to Far buildings. */
 #include "resource_load.h"
+#include "draw_distance.h"
 extern int xbox_HeapIsFreeSpace(uint32_t xbox_va);   /* released, or never handed out */
 extern void sub_00032C70_gen(void);
 extern void sub_0002DA70_gen(void);
@@ -2517,19 +2518,25 @@ void sub_0002D9D0(void)
     sub_0002D9D0_gen();
     resource_load_graffiti_release((uint8_t *)g_xbox_mem_offset, mgr, xbox_HeapIsFreeSpace);
 }
+/* Each also tells Far buildings the stage asked for, which its rules for one
+ * map know it by (draw_buildings_stage). */
+static void stage_asked(uint32_t stage)
+{
+    if (stage != RESOURCE_LOAD_NO_STAGE) draw_buildings_stage(stage);
+}
 void sub_0004AC80(void)
 {
     const uint8_t *m = (const uint8_t *)g_xbox_mem_offset;
     uint32_t flow = g_ecx, state = resource_load_flow_state(m, flow);
     sub_0004AC80_gen();
-    resource_load_stage_step(m, flow, state, pad_now());
+    stage_asked(resource_load_stage_step(m, flow, state, pad_now()));
 }
 void sub_0004ACB0(void)
 {
     const uint8_t *m = (const uint8_t *)g_xbox_mem_offset;
     uint32_t flow = g_ecx, state = resource_load_flow_state(m, flow);
     sub_0004ACB0_gen();
-    resource_load_stage_step(m, flow, state, pad_now());
+    stage_asked(resource_load_stage_step(m, flow, state, pad_now()));
 }
 
 /* JSRF_TRACE_AT="t:frames[:shots,every][;t:frames[:shots,every]...]" (test

@@ -97,12 +97,12 @@ uint32_t resource_load_flow_state(const uint8_t *mem, uint32_t flow)
     return rd32(mem, flow + RL_FLOW_STATE);
 }
 
-void resource_load_stage_step(const uint8_t *mem, uint32_t flow, uint32_t state_before, double t)
+uint32_t resource_load_stage_step(const uint8_t *mem, uint32_t flow, uint32_t state_before, double t)
 {
     uint32_t file, asked, loaded;
 
     if (resource_load_flow_state(mem, flow) == state_before)
-        return;                     /* not asked yet: the manager was busy */
+        return RESOURCE_LOAD_NO_STAGE;      /* not asked yet: the manager was busy */
     file = rd32(mem, flow + RL_FLOW_FILE);
     asked = rd32(mem, file);
     loaded = rd32(mem, flow + RL_FLOW_STAGE);
@@ -113,4 +113,5 @@ void resource_load_stage_step(const uint8_t *mem, uint32_t flow, uint32_t state_
         fprintf(stderr, "[LOAD] t=%.1f mission %08X asks for stage %08X, but its file at %08X"
                         " said %08X when it loaded: something wrote over it since\n",
                 t, rd32(mem, flow + RL_FLOW_MISSION), asked, file, loaded);
+    return asked;
 }

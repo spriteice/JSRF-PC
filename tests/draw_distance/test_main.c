@@ -29,6 +29,10 @@
  * Developer > Far buildings test's rows are pressed as the menu presses them,
  * between the game's sets, and the eye's area is followed through the sets
  * of the made-up map and of two tiny ones.
+ * Dogenzaka Hill's own rule (known bug 66) is given a made-up map with the
+ * shape of the hill's corner: 30 areas, as Stg12's, where the street, area
+ * 0, and the corner, area 16, list area 14, and only 14 lists area 13, up the
+ * hill.
  */
 #include <float.h>
 #include <math.h>
@@ -520,6 +524,104 @@ static void check_eye(void)
     printf("eye: its area through the sets\n");
 }
 
+/* ---- Dogenzaka Hill's rule ---------------------------------------------- */
+
+/* A made-up map with the shape of Dogenzaka Hill's corner (known bug 66):
+ * 30 areas, as Stg12 has, each listing itself, but the street, area 0,
+ * which lists the corner, 16, and area 14 up from them; the corner, which
+ * lists 0, 14 and a side area, 19; and area 14, which lists 13, further up
+ * the hill, as well as 0 and 16; and 13, which lists 14. So the game draws
+ * 13 from 13 and 14 only, and 1x adds it from 0 and 16 through 14's list.
+ * `last` is area 29's list, so a second map, told from the first, can be
+ * made. */
+#define HILL_AREAS  30
+#define HILL_STAGE  0x00010002u     /* Stg12, as the mission asks for it */
+#define STREET      0
+#define UPHILL      13
+#define CORNER      16
+#define SIDE_AREA   19
+static uint32_t s_hill_self[HILL_AREAS];
+static const uint32_t k_street[] = { 0, 14, 16 }, k_up14[] = { 14, 13, 16, 0 },
+                      k_corner[] = { 16, 0, 14, 19 }, k_uphill[] = { 13, 14 };
+static DrawArea s_hill[HILL_AREAS];
+
+static void hill_make(uint32_t last)
+{
+    int i;
+    memset(s_hill, 0, sizeof s_hill);
+    for (i = 0; i < HILL_AREAS; i++) {
+        s_hill_self[i] = (uint32_t)i;
+        s_hill[i].list = &s_hill_self[i];
+        s_hill[i].nlist = 1;
+    }
+    s_hill_self[HILL_AREAS - 1] = last;
+    s_hill[STREET].list = k_street;     s_hill[STREET].nlist = 3;
+    s_hill[14].list = k_up14;           s_hill[14].nlist = 4;
+    s_hill[CORNER].list = k_corner;     s_hill[CORNER].nlist = 4;
+    s_hill[UPHILL].list = k_uphill;     s_hill[UPHILL].nlist = 2;
+}
+
+/* The set from an eye in area `in` on the hill, widened, as a mask; n areas
+ * of it. */
+static uint32_t hill_widened(int in, int n)
+{
+    uint32_t set[DRAW_SET_WORDS] = { 0 };
+    unsigned e;
+    int w;
+    set[0] = AREA(in);
+    for (e = 0; e < s_hill[in].nlist; e++) set[0] |= AREA(s_hill[in].list[e]);
+    draw_buildings_widen(s_hill, n, set, 0.0, 0);
+    for (w = 1; w < DRAW_SET_WORDS; w++) CHECK(!set[w]);
+    return set[0];
+}
+
+/* Far buildings 1x and Far shadows 1x from the settings. On the hill's map
+ * after its stage, area 13 is never added from the street or the corner, at
+ * 1x, 3x or All, nor to their shadows, and is still drawn from 13 and 14,
+ * where the game draws it itself; the side area is still added. On a map
+ * after another stage, or on one of 29 areas after the hill's stage, 13 is
+ * added from the street as before. run.py checks the lines. */
+static void check_hill(void)
+{
+    uint32_t game[DRAW_SET_WORDS] = { AREA(STREET) | AREA(14) | AREA(CORNER) };
+    CHECK(draw_far_buildings() == 1 && draw_far_shadows() == 1);
+    hill_make(HILL_AREAS - 1);
+    draw_buildings_stage(HILL_STAGE);
+    CHECK(hill_widened(STREET, HILL_AREAS) == (game[0] | AREA(SIDE_AREA)));
+    CHECK(hill_widened(CORNER, HILL_AREAS) == (game[0] | AREA(SIDE_AREA)));
+    CHECK(hill_widened(14, HILL_AREAS) & AREA(UPHILL));
+    CHECK(hill_widened(UPHILL, HILL_AREAS) & AREA(UPHILL));
+    /* Further: not at 3x or All either. */
+    s_far_row.pick(3);
+    CHECK(!(hill_widened(STREET, HILL_AREAS) & AREA(UPHILL)));
+    s_far_row.pick(DRAW_FAR_WHOLE);
+    CHECK(!(hill_widened(CORNER, HILL_AREAS) & AREA(UPHILL)));
+    /* The shadows, at 1x under All: the game's set and the side area. */
+    memcpy(s_live, game, sizeof s_live);
+    draw_buildings_widen(s_hill, HILL_AREAS, s_live, 0.0, 0);
+    draw_buildings_shadows(s_live, game, shadow_pass);
+    CHECK(s_seen[0] == (game[0] | AREA(SIDE_AREA)));
+    s_far_row.pick(1);
+    /* Developer > Far buildings test steps through what is added: the side
+     * area, never 13. */
+    CHECK(hill_widened(STREET, HILL_AREAS) == (game[0] | AREA(SIDE_AREA)));
+    leave_press(1);
+    CHECK(hill_widened(STREET, HILL_AREAS) == game[0] && s_leave_row.value() == SIDE_AREA);
+    leave_press(1);
+    CHECK(hill_widened(STREET, HILL_AREAS) == (game[0] | AREA(SIDE_AREA)) && s_leave_row.value() == -1);
+    /* Another map after another stage: 13 added from the street. */
+    hill_make(HILL_AREAS - 2);
+    draw_buildings_stage(HILL_STAGE + 1);
+    CHECK(hill_widened(STREET, HILL_AREAS) & AREA(UPHILL));
+    /* The hill's stage, but a map of 29 areas: not the one, so no rule. */
+    draw_buildings_stage(HILL_STAGE);
+    CHECK(hill_widened(STREET, HILL_AREAS - 1) & AREA(UPHILL));
+    /* The hill again: the rule again. */
+    hill_make(HILL_AREAS - 1);
+    CHECK(hill_widened(STREET, HILL_AREAS) == (game[0] | AREA(SIDE_AREA)));
+    printf("dogenzaka hill: area 13 never added from the street or the corner\n");
+}
+
 int main(int argc, char **argv)
 {
     const char *c = argc > 1 ? argv[1] : "";
@@ -655,6 +757,7 @@ int main(int argc, char **argv)
     if (!strcmp(c, "far_misc")) check_misc();
     if (!strcmp(c, "far_test")) check_far_test();
     if (!strcmp(c, "far_eye")) check_eye();
+    if (!strcmp(c, "far_hill")) check_hill();
     if (!strcmp(c, "shadows")) check_shadows();
     if (!strcmp(c, "far_pick")) {
         /* Off from its own key, whatever the old toggle says; then the row:

@@ -271,13 +271,58 @@ static int set_count(const uint32_t *set)
 }
 
 /* What Far buildings keeps of a map, worked out on the first call on it:
- * the areas some list names, and each area's list. */
+ * the stage asked for before it, its rule (k_rules; -1 none), the areas some
+ * list names, and each area's list. */
 static struct {
-    int      built, n;
-    uint32_t key;
+    int      built, n, rule;
+    uint32_t key, stage;
     uint32_t listed[DRAW_SET_WORDS];
     uint32_t list[DRAW_AREAS_MAX][DRAW_SET_WORDS];
 } s_map;
+
+/* The stage the mission last asked for (draw_buildings_stage), on the game's
+ * thread. */
+static uint32_t s_stage = DRAW_STAGE_NONE;
+
+/* The maps' own rules: an area Far buildings never adds while the game's set
+ * is the one some areas make, where the game hides it on purpose and the
+ * lists can't tell (draw_distance.h, known bug 66). The stage files don't say
+ * which areas the game hides from which side, and no rule from the lists
+ * tells these from the areas Far buildings is there to add
+ * (far-buildings-1x/DIAGNOSIS.md in the shared folder): each one is kept by
+ * hand, for a case seen and named, with spriteice's OK.
+ *
+ * Dogenzaka Hill (Stg12): area 13, up the hill, is drawn by the game from
+ * areas 13 and 14 only, as 14's list names it and the lists of the street
+ * below it, area 0, and of the corner between them, area 16, don't. Far
+ * buildings adds it from 0 and 16 through 14's list, and from the street its
+ * buildings hang in the sky with nothing under them (Adri, GitHub issue 2,
+ * 15 November 2026; named with Developer > Far buildings test by spriteice's
+ * run, 16 November 2026). Hidden from both, the game's own line (spriteice,
+ * 16 November 2026, 01:44 UTC: "Test build to name the area first", for "a
+ * hand-kept rule you OK for this one case"; 06:04 UTC: "From areas 0 and
+ * 16"). It goes both ways: back up the hill in area 14 the game draws area 13
+ * itself. */
+#define STAGE_DOGENZAKA_HILL 0x00010002u    /* as the mission asks for it */
+#define DOGENZAKA_AREAS      30             /* its map's, so it's the one */
+#define DOGENZAKA_UPHILL     13
+#define DOGENZAKA_STREET     0
+#define DOGENZAKA_CORNER     16
+#define DRAW_RULE_FROM       2              /* the most areas a rule hides from */
+static const struct {
+    const char *map;
+    uint32_t    stage;
+    int         areas, never, from[DRAW_RULE_FROM];
+} k_rules[] = {
+    { "Dogenzaka Hill", STAGE_DOGENZAKA_HILL, DOGENZAKA_AREAS, DOGENZAKA_UPHILL,
+      { DOGENZAKA_STREET, DOGENZAKA_CORNER } },
+};
+#define DRAW_RULES ((int)(sizeof k_rules / sizeof k_rules[0]))
+
+void draw_buildings_stage(uint32_t stage)
+{
+    s_stage = stage;
+}
 
 /* The map, told from another: FNV-1a over its areas' volumes and lists. */
 static uint32_t map_key(const DrawArea *a, int n)
@@ -318,6 +363,8 @@ static void map_take(const DrawArea *a, int n, uint32_t key)
     s_map.built = 1;
     s_map.n = n;
     s_map.key = key;
+    s_map.stage = s_stage;      /* asked for before the map loads */
+    s_map.rule = -1;
     for (i = 0; i < n; i++)
         for (e = 0; a[i].list && e < a[i].nlist; e++)
             if (a[i].list[e] < (uint32_t)n) {
@@ -336,6 +383,18 @@ static void map_take(const DrawArea *a, int n, uint32_t key)
         if (set_has(s_map.listed, i))
             fprintf(stderr, "[DRAW] area %d: fog %g to %g, density %g\n",
                     i, a[i].fog_start, a[i].fog_end, a[i].fog_density);
+    for (i = 0; i < DRAW_RULES; i++) {
+        if (k_rules[i].stage != s_map.stage) continue;
+        if (k_rules[i].areas != n) {
+            fprintf(stderr, "[DRAW] Far buildings: stage %08X has %d areas, not %s's %d, so its rule is "
+                    "left out\n", s_map.stage, n, k_rules[i].map, k_rules[i].areas);
+            continue;
+        }
+        s_map.rule = i;
+        fprintf(stderr, "[DRAW] Far buildings: %s (stage %08X), area %d never added from areas %d and %d, "
+                "where the game hides it\n", k_rules[i].map, s_map.stage, k_rules[i].never,
+                k_rules[i].from[0], k_rules[i].from[1]);
+    }
 }
 
 /* Widens set to step: for 1 to 3, as many crossings ahead, each adding the
@@ -389,6 +448,16 @@ static void set_leave_out(uint32_t set[DRAW_SET_WORDS], const uint32_t game[DRAW
     if (a >= 0 && a < DRAW_AREAS_MAX && !set_has(game, a)) set[a >> 5] &= ~(1u << (a & 31));
 }
 
+/* The map's rule (k_rules) on set, widened from game: its area taken out
+ * while game is the set one of its areas makes. */
+static void map_rule(uint32_t set[DRAW_SET_WORDS], const uint32_t game[DRAW_SET_WORDS])
+{
+    int k, r = s_map.rule;
+    if (r < 0) return;
+    for (k = 0; k < DRAW_RULE_FROM; k++)
+        if (set_from_area(game, k_rules[r].from[k])) set_leave_out(set, game, k_rules[r].never);
+}
+
 /* The eye's area, for the log, from the game's set: the area that makes it
  * (set_from_area). The game's own number for it isn't kept, so where two
  * areas make the same set, as two areas side by side can, it is the first,
@@ -408,6 +477,7 @@ static void eye_note(const uint32_t set[DRAW_SET_WORDS], double now)
         uint32_t adds[DRAW_SET_WORDS];
         memcpy(adds, set, sizeof adds);
         set_reach(adds, s_far);
+        map_rule(adds, set);
         for (w = 0; w < DRAW_SET_WORDS; w++) adds[w] &= ~set[w];
         set_print(added, sizeof added, adds);
         if (s_eye_lines < DRAW_EYE_LINES) {
@@ -470,6 +540,7 @@ void draw_buildings_widen(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WO
     memcpy(was, set, sizeof was);
     eye_note(set, now);
     set_reach(set, reach);
+    map_rule(set, was);
     for (w = 0; w < DRAW_SET_WORDS; w++) s_added_now[w] = set[w] & ~was[w];
     leave_step();
     set_leave_out(set, was, s_leave_out);
@@ -495,6 +566,7 @@ void draw_buildings_shadows(uint32_t set[DRAW_SET_WORDS], const uint32_t game[DR
     memcpy(wide, set, sizeof wide);
     memcpy(set, game, sizeof wide);
     set_reach(set, step);
+    map_rule(set, game);
     set_leave_out(set, game, s_leave_out);
     s_shadows_added -= set_count(wide) - set_count(set);
     run();

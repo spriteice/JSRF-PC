@@ -114,15 +114,15 @@ int main(int argc, char **argv)
         flow(ASKING, STG20, STG20);
         check("the state read", resource_load_flow_state(s_ram, FLOW) == ASKING);
         put(FLOW + STATE, ASKED);
-        resource_load_stage_step(s_ram, FLOW, ASKING, T);
+        check("the stage asked for", resource_load_stage_step(s_ram, FLOW, ASKING, T) == STG20);
         check("the flow untouched", get(FLOW + STATE) == ASKED && get(BUF) == STG20);
     } else if (!strcmp(c, "written_over")) {   /* asked for, its file changed */
         flow(ASKED, MULT, STG20);
-        resource_load_stage_step(s_ram, FLOW, ASKING, T);
+        check("the stage asked for", resource_load_stage_step(s_ram, FLOW, ASKING, T) == MULT);
         check("the flow untouched", get(FLOW + STATE) == ASKED && get(BUF) == MULT);
     } else if (!strcmp(c, "waiting")) {  /* the manager was busy: not asked yet */
         flow(ASKING, STG20, STG20);
-        resource_load_stage_step(s_ram, FLOW, ASKING, T);
+        check("no stage yet", resource_load_stage_step(s_ram, FLOW, ASKING, T) == RESOURCE_LOAD_NO_STAGE);
         check("still asking", get(FLOW + STATE) == ASKING);
     } else {
         printf("unknown case %s FAILED\n", c);

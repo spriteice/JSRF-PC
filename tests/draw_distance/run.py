@@ -144,6 +144,17 @@ cases = {
                   "[DRAW] Far buildings test: the backdrop's depth writes as the game sets them (the menu)",
                   "[DRAW] Far buildings test: the backdrop's depth writes off, as Far buildings sets them "
                   "(the menu)"]),
+    # Dogenzaka Hill's rule (test_main.c, check_hill): logged on the hill's
+    # map, and left out, saying so, on a map of another size after its stage.
+    "far_hill": ("farbuildingsahead=1\nfarshadowsahead=1\n",
+                 ["[DRAW] Far buildings: Dogenzaka Hill (stage 00010002), area 13 never added from areas 0 "
+                  "and 16, where the game hides it",
+                  "[DRAW] the eye at t=0.00: area 0, from -1; Far buildings adds 19 there",
+                  "[DRAW] the eye at t=0.00: area 16, from 0; Far buildings adds none there",
+                  "[DRAW] Far buildings test: leaving out area 19 (the menu); the eye in area 0, "
+                  "Far buildings 1x adding 19",
+                  "[DRAW] Far buildings: stage 00010002 has 29 areas, not Dogenzaka Hill's 30, so its rule "
+                  "is left out"]),
     "far_eye": ("farbuildingsahead=1\nfarshadowsahead=0\n",
                 ["[DRAW] the eye at t=0.00: area 0, from -1; Far buildings adds 2 there",
                  "[DRAW] the eye at t=0.10: area 8, from 0; Far buildings adds 6 there",
