@@ -43,9 +43,19 @@ CHECKS = [
     "in music_info_now: current <= 1 failed: the music player heard is 2",
     "in music_info_now: in_guest(player, ADXT_SIZE, top) failed: music player 0 at 003FFFF8",
     "in music_info_now: in_guest(sound, MUSIC_SOUND_SIZE, top) failed: the sound manager at 00000000",
+    "in song_of_file: found failed: music id B, not in the music file table",
+    "in song_of_file: n < MUSIC_FILES_MAX failed: the music file table has no end in 64 entries",
     "failed: the object manager at 00000000",
     "in music_info_song: tscale > 0 && ncount >= 0 failed: mix 3C's play time 44100 / 0",
     "failed: song 5's title at 00000000 or artist",
+]
+# Each id shown as another song's file, or showing nothing, as it changes.
+FILES = [
+    "[MUSIC] music id 0 plays no song's file: showing nothing",
+    "[MUSIC] music id 1C plays no song's file: showing nothing",
+    "[MUSIC] music id 19 plays song id 3B's file: showing No. 30",
+    "[MUSIC] music id A plays song id 1F's file: showing No. 2",
+    "[MUSIC] music id B plays no song's file: showing nothing",
 ]
 PICK = [
     "[MUSIC] t=1.0 the street pause menu shows the music: mix 3C at 0:00.0 (0 / 44100)",
@@ -61,7 +71,7 @@ cases = {
     "on": ("musicinpause=1\n", ["[MUSIC] info in pause on (settings)"]),
     "flip": ("game_dir=/games/jsrf\nmusicinpause=0\n",
              ["[MUSIC] info in pause off (settings)", "[MUSIC] info in pause on (the menu)"]),
-    "game": (None, CHECKS + PICK),
+    "game": (None, CHECKS + FILES + PICK),
 }
 
 with tempfile.TemporaryDirectory(prefix="music_info-") as directory:

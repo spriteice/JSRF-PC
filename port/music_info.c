@@ -205,13 +205,13 @@ int music_info_is_mix(int id)
     return find_mix(id) != NULL;
 }
 
-/* A music id the sound manager can hold: a song, a mix, or one of those
- * that show nothing. */
+/* A music id the sound manager can hold: a song, a mix, the final level's
+ * Grace & Glory, or one of those that show nothing. */
 static int known_id(int id)
 {
     switch (id) {
     case MUSIC_TITLE: case MUSIC_CLEAR: case MUSIC_GAME_OVER: case MUSIC_DJ_DEMO:
-    case MUSIC_DJ_CLEAR: case MUSIC_ENDING_GRACE: case MUSIC_ENDING_SHORT:
+    case MUSIC_DJ_CLEAR: case MUSIC_FINAL_GRACE: case MUSIC_ENDING_SHORT:
     case MUSIC_ENDING_LONG:
         return 1;
     default:
@@ -234,10 +234,56 @@ static int in_guest(uint32_t va, uint32_t size, uint32_t top)
     return va >= 0x10000u && size <= top && va <= top - size;
 }
 
+/* Whether the paths at a and b, two entries of the game's table of music
+ * files, are one file's: the same string, or the same text. */
+static int same_path(const uint8_t *mem, uint32_t top, uint32_t a, uint32_t b)
+{
+    uint32_t i;
+    if (a == b) return in_guest(a, 1, top);
+    for (i = 0; i < MUSIC_PATH_MAX; i++) {
+        if (!in_guest(a + i, 1, top) || !in_guest(b + i, 1, top) || mem[a + i] != mem[b + i])
+            return 0;
+        if (!mem[a + i]) return 1;
+    }
+    return 0;
+}
+
+/* The song id whose file the game plays for music id id, by its table of
+ * music files: the first song id whose entry names the same file. MUSIC_NONE
+ * when its file is no song's. */
+static int song_of_file(const uint8_t *mem, uint32_t top, int id)
+{
+    uint32_t n, k, path = 0;
+    int found = 0;
+    if (!RECOMP_CHECK(in_guest(MUSIC_FILES, MUSIC_FILES_MAX * MUSIC_FILE_SIZE, top),
+                      "the music file table at %08X, memory to %08X", MUSIC_FILES, top))
+        return MUSIC_NONE;
+    for (n = 0; n < MUSIC_FILES_MAX; n++) {
+        int entry = (int)guest32(mem, MUSIC_FILES + n * MUSIC_FILE_SIZE);
+        if (entry == MUSIC_NONE) break;
+        if (entry == id && !found) {
+            path = guest32(mem, MUSIC_FILES + n * MUSIC_FILE_SIZE + 4);
+            found = 1;
+        }
+    }
+    if (!RECOMP_CHECK(n < MUSIC_FILES_MAX, "the music file table has no end in %u entries",
+                      MUSIC_FILES_MAX))
+        return MUSIC_NONE;
+    if (!RECOMP_CHECK(found, "music id %X, not in the music file table", id)) return MUSIC_NONE;
+    for (k = 0; k < n; k++) {
+        int entry = (int)guest32(mem, MUSIC_FILES + k * MUSIC_FILE_SIZE);
+        if (entry >= MUSIC_FIRST_SONG && entry < MUSIC_FIRST_SONG + MUSIC_SONGS
+            && same_path(mem, top, path, guest32(mem, MUSIC_FILES + k * MUSIC_FILE_SIZE + 4)))
+            return entry;
+    }
+    return MUSIC_NONE;
+}
+
 int music_info_now(const uint8_t *mem, uint32_t top, MusicNow *now)
 {
+    static int told = MUSIC_NONE;   /* the last id the log was told of, below */
     uint32_t objects, sound, current, player;
-    int status;
+    int status, song;
     now->id = MUSIC_NONE;
     now->player = 0;
     if (!in_guest(MUSIC_OBJECTS, 4, top)) return 0;
@@ -263,8 +309,22 @@ int music_info_now(const uint8_t *mem, uint32_t top, MusicNow *now)
      * ended, nothing is shown. */
     status = (int)(int8_t)mem[player + ADXT_STATUS];
     if (status != ADXT_PLAYING && status != ADXT_DECODED) return 0;
-    return (now->id >= MUSIC_FIRST_SONG && now->id < MUSIC_FIRST_SONG + MUSIC_SONGS)
-        || music_info_is_mix(now->id);
+    if ((now->id >= MUSIC_FIRST_SONG && now->id < MUSIC_FIRST_SONG + MUSIC_SONGS)
+        || music_info_is_mix(now->id))
+        return 1;
+    /* Any other id: the song whose file it plays, if it plays one. */
+    song = song_of_file(mem, top, now->id);
+    if (now->id != told) {
+        told = now->id;
+        if (song == MUSIC_NONE)
+            fprintf(stderr, "[MUSIC] music id %X plays no song's file: showing nothing\n", now->id);
+        else
+            fprintf(stderr, "[MUSIC] music id %X plays song id %X's file: showing No. %d\n", now->id,
+                    song, song - MUSIC_FIRST_SONG + 1);
+    }
+    if (song == MUSIC_NONE) return 0;
+    now->id = song;
+    return 1;
 }
 
 int music_info_song(int id, int64_t ncount, int64_t tscale)

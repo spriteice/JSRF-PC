@@ -11,8 +11,10 @@
  * music id names it. In the streets a mix plays: one long file of several
  * songs, back to back, which loops. There the mix's play position, looked
  * up in the table of where each song starts in each street mix, names the
- * song. Anything else (the title, the DJ's scenes, the endings) shows
- * nothing.
+ * song. The game also plays a song's file under an id of its own (the final
+ * level's Grace & Glory): its table of music files gives the two ids the same
+ * file, and the song is shown. Anything else (the title, the DJ's scenes, the
+ * endings) shows nothing.
  *
  * The hooks are in recomp_manual.c, inside the two pause menus' draws: they
  * read the game's position and draw the lines with the game's own font call.
@@ -49,15 +51,25 @@ enum {
     MUSIC_MIX_08A, MUSIC_MIX_08B, MUSIC_MIX_09A, MUSIC_MIX_09B, MUSIC_MIX_03B
 };
 /* The music that shows nothing: the title, the clear and game over jingles,
- * the DJ's two scenes, the ending's copy of Grace & Glory, and the two
- * endings. */
+ * the DJ's two scenes, and the two endings. */
 enum {
     MUSIC_TITLE = 0x00, MUSIC_CLEAR = 0x0A, MUSIC_GAME_OVER = 0x0B, MUSIC_DJ_DEMO = 0x14,
-    MUSIC_DJ_CLEAR = 0x15, MUSIC_ENDING_GRACE = 0x19, MUSIC_ENDING_SHORT = 0x1B,
-    MUSIC_ENDING_LONG = 0x1C
+    MUSIC_DJ_CLEAR = 0x15, MUSIC_ENDING_SHORT = 0x1B, MUSIC_ENDING_LONG = 0x1C
 };
+/* The final level's music: song 30's file (grace.adx) under an id of its
+ * own, which the table of music files below shows as song 30. */
+enum { MUSIC_FINAL_GRACE = 0x19 };
 #define MUSIC_NONE (-1)         /* the sound manager's id when nothing plays */
 #define MUSIC_RATE 44100        /* every music file's rate: the table's samples */
+
+/* The game's table of music files: for each music id, the id and a pointer
+ * to its file's path, ended by the id MUSIC_NONE. Two ids can name one file,
+ * so an id that isn't a song's or a mix's shows the song whose id has its
+ * file. */
+#define MUSIC_FILES      0x001D3878u
+#define MUSIC_FILE_SIZE  8u     /* an entry: the id, then the path */
+#define MUSIC_FILES_MAX  64u    /* the most entries read: the game's table has 55 */
+#define MUSIC_PATH_MAX   64u    /* the most of a path compared: the game's are under 40 */
 
 /* The game's tables of the 30 songs' titles and artists: a pointer to each
  * string, in song order. The strings break their lines with "$n". */
@@ -104,7 +116,8 @@ void music_info_start(void);
 int music_info_on(void);
 
 /* What the sound manager plays now: the music id on the player that is
- * heard, and that player. */
+ * heard, as a song's or a mix's (a song's file under an id of its own is
+ * that song's), and that player. */
 typedef struct {
     int id;
     uint32_t player;
@@ -112,7 +125,9 @@ typedef struct {
 
 /* Reads it from the game's memory mem, whose guest addresses run below top.
  * 1 when that player plays (or plays out) a song or a mix, so there is
- * something to show; 0 otherwise. */
+ * something to show; 0 otherwise. The [MUSIC] log says when an id is shown
+ * as the song whose file it plays, and when an id shows nothing, once each
+ * time the id met changes. */
 int music_info_now(const uint8_t *mem, uint32_t top, MusicNow *now);
 
 /* Whether id is a mix, whose song needs its play position. */

@@ -9,9 +9,9 @@
  * settings file and checks the log and the file.
  *
  * The game's side is a guest memory of the test's own: the object manager,
- * the sound manager with its two music players, and the title and artist
- * tables with a few of their strings, laid out as music_info.h says the
- * game's are. ADXT_GetTime is the game's: here a mix's play time is given as
+ * the sound manager with its two music players, the table of music files,
+ * and the title and artist tables with a few of their strings, laid out as
+ * music_info.h says the game's are. ADXT_GetTime is the game's: here a mix's play time is given as
  * its count and rate, as ADXT_GetTime gives them.
  */
 #include <math.h>
@@ -38,6 +38,7 @@ void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count)
 #define PLAYER_0 0x00320000u
 #define PLAYER_1 0x00320100u
 #define STRINGS  0x00330000u
+#define PATHS    0x00340000u   /* the music files' paths */
 static uint8_t *mem;
 
 static void put32(uint32_t va, uint32_t v) { memcpy(mem + va, &v, 4); }
@@ -62,10 +63,47 @@ static void playing(int id, uint32_t current, int status)
     mem[(current ? PLAYER_1 : PLAYER_0) + ADXT_STATUS] = (uint8_t)status;
 }
 
+/* The table of music files, laid out as the game's: the songs and the music
+ * that shows nothing at paths of their own, ended by MUSIC_NONE; the final
+ * level's Grace & Glory at song 30's path, the same string, as the game's;
+ * and the clear jingle at a copy of Aisle 10's path, as a table whose two
+ * entries hold copies of one path would. The game over jingle is left out.
+ * Gives the entries before the end. */
+static uint32_t music_files(void)
+{
+    static const int own[] = { MUSIC_TITLE, MUSIC_DJ_DEMO, MUSIC_DJ_CLEAR, MUSIC_ENDING_SHORT,
+                               MUSIC_ENDING_LONG };
+    uint32_t at = PATHS, n = 0, grace = 0, aisle = 0;
+    char path[48];
+    unsigned i;
+    for (i = 0; i < sizeof own / sizeof own[0]; i++, n++) {
+        snprintf(path, sizeof path, "D:\\Media\\Z_ADX\\BGM\\own_%02X.adx", own[i]);
+        put32(MUSIC_FILES + n * MUSIC_FILE_SIZE, (uint32_t)own[i]);
+        put32(MUSIC_FILES + n * MUSIC_FILE_SIZE + 4, put_text(&at, path));
+    }
+    for (i = MUSIC_FIRST_SONG; i < MUSIC_FIRST_SONG + MUSIC_SONGS; i++, n++) {
+        uint32_t va;
+        snprintf(path, sizeof path, "D:\\Media\\Z_ADX\\BGM\\song_%02X.adx", i);
+        va = put_text(&at, path);
+        if (i == MUSIC_GRACE_AND_GLORY) grace = va;
+        if (i == MUSIC_AISLE_10) aisle = va;
+        put32(MUSIC_FILES + n * MUSIC_FILE_SIZE, i);
+        put32(MUSIC_FILES + n * MUSIC_FILE_SIZE + 4, va);
+    }
+    put32(MUSIC_FILES + n * MUSIC_FILE_SIZE, MUSIC_FINAL_GRACE);
+    put32(MUSIC_FILES + n++ * MUSIC_FILE_SIZE + 4, grace);
+    snprintf(path, sizeof path, "%s", (const char *)mem + aisle);
+    put32(MUSIC_FILES + n * MUSIC_FILE_SIZE, MUSIC_CLEAR);
+    put32(MUSIC_FILES + n++ * MUSIC_FILE_SIZE + 4, put_text(&at, path));
+    put32(MUSIC_FILES + n * MUSIC_FILE_SIZE, (uint32_t)MUSIC_NONE);
+    return n;
+}
+
 /* ---- the cases -------------------------------------------------------------- */
 static void check_now(void)
 {
     MusicNow now;
+    uint32_t files = music_files();
     /* A mix on the second player, playing; then playing out its end. */
     playing(MUSIC_MIX_01A, 1, ADXT_PLAYING);
     CHECK(music_info_now(mem, TOP, &now) && now.id == MUSIC_MIX_01A && now.player == PLAYER_1);
@@ -90,6 +128,21 @@ static void check_now(void)
     CHECK(!music_info_now(mem, TOP, &now));
     playing(MUSIC_ENDING_LONG, 0, ADXT_PLAYING);
     CHECK(!music_info_now(mem, TOP, &now));
+    /* The final level's Grace & Glory, song 30's file under an id of its
+     * own: song 30. A copy of a song's path is that song's file too. */
+    playing(MUSIC_FINAL_GRACE, 1, ADXT_PLAYING);
+    CHECK(music_info_now(mem, TOP, &now) && now.id == MUSIC_GRACE_AND_GLORY && now.player == PLAYER_1);
+    playing(MUSIC_CLEAR, 0, ADXT_DECODED);
+    CHECK(music_info_now(mem, TOP, &now) && now.id == MUSIC_AISLE_10 && now.player == PLAYER_0);
+    /* An id the table doesn't hold, and a table with no end in the entries
+     * read: nothing, each a [CHECK] line once (run.py). */
+    playing(MUSIC_GAME_OVER, 0, ADXT_PLAYING);
+    CHECK(!music_info_now(mem, TOP, &now));
+    put32(MUSIC_FILES + files * MUSIC_FILE_SIZE, MUSIC_TITLE);
+    playing(MUSIC_FINAL_GRACE, 0, ADXT_PLAYING);
+    CHECK(!music_info_now(mem, TOP, &now));
+    put32(MUSIC_FILES + files * MUSIC_FILE_SIZE, (uint32_t)MUSIC_NONE);
+    CHECK(music_info_now(mem, TOP, &now) && now.id == MUSIC_GRACE_AND_GLORY);
     /* What the game never holds: each a [CHECK] line, once (run.py), and
      * nothing shown. */
     playing(0x77, 0, ADXT_PLAYING);
@@ -119,9 +172,10 @@ static void check_songs(void)
     }
     CHECK(music_info_song(MUSIC_HUMMING_THE_BASSLINE, 0, 0) == 0);
     CHECK(music_info_song(MUSIC_GRACE_AND_GLORY, 0, 0) == MUSIC_SONGS - 1);
-    /* What shows nothing. */
+    /* What shows nothing, and an id that plays a song's file under its own,
+     * which music_info_now gives as the song's (check_now). */
     CHECK(music_info_song(MUSIC_TITLE, 0, MUSIC_RATE) == -1);
-    CHECK(music_info_song(MUSIC_ENDING_GRACE, 0, MUSIC_RATE) == -1);
+    CHECK(music_info_song(MUSIC_FINAL_GRACE, 0, MUSIC_RATE) == -1);
     CHECK(music_info_song(MUSIC_NONE, 0, MUSIC_RATE) == -1);
     CHECK(music_info_song(0x77, 0, MUSIC_RATE) == -1);
     printf("music_info: the songs\n");
