@@ -25,6 +25,8 @@ const WideHudPiece widescreen_hud_pieces[WIDE_HUD_PIECES] = {
     [WIDE_HUD_SIGN]    = { 0x000FC370u, "the HUD's sign", NV2A_WIDE_HUD_MIDDLE, 0 },
     [WIDE_HUD_COUNTER] = { 0x00104AB0u, "the counter in the middle", NV2A_WIDE_HUD_MIDDLE, 0 },
     [WIDE_HUD_SKIP]    = { 0x000131F0u, "the skip prompt", NV2A_WIDE_HUD_RIGHT, NV2A_WIDE_HUD_LOW },
+    [WIDE_HUD_SOUL]    = { 0x0010D480u, "the graffiti soul indicator", NV2A_WIDE_HUD_LEFT,
+                           NV2A_WIDE_HUD_LOW },
 };
 
 /* A piece's flags that its start mark carries to the renderer. */

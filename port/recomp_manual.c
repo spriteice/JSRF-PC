@@ -1302,6 +1302,7 @@ void sub_0017CAB0(void)
 #include "intro.h"
 #include "keyboard_move.h"
 #include "missions.h"
+#include "soul_indicator.h"
 #define XPP_TYPE_GAMEPAD 0x001BC860u
 #define XPP_HANDLE_BASE  0x58580000u
 
@@ -2021,6 +2022,10 @@ void sub_00051FC0(void)
             fprintf(stderr, "[FLOW] t=%.1f state %u mission %08X\n", pad_now(), last_state,
                     *(uint32_t *)(m + flow + 0x58));
         }
+        /* Gameplay > Graffiti souls > Visual indicator: the mission's soul
+         * challenge read at its setup, before the setup runs, and dropped
+         * when the flow hands over to the next (port/soul_indicator.c). */
+        soul_indicator_flow(m, ADX_GUEST_RAM, flow, jsrf_now());
     }
     sub_00051FC0_gen();
 }
@@ -2431,10 +2436,14 @@ void sub_00191440(void)
     sub_00191440_gen();
 }
 
-/* ---- sub_00013A80: one pass of the game's main loop (test only log) ------
+/* ---- sub_00013A80: one pass of the game's main loop (a count, and a test
+ * only log) ------
+ * Each pass is counted, at its start, for what the port draws once a pass
+ * (the graffiti soul indicator, after the gauge, below).
  * JSRF_FRAME_LOG=1: once a second, how many passes ran, how many of them
  * presented (+0x74 set = no Present this pass) and how many waited a vblank
  * (+0x94), and the vblank counter the game keeps at 0x265174. */
+static unsigned s_loop_passes;  /* the main loop's passes so far */
 extern void sub_00013A80_gen(void);
 void sub_00013A80(void)
 {
@@ -2442,6 +2451,7 @@ void sub_00013A80(void)
     uint8_t *m = (uint8_t *)g_xbox_mem_offset;
     uint32_t o = g_ecx;
     uint32_t w94 = (o > 0x10000u && o < (64u << 20)) ? *(uint32_t *)(m + o + 0x94) : 0;
+    s_loop_passes++;
     if (on < 0) on = getenv("JSRF_FRAME_LOG") ? 1 : 0;
     sub_00013A80_gen();
     if (!on || o < 0x10000u || o >= (64u << 20)) return;
@@ -4420,14 +4430,273 @@ void sub_001060B0(void)
     sub_001060B0_gen();
     wide_hud_end(WIDE_HUD_HEALTH, marked);
 }
-/* sub_0010D480: the gauge and its numbers (class 0x1D2328), at the bottom
- * right, in two draws. */
+/* sub_0010D480: the gauge and its numbers (class 0x1D2328; one argument,
+ * the HUD walk's pass, ret 4), at the bottom right, in two draws. The
+ * graffiti soul indicator draws after it, when it drew (soul_draw, below):
+ * it draws on some of the walk's passes, as its own table and a flag say,
+ * and D3D's put pointer moves only when it does, which keeps no copy of
+ * those rules here. Compared for changed, not grown: D3D's make-space can
+ * take the pointer back to its buffer's start. */
 extern void sub_0010D480_gen(void);
+static void soul_draw(uint32_t pass);
+static uint32_t d3d_put(void)
+{
+    uint32_t dev = MEM32(D3D_DEVICE);
+    return dev ? MEM32(dev + WIDE_HUD_D3D_PUT) : 0;
+}
 void sub_0010D480(void)
 {
-    int marked = wide_hud_begin(WIDE_HUD_GAUGE);
+    uint32_t pass = GARG(1), put;
+    int marked = wide_hud_begin(WIDE_HUD_GAUGE), drew;
+    put = d3d_put();
     sub_0010D480_gen();
+    drew = d3d_put() != put;
     wide_hud_end(WIDE_HUD_GAUGE, marked);
+    if (drew) soul_draw(pass);
+}
+/* ---- the graffiti soul indicator's badge (soul_indicator.h) -----------------
+ * The game has no badge to show while a soul challenge is on track, so the
+ * gauge's override, above, draws one after the gauge: nothing in the
+ * gauge's function, the recompiler or the runtime is wrong, and this adds
+ * to what the HUD draws, as Music info in pause adds to the pause menus.
+ * soul_indicator_frame gives the quad (its place, size, fade and red); this
+ * draws it the way the gauge draws its own 1-quad batch, with the game's
+ * calls: its states (alpha test off, blending on, no texture on stage 1,
+ * the badge's texture on stage 0, each set only when the game's cache of
+ * it differs, and the cache written), one quad through a batch, at the
+ * gauge's z, and the states put back. The badge is drawn white (spriteice,
+ * 11:21 UTC on 2026-11-17): stage 0's colour is the dot product of the
+ * texture's and the diffuse's, each taken as -1 to 1, with the diffuse
+ * green alone, which gives twice the texture's green less one. The badge
+ * is cyan, its red near nothing, so its green is its brightness: white
+ * where it is cyan, its outlines and figure dark. Its alpha is the
+ * texture's times the diffuse's, the fade. While it is red, the same quad
+ * again through a second batch, with stage 0's colour the diffuse (red) and
+ * its alpha the texture's times the diffuse's, so the badge blends to red,
+ * the white showing through. Stage 0's six states are read from D3D's copy
+ * before and put back after, so the game's cache of the mode it set them
+ * with stays true. Its own two batches, made once from the game's factory
+ * as the HUD's pieces make theirs, so the gauge's vertex buffer isn't
+ * locked a second time in a frame, and the red's begin doesn't lock the
+ * buffer the white's draw still uses. It is a HUD piece of its own (WIDE_HUD_SOUL), so
+ * widescreen takes it to the left edge, Display > HUD scale sizes it, and
+ * Disable HUD hides it. Once a pass of the game's loop (soul_indicator_once),
+ * as the gauge can draw on more than one of the walk's passes. Every call is
+ * through a vtable, stdcall with the object first, the callee popping; the
+ * scratch for the quad, the six states and the factory's out is below the
+ * stack the gauge left, as music_info_draw takes its. tests/soul_indicator
+ * checks the quad and its vertices; what it looks like needs the game, the
+ * test build's steps. */
+#define HUD_DEVICE         0x00251D6Cu  /* -> the game's device (vtable 0x1E0F00), as DD_DEVICE */
+#define HUD_DEV_BLEND      0x124u       /* (device, on): alpha blending */
+#define HUD_DEV_TEXTURE    0x144u       /* (device, stage, texture), -1 for none */
+#define HUD_DEV_STAGE_OPS  0x148u       /* (device, stage, -> the six states below) */
+#define HUD_DEV_ALPHA_TEST 0x1C4u       /* (device, on) */
+#define HUD_BLEND_SET      0x001FA1D0u  /* the blending last set through HUD_DEV_BLEND */
+#define HUD_STAGE0_SET     0x00251D54u  /* the texture last set on stage 0 */
+#define HUD_STAGE1_SET     0x00251D58u  /* and on stage 1 */
+#define HUD_NO_TEXTURE     0xFFFFFFFFu
+#define HUD_FACTORY        0x00251D74u  /* -> the quad batches' factory (vtable 0x1E13F0) */
+#define HUD_FACTORY_MAKE   0x24u        /* (factory, quads, 0, -> the batch made): < 0 failed */
+#define HUD_BATCH_BEGIN    0x0Cu        /* (batch): locks its vertices, < 0 when it can't */
+#define HUD_BATCH_END      0x10u        /* (batch): unlocks them, and gives the count */
+#define HUD_BATCH_ADD      0x14u        /* (batch, -> the vertices, mode) */
+#define HUD_BATCH_ADD_QUAD 0u           /* the add's mode: a whole quad, four vertices */
+#define HUD_BATCH_Z        0x20u        /* (batch, z, step): the z its adds take */
+#define HUD_BATCH_DRAW     0x28u        /* (batch, count) */
+#define HUD_TEXTURES       0x00252790u  /* the texture manager, a hash table */
+#define HUD_TEXTURE_NONE   0xFFFFFFFFu  /* what its lookup gives for a hash it hasn't */
+#define D3D_STAGE_STATES   0x0019DEE0u  /* D3D's copy of stage 0's states, a dword each */
+#define D3D_COLOROP        0x30u
+#define D3D_COLORARG1      0x38u
+#define D3D_COLORARG2      0x3Cu
+#define D3D_ALPHAOP        0x40u
+#define D3D_ALPHAARG1      0x48u
+#define D3D_ALPHAARG2      0x4Cu
+#define D3D_TA_DIFFUSE     0u
+#define D3D_TA_TEXTURE     2u
+#define D3D_OP_SELECTARG2  3u
+#define D3D_OP_MODULATE    4u
+/* The Xbox's own numbering: its two bump map ops are at the end (25 and 26,
+ * as SetTextureStageState at 0x18F2B3 and the game's stage modes at
+ * 0x14FFDE take them), so the dot product is 22, where the PC's is 24. */
+#define D3D_OP_DOTPRODUCT3 22u
+#define SOUL_BADGE         0x58646C0Au  /* the badge's texture, in the Misc set */
+#define SOUL_Z             0x3FB33333u  /* 1.4f, the gauge's 1-quad batch's z */
+#define SOUL_SCRATCH       0x80u        /* the quad (SOUL_QUAD_BYTES), then six dwords */
+/* The return addresses: each just after the gauge's own call that the
+ * badge's stands for (sub_0010D480, and its constructor's for the texture
+ * and the batch), and the main loop's stage 0 call (sub_00013A80) for the
+ * stage's six, which the gauge doesn't set. */
+#define SOUL_ALPHA_OFF_RET  0x0010D4D1u
+#define SOUL_BLEND_ON_RET   0x0010D4F6u
+#define SOUL_STAGE1_RET     0x0010D519u
+#define SOUL_STAGE0_RET     0x0010D543u
+#define SOUL_BEGIN_RET      0x0010D554u
+#define SOUL_ADD_RET        0x0010D56Du
+#define SOUL_END_RET        0x0010D579u
+#define SOUL_Z_RET          0x0010D594u
+#define SOUL_DRAW_RET       0x0010D5A1u
+#define SOUL_BLEND_BACK_RET 0x0010D7B9u
+#define SOUL_ALPHA_ON_RET   0x0010D7C9u
+#define SOUL_LOOKUP_RET     0x0010D094u
+#define SOUL_MAKE_RET       0x0010D056u
+#define SOUL_STAGE_OPS_RET  0x00013DE2u
+extern void sub_0006E130(void);   /* the texture manager's lookup: thiscall, (hash) */
+
+/* A call through slot slot of args[0]'s vtable, stdcall with the object
+ * first: g_eax after it, or 0 and *ok cleared when the slot isn't the game's
+ * code (said once in the log). */
+static uint32_t soul_vcall(uint32_t slot, uint32_t ra, int nargs, const uint32_t *args, int *ok)
+{
+    uint32_t va = adx_word(adx_word(args[0]) + slot);
+    recomp_func_t fn = recomp_lookup_manual(va);
+    if (!fn) fn = recomp_lookup(va);
+    if (!fn) {
+        static int said;
+        if (!said++)
+            fprintf(stderr, "[SOUL] %08X's slot +%X is %08X, not the game's code: no badge\n",
+                    args[0], slot, va);
+        *ok = 0;
+        return 0;
+    }
+    return guest_call_cdecl(fn, ra, nargs, args);
+}
+
+/* The badge's two batches, made once from the game's factory, with the
+ * scratch for its out: 0 when the factory gave none (said once). */
+static int soul_batches(uint32_t *batch, uint32_t scratch, int *ok)
+{
+    int k;
+    for (k = 0; k < 2 && *ok; k++) {
+        uint32_t a[4] = { adx_word(HUD_FACTORY), 1, 0, scratch };
+        int32_t hr;
+        if (batch[k]) continue;
+        MEM32(scratch) = 0;
+        hr = (int32_t)soul_vcall(HUD_FACTORY_MAKE, SOUL_MAKE_RET, 4, a, ok);
+        batch[k] = *ok && hr >= 0 ? adx_word(scratch) : 0;
+        if (*ok && !batch[k]) {
+            fprintf(stderr, "[SOUL] the factory at %08X gave no batch (%08X): no badge\n", a[0],
+                    (uint32_t)hr);
+            *ok = 0;
+        }
+    }
+    return *ok;
+}
+
+/* One quad through batch: the gauge's z, then begin, the add, end and draw,
+ * as the gauge draws its 1-quad batch (it sets its z after its draw, for its
+ * next; set before, the first draw has it too). */
+static void soul_batch(uint32_t batch, uint32_t quad, int *ok)
+{
+    uint32_t a[3] = { batch, SOUL_Z, 0 }, count;
+    soul_vcall(HUD_BATCH_Z, SOUL_Z_RET, 3, a, ok);
+    if (!*ok || (int32_t)soul_vcall(HUD_BATCH_BEGIN, SOUL_BEGIN_RET, 1, a, ok) < 0 || !*ok)
+        return;
+    a[1] = quad;
+    a[2] = HUD_BATCH_ADD_QUAD;
+    soul_vcall(HUD_BATCH_ADD, SOUL_ADD_RET, 3, a, ok);
+    count = soul_vcall(HUD_BATCH_END, SOUL_END_RET, 1, a, ok);
+    a[1] = count;
+    if (*ok) soul_vcall(HUD_BATCH_DRAW, SOUL_DRAW_RET, 2, a, ok);
+}
+
+/* Stage 0's six states (D3D_COLORARG1 to D3D_ALPHAOP, in soul_draw's order)
+ * through the device, from six dwords at at. */
+static void soul_stage_ops(uint32_t dev, uint32_t at, int *ok)
+{
+    const uint32_t a[3] = { dev, 0, at };
+    soul_vcall(HUD_DEV_STAGE_OPS, SOUL_STAGE_OPS_RET, 3, a, ok);
+}
+
+static void soul_draw(uint32_t pass)
+{
+    static const uint32_t state[6] = { D3D_COLORARG1, D3D_COLORARG2, D3D_COLOROP,
+                                       D3D_ALPHAARG1, D3D_ALPHAARG2, D3D_ALPHAOP };
+    static const uint32_t white[6] = { D3D_TA_TEXTURE, D3D_TA_DIFFUSE, D3D_OP_DOTPRODUCT3,
+                                       D3D_TA_TEXTURE, D3D_TA_DIFFUSE, D3D_OP_MODULATE };
+    static const uint32_t red[6] = { D3D_TA_TEXTURE, D3D_TA_DIFFUSE, D3D_OP_SELECTARG2,
+                                     D3D_TA_TEXTURE, D3D_TA_DIFFUSE, D3D_OP_MODULATE };
+    static uint32_t batch[2];   /* the white pass's, and the red's */
+    static int given_up, said_texture;
+    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
+    uint32_t esp = g_esp, scratch, ops, dev, tex, blend, sv_ecx = g_ecx, a[3], kept[6];
+    int ok = 1, marked, k;
+    SoulQuad q;
+    if (given_up || !soul_indicator_once(s_loop_passes, pass)
+     || !soul_indicator_frame(m, ADX_GUEST_RAM, jsrf_now(), &q))
+        return;
+    dev = adx_word(HUD_DEVICE);
+    g_ecx = HUD_TEXTURES;
+    a[0] = SOUL_BADGE;
+    tex = guest_call_cdecl(sub_0006E130, SOUL_LOOKUP_RET, 1, a);
+    g_ecx = sv_ecx;
+    if (tex == HUD_TEXTURE_NONE || !dev) {
+        if (!said_texture++)
+            fprintf(stderr, "[SOUL] not drawn: the badge's texture %08X is %08X, the device "
+                    "%08X\n", SOUL_BADGE, tex, dev);
+        return;
+    }
+    g_esp -= SOUL_SCRATCH;
+    scratch = g_esp;
+    ops = scratch + SOUL_QUAD_BYTES;
+    if (!soul_batches(batch, scratch, &ok)) {
+        given_up = 1;
+        g_esp = esp;
+        return;
+    }
+    marked = wide_hud_begin(WIDE_HUD_SOUL);
+    /* The gauge's states, each set only when the game's cache differs. */
+    a[0] = dev;
+    a[1] = 0;
+    soul_vcall(HUD_DEV_ALPHA_TEST, SOUL_ALPHA_OFF_RET, 2, a, &ok);
+    blend = MEM32(HUD_BLEND_SET);
+    if (blend != 1) {
+        MEM32(HUD_BLEND_SET) = 1;
+        a[1] = 1;
+        soul_vcall(HUD_DEV_BLEND, SOUL_BLEND_ON_RET, 2, a, &ok);
+    }
+    if (MEM32(HUD_STAGE1_SET) != HUD_NO_TEXTURE) {
+        MEM32(HUD_STAGE1_SET) = HUD_NO_TEXTURE;
+        a[1] = 1;
+        a[2] = HUD_NO_TEXTURE;
+        soul_vcall(HUD_DEV_TEXTURE, SOUL_STAGE1_RET, 3, a, &ok);
+    }
+    if (MEM32(HUD_STAGE0_SET) != tex) {
+        MEM32(HUD_STAGE0_SET) = tex;
+        a[1] = 0;
+        a[2] = tex;
+        soul_vcall(HUD_DEV_TEXTURE, SOUL_STAGE0_RET, 3, a, &ok);
+    }
+    /* The badge, white at its fade; then, while red shows, red over it;
+     * then stage 0's states as they were. */
+    for (k = 0; k < 6; k++) {
+        kept[k] = MEM32(D3D_STAGE_STATES + state[k]);
+        MEM32(ops + 4u * (uint32_t)k) = white[k];
+    }
+    soul_stage_ops(dev, ops, &ok);
+    soul_indicator_vertices(m, scratch, &q, q.colour);
+    if (ok) soul_batch(batch[0], scratch, &ok);
+    if (ok && q.red > 0.0f) {
+        for (k = 0; k < 6; k++) MEM32(ops + 4u * (uint32_t)k) = red[k];
+        soul_stage_ops(dev, ops, &ok);
+        soul_indicator_vertices(m, scratch, &q, q.red_colour);
+        if (ok) soul_batch(batch[1], scratch, &ok);
+    }
+    for (k = 0; k < 6; k++) MEM32(ops + 4u * (uint32_t)k) = kept[k];
+    soul_stage_ops(dev, ops, &ok);
+    /* What it changed, put back as the gauge puts its back. */
+    a[0] = dev;
+    if (blend != 1) {
+        MEM32(HUD_BLEND_SET) = blend;
+        a[1] = blend;
+        soul_vcall(HUD_DEV_BLEND, SOUL_BLEND_BACK_RET, 2, a, &ok);
+    }
+    a[1] = 1;
+    soul_vcall(HUD_DEV_ALPHA_TEST, SOUL_ALPHA_ON_RET, 2, a, &ok);
+    wide_hud_end(WIDE_HUD_SOUL, marked);
+    g_esp = esp;
+    if (!ok) given_up = 1;
 }
 /* sub_0010DC60: the spray can's model and its count's digits (class
  * 0x1D2370), on the right. */

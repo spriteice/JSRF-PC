@@ -10,14 +10,15 @@ Far buildings and Far shadows, in `port/draw_distance.c` and Music info in
 pause in `port/music_info.c`, Audio in `port/audio.c`, Input's Free camera in
 `port/freecam.c`, and its Default cam fix in `port/camera_walls.c` and
 Keyboard moves in `port/keyboard_move.c`, Gameplay's Skip intro in
-`port/intro.c` and Skip cutscenes in `port/cutscene_skip.c`, Developer in
-`port/developer.c`, with Missions' rows in `port/missions_menu.c` and its Far
-buildings test in `port/draw_distance.c`). A row marked last goes below any
-added later (`last` in `menu.h`). A row can instead go right below another
-row of its menu, which it names, whichever of the two was added first
-(`under` in `menu.h`): rows added as the game starts can sit among the
-window's, as Draw distance and the Building distance submenu sit under the
-HUD submenu, in the order they were added. If no row has that
+`port/intro.c`, Skip cutscenes in `port/cutscene_skip.c` and Visual indicator
+in `port/soul_indicator.c`, Developer in `port/developer.c`, with Missions'
+rows in `port/missions_menu.c` and its Far buildings test in
+`port/draw_distance.c`). A row marked last goes below any added later
+(`last` in `menu.h`). A row can instead go right below another row of its
+menu, which it names, whichever of the two was added first (`under` in
+`menu.h`): rows added as the game starts can sit among the window's, as Draw
+distance and the Building distance submenu sit under the HUD submenu, in the
+order they were added. If no row has that
 name, it goes at the end of its menu, above the last row, and the log says so
 once.
 
@@ -44,10 +45,11 @@ as a submenu named as one before it in its menu adds nothing (`group` in
 `menu.h`). A new input setting goes in one of them, or in a submenu of its
 own. Gameplay, after Input, is submenus too, and nothing else, for how the
 game plays: Skips, for the parts of the game a player can leave out (Skip
-intro, then Skip cutscenes). The window adds them (`nv2a_gl.c`), in their
-order, so they keep it whichever module adds its rows first. A new skip goes
-in Skips, and a new gameplay setting in one of Gameplay's submenus, or in a
-submenu of its own.
+intro, then Skip cutscenes), then Graffiti souls, for help with the graffiti
+soul challenges (Visual indicator). The window adds them (`nv2a_gl.c`), in
+their order, so they keep it whichever module adds its rows first. A new skip
+goes in Skips, and a new gameplay setting in one of Gameplay's submenus, or
+in a submenu of its own.
 
 ## Wording
 
@@ -84,8 +86,8 @@ submenu of its own.
   (`MENU_HINT_LONGEST`), so it fits in two lines at 640 × 480.
 - A hint names no key, as a label doesn't.
 - The tests of the modules that add rows (tests/audio, camera_walls,
-  draw_distance, intro, keyboard_move, music_info, developer) check that
-  each has one.
+  draw_distance, intro, keyboard_move, music_info, soul_indicator,
+  developer) check that each has one.
 
 ## (Restart)
 

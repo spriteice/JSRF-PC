@@ -755,6 +755,9 @@ static int host_main(void)
     /* Whether a cutscene ends at a second press of A, and its row in
      * Gameplay > Skips, below Skip intro (port/cutscene_skip.c). */
     { extern void cutscene_skip_start(void); cutscene_skip_start(); }
+    /* Whether the graffiti soul indicator shows, and its row in Gameplay >
+     * Graffiti souls (port/soul_indicator.c). */
+    { extern void soul_indicator_start(void); soul_indicator_start(); }
     /* Whether the game starts at a mission (JSRF_START_MISSION), read once
      * and taken out of the environment (port/missions.c). */
     { extern void missions_start(void); missions_start(); }

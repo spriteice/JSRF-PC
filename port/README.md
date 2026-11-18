@@ -16,7 +16,12 @@ Future* and nothing else, and these two files are its core.
   to come back. The comments say which fault each one was written for. A new
   one goes here only when the game function's own logic is the cause
   (docs/project-rules.md, Where code goes 6): a function the lifter got
-  wrong is fixed in the recompiler, in `tools/recomp`.
+  wrong is fixed in the recompiler, in `tools/recomp`. It also holds the
+  hooks of the port's own features, which add to what the game does with
+  nothing in it wrong, such as Skip intro, Music info in pause and the
+  graffiti soul indicator. Each hook calls its feature's own file in this
+  folder (`intro.c`, `music_info.c`, `soul_indicator.c`), which holds the
+  feature's setting and logic in plain C that a test links.
 
 The other files here are the port's own features, each with a comment at
 its top saying what it does and where it reaches the game. Developer >

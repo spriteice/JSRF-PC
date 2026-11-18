@@ -99,6 +99,7 @@ set(JSRF_SOURCES
     missions.c
     missions_menu.c
     music_info.c
+    soul_indicator.c
     draw_distance.c
     audio.c
     developer.c

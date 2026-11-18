@@ -199,25 +199,37 @@ input goes to the menu.
   faces (Skater), which the camera turning, the free camera or the game's
   own, doesn't change. It changes at once, and is kept as `keyboard_moves=`
   (0 Camera, 1 Skater) in the settings file.
-- **Gameplay:** One submenu, Skips, with Skip intro and Skip cutscenes. Skip
-  intro leaves out the logos and the graffiti disclaimer the game opens
-  with, and starts at the title screen's loading. Off by default, so the
-  intro plays as on the Xbox. It is kept as `skipintro=` in the settings
-  file. Skip cutscenes lets you leave a story scene, or a preview where the
-  camera follows a rival to their place: while one plays, press A (the jump
-  button), and "Press A again to skip" fades in at the bottom right for 3
-  seconds, with the game's own green A button, as its message boxes show it;
-  press A again while it shows, and the scene ends as it does at its own end
-  (a preview as if it had played out), the story going on from there. With
-  it ticked, that is the one way for every scene and preview, those you've
-  seen before too: the game's own skip of a scene or preview seen before, at
-  one press of A or Start, is left out, and is back when it's off. Previews
-  the game never lets you skip, as in mission 0121's rounds, are covered
-  too. Nothing shows until the first press. The prompt is drawn with the
-  HUD, so Display > HUD's scale sizes it, and with Disable HUD it isn't
-  shown, though two presses still end the scene. Off by default, so scenes
-  play to their end as on the Xbox; it changes at once, and is kept as
-  `skipcutscenes=` (1 or 0) in the settings file.
+- **Gameplay:** Two submenus: Skips, with Skip intro and Skip cutscenes,
+  then Graffiti souls, with Visual indicator. Skip intro leaves out the
+  logos and the graffiti disclaimer the game opens with, and starts at the
+  title screen's loading. Off by default, so the intro plays as on the Xbox.
+  It is kept as `skipintro=` in the settings file. Skip cutscenes lets you
+  leave a story scene, or a preview where the camera follows a rival to
+  their place: while one plays, press A (the jump button), and "Press A
+  again to skip" fades in at the bottom right for 3 seconds, with the game's
+  own green A button, as its message boxes show it; press A again while it
+  shows, and the scene ends as it does at its own end (a preview as if it
+  had played out), the story going on from there. With it ticked, that is
+  the one way for every scene and preview, those you've seen before too: the
+  game's own skip of a scene or preview seen before, at one press of A or
+  Start, is left out, and is back when it's off. Previews the game never
+  lets you skip, as in mission 0121's rounds, are covered too. Nothing shows
+  until the first press. The prompt is drawn with the HUD, so Display >
+  HUD's scale sizes it, and with Disable HUD it isn't shown, though two
+  presses still end the scene. Off by default, so scenes play to their end
+  as on the Xbox; it changes at once, and is kept as `skipcutscenes=` (1 or
+  0) in the settings file. Visual indicator shows the graffiti soul, in
+  white, at the bottom left, level with the speed bar, while one of an
+  area's special soul challenges is under way and on track: a course of
+  moves, or Shibuya Terminal's 13 platforms. It comes in once the challenge
+  can fail: at the first platform, or once a course's opening move is done
+  (on Chuo Street, a second's grinding on the first rail, which the game
+  lets you add up over tries). It pulses at each new platform, turns red
+  and goes when the challenge fails, and goes when the soul is yours. The
+  challenges themselves are as on the Xbox. It goes to the screen's left edge in widescreen, and HUD scale and
+  Disable HUD size it and hide it with the rest of the HUD. Off by default;
+  it changes at once, and is kept as `soulindicator=` (1 or 0) in the
+  settings file.
 - **Developer:** Settings for testing and bug reports.
   - **Log to file:** Stops or starts writing to `last-run.log` at once.
   - **Logging:** The engine's diagnostic logs, for bug reports.

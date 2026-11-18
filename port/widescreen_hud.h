@@ -65,6 +65,9 @@ enum {
     WIDE_HUD_SIGN,      /* one of the HUD's own signs (3D), in the middle */
     WIDE_HUD_COUNTER,   /* a label and a three-digit number, in the middle */
     WIDE_HUD_SKIP,      /* Skip cutscenes' prompt, at the bottom right (cutscene_skip.h) */
+    WIDE_HUD_SOUL,      /* the graffiti soul indicator, at the bottom left
+                         * (soul_indicator.h): the port's, drawn after the
+                         * gauge by the gauge's override */
     WIDE_HUD_PIECES
 };
 
@@ -75,7 +78,8 @@ enum {
 #define WIDE_HUD_TEXT 0x100u
 
 typedef struct {
-    uint32_t va;        /* the function that draws it */
+    uint32_t va;        /* the function that draws it (the soul indicator's:
+                         * the gauge's, whose override draws it) */
     const char *name;   /* for the log */
     int side;           /* NV2A_WIDE_HUD_LEFT, _RIGHT or _MIDDLE */
     unsigned flags;     /* NV2A_WIDE_HUD_OWN_VIEW, NV2A_WIDE_HUD_LOW, WIDE_HUD_TEXT */

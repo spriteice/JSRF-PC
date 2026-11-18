@@ -20,7 +20,9 @@ LOG = "[WIDE] HUD piece 0, the health bar (sub_001060B0): marked for the right e
 LOGS = ("[WIDE] HUD piece 1, the gauge (sub_0010D480): marked for the right edge, at the bottom",
         "[WIDE] HUD piece 9, the rolling number (sub_0010A750): marked for the left edge, at the top",
         "[WIDE] HUD piece 11, the HUD's sign (sub_000FC370): marked, in the middle",
-        "[WIDE] HUD piece 12, the counter in the middle (sub_00104AB0): marked, in the middle")
+        "[WIDE] HUD piece 12, the counter in the middle (sub_00104AB0): marked, in the middle",
+        "[WIDE] HUD piece 14, the graffiti soul indicator (sub_0010D480): marked for the left "
+        "edge, at the bottom")
 TEXT = ("[WIDE] HUD piece 7, the score: its text drawn with it",
         "[WIDE] HUD piece 10, the sliding message: its text drawn with it")
 

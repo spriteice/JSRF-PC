@@ -5,11 +5,14 @@
  * push buffer. space() plays D3D's make-space call.
  *
  *   1. The pieces: each is its function's, on its side, named, and only one
- *      function's; the health bar is still piece 0, sub_001060B0's, on the
- *      right. Only the rolling number has a viewport of its own, only the
- *      score and the sliding message have text, and only the gauge sits at
- *      the bottom. The HUD's signs' draw (sub_000FC370) and the counter in
- *      the middle (sub_00104AB0) are pieces in the middle, after the rest.
+ *      function's, but the graffiti soul indicator, which the gauge's
+ *      override draws after the gauge; the health bar is still piece 0,
+ *      sub_001060B0's, on the right. Only the rolling number has a viewport
+ *      of its own, only the score and the sliding message have text, and
+ *      only the gauge and the soul indicator sit at the bottom. The HUD's
+ *      signs' draw (sub_000FC370) and the counter in the middle
+ *      (sub_00104AB0) are pieces in the middle, after the edges' first
+ *      eleven, and the soul indicator, on the left, is the last.
  *   2. When off (4:3 at the HUD's own size, or with no device yet, or no
  *      such piece), nothing is written and nothing is logged, and the end
  *      writes nothing either.
@@ -24,8 +27,8 @@
  *   5. Make-space that leaves no room below the limit gets no mark, and no
  *      end mark follows; the check says so once (run.py counts).
  *   6. The rolling number's marks carry its own-viewport flag, the gauge's
- *      its flag for the bottom, and the middle pieces' the middle, with HUD
- *      scale's flag; the end marks, no flag.
+ *      and the soul indicator's their flag for the bottom, and the middle
+ *      pieces' the middle, with HUD scale's flag; the end marks, no flag.
  *   7. The font's text goes with a piece only while a piece with text runs,
  *      marked: not before its start, not after its end, not when it wasn't
  *      marked (4:3), and not for a piece without text. The first time for a
@@ -108,6 +111,7 @@ static void pieces(void)
         { WIDE_HUD_SIGN,    0x000FC370u, NV2A_WIDE_HUD_MIDDLE },
         { WIDE_HUD_COUNTER, 0x00104AB0u, NV2A_WIDE_HUD_MIDDLE },
         { WIDE_HUD_SKIP,    0x000131F0u, NV2A_WIDE_HUD_RIGHT },
+        { WIDE_HUD_SOUL,    0x0010D480u, NV2A_WIDE_HUD_LEFT },
     };
     unsigned i, j;
     CHECK(WIDE_HUD_HEALTH == 0);
@@ -118,16 +122,20 @@ static void pieces(void)
         unsigned text = want[i].piece == WIDE_HUD_SCORE || want[i].piece == WIDE_HUD_MESSAGE
                       ? WIDE_HUD_TEXT : 0u;
         unsigned low = want[i].piece == WIDE_HUD_GAUGE || want[i].piece == WIDE_HUD_SKIP
+                     || want[i].piece == WIDE_HUD_SOUL
                      ? NV2A_WIDE_HUD_LOW : 0u;
         CHECK(p->va == want[i].va && p->side == want[i].side);
         CHECK(p->name != NULL && p->name[0] != '\0');
         CHECK(p->flags == (own | text | low));
         for (j = 0; j < i; j++)
-            CHECK(widescreen_hud_pieces[want[j].piece].va != p->va);
+            CHECK(widescreen_hud_pieces[want[j].piece].va != p->va
+                  || (want[i].piece == WIDE_HUD_SOUL && want[j].piece == WIDE_HUD_GAUGE));
     }
     CHECK((WIDE_HUD_TEXT & (NV2A_WIDE_HUD_OWN_VIEW | NV2A_WIDE_HUD_LOW | NV2A_WIDE_HUD_SIZED)) == 0);
-    /* the middle pieces after the edges' eleven, then Skip cutscenes' prompt */
-    CHECK(WIDE_HUD_SIGN == 11 && WIDE_HUD_COUNTER == 12 && WIDE_HUD_SKIP == 13 && WIDE_HUD_PIECES == 14);
+    /* the middle pieces after the edges' eleven, then Skip cutscenes' prompt,
+     * then the soul indicator */
+    CHECK(WIDE_HUD_SIGN == 11 && WIDE_HUD_COUNTER == 12 && WIDE_HUD_SKIP == 13
+          && WIDE_HUD_SOUL == 14 && WIDE_HUD_PIECES == 15);
 }
 
 static void off(void)
@@ -219,7 +227,8 @@ static void own_view(void)
     CHECK(!widescreen_hud_text_now());
 }
 
-/* The gauge's marks say it is at the bottom; the middle pieces', the middle. */
+/* The gauge's marks say it is at the bottom, and the soul indicator's, at
+ * the bottom on the left; the middle pieces', the middle. */
 static void corners(void)
 {
     int marked;
@@ -240,7 +249,13 @@ static void corners(void)
     CHECK(mark_at(BUFFER + 32, WIDE_HUD_COUNTER, NV2A_WIDE_HUD_MIDDLE));
     widescreen_hud_end(mem(), DEVICE, WIDE_HUD_COUNTER, marked, space);
     CHECK(mark_at(BUFFER + 40, WIDE_HUD_COUNTER, NV2A_WIDE_HUD_NONE));
-    CHECK(word(DEVICE + WIDE_HUD_D3D_PUT) == BUFFER + 48);
+    marked = widescreen_hud_begin(mem(), DEVICE, WIDE_HUD_SOUL, 1, space);
+    CHECK(marked);
+    CHECK(mark_flags_at(BUFFER + 48, WIDE_HUD_SOUL, NV2A_WIDE_HUD_LEFT,
+                        NV2A_WIDE_HUD_SIZED | NV2A_WIDE_HUD_LOW));
+    widescreen_hud_end(mem(), DEVICE, WIDE_HUD_SOUL, marked, space);
+    CHECK(mark_flags_at(BUFFER + 56, WIDE_HUD_SOUL, NV2A_WIDE_HUD_NONE, 0));
+    CHECK(word(DEVICE + WIDE_HUD_D3D_PUT) == BUFFER + 64);
     CHECK(!widescreen_hud_text_now());
 }
 

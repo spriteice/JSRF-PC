@@ -51,7 +51,8 @@ if f'#define DRAW_UNDER     "{group.group(1)}"' not in draw:
     sys.exit("hud_scale: Draw distance's rows don't go under HUD")
 labels = re.findall(r'\.label = ("[^"]+"|\w+)', display)
 if labels != ['"Fullscreen"', '"Render scale (Restart)"', '"Aspect ratio"', "SDL_HUD_GROUP",
-              '"HUD scale"', '"Disable HUD"', "XBOX_GROUP_ENHANCEMENTS", "XBOX_GROUP_SKIPS"]:
+              '"HUD scale"', '"Disable HUD"', "XBOX_GROUP_ENHANCEMENTS", "XBOX_GROUP_SKIPS",
+              "XBOX_GROUP_SOULS"]:
     sys.exit(f"hud_scale: Display's rows are {labels}")
 adds = re.findall(r"xbox_MenuAdd\((&?\w+)", display)
 if adds != ["&fullscreen", "&scale", "rows", "groups"]:
