@@ -2036,7 +2036,7 @@ void sub_00051FC0(void)
  * not in yet itself, and waits for it: its own files at sub_0004F8E0, its
  * mission's in the game flow's steps (0x1F9888: sub_0004ABA0 on).
  *
- * With Display > Skips > Skip intro on, the task is put at its end before
+ * With Gameplay > Skips > Skip intro on, the task is put at its end before
  * its first update, with the screen's fade black, as the disclaimer leaves
  * it: the game opens at the title's loading, and no card is drawn. A start
  * at a mission (port/missions.c) leaves the cards out the same way, whatever
@@ -2062,7 +2062,7 @@ void sub_0007E360(void)
         t[INTRO_STATE / 4] = INTRO_DONE;
         guest_call_cdecl(sub_00024600, INTRO_FADE_SET_RA, 1, &black);
         fprintf(stderr, "[INTRO] t=%.2f frame %u: skipped (%s)\n", pad_now(), s_game_frames,
-                missions_starting() ? "a start at a mission" : "Display > Skips > Skip intro");
+                missions_starting() ? "a start at a mission" : "Gameplay > Skips > Skip intro");
     }
     sub_0007E360_gen();
     now = t[INTRO_STATE / 4];

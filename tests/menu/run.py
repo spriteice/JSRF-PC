@@ -14,11 +14,16 @@ as that file needs SDL, a window and OpenGL.
    same and test_window.cpp, which stands in for SDL and the backends.
 3. The input layer's gate (menu_gate in src/input/xinput_device.c), taken
    from that file verbatim, with test_gate.c.
+4. The window's submenus (src/nv2a_gl/nv2a_gl.c, sdl_menu_display), by
+   text: Display's Enhancements, at its foot, then Gameplay's, in their
+   order, Skips first. That the menu then draws them so needs the window,
+   the test build's menu steps.
 
 Requires a C and a C++ compiler on PATH: cc and c++, or CC and CXX.
 """
 import os
 import pathlib
+import re
 import shlex
 import subprocess
 import sys
@@ -41,6 +46,20 @@ def cut(text, start, end):
     at = text.index(start)
     return text[at:text.index(end, at)]
 
+
+# 4. The window's submenus, as the window adds them (sdl_menu_display's
+# groups): Display's Enhancements, marked last, at its foot; then Gameplay's,
+# none marked last, as Gameplay has no other rows: Skips at the top
+# (spriteice, 11:52 UTC on 2026-11-15). Display has no Skips.
+gl = (root / "src/nv2a_gl/nv2a_gl.c").read_text(encoding="utf-8")
+groups = cut(cut(gl, "static void sdl_menu_display(void)\n{", "\n}\n"),
+             "static const XBOX_MENU_ITEM groups[] = {", "};")
+found = re.findall(r"\{ \.menu = (\w+), \.kind = XBOX_ITEM_GROUP, \.label = (\w+)(, \.last = 1)?", groups)
+if found != [("XBOX_MENU_DISPLAY", "XBOX_GROUP_ENHANCEMENTS", ", .last = 1"),
+             ("XBOX_MENU_GAMEPLAY", "XBOX_GROUP_SKIPS", "")]:
+    sys.exit(f"menu: the window's submenus are {found}")
+if groups.count("{ .menu") != len(found):
+    sys.exit("menu: the window's submenus hold a row that isn't a submenu")
 
 window = (root / "src/menu/menu_sdl.cpp").read_text(encoding="utf-8")
 window_cut = (cut(window, "#define OV_GAME_LINES", "/* ---- File:")

@@ -6,16 +6,15 @@ The rows are declared in `src/menu/menu.h` and drawn by `src/menu/menu.cpp`;
 each menu's rows live with the setting they change (File in
 `src/menu/menu_sdl.cpp`, Display, Graphics and Purge shaders in
 `src/nv2a_gl/nv2a_gl.c`, Display's Draw distance and Building distance, with
-Far buildings and Far shadows, in `port/draw_distance.c`, Skip intro in
-`port/intro.c`, Skip cutscenes in `port/cutscene_skip.c` and Music info in
-pause in `port/music_info.c`, Audio in
-`port/audio.c`, Input's Free camera in
+Far buildings and Far shadows, in `port/draw_distance.c` and Music info in
+pause in `port/music_info.c`, Audio in `port/audio.c`, Input's Free camera in
 `port/freecam.c`, and its Default cam fix in `port/camera_walls.c` and
-Keyboard moves in `port/keyboard_move.c`, Developer in
+Keyboard moves in `port/keyboard_move.c`, Gameplay's Skip intro in
+`port/intro.c` and Skip cutscenes in `port/cutscene_skip.c`, Developer in
 `port/developer.c`, with Missions' rows in `port/missions_menu.c` and its Far
-buildings test in `port/draw_distance.c`). A row marked last goes below any added
-later (`last` in `menu.h`). A row can instead go right below another row of its menu, which it
-names, whichever of the two was added first
+buildings test in `port/draw_distance.c`). A row marked last goes below any
+added later (`last` in `menu.h`). A row can instead go right below another
+row of its menu, which it names, whichever of the two was added first
 (`under` in `menu.h`): rows added as the game starts can sit among the
 window's, as Draw distance and the Building distance submenu sit under the
 HUD submenu, in the order they were added. If no row has that
@@ -29,15 +28,13 @@ whichever was added first. A submenu nobody has put a row in isn't shown. If
 no submenu has that name, the row goes at the end of its menu, above the last
 row, and the log says so once. A submenu can sit under a row as other rows
 do: Building distance, with Far buildings and Far shadows, sits under HUD,
-below Draw distance. Display ends with two, both marked last and
-added by the window (`nv2a_gl.c`): Skips, for the parts of the game a player
-can leave out (Skip intro, then Skip cutscenes), then Enhancements, for what
-goes beyond the console (Music info in pause, then See through fix, added by
-the window). A new skip or enhancement goes in one of them, not in Display
-itself. Graphics ends with one, Upscaling, marked last and added by the
-window too, for the rows that draw the game from sharper copies: Menus and
-HUD, Textures, Graffiti, Sharpness, Edge strength, then Cleanup, a row of two
-ticks.
+below Draw distance. Display ends with one, Enhancements, marked last and
+added by the window (`nv2a_gl.c`), for what goes beyond the console (Music
+info in pause, then See through fix, added by the window). A new
+enhancement goes in it, not in Display itself. Graphics
+ends with one, Upscaling, marked last and added by the window too, for the
+rows that draw the game from sharper copies: Menus and HUD, Textures,
+Graffiti, Sharpness, Edge strength, then Cleanup, a row of two ticks.
 Input is two submenus, and nothing else: Free camera, added with its rows by
 `port/freecam.c` (Enable free camera, Auto centre, Invert X, Invert Y,
 Sensitivity X, Sensitivity Y, then Deadzone), then Behaviour, for how the
@@ -45,7 +42,12 @@ game's camera and the keys act: Default cam fix, then Keyboard moves. Each of
 those two modules adds Behaviour with its row, and the second adds nothing,
 as a submenu named as one before it in its menu adds nothing (`group` in
 `menu.h`). A new input setting goes in one of them, or in a submenu of its
-own.
+own. Gameplay, after Input, is submenus too, and nothing else, for how the
+game plays: Skips, for the parts of the game a player can leave out (Skip
+intro, then Skip cutscenes). The window adds them (`nv2a_gl.c`), in their
+order, so they keep it whichever module adds its rows first. A new skip goes
+in Skips, and a new gameplay setting in one of Gameplay's submenus, or in a
+submenu of its own.
 
 ## Wording
 
@@ -174,7 +176,7 @@ own.
   row does. A (Restart) row keeps its value instead, and the game restarts
   once, after them all, if one changed.
 - **A preset sets every setting but Developer's.** Every row of Display,
-  Graphics, Audio and Input, in a submenu or not, gives its value in
+  Graphics, Audio, Input and Gameplay, in a submenu or not, gives its value in
   each preset where it's added (`presets` and `preset` in `menu.h`), with
   JSRF-PC default's from the constant its own default comes from, so the
   preset moves with the default. That takes in Fullscreen, full screen in

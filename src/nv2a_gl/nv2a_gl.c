@@ -2208,13 +2208,17 @@ static void sdl_menu_display(void)
           .presets = XBOX_PRESETS_SET, .preset = { 0, 0, 0 },
           .hint = "Hides the HUD." },
     };
-    /* Display's two submenus, at its foot whatever is added later (menu.h,
-     * last), for rows from elsewhere: Skips, then Enhancements. */
+    /* Display's submenu, at its foot whatever is added later (menu.h,
+     * last), for rows from elsewhere: Enhancements. Then Gameplay's, for
+     * rows from elsewhere too, added here so they keep their order
+     * whichever module adds its rows first: Skips, at the top (spriteice,
+     * 11:52 UTC on 2026-11-15: "The "Skips" sub menu from display will also
+     * move here, to go at the top"). */
     static const XBOX_MENU_ITEM groups[] = {
-        { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_SKIPS, .last = 1,
-          .hint = "Time-saving skips." },
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_ENHANCEMENTS, .last = 1,
           .hint = "Improves the game beyond the original Xbox version." },
+        { .menu = XBOX_MENU_GAMEPLAY, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_SKIPS,
+          .hint = "Time-saving skips." },
     };
     sdl_scale_names();                      /* Render scale's names, for the shape now */
     xbox_MenuAdd(&fullscreen, 1);

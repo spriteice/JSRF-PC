@@ -39,7 +39,7 @@
  * reversed, as the graffiti soul indicator does. It goes with the scene when
  * the scene ends by itself.
  *
- * skipcutscenes= in the settings file, or Display > Skips > Skip cutscenes:
+ * skipcutscenes= in the settings file, or Gameplay > Skips > Skip cutscenes:
  * off unless ticked. The idea, ending a scene through the game's own end,
  * is Miggas's and mstan's: no code of theirs is used. Plain C, so
  * tests/cutscene_skip links it. */
@@ -56,7 +56,7 @@
 #define CUTSCENE_SKIP_GONE   0.1
 
 /* Reads skipcutscenes= from the settings file, and adds the row to
- * Display > Skips. Once, at start. */
+ * Gameplay > Skips. Once, at start. */
 void cutscene_skip_start(void);
 
 /* Whether Skip cutscenes is on. */

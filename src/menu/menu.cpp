@@ -15,7 +15,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char *const k_menu_title[] = { "File", "Display", "Graphics", "Audio", "Input", "Developer" };
+static const char *const k_menu_title[] = { "File", "Display", "Graphics", "Audio", "Input", "Gameplay",
+                                            "Developer" };
 static_assert(IM_ARRAYSIZE(k_menu_title) == XBOX_MENU_COUNT, "a title for each menu in menu.h");
 
 /* The rows, and the boxes open over them -- by index: rows still arriving
@@ -66,13 +67,13 @@ static void take_queued(void)
     queue_unlock();
     g_under_told.resize(g_items.Size, 0);
     /* Every row but a separator says what it does, briefly (menu.h, hint).
-     * Every row of Display, Graphics, Audio and Input gives its value in
-     * each of File > Presets' presets (menu.h, presets). One the presets set
-     * is a TOGGLE, a CHOICE with choices, a NUMBER or a row of ticks
-     * (TOGGLES) with no more than a bit of an int each, and one that asks
-     * first (for a restart) is a TOGGLE or a CHOICE that keeps its value
-     * instead (keep), so a preset restarts the game once, at the end. Any
-     * other is told once, and no preset sets it. */
+     * Every row of Display, Graphics, Audio, Input and Gameplay gives its
+     * value in each of File > Presets' presets (menu.h, presets). One the
+     * presets set is a TOGGLE, a CHOICE with choices, a NUMBER or a row of
+     * ticks (TOGGLES) with no more than a bit of an int each, and one that
+     * asks first (for a restart) is a TOGGLE or a CHOICE that keeps its
+     * value instead (keep), so a preset restarts the game once, at the end.
+     * Any other is told once, and no preset sets it. */
     for (int i = from; i < g_items.Size; i++) {
         const XBOX_MENU_ITEM &it = g_items[i];
         const char *name = it.label ? it.label : "a row";

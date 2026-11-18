@@ -2,9 +2,10 @@
  *
  * The in-game menu, driven with a pad and no window: Dear ImGui's null
  * backends, the menu's own drawing (src/menu/menu.cpp), and rows standing in
- * for the window's settings. Checks the order of the menus, that it opens to
- * the bar alone with a pad on File's title, and that each kind of row reaches
- * its owner's function -- through the confirmation box when it has one. Then
+ * for the window's settings. Checks the order of the menus (Gameplay after
+ * Input), that it opens to the bar alone with a pad on File's title, and
+ * that each kind of row reaches its owner's function -- through the
+ * confirmation box when it has one. Then
  * rows that arrive once the menu is up: from one of its own rows, and from
  * another thread while a box is open over the rows it was asked from -- all
  * above a row marked last, which arrived before any of them. Rows placed
@@ -25,9 +26,9 @@
  * number's their row's, none on the bar or in a box; the pad's buttons or
  * the keys; and all of it inside the strip, two lines tall at 640 x 480 for
  * the longest hint a row may have. Then submenus of rows (group), as
- * Display's Skips and Enhancements, in a menu of their own: at its foot,
- * each with the rows that name it, added before it or after; one with
- * nothing in it, and a second of the same name, not shown; a row naming
+ * Gameplay's Skips and Display's Enhancements, in a menu of their own: at
+ * its foot, each with the rows that name it, added before it or after; one
+ * with nothing in it, and a second of the same name, not shown; a row naming
  * one that isn't there, drawn in the menu; and a row chosen in one, which
  * stays open, B going back a level at a time. File > Presets: the preset
  * every row is at ticked, or none; each preset setting each row through
@@ -125,10 +126,11 @@ static const XBOX_MENU_ITEM k_under[] = {
       NULL, NULL, 0, 0, 0, NULL, 0, "Last row", "Goes under the last.", NO_PRESETS, NULL, NULL, NULL },
 };
 
-/* Submenus (group), as Display's Skips and Enhancements, in Audio, which
- * nothing else uses: their rows, some added before them (as at the game's
- * start) and one after; a row in Audio itself; and the submenus, at its
- * foot, with one that nothing goes in and a second of the same name. */
+/* Submenus (group), as Gameplay's Skips and Display's Enhancements, both in
+ * Audio here, which nothing else uses: their rows, some added before them
+ * (as at the game's start) and one after; a row in Audio itself; and the
+ * submenus, at its foot, with one that nothing goes in and a second of the
+ * same name. */
 static int s_skip_runs, s_music_runs, s_see_runs;
 static int  in_state(void)    { return 0; }
 static void skip_run(void)    { s_skip_runs++; }
@@ -495,9 +497,9 @@ static void click(void)
 
 int main(void)
 {
-    /* Developer first, then Input, then Display, then File: the order
-     * on screen is the enum's, not the order rows arrive in. Before them
-     * all, Display's last row. */
+    /* Developer first, then Gameplay, then Input, then Display, then File:
+     * the order on screen is the enum's, not the order rows arrive in.
+     * Before them all, Display's last row. */
     const XBOX_MENU_ITEM developer[] = {
         { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLE, "Log to file", log_state, log_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
           "Writes the log to a file.", NO_PRESETS, NULL, NULL, NULL },
@@ -505,6 +507,10 @@ int main(void)
           NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Adds lines to the log.", NO_PRESETS, NULL, NULL, NULL },
         { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLE, "Asks (Restart)", asked_state, asked_run, NULL, NULL, 0, NULL,
           "The game restarts to apply it.", NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Asks first.", NO_PRESETS, NULL, NULL, NULL },
+    };
+    const XBOX_MENU_ITEM gameplay[] = {
+        { XBOX_MENU_GAMEPLAY, XBOX_ITEM_TOGGLE, "Indicator", in_state, under_run, NULL, NULL, 0, NULL, NULL, NULL,
+          NULL, 0, 0, 0, NULL, 0, NULL, "Shows how a challenge is going.", NO_PRESETS, NULL },
     };
     const XBOX_MENU_ITEM input[] = {
         { XBOX_MENU_INPUT, XBOX_ITEM_NUMBER, "Sensitivity", NULL, NULL, NULL, NULL, 0, NULL, NULL,
@@ -531,6 +537,7 @@ int main(void)
     xbox_MenuAdd(&k_last, 1);
     xbox_MenuAdd(k_under, 4);
     xbox_MenuAdd(developer, 3);
+    xbox_MenuAdd(gameplay, 1);
     xbox_MenuAdd(input, 2);
     xbox_MenuAdd(display, 3);
     xbox_MenuAdd(file, 3);
@@ -896,9 +903,19 @@ int main(void)
     CHECK(s_dead == 0 && s_sets == 0);
     CHECK(strstr(open_menu(), "Input") != NULL);
 
-    /* Switches. B to Input's title, Right to the bar's last menu,
-     * Developer; A opens it on Log to file, and A flips that, once. */
+    /* B to Input's title, Right: Gameplay, after Input; A opens it on its
+     * row. */
     s_bare = 0;
+    frame(ImGuiKey_GamepadFaceRight); frames(2);
+    CHECK(!strcmp(open_menu(), "") && bar_focused());
+    frame(ImGuiKey_GamepadDpadRight); frames(2);
+    frame(ImGuiKey_GamepadFaceDown); frames(2);
+    fprintf(stderr, "gameplay: [%s] %s\n", open_menu(), nav_state());
+    CHECK(strstr(open_menu(), "Gameplay") != NULL);
+    CHECK(hint_is("Shows how a challenge is going."));
+
+    /* Switches. B to Gameplay's title, Right to the bar's last menu,
+     * Developer; A opens it on Log to file, and A flips that, once. */
     frame(ImGuiKey_GamepadFaceRight); frames(2);
     CHECK(!strcmp(open_menu(), "") && bar_focused());
     frame(ImGuiKey_GamepadDpadRight); frames(2);
@@ -1191,12 +1208,13 @@ int main(void)
 
     /* Long lists (above), at 1920 x 1080 and at 640 x 480: every menu and
      * list of choices stays between the bar and the strip, and scrolls
-     * where it is taller. From Audio's title, Right, Right: Developer's. A
-     * opens it, on Log to file: it is taller than the room, so it scrolls,
-     * hanging from the bar as before. Down three times, Right: the long
-     * list, beside its row, in the room, scrolling. B; Up four times wraps
-     * to the foot, the short list; Right: its choices, opened beside the
-     * room's foot, go up to stay in it. B, B: Developer's title again. */
+     * where it is taller. From Audio's title, Right three times (Input,
+     * Gameplay): Developer's. A opens it, on Log to file: it is taller than
+     * the room, so it scrolls, hanging from the bar as before. Down three
+     * times, Right: the long list, beside its row, in the room, scrolling.
+     * B; Up four times wraps to the foot, the short list; Right: its
+     * choices, opened beside the room's foot, go up to stay in it. B, B:
+     * Developer's title again. */
     for (int i = 0; i < LONG_CHOICES; i++) {
         snprintf(s_long_names[i], sizeof s_long_names[i], "Choice %d", i + 1);
         s_long_choices[i] = s_long_names[i];
@@ -1212,8 +1230,7 @@ int main(void)
         it = long_row(XBOX_ITEM_CHOICE, "Short list", SHORT_CHOICES, "Opens at the foot.");
         xbox_MenuAdd(&it, 1);
     }
-    frame(ImGuiKey_GamepadDpadRight); frames(2);
-    frame(ImGuiKey_GamepadDpadRight); frames(2);
+    for (int i = 0; i < 3; i++) { frame(ImGuiKey_GamepadDpadRight); frames(2); }
     for (int small = 0; small < 2; small++) {
         g_display = small ? ImVec2(640.0f, 480.0f) : ImVec2(0.0f, 0.0f);
         frames(2);

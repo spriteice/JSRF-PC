@@ -41,9 +41,9 @@ static void play(uint32_t scene, double *t, double until)
 
 static void row(void)
 {
-    /* One row: a toggle in Display > Skips, showing the setting. */
+    /* One row: a toggle in Gameplay > Skips, showing the setting. */
     CHECK(s_rows == 1);
-    CHECK(s_row.menu == XBOX_MENU_DISPLAY && s_row.kind == XBOX_ITEM_TOGGLE && !s_row.last && !s_row.under);
+    CHECK(s_row.menu == XBOX_MENU_GAMEPLAY && s_row.kind == XBOX_ITEM_TOGGLE && !s_row.last && !s_row.under);
     CHECK(s_row.group && !strcmp(s_row.group, XBOX_GROUP_SKIPS));
     CHECK(!strcmp(s_row.label, "Skip cutscenes") && !s_row.confirm);
     /* A hint, a sentence short enough for the strip, naming no key (docs/menu-format.md). */

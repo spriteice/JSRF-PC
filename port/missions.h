@@ -16,7 +16,7 @@
  * the game's own number (MISSIONS_SKATER_YOYO is Yoyo), unlocked in the
  * progress written, as the game's own unlock does, so the mission's cast
  * keeps them; without it, New Game's Yoyo. Nothing is skipped but the
- * title, and the intro, whatever Display > Skips > Skip intro says.
+ * title, and the intro, whatever Gameplay > Skips > Skip intro says.
  *
  * JSRF_START_LOAD=1 starts the game at the title's Load Game instead: the
  * game's own Load Game screen, with the saves of the runs started at a

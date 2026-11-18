@@ -44,6 +44,7 @@ typedef enum {
     XBOX_MENU_GRAPHICS,
     XBOX_MENU_AUDIO,
     XBOX_MENU_INPUT,
+    XBOX_MENU_GAMEPLAY,
     XBOX_MENU_DEVELOPER,
     XBOX_MENU_COUNT
 } XBOX_MENU_ID;
@@ -74,9 +75,9 @@ typedef enum {
 } XBOX_PRESET;
 
 /* What the presets do with a row (XBOX_MENU_ITEM's presets). A preset sets
- * every setting but Developer's: each row of Display, Graphics, Audio and
- * Input gives its value in each preset, and the log says so once for one
- * that doesn't, which no preset then sets. */
+ * every setting but Developer's: each row of Display, Graphics, Audio,
+ * Input and Gameplay gives its value in each preset, and the log says so
+ * once for one that doesn't, which no preset then sets. */
 typedef enum {
     XBOX_PRESETS_UNSAID,    /* nothing said: File's and Developer's rows, which
                              * no preset sets                                 */
@@ -113,7 +114,7 @@ typedef struct XBOX_MENU_ITEM {
     double          min, max, step;
     const char     *format;
     /* Nonzero: drawn below the menu's other rows, whenever it was added --
-     * Display's two submenus (XBOX_GROUP_SKIPS, below), below the rows
+     * Display's submenu (XBOX_GROUP_ENHANCEMENTS, below), below the rows
      * added as the game starts, under the window's. */
     int             last;
     /* Set: drawn right below the row of its menu with this label, whenever
@@ -158,11 +159,14 @@ typedef struct XBOX_MENU_ITEM {
     const void     *data;
 } XBOX_MENU_ITEM;
 
-/* Display's submenus, at its foot (nv2a_gl.c adds them): Skips, for the
- * parts of the game a player can leave out, then Enhancements, for what
- * goes beyond the console. */
-#define XBOX_GROUP_SKIPS        "Skips"
+/* Display's submenu, at its foot (nv2a_gl.c adds it): Enhancements, for
+ * what goes beyond the console. */
 #define XBOX_GROUP_ENHANCEMENTS "Enhancements"
+
+/* Gameplay's submenus, in its order (nv2a_gl.c adds them, so they keep it
+ * whichever module adds its rows first): Skips, for the parts of the game
+ * a player can leave out. */
+#define XBOX_GROUP_SKIPS        "Skips"
 
 /* Graphics' submenu, at its foot (nv2a_gl.c adds it): Upscaling, for the
  * rows that draw the game from sharper copies -- Menus and HUD, Textures

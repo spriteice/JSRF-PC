@@ -749,11 +749,11 @@ static int host_main(void)
     /* Whether the keyboard steers the skater from the way it faces, and its
      * row in Input > Behaviour, after Default cam fix (port/keyboard_move.c). */
     { extern void kbmove_start(void); kbmove_start(); }
-    /* Whether the intro is skipped, and its row in Display > Skips
+    /* Whether the intro is skipped, and its row in Gameplay > Skips
      * (port/intro.c). */
     { extern void intro_start(void); intro_start(); }
     /* Whether a cutscene ends at a second press of A, and its row in
-     * Display > Skips, below Skip intro (port/cutscene_skip.c). */
+     * Gameplay > Skips, below Skip intro (port/cutscene_skip.c). */
     { extern void cutscene_skip_start(void); cutscene_skip_start(); }
     /* Whether the game starts at a mission (JSRF_START_MISSION), read once
      * and taken out of the environment (port/missions.c). */

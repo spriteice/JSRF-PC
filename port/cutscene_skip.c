@@ -1,5 +1,5 @@
 /* Skip cutscenes (cutscene_skip.h): skipcutscenes= in the settings file, or
- * Display > Skips > Skip cutscenes.
+ * Gameplay > Skips > Skip cutscenes.
  *
  * Read once, at start (cutscene_skip_start). The menu's row changes it at
  * once and keeps it in the settings file; it runs on the window's thread,
@@ -74,10 +74,10 @@ void cutscene_skip_start(void)
     fprintf(stderr, "[SKIP] skip cutscenes %s (settings)\n", s_on ? "on" : "off");
 #if defined(XBOXRECOMP_MENU)
     {
-        /* In Display's Skips, which the window adds once it is up, below
+        /* In Gameplay's Skips, which the window adds once it is up, below
          * Skip intro (added before it). */
         const XBOX_MENU_ITEM row = {
-            .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Skip cutscenes",
+            .menu = XBOX_MENU_GAMEPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Skip cutscenes",
             .state = menu_on, .run = menu_flip, .group = XBOX_GROUP_SKIPS,
             /* File > Presets: scenes play to their end in Xbox mode, as on
              * the Xbox. */
