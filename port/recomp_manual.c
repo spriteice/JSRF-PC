@@ -5071,23 +5071,38 @@ void sub_0005CB90(void) { wide_menu_node(sub_0005CB90_gen, 0x0005CB90u); }
  * pause menu, which goes to the left edge with that menu's left-hand parts.
  * The banner with an area's name under the arrow as the player nears
  * another area, a sign of the arrow's object's, goes there too, the arrow
- * staying where it is. The result screens' banners, YOU WIN, CLEARED, GAME
- * OVER and YOU LOSE, are signs the result flow makes, and go to the right
- * edge. The HUD's own signs, such as the stop sign, stay in the middle,
- * marked there for HUD scale (widescreen_hud_sign, WIDE_HUD_SIGN). */
+ * staying where it is. So does the word FLAG under the same arrow in a
+ * flag chase, its x (+WIDE_MENU_SIGN_X) moved further left for its draw,
+ * to the banner's gap (widescreen_menus_sign_x), and put back after, word
+ * for word: only the sign's maker writes it. The result screens' banners,
+ * YOU WIN, CLEARED, GAME OVER and YOU LOSE, are signs the result flow
+ * makes, and go to the right edge. The HUD's own signs, such as the stop
+ * sign, stay in the middle, marked there for HUD scale
+ * (widescreen_hud_sign, WIDE_HUD_SIGN). */
 extern void sub_000FC370_gen(void);
 void sub_000FC370(void)
 {
+    uint8_t *mem = (uint8_t *)g_xbox_mem_offset;
+    uint32_t sign = g_ecx, x = 0;
     unsigned piece = 0;
     int side = nv2a_wide_scene()
-        ? widescreen_menus_sign((uint8_t *)g_xbox_mem_offset, ADX_GUEST_RAM, g_ecx, jsrf_now(),
-                                &piece)
+        ? widescreen_menus_sign(mem, ADX_GUEST_RAM, sign, jsrf_now(), &piece)
         : NV2A_WIDE_HUD_NONE;
     int marked = side != NV2A_WIDE_HUD_NONE && wide_menu_mark(piece, side);
+    float move = marked && piece == WIDE_MENU_PIECE_FLAG
+               ? widescreen_menus_sign_x(mem, ADX_GUEST_RAM, sign) : 0.0f;
     int hud = side == NV2A_WIDE_HUD_NONE
-           && widescreen_hud_sign((uint8_t *)g_xbox_mem_offset, g_ecx)
+           && widescreen_hud_sign(mem, sign)
            && wide_hud_begin(WIDE_HUD_SIGN);
+    if (move != 0.0f) {
+        float f;
+        memcpy(&x, mem + sign + WIDE_MENU_SIGN_X, sizeof x);
+        memcpy(&f, &x, sizeof f);
+        f += move;
+        memcpy(mem + sign + WIDE_MENU_SIGN_X, &f, sizeof f);
+    }
     sub_000FC370_gen();
+    if (move != 0.0f) memcpy(mem + sign + WIDE_MENU_SIGN_X, &x, sizeof x);
     wide_hud_end(WIDE_HUD_SIGN, hud);
     wide_menu_unmark(piece, marked);
 }

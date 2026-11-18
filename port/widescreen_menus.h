@@ -49,7 +49,8 @@
  *     (WIDE_MENU_AREA_SIGN_FLAG); the banner with an area's name that
  *     shows under an arrow as the player nears its way in is a sign too,
  *     of another maker (WIDE_MENU_BANNER_CLASS), and goes to the left edge
- *     as well;
+ *     as well, and so does the word FLAG under the same arrow in a flag
+ *     chase, moved further, to the banner's gap (widescreen_menus_sign_x);
  *   - the other pause menu's header is that menu's child object (class
  *     0x1D0770, drawn by sub_000F7F00), drawn after the menu's draw returns:
  *     the menu's first child;
@@ -225,6 +226,7 @@ extern const WideMenu widescreen_menus[WIDE_MENUS];
 #define WIDE_MENU_PIECE_RESULT  0xCBu   /* a result screen's banner */
 #define WIDE_MENU_PIECE_CHOICE  0xCCu   /* a result screen's icons and static bar */
 #define WIDE_MENU_PIECE_TIME    0xCDu   /* a result screen's race time */
+#define WIDE_MENU_PIECE_FLAG    0xCEu   /* the word FLAG under a flag chase's arrow */
 
 /* The tickers' classes: the pause menus' and the race preview's, both drawn
  * by sub_00115F40. */
@@ -251,6 +253,46 @@ extern const WideMenu widescreen_menus[WIDE_MENUS];
  * the middle. */
 #define WIDE_MENU_SIGN_PARENT    0x24u
 #define WIDE_MENU_BANNER_CLASS   0x001D1DD0u
+/* The arrow has two forms, by its kind (+0x58, 32 bits): the way to another
+ * area, made by an area's way-out zone (sub_00106C10), whose sign is that
+ * area's banner; and a flag chase's, made by mission bit 0x800
+ * (sub_00106D00, in the story's flag chases, missions 0252, 0726 and 0926),
+ * whose sign is the 3D word FLAG (type 0x27, the HUD's model 0x7A), under
+ * the arrow, about in the middle, at 4:3 (flag-text/FINDINGS.md). Moved as
+ * the banner is, by the screen's margin alone, the word kept its 4:3 gap
+ * from the left edge, 259 title pixels, and so stayed near the middle in
+ * widescreen (spriteice, 15 November 2026, 12:53 UTC: "The "Flag" text in the
+ * flag chases is still centred like 4:3. Can we move it to the left edge
+ * please, the same distance from the edge that it is in 4:3"; known bug 64).
+ * So it goes left with a piece of its own (WIDE_MENU_PIECE_FLAG), and for
+ * its draw the sign's x is moved left in the HUD's units, so the word's left
+ * end comes where the banner's frame starts (spriteice's choice, 16 November
+ * 2026, "Left edge, the area banner's gap"; widescreen_menus_sign_x): the
+ * renderer's left move then keeps that gap at any shape. Any other kind, or
+ * one past the memory's end, is placed as the banner. */
+#define WIDE_MENU_BANNER_KIND    0x58u
+#define WIDE_MENU_ARROW_TO_AREA  0u      /* the way to another area: its sign the area's banner */
+#define WIDE_MENU_ARROW_TO_FLAG  1u      /* a flag chase's: its sign the word FLAG */
+/* The sign's x, a float in the HUD's 3D units, 10 title pixels each (the HUD
+ * camera's 0.1 a pixel), which only its maker (sub_000FBFD0) writes, so a
+ * move for one draw, put back after, leaves the game's state as it was. */
+#define WIDE_MENU_SIGN_X         0x48u
+/* Where the word goes, and where it is, at 4:3, in those units: the
+ * banner's frame (model 0x62) starts at 5.0, 50 title pixels from the left
+ * edge, about where the left-hand HUD starts (the sliding message at 46,
+ * the rolling number at 51); the word FLAG (model 0x7A) at 25.9. */
+#define WIDE_MENU_HUD_MARGIN_X   5.0f
+#define WIDE_MENU_FLAG_LEFT_X    25.9f
+/* How many play, for the word's move: the game manager's variables
+ * (sub_000127C0's store), 32 bits each from +0x7868 of the game's object
+ * manager (its pointer at 0x22FCE0, music_info.h's MUSIC_OBJECTS), of which
+ * 0xC is the players' count; above 1 is a split screen, which the sign's
+ * update (sub_000FC250) reads the same way. A split screen keeps 4:3 in the
+ * middle (known bug 42), where a move to the banner's gap would take the
+ * word out of its player's view, so it isn't moved further there. */
+#define WIDE_MENU_OBJECTS        0x0022FCE0u
+#define WIDE_MENU_GAME_VARS      0x7868u
+#define WIDE_MENU_PLAYERS_VAR    0x0Cu
 /* A result screen's banner, YOU WIN, CLEARED, GAME OVER or YOU LOSE, is a
  * HUD sign too, of the type (+0x54) for its word, that the result flow
  * makes with flags of its own, which no other maker of a sign
@@ -320,6 +362,12 @@ int widescreen_menus_text_side(float x, float y, unsigned *piece);
  *     to the left edge too, with the same piece, not with a grid: its flags
  *     are 0 and its parent (+WIDE_MENU_SIGN_PARENT, within top) is of class
  *     WIDE_MENU_BANNER_CLASS. The first time, a line in the log says so.
+ *   - The word FLAG under a flag chase's arrow, the same sign of an arrow
+ *     whose kind (+WIDE_MENU_BANNER_KIND, within top) is
+ *     WIDE_MENU_ARROW_TO_FLAG, goes to the left edge with its own piece
+ *     (WIDE_MENU_PIECE_FLAG), not with a grid, and is moved further for its
+ *     draw (widescreen_menus_sign_x). The first time, a line in the log says
+ *     so.
  *   - A result screen's banner goes to the right edge
  *     (WIDE_MENU_PIECE_RESULT): its flags are one of the result flow's
  *     (WIDE_MENU_RESULT_SIGN_FLAGS, _CHOICE). The first time, and for each
@@ -330,6 +378,17 @@ int widescreen_menus_text_side(float x, float y, unsigned *piece);
 #define WIDE_MENU_SIGNS_TOLD 8u
 int widescreen_menus_sign(uint8_t *mem, uint32_t top, uint32_t sign, double now,
                           unsigned *piece);
+
+/* For the HUD signs' draw, once the sign at sign is marked: how far to move
+ * its x (+WIDE_MENU_SIGN_X) for the draw, in the HUD's units, before the
+ * renderer's left move. For the word FLAG under a flag chase's arrow (as
+ * widescreen_menus_sign tells it), WIDE_MENU_HUD_MARGIN_X -
+ * WIDE_MENU_FLAG_LEFT_X, so its left end comes where the area banner's
+ * frame starts, with one player; 0 with more (a split screen), or when the
+ * players' count (WIDE_MENU_OBJECTS, then the game manager's
+ * WIDE_MENU_PLAYERS_VAR) isn't within top, and the log says so once for
+ * each. 0 for every other sign. */
+float widescreen_menus_sign_x(const uint8_t *mem, uint32_t top, uint32_t sign);
 
 /* For the header class's draw: whether the object at self is the first
  * child of the other pause menu that drew last, within WIDE_MENU_RECENT of

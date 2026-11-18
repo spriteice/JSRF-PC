@@ -103,6 +103,11 @@ ONCE = (
     "marked for the left edge",
     "[WIDE] menu part 194 under the arrow to another area, the area name (a sign, flags 00000000, "
     "its parent of class 001D1DD0): marked for the left edge",
+    "[WIDE] menu part 206 under the arrow to the flag, the word FLAG (a sign, flags 00000000, "
+    "its parent of class 001D1DD0, kind 1): marked for the left edge, 20.9 to the left",
+    "[WIDE] menu part 206, the word FLAG: 2 players, a split screen: not moved further",
+    "[WIDE] menu part 206, the word FLAG: the players' count unread (the object manager "
+    "00000000): not moved further",
     "[WIDE] a sign with flags 00000000 (class 00000000): left where it is",
     "[WIDE] a sign with flags 58000000 (class 00000000): left where it is",
     "[WIDE] a sign with flags 40000000 (class 00000000): left where it is",

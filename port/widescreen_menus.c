@@ -125,8 +125,9 @@ const WidePlainMenu widescreen_menus_plain[WIDE_PLAINS] = {
 static int s_menu = -1;
 static uint32_t s_self;
 /* Whether the area name's sign being drawn is a menu's (the street pause
- * menu's, the notebook's or the race preview's), not one on its own or the
- * banner under the arrow to another area. */
+ * menu's, the notebook's or the race preview's), not one on its own, the
+ * banner under the arrow to another area or the word FLAG under a flag
+ * chase's. */
 static int s_sign_in_menu;
 /* When the street pause menu and the notebook last began, for the area
  * name's sign, and whether they have. */
@@ -295,14 +296,24 @@ static int area_banner(const uint8_t *mem, uint32_t top, uint32_t sign, uint32_t
         && guest32(mem, parent) == WIDE_MENU_BANNER_CLASS;
 }
 
+/* Whether the sign at sign, under the arrow (area_banner), is the word FLAG
+ * under a flag chase's: its arrow's kind, within top, is
+ * WIDE_MENU_ARROW_TO_FLAG. Any other kind, or one past top, isn't. */
+static int flag_sign(const uint8_t *mem, uint32_t top, uint32_t sign)
+{
+    uint32_t parent = guest32(mem, sign + WIDE_MENU_SIGN_PARENT);
+    return top - 4u - parent >= WIDE_MENU_BANNER_KIND
+        && guest32(mem, parent + WIDE_MENU_BANNER_KIND) == WIDE_MENU_ARROW_TO_FLAG;
+}
+
 int widescreen_menus_sign(uint8_t *mem, uint32_t top, uint32_t sign, double now,
                           unsigned *piece)
 {
-    enum { IN_STREET, IN_NOTEBOOK, ON_ITS_OWN, IN_PREVIEW, UNDER_ARROW, PLACES };
+    enum { IN_STREET, IN_NOTEBOOK, ON_ITS_OWN, IN_PREVIEW, UNDER_ARROW, TO_FLAG, PLACES };
     static const char *const where[PLACES] = {
         [IN_STREET] = "in the street pause menu", [IN_NOTEBOOK] = "in the GG notebook",
         [ON_ITS_OWN] = "on its own, with no menu drawing", [IN_PREVIEW] = "in the race preview",
-        [UNDER_ARROW] = "under the arrow to another area",
+        [UNDER_ARROW] = "under the arrow to another area", [TO_FLAG] = "under the arrow to the flag",
     };
     static unsigned char told[PLACES];
     static uint32_t told_flags[WIDE_MENU_SIGNS_TOLD];
@@ -328,19 +339,58 @@ int widescreen_menus_sign(uint8_t *mem, uint32_t top, uint32_t sign, double now,
         }
         return NV2A_WIDE_HUD_NONE;
     }
-    which = banner ? UNDER_ARROW : street ? IN_STREET : notebook ? IN_NOTEBOOK
-          : preview ? IN_PREVIEW : ON_ITS_OWN;
-    s_sign_in_menu = which != ON_ITS_OWN && which != UNDER_ARROW;
+    which = banner && flag_sign(mem, top, sign) ? TO_FLAG : banner ? UNDER_ARROW
+          : street ? IN_STREET : notebook ? IN_NOTEBOOK : preview ? IN_PREVIEW : ON_ITS_OWN;
+    s_sign_in_menu = which != ON_ITS_OWN && which != UNDER_ARROW && which != TO_FLAG;
     if (!told[which]) {
         char parent[40] = "";
         told[which] = 1;
-        if (banner)
-            snprintf(parent, sizeof parent, ", its parent of class %08X", WIDE_MENU_BANNER_CLASS);
-        fprintf(stderr, "[WIDE] menu part %u %s, the area name (a sign, flags %08X%s): "
-                "marked for the left edge\n", WIDE_MENU_PIECE_SIGN, where[which], flags, parent);
+        if (which == TO_FLAG)
+            fprintf(stderr, "[WIDE] menu part %u %s, the word FLAG (a sign, flags %08X, its "
+                    "parent of class %08X, kind %u): marked for the left edge, %.1f to the "
+                    "left\n", WIDE_MENU_PIECE_FLAG, where[which], flags, WIDE_MENU_BANNER_CLASS,
+                    WIDE_MENU_ARROW_TO_FLAG,
+                    (double)(WIDE_MENU_FLAG_LEFT_X - WIDE_MENU_HUD_MARGIN_X));
+        else {
+            if (banner)
+                snprintf(parent, sizeof parent, ", its parent of class %08X",
+                         WIDE_MENU_BANNER_CLASS);
+            fprintf(stderr, "[WIDE] menu part %u %s, the area name (a sign, flags %08X%s): "
+                    "marked for the left edge\n", WIDE_MENU_PIECE_SIGN, where[which], flags,
+                    parent);
+        }
     }
-    *piece = WIDE_MENU_PIECE_SIGN;
+    *piece = which == TO_FLAG ? WIDE_MENU_PIECE_FLAG : WIDE_MENU_PIECE_SIGN;
     return NV2A_WIDE_HUD_LEFT;
+}
+
+float widescreen_menus_sign_x(const uint8_t *mem, uint32_t top, uint32_t sign)
+{
+    static int told_unread, told_split;
+    uint32_t objects, players;
+    if (!sign || !area_banner(mem, top, sign, guest32(mem, sign + WIDE_MENU_SIGN_FLAGS))
+        || !flag_sign(mem, top, sign)) return 0.0f;
+    /* the game manager's pointer, and its players' count, within top */
+    objects = top >= 4u && WIDE_MENU_OBJECTS <= top - 4u ? guest32(mem, WIDE_MENU_OBJECTS) : 0u;
+    if (!objects || objects % 4u != 0 || objects > top - 4u
+        || top - 4u - objects < WIDE_MENU_GAME_VARS + 4u * WIDE_MENU_PLAYERS_VAR) {
+        if (!told_unread) {
+            told_unread = 1;
+            fprintf(stderr, "[WIDE] menu part %u, the word FLAG: the players' count unread (the "
+                    "object manager %08X): not moved further\n", WIDE_MENU_PIECE_FLAG, objects);
+        }
+        return 0.0f;
+    }
+    players = guest32(mem, objects + WIDE_MENU_GAME_VARS + 4u * WIDE_MENU_PLAYERS_VAR);
+    if (players > 1u) {
+        if (!told_split) {
+            told_split = 1;
+            fprintf(stderr, "[WIDE] menu part %u, the word FLAG: %u players, a split screen: not "
+                    "moved further\n", WIDE_MENU_PIECE_FLAG, players);
+        }
+        return 0.0f;
+    }
+    return WIDE_MENU_HUD_MARGIN_X - WIDE_MENU_FLAG_LEFT_X;
 }
 
 int widescreen_menus_child(uint8_t *mem, uint32_t self, double now)

@@ -40,6 +40,18 @@
  *      with a menu just drawn, named once; with flags, another parent, none,
  *      one that isn't a word's place or is past the memory's end, it stays
  *      and its parent isn't read.
+ *   6a. The word FLAG under a flag chase's arrow (known bug 64): the same
+ *      sign, its arrow of kind 1, goes left with its own piece, not with a
+ *      grid, even with a menu just drawn, named once, and is moved 20.9 of
+ *      the HUD's units to the left for its draw (its left end from 25.9 to
+ *      the banner's frame's 5.0) with one player (or a count of 0); not
+ *      moved further with two to four (a split screen), nor when the object
+ *      manager's pointer or its players' count isn't within the memory (no
+ *      pointer, one that isn't a word's place, its count one word past the
+ *      end; the last word is read), each said once. The banner (kind 0), a
+ *      kind the arrow doesn't have, or one past the memory's end, is placed
+ *      as before and not moved, and so is every other sign: another parent,
+ *      none, an area's name, a result screen's banner, the HUD's own.
  *   7. The other pause menu's header goes left: its first child, within a
  *      quarter of a second of the menu, not another object, not after, and
  *      not once the menu's object is gone (its class changed). So does the
@@ -175,6 +187,29 @@ static int sign_left(uint32_t va, double now)
     unsigned piece = 999;
     return widescreen_menus_sign(mem(), GUEST, va, now, &piece) == NV2A_WIDE_HUD_LEFT
         && piece == WIDE_MENU_PIECE_SIGN;
+}
+
+/* Whether it goes to the left edge with the word FLAG's piece. */
+static int sign_flag(uint32_t va, double now)
+{
+    unsigned piece = 999;
+    return widescreen_menus_sign(mem(), GUEST, va, now, &piece) == NV2A_WIDE_HUD_LEFT
+        && piece == WIDE_MENU_PIECE_FLAG;
+}
+
+/* Whether the sign at va is moved by the word FLAG's move for its draw
+ * (20.9 of the HUD's units to the left, the word's left end from 25.9 to
+ * the banner's frame's 5.0), with top the memory's end. */
+static int sign_moved(uint32_t va, uint32_t top)
+{
+    float x = widescreen_menus_sign_x(mem(), top, va);
+    return x == WIDE_MENU_HUD_MARGIN_X - WIDE_MENU_FLAG_LEFT_X && fabsf(x + 20.9f) < 0.001f;
+}
+
+/* Whether it isn't moved further. */
+static int sign_not_moved(uint32_t va, uint32_t top)
+{
+    return widescreen_menus_sign_x(mem(), top, va) == 0.0f;
 }
 
 /* Whether it goes to the right edge with a result screen's banner's piece. */
@@ -560,6 +595,127 @@ static void sign(void)
     set(GUEST - 4u, 0);
     set(SIGN + WIDE_MENU_SIGN_PARENT, ARROW);
     CHECK(sign_left(SIGN, 60.0));
+    CHECK(word(DEVICE + WIDE_HUD_D3D_PUT) == BUFFER);
+}
+
+/* The word FLAG under a flag chase's arrow (known bug 64), after sign's
+ * checks: the same sign of the same arrow, of its kind 1. */
+#define GAME    0x30000u   /* the game's object manager, its variables at +0x7868 */
+#define PLAYERS (GAME + WIDE_MENU_GAME_VARS + 4u * WIDE_MENU_PLAYERS_VAR)
+static void flag(void)
+{
+    static const uint32_t others[] = {
+        WIDE_MENU_AREA_SIGN_FLAG, WIDE_MENU_AREA_SIGN_FLAG | 0x58000000u, 0x58000000u,
+        0x40000000u, WIDE_MENU_RESULT_SIGN_FLAGS, WIDE_MENU_RESULT_SIGN_FLAGS_CHOICE,
+    };
+    uint32_t last = GUEST - 4u - (WIDE_MENU_GAME_VARS + 4u * WIDE_MENU_PLAYERS_VAR);
+    unsigned i, n;
+    int began;
+    CHECK(WIDE_MENU_BANNER_KIND == 0x58u && WIDE_MENU_ARROW_TO_AREA == 0u
+          && WIDE_MENU_ARROW_TO_FLAG == 1u && WIDE_MENU_SIGN_X == 0x48u);
+    CHECK(WIDE_MENU_OBJECTS == 0x0022FCE0u && WIDE_MENU_GAME_VARS == 0x7868u
+          && WIDE_MENU_PLAYERS_VAR == 0x0Cu);
+    CHECK(WIDE_MENU_HUD_MARGIN_X == 5.0f && WIDE_MENU_FLAG_LEFT_X == 25.9f);
+    CHECK(WIDE_MENU_PIECE_FLAG == 0xCEu && WIDE_MENU_PIECE_FLAG > WIDE_MENU_PIECE_TIME
+          && WIDE_MENU_PIECE_FLAG < WIDE_MENU_PIECE_FILL0);
+    CHECK(widescreen_menus_mark_flags(WIDE_MENU_PIECE_FLAG, NV2A_WIDE_HUD_LEFT) == 0u);
+    fresh();
+    set(WIDE_MENU_OBJECTS, GAME);
+    set(PLAYERS, 1);
+    set(ARROW, WIDE_MENU_BANNER_CLASS);
+    set(SIGN + WIDE_MENU_SIGN_PARENT, ARROW);
+    /* the way to another area (kind 0): the banner as before, not moved
+     * further */
+    set(ARROW + WIDE_MENU_BANNER_KIND, WIDE_MENU_ARROW_TO_AREA);
+    CHECK(sign_left(SIGN, 70.0));
+    CHECK(sign_not_moved(SIGN, GUEST));
+    /* a flag chase's (kind 1): left with its own piece, named once, not on
+     * a grid, even with a menu just drawn; moved 20.9 to the left */
+    set(ARROW + WIDE_MENU_BANNER_KIND, WIDE_MENU_ARROW_TO_FLAG);
+    CHECK(sign_flag(SIGN, 70.0));
+    CHECK(widescreen_menus_mark_flags(WIDE_MENU_PIECE_FLAG, NV2A_WIDE_HUD_LEFT) == 0u);
+    CHECK(sign_moved(SIGN, GUEST));
+    menu_object(WIDE_MENU_STREET_PAUSE);
+    began = widescreen_menus_begin(mem(), WIDE_MENU_STREET_PAUSE, MENU, 1, 80.0);
+    widescreen_menus_end(began);
+    CHECK(began);
+    CHECK(sign_flag(SIGN, 80.0));
+    CHECK(widescreen_menus_mark_flags(WIDE_MENU_PIECE_FLAG, NV2A_WIDE_HUD_LEFT) == 0u);
+    CHECK(widescreen_menus_mark_flags(WIDE_MENU_PIECE_SIGN, NV2A_WIDE_HUD_LEFT) == 0u);
+    CHECK(sign_flag(SIGN, 90.0));
+    CHECK(sign_moved(SIGN, GUEST));
+    /* the players' count: 0 or 1 moved; two to four (a split screen) not
+     * moved further, said once */
+    set(PLAYERS, 0);
+    CHECK(sign_moved(SIGN, GUEST));
+    for (n = 2; n <= 4; n++) {
+        set(PLAYERS, n);
+        CHECK(sign_flag(SIGN, 90.0));              /* still at the left */
+        CHECK(sign_not_moved(SIGN, GUEST));
+    }
+    set(PLAYERS, 1);
+    CHECK(sign_moved(SIGN, GUEST));
+    /* the object manager's pointer, or its players' count, not within the
+     * memory: not moved further, said once */
+    set(WIDE_MENU_OBJECTS, 0);
+    CHECK(sign_not_moved(SIGN, GUEST));
+    set(WIDE_MENU_OBJECTS, GAME + 2u);
+    CHECK(sign_not_moved(SIGN, GUEST));
+    set(WIDE_MENU_OBJECTS, GUEST);
+    CHECK(sign_not_moved(SIGN, GUEST));
+    set(WIDE_MENU_OBJECTS, last + 4u);                    /* its count one word past */
+    CHECK(sign_not_moved(SIGN, GUEST));
+    set(WIDE_MENU_OBJECTS, last);                         /* its count the last word */
+    set(GUEST - 4u, 1);
+    CHECK(sign_moved(SIGN, GUEST));
+    CHECK(sign_not_moved(SIGN, GUEST - 4u));             /* past the end */
+    set(GUEST - 4u, 0);
+    set(WIDE_MENU_OBJECTS, GAME);
+    CHECK(sign_moved(SIGN, GUEST));
+    CHECK(sign_not_moved(SIGN, WIDE_MENU_OBJECTS));       /* its pointer past the end */
+    CHECK(sign_not_moved(SIGN, 2u));                      /* no memory */
+    CHECK(sign_not_moved(0, GUEST));
+    /* a kind the arrow doesn't have: the banner, not moved further */
+    set(ARROW + WIDE_MENU_BANNER_KIND, 2u);
+    CHECK(sign_left(SIGN, 90.0));
+    CHECK(sign_not_moved(SIGN, GUEST));
+    /* the arrow's kind past the memory's end (kind 1 there, so a read
+     * would show): the banner, not moved; its kind the last word: read */
+    set(ARROW + WIDE_MENU_BANNER_KIND, WIDE_MENU_ARROW_TO_FLAG);
+    {
+        uint32_t top = ARROW + 4u + WIDE_MENU_BANNER_KIND;    /* the kind the last word */
+        unsigned piece = 999;
+        CHECK(widescreen_menus_sign(mem(), top - 4u, SIGN, 90.0, &piece) == NV2A_WIDE_HUD_LEFT
+              && piece == WIDE_MENU_PIECE_SIGN);
+        CHECK(sign_not_moved(SIGN, top - 4u));
+        piece = 999;
+        CHECK(widescreen_menus_sign(mem(), top, SIGN, 90.0, &piece) == NV2A_WIDE_HUD_LEFT
+              && piece == WIDE_MENU_PIECE_FLAG);
+    }
+    CHECK(sign_flag(SIGN, 90.0));
+    CHECK(sign_moved(SIGN, GUEST));
+    /* another parent, or none: it stays, and isn't moved */
+    set(ARROW, 0x001D2020u);
+    CHECK(sign_stays(SIGN, 90.0));
+    CHECK(sign_not_moved(SIGN, GUEST));
+    set(ARROW, WIDE_MENU_BANNER_CLASS);
+    set(SIGN + WIDE_MENU_SIGN_PARENT, 0);
+    CHECK(sign_not_moved(SIGN, GUEST));
+    set(SIGN + WIDE_MENU_SIGN_PARENT, ARROW);
+    /* every other sign, of the same arrow: placed as before, not moved */
+    for (i = 0; i < sizeof others / sizeof others[0]; i++) {
+        set(SIGN + WIDE_MENU_SIGN_FLAGS, others[i]);
+        CHECK(sign_not_moved(SIGN, GUEST));
+    }
+    set(SIGN + WIDE_MENU_SIGN_FLAGS, WIDE_MENU_AREA_SIGN_FLAG);
+    CHECK(sign_left(SIGN, 90.0));
+    set(SIGN + WIDE_MENU_SIGN_FLAGS, WIDE_MENU_RESULT_SIGN_FLAGS);
+    CHECK(sign_right(SIGN, 90.0));
+    set(SIGN + WIDE_MENU_SIGN_FLAGS, 0x58000000u);
+    CHECK(sign_stays(SIGN, 90.0));
+    set(SIGN + WIDE_MENU_SIGN_FLAGS, 0);
+    CHECK(sign_flag(SIGN, 90.0));
+    CHECK(sign_moved(SIGN, GUEST));
     CHECK(word(DEVICE + WIDE_HUD_D3D_PUT) == BUFFER);
 }
 
@@ -1470,6 +1626,7 @@ int main(void)
     parts();
     text();
     sign();
+    flag();
     child();
     ticker();
     marks();
