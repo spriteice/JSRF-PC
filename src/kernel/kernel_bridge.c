@@ -5385,6 +5385,10 @@ static int guest_lock_on(void)
 }
 void xbox_guest_lock_acquire(void)
 {
+    /* The Xbox's float modes, before anything else: every thread that runs
+     * the game's code comes through here, with the lock on or off and at any
+     * priority (kernel_float.c). */
+    xbox_float_modes_enter();
     if (!guest_lock_on() || t_guest_holds) return;
     /* Idle-priority threads run outside the lock (see above). The priority
      * may have been set by another thread through a handle, so ask the

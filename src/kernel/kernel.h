@@ -622,6 +622,19 @@ NTSTATUS __stdcall xbox_KeAlertThread(PVOID Thread, KPROCESSOR_MODE AlertMode);
 NTSTATUS __stdcall xbox_NtYieldExecution(void);
 
 /* ============================================================================
+ * Float modes (kernel_float.c)
+ * ============================================================================ */
+
+/* One [SSE] line at the engine's start: the host's MXCSR, and whether its
+ * modes are the Xbox's. It sets nothing. */
+void     xbox_float_modes_at_start(void);
+/* Gives the calling thread the Xbox's MXCSR modes (0x1F80), as the console's
+ * kernel gives a new thread: called first in xbox_guest_lock_acquire. Its
+ * first call on a thread says what it found; a later one puts the modes
+ * back, and says so, only if host code changed them in between. */
+void     xbox_float_modes_enter(void);
+
+/* ============================================================================
  * Synchronization (kernel_sync.c)
  * ============================================================================ */
 

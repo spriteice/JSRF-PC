@@ -740,6 +740,9 @@ static int host_main(void)
     /* Whether this processor's own RCPSS and RSQRTSS give the Xbox's answers,
      * which the runtime works out either way (port/recomp_manual.c). */
     { extern void recomp_sse_approx_log(void); recomp_sse_approx_log(); }
+    /* And whether this process's float modes are the Xbox's; each thread gets
+     * them where it enters the game's code (src/kernel/kernel_float.c). */
+    { extern void xbox_float_modes_at_start(void); xbox_float_modes_at_start(); }
     /* The free camera's settings, its rows in Input > Free camera, at the top
      * of the page, and F8 (port/freecam.c). */
     { extern void freecam_start(void); freecam_start(); }

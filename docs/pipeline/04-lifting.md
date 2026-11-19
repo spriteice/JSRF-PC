@@ -338,6 +338,13 @@ physics and depth. The runtime doesn't run the host's instruction:
 out the Pentium III's answers in integers, the same on every processor, and
 an `[SSE]` line at the start says whether the host's own would differ.
 
+The SSE arithmetic the C compiles to, the x87's doubles included, runs under
+the host thread's MXCSR, so the kernel gives every thread that runs the
+game's code the Xbox's modes, 0x1F80 (rounding to nearest, nothing flushed
+to zero), where it takes the guest lock (src/kernel/kernel_float.c). An
+`[SSE]` line for each thread says what it found, and another says when host
+code changed the modes and they were put back.
+
 ## Jump Tables (Switch Statements)
 
 The disassembler identifies switch statement jump tables. The lifter converts them to C switch statements:

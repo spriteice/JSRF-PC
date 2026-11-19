@@ -36,6 +36,7 @@ Linux, src/platform's `win32_compat.c` gives the same calls on POSIX.
 | `kernel_apc.c` | The file requests' APCs, delivered at the thread's next alertable wait |
 | `kernel_io.c` | The I/O manager: devices and IRPs |
 | `kernel_thread.c` | Threads: priorities, suspend and resume, KeDelayExecutionThread |
+| `kernel_float.c` | The Xbox's float modes, MXCSR 0x1F80, on every thread that runs the game's code, set where it takes the guest lock, and their `[SSE]` lines |
 | `kernel_sync.c` | Synchronisation: events, semaphores, mutexes |
 | `kernel_timer.c` | Timers, and the timer thread: KeTickCount, the timers and DPCs that are due, and the devices' periodic work |
 | `kernel_interrupt.c` | Interrupt objects, and the DPC queue |
@@ -176,6 +177,22 @@ guest lock given up and none of the runtime's own locks held
 guest heap's lock as it started, and the game hung before the Sega logo.
 `RECOMP_SUSPEND_REAL=1` makes a suspend of another thread stop it where it is,
 on both.
+
+A thread starts on the console with MXCSR at 0x1F80: rounding to nearest,
+nothing flushed to zero, every exception masked. On the host it starts with
+whatever the thread that made it, or a library loaded on it, left there. So
+every thread that runs the game's code gets the Xbox's modes where it takes
+the guest lock (`kernel_float.c`, called first in `xbox_guest_lock_acquire`).
+Its first take says in the log what it found:
+
+```
+[SSE] thread 1003 enters the game's code: MXCSR 0x1FA0, the Xbox's modes
+```
+
+A later take costs one read of the register, and if host code changed the
+modes in between, it puts them back and says so. Only the modes are
+compared: bits 0 to 5 are flags that any inexact operation sets, so 0x1FA0
+is the Xbox's modes too.
 
 ## Synchronization
 

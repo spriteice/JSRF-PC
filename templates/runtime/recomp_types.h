@@ -315,10 +315,14 @@ extern RECOMP_TLS int g_fp_cmp;
 extern RECOMP_TLS uint16_t g_fp_cc;
 /* SSE control and status (MXCSR), reset value 0x1F80: every exception
  * masked, rounding to nearest. Like the x87 control word it is guest state
- * that STMXCSR stores and LDMXCSR loads; the host's MXCSR is never changed.
- * The rounding-control bits (13-14) steer CVTSS2SI/CVTSD2SI. The exception
- * flags (bits 0-5) are not modelled and read as clear, as the x87 status
- * word's exception byte is not. */
+ * that STMXCSR stores and LDMXCSR loads, and LDMXCSR changes only this copy.
+ * The host's own MXCSR, which the SSE arithmetic the generated code compiles
+ * to runs under, is given the Xbox's modes, 0x1F80, on every thread that runs
+ * the game's code, where it takes the guest lock (src/kernel/kernel_float.c):
+ * the guest's own value for the whole run of a title with no LDMXCSR, as
+ * JSRF has none. The rounding-control bits (13-14) here steer
+ * CVTSS2SI/CVTSD2SI. The exception flags (bits 0-5) are not modelled and read
+ * as clear, as the x87 status word's exception byte is not. */
 extern RECOMP_TLS uint32_t g_mxcsr;
 /* x87 precision control (control word bits 8-9). The stack is double-backed,
  * which matches PC=53 and is close enough for PC=64, but PC=24 -- what the

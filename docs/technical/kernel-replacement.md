@@ -209,6 +209,8 @@ Xbox file paths use device notation (`\Device\CdRom0\`, `D:\`, `T:\`) which must
 
 That table is the toolkit's first answer, for Burnout 3, which ran single-threaded. In JSRF-PC the title's threads are host threads: each PsCreateSystemThreadEx starts one (src/kernel/kernel_thread.c), and the events, waits and critical sections are real ones (src/kernel/kernel_sync.c and kernel_bridge.c). The DPCs are queued in src/kernel/kernel_interrupt.c and run by the kernel's timer thread (kernel_timer.c). A suspend of another thread is counted, and that thread stops at its next recompiled function's entry rather than where it is, on Windows as on Linux (src/kernel/README.md, Threading).
 
+Every thread that runs the title's code, the host threads that run its interrupt routines, DPCs and timers among them, takes the guest lock first (`xbox_guest_lock_acquire`, kernel_bridge.c), and there it gets the Xbox's float modes, MXCSR 0x1F80, as the console's kernel gives each new thread (src/kernel/kernel_float.c). On the host a thread's MXCSR is whatever the thread that made it, or a library loaded on it, left there. A thread's first take says in the log what it found, with an `[SSE]` line, and a later one puts the modes back, and says so, if host code changed them in between.
+
 ### Graphics (~10 ordinals)
 
 | Xbox Function | Implementation |
