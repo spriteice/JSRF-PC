@@ -308,3 +308,34 @@ its name, it counts as changed.
 docs/build-and-test-reference.md (What is kept between builds) says when it
 runs. It needs only Python's standard library, and its test,
 `tools/test_gen_diff.py`, runs on folders it makes up.
+
+## Whether moved code arrived as it left: move_check
+
+`tools/move_check.py` checks a change that moves code out of one file or
+several into others, a unit of its own or a file already there: the lines
+taken out of each file must be the lines put into the units, word for word
+and in the same order.
+
+```bash
+python3 tools/move_check.py BASE [NEW] --from FILE [FILE ...] --to UNIT [UNIT ...] [--rename OLD=NEW ...]
+```
+
+BASE and NEW are two trees git knows, a commit or a tree hash; without NEW
+it checks what is staged, and prints its tree hash. With several units,
+each is matched in the order given against the lines not yet matched, from
+the files it shares the most lines with first. A
+moved line may differ only by a `static` taken off its start (a static the
+files now share, gone extern), or by a name given its unit's prefix on the
+way (`--rename OLD=NEW`, as a whole word, which also covers the lines that
+change only by it where they are). A new unit's head comment, and
+`#include` lines, blank lines and declarations (prototypes and `extern`
+lines) in the files and the units, are counted and need no word. Everything
+else in them is listed, marked `!`, for the review pack to explain: lines
+taken out that arrived nowhere as they were, lines in a unit that weren't
+moved (an accessor, say), lines added to a file, and comments changed.
+The other files the change touches (a header, CMakeLists.txt, a test's
+run.py) are listed by file, with their lines sorted the same way, but don't
+decide the result. Its exit status is 0 when every line in the files and the
+units is accounted for, 1 when some are listed to explain, and 2 when it
+can't run. It needs only Python's standard library and git, and its test,
+`tools/test_move_check.py`, runs on trees it makes up.
