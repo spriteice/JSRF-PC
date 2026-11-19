@@ -339,3 +339,48 @@ decide the result. Its exit status is 0 when every line in the files and the
 units is accounted for, 1 when some are listed to explain, and 2 when it
 can't run. It needs only Python's standard library and git, and its test,
 `tools/test_move_check.py`, runs on trees it makes up.
+
+## Whether two engines differ only as a move makes them: compare_engines
+
+`tools/compare_engines.py` compares two builds of the engine, from a
+change's base tree and from its tree, built the same way with each checkout
+at the same path, as docs/build-and-test-reference.md (The same engine)
+builds them:
+
+```bash
+python3 tools/compare_engines.py OLD NEW [--extern NAME ...] [--objdump PROG] [--out DIR]
+```
+
+OLD and NEW are the two build folders. Every object and static library
+under each is read (`*.o`, `*.obj` and `*.a`), Linux's and Windows'. Objects
+with the same SHA-256 are the same, and when every one is, it says so and
+stops. Otherwise it lists the symbols of the objects that differ whose size,
+type (`t` to `T`, a static gone extern) or object changed, or that are in
+one engine only (Windows' objects have no sizes, so there a function runs
+to the next symbol), and compares every function by its name, wherever it
+now is, disassembled by binutils' objdump with the addresses left out. A
+reference is named by what it points at, a function or variable by its
+name, a string by its text and a constant by its bytes, with a field in
+those bytes that is relocated itself (a switch table's entry, a pointer)
+named by what it points at, and a jump inside the function by how many
+instructions away it lands, so the new order of a file's strings, statics
+and code doesn't show. The nops that align code are left out, and a
+function's address loaded from the GOT reads as the `lea` that takes it in
+its own file. Each function is sorted: the same; the same but moved or
+gone extern (with `-fcf-protection`, a static gone extern starts with
+`endbr64`); different where it calls, on one side only, a function the
+move changed, or one the move put a file between it and, and what those
+call in turn (a body inlined on one side, a call on the other), with those
+callees named; only in one engine, as a static or a
+compiler's copy (`.constprop`, `.isra`, `.part`, `.cold`) inlined on the
+other side, or as a function named with `--extern` (a static the move made
+extern, which move_check lists); and anything else. Every function that
+differs is shown with its diff. The sorting names a cause and doesn't prove
+one, and the comparison shows where the code changed, not what the game
+does. Data is compared by its symbols only. Its exit status is 0 when
+nothing differs or everything that does is of a move's kinds, 1 when
+anything else does, and 2 when it can't run; `--out` also writes each
+function's text and each diff to a folder. It needs only Python's standard
+library and objdump (the `linux tests` image has it, and it reads Windows'
+objects too), and its test, `tools/test_compare_engines.py`, compiles
+made-up files with GCC and with clang for Windows.
