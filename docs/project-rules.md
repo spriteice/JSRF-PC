@@ -264,11 +264,13 @@ In order:
 4. **Verify** what you can: it builds, the repo's tests pass, and the static
    checks pass: CI's count of the compilers' warnings in our code
    (docs/build-and-test-reference.md, CI, Warnings). You don't play the
-   game: on my PC you run only the packaged engine's own checks and its runs
-   with nobody at the pad, the idle run and, from input playback's release
-   on, the smoke set's saved runs (docs/build-and-test-reference.md, "On
-   my PC"). So call every runtime claim "unverified" until I test it, but
-   for what those runs' logs show. Never claim something is fixed without
+   game: you run only the packaged engine's own checks and its runs with
+   nobody at the pad, the idle run on my PC, and playback runs of my
+   recordings on my PC and the Ally X, the smoke set's among them from
+   input playback's release on (docs/build-and-test-reference.md, "On my
+   PC" and "Playback runs"). So call every runtime claim "unverified" until
+   I test it, but for what those runs' logs show. How anything looks or
+   feels is mine to judge. Never claim something is fixed without
    evidence. A change made for timing or speed is measured before and
    after, and tuning is measured again when a deeper cause in the same area
    is fixed.

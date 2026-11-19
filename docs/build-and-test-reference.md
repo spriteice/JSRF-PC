@@ -44,7 +44,8 @@ In order, with where each step is said in full:
 - I only run builds you deliver. I don't build by hand: you build on the
   Windows PC yourself, or in the cloud while another thread has it (When
   the PC is busy, below). Nothing on the devices is installed or changed but
-  what "On my PC" (below) lists, unless I say so.
+  what "On my PC" (below) lists, and on the Ally X what "Playback runs"
+  (below) lists, unless I say so.
 
 ## Where the work runs
 
@@ -68,8 +69,10 @@ files move between them, and what the PC has installed.
 
 - **Set up once:** Docker, through WSL 2, for the build image, and Git and
   Python for the checkout and the Windows tests, each at the version
-  building-on-pc/README.md lists. Anything else, or another version, is
-  asked for first.
+  building-on-pc/README.md lists, and Windows' own OpenSSH client for
+  playback runs on the Ally X, with its key and its list of known hosts
+  in `Building\ssh\` (Playback runs). Anything else, or another version,
+  is asked for first.
 - **The standing rules and scripts:** a session is started in `Building\`,
   where it is given `Building\CLAUDE.md` by itself: the part of the rules
   a session there needs, so a run's instructions carry only the run. The
@@ -102,8 +105,9 @@ files move between them, and what the PC has installed.
 - **No playing by hand:** you may run the packaged engine's own checks
   there (Compatibility checks, Windows: it starts), which don't start the
   game, and its runs with nobody at the pad: the idle run (Compatibility
-  checks, Windows: the idle run) and, from input playback's release on,
-  the smoke set's saved runs (The smoke set). Nothing else of the game.
+  checks, Windows: the idle run) and playback runs of my recordings
+  (Playback runs), the smoke set's among them from input playback's
+  release on (The smoke set). Nothing else of the game.
 - **A step the permission check refuses:** the session stops there and
   reports it. It never runs that command again, or another to the same
   end. The thread then asks me on a card whether to accept it in the
@@ -112,8 +116,8 @@ files move between them, and what the PC has installed.
   run never shares the PC with another, as load changes what timing tests
   find. Within one build, the steps that don't depend on each other run
   at the same time: its Windows tests beside the build in `jsrf-build`,
-  and its two packages together. An idle run and a repeated run are
-  always alone on the machine. The cloud's jobs run one after another
+  and its two packages together. An idle run, a playback run and a
+  repeated run are always alone on the machine. The cloud's jobs run one after another
   too.
 
 ### When the PC is busy
@@ -159,6 +163,41 @@ against the kept copy (What is kept between builds).
   first, the server or the PC.
 - **One job at a time:** the sandbox runs its build and its thread's CI
   jobs one after another (On my PC).
+
+### Playback runs
+
+Input playback (Developer > Playback) plays back a run I recorded: every
+press the game read, by the game's own frame, with nobody at the pad. From
+the first test build that carries it, you may play my recordings yourself,
+unattended, and read their logs.
+
+- **A run** is its folder, as the shared folder's
+  `input-playback/RUNS.md` lists it: my recording, the steps you wrote for
+  it (the settings and Developer switches set before it, and the in-game
+  menu's rows run at its idle moments), and the saves it starts from,
+  which stay on the device it was recorded on. The engine plays it on a
+  scratch copy of them, so my own settings and saves are never changed,
+  and it ends at the recording's end, or when it drifts off route.
+- **Never by hand:** you never record a run, or press anything during
+  one. A run's log shows what a log can; how anything looks or feels
+  stays mine to judge (project rules, Workflow 4).
+- **On the PC:** through a Remote Control session, under the PC's claim
+  (When the PC is busy), in the build's folder, on a copy of my portable
+  folder made as for testing (Delivery package), and alone on the PC.
+- **On the Ally X:** over SSH from the PC's session, in Desktop Mode, on
+  power and on my network. The session copies the Linux package and the
+  run folders across with `scp`, starts a batch of runs that outlives the
+  connection (`systemd-run --user`), kept awake with `systemd-inhibit` so
+  no power setting changes, and copies each run's log back. A batch holds
+  the Ally X's claim, `building-on-pc\ALLY-X-IN-USE.md` beside the PC's,
+  kept the same way, and nothing else runs there while it is held. What I
+  set up there once: SSH turned on (`sudo systemctl enable --now sshd`), a
+  password for `deck`, and the PC's key in `~/.ssh/authorized_keys`.
+  Nothing is installed, and `sudo systemctl disable --now sshd` undoes it.
+  Game Mode isn't run this way: I test it myself.
+- **In TESTING.md,** a playback run is a step, `Playback: <run> on
+  <device>` (Test checklist), and it passes when its log, read in full,
+  shows what the step says I'd see.
 
 ### What is kept between builds
 
@@ -650,7 +689,8 @@ test-lists/README.md has its path.
   and nothing else, each saying exactly what to do and on which device,
   what I should see if it works, and what I'd see if it doesn't. A change
   to a shared layer also has the smoke set's runs, from input playback's
-  release on (The smoke set).
+  release on (The smoke set). A step can be a playback run, `Playback:
+  <run> on <device>`, which you run and mark from its log (Playback runs).
 - **Where:** Desktop Mode, Game Mode, or both on the Ally X, and the Windows
   PC. A step for the laptop is marked optional, and only for a change that
   could act differently on AMD's Windows driver.
