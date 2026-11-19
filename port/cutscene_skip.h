@@ -31,7 +31,9 @@
  * game has no skip for (no command 249 that holds: 0121's rounds) ends at
  * the second press through its mission's own end, the first of its command
  * 230s that the story's flags now lead to, found by the events scan as if
- * the preview had played out (recomp_manual.c, sub_00057DE0).
+ * the preview had played out (recomp_manual.c, sub_00057DE0), with its
+ * letterbox bars taken away first, as the game's own skip of a preview
+ * takes them away (a 230 alone leaves them on).
  *
  * The prompt is shown for CUTSCENE_SKIP_WINDOW seconds from the first press.
  * It fades in over CUTSCENE_SKIP_FADE while shrinking from

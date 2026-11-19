@@ -5407,8 +5407,46 @@ void sub_0003A8C0(void)
  * (cutscene_skip_preview_ends, any exit), and only when every such end
  * takes the same exit; else the preview plays on, and the log says so.
  * Called from sub_00057DE0's wrapper (the stage's blocking-entry list),
- * after the scan, when it found nothing. */
+ * after the scan, when it found nothing.
+ *
+ * Before the end, the letterbox bars are taken away, as the game's own
+ * skip of a preview takes them away (preview_bars_off). The bars are an
+ * object of their own (class 0x1CF338, the game manager's slot 0x1164,
+ * under the HUD root, which outlives a change of mission in the stage):
+ * a preview's script turns them on (its command 206, the screen command's
+ * type 0) and its own playing turns them off (command 207) before its
+ * end's flags come. A command 230 only sets the end's flags and takes its
+ * exit (sub_00057F90, 0x58026), so ending the preview there, with nothing
+ * else, left the bars on in play (known bug 68: Adri's run, 0121's round,
+ * the bars still there in mssn0120 after it). The game's own skip, for a
+ * preview with a command 249, gives the screen command {the bars, 1 frame}
+ * off (sub_00107340 at 0x57EB3) before it sets the entry's flags and takes
+ * its exit; this gives the same command, from the same place, so the bars
+ * slide away over a frame and their object is removed, the game's way. */
 #define RUNNER_END_FOUND 0xFB8u  /* the end the scan found, for sub_00057F90 */
+#define SCREEN_COMMAND_RA 0x00057EB8u /* the events scan's own call of the screen command, for a 249 */
+#define SCREEN_BARS      0u      /* the screen command's type: the letterbox bars */
+#define SCREEN_OFF       0u      /* its second argument: 1 on, 0 off */
+#define SKIP_BARS_FRAMES 1u      /* the frames a 249 takes the bars away over */
+#define SCREEN_SCRATCH   16u     /* below the stack: the command's three words */
+extern void sub_00107340(void);
+/* The game's own preview skip's screen command, {SCREEN_BARS,
+ * SKIP_BARS_FRAMES, 0} off (sub_00107340, cdecl: the command's address,
+ * then 1 on or 0 off), as the events scan gives it at 0x57EB3. With no bars
+ * there, it does nothing. */
+static void preview_bars_off(void)
+{
+    const uint32_t esp = g_esp;
+    uint32_t a[2];
+    g_esp -= SCREEN_SCRATCH;
+    MEM32(g_esp) = SCREEN_BARS;
+    MEM32(g_esp + 4u) = SKIP_BARS_FRAMES;
+    MEM32(g_esp + 8u) = 0;
+    a[0] = g_esp;
+    a[1] = SCREEN_OFF;
+    guest_call_cdecl(sub_00107340, SCREEN_COMMAND_RA, 2, a);
+    g_esp = esp;
+}
 static int scene_there(void)
 {
     uint32_t gm = MEM32(GAME_MANAGER);
@@ -5448,9 +5486,11 @@ static void preview_unskipped(uint32_t runner)
                 "230 at %08X, exit %u, of %d): two presses of A skip it\n", now, ends[0], exit, count);
     }
     if (cutscene_skip_frame(ends[0], (MEM8(PAD_PRESSED) & PAD_PRESSED_A) != 0, now)) {
+        preview_bars_off();
         MEM32(runner + RUNNER_END_FOUND) = ends[0];
         g_eax = CUTSCENE_SKIP_END;
-        fprintf(stderr, "[SKIP] t=%.2f the preview ends: its own end (command 230 at %08X, exit %u) "
+        fprintf(stderr, "[SKIP] t=%.2f the preview ends: the bars taken away first (the screen command "
+                "the game's own preview skip gives), then its own end (command 230 at %08X, exit %u) "
                 "found now, as when the preview plays out, for the mission to set its flags and take "
                 "its exit\n", now, ends[0], exit);
     }
