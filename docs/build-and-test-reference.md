@@ -437,7 +437,9 @@ between builds).
   compile's counts have names of their own (`tests/coverage_cc.py`, the
   compiler `--coverage` runs), so the programs a test builds from the same
   files (gl_backend's 15) add up, where CI's GCC would keep only the last
-  one's.
+  one's. The report names each test whose program still wrote no counts
+  (an `_exit()` without the dump, a crash or a timeout), with the files
+  that then read as never run.
 - **Before a commit,** the jobs the project rules' check 6 gives it run
   on its tree (project rules, Before every commit, 6). Its rows for
   Markdown hold only while no job or test reads a Markdown file, so a

@@ -3,11 +3,11 @@
 at each of a file's sources, how tests/run_all.py names a
 sanitizer's leak, checks that each known bug names its release and counts
 what each tsan.supp entry hides, how count_warnings.py counts a build's
-warnings, how coverage.py adds up the tests' line counts, that the tests
-that end with _exit() write theirs and how tests/coverage_cc.py keeps
-each compile's apart, how launcher/images.sh names each image, when
-llvm_mingw.py uses its copy again, and what push_gate.py refuses before
-a commit or a push."""
+warnings, how coverage.py adds up the tests' line counts and names the
+programs that wrote none, that the tests that end with _exit() write
+theirs, how tests/coverage_cc.py keeps each compile's apart, how
+launcher/images.sh names each image, when llvm_mingw.py uses its copy
+again, and what push_gate.py refuses before a commit or a push."""
 
 import hashlib
 import http.server
@@ -368,7 +368,7 @@ def test_coverage_merges_each_tests_counts(tmp_path, monkeypatch):
             {"file": "../port/recomp/gen/f.c", "lines": [{"line_number": 1, "count": 1}]}]}],
     }
     monkeypatch.setattr(coverage, "gcov", lambda note: None if note.name == "-.gcno" else reports[note.parent.name])
-    found, unread = coverage.coverage(tmp_path)
+    found, unread, _ = coverage.coverage(tmp_path)
     assert found == {"src/a.c": (2, 3), "port/b.c": (0, 1)}
     assert unread == ["two/-.gcno"]
 
@@ -443,6 +443,33 @@ def test_coverage_cc_keeps_each_programs_counts(tmp_path):
             for f in report["files"]:
                 reached |= {line["line_number"] for line in f["lines"] if line["count"]}
     assert {4, 5} <= reached
+
+
+def test_coverage_names_programs_that_wrote_no_counts(tmp_path, monkeypatch):
+    # A program that ended without its exit handlers (an _exit, a crash, a
+    # timeout) left .gcno files with no .gcda beside them: their files of
+    # src/ and port/ with code are named, by test. Not a compile whose
+    # program wrote its counts, a file with no code (a table, as
+    # nv2a_uniforms.c is), or a file not ours.
+    cwd = coverage.root.as_posix()
+    notes = {
+        ("clock", "1-timer"): [{"file": "src/kernel/timer.c", "functions": [{"name": "f"}]},
+                               {"file": "src/platform/check.h", "functions": [{"name": "g"}]},
+                               {"file": "tests/clock/test_main.c", "functions": [{"name": "main"}]}],
+        ("clock", "1-table"): [{"file": "src/gl/table.c", "functions": []}],
+        ("apu", "2-mix"): [{"file": "src/apu/mix.c", "functions": [{"name": "h"}]}],
+    }
+    for (test, name), files in notes.items():
+        (tmp_path / test).mkdir(exist_ok=True)
+        (tmp_path / test / (name + ".gcno")).write_bytes(b"")
+        for f in files:
+            f["lines"] = [{"line_number": 1, "count": 0}]
+    (tmp_path / "apu" / "2-mix.gcda").write_bytes(b"")
+    monkeypatch.setattr(coverage, "gcov", lambda note: [{"current_working_directory": cwd,
+                                                         "files": notes[note.parent.name, note.stem]}])
+    found, unread, uncounted = coverage.coverage(tmp_path)
+    assert uncounted == [("clock", "src/kernel/timer.c"), ("clock", "src/platform/check.h")]
+    assert found["src/kernel/timer.c"] == (0, 1) and unread == []
 
 
 @pytest.mark.parametrize("groups, recipe", [

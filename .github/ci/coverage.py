@@ -12,7 +12,10 @@ written to <counts dir>/coverage.txt. A test that ends without returning
 from main (an abort, _exit, or a timeout) writes no counts, so its lines
 count as not reached, unless it writes them first: a test that ends with
 _exit() calls __gcov_dump() before it, under TEST_COVERAGE, which
-run_all.py --coverage defines. A test that builds a copy of a file's text (as
+run_all.py --coverage defines. The report names each test whose program
+wrote none (a .gcno file with code and no .gcda file beside it), with its
+files of src/ and port/, so they don't read as never run unexplained. A
+test that builds a copy of a file's text (as
 nv2a_queue builds pieces of src/kernel/kernel_mmio.c from its standard
 input) counts towards the copy, not the file. A .gcno file gcov can't read
 is named in the report and left out.
@@ -61,25 +64,29 @@ def gcov(note):
 
 
 def coverage(counts):
-    """{path: (lines reached, lines with code)} over every test's counts, and
-    the .gcno files gcov couldn't read."""
-    lines, unread = {}, []
+    """{path: (lines reached, lines with code)} over every test's counts, the
+    .gcno files gcov couldn't read, and the (test, path) of each file of ours
+    with code that a program built and wrote no counts of."""
+    lines, unread, uncounted = {}, [], set()
     for note in sorted(pathlib.Path(counts).rglob("*.gcno")):
         reports = gcov(note)
         if reports is None:
             unread.append(note.relative_to(counts).as_posix())
             continue
+        written = note.with_suffix(".gcda").exists()
         for report in reports:
             cwd = report.get("current_working_directory", str(root))
             for f in report.get("files", []):
                 rel = ours(f["file"], cwd)
                 if not rel:
                     continue
+                if not written and f.get("functions"):
+                    uncounted.add((note.relative_to(counts).parts[0], rel))
                 seen = lines.setdefault(rel, {})
                 for line in f.get("lines", []):
                     n = line["line_number"]
                     seen[n] = seen.get(n, False) or line["count"] > 0
-    return {p: (sum(v.values()), len(v)) for p, v in lines.items()}, unread
+    return {p: (sum(v.values()), len(v)) for p, v in lines.items()}, unread, sorted(uncounted)
 
 
 def main(argv):
@@ -87,7 +94,7 @@ def main(argv):
         print(__doc__.strip().split("\n\n")[1], file=sys.stderr)
         return 2
     counts = pathlib.Path(argv[0])
-    found, unread = coverage(counts)
+    found, unread, uncounted = coverage(counts)
     unbuilt = sorted(p.relative_to(root).as_posix() for d in OURS
                      for p in (root / d).rglob("*") if p.suffix in SOURCES
                      and not p.relative_to(root).as_posix().startswith(GENERATED)
@@ -101,6 +108,10 @@ def main(argv):
     reached = sum(r for r, _ in found.values())
     total = sum(t for _, t in found.values())
     report += ["", "Not built by any test (%d files):" % len(unbuilt)] + ["  " + p for p in unbuilt]
+    if uncounted:
+        report += ["", "Built by a test whose program wrote no counts (an _exit, a crash or a "
+                   "timeout), so read as never run (%d):" % len(uncounted)]
+        report += ["  %s: %s" % (test, p) for test, p in uncounted]
     if unread:
         report += ["", "Counts gcov couldn't read, left out (%d):" % len(unread)] + ["  " + p for p in unread]
     report += ["", "coverage: %d of %d lines with code reached (%.1f%%) in the %d files the tests build; "
