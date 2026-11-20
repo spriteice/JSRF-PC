@@ -221,6 +221,40 @@ void menu_build(int just_opened, int pad);
 int menu_preset_now(void);
 int menu_preset_apply(int p);
 
+/* A row by its labels (input playback's steps, and tests/menu), on the
+ * window's thread, chosen as a click or the pad chooses it. A path is the
+ * menu's title, then the labels down to the row (a submenu's, then its
+ * row's: menu.h, group), joined by " > ", then what is chosen in it:
+ *
+ *   "Graphics > Anti-aliasing (SMAA)"       a toggle, flipped; with " > On"
+ *                                           or " > Off", put so
+ *   "Graphics > Anti-aliasing (MSAA) > 4x"  a choice, by its name
+ *   "Graphics > Cleanup > <a tick's name>"  a tick, flipped; with " > On" or
+ *                                           " > Off", put so
+ *   "Display > HUD > HUD scale > 1.5"       a number, within its min and max
+ *   an ACTION row's path                    run
+ *
+ * menu_path_run does it and menu_path_check only says whether it would:
+ * MENU_PATH_OK, or why not (menu_path_why, for the log). Each takes the rows
+ * added since the last frame first. A row that asks first (a restart, File >
+ * Exit) is refused: what it sets is set before a run starts, not during it. */
+typedef enum {
+    MENU_PATH_OK,
+    MENU_PATH_NO_MENU,      /* no menu has that title                        */
+    MENU_PATH_NO_ROW,       /* nothing there has that label                  */
+    MENU_PATH_NO_CHOICE,    /* the row has no such choice, or it isn't On or
+                             * Off                                           */
+    MENU_PATH_BAD_NUMBER,   /* not a number, or past the row's min or max    */
+    MENU_PATH_ASKS,         /* the row asks first                            */
+    MENU_PATH_NOT_RUN,      /* nothing to choose: a submenu with nothing after
+                             * it, a box of text, or a row that needs a choice
+                             * or a number after it                          */
+    MENU_PATH_TOO_LONG      /* more after what is chosen                     */
+} MENU_PATH;
+int menu_path_check(const char *path);
+int menu_path_run(const char *path);
+const char *menu_path_why(int result);
+
 /* The hint the strip along the bottom showed in the last menu_build: the
  * row the pad is on, else the one the pointer is on; NULL on the bar, or in
  * a box. Read by tests/menu. */

@@ -256,6 +256,148 @@ extern "C" int menu_preset_apply(int p)
     return restart;
 }
 
+/* ---- A row by its labels (menu.h, menu_path_run) ------------------------ */
+
+#define MENU_PATH_SEP    " > "
+#define MENU_PATH_PARTS  8      /* the menu, a submenu, a row, a choice, On: room to spare */
+#define MENU_PATH_ON     "On"
+#define MENU_PATH_OFF    "Off"
+
+/* The path's parts, split at each " > ", into buf. The count, or -1 for
+ * more parts than MENU_PATH_PARTS or a path that doesn't fit. */
+static int path_split(const char *path, char *buf, size_t n, const char **part)
+{
+    int count = 0;
+    char *at, *sep;
+    if (!path || strlen(path) >= n) return -1;
+    strcpy(buf, path);
+    at = buf;
+    for (;;) {
+        if (count == MENU_PATH_PARTS) return -1;
+        part[count++] = at;
+        sep = strstr(at, MENU_PATH_SEP);
+        if (!sep) return count;
+        *sep = 0;
+        at = sep + strlen(MENU_PATH_SEP);
+    }
+}
+
+/* The row with that label shown in menu m, in submenu group (NULL for the
+ * menu itself), as the menu draws it: the first, and no separator. */
+static const XBOX_MENU_ITEM *path_row(int m, const char *group, const char *label)
+{
+    for (const XBOX_MENU_ITEM &it : g_items)
+        if (it.menu == m && it.kind != XBOX_ITEM_SEPARATOR && it.label && !strcmp(it.label, label)
+            && drawn_in_is(it, group))
+            return &it;
+    return NULL;
+}
+
+static int path_choice(const XBOX_MENU_ITEM *it, const char *name)
+{
+    for (int i = 0; i < it->nchoices; i++)
+        if (it->choices[i] && !strcmp(it->choices[i], name)) return i;
+    return -1;
+}
+
+/* -1 for neither On nor Off. */
+static int path_on(const char *word)
+{
+    return !strcmp(word, MENU_PATH_ON) ? 1 : !strcmp(word, MENU_PATH_OFF) ? 0 : -1;
+}
+
+/* What the path chooses, and done when `run` is set. */
+static int path_do(const char *path, int run)
+{
+    char buf[512];
+    const char *part[MENU_PATH_PARTS];
+    const XBOX_MENU_ITEM *it = NULL;
+    const char *group = NULL;
+    int n = path_split(path, buf, sizeof buf, part), m, at;
+
+    take_queued();
+    if (n < 0) return MENU_PATH_TOO_LONG;
+    for (m = 0; m < XBOX_MENU_COUNT && strcmp(k_menu_title[m], part[0]); m++) { }
+    if (m == XBOX_MENU_COUNT) return MENU_PATH_NO_MENU;
+    /* Down through a submenu, to the row. */
+    for (at = 1; ; at++) {
+        if (at == n) return it ? MENU_PATH_NOT_RUN : MENU_PATH_NO_ROW;
+        it = path_row(m, group, part[at]);
+        if (!it) return MENU_PATH_NO_ROW;
+        if (it->kind != XBOX_ITEM_GROUP) break;
+        if (group || group_row(m, it->label) != it) return MENU_PATH_NO_ROW;
+        group = it->label;
+    }
+    at++;                               /* the parts after the row's own */
+    if (it->confirm) return MENU_PATH_ASKS;
+    switch (it->kind) {
+    case XBOX_ITEM_ACTION:
+        if (at != n) return MENU_PATH_TOO_LONG;
+        if (run) it->run();
+        return MENU_PATH_OK;
+    case XBOX_ITEM_TOGGLE: {
+        int want;
+        if (at == n) { if (run) it->run(); return MENU_PATH_OK; }
+        if (at + 1 != n) return MENU_PATH_TOO_LONG;
+        want = path_on(part[at]);
+        if (want < 0) return MENU_PATH_NO_CHOICE;
+        if (run && (it->state() != 0) != want) it->run();
+        return MENU_PATH_OK;
+    }
+    case XBOX_ITEM_CHOICE: {
+        int i;
+        if (at == n) return MENU_PATH_NOT_RUN;
+        if (at + 1 != n) return MENU_PATH_TOO_LONG;
+        i = path_choice(it, part[at]);
+        if (i < 0) return MENU_PATH_NO_CHOICE;
+        if (run && i != it->state()) row_pick(*it, i);
+        return MENU_PATH_OK;
+    }
+    case XBOX_ITEM_TOGGLES: {
+        int i, want = -1;
+        if (at == n) return MENU_PATH_NOT_RUN;
+        if (at + 2 < n) return MENU_PATH_TOO_LONG;
+        i = path_choice(it, part[at]);
+        if (i < 0) return MENU_PATH_NO_CHOICE;
+        if (at + 2 == n && (want = path_on(part[at + 1])) < 0) return MENU_PATH_NO_CHOICE;
+        if (run && (want < 0 || ((it->state() >> i) & 1) != want)) row_pick(*it, i);
+        return MENU_PATH_OK;
+    }
+    case XBOX_ITEM_NUMBER: {
+        char *end;
+        double v;
+        if (at == n) return MENU_PATH_NOT_RUN;
+        if (at + 1 != n) return MENU_PATH_TOO_LONG;
+        v = strtod(part[at], &end);
+        if (end == part[at] || *end || !(v >= it->min - MENU_STEP_SLACK * it->step)
+            || !(v <= it->max + MENU_STEP_SLACK * it->step))
+            return MENU_PATH_BAD_NUMBER;
+        if (run) it->set(v < it->min ? it->min : v > it->max ? it->max : v);
+        return MENU_PATH_OK;
+    }
+    default:
+        return MENU_PATH_NOT_RUN;
+    }
+}
+
+extern "C" int menu_path_check(const char *path) { return path_do(path, 0); }
+extern "C" int menu_path_run(const char *path)   { return path_do(path, 1); }
+
+extern "C" const char *menu_path_why(int result)
+{
+    switch (result) {
+    case MENU_PATH_OK:         return "done";
+    case MENU_PATH_NO_MENU:    return "no menu has that title";
+    case MENU_PATH_NO_ROW:     return "nothing there has that label";
+    case MENU_PATH_NO_CHOICE:  return "the row has no such choice, or it isn't On or Off";
+    case MENU_PATH_BAD_NUMBER: return "not a number, or past the row's least or most";
+    case MENU_PATH_ASKS:       return "the row asks first";
+    case MENU_PATH_NOT_RUN:    return "nothing to choose there";
+    case MENU_PATH_TOO_LONG:   return "more after what is chosen";
+    default:                   return "not a result";
+    }
+}
+
 static double step_from(const XBOX_MENU_ITEM *it, double v, int dir)
 {
     double n = (v - it->min) / it->step;

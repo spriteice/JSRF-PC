@@ -1262,6 +1262,63 @@ int main(void)
     g_display = ImVec2(0.0f, 0.0f);
     frames(2);
 
+    /* Rows by their labels (menu.h, menu_path_run), as input playback's
+     * steps choose them: each kind, a submenu, a row added since the last
+     * frame, and every way a path can be refused, with nothing done. */
+    {
+        int full = s_full, runs = s_full_runs, flips = s_flips, sw = s_switches, sets = s_sets;
+        CHECK(menu_path_check("Display > Fullscreen") == MENU_PATH_OK && s_full_runs == runs);
+        CHECK(menu_path_run("Display > Fullscreen") == MENU_PATH_OK && s_full == !full && s_full_runs == runs + 1);
+        CHECK(menu_path_run("Display > Fullscreen > Off") == MENU_PATH_OK && s_full == 0);
+        CHECK(menu_path_run("Display > Fullscreen > Off") == MENU_PATH_OK && s_full == 0);
+        CHECK(menu_path_run("Display > Fullscreen > On") == MENU_PATH_OK && s_full == 1);
+        CHECK(menu_path_run("Display > Fullscreen > Maybe") == MENU_PATH_NO_CHOICE && s_full == 1);
+        CHECK(menu_path_run("Display > Fullscreen > On > On") == MENU_PATH_TOO_LONG);
+        CHECK(menu_path_run("Display > Render scale > 2x  (1280 x 960)") == MENU_PATH_ASKS);
+        CHECK(menu_path_run("File > Exit") == MENU_PATH_ASKS && !s_exit);
+        CHECK(menu_path_run("File > About") == MENU_PATH_NOT_RUN);
+        CHECK(menu_path_run("Input > Sensitivity > 3") == MENU_PATH_OK && s_sens == 3 && s_sets == sets + 1);
+        CHECK(menu_path_run("Input > Sensitivity > 11") == MENU_PATH_BAD_NUMBER && s_sens == 3);
+        CHECK(menu_path_run("Input > Sensitivity > fast") == MENU_PATH_BAD_NUMBER);
+        CHECK(menu_path_run("Input > Sensitivity") == MENU_PATH_NOT_RUN);
+        CHECK(menu_path_run("Developer > Logging > Second (Restart)") == MENU_PATH_OK
+              && s_switches == (sw ^ 2) && s_flips == flips + 1);
+        CHECK(menu_path_run("Developer > Logging > Second (Restart) > On") == MENU_PATH_OK && (s_switches & 2));
+        CHECK(menu_path_run("Developer > Logging > Second (Restart) > On") == MENU_PATH_OK && (s_switches & 2));
+        CHECK(menu_path_run("Developer > Logging > Second (Restart) > Off") == MENU_PATH_OK && !(s_switches & 2));
+        CHECK(menu_path_run("Developer > Logging > Fourth") == MENU_PATH_NO_CHOICE);
+        CHECK(menu_path_run("Developer > Logging") == MENU_PATH_NOT_RUN);
+        s_with_calls = 0;
+        CHECK(menu_path_run("Audio > Skips > Dogenzaka Hill (stg12) > 0112 (race, Beat)") == MENU_PATH_OK
+              && s_with_calls == 1 && s_with_index == 1 && s_with_data == k_with_data);
+        CHECK(menu_path_run("Audio > Skips") == MENU_PATH_NOT_RUN);
+        CHECK(menu_path_run("Audio > Dogenzaka Hill (stg12) > 0110 (free play)") == MENU_PATH_NO_ROW);
+        CHECK(menu_path_run("Audio > Empty > Effects") == MENU_PATH_NO_ROW);
+        CHECK(menu_path_run("Audio > Effects > Skips") == MENU_PATH_NO_CHOICE);
+        CHECK(menu_path_run("Audio > Nowhere") == MENU_PATH_NO_ROW);
+        CHECK(menu_path_run("Audio") == MENU_PATH_NO_ROW);
+        CHECK(menu_path_run("Sound > Effects") == MENU_PATH_NO_MENU);
+        CHECK(menu_path_run("") == MENU_PATH_NO_MENU);
+        CHECK(menu_path_run("A > B > C > D > E > F > G > H > I") == MENU_PATH_TOO_LONG);
+        {
+            int see = s_see_runs;
+            CHECK(menu_path_run("Audio > Enhancements > See through") == MENU_PATH_OK && s_see_runs == see + 1);
+        }
+        {
+            /* Added after the last frame: found all the same. */
+            static const XBOX_MENU_ITEM added = {
+                XBOX_MENU_AUDIO, XBOX_ITEM_ACTION, "Just added", NULL, skip_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
+                0, 0, 0, NULL, 0, NULL, "Was added a moment ago.", NO_PRESETS, NULL, NULL, NULL };
+            int skips = s_skip_runs;
+            xbox_MenuAdd(&added, 1);
+            CHECK(menu_path_run("Audio > Just added") == MENU_PATH_OK && s_skip_runs == skips + 1);
+            CHECK(menu_path_run("Audio > Just added > Now") == MENU_PATH_TOO_LONG && s_skip_runs == skips + 1);
+        }
+        CHECK(strcmp(menu_path_why(MENU_PATH_ASKS), "the row asks first") == 0);
+        CHECK(strcmp(menu_path_why(99), "not a result") == 0);
+        frames(2);
+    }
+
     /* The busy box, centred. */
     busy_frame();
     busy_frame();
