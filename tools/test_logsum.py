@@ -19,7 +19,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 # A printf conversion: flags, width, precision, length, and the conversion.
 CONVERSION = re.compile(r"%([-+ #0]*)(\d*)(\.\d+)?(hh|h|ll|l|L|z|j|t)?([diouxXeEfgGcsp%])")
-ESCAPES = {"n": "\n", "t": "\t", '"': '"', "\\": "\\", "'": "'"}
+ESCAPES = {"n": "\n", "r": "\r", "t": "\t", '"': '"', "\\": "\\", "'": "'"}
 
 
 def _literal_end(text, start):

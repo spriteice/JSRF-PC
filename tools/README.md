@@ -282,6 +282,57 @@ It needs only Python's standard library. Its test, `tools/test_logsum.py`,
 takes each line it reads from the engine's own source, so a log line changed
 in the engine fails that test until logsum is changed to match.
 
+## Reading a log in full: logdigest
+
+`tools/logdigest.py` turns a log into a digest meant to be read whole: a
+log over 100 KB is read in full through it, and then where it points
+([docs/project-rules.md](../docs/project-rules.md), Workflow 5).
+
+```bash
+python3 tools/logdigest.py last-run.log [more.log ...] > digest.md
+python3 tools/logdigest.py last-run.log --against old-last-run.log > digest.md
+python3 tools/logdigest.py --tag FILE last-run.log    # every kind of [FILE] line
+```
+
+For each run in a log (from the engine's banner, one per start; the lines
+before the first are a part of their own):
+
+- **The header:** the version, the system and Developer switches (as logsum
+  reads them), the first line, the size, and how the run ended: a clean
+  exit (the window closed, then the renderer's report), a crash report, a
+  restart, or cut off with its last line, and any freeze report.
+- **Every line counted by its tag** (`[GL]`, `[PACE]`: the line's start
+  after spaces, or "(no tag)"), with each tag's first and last line. The
+  counts add up to the run's lines, and the digest says so.
+- **Every error, check, crash and freeze line in full,** with the line
+  before and after it, grouped as the tool's `ERRORS` list says. Past 100
+  lines in a group, its first and last 50 with the count between, and
+  `--tag` for all of them. A crash report is given whole to the run's end
+  (up to 200 lines, then its last 20), and a freeze report, which repeats
+  every 10 s, as its first and its last. Lines with an error word that
+  aren't errors, such as a failed open of the game's cache before the disc,
+  are in `NOT_ERRORS`, each with why.
+- **The first of each kind of line,** with its line number and count. A
+  kind is the line with its numbers, lists of numbers and paths made one
+  (`#`, `<path>`): the first 20 kinds of each tag, then how many more. A
+  later run in the same log lists only the kinds no earlier run had.
+
+With several logs it lists what only one of them has, and with
+`--against` an older log the tags and kinds new since it and gone since
+it. Line numbers are those `sed -n` gives; a CR-LF log, a last line with no
+end and bytes that aren't UTF-8 read like any other. It needs only Python's
+standard library, and logsum beside it. A log of a million lines gives a
+digest under 64 KB; the logs of November 2026 give 16 to 50 KB, and a 145 MB
+log takes about 45 s.
+
+Its test, `tools/test_logdigest.py`, writes its logs from the engine's own
+lines, as logsum's does. It also reads every format the engine prints (each
+call of fprintf, printf, guard_say and fputs, and each string that starts
+with a tag): every line among them with an error word (fail, error, cannot,
+could not, refused, crash, frozen, fatal, corrupt, bad, unable, abort) must
+be in `ERRORS` or `NOT_ERRORS`, and not in both, so a new error line in the
+engine fails the test until the tool has it.
+
 ## Which generated functions a change alters: gen_diff
 
 `tools/gen_diff.py` compares two folders of generated code made from

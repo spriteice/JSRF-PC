@@ -274,8 +274,14 @@ In order:
    evidence. A change made for timing or speed is measured before and
    after, and tuning is measured again when a deeper cause in the same area
    is fixed.
-5. **Track my testing.** Read every log I send in full, start to end, before
-   reporting on it, using scripts for logs too long to read whole. Each time
+5. **Track my testing.** Read every log I send in full before reporting on
+   it. A log of 100 KB or less is read whole, start to end. A larger one is
+   read in full this way: run `tools/logdigest.py` on it, with `--against`
+   the same device's log from the last tested build where there is one, and
+   read its output whole; then read the raw log where it points: each error,
+   check, crash and freeze line with what is around it, each kind of line
+   new to this build, and the part of the run each step under test covers
+   (tools/README.md, Reading a log in full: logdigest). Each time
    I send logs, check them against the build's test checklist and list
    every step still untested, per device. Before asking me to approve a
    commit, remind me of any untested steps and which device each needs. A
