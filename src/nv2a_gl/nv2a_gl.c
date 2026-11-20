@@ -1628,6 +1628,8 @@ int nv_window_pref_num(const char *key, double *v)
     return r;
 }
 
+/* key=val in place of the key's lines, or at the end; val NULL: the
+ * key's lines go. */
 static void sdl_cfg_write(const char *path, const char *key, const char *val)
 {
     char tmp[1100], line[1200];
@@ -1650,13 +1652,13 @@ static void sdl_cfg_write(const char *path, const char *key, const char *val)
     if ((in = fopen(path, "r")) != NULL) {
         while (fgets(line, sizeof line, in)) {
             if (!strncmp(line, key, kl) && line[kl] == '=') {
-                if (!done) fprintf(out, "%s=%s\n", key, val);
+                if (!done && val) fprintf(out, "%s=%s\n", key, val);
                 done = 1;
             } else fputs(line, out);
         }
         fclose(in);
     }
-    if (!done) fprintf(out, "%s=%s\n", key, val);
+    if (!done && val) fprintf(out, "%s=%s\n", key, val);
     fclose(out);
     /* On Windows rename() will not replace a file that exists -- and the
      * launcher has always written this one -- so a choice made here was
@@ -1690,6 +1692,38 @@ void nv_window_pref_set_num(const char *key, double v)
     char s[32];
     snprintf(s, sizeof s, "%.15g", v);
     sdl_cfg_put(key, s);
+}
+
+/* A line's text from a file beside the settings file (sdl_cfg_beside), for
+ * the input layer's layouts (src/input/input_remap.c, remap.cfg), which keep
+ * SDL's names for their inputs: 1 and buf, the key's last line's value
+ * without its line end, when it has one; 0 when there is no such key. And
+ * keeping one, val NULL deleting the key's line, as a layout does for a
+ * control back at its default. */
+int nv_window_file_str(const char *file, const char *key, char *buf, size_t n);
+int nv_window_file_str(const char *file, const char *key, char *buf, size_t n)
+{
+    char path[1024], line[1200];
+    size_t kl = strlen(key);
+    FILE *f;
+    int r = 0;
+    sdl_cfg_beside(path, sizeof path, file);
+    if (!n || !path[0] || !(f = fopen(path, "r"))) return 0;
+    while (fgets(line, sizeof line, f))
+        if (!strncmp(line, key, kl) && line[kl] == '=') {
+            line[kl + 1 + strcspn(line + kl + 1, "\r\n")] = 0;
+            snprintf(buf, n, "%s", line + kl + 1);
+            r = 1;
+        }
+    fclose(f);
+    return r;
+}
+void nv_window_file_set_str(const char *file, const char *key, const char *val);
+void nv_window_file_set_str(const char *file, const char *key, const char *val)
+{
+    char path[1024];
+    sdl_cfg_beside(path, sizeof path, file);
+    sdl_cfg_write(path, key, val);
 }
 
 /* A number kept in a file beside the settings file (sdl_cfg_beside): its
@@ -1749,79 +1783,50 @@ int nv_window_pref_shape(void)
     return shape;
 }
 
-/* The keyboard as a gamepad, by key POSITION
- * (scancodes), so W A S D on QWERTY is Z Q S D on AZERTY:
- *   W A S D    left stick + d-pad       arrows   right stick
- *   Space, J   A        K  B            H  X     L  Y
- *   E          R trigger                Q  L trigger
- *   R          Black                    F  White
- *   Return     Start                    Esc  Back (and a keyboard's Back key)
- *   C / V      left / right stick click
+/* The keyboard and the mouse as a gamepad: which keys, by their place
+ * (scancodes, so W A S D on QWERTY is Z Q S D on AZERTY), and which mouse
+ * buttons are held, a bit each, for the input layer, whose keyboard layout
+ * says what each presses (src/input/input_layout.h, nv_window_keys). Set
+ * and cleared here, on the window's thread, and read on the game's.
  * F11 or Alt+Return: full screen. F10: 4:3 or Match screen. F9: resolution.
- * And the keys the game binds for itself (nv_window_hotkey). */
-static volatile unsigned short g_sdl_kb_buttons;
-static volatile unsigned char  g_sdl_kb_analog[8];
+ * F1: the in-game menu. And the keys the game binds for itself
+ * (nv_window_hotkey). None of those reaches the game (nv_window_key_reserved). */
+#define NV_MOUSE_BUTTONS 5          /* left, middle, right, back, forward (SDL_BUTTON_LEFT to X2) */
+_Static_assert(NV_MOUSE_BUTTONS == SDL_BUTTON_X2 - SDL_BUTTON_LEFT + 1, "the mouse's buttons are SDL's");
+#define NV_KEYS          (SDL_NUM_SCANCODES + NV_MOUSE_BUTTONS)
+#define NV_KEY_WORDS     ((NV_KEYS + 31) / 32)
+static uint32_t g_sdl_held[NV_KEY_WORDS];
 
 /* For the input latency log (nv2a_latency.h): when the window's events were
- * last pumped and the time before that (sdl_pump), and as each key went
- * down, those two: when SDL had it, and the pump it came in after. The keys
- * in nv_window_keys' order, its 12 bits and then its 8 analog keys, as the
- * input layer counts them (src/input/input_press.h). */
-#define NV_KEYS      20
-#define NV_KEY_BITS  12
+ * last pumped and the time before that (sdl_pump), and as each key or mouse
+ * button went down, those two: when SDL had it, and the pump it came in
+ * after. */
 static volatile double g_sdl_pump_at, g_sdl_pump_before;
 static volatile double g_sdl_kb_at[NV_KEYS], g_sdl_kb_before[NV_KEYS];
-static const char *const g_sdl_key_names[NV_KEYS] = {
-    "W", "S", "A", "D", "Return", "Esc", "Up", "Down", "Left", "Right", "C", "V",
-    "Space or J", "K", "H", "L", "R", "F", "Q", "E",
-};
 
-static void sdl_key_down_at(int k)
+/* A key or mouse button, by its place in g_sdl_held, down or let go. */
+static void sdl_held(int k, int down)
 {
-    g_sdl_kb_at[k] = g_sdl_pump_at;
-    g_sdl_kb_before[k] = g_sdl_pump_before;
+    uint32_t bit, was;
+    if (k < 0 || k >= NV_KEYS) return;
+    bit = 1u << (k % 32);
+    was = down ? __atomic_fetch_or(&g_sdl_held[k / 32], bit, __ATOMIC_RELAXED)
+               : __atomic_fetch_and(&g_sdl_held[k / 32], ~bit, __ATOMIC_RELAXED);
+    if (down && !(was & bit) && nv2a_lat_on()) {
+        g_sdl_kb_at[k] = g_sdl_pump_at;
+        g_sdl_kb_before[k] = g_sdl_pump_before;
+    }
 }
 
 static void sdl_key(SDL_Scancode sc, int down)
 {
-    unsigned short bit = 0;
-    int analog = -1;
-    switch (sc) {
-    case SDL_SCANCODE_W:      bit = 1u << 0; break;
-    case SDL_SCANCODE_S:      bit = 1u << 1; break;
-    case SDL_SCANCODE_A:      bit = 1u << 2; break;
-    case SDL_SCANCODE_D:      bit = 1u << 3; break;
-    case SDL_SCANCODE_RETURN: case SDL_SCANCODE_KP_ENTER: bit = 1u << 4; break;
-    case SDL_SCANCODE_ESCAPE: case SDL_SCANCODE_AC_BACK: bit = 1u << 5; break;   /* AC_BACK: a keyboard's Back key */
-    case SDL_SCANCODE_UP:     bit = 1u << 6; break;
-    case SDL_SCANCODE_DOWN:   bit = 1u << 7; break;
-    case SDL_SCANCODE_LEFT:   bit = 1u << 8; break;
-    case SDL_SCANCODE_RIGHT:  bit = 1u << 9; break;
-    case SDL_SCANCODE_C:      bit = 1u << 10; break;
-    case SDL_SCANCODE_V:      bit = 1u << 11; break;
-    case SDL_SCANCODE_SPACE: case SDL_SCANCODE_J: analog = 0; break;   /* A */
-    case SDL_SCANCODE_K:      analog = 1; break;                       /* B */
-    case SDL_SCANCODE_H:      analog = 2; break;                       /* X */
-    case SDL_SCANCODE_L:      analog = 3; break;                       /* Y */
-    case SDL_SCANCODE_R:      analog = 4; break;                       /* Black */
-    case SDL_SCANCODE_F:      analog = 5; break;                       /* White */
-    case SDL_SCANCODE_Q:      analog = 6; break;                       /* L trigger */
-    case SDL_SCANCODE_E:      analog = 7; break;                       /* R trigger */
-    default: return;
-    }
-    if (bit) {
-        if (down && !(g_sdl_kb_buttons & bit) && nv2a_lat_on()) {
-            int k = 0;
-            while (!(bit & (1u << k))) k++;
-            sdl_key_down_at(k);
-        }
-        if (down) g_sdl_kb_buttons |= bit;
-        else      g_sdl_kb_buttons &= (unsigned short)~bit;
-    }
-    if (analog >= 0) {
-        if (down && !g_sdl_kb_analog[analog] && nv2a_lat_on()) sdl_key_down_at(NV_KEY_BITS + analog);
-        g_sdl_kb_analog[analog] = down ? 255 : 0;
-    }
+    if ((int)sc > SDL_SCANCODE_UNKNOWN && (int)sc < SDL_NUM_SCANCODES) sdl_held((int)sc, down);
+}
+
+static void sdl_mouse_button(Uint8 button, int down)
+{
+    if (button >= SDL_BUTTON_LEFT && button < SDL_BUTTON_LEFT + NV_MOUSE_BUTTONS)
+        sdl_held(SDL_NUM_SCANCODES + button - SDL_BUTTON_LEFT, down);
 }
 
 /* A key the game binds for itself (port/freecam.c's F8), by SDL's name for
@@ -1893,25 +1898,42 @@ static void sdl_pad_hotkey(Uint8 b)
             g_sdl_hotkey[i].run();
 }
 
-/* Read by the input layer (xinput_device.c). */
-int nv_window_keys(unsigned short *buttons, unsigned char *analog)
+/* Read by the input layer (xinput_device.c): the keys and mouse buttons
+ * held, words of a bit each (g_sdl_held). 1 when one is. */
+int nv_window_keys(uint32_t *held, int words);
+int nv_window_keys(uint32_t *held, int words)
 {
-    int i, any;
-    unsigned short b = g_sdl_kb_buttons;
-    if (buttons) *buttons = b;
-    any = b != 0;
-    for (i = 0; i < 8; i++) {
-        unsigned char v = g_sdl_kb_analog[i];
-        if (analog) analog[i] = v;
-        if (v) any = 1;
+    int i, any = 0;
+    for (i = 0; i < words; i++) {
+        held[i] = i < NV_KEY_WORDS ? __atomic_load_n(&g_sdl_held[i], __ATOMIC_RELAXED) : 0;
+        any |= held[i] != 0;
     }
     return any;
 }
 
+/* A key the window keeps for itself, by its place, which the game never
+ * sees and a layout can't have (src/input/input_remap.c): the menu's F1,
+ * F9 to F11, and the keys the game bound (nv_window_hotkey). Alt+Return is
+ * Return's, with Alt. */
+int nv_window_key_reserved(int scancode);
+int nv_window_key_reserved(int scancode)
+{
+    int i;
+#if defined(XBOXRECOMP_MENU)
+    if (scancode == SDL_SCANCODE_F1) return 1;
+#endif
+    if (scancode == SDL_SCANCODE_F9 || scancode == SDL_SCANCODE_F10 || scancode == SDL_SCANCODE_F11)
+        return 1;
+    for (i = 0; i < g_sdl_hotkeys; i++)
+        if (g_sdl_hotkey[i].button == SDL_CONTROLLER_BUTTON_INVALID && (int)g_sdl_hotkey[i].key == scancode)
+            return 1;
+    return 0;
+}
+
 /* Asked by the input layer (xinput_device.c) at the game's read of the first
- * pad, for each press it saw there (src/input/input_press.h): one of the
- * pad's controls, named (key -1), or one of nv_window_keys' keys, by its
- * place in NV_KEYS' order. For the input latency log (nv2a_latency.h), with
+ * pad, for each press it saw there (src/input/input_press.h), named: one of
+ * the pad's controls (key -1), or a key or mouse button, by its place in
+ * nv_window_keys' bits. For the input latency log (nv2a_latency.h), with
  * when SDL had it and where the title's pushbuffer had got to. Defined on
  * every SDL build, as nv_window_keys is. */
 void nv_window_latency_press(const char *what, int key, unsigned pass);
@@ -1920,8 +1942,8 @@ void nv_window_latency_press(const char *what, int key, unsigned pass)
     double now, sdl, before = 0.0;
     if (!nv2a_lat_on() || key >= NV_KEYS) return;
     now = sdl = mono_now();
+    if (!what) what = "?";
     if (key >= 0) {
-        what = g_sdl_key_names[key];
         sdl = g_sdl_kb_at[key];
         before = g_sdl_kb_before[key];
         if (sdl <= 0.0 || sdl > now) { sdl = now; before = 0.0; }
@@ -2013,11 +2035,12 @@ static void sdl_restart_at(int pick, int fs)
     sdl_restart(fs);
 }
 
-/* Keys held when a box took the keyboard never see their release. */
+/* Keys held when a box took the keyboard, or the window lost focus, never
+ * see their release; nor do mouse buttons. */
 static void sdl_keys_release(void)
 {
-    g_sdl_kb_buttons = 0;
-    memset((void *)g_sdl_kb_analog, 0, sizeof g_sdl_kb_analog);
+    int i;
+    for (i = 0; i < NV_KEY_WORDS; i++) __atomic_store_n(&g_sdl_held[i], 0, __ATOMIC_RELAXED);
 }
 
 /* Render scale's names as F9's box and the menu's row show them: each
@@ -3041,16 +3064,16 @@ static void sdl_pump(void)
         case SDL_KEYUP:
             sdl_key(ev.key.keysym.scancode, 0);
             break;
+        case SDL_MOUSEBUTTONDOWN:
+        case SDL_MOUSEBUTTONUP:
+            sdl_mouse_button(ev.button.button, ev.type == SDL_MOUSEBUTTONDOWN);
+            break;
         case SDL_CONTROLLERBUTTONDOWN:
             sdl_pad_hotkey(ev.cbutton.button);
             break;
         case SDL_WINDOWEVENT:
             /* Losing focus with a key held never delivers its key-up. */
-            if (ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
-                int i;
-                g_sdl_kb_buttons = 0;
-                for (i = 0; i < 8; i++) g_sdl_kb_analog[i] = 0;
-            }
+            if (ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST) sdl_keys_release();
             /* Onto another display: Match screen takes its shape. */
             if (ev.window.event == SDL_WINDOWEVENT_DISPLAY_CHANGED) sdl_wide_display();
             break;

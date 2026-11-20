@@ -745,8 +745,12 @@ static int host_main(void)
     /* And whether this process's float modes are the Xbox's; each thread gets
      * them where it enters the game's code (src/kernel/kernel_float.c). */
     { extern void xbox_float_modes_at_start(void); xbox_float_modes_at_start(); }
-    /* The free camera's settings, its rows in Input > Free camera, at the top
-     * of the page, and F8 (port/freecam.c). */
+    /* The controller's and the keyboard's layouts from the settings, and
+     * their pages, Input's first submenus: Controller layout, then Keyboard
+     * layout (src/input/input_remap.c). */
+    { extern void input_remap_start(void); input_remap_start(); }
+    /* The free camera's settings, its rows in Input > Free camera, below the
+     * layouts, and F8 (port/freecam.c). */
     { extern void freecam_start(void); freecam_start(); }
     /* Whether the game's own camera is kept out of walls, and its row, the
      * first in Input > Behaviour (port/camera_walls.c). */

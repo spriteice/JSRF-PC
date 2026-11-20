@@ -9,7 +9,7 @@
 > out of date there: say so. The generated code is never edited, and a bug
 > is fixed where it starts, not stubbed out or guarded around.
 
-Maps the Xbox controller API to the host's pads, through SDL2's GameController API on Linux and Windows. The original Xbox used `XInputGetState` with a slightly different structure layout than the XInput API on Windows; this layer keeps the Xbox's layout and fills it from SDL2, with the window's keyboard merged in, each through its layout: which of the host's buttons or keys press each of the Xbox pad's controls (`input_layout.h`). src/usb's controller (`usb_gamepad.c`) reports that state to the game's own USB driver. While the in-game menu is open it has the pad, and the game sees nothing pressed. With `RECOMP_INPUT_LATENCY`, each press on the first pad or the keyboard that the game reads is handed to the window, which follows it to the screen (`src/nv2a_gl/nv2a_latency.h`).
+Maps the Xbox controller API to the host's pads, through SDL2's GameController API on Linux and Windows. The original Xbox used `XInputGetState` with a slightly different structure layout than the XInput API on Windows; this layer keeps the Xbox's layout and fills it from SDL2, with the window's keyboard and mouse merged in, each through its layout: which of the host's buttons, or keys and mouse buttons, press each of the Xbox pad's controls (`input_layout.h`). A player sets the layouts in the in-game menu, Input > Controller layout and Input > Keyboard layout, and `remap.cfg`, beside the settings file, keeps them (`input_remap.h`). src/usb's controller (`usb_gamepad.c`) reports that state to the game's own USB driver. While the in-game menu is open it has the pad, and the game sees nothing pressed. With `RECOMP_INPUT_LATENCY`, each press on the first pad or the keyboard that the game reads is handed to the window, which follows it to the screen (`src/nv2a_gl/nv2a_latency.h`).
 
 ## Files
 
@@ -17,7 +17,8 @@ Maps the Xbox controller API to the host's pads, through SDL2's GameController A
 |------|---------|
 | `xinput_xbox.h` | Public header — types, button constants, function prototypes |
 | `xinput_device.c` | Implementation: SDL2's GameController and the window's keyboard, as the Xbox gamepad's state |
-| `input_layout.c`, `input_layout.h` | The layouts, the host's pads' and the keyboard's: which inputs press each of the Xbox pad's controls, their defaults, and the state they give (no SDL in it, for tests/input_layout) |
+| `input_layout.c`, `input_layout.h` | The layouts, the host's pads' and the keyboard's (its keys and the mouse's buttons): which inputs press each of the Xbox pad's controls, their defaults, a row's bind (a swap), and the state they give (no SDL in it, for tests/input_layout) |
+| `input_remap.c`, `input_remap.h` | The layouts in use: read from `remap.cfg`, beside the settings file, at start, copied to the game's thread under a lock, and the in-game menu's two pages that change them, each change kept and logged (no SDL in it, for tests/input_layout; the inputs' names are `xinput_device.c`'s) |
 | `rumble_hold.c`, `rumble_hold.h` | When to send the vibration the game set to the host's pad, so it holds as the console's does (no SDL in it, for tests/rumble) |
 | `input_press.c`, `input_press.h` | What the input latency log (`RECOMP_INPUT_LATENCY`) counts as a press on the first pad or the keyboard: a control held at a read that wasn't at the one before (no SDL in it, for tests/input_latency) |
 
@@ -126,7 +127,7 @@ XBOX_ANALOG_BUTTON_THRESHOLD  30   // Recommended press threshold
 
 ### Xbox → Modern Controller Mapping
 
-The pad's layout as it starts (`input_layout_pad_default`). The sticks are the game's as they are; only the keyboard's layout pushes a stick.
+The pad's layout as it starts (`input_layout_pad_default`), which Input > Controller layout changes. The sticks are the game's as they are; only the keyboard's layout pushes a stick.
 
 | Xbox Button | Host Pad (SDL2) | Notes |
 |-------------|------------------|-------|
@@ -139,7 +140,7 @@ The pad's layout as it starts (`input_layout_pad_default`). The sticks are the g
 | L Trigger | Left Trigger | Analog 0-255 |
 | R Trigger | Right Trigger | Analog 0-255 |
 | Start | Start/Menu | |
-| Back | Back/View | The in-game menu's button whenever there is a menu, so the game never sees a pad's Back then. The keyboard's Back (Esc) is the game's: F1 opens the menu |
+| Back | none | The pad's Back is the in-game menu's button whenever there is a menu, so the game never sees it then, and no layout has it; with no menu, it is the game's Back. The keyboard's Back (Esc) is the game's: F1 opens the menu. Controller layout can give the game's Back a button |
 | D-pad | D-pad | Digital only |
 | L Stick | L Stick | Click = L3 |
 | R Stick | R Stick | Click = R3 |

@@ -295,12 +295,13 @@ extern "C" int xbox_MenuEvent(const SDL_Event *ev)
     SDL_LockMutex(g_mu);
     ImGui_ImplSDL2_ProcessEvent(ev);
     SDL_UnlockMutex(g_mu);
-    /* A key let go still reaches the game, so nothing it saw pressed stays
-     * held; a key pressed, typed text and clicks are the menu's. Closing the
-     * window, focus and the rest go on to sdl_pump as before. */
+    /* A key or a mouse button let go still reaches the game, so nothing it
+     * saw pressed stays held (a mouse button can press a control,
+     * src/input/input_layout.h); a key pressed, typed text, clicks and the
+     * wheel are the menu's. Closing the window, focus and the rest go on to
+     * sdl_pump as before. */
     return ev->type == SDL_KEYDOWN || ev->type == SDL_TEXTINPUT
-        || ev->type == SDL_MOUSEBUTTONDOWN || ev->type == SDL_MOUSEBUTTONUP
-        || ev->type == SDL_MOUSEWHEEL;
+        || ev->type == SDL_MOUSEBUTTONDOWN || ev->type == SDL_MOUSEWHEEL;
 }
 
 static void scale_to_window(void)

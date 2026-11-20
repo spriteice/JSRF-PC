@@ -315,6 +315,9 @@ int main(void)
     fprintf(stderr, "bind: the mouse's right button, handed %d: %d; to the menu %d\n", s_handed, s_key_input,
             s_to_imgui);
     CHECK(s_handed == 4 && s_key_input == SDL_NUM_SCANCODES + 2 && s_to_imgui == 0);
+    /* Its let go reaches the game, as a key's does, so the game doesn't see
+     * a mouse button that can press a control held on; the menu sees it too. */
+    CHECK(!event(SDL_MOUSEBUTTONUP, SDL_BUTTON_RIGHT) && s_to_imgui == 1);
     for (int i = 0; i < 3; i++) show();
     /* No box: F1 shuts the menu, as ever. */
     CHECK(event(SDL_KEYDOWN, SDL_SCANCODE_F1) && !g_open);

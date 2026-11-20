@@ -4,8 +4,9 @@
  * button down; an analog button or a trigger at half way or more (128 of
  * 255); a stick half way or more from its centre (16384 of 32767, round the
  * circle). The pad and the keyboard apart, so the log can tell them apart:
- * the pad's controls as the game sees them, the keys as the window holds
- * them (nv_window_keys). No SDL in it, for tests/input_latency. */
+ * the pad's controls here, as the game sees them; a key or mouse button
+ * as the window holds them (nv_window_keys), one the keyboard's layout
+ * uses (xinput_device.c). No SDL in it, for tests/input_latency. */
 #ifndef XBOX_INPUT_PRESS_H
 #define XBOX_INPUT_PRESS_H
 
@@ -22,11 +23,6 @@ extern "C" {
 #define INPUT_PRESS_LSTICK  16
 #define INPUT_PRESS_RSTICK  17
 
-/* The keyboard's, a bit each: nv_window_keys' twelve bits, then its eight
- * analog keys. */
-#define INPUT_PRESS_KEYS    20
-#define INPUT_PRESS_KEY_BITS 12
-
 /* Half way: an analog button or trigger, and a stick's distance from its
  * centre. */
 #define INPUT_PRESS_ANALOG_HALF 128
@@ -35,9 +31,6 @@ extern "C" {
 /* The pad's controls held: buttons as wButtons, analog as bAnalogButtons,
  * axes as the left stick's x and y, then the right's. */
 uint32_t input_press_pad(WORD buttons, const unsigned char analog[8], const short axes[4]);
-
-/* The keys held: keys and analog as nv_window_keys gives them. */
-uint32_t input_press_keys(unsigned short keys, const unsigned char analog[8]);
 
 /* A pad's control's name, for the log ("A", "d-pad up", "left stick"). */
 const char *input_press_pad_name(int control);

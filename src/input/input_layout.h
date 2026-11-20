@@ -44,17 +44,26 @@ enum {
     INPUT_PAD_INPUTS
 };
 
-/* The keyboard's inputs: the keys as the window holds them
- * (nv_window_keys), its twelve bits, then its eight analog keys. */
+/* The keyboard's and the mouse's inputs: a key by its place, as SDL numbers
+ * them (SDL_Scancode, which xinput_device.c checks these against), then the
+ * mouse's buttons from SDL's first, its left (SDL_BUTTON_LEFT): left,
+ * middle, right, back and forward. The keys the defaults use are named. */
 enum {
-    INPUT_KEY_W, INPUT_KEY_S, INPUT_KEY_A, INPUT_KEY_D, INPUT_KEY_RETURN, INPUT_KEY_ESC,
-    INPUT_KEY_UP, INPUT_KEY_DOWN, INPUT_KEY_LEFT, INPUT_KEY_RIGHT, INPUT_KEY_C, INPUT_KEY_V,
-    INPUT_KEY_SPACE_J, INPUT_KEY_K, INPUT_KEY_H, INPUT_KEY_L,
-    INPUT_KEY_R, INPUT_KEY_F, INPUT_KEY_Q, INPUT_KEY_E,
-    INPUT_KEYS
+    INPUT_KEY_A = 4, INPUT_KEY_C = 6, INPUT_KEY_D = 7, INPUT_KEY_E = 8, INPUT_KEY_F = 9,
+    INPUT_KEY_H = 11, INPUT_KEY_J = 13, INPUT_KEY_K = 14, INPUT_KEY_L = 15,
+    INPUT_KEY_Q = 20, INPUT_KEY_R = 21, INPUT_KEY_S = 22, INPUT_KEY_V = 25, INPUT_KEY_W = 26,
+    INPUT_KEY_RETURN = 40, INPUT_KEY_ESCAPE = 41, INPUT_KEY_SPACE = 44,
+    INPUT_KEY_RIGHT = 79, INPUT_KEY_LEFT = 80, INPUT_KEY_DOWN = 81, INPUT_KEY_UP = 82,
+    INPUT_KEY_KP_ENTER = 88,
+    INPUT_KEY_AC_BACK = 270                 /* a keyboard's Back key */
 };
+#define INPUT_KEY_SCANCODES     512         /* SDL_NUM_SCANCODES */
+#define INPUT_KEY_MOUSE         INPUT_KEY_SCANCODES
+#define INPUT_KEY_MOUSE_BUTTONS 5
+#define INPUT_KEYS              (INPUT_KEY_MOUSE + INPUT_KEY_MOUSE_BUTTONS)
 
-/* The keys held: a bit for each of the keyboard's inputs. */
+/* The keys and mouse buttons held: a bit for each of the keyboard's
+ * inputs, as the window holds them (nv_window_keys). */
 #define INPUT_HELD_WORDS ((INPUT_KEYS + 31) / 32)
 
 /* No input, in a control's place for one. */
@@ -70,8 +79,10 @@ typedef struct InputLayout {
 } InputLayout;
 
 /* The layouts as they always were: the host pad's buttons at their Xbox
- * places, with the bumpers as Black and White; and the keys as
- * nv2a_gl.c's comment above sdl_key lists them. */
+ * places, with the bumpers as Black and White, and its Back none of the
+ * game's (xinput_device.c gives it to the game when there is no menu); and
+ * the keys as docs/playing.md lists them, with a second key on A (J), on
+ * Start (keypad Enter) and on Back (a keyboard's Back key). */
 void input_layout_pad_default(InputLayout *l);
 void input_layout_keys_default(InputLayout *l);
 
@@ -95,6 +106,16 @@ int input_layout_keys(const InputLayout *l, const uint32_t held[INPUT_HELD_WORDS
  * left, *y up minus down, each -1, 0 or 1. Returns 1 while one is held. */
 int input_layout_keys_move(const InputLayout *l, const uint32_t held[INPUT_HELD_WORDS],
                            int *x, int *y);
+
+/* Control c pressed by input alone, as a layout's row binds it: every other
+ * control that had input has c's first input in its place instead (none if
+ * c had none, or if that control has it already), so the two swap and no
+ * input presses two controls that it didn't before. */
+void input_layout_bind(InputLayout *l, int c, int input);
+
+/* The inputs any control has, a bit each (the latency log counts a press
+ * of those alone). */
+void input_layout_used(const InputLayout *l, uint32_t used[INPUT_HELD_WORDS]);
 
 #ifdef __cplusplus
 }

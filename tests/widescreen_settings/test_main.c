@@ -9,6 +9,8 @@
  * With neither widescreen= nor aspect=, as on a new install, widescreen is on
  * at Match screen. A settings file from before aspect= keeps what F10 chose
  * then: widescreen= alone, on at 16:9 or off.
+ *
+ * And the string settings the input layer's layouts keep (strings, below).
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,6 +24,33 @@ static void expect(int on, int shape)
     CHECK(nv_window_pref_shape() == shape);
 }
 
+/* The input layer's string settings (src/input/input_remap.c), in
+ * remap.cfg beside the settings file, over key_a=Space, key_a=Left Ctrl
+ * (with a CR) and pad_b=x: the last line's text, without its line end;
+ * none for a key with no line, or only one that starts the same, or only a
+ * line in the settings file; kept in place of the key's lines; and a line
+ * gone for NULL, with the other keys kept. The settings file, with its own
+ * key_a and pad_b, is left as it was (run.py checks both files after). */
+#define REMAP "remap.cfg"
+static void strings(void)
+{
+    char v[64];
+    CHECK(nv_window_file_str(REMAP, "key_a", v, sizeof v) == 1 && !strcmp(v, "Left Ctrl"));
+    CHECK(nv_window_file_str(REMAP, "pad_b", v, sizeof v) == 1 && !strcmp(v, "x"));
+    CHECK(nv_window_file_str(REMAP, "key", v, sizeof v) == 0);
+    CHECK(nv_window_file_str(REMAP, "pad_b_2", v, sizeof v) == 0);
+    CHECK(nv_window_file_str(REMAP, "widescreen", v, sizeof v) == 0);
+    nv_window_file_set_str(REMAP, "key_a", "Mouse left");
+    CHECK(nv_window_file_str(REMAP, "key_a", v, sizeof v) == 1 && !strcmp(v, "Mouse left"));
+    nv_window_file_set_str(REMAP, "key_a_2", "none");
+    CHECK(nv_window_file_str(REMAP, "key_a_2", v, sizeof v) == 1 && !strcmp(v, "none"));
+    nv_window_file_set_str(REMAP, "key_a", NULL);
+    CHECK(nv_window_file_str(REMAP, "key_a", v, sizeof v) == 0);
+    CHECK(nv_window_file_str(REMAP, "key_a_2", v, sizeof v) == 1 && !strcmp(v, "none"));
+    CHECK(nv_window_file_str(REMAP, "pad_b", v, sizeof v) == 1 && !strcmp(v, "x"));
+    CHECK(nv_window_pref_widescreen() == 1);
+}
+
 int main(int argc, char **argv)
 {
     const char *c = argc > 1 ? argv[1] : "";
@@ -30,6 +59,7 @@ int main(int argc, char **argv)
     else if (!strcmp(c, "old_43")) expect(0, NV2A_WIDE_SHAPE_16_9);
     else if (!strcmp(c, "shape")) expect(1, NV2A_WIDE_SHAPE_21_9);
     else if (!strcmp(c, "shape_43")) expect(0, NV2A_WIDE_SHAPE_16_10);
+    else if (!strcmp(c, "strings")) strings();
     else CHECK(!"a case");
     printf("widescreen settings: %s\n", c);
     return 0;

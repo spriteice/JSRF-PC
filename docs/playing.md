@@ -8,19 +8,36 @@ The controls, the in-game menu, and the graphics options. Installing is in the
 Any pad SDL knows works, over USB or Bluetooth: Xbox, PlayStation, Switch Pro,
 Steam Deck, and many more. The buttons are the Xbox's, with the bumpers as Black
 and White. Back opens and closes the in-game menu, so the game's own Back is
-Esc on the keyboard.
+Esc on the keyboard, unless you give it a button of the pad's.
+
+Input > Controller layout changes which button presses each of the game's
+controls, for every pad: choose a control, then press its button or pull its
+trigger. The button that control had goes to whichever control had the one
+you pressed, so the two swap. A trigger on a game trigger keeps its
+pressure; a button gives a full press. Any button SDL reports can be used,
+the back paddles, Misc and the touchpad too, but Guide, the system's, and
+Back, the menu's. The sticks stay as they are, and R3 is still the free
+camera's switch, whatever it presses. Reset to default puts every button
+back.
 
 ## Keyboard
 
 Keys go by position, so W A S D on a QWERTY keyboard is Z Q S D on an AZERTY
-one.
+one. These are the defaults: Input > Keyboard layout changes which key, or
+mouse button, presses each control, as Controller layout does for the pad,
+and Reset to default puts them back. Any key can be used but F1 and F8 to
+F11, and the mouse's left, middle, right, back and forward buttons. A
+control has one key once you choose it: the second keys below (J, keypad
+Enter, a keyboard's Back key) stay until you change their control. Keyboard
+moves steers with whatever keys the left stick has.
 
 - **W A S D:** Move, and the menus. They are the left stick, so W goes away
   from the camera. With Input > Behaviour > Keyboard moves at Skater, W goes
   the way the skater faces, however the camera turns, A and D turn it while
   held, W with A or D turns it wider, and S turns it round.
 - **Arrow keys:** The camera (right stick).
-- **Space or J:** A, to jump.
+- **Space or J:** A, to jump. Each is A on its own, so letting go of one
+  while the other is held keeps A held.
 - **K:** B.
 - **H:** X.
 - **L:** Y.
@@ -28,8 +45,8 @@ one.
 - **Q:** L trigger.
 - **R:** Black.
 - **F:** White.
-- **Return:** Start.
-- **Esc:** Back.
+- **Return or keypad Enter:** Start.
+- **Esc, or a keyboard's Back key:** Back.
 - **C and V:** Left and right stick click.
 
 ## Settings keys
@@ -140,7 +157,8 @@ input goes to the menu.
   render scale, draw distance, anisotropic filtering, Upscaling's
   Menus and HUD, Textures and Graffiti, and both anti-aliasings at their most,
   as far as the graphics card goes, and Far buildings and Far shadows at 3x.
-  A preset sets every setting but Developer's: each one also puts the game
+  A preset sets every setting but Developer's and Input's two layouts: each
+  one also puts the game
   full screen, Upscaling's Cleanup as a new install has it, the free
   camera's own settings back to their defaults, and Keyboard moves at
   Camera. The one ticked is the one your settings match, if any.
@@ -205,7 +223,13 @@ input goes to the menu.
   off, the sound is as before them. It is kept as `audioeffects=` in the
   settings file, and changing it restarts the game. [The audio
   effects](technical/audio-effects.md) says how they work.
-- **Input:** Two submenus. Free camera has [the free
+- **Input:** Four submenus. Controller layout and Keyboard layout set
+  which button, or key or mouse button, presses each of the game's
+  controls ([Controller](#controller) and [Keyboard](#keyboard), above). Each
+  change is kept at once in `remap.cfg`, beside the settings file, a
+  `pad_<control>=` or `key_<control>=` line with SDL's name for it, and only
+  for a control that differs from its default; Reset to default puts its page back. No preset
+  changes them. Free camera has [the free
   camera](#free-camera)'s own settings: Enable free camera, Auto centre,
   Invert X, Invert Y, Sensitivity X, Sensitivity Y, and Deadzone (15% by
   default). Behaviour has Default cam fix, No skater fade, then Keyboard

@@ -26,15 +26,6 @@ uint32_t input_press_pad(WORD buttons, const unsigned char analog[8], const shor
     return held;
 }
 
-uint32_t input_press_keys(unsigned short keys, const unsigned char analog[8])
-{
-    uint32_t held = keys & ((1u << INPUT_PRESS_KEY_BITS) - 1u);
-    int i;
-    for (i = 0; i < 8; i++)
-        if (analog[i] >= INPUT_PRESS_ANALOG_HALF) held |= 1u << (INPUT_PRESS_KEY_BITS + i);
-    return held;
-}
-
 const char *input_press_pad_name(int control)
 {
     return control >= 0 && control < INPUT_PRESS_PAD ? k_pad_names[control] : "?";

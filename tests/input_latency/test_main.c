@@ -73,18 +73,6 @@ static void presses(void)
     CHECK(!strcmp(input_press_pad_name(INPUT_PRESS_LSTICK), "left stick"));
     CHECK(!strcmp(input_press_pad_name(INPUT_PRESS_PAD), "?"));
     printf("  ok\n");
-
-    printf("the keys\n");
-    memset(an, 0, sizeof an);
-    CHECK(input_press_keys(0, an) == 0);
-    CHECK(input_press_keys(0x0001, an) == 1u);                   /* W */
-    CHECK(input_press_keys(0xF000, an) == 0);                    /* no key there */
-    an[0] = 255;
-    CHECK(input_press_keys(0, an) == 1u << INPUT_PRESS_KEY_BITS);    /* Space or J */
-    an[0] = 0;
-    an[7] = 255;
-    CHECK(input_press_keys(0x0800, an) == ((1u << 11) | (1u << (INPUT_PRESS_KEY_BITS + 7))));
-    printf("  ok\n");
 }
 
 /* A frame from its flip to its swap: the flip at `at`, handed over 10 ms on,

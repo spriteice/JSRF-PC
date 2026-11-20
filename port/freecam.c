@@ -289,7 +289,7 @@ int freecam_on(void)
 
 #if defined(XBOXRECOMP_MENU)
 /* The in-game menu's Input page, its Free camera submenu (src/menu/menu.h,
- * XBOX_GROUP_FREECAM), at the top of the page. A row changes what the player
+ * XBOX_GROUP_FREECAM), below the layouts' two. A row changes what the player
  * asks of freecam, which takes it up from the next frame, and keeps it in the
  * settings file, as F8 keeps freecam=; it runs on the window's thread, as F8
  * does. The rows show the player's, also while a recording plays its own. The

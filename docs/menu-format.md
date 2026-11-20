@@ -7,8 +7,9 @@ each menu's rows live with the setting they change (File in
 `src/menu/menu_sdl.cpp`, Display, Graphics and Purge shaders in
 `src/nv2a_gl/nv2a_gl.c`, Display's Draw distance and Building distance, with
 Far buildings and Far shadows, in `port/draw_distance.c` and Music info in
-pause in `port/music_info.c`, Audio in `port/audio.c`, Input's Free camera in
-`port/freecam.c`, and its Default cam fix and No skater fade in
+pause in `port/music_info.c`, Audio in `port/audio.c`, Input's Controller
+layout and Keyboard layout in `src/input/input_remap.c`, its Free
+camera in `port/freecam.c`, and its Default cam fix and No skater fade in
 `port/camera_walls.c` and Keyboard moves in `port/keyboard_move.c`,
 Gameplay's Skip intro in
 `port/intro.c`, Skip cutscenes in `port/cutscene_skip.c` and Visual indicator
@@ -37,9 +38,11 @@ enhancement goes in it, not in Display itself. Graphics
 ends with one, Upscaling, marked last and added by the window too, for the
 rows that draw the game from sharper copies: Menus and HUD, Textures,
 Graffiti, Sharpness, Edge strength, then Cleanup, a row of two ticks.
-Input is two submenus, and nothing else: Free camera, added with its rows by
+Input is four submenus, and nothing else: Controller layout, then Keyboard
+layout, added with their rows by `src/input/input_remap.c` (Layouts, below);
+Free camera, added with its rows by
 `port/freecam.c` (Enable free camera, Auto centre, Invert X, Invert Y,
-Sensitivity X, Sensitivity Y, then Deadzone), then Behaviour, for how the
+Sensitivity X, Sensitivity Y, then Deadzone); then Behaviour, for how the
 game's camera and the keys act: Default cam fix, No skater fade, then
 Keyboard moves. Each of those two modules adds Behaviour with its rows, and
 the second adds nothing, as a submenu named as one before it in its menu adds
@@ -141,6 +144,25 @@ in a submenu of its own.
 - A menu path (`menu_path_run` in `menu.h`) stops at a bind row, and
   doesn't run it: its box waits for a press, which a path can't give.
 
+## Layouts
+
+- Input's first two submenus are the layouts (`src/input/input_remap.c`):
+  Controller layout, a bind row for each of the game's buttons (A, B, X, Y,
+  Black, White, L trigger, R trigger, Start, Back, Left stick click, Right
+  stick click, then the d-pad's four), and Keyboard layout, a row for each
+  of the sticks' directions, then the same buttons, which keys and mouse
+  buttons press. Each ends with Reset to default, which puts every row of
+  its page back.
+- A row shows its control's inputs, by the names the menu gives them ("LB",
+  "LT", "Paddle 1"; a key by SDL's name, "Space"; "Mouse right"), two with a
+  comma where the default has a second key ("Space, J"), or None.
+- A press binds that input to the row's control alone, and the control that
+  had it gets the row's old input, so the two swap. A row can't have the
+  pad's Guide or Back, or the window's keys: F1, F9 to F11 and the keys the
+  game binds, as F8. Nor a key SDL has no name for, which the settings
+  couldn't keep.
+- The layouts are a player's own: no preset sets them (File > Presets).
+
 ## Look
 
 - The menu's look is `src/menu/menu_style.cpp`'s, and the setup's window
@@ -208,7 +230,7 @@ in a submenu of its own.
 - **A preset sets every setting but Developer's, and the rows that say a
   preset leaves them alone** (`XBOX_PRESETS_LEFT` in `menu.h`): a player's
   own choices, not a quality setting, each with its own way back to its
-  default, as bind rows are. Every other row of Display,
+  default, as the layouts' rows are (Layouts, above). Every other row of Display,
   Graphics, Audio, Input and Gameplay, in a submenu or not, gives its value in
   each preset where it's added (`presets` and `preset` in `menu.h`), with
   JSRF-PC default's from the constant its own default comes from, so the

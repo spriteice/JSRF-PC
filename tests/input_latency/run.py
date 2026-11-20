@@ -6,8 +6,10 @@ engine builds them; test_main.c plays the game's reads of the first pad and
 the GPU thread's flips, hand-overs and swaps, each with its time and
 address, and keeps the lines the log writes.
 
-What counts as a press: a button, an analog button or trigger at half way,
-a stick half way from its centre round the circle, and the keys, each apart.
+What counts as a press on the pad: a button, an analog button or trigger at
+half way, a stick half way from its centre round the circle, each apart. A
+key or mouse button is a press of its own when the keyboard's layout uses it
+(tests/input_layout checks which those are).
 Each press to its frame: a flip written before the read isn't its frame and
 the first past it is; a flip with nothing drawn passes it on to the next
 frame shown; the ring's end, with the title wrapped before the read and
