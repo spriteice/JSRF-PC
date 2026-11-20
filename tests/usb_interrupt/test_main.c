@@ -100,13 +100,19 @@ void xbox_worker_stack_free(int slot)
     __atomic_fetch_and(&s_slots, ~(1L << slot), __ATOMIC_RELEASE);
 }
 
-/* The guest lock: one thread runs the title's code at a time. */
+/* The guest lock: one thread runs the title's code at a time. How many
+ * threads are queueing for it, and every take, for the title's hand-over
+ * (title_thread). */
 static CRITICAL_SECTION s_lock;
 static RECOMP_TLS int s_holds;
+static volatile LONG s_queueing, s_takes;
 void xbox_guest_lock_acquire(void)
 {
     if (s_holds) return;
+    __atomic_add_fetch(&s_queueing, 1, __ATOMIC_ACQ_REL);
     EnterCriticalSection(&s_lock);
+    __atomic_sub_fetch(&s_queueing, 1, __ATOMIC_ACQ_REL);
+    __atomic_add_fetch(&s_takes, 1, __ATOMIC_RELEASE);
     s_holds = 1;
 }
 void xbox_guest_lock_release(void)
@@ -237,15 +243,36 @@ recomp_func_t recomp_lookup_manual(uint32_t va) { (void)va; return NULL; }
 
 /* ---- the threads ------------------------------------------------------- */
 
-/* The title: holds the guest lock most of the time, as its main thread does. */
+/* The title: holds the guest lock most of the time, as its main thread does,
+ * and hands it over to a thread queueing for it, as the engine's guest lock
+ * does (guest_lock_hand_over, kernel_bridge.c): it stands back until a take
+ * is seen, for a millisecond at most. The lock isn't FIFO, and the thread
+ * that drops it wins it back almost every time: the waiter it wakes is
+ * still being scheduled. Taking it straight back, the title left the
+ * controller's thread and the timer thread so little that GitHub's run 124,
+ * the build for coverage, saw 26 USB and 29 display interrupts in the 30 s
+ * the test allows. */
 static DWORD WINAPI title_thread(LPVOID unused)
 {
+    LARGE_INTEGER freq, t0, t;
     (void)unused;
+    QueryPerformanceFrequency(&freq);
     while (!__atomic_load_n(&s_stop, __ATOMIC_ACQUIRE)) {
+        LONG taken;
         xbox_guest_lock_acquire();
         work();
+        taken = __atomic_load_n(&s_takes, __ATOMIC_RELAXED);
         xbox_guest_lock_release();
-        Sleep(0);
+        if (!__atomic_load_n(&s_queueing, __ATOMIC_ACQUIRE)) {
+            Sleep(0);
+            continue;
+        }
+        QueryPerformanceCounter(&t0);
+        do {
+            SwitchToThread();
+            QueryPerformanceCounter(&t);
+        } while (__atomic_load_n(&s_takes, __ATOMIC_ACQUIRE) == taken
+                 && t.QuadPart - t0.QuadPart < freq.QuadPart / 1000);
     }
     __atomic_add_fetch(&s_stop, 1, __ATOMIC_RELEASE);
     return 0;
