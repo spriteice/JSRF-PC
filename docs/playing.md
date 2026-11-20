@@ -192,18 +192,29 @@ input goes to the menu.
   where the game never shows it, such as the top of Dogenzaka Hill in the sky
   at its bottom. At any choice, a stretch partway up Dogenzaka Hill, and the
   hill past it, isn't drawn from the street below it, where the game hides it
-  too: from there its buildings and traffic would hang in the sky. It changes
-  at once, costs more the further it goes, and is kept as
-  `farbuildingsahead=` (0 for Off to 4 for All) in the settings file.
+  too: from there its buildings and traffic would hang in the sky. Nor is the
+  rest of the hill drawn from the low street at its far corner, under its top,
+  or on the way to it. At All on Hikage Street, the space above each of the
+  street's three ends is drawn only from the ends and from up in it, as what
+  is built there would stand in the street's view further in, so its buildings
+  come in as you reach an end. On Kibogaoka Hill, the buildings past the
+  bowl's far side aren't drawn from the rim by the tunnel, just past it, or on
+  the way to it, where they would hang in the air, nor are some in the map's
+  middle; they come back in the tunnel. At All on Chuo Street, two pieces of
+  scenery from past the long halfpipe's end wall aren't drawn from a stretch
+  further down it. It changes at once, costs more the further it goes, and is
+  kept as `farbuildingsahead=` (0 for Off to 4 for All) in the settings file.
   Far shadows, below it, draws the shadows of the areas Far buildings adds
   too, as many areas ahead as its own choice, Off to All, and never further
   than Far buildings, so they don't pop in as you come near, at the cost of
   minor visual glitches, such as patches of light in shadows that move with
   the camera. On Chuo Street, the scenery past the long halfpipe's end wall
   keeps its shadows only where the game shows them, as at All they lit
-  patches on that wall. Off, those areas have no shadows until you're near
-  enough for the game to show them itself. 3x by default; it does nothing with Far
-  buildings off, changes at once, and is kept as `farshadowsahead=` (0 for
+  patches on that wall, and so does some scenery on Kibogaoka Hill, whose
+  shadows lit patches on a walkway across the bowl from it. Off, those areas
+  have no shadows until you're near enough for the game to show them itself.
+  3x by default; it does nothing with Far buildings off, changes at once, and
+  is kept as `farshadowsahead=` (0 for
   Off to 4 for All) in the settings file. Before b2.1-hotfix the two were on
   or off, kept as `farbuildings=` and `farshadows=`: until you choose again,
   1 there reads as 3x and 0 as Off. Music info in pause shows

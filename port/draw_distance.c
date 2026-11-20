@@ -319,6 +319,21 @@ typedef struct { int first, last; } RuleRun;
 #define RULE_ONE(a) { (a), (a) }    /* a run of one area */
 static const RuleRun k_dogenzaka_never[] = { RULE_ONE(DOGENZAKA_UPHILL) },
                      k_dogenzaka_from[] = { RULE_ONE(DOGENZAKA_STREET), RULE_ONE(DOGENZAKA_CORNER) };
+/* And from area 6, the low street at the hill's far corner, under the
+ * hill's top, and from 4 beside it, on the way there from 2, the rest of the
+ * hill, areas 0 to 14, is never added, nor what lies past it, where from
+ * there its buildings and traffic hang in the sky; what the game draws
+ * itself there stays: 4 and 6 from 6, and 2, 4 and 6 from 4 (spriteice, 20
+ * November 2026, 09:15 and 09:18 UTC: "lets also do the same to dogenzaka
+ * hill for all", "we want 0-14 left out of the draw"; the zones named with
+ * the in-game menu, 6 at 09:56 UTC and 4 at 11:29 UTC: "dogenzaka hill needs
+ * to extend into the zone where i pressed the menu a few times in a row"). */
+#define DOGENZAKA_HILL_FIRST 0
+#define DOGENZAKA_HILL_LAST  14
+#define DOGENZAKA_TO_FAR     4              /* then 6, the far corner's street */
+#define DOGENZAKA_FAR_STREET 6
+static const RuleRun k_dogenzaka_hill[] = { { DOGENZAKA_HILL_FIRST, DOGENZAKA_HILL_LAST } },
+                     k_dogenzaka_far[] = { RULE_ONE(DOGENZAKA_TO_FAR), RULE_ONE(DOGENZAKA_FAR_STREET) };
 /* Chuo Street (Stg11): areas 47, 48 and 50 are scenery only, with no space
  * of their own, and only areas at the long halfpipe's west end and past it
  * name them: 47 areas 6, 8, 31 and 32; 48 areas 8 and 10; 50 area 30. From
@@ -338,6 +353,89 @@ static const RuleRun k_dogenzaka_never[] = { RULE_ONE(DOGENZAKA_UPHILL) },
 #define CHUO_SCENERY_END     50
 static const RuleRun k_chuo_never[] = { RULE_ONE(CHUO_SCENERY_WEST), RULE_ONE(CHUO_SCENERY_SOUTH),
                                         RULE_ONE(CHUO_SCENERY_END) };
+/* And 49 and 51, scenery with no space of its own that the game draws only
+ * from the halfpipe's west end (49 from area 10; 51 from 10, 11, 12 and
+ * 30), are never added from area 25, a bit further down the halfpipe, nor
+ * from 28 on the way to it or 24 past it, so they don't come in as you step
+ * out of 25: Far buildings added them there at All only (spriteice, 20
+ * November 2026, 11:48 UTC, the two named with Developer > Far buildings
+ * test in 25: "49, 51 need to be removed from the zone where i pressed menu
+ * 10 times in chuo street. it is a bit further down the half pipe"). */
+#define CHUO_PAST_WEST       49             /* and 51 */
+#define CHUO_PAST_WEST_TOO   51
+#define CHUO_TO_DOWN         28             /* then 25, then 24 */
+#define CHUO_DOWN_HALFPIPE   25
+#define CHUO_PAST_DOWN       24
+static const RuleRun k_chuo_past[] = { RULE_ONE(CHUO_PAST_WEST), RULE_ONE(CHUO_PAST_WEST_TOO) },
+                     k_chuo_down[] = { RULE_ONE(CHUO_PAST_DOWN), RULE_ONE(CHUO_DOWN_HALFPIPE),
+                                       RULE_ONE(CHUO_TO_DOWN) };
+/* Hikage Street (Stg13): areas 14, 15 and 16 are the spaces above the
+ * street's three ends: over the east end, area 1, the west end, area 12, and
+ * the north end, area 7. No list but its own names each, so the game draws
+ * each only while the eye is up in it, and 1x to 3x never add them. All adds
+ * every listed area, and from the street what is built for the view from up
+ * there stands in the street's view: a tower block in the gap by the north
+ * end, chimneys behind the near building by the east end (Adri, GitHub issue
+ * 2, 20 November 2026, named with Developer > Far buildings test; known bug
+ * 70). Never added from the street's other zones, 0, 2 to 6, 8 to 11 and 17
+ * (13 is scenery, with no space of its own): from the ends and from up in 14
+ * to 16 all three stay, so each end's buildings come in as you reach it
+ * (spriteice, 20 November 2026, 08:48 UTC: "all buildings stay on in 1,7,12,
+ * and their zones above"; 08:50 UTC, on the card: "On only from 1, 7 and
+ * 12"). */
+#define STAGE_HIKAGE_STREET  0x00010003u    /* as the mission asks for it */
+#define HIKAGE_AREAS         46             /* its map's, so it's the one */
+#define HIKAGE_MIDDLE        0
+#define HIKAGE_EAST_END      1
+#define HIKAGE_NORTH_END     7
+#define HIKAGE_WEST_END      12
+#define HIKAGE_SOUTH         17
+#define HIKAGE_ABOVE_EAST    14             /* then the west end's, 15, and the north end's */
+#define HIKAGE_ABOVE_NORTH   16
+static const RuleRun k_hikage_never[] = { { HIKAGE_ABOVE_EAST, HIKAGE_ABOVE_NORTH } },
+                     k_hikage_from[] = { RULE_ONE(HIKAGE_MIDDLE),
+                                         { HIKAGE_EAST_END + 1, HIKAGE_NORTH_END - 1 },
+                                         { HIKAGE_NORTH_END + 1, HIKAGE_WEST_END - 1 },
+                                         RULE_ONE(HIKAGE_SOUTH) };
+/* Kibogaoka Hill (stg22): from area 31, on the bowl's rim, and from 27 and 23
+ * on the way to it, Far buildings adds the areas past the bowl's west side,
+ * 56 to 121, at 1x to All: among them a group high over the west side, 56 to
+ * 68, and scenery with no space of its own, which from the rim hang in the
+ * air, a tall green tower and other blocks (Adri, GitHub issue 2, 20 November
+ * 2026; named with Developer > Far buildings test by spriteice's run that
+ * day; known bug 71). None of them is added from 31, 27 or 23, or from 32,
+ * just past the rim, nor are areas 4 and 6, in the map's middle, or what lies
+ * past them; from 35, where the tunnel starts, they are added as before
+ * (spriteice, 20 November 2026, 08:46 UTC: "all areas not listed 56 through
+ * 121 can be left out of this zone too, and the once in the tunnel they can
+ * be enabled again"; 09:56 UTC: "it needs to work in the earlier zone or two
+ * as well"; zone 32 named with the in-game menu at 11:34 UTC: "you can just
+ * get out of the zone and the buildings pop in"; 11:37 UTC: "we also need to
+ * leave out 4, 6 in the same area on k hill"). 108 and 109, far backdrops the
+ * game draws from all four, stay, 110 and 111 from all but 32, and 115 to 117
+ * where it does. And from area 74, on the bowl's west side, Far shadows draws
+ * the shadow volumes of 115, 116 and 117, scenery the game draws from the
+ * east side, and each takes the shadow off a walkway there in a pale patch
+ * (known bug 72, at 3x and All; named the same way). Far shadows never adds
+ * them, from any area, as on Chuo Street: where the game draws them itself
+ * their shadows stay, and Far buildings still draws their scenery. */
+#define STAGE_KIBOGAOKA_HILL 0x00020002u    /* as the mission asks for it */
+#define KIBOGAOKA_AREAS      124            /* its map's, so it's the one */
+#define KIBOGAOKA_TO_RIM     23             /* then 27, by the rim */
+#define KIBOGAOKA_BY_RIM     27
+#define KIBOGAOKA_RIM        31
+#define KIBOGAOKA_PAST_RIM   32
+#define KIBOGAOKA_MIDDLE     4              /* and 6, in the map's middle */
+#define KIBOGAOKA_MIDDLE_TOO 6
+#define KIBOGAOKA_PAST_FIRST 56
+#define KIBOGAOKA_PAST_LAST  121
+#define KIBOGAOKA_LIT_FIRST  115
+#define KIBOGAOKA_LIT_LAST   117
+static const RuleRun k_kibogaoka_never[] = { RULE_ONE(KIBOGAOKA_MIDDLE), RULE_ONE(KIBOGAOKA_MIDDLE_TOO),
+                                             { KIBOGAOKA_PAST_FIRST, KIBOGAOKA_PAST_LAST } },
+                     k_kibogaoka_from[] = { RULE_ONE(KIBOGAOKA_TO_RIM), RULE_ONE(KIBOGAOKA_BY_RIM),
+                                            RULE_ONE(KIBOGAOKA_RIM), RULE_ONE(KIBOGAOKA_PAST_RIM) },
+                     k_kibogaoka_lit[] = { { KIBOGAOKA_LIT_FIRST, KIBOGAOKA_LIT_LAST } };
 /* A list of runs, and how many it holds, for a rule. */
 #define RULE_AREAS(a) (a), (int)(sizeof (a) / sizeof (a)[0])
 static const struct {
@@ -352,7 +450,15 @@ static const struct {
 } k_rules[] = {
     { "Dogenzaka Hill", STAGE_DOGENZAKA_HILL, DOGENZAKA_AREAS,
       RULE_AREAS(k_dogenzaka_never), RULE_AREAS(k_dogenzaka_from), 0 },
+    { "Dogenzaka Hill", STAGE_DOGENZAKA_HILL, DOGENZAKA_AREAS,
+      RULE_AREAS(k_dogenzaka_hill), RULE_AREAS(k_dogenzaka_far), 0 },
     { "Chuo Street", STAGE_CHUO_STREET, CHUO_AREAS, RULE_AREAS(k_chuo_never), NULL, 0, 1 },
+    { "Chuo Street", STAGE_CHUO_STREET, CHUO_AREAS, RULE_AREAS(k_chuo_past), RULE_AREAS(k_chuo_down), 0 },
+    { "Hikage Street", STAGE_HIKAGE_STREET, HIKAGE_AREAS,
+      RULE_AREAS(k_hikage_never), RULE_AREAS(k_hikage_from), 0 },
+    { "Kibogaoka Hill", STAGE_KIBOGAOKA_HILL, KIBOGAOKA_AREAS,
+      RULE_AREAS(k_kibogaoka_never), RULE_AREAS(k_kibogaoka_from), 0 },
+    { "Kibogaoka Hill", STAGE_KIBOGAOKA_HILL, KIBOGAOKA_AREAS, RULE_AREAS(k_kibogaoka_lit), NULL, 0, 1 },
 };
 #define DRAW_RULES ((int)(sizeof k_rules / sizeof k_rules[0]))
 _Static_assert(sizeof k_rules / sizeof k_rules[0] <= 32, "a bit of s_map.rules for each rule");

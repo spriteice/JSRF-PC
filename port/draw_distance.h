@@ -25,8 +25,14 @@
  * where the game hides it on purpose and the lists can't tell, nor what lies
  * past it, reached only through its list: on Dogenzaka Hill, area 13, up
  * the hill, and the hill past it, from the street below it and the corner
- * between them (known bugs 66 and 69; draw_buildings_stage). It changes at
- * once.
+ * between them (known bugs 66 and 69), and the rest of the hill from the low
+ * street at its far corner, under its top, and on the way to it; on Hikage
+ * Street, at All, the spaces above the street's three ends, from its other
+ * zones (known bug 70); on Kibogaoka Hill, the areas past the bowl's far
+ * side, and areas 4 and 6, in the map's middle, from its rim, the way to it
+ * and just past it (known bug 71); on Chuo Street, two pieces of scenery
+ * past the halfpipe's west end, from a stretch further down it (known bug
+ * 75; draw_buildings_stage). It changes at once.
  *
  * Far shadows, below it, kept as farshadowsahead= (the same steps, 3 the
  * default): the map's shadows are drawn from the game's set widened the same
@@ -37,10 +43,11 @@
  * volumes of areas the game doesn't draw from where the eye is. A map's rule
  * can keep an area's shadows out where they make such patches: on Chuo
  * Street, those of areas 47, 48 and 50, behind the long halfpipe's end wall,
- * which they lit at All (draw_buildings_stage). Off, the shadows come from
- * the game's own set, and an area only Far buildings adds has no shadows
- * until the game draws it itself. It does nothing with Far buildings off. It
- * changes at once.
+ * which they lit at All; on Kibogaoka Hill, those of areas 115 to 117,
+ * which lit a walkway across the bowl from them (draw_buildings_stage). Off,
+ * the shadows come from the game's own set, and an area only Far buildings
+ * adds has no shadows until the game draws it itself. It does nothing with
+ * Far buildings off. It changes at once.
  *
  * Before b2.1-hotfix the two rows were toggles, kept as farbuildings= and
  * farshadows= (1 on, 0 off, on drawing the whole map): with no step of its
@@ -172,15 +179,30 @@ int draw_set_whole_map(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WORDS
  * them (known bug 66). A hidden area is a wall: Far buildings doesn't walk
  * through it, so the areas past it, reached only through its list, aren't
  * added either, as the game hides them too: from the street, areas 11 and
- * 12 further up the hill, whose traffic hung in the sky (known bug 69). A
- * rule can also hide its areas from Far shadows only, and from every area:
- * on Chuo Street (stage 0x00010001, its 59 areas), Far shadows never adds
- * areas 47, 48 and 50, scenery past the long halfpipe's end wall, whose
- * shadow volumes lit patches on it at All (known bug 52); Far buildings
- * still adds them, and where the game draws them itself their shadows stay.
- * A rule's areas are runs, first to last. Each such rule is kept by hand,
- * for one case seen and named; the first call on the map logs each. Before
- * any stage, DRAW_STAGE_NONE, which no rule has. */
+ * 12 further up the hill, whose traffic hung in the sky (known bug 69). And
+ * areas 0 to 14, the rest of the hill, while the game's set is area 6's, the
+ * low street at the hill's far corner, under its top, or area 4's, on the way
+ * there, where its buildings hung in the sky as well. A rule can also hide
+ * its areas from Far shadows only, and from every area: on Chuo Street (stage
+ * 0x00010001, its 59 areas), Far shadows never adds areas 47, 48 and 50,
+ * scenery past the long halfpipe's end wall, whose shadow volumes lit patches
+ * on it at All (known bug 52); Far buildings still adds them, and where the
+ * game draws them itself their shadows stay. Nor does Far buildings add 49
+ * and 51, two more such pieces, while the game's set is area 25's, a bit
+ * further down the halfpipe, or 28's or 24's beside it, from where All added
+ * them (known bug 75). A rule's areas are runs, first
+ * to last. On Hikage Street (stage 0x00010003, its 46 areas), areas 14 to 16,
+ * the spaces above the street's three ends, named by no list but their own,
+ * while the game's set is that of a street zone but the ends, 1, 7 and 12:
+ * from there All drew what is built to be seen from up in them (known
+ * bug 70). On Kibogaoka Hill (stage 0x00020002, its 124 areas), areas 56
+ * to 121, past the bowl's far side, and 4 and 6, in the map's middle,
+ * while the game's set is the rim's, area 31, that of 27 or 23 on the way
+ * to it, or that of 32, just past it, where they hung in the air (known
+ * bug 71); and the shadows of 115 to 117, from every area, which lit patches
+ * on a walkway (known bug 72). Each such rule is kept by hand, for one case
+ * seen and named; the first call on the map logs each. Before any stage,
+ * DRAW_STAGE_NONE, which no rule has. */
 #define DRAW_STAGE_NONE 0xFFFFFFFFu
 void draw_buildings_stage(uint32_t stage);
 

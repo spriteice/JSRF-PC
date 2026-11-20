@@ -144,11 +144,14 @@ cases = {
                   "[DRAW] Far buildings test: the backdrop's depth writes as the game sets them (the menu)",
                   "[DRAW] Far buildings test: the backdrop's depth writes off, as Far buildings sets them "
                   "(the menu)"]),
-    # Dogenzaka Hill's rule (test_main.c, check_hill): logged on the hill's
-    # map, and left out, saying so, on a map of another size after its stage.
+    # Dogenzaka Hill's two rules (test_main.c, check_hill): each logged on the
+    # hill's map, and left out, saying so, on a map of another size after its
+    # stage.
     "far_hill": ("farbuildingsahead=1\nfarshadowsahead=1\n",
                  ["[DRAW] Far buildings: Dogenzaka Hill (stage 00010002), area 13 and what lies past it never "
                   "added from areas 0 and 16, where the game hides them",
+                  "[DRAW] Far buildings: Dogenzaka Hill (stage 00010002), areas 0 to 14 and what lies past them "
+                  "never added from areas 4 and 6, where the game hides them",
                   "[DRAW] the eye at t=0.00: area 0, from -1; Far buildings adds 19 there",
                   "[DRAW] the eye at t=0.00: area 16, from 0; Far buildings adds none there",
                   "[DRAW] Far buildings test: leaving out area 19 (the menu); the eye in area 0, "
@@ -161,8 +164,27 @@ cases = {
     "far_chuo": ("farbuildingsahead=2\nfarshadowsahead=2\n",
                  ["[DRAW] Far shadows: Chuo Street (stage 00010001), the shadows of areas 47, 48 and 50 never "
                   "added from any area, where they make patches of light",
+                  "[DRAW] Far buildings: Chuo Street (stage 00010001), areas 49 and 51 and what lies past them "
+                  "never added from areas 24, 25 and 28, where the game hides them",
                   "[DRAW] Far buildings: stage 00010001 has 58 areas, not Chuo Street's 59, so its rule is "
                   "left out"]),
+    # Hikage Street's rule (test_main.c, check_hikage): logged on its map,
+    # its areas as a run and the areas it hides them from as runs, and left
+    # out, saying so, on a map of another size after its stage.
+    "far_hikage": ("farbuildingsahead=4\nfarshadowsahead=4\n",
+                   ["[DRAW] Far buildings: Hikage Street (stage 00010003), areas 14 to 16 and what lies past them "
+                    "never added from areas 0, 2 to 6, 8 to 11 and 17, where the game hides them",
+                    "[DRAW] Far buildings: stage 00010003 has 45 areas, not Hikage Street's 46, so its rule is "
+                    "left out"]),
+    # Kibogaoka Hill's two rules (test_main.c, check_kibogaoka): each logged
+    # on its map, and each left out on a map of another size.
+    "far_kibogaoka": ("farbuildingsahead=1\nfarshadowsahead=1\n",
+                      ["[DRAW] Far buildings: Kibogaoka Hill (stage 00020002), areas 4, 6 and 56 to 121 and what "
+                       "lies past them never added from areas 23, 27, 31 and 32, where the game hides them",
+                       "[DRAW] Far shadows: Kibogaoka Hill (stage 00020002), the shadows of areas 115 to 117 never "
+                       "added from any area, where they make patches of light",
+                       "[DRAW] Far buildings: stage 00020002 has 123 areas, not Kibogaoka Hill's 124, so its rule "
+                       "is left out"]),
     "whole_map": ("farbuildingsahead=0\n", ["[DRAW] Far buildings Off (settings)"]),
     "far_eye": ("farbuildingsahead=1\nfarshadowsahead=0\n",
                 ["[DRAW] the eye at t=0.00: area 0, from -1; Far buildings adds 2 there",

@@ -36,6 +36,12 @@
  * Chuo Street's rule for Far shadows (known bug 52) is given a made-up map of
  * 59 areas, as Stg11's, where the three areas it hides are named only by an
  * area two crossings from the eye.
+ * Hikage Street's rule (known bug 70) is given a made-up map of 46 areas, as
+ * Stg13's, where the spaces above the ends, 14 to 16, are named by no list
+ * but their own; and Kibogaoka Hill's two (known bugs 71 and 72) one of 124,
+ * as stg22's, where the rim's tunnel lists areas in the run the rule hides,
+ * one in it the game draws from the rim, and one past it, the way to the rim
+ * is two areas before it, and the walkway is a crossing from 115 to 117.
  */
 #include <float.h>
 #include <math.h>
@@ -527,6 +533,51 @@ static void check_eye(void)
     printf("eye: its area through the sets\n");
 }
 
+/* ---- the map rules at every setting ------------------------------------ */
+
+static int set_holds(const uint32_t set[DRAW_SET_WORDS], int a) { return (set[a >> 5] >> (a & 31)) & 1u; }
+
+/* From an eye in area `in`, n areas of map: Far buildings' set, and what the
+ * shadow passes see. */
+static void sets_from(const DrawArea *map, int n, int in, uint32_t buildings[DRAW_SET_WORDS],
+                      uint32_t shadows[DRAW_SET_WORDS])
+{
+    uint32_t game[DRAW_SET_WORDS] = { 0 };
+    unsigned e;
+    game[in >> 5] |= 1u << (in & 31);
+    for (e = 0; e < map[in].nlist; e++) game[map[in].list[e] >> 5] |= 1u << (map[in].list[e] & 31);
+    memcpy(s_live, game, sizeof s_live);
+    draw_buildings_widen(map, n, s_live, 0.0, 0);
+    memset(s_seen, 0, sizeof s_seen);
+    draw_buildings_shadows(s_live, game, shadow_pass);
+    memcpy(buildings, s_live, sizeof s_live);
+    memcpy(shadows, s_seen, sizeof s_seen);
+}
+
+/* At every pair of settings, Far buildings 1x to All and Far shadows Off up
+ * to it, from an eye in area `in`, n areas of map: none of the areas first
+ * to last in the shadows' set, nor in Far buildings' unless shadows_only,
+ * but those the game draws there itself. The settings as they were after. */
+static void check_every_setting(const DrawArea *map, int n, int in, int first, int last, int shadows_only)
+{
+    uint32_t b[DRAW_SET_WORDS], sh[DRAW_SET_WORDS];
+    int far = draw_far_buildings(), shadows = draw_far_shadows(), f, s, a;
+    unsigned e;
+    for (f = 1; f <= DRAW_FAR_WHOLE; f++)
+        for (s = 0; s <= f; s++) {
+            s_far_row.pick(f);
+            s_shadow_row.pick(s);
+            sets_from(map, n, in, b, sh);
+            for (a = first; a <= last; a++) {
+                int game = a == in;
+                for (e = 0; e < map[in].nlist; e++) game |= map[in].list[e] == (uint32_t)a;
+                CHECK(game || ((shadows_only || !set_holds(b, a)) && !set_holds(sh, a)));
+            }
+        }
+    s_far_row.pick(far);
+    s_shadow_row.pick(shadows);
+}
+
 /* ---- Dogenzaka Hill's rule ---------------------------------------------- */
 
 /* A made-up map with the shape of Dogenzaka Hill's corner (known bug 66):
@@ -536,8 +587,11 @@ static void check_eye(void)
  * the hill, as well as 0 and 16; and 13, which lists 14 and 11, further up
  * still. So the game draws 13 from 13 and 14 only, and 1x adds it from 0
  * and 16 through 14's list; and it draws 11 from 11 and 13 only, and 2x adds
- * it from 0 and 16 through 13's (known bug 69). `last` is area 29's list, so
- * a second map, told from the first, can be made. */
+ * it from 0 and 16 through 13's (known bug 69). And the low street at the
+ * far corner, area 6, which lists 4, low on the hill, 17 beside it, and a
+ * side area, 20; 4, which lists 2, 6 and 21; 2, which lists 0 and 22; and
+ * 17, which lists 6 and 20. `last` is area 29's list, so a second map, told
+ * from the first, can be made. */
 #define HILL_AREAS  30
 #define HILL_STAGE  0x00010002u     /* Stg12, as the mission asks for it */
 #define STREET      0
@@ -545,9 +599,14 @@ static void check_eye(void)
 #define UPHILL      13
 #define CORNER      16
 #define SIDE_AREA   19
+#define TO_FAR      4
+#define FAR_STREET  6
+#define FAR_NOOK    17
 static uint32_t s_hill_self[HILL_AREAS];
 static const uint32_t k_street[] = { 0, 14, 16 }, k_up14[] = { 14, 13, 16, 0 },
-                      k_corner[] = { 16, 0, 14, 19 }, k_uphill[] = { 13, 14, 11 };
+                      k_corner[] = { 16, 0, 14, 19 }, k_uphill[] = { 13, 14, 11 },
+                      k_far_street[] = { 6, 4, 17, 20 }, k_low4[] = { 4, 2, 6, 21 }, k_low2[] = { 2, 0, 22 },
+                      k_far_nook[] = { 17, 6, 20 };
 static DrawArea s_hill[HILL_AREAS];
 
 static void hill_make(uint32_t last)
@@ -564,6 +623,10 @@ static void hill_make(uint32_t last)
     s_hill[14].list = k_up14;           s_hill[14].nlist = 4;
     s_hill[CORNER].list = k_corner;     s_hill[CORNER].nlist = 4;
     s_hill[UPHILL].list = k_uphill;     s_hill[UPHILL].nlist = 3;
+    s_hill[FAR_STREET].list = k_far_street; s_hill[FAR_STREET].nlist = 4;
+    s_hill[TO_FAR].list = k_low4;       s_hill[TO_FAR].nlist = 4;
+    s_hill[2].list = k_low2;            s_hill[2].nlist = 3;
+    s_hill[FAR_NOOK].list = k_far_nook; s_hill[FAR_NOOK].nlist = 3;
 }
 
 /* The set from an eye in area `in` on the hill, widened, as a mask; n areas
@@ -586,9 +649,14 @@ static uint32_t hill_widened(int in, int n)
  * where the game draws it itself; the side area is still added. Nor is area
  * 11, past 13, reached only through 13's list, at 2x, 3x or All, from the
  * street or the corner (known bug 69); from 14, where the game draws 13, 1x
- * adds it. On a map after another stage, or on one of 29 areas after the
- * hill's stage, 13 and 11 are added from the street as before. run.py checks
- * the lines. */
+ * adds it. From the low street at the far corner, 6, areas 0 to 14 are
+ * never added, at 1x to All, nor what lies past them, but 4 and 6, which
+ * the game draws there itself; what lies past 4 is. Nor from 4, on the way
+ * there, but 2, 4 and 6, which the game draws there; what lies past 2 is,
+ * and not 16, past 0. From 17 beside it, the rule doesn't apply: 2x adds 2.
+ * On a map after another stage, or on one of 29 areas after the hill's
+ * stage, 13 and 11 are added from the street as before, and 2 from 6. run.py
+ * checks the lines. */
 static void check_hill(void)
 {
     uint32_t game[DRAW_SET_WORDS] = { AREA(STREET) | AREA(14) | AREA(CORNER) };
@@ -601,6 +669,15 @@ static void check_hill(void)
     CHECK(hill_widened(14, HILL_AREAS) & AREA(UPHILL));
     CHECK(hill_widened(14, HILL_AREAS) & AREA(PAST_UPHILL));
     CHECK(hill_widened(UPHILL, HILL_AREAS) & AREA(UPHILL));
+    /* At every setting, from the street and the corner: neither 13 nor 11;
+     * from the far corner's street: none of 0 to 14 but what the game draws
+     * there. */
+    check_every_setting(s_hill, HILL_AREAS, STREET, PAST_UPHILL, PAST_UPHILL, 0);
+    check_every_setting(s_hill, HILL_AREAS, STREET, UPHILL, UPHILL, 0);
+    check_every_setting(s_hill, HILL_AREAS, CORNER, PAST_UPHILL, PAST_UPHILL, 0);
+    check_every_setting(s_hill, HILL_AREAS, CORNER, UPHILL, UPHILL, 0);
+    check_every_setting(s_hill, HILL_AREAS, FAR_STREET, 0, 14, 0);
+    check_every_setting(s_hill, HILL_AREAS, TO_FAR, 0, 14, 0);
     /* Further: not at 2x, 3x or All either, nor what lies past 13; at All,
      * every other area, as each lists itself. */
     for (step = 2; step <= DRAW_FAR_WHOLE; step++) {
@@ -609,6 +686,21 @@ static void check_hill(void)
         CHECK(hill_widened(STREET, HILL_AREAS) == (step < DRAW_FAR_WHOLE ? game[0] | AREA(SIDE_AREA) : all));
         CHECK(hill_widened(CORNER, HILL_AREAS) == (step < DRAW_FAR_WHOLE ? game[0] | AREA(SIDE_AREA) : all));
         CHECK(hill_widened(14, HILL_AREAS) & AREA(PAST_UPHILL));
+    }
+    /* The far corner's street, at 1x to All: of 0 to 14, only what the game
+     * draws there; 21, past 4, added; 16 and 22, past 0 and 2, not. From 4,
+     * the same but 2, 4 and 6; 17 and 22, past 6 and 2, added; 16 not. From
+     * 17 beside it, no rule: 2x adds 2 through 4's list. */
+    for (step = 1; step <= DRAW_FAR_WHOLE; step++) {
+        uint32_t low;
+        s_far_row.pick(step);
+        low = hill_widened(FAR_STREET, HILL_AREAS);
+        CHECK((low & RUN(0, 14)) == (AREA(4) | AREA(FAR_STREET)) && (low & AREA(21)) &&
+              !(low & (AREA(CORNER) | AREA(22))));
+        low = hill_widened(TO_FAR, HILL_AREAS);
+        CHECK((low & RUN(0, 14)) == (AREA(2) | AREA(TO_FAR) | AREA(FAR_STREET)) && (low & AREA(FAR_NOOK)) &&
+              (low & AREA(22)) && !(low & AREA(CORNER)));
+        CHECK(!(hill_widened(FAR_NOOK, HILL_AREAS) & AREA(2)) == (step < 2));
     }
     /* The shadows, at 1x under All: the game's set and the side area. */
     memcpy(s_live, game, sizeof s_live);
@@ -631,30 +723,39 @@ static void check_hill(void)
     s_far_row.pick(2);
     CHECK(hill_widened(STREET, HILL_AREAS) & AREA(PAST_UPHILL));
     s_far_row.pick(1);
+    CHECK(hill_widened(FAR_STREET, HILL_AREAS) & AREA(2));
     /* The hill's stage, but a map of 29 areas: not the one, so no rule. */
     draw_buildings_stage(HILL_STAGE);
     CHECK(hill_widened(STREET, HILL_AREAS - 1) & AREA(UPHILL));
     /* The hill again: the rule again. */
     hill_make(HILL_AREAS - 1);
     CHECK(hill_widened(STREET, HILL_AREAS) == (game[0] | AREA(SIDE_AREA)));
-    printf("dogenzaka hill: area 13 and what lies past it never added from the street or the corner\n");
+    printf("dogenzaka hill: area 13 and what lies past it never added from the street or the corner, "
+           "nor 0 to 14 from the far corner's street or the way to it\n");
 }
 
 /* ---- Chuo Street's rule ------------------------------------------------- */
 
-/* A made-up map with the shape of Chuo Street's halfpipe (known bug 52): 59
- * areas, as Stg11 has, each listing itself, but the halfpipe, area 1, which
- * lists 2 along it; area 2, which lists 1 and the end, 6; and the end, which
- * lists 2 and the three scenery areas past the end wall, 47, 48 and 50. So
- * from the halfpipe 1x adds the end and 2x the three. */
+/* A made-up map with the shape of Chuo Street's halfpipe (known bugs 52 and
+ * 75): 59 areas, as Stg11 has, each listing itself, but the halfpipe, area
+ * 1, which lists 2 along it; area 2, which lists 1 and the end, 6; and the
+ * end, which lists 2 and the three scenery areas past the end wall, 47, 48
+ * and 50. So from the halfpipe 1x adds the end and 2x the three. And further
+ * down it, area 25, which lists 24 and 28 beside it; 28, which lists 25; 24,
+ * which lists 25 and 23; 23, which lists 10; and 10, which lists the two
+ * scenery areas 49 and 51. So from 25 3x adds the two. */
 #define CHUO_AREAS  59
 #define CHUO_STAGE  0x00010001u     /* Stg11, as the mission asks for it */
 #define HALFPIPE    1
 #define ALONG       2
 #define END_WALL    6
 #define SCENERY     (AREA(47 - 32) | AREA(48 - 32) | AREA(50 - 32))     /* in the set's second word */
+#define DOWN        25
+#define PAST_WEST   (AREA(49 - 32) | AREA(51 - 32))                     /* the same */
 static uint32_t s_chuo_self[CHUO_AREAS];
-static const uint32_t k_halfpipe[] = { 1, 2 }, k_along[] = { 2, 1, 6 }, k_end[] = { 6, 2, 47, 48, 50 };
+static const uint32_t k_halfpipe[] = { 1, 2 }, k_along[] = { 2, 1, 6 }, k_end[] = { 6, 2, 47, 48, 50 },
+                      k_down[] = { 25, 24, 28 }, k_down28[] = { 28, 25 }, k_down24[] = { 24, 25, 23 },
+                      k_down23[] = { 23, 10 }, k_west10[] = { 10, 49, 51 };
 static DrawArea s_chuo[CHUO_AREAS];
 
 static void chuo_make(void)
@@ -669,6 +770,11 @@ static void chuo_make(void)
     s_chuo[HALFPIPE].list = k_halfpipe;     s_chuo[HALFPIPE].nlist = 2;
     s_chuo[ALONG].list = k_along;           s_chuo[ALONG].nlist = 3;
     s_chuo[END_WALL].list = k_end;          s_chuo[END_WALL].nlist = 5;
+    s_chuo[DOWN].list = k_down;             s_chuo[DOWN].nlist = 3;
+    s_chuo[28].list = k_down28;             s_chuo[28].nlist = 2;
+    s_chuo[24].list = k_down24;             s_chuo[24].nlist = 3;
+    s_chuo[23].list = k_down23;             s_chuo[23].nlist = 2;
+    s_chuo[10].list = k_west10;             s_chuo[10].nlist = 3;
 }
 
 /* From an eye in area `in`, n areas of the map: Far buildings' set, and what
@@ -693,9 +799,11 @@ static void chuo_sets(int in, int n, uint32_t *buildings, uint32_t *shadows, int
  * map after its stage, the shadows never take 47, 48 and 50 from the
  * halfpipe, at 2x or at All, though Far buildings adds them; the rest of the
  * shadows' set is Far buildings'. From the end, whose own list names them,
- * the game draws them and their shadows stay. On a map after another stage,
- * or on one of 58 areas after Chuo Street's stage, the shadows take them as
- * before. run.py checks the lines. */
+ * the game draws them and their shadows stay. Far buildings never adds 49
+ * and 51 from 25, 24 or 28, at any setting; from 23 it does, and from 10 the
+ * game draws them. On a map after another stage, or on one of 58 areas after
+ * Chuo Street's stage, the shadows take 47, 48 and 50 as before, and 3x adds
+ * 49 and 51 from 25. run.py checks the lines. */
 static void check_chuo(void)
 {
     uint32_t buildings, shadows;
@@ -705,6 +813,21 @@ static void check_chuo(void)
     draw_buildings_stage(CHUO_STAGE);
     chuo_sets(HALFPIPE, CHUO_AREAS, &buildings, &shadows, &same);
     CHECK(buildings == SCENERY && !shadows && same);
+    /* At every setting, from the halfpipe: none of their shadows. From 25,
+     * 24 and 28: neither 49 nor 51. */
+    check_every_setting(s_chuo, CHUO_AREAS, HALFPIPE, 47, 48, 1);
+    check_every_setting(s_chuo, CHUO_AREAS, HALFPIPE, 50, 50, 1);
+    {
+        static const int down[] = { DOWN, 24, 28 };
+        int k;
+        for (k = 0; k < 3; k++) {
+            check_every_setting(s_chuo, CHUO_AREAS, down[k], 49, 49, 0);
+            check_every_setting(s_chuo, CHUO_AREAS, down[k], 51, 51, 0);
+        }
+    }
+    /* From 23, whose list names 10, Far buildings adds them: the rule is the three's. */
+    chuo_sets(23, CHUO_AREAS, &buildings, &shadows, &same);
+    CHECK((buildings & PAST_WEST) == PAST_WEST && (shadows & PAST_WEST) == PAST_WEST);
     s_far_row.pick(DRAW_FAR_WHOLE);
     s_shadow_row.pick(DRAW_FAR_WHOLE);
     chuo_sets(HALFPIPE, CHUO_AREAS, &buildings, &shadows, &same);
@@ -729,7 +852,221 @@ static void check_chuo(void)
     draw_buildings_stage(CHUO_STAGE);
     chuo_sets(HALFPIPE, CHUO_AREAS - 1, &buildings, &shadows, &same);
     CHECK(buildings == SCENERY && shadows == SCENERY);
-    printf("chuo street: the shadows of areas 47, 48 and 50 never added\n");
+    s_far_row.pick(3);
+    chuo_sets(DOWN, CHUO_AREAS - 1, &buildings, &shadows, &same);
+    CHECK((buildings & PAST_WEST) == PAST_WEST);
+    s_far_row.pick(2);
+    printf("chuo street: the shadows of areas 47, 48 and 50 never added, nor 49 and 51 from 25, 24 or 28\n");
+}
+
+/* ---- Hikage Street's and Kibogaoka Hill's rules ------------------------- */
+
+/* A made-up map of up to 124 areas (Kibogaoka Hill's count), each listing
+ * itself but those given a list of their own (MADE_LIST). */
+#define MADE_MOST 124
+#define MADE_LIST(i, a) (s_made[i].list = (a), s_made[i].nlist = sizeof (a) / sizeof (a)[0])
+static uint32_t s_made_self[MADE_MOST];
+static DrawArea s_made[MADE_MOST];
+
+static void made_map(int n)
+{
+    int i;
+    memset(s_made, 0, sizeof s_made);
+    for (i = 0; i < n; i++) {
+        s_made_self[i] = (uint32_t)i;
+        s_made[i].list = &s_made_self[i];
+        s_made[i].nlist = 1;
+    }
+}
+
+/* From an eye in area `in`, n areas of the made-up map: Far buildings' set,
+ * and what the shadow passes see. */
+static void made_sets(int in, int n, uint32_t buildings[DRAW_SET_WORDS], uint32_t shadows[DRAW_SET_WORDS])
+{
+    sets_from(s_made, n, in, buildings, shadows);
+}
+
+/* A made-up map with the shape of Hikage Street's ends (known bug 70): 46
+ * areas, as Stg13 has, each listing itself, so All adds each, but the east
+ * end, 1, and the area next to it, 2, which list each other; and the spaces
+ * above the ends, 14, 15 and 16, named by no list but their own, which list
+ * the ends below them. */
+#define HIKAGE_AREAS  46
+#define HIKAGE_STAGE  0x00010003u   /* Stg13, as the mission asks for it */
+static const uint32_t k_hikage_east[] = { 1, 2 }, k_hikage_next[] = { 2, 1, 3 },
+                      k_hikage_14[] = { 14, 1, 2 }, k_hikage_15[] = { 15, 12, 11 }, k_hikage_16[] = { 16, 7, 6 };
+
+static void hikage_make(void)
+{
+    made_map(HIKAGE_AREAS);
+    MADE_LIST(1, k_hikage_east);
+    MADE_LIST(2, k_hikage_next);
+    MADE_LIST(14, k_hikage_14);
+    MADE_LIST(15, k_hikage_15);
+    MADE_LIST(16, k_hikage_16);
+}
+
+/* Whether Far buildings' set from an eye in area `in` holds all of 14, 15
+ * and 16 (1), none (0), or some (-1); and the shadows' the same. */
+static int hikage_above(int in, int n, int *shadows)
+{
+    uint32_t b[DRAW_SET_WORDS], sh[DRAW_SET_WORDS];
+    int a, nb = 0, ns = 0;
+    made_sets(in, n, b, sh);
+    for (a = 14; a <= 16; a++) {
+        nb += set_holds(b, a);
+        ns += set_holds(sh, a);
+    }
+    *shadows = ns == 3 ? 1 : ns ? -1 : 0;
+    return nb == 3 ? 1 : nb ? -1 : 0;
+}
+
+/* Far buildings All and Far shadows All from the settings. On Hikage
+ * Street's map after its stage, 14, 15 and 16 are never added from the
+ * street's zones 0, 2 to 6, 8 to 11 and 17, nor to their shadows, and all
+ * three are from the ends, 1, 7 and 12, and from up in each of them; at 3x
+ * no list leads to them from anywhere. On a map after another stage, or on
+ * one of 45 areas after Hikage Street's stage, All adds them from the street
+ * as before. run.py checks the lines. */
+static void check_hikage(void)
+{
+    static const int k_from[] = { 0, 2, 3, 4, 5, 6, 8, 9, 10, 11, 17 }, k_ends[] = { 1, 7, 12, 14, 15, 16 };
+    int i, shadows;
+    CHECK(draw_far_buildings() == DRAW_FAR_WHOLE && draw_far_shadows() == DRAW_FAR_WHOLE);
+    hikage_make();
+    draw_buildings_stage(HIKAGE_STAGE);
+    for (i = 0; i < (int)(sizeof k_from / sizeof k_from[0]); i++)
+        CHECK(hikage_above(k_from[i], HIKAGE_AREAS, &shadows) == 0 && shadows == 0);
+    for (i = 0; i < (int)(sizeof k_ends / sizeof k_ends[0]); i++)
+        CHECK(hikage_above(k_ends[i], HIKAGE_AREAS, &shadows) == 1 && shadows == 1);
+    /* At every setting, from the street's zones: none of them. */
+    for (i = 0; i < (int)(sizeof k_from / sizeof k_from[0]); i++)
+        check_every_setting(s_made, HIKAGE_AREAS, k_from[i], 14, 16, 0);
+    /* The rest of the map still comes in from the street at All. */
+    {
+        uint32_t b[DRAW_SET_WORDS], sh[DRAW_SET_WORDS];
+        made_sets(2, HIKAGE_AREAS, b, sh);
+        CHECK(set_holds(b, 13) && set_holds(b, 45) && set_holds(sh, 45));
+    }
+    /* 3x: the lists lead to them from nowhere but themselves. */
+    s_far_row.pick(3);
+    s_shadow_row.pick(3);
+    CHECK(hikage_above(1, HIKAGE_AREAS, &shadows) == 0 && hikage_above(2, HIKAGE_AREAS, &shadows) == 0);
+    s_far_row.pick(DRAW_FAR_WHOLE);
+    s_shadow_row.pick(DRAW_FAR_WHOLE);
+    /* Another map after another stage, and one of 45 areas after Hikage
+     * Street's: All adds them from the street. */
+    draw_buildings_stage(HIKAGE_STAGE + 1);
+    s_made_self[HIKAGE_AREAS - 1] = HIKAGE_AREAS - 2;     /* another map, told from the first */
+    CHECK(hikage_above(2, HIKAGE_AREAS, &shadows) == 1 && shadows == 1);
+    draw_buildings_stage(HIKAGE_STAGE);
+    CHECK(hikage_above(2, HIKAGE_AREAS - 1, &shadows) == 1 && shadows == 1);
+    printf("hikage street: areas 14 to 16 added only from the ends and from up in them\n");
+}
+
+/* A made-up map with the shape of Kibogaoka Hill's rim (known bug 71) and
+ * walkway (known bug 72): 124 areas, as stg22 has, each listing itself, but
+ * the rim, 31, which lists 32, just past it, the tunnel, 35, a far backdrop
+ * the game draws from it, 108, and 13, on the way to the map's middle; 32,
+ * which lists the tunnel and 13; the tunnel, which lists the rim and 56,
+ * 115, 121 and 122, past the far side; 56, which lists 123, reached only
+ * through it; the way to the rim, 23, which lists 27, and 27, which lists
+ * the rim; the walkway, 74, which lists 75; 75, which lists 115, 116 and
+ * 117; 13, which lists area 4, in the map's middle; 4, which lists 115 and
+ * 6, beside it; and 6, which lists 10, reached only through it. */
+#define KIBO_AREAS    124
+#define KIBO_STAGE    0x00020002u   /* stg22, as the mission asks for it */
+#define KIBO_TO_RIM   23
+#define KIBO_BY_RIM   27
+#define KIBO_RIM      31
+#define KIBO_PAST_RIM 32
+#define KIBO_TUNNEL   35
+#define KIBO_WALKWAY  74
+#define KIBO_MIDDLE   4             /* and 6 beside it */
+static const uint32_t k_kibo_rim[] = { 31, 32, 35, 108, 13 }, k_kibo_32[] = { 32, 35, 13 },
+                      k_kibo_tunnel[] = { 35, 31, 56, 115, 121, 122 }, k_kibo_56[] = { 56, 123 },
+                      k_kibo_walkway[] = { 74, 75 }, k_kibo_75[] = { 75, 115, 116, 117 },
+                      k_kibo_13[] = { 13, 4 }, k_kibo_4[] = { 4, 115, 6 }, k_kibo_6[] = { 6, 10 },
+                      k_kibo_23[] = { 23, 27 }, k_kibo_27[] = { 27, 31 };
+
+static void kibo_make(void)
+{
+    made_map(KIBO_AREAS);
+    MADE_LIST(KIBO_RIM, k_kibo_rim);
+    MADE_LIST(KIBO_PAST_RIM, k_kibo_32);
+    MADE_LIST(KIBO_TUNNEL, k_kibo_tunnel);
+    MADE_LIST(56, k_kibo_56);
+    MADE_LIST(KIBO_WALKWAY, k_kibo_walkway);
+    MADE_LIST(75, k_kibo_75);
+    MADE_LIST(13, k_kibo_13);
+    MADE_LIST(KIBO_MIDDLE, k_kibo_4);
+    MADE_LIST(6, k_kibo_6);
+    MADE_LIST(KIBO_TO_RIM, k_kibo_23);
+    MADE_LIST(KIBO_BY_RIM, k_kibo_27);
+}
+
+/* Far buildings 1x and Far shadows 1x from the settings. On Kibogaoka
+ * Hill's map after its stage: from the rim, nothing 56 to 121 is added at
+ * 1x, 2x or All, but 108, which the game draws there, and 122, past the far
+ * side but not in the run, are; nor is 123, which lies past 56, nor 4 and 6
+ * in the map's middle, nor 10 past them. Nor from 32, just past the rim, or
+ * 27 and 23, on the way to it, at any setting. From the tunnel, all of
+ * them are, as before. From the walkway at 2x, Far buildings
+ * adds 115, 116 and 117, and the shadows never take them; from area 4, where
+ * the game draws 115, its shadows stay. On a map of 123 areas after the
+ * stage, nothing is hidden. run.py checks the lines. */
+static void check_kibogaoka(void)
+{
+    uint32_t b[DRAW_SET_WORDS], sh[DRAW_SET_WORDS];
+    int step, a;
+    CHECK(draw_far_buildings() == 1 && draw_far_shadows() == 1);
+    kibo_make();
+    draw_buildings_stage(KIBO_STAGE);
+    made_sets(KIBO_RIM, KIBO_AREAS, b, sh);
+    CHECK(set_holds(b, 108) && set_holds(b, 122) && !set_holds(b, 56) && !set_holds(b, 115) && !set_holds(b, 121));
+    CHECK(set_holds(b, 13) && !set_holds(b, KIBO_MIDDLE));
+    CHECK(set_holds(sh, 122) && !set_holds(sh, 56));
+    /* At every setting: from the rim, none of 56 to 121 but 108, which the
+     * game draws there, nor 4 or 6, nor from the areas by it; from the
+     * walkway, none of the shadows of 115 to 117. */
+    for (a = 0; a < 4; a++) {
+        static const int from[] = { KIBO_RIM, KIBO_PAST_RIM, KIBO_BY_RIM, KIBO_TO_RIM };
+        check_every_setting(s_made, KIBO_AREAS, from[a], 56, 121, 0);
+        check_every_setting(s_made, KIBO_AREAS, from[a], KIBO_MIDDLE, KIBO_MIDDLE, 0);
+        check_every_setting(s_made, KIBO_AREAS, from[a], 6, 6, 0);     /* 5 between them, at All, is */
+    }
+    check_every_setting(s_made, KIBO_AREAS, KIBO_WALKWAY, 115, 117, 1);
+    for (step = 2; step <= DRAW_FAR_WHOLE; step++) {
+        s_far_row.pick(step);
+        made_sets(KIBO_RIM, KIBO_AREAS, b, sh);
+        for (a = 56; a <= 121; a++) CHECK(set_holds(b, a) == (a == 108));
+        CHECK(set_holds(b, 122) && !set_holds(b, 123) && !set_holds(b, 10));
+        CHECK(set_holds(b, 40) == (step == DRAW_FAR_WHOLE));    /* every other area, as each lists itself */
+        made_sets(KIBO_PAST_RIM, KIBO_AREAS, b, sh);
+        CHECK(set_holds(b, 122) && !set_holds(b, 10));
+        /* From the tunnel, all of them, and 123 past 56 a crossing on; 4 two
+         * crossings on, and at All 6 and 10. */
+        made_sets(KIBO_TUNNEL, KIBO_AREAS, b, sh);
+        CHECK(set_holds(b, 56) && set_holds(b, 115) && set_holds(b, 121) && set_holds(b, 123));
+        CHECK(set_holds(b, KIBO_MIDDLE) && set_holds(b, 6) == (step > 2) &&
+              set_holds(b, 10) == (step == DRAW_FAR_WHOLE));
+    }
+    /* The walkway at 2x: the buildings of 115 to 117, not their shadows; the
+     * rest of the shadows' set is Far buildings'. */
+    s_far_row.pick(2);
+    s_shadow_row.pick(2);
+    made_sets(KIBO_WALKWAY, KIBO_AREAS, b, sh);
+    for (a = 115; a <= 117; a++) CHECK(set_holds(b, a) && !set_holds(sh, a));
+    CHECK(set_holds(sh, 75));
+    /* From area 4 the game draws 115: its shadows stay. */
+    made_sets(KIBO_MIDDLE, KIBO_AREAS, b, sh);
+    CHECK(set_holds(sh, 115));
+    /* A map of 123 areas after the stage: not the one, so no rule. */
+    made_sets(KIBO_RIM, KIBO_AREAS - 1, b, sh);
+    CHECK(set_holds(b, 56) && set_holds(b, 121) && set_holds(b, KIBO_MIDDLE));
+    made_sets(KIBO_WALKWAY, KIBO_AREAS - 1, b, sh);
+    CHECK(set_holds(sh, 115));
+    printf("kibogaoka hill: 4, 6 and 56 to 121 never added from the rim or by it, nor the shadows of 115 to 117\n");
 }
 
 /* The whole map's set, for the free camera when its eye and the game's
@@ -909,6 +1246,8 @@ int main(int argc, char **argv)
     if (!strcmp(c, "far_eye")) check_eye();
     if (!strcmp(c, "far_hill")) check_hill();
     if (!strcmp(c, "far_chuo")) check_chuo();
+    if (!strcmp(c, "far_hikage")) check_hikage();
+    if (!strcmp(c, "far_kibogaoka")) check_kibogaoka();
     if (!strcmp(c, "shadows")) check_shadows();
     if (!strcmp(c, "whole_map")) check_whole_map();
     if (!strcmp(c, "far_pick")) {
