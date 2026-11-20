@@ -49,6 +49,7 @@ typedef struct { uint32_t frame, read; int none; XBOX_GAMEPAD pad; } PbPad;
 typedef struct { uint32_t frame; PLAYBACK_ANCHOR kind; uint32_t value, random; } PbAnchor;
 typedef struct { uint32_t frame, turn, camera; float pos[3]; } PbSpot;     /* a check or an idle moment */
 typedef struct { uint32_t frame; FREECAM_SETTINGS fc; } PbFreecam;
+typedef struct { uint32_t frame; int dx, dy; } PbMouse;
 typedef struct { void *at; int n, cap; } PbList;
 
 static const char *const k_kind[PLAYBACK_ANCHOR_KINDS] = {
@@ -90,9 +91,10 @@ static struct { int seen; FREECAM_SETTINGS fc; } s_fc_last;
 static uint32_t s_next_check;
 
 /* Playing. */
-static PbList s_pads[PLAYBACK_PORTS], s_freecams, s_anchors, s_checks, s_idles;
+static PbList s_pads[PLAYBACK_PORTS], s_freecams, s_mice, s_anchors, s_checks, s_idles;
 static int s_cur[PLAYBACK_PORTS] = { -1, -1, -1, -1 };
 static int s_fc_cur = -1, s_fc_player_seen;
+static int s_mouse_next, s_mouse_armed;     /* the next mouse line to take; the player's mouse still once */
 static FREECAM_SETTINGS s_fc_player;        /* the player's, as the last frame had them */
 static int s_anchor_next, s_check_next, s_idle_next;
 static int64_t s_offset;                    /* the frame played less the frame recorded */
@@ -103,6 +105,7 @@ static uint32_t s_packet[PLAYBACK_PORTS];
 
 #define PB_PADS(p)  ((PbPad *)s_pads[p].at)
 #define PB_FREECAM  ((PbFreecam *)s_freecams.at)
+#define PB_MOUSE    ((PbMouse *)s_mice.at)
 #define PB_ANCHOR   ((PbAnchor *)s_anchors.at)
 #define PB_CHECK    ((PbSpot *)s_checks.at)
 #define PB_IDLE     ((PbSpot *)s_idles.at)
@@ -158,7 +161,7 @@ static int same_freecam(const FREECAM_SETTINGS *a, const FREECAM_SETTINGS *b)
 {
     return a->on == b->on && a->invert_x == b->invert_x && a->invert_y == b->invert_y
         && a->centre == b->centre && a->sens_x == b->sens_x && a->sens_y == b->sens_y
-        && a->deadzone == b->deadzone;
+        && a->deadzone == b->deadzone && a->mouse == b->mouse && a->mouse_sens == b->mouse_sens;
 }
 
 static float distance(const float a[3], const float b[3])
@@ -334,7 +337,9 @@ static void record_freecam(const FREECAM_SETTINGS *fc)
     put_number(fc->sens_x);
     put_number(fc->sens_y);
     put_number(fc->deadzone);
-    fprintf(s_out, " %d\n", fc->centre);
+    fprintf(s_out, " %d %d", fc->centre, fc->mouse);
+    put_number(fc->mouse_sens);
+    fputc('\n', s_out);
 }
 
 /* ---- reading a recording ------------------------------------------------ */
@@ -366,17 +371,23 @@ static int read_pad(const char *s, PbPad *p, uint32_t *port)
     return 1;
 }
 
-/* A freecam line, each value in its range in the settings file. */
+/* A freecam line, each value in its range in the settings file; without
+ * the mouse's two (made before the mouse turned the free camera), Mouse look
+ * off, at 5. */
 static int read_freecam(const char *s, PbFreecam *e)
 {
     FREECAM_SETTINGS *c = &e->fc;
-    return sscanf(s, "%u %d %d %d %lf %lf %lf %d", &e->frame, &c->on, &c->invert_x, &c->invert_y,
-                  &c->sens_x, &c->sens_y, &c->deadzone, &c->centre) == 8
+    int n = sscanf(s, "%u %d %d %d %lf %lf %lf %d %d %lf", &e->frame, &c->on, &c->invert_x, &c->invert_y,
+                   &c->sens_x, &c->sens_y, &c->deadzone, &c->centre, &c->mouse, &c->mouse_sens);
+    if (n == 8) { c->mouse = 0; c->mouse_sens = 5; }
+    return (n == 8 || n == 10)
         && (c->on == 0 || c->on == 1) && (c->invert_x == 0 || c->invert_x == 1)
         && (c->invert_y == 0 || c->invert_y == 1)
         && c->sens_x >= FREECAM_SENS_MIN && c->sens_x <= FREECAM_SENS_MAX
         && c->sens_y >= FREECAM_SENS_MIN && c->sens_y <= FREECAM_SENS_MAX
-        && c->deadzone >= 0 && c->deadzone <= 1 && c->centre >= 0 && c->centre < FREECAM_CENTRE_LEVELS;
+        && c->deadzone >= 0 && c->deadzone <= 1 && c->centre >= 0 && c->centre < FREECAM_CENTRE_LEVELS
+        && (c->mouse == 0 || c->mouse == 1)
+        && c->mouse_sens >= FREECAM_SENS_MIN && c->mouse_sens <= FREECAM_SENS_MAX;
 }
 
 static int read_spot(const char *s, PbSpot *p)
@@ -389,8 +400,9 @@ static void forget(void)
 {
     int p;
     for (p = 0; p < PLAYBACK_PORTS; p++) { free(s_pads[p].at); memset(&s_pads[p], 0, sizeof s_pads[p]); }
-    free(s_freecams.at); free(s_anchors.at); free(s_checks.at); free(s_idles.at);
+    free(s_freecams.at); free(s_mice.at); free(s_anchors.at); free(s_checks.at); free(s_idles.at);
     memset(&s_freecams, 0, sizeof s_freecams);
+    memset(&s_mice, 0, sizeof s_mice);
     memset(&s_anchors, 0, sizeof s_anchors);
     memset(&s_checks, 0, sizeof s_checks);
     memset(&s_idles, 0, sizeof s_idles);
@@ -443,6 +455,12 @@ static int load(const char *path)
             ok = read_freecam(s, &e) && (!s_freecams.n || e.frame >= PB_FREECAM[s_freecams.n - 1].frame);
             if (ok && (ok = (to = add(&s_freecams, sizeof *to)) != NULL)) *to = e;
             frame = e.frame;
+        } else if (!strcmp(word, "mouse")) {
+            PbMouse m, *to;
+            ok = sscanf(s, "%u %d %d", &m.frame, &m.dx, &m.dy) == 3
+                 && (!s_mice.n || m.frame >= PB_MOUSE[s_mice.n - 1].frame);
+            if (ok && (ok = (to = add(&s_mice, sizeof *to)) != NULL)) *to = m;
+            frame = m.frame;
         } else if (!strcmp(word, "anchor")) {
             PbAnchor a, *to;
             char kind[16];
@@ -510,6 +528,7 @@ int playback_play(const char *folder, int exit_at_end)
     }
     s_fc_cur = -1;
     s_fc_player_seen = 0;
+    s_mouse_next = s_mouse_armed = 0;
     s_anchor_next = s_check_next = s_idle_next = 0;
     s_offset = 0;
     s_exit_at_end = exit_at_end;
@@ -518,8 +537,9 @@ int playback_play(const char *folder, int exit_at_end)
     s_res.state = PLAYBACK_PLAYING;
     s_res.anchors = s_anchors.n;
     hook_exit();
-    fprintf(stderr, "[PLAYBACK] playing %s: %d pad changes, %d free camera changes, %d anchors, %d checks,"
-            " %d idle moments, %u frames%s\n", path, pads, s_freecams.n, s_anchors.n, s_checks.n, s_idles.n, s_end,
+    fprintf(stderr, "[PLAYBACK] playing %s: %d pad changes, %d free camera changes, %d mouse moves, %d anchors,"
+            " %d checks, %d idle moments, %u frames%s\n", path, pads, s_freecams.n, s_mice.n, s_anchors.n, s_checks.n,
+            s_idles.n, s_end,
             exit_at_end ? "; the game closes at its end" : "; the game is yours at its end");
     pb_unlock();
     return 1;
@@ -645,11 +665,34 @@ static int play_freecam(FREECAM_SETTINGS *fc)
     if (c != s_fc_cur) {
         const FREECAM_SETTINGS *r = &PB_FREECAM[c].fc;
         fprintf(stderr, "[PLAYBACK] frame %u: the free camera as recorded at frame %u: %s; invert x %d y %d,"
-                " sensitivity x %g y %g, deadzone %g, auto centre %d\n", s_frame, PB_FREECAM[c].frame,
-                r->on ? "on" : "off", r->invert_x, r->invert_y, r->sens_x, r->sens_y, r->deadzone, r->centre);
+                " sensitivity x %g y %g, deadzone %g, auto centre %d, mouse look %s at %g\n", s_frame,
+                PB_FREECAM[c].frame, r->on ? "on" : "off", r->invert_x, r->invert_y, r->sens_x, r->sens_y,
+                r->deadzone, r->centre, r->mouse ? "on" : "off", r->mouse_sens);
     }
     s_fc_cur = c;
     *fc = PB_FREECAM[c].fc;
+    return 1;
+}
+
+/* The recording's mouse for this frame, in place of the player's: every
+ * move up to the recording's frame not yet taken. */
+static int play_mouse(int *dx, int *dy)
+{
+    uint32_t f = recorded_frame();
+    /* The player's own mouse, once still since playback started. */
+    if (*dx || *dy) {
+        if (s_mouse_armed) {
+            fprintf(stderr, "[PLAYBACK] frame %u: the mouse was moved: the game is yours\n", s_frame);
+            play_over(PLAYBACK_HANDED_BACK);
+            return 0;
+        }
+    } else
+        s_mouse_armed = 1;
+    *dx = *dy = 0;
+    for (; s_mouse_next < s_mice.n && PB_MOUSE[s_mouse_next].frame <= f; s_mouse_next++) {
+        *dx += PB_MOUSE[s_mouse_next].dx;
+        *dy += PB_MOUSE[s_mouse_next].dy;
+    }
     return 1;
 }
 
@@ -731,6 +774,16 @@ int playback_freecam(FREECAM_SETTINGS *fc)
     pb_lock();
     if (playing()) played = play_freecam(fc);
     else if (s_out) record_freecam(fc);
+    pb_unlock();
+    return played;
+}
+
+int playback_mouse(int *dx, int *dy)
+{
+    int played = 0;
+    pb_lock();
+    if (playing()) played = play_mouse(dx, dy);
+    else if (s_out && (*dx || *dy)) fprintf(s_out, "mouse %u %d %d\n", s_frame, *dx, *dy);
     pb_unlock();
     return played;
 }

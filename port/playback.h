@@ -36,10 +36,13 @@
  * them up (port/freecam.c): at the start, and whenever F8, the pad or the
  * menu changes them. On playback the recording's are in place of the player's
  * from its first, and the player's are back once it stops; the player's own
- * are never changed by it. Anything pressed on a real pad or the keyboard,
+ * are never changed by it. So is the mouse's move the free camera turns by,
+ * each frame it moves: on playback the recording's is in place of the
+ * player's. Anything pressed on a real pad or the keyboard,
  * the right stick too, ends playback and gives the game back, once they have
  * been let go of since it started; so does turning the free camera on or off,
- * or changing it in the menu.
+ * or changing it in the menu, and a move of the mouse that would turn it,
+ * once the mouse has been still since playback started.
  *
  * The recording is a folder, `recordings/<date>-<time>/` beside the settings
  * file (`portable/recordings/` in portable mode), holding recording.txt: one
@@ -49,7 +52,8 @@
  *   version <version> <linux|windows>       the build it was made on
  *   pad <frame>[.<read>] <port> <buttons> <analog> <lx> <ly> <rx> <ry>
  *   pad <frame>[.<read>] <port> none        no pad on that port
- *   freecam <frame> <on> <invert_x> <invert_y> <sensitivity_x> <sensitivity_y> <deadzone> <autocentre>
+ *   freecam <frame> <on> <invert_x> <invert_y> <sensitivity_x> <sensitivity_y> <deadzone> <autocentre> <mouse> <mouse_sensitivity>
+ *   mouse <frame> <x> <y>
  *   anchor <frame> <kind> <value> <random>
  *   check <frame> <x> <y> <z> <turn> <camera>
  *   idle <frame> <x> <y> <z> <turn> <camera>
@@ -61,7 +65,13 @@
  * RT) in two hex digits each; the sticks in decimal, up positive. A freecam
  * line is the free camera's switch and tuning from that frame on, as the
  * settings file has them (port/freecam.c), each in its range there; before
- * the first, the free camera is as the player has it. A kind is mission.bin,
+ * the first, the free camera is as the player has it. One without mouse and
+ * mouse_sensitivity (a recording made before the mouse turned the free
+ * camera) has Mouse look off, at 5. A mouse line is the mouse's move the free
+ * camera turned by at that frame, in the mouse's counts, right and up
+ * positive; on playback, the moves up to the recording's frame not yet taken
+ * are taken at once, so a frame skipped to turns the view as far, and one
+ * waited at turns it once. A kind is mission.bin,
  * mission.dat, stage, scene or scene-end, its value and the random generator
  * in eight hex digits. turn is the skater's turn, 0x10000 a whole turn, in
  * eight hex digits; camera the camera's mode. Lines starting with # are
@@ -147,6 +157,14 @@ int playback_pad(uint32_t port, XBOX_INPUT_STATE *st, int connected);
  * changing them while it plays hands the game back. Returns whether the
  * recording's are in place. */
 int playback_freecam(FREECAM_SETTINGS *fc);
+
+/* Once a game frame (freecam_frame), after playback_freecam, with the
+ * mouse's move the free camera turns by this frame, in its counts, right and
+ * up (0 in a frame it doesn't steer, or with Mouse look off): recorded when it
+ * moved, or, while a recording plays, the recording's put in its place. The
+ * player's mouse moving while it plays hands the game back. Returns whether
+ * the recording's is in place. */
+int playback_mouse(int *dx, int *dy);
 
 /* An anchor, as the game reaches it, with its random generator: kept, or
  * put back. */

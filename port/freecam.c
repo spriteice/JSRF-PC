@@ -2,11 +2,11 @@
  *
  * The follow camera keeps what it works out for itself -- what it looks at,
  * how far it stays, where a wall stops it -- and freecam only moves the eye
- * around that target, by the right stick. The follow camera's hook then keeps
- * that eye's view out of walls, and, with No skater fade on (off by default;
- * camera_walls.h), the eye no nearer the player than the game draws them
- * whole, as the game fades your skater out when its camera's eye comes
- * nearer. While
+ * around that target, by the right stick or the mouse. The follow camera's
+ * hook then keeps that eye's view out of walls, and, with No skater fade on
+ * (off by default; camera_walls.h), the eye no nearer the player than the
+ * game draws them whole, as the game fades your skater out when its camera's
+ * eye comes nearer. While
  * that eye is in none of the map's areas, the areas drawn are the game's own
  * eye's, and your skater is drawn while in none itself (recomp_manual.c,
  * sub_0006A970 and sub_0006AC10). Two angles say where:
@@ -33,15 +33,27 @@
  * the next -- no acceleration, no smoothing. With auto centre, a stick let go
  * for a while lets the view ease back to the game's own, behind the player,
  * and keep following it there until the stick is pushed: how long it waits
- * and how fast it eases are the level's (k_centre). A pad's button flips
- * freecam, as F8 does: Input > Controller layout's Toggle free camera row,
- * R3 by default (src/input/input_remap.c), with none for the game's own
- * Right stick click, which costs it little: the game reads R3 only as one
- * screen's "any button" (0x7DE20, 0x7DED0). The settings are read once, at
- * start (freecam_start); F8, the pad's button and the menu's rows change
- * them on the window's thread, and freecam takes up the change at the start
- * of the game's next frame (freecam_frame), so that input playback can
- * record it by the frame and play it back there (port/playback.c):
+ * and how fast it eases are the level's (k_centre).
+ *
+ * The mouse turns it too, while Mouse look is on: the window holds the
+ * pointer while freecam is on and the in-game menu is shut
+ * (nv_window_mouse_look), and freecam takes how far it moved once a game
+ * frame, which input playback records and plays back as it does the stick
+ * (freecam_frame). Its turn is in proportion to the mouse's counts, with
+ * nothing else -- no acceleration, no smoothing, and the frame rate plays no
+ * part -- and adds to the stick's. Invert X and Y turn both, and moving it
+ * counts as pushing the stick for auto centre. A move in a frame freecam
+ * doesn't steer (paused, a scene) is dropped. The mouse is player 1's, as the
+ * keyboard is (port 0, xinput_device.c's kb_merge): with a free camera for
+ * each player, it would turn port 0's alone. A pad's button flips freecam,
+ * as F8 does: Input > Controller layout's Toggle free camera row, R3 by
+ * default (src/input/input_remap.c), with none for the game's own Right
+ * stick click, which costs it little: the game reads R3 only as one screen's
+ * "any button" (0x7DE20, 0x7DED0). The settings are read once, at start
+ * (freecam_start); F8, the pad's button and the menu's rows change them on
+ * the window's thread, and freecam takes up the change at the start of the
+ * game's next frame (freecam_frame), so that input playback can record it
+ * by the frame and play it back there (port/playback.c):
  *
  *   freecam        0 / 1    on at start (F8 and the pad's button flip it,
  *                           and keep it here)
@@ -53,6 +65,9 @@
  *   deadzone       0 - 1    0.15 = 15%, the default, measured on the stick's
  *                           distance from centre, and the speed rescaled from 0
  *                           at its edge
+ *   mouse          0 / 1    1, the default: the mouse turns it too
+ *   mouse_sensitivity
+ *                  1 - 10   0.02 degrees a count of the mouse per step
  *
  * A key that is missing takes its default; one that is out of range, or not
  * a number, takes its default and says so in the log. */
@@ -68,6 +83,10 @@
 /* Degrees per game frame, at full tilt, for each step of sensitivity: 36 a
  * second at the game's 60 frames a second. */
 #define FREECAM_STEP_DEG 0.6
+/* Degrees per count of the mouse, for each step of its sensitivity (the
+ * same steps): 5 turns 0.1 degrees a count, a full turn in 3,600 counts,
+ * about 11 cm of mouse at 800 counts an inch. */
+#define FREECAM_MOUSE_STEP_DEG 0.02
 /* How far the eye goes above or below the target, in degrees. The view is
  * built from an eye, a target and an up direction, which turns over at
  * straight up or down; this stays short of it. */
@@ -96,33 +115,47 @@ static const double k_rad = 3.14159265358979323846 / 180.0;
 extern int  nv_window_pref_num(const char *key, double *v);
 extern void nv_window_pref_set_num(const char *key, double v);
 extern void nv_window_hotkey(const char *name, void (*run)(void));
+/* And the mouse's look: who wants the mouse's moves, and the moves. */
+extern void nv_window_mouse_look(int (*want)(void));
+extern int  nv_window_mouse_take(int *dx, int *dy);
 #else
 /* Without the SDL window (a headless build) there is no settings file: no
- * keys. */
+ * keys. And no mouse. */
 static int nv_window_pref_num(const char *key, double *v)
 {
     (void)key; (void)v;
     return 0;
 }
+static int nv_window_mouse_take(int *dx, int *dy)
+{
+    *dx = *dy = 0;
+    return 0;
+}
 #endif
 
 /* With no keys in the settings: off (the game's own camera), neither way
- * inverted, auto centre off, 5 either way, and a 15% deadzone. */
-#define FREECAM_ON_DEFAULT       0
-#define FREECAM_INVERT_DEFAULT   0
-#define FREECAM_CENTRE_DEFAULT   0
-#define FREECAM_SENS_DEFAULT     5.0
-#define FREECAM_DEADZONE_DEFAULT 0.15
+ * inverted, auto centre off, 5 either way, a 15% deadzone, and the mouse on
+ * at 5. */
+#define FREECAM_ON_DEFAULT         0
+#define FREECAM_INVERT_DEFAULT     0
+#define FREECAM_CENTRE_DEFAULT     0
+#define FREECAM_SENS_DEFAULT       5.0
+#define FREECAM_DEADZONE_DEFAULT   0.15
+#define FREECAM_MOUSE_DEFAULT      1
+#define FREECAM_MOUSE_SENS_DEFAULT 5.0
 /* The player's: the settings file's, then as F8, the pad's button and the
  * menu's rows change them, on the window's thread. */
 static volatile FREECAM_SETTINGS s_asked = {
     FREECAM_ON_DEFAULT, FREECAM_INVERT_DEFAULT, FREECAM_INVERT_DEFAULT, FREECAM_CENTRE_DEFAULT,
-    FREECAM_SENS_DEFAULT, FREECAM_SENS_DEFAULT, FREECAM_DEADZONE_DEFAULT };
+    FREECAM_SENS_DEFAULT, FREECAM_SENS_DEFAULT, FREECAM_DEADZONE_DEFAULT,
+    FREECAM_MOUSE_DEFAULT, FREECAM_MOUSE_SENS_DEFAULT };
 /* What freecam goes by: the player's as freecam_frame last took them, or a
  * recording's. */
 static FREECAM_SETTINGS s_cfg;
 static int s_played;            /* s_cfg is a recording's */
 static volatile int s_steer;    /* on, and the follow camera ran last frame */
+static volatile int s_mouse_on; /* on, with Mouse look: the window asks it */
+static int s_mouse[2];          /* the mouse's move for this frame, counts right and up */
 static int s_follow_ran;        /* the follow camera ran since freecam_frame */
 static int s_cam_ran;           /* and s_cam's update did */
 static int s_held;              /* s_cam's update did not run last frame */
@@ -149,9 +182,9 @@ static double cfg_num(const char *key, double def, double lo, double hi)
 /* The switch and tuning, to the log: why is where they came from. */
 static void say(const char *why, const FREECAM_SETTINGS *c)
 {
-    fprintf(stderr, "[FREECAM] %s (%s); invert x %d y %d, sensitivity x %g y %g, deadzone %g, auto centre %s\n",
-            c->on ? "on" : "off", why, c->invert_x, c->invert_y, c->sens_x, c->sens_y, c->deadzone,
-            k_centre_names[c->centre]);
+    fprintf(stderr, "[FREECAM] %s (%s); invert x %d y %d, sensitivity x %g y %g, deadzone %g, auto centre %s,"
+            " mouse look %s at %g\n", c->on ? "on" : "off", why, c->invert_x, c->invert_y, c->sens_x, c->sens_y,
+            c->deadzone, k_centre_names[c->centre], c->mouse ? "on" : "off", c->mouse_sens);
 }
 
 #if defined(NV2A_GL_USE_SDL)
@@ -170,6 +203,16 @@ static void freecam_flip(void)
 static void freecam_menu(void);
 #endif
 
+#if defined(NV2A_GL_USE_SDL)
+/* Asked by the window as it pumps its events: the mouse's moves are wanted
+ * while freecam and its Mouse look are on, the player's or a recording's (the
+ * window adds: and the in-game menu is shut, and it has focus). */
+static int freecam_mouse_wanted(void)
+{
+    return s_mouse_on;
+}
+#endif
+
 void freecam_start(void)
 {
     s_asked.on = cfg_num("freecam", s_asked.on, -HUGE_VAL, HUGE_VAL) != 0;
@@ -179,7 +222,10 @@ void freecam_start(void)
     s_asked.sens_y = cfg_num("sensitivity_y", s_asked.sens_y, FREECAM_SENS_MIN, FREECAM_SENS_MAX);
     s_asked.deadzone = cfg_num("deadzone", s_asked.deadzone, 0, 1);
     s_asked.centre = (int)cfg_num("autocentre", s_asked.centre, 0, FREECAM_CENTRE_LEVELS - 1);
+    s_asked.mouse = cfg_num("mouse", s_asked.mouse, -HUGE_VAL, HUGE_VAL) != 0;
+    s_asked.mouse_sens = cfg_num("mouse_sensitivity", s_asked.mouse_sens, FREECAM_SENS_MIN, FREECAM_SENS_MAX);
     s_cfg = s_asked;
+    s_mouse_on = s_cfg.on && s_cfg.mouse;
     say("settings", &s_cfg);
 #if defined(XBOXRECOMP_MENU)
     freecam_menu();
@@ -187,19 +233,32 @@ void freecam_start(void)
 #if defined(NV2A_GL_USE_SDL)
     nv_window_hotkey("F8", freecam_flip);
     input_remap_pad_hotkey(INPUT_CTL_FREECAM, freecam_flip);
+    nv_window_mouse_look(freecam_mouse_wanted);
 #endif
 }
 
 void freecam_frame(void)
 {
     FREECAM_SETTINGS c = s_asked;
-    int played = playback_freecam(&c), steer, held;
+    int played = playback_freecam(&c), steer, held, mouse, dx, dy;
     if (!played && s_played) say("yours again, as playback ended", &c);
     if (c.on != s_cfg.on) s_cam = 0;                /* on or off: from the game's view next time */
     s_cfg = c;
     s_played = played;
+    s_mouse_on = s_cfg.on && s_cfg.mouse;
     steer = s_cfg.on && s_follow_ran;
     held = s_cfg.on && s_cam && !s_follow_ran && !s_cam_ran;
+    /* The mouse's move since the last frame, right and up (the window's y
+     * points down), for the follow camera to turn by this frame: only while
+     * it steers with Mouse look on, else dropped. Recorded, or the
+     * recording's in its place. */
+    nv_window_mouse_take(&dx, &dy);
+    dy = -dy;
+    mouse = steer && s_cfg.mouse;
+    if (!mouse) dx = dy = 0;
+    playback_mouse(&dx, &dy);
+    s_mouse[0] = mouse ? dx : 0;
+    s_mouse[1] = mouse ? dy : 0;
     if (steer != s_steer || held != s_held)
         fprintf(stderr, "[FREECAM] %s\n", steer ? "steering the camera"
                 : held ? "held: its camera did not run; keeping the view"
@@ -244,7 +303,8 @@ int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float s
                   int reset, float eye[3])
 {
     const double pmax = FREECAM_PITCH_MAX_DEG * k_rad, step = FREECAM_STEP_DEG * k_rad;
-    double v[3], d, x, y, cp, gyaw, gpitch;
+    const double mstep = FREECAM_MOUSE_STEP_DEG * k_rad;
+    double v[3], d, x, y, mx, my, cp, gyaw, gpitch;
     int again = 0;
     s_follow_ran = 1;
     if (!s_cfg.on) return FREECAM_OFF;
@@ -266,12 +326,19 @@ int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float s
         s_cam = cam;
     }
     freecam_stick(&x, &y);
-    if (x != 0 || y != 0) s_idle = 0;
+    mx = s_mouse[0];                        /* this frame's, once */
+    my = s_mouse[1];
+    s_mouse[0] = s_mouse[1] = 0;
+    if (x != 0 || y != 0 || mx != 0 || my != 0) s_idle = 0;
     else if (s_idle < k_centre[s_cfg.centre].wait) s_idle++;
+    /* The turn this frame, radians: the stick's per frame, and the mouse's
+     * per count. */
+    x = x * s_cfg.sens_x * step + mx * s_cfg.mouse_sens * mstep;
+    y = y * s_cfg.sens_y * step + my * s_cfg.mouse_sens * mstep;
     if (s_cfg.invert_x) x = -x;
     if (s_cfg.invert_y) y = -y;
-    s_yaw = remainder(s_yaw + x * s_cfg.sens_x * step, 2 * 180.0 * k_rad);
-    s_pitch -= y * s_cfg.sens_y * step;     /* up tilts the view up: the eye goes down */
+    s_yaw = remainder(s_yaw + x, 2 * 180.0 * k_rad);
+    s_pitch -= y;                           /* up tilts the view up: the eye goes down */
     if (s_cfg.centre && s_idle >= k_centre[s_cfg.centre].wait) {
         double ease = k_centre[s_cfg.centre].ease;
         s_yaw = remainder(s_yaw + remainder(gyaw - s_yaw, 2 * 180.0 * k_rad) / ease, 2 * 180.0 * k_rad);
@@ -312,6 +379,10 @@ static double menu_sens_y(void)        { return s_asked.sens_y; }
 static void   menu_sens_y_set(double v) { s_asked.sens_y = v; nv_window_pref_set_num("sensitivity_y", v); }
 static double menu_dz(void)            { return s_asked.deadzone * 100; }
 static void   menu_dz_set(double v)    { s_asked.deadzone = v / 100; nv_window_pref_set_num("deadzone", v / 100); }
+static int    menu_mouse(void)         { return s_asked.mouse; }
+static void   menu_mouse_run(void)     { s_asked.mouse = !s_asked.mouse; nv_window_pref_set_num("mouse", s_asked.mouse); }
+static double menu_mouse_sens(void)    { return s_asked.mouse_sens; }
+static void   menu_mouse_sens_set(double v) { s_asked.mouse_sens = v; nv_window_pref_set_num("mouse_sensitivity", v); }
 
 static void freecam_menu(void)
 {
@@ -324,7 +395,7 @@ static void freecam_menu(void)
           .group = XBOX_GROUP_FREECAM, .state = menu_on, .run = freecam_flip,
           .presets = XBOX_PRESETS_SET,
           .preset = { 0, FREECAM_ON_DEFAULT, FREECAM_ON_DEFAULT },
-          .hint = "Lets the right stick control the camera." },
+          .hint = "Lets the right stick, or the mouse, control the camera." },
         { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_CHOICE, .label = "Auto centre",
           .group = XBOX_GROUP_FREECAM,
           .state = menu_centre, .pick = menu_centre_pick,
@@ -350,14 +421,14 @@ static void freecam_menu(void)
           .min = FREECAM_SENS_MIN, .max = FREECAM_SENS_MAX, .step = 1, .format = "%g",
           .presets = XBOX_PRESETS_SET,
           .preset = { FREECAM_SENS_DEFAULT, FREECAM_SENS_DEFAULT, FREECAM_SENS_DEFAULT },
-          .hint = "Sets how fast the camera turns left and right." },
+          .hint = "Sets how fast the right stick turns the camera left and right." },
         { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_NUMBER, .label = "Sensitivity Y",
           .group = XBOX_GROUP_FREECAM,
           .value = menu_sens_y, .set = menu_sens_y_set,
           .min = FREECAM_SENS_MIN, .max = FREECAM_SENS_MAX, .step = 1, .format = "%g",
           .presets = XBOX_PRESETS_SET,
           .preset = { FREECAM_SENS_DEFAULT, FREECAM_SENS_DEFAULT, FREECAM_SENS_DEFAULT },
-          .hint = "Sets how fast the camera turns up and down." },
+          .hint = "Sets how fast the right stick turns the camera up and down." },
         { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_NUMBER, .label = "Deadzone",
           .group = XBOX_GROUP_FREECAM,
           .value = menu_dz, .set = menu_dz_set, .min = 0, .max = 100, .step = 5, .format = "%g%%",
@@ -365,6 +436,20 @@ static void freecam_menu(void)
           .preset = { FREECAM_DEADZONE_DEFAULT * 100, FREECAM_DEADZONE_DEFAULT * 100,
                       FREECAM_DEADZONE_DEFAULT * 100 },
           .hint = "Sets how far the right stick moves before the camera turns." },
+        { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_TOGGLE, .label = "Mouse look",
+          .group = XBOX_GROUP_FREECAM,
+          .state = menu_mouse, .run = menu_mouse_run,
+          .presets = XBOX_PRESETS_SET,
+          .preset = { FREECAM_MOUSE_DEFAULT, FREECAM_MOUSE_DEFAULT, FREECAM_MOUSE_DEFAULT },
+          .hint = "Lets the mouse turn the free camera." },
+        { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_NUMBER, .label = "Mouse sensitivity",
+          .group = XBOX_GROUP_FREECAM,
+          .value = menu_mouse_sens, .set = menu_mouse_sens_set,
+          .min = FREECAM_SENS_MIN, .max = FREECAM_SENS_MAX, .step = 1, .format = "%g",
+          .presets = XBOX_PRESETS_SET,
+          .preset = { FREECAM_MOUSE_SENS_DEFAULT, FREECAM_MOUSE_SENS_DEFAULT,
+                      FREECAM_MOUSE_SENS_DEFAULT },
+          .hint = "Sets how fast the mouse turns the camera." },
     };
     xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
 }

@@ -58,7 +58,7 @@ int pad_test_inputs(uint32_t port, XBOX_INPUT_STATE *st) { (void)port; (void)st;
 
 /* The menu: Developer > Playback's rows, and the free camera's on the Input
  * page, caught. */
-static XBOX_MENU_ITEM g_rows[8], g_cam_rows[8];
+static XBOX_MENU_ITEM g_rows[8], g_cam_rows[12];
 static int g_nrows, g_ncam_rows, g_closed, g_restarts;
 static char g_restart_env[1100];
 void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count)
@@ -102,6 +102,16 @@ static double pref(const char *key)
     return v;
 }
 static void (*g_f8)(void), (*g_r3)(void);
+static int (*g_mouse_want)(void);
+static int g_mouse[2];              /* the player's mouse, right and down, since the game's frame took it */
+void nv_window_mouse_look(int (*want)(void)) { g_mouse_want = want; }
+int nv_window_mouse_take(int *dx, int *dy)
+{
+    *dx = g_mouse[0];
+    *dy = g_mouse[1];
+    g_mouse[0] = g_mouse[1] = 0;
+    return 1;
+}
 void nv_window_hotkey(const char *name, void (*run)(void)) { if (!strcmp(name, "F8")) g_f8 = run; }
 void input_remap_pad_hotkey(int control, void (*run)(void)) { if (control == INPUT_CTL_FREECAM) g_r3 = run; }
 void nv_window_file_path(const char *file, char *buf, size_t n) { snprintf(buf, n, "%s/%s", g_dir, file); }
@@ -150,8 +160,10 @@ static void player(int frame, int read, int cam, XBOX_INPUT_STATE *st)
 
 /* The free camera's player, on the window's thread, before the pass's reads:
  * F8 and R3 (Toggle free camera) turn it on, off and on, and the menu's
- * rows change its sensitivity, its invert and its auto centre while it
- * steers. */
+ * rows change its sensitivity, its invert, its auto centre and the mouse's
+ * sensitivity while it steers. The mouse turns it, standing still and
+ * moving, and moves while it is off, which turns nothing. */
+#define CAM_MOUSE_OFF 610           /* the mouse moved while R3 has it off */
 static void cam_player(int frame)
 {
     if (frame == CAM_F8_ON || frame == CAM_F8_ON2) g_f8();
@@ -159,6 +171,10 @@ static void cam_player(int frame)
     if (frame == 340) cam_row("Sensitivity X")->set(8);
     if (frame == 350) cam_row("Invert Y")->run();
     if (frame == 360) cam_row("Auto centre")->pick(3);
+    if (frame == 365) cam_row("Mouse sensitivity")->set(7);
+    if (frame >= 240 && frame <= 260) { g_mouse[0] += 9; g_mouse[1] += 4; }
+    if (frame >= 560 && frame <= 580) { g_mouse[0] -= 6; g_mouse[1] -= 2; }
+    if (frame >= CAM_MOUSE_OFF && frame <= CAM_MOUSE_OFF + 10) g_mouse[0] += 25;
 }
 
 /* An anchor of the run, by the recorded frame it comes at. */
@@ -185,6 +201,7 @@ typedef struct {
     int press_at;               /* a real pad pressed from this frame (0: never) */
     int hold_from_start;        /* a real pad held for the first ten frames */
     int right_at;               /* a real pad's right stick pushed from this frame (0: never) */
+    int mouse_at;               /* the player's mouse moved from this frame (0: never) */
     int f8_at;                  /* F8 pressed at this frame (0: never) */
     int recording;              /* the host is the player: recording; 2, with the free camera */
 } How;
@@ -210,6 +227,7 @@ static void run(Game *g, const How *h)
             break;                                  /* a playback over: the run with it */
         if (h->recording == 2) cam_player(f);
         if (h->f8_at && f == h->f8_at) g_f8();
+        if (h->mouse_at && f >= h->mouse_at) g_mouse[0] += 5;
         for (r = 0; r < READS; r++) {
             if (h->recording) player(f, r, h->recording == 2, &g_host);
             else {
@@ -293,7 +311,7 @@ static void record(void)
         checks += !strncmp(line, "check ", 6);
         idles += !strncmp(line, "idle ", 5);
         ends += !strcmp(line, "end 1000\n");
-        cams += !strcmp(line, "freecam 1 0 0 0 5 5 0.15 0\n");
+        cams += !strcmp(line, "freecam 1 0 0 0 5 5 0.15 0 1 5\n");
     }
     fclose(f);
     /* A check a second of frames from the first: 7 before the scene (400 to
@@ -426,18 +444,22 @@ static void cam_yours(void)
     cam_row("Auto centre")->pick(1);
     if (!cam_row("Invert X")->state()) cam_row("Invert X")->run();
     if (cam_row("Invert Y")->state()) cam_row("Invert Y")->run();
+    if (cam_row("Mouse look")->state()) cam_row("Mouse look")->run();
+    cam_row("Mouse sensitivity")->set(9);
     freecam_frame();
 }
 
-/* Recorded with the free camera: turned on by F8, steered by the right stick,
- * its settings changed in the menu while it steers, off by R3 and on again by
- * F8. The right stick is in the recording as the pad gave it, and the game
- * read it zeroed while the free camera steered. */
+/* Recorded with the free camera: turned on by F8, steered by the right stick
+ * and the mouse, its settings changed in the menu while it steers, off by R3
+ * and on again by F8. The right stick is in the recording as the pad gave it,
+ * and the game read it zeroed while the free camera steered; the mouse's
+ * moves are in it right and up, each frame the free camera turned by them,
+ * and not those while it was off. */
 static void record_cam(void)
 {
     How h = { .frames = FRAMES, .skip_anchor = -1, .wrong_anchor = -1, .recording = 2 };
     char path[700], line[256];
-    int cams = 0, right = 0;
+    int cams = 0, right = 0, mice = 0, mice_off = 0, mouse_on = 0, frame, dx, dy;
     FILE *f;
     freecam_frame();
     snprintf(g_cam_run, sizeof g_cam_run, "%s/recordings/2026-11-20-020000", g_dir);
@@ -451,14 +473,24 @@ static void record_cam(void)
     while (fgets(line, sizeof line, f)) {
         cams += !strncmp(line, "freecam ", 8);
         right += !strncmp(line, "pad ", 4) && strstr(line, " 30000 -6000\n") != NULL;
+        if (sscanf(line, "mouse %d %d %d", &frame, &dx, &dy) == 3) {
+            mice++;
+            mice_off += frame >= CAM_MOUSE_OFF && frame <= CAM_MOUSE_OFF + 10;
+            CHECK((dx == 9 && dy == -4) || (dx == -6 && dy == 2), "a mouse line: %s", line);
+        }
     }
     fclose(f);
-    /* At the start; on; sensitivity, invert and auto centre; off; on. */
-    CHECK(cams == 7 && right > 10, "the free camera's recording: %d freecam lines, the right stick in %d", cams, right);
+    /* At the start; on; sensitivity, invert and auto centre; the mouse's
+     * sensitivity; off; on. */
+    CHECK(cams == 8 && right > 10, "the free camera's recording: %d freecam lines, the right stick in %d", cams, right);
+    CHECK(mice == 42 && mice_off == 0, "the mouse's recording: %d lines, %d while the free camera was off", mice,
+          mice_off);
     CHECK(g_cam.seen[150][0].sThumbRX == 0 && g_cam.seen[30][0].sThumbRX == 0 && g_cam.eye[150][0] != 0
           && g_cam.seen[600][0].wButtons & XBOX_GAMEPAD_RIGHT_THUMB,
           "the free camera's stick reached the game (%d), or it didn't steer", g_cam.seen[150][0].sThumbRX);
-    CHECK(freecam_on() && pref("freecam") == 1 && pref("sensitivity_x") == 8 && pref("autocentre") == 3,
+    mouse_on = g_mouse_want && g_mouse_want();
+    CHECK(mouse_on && freecam_on() && pref("freecam") == 1 && pref("sensitivity_x") == 8 && pref("autocentre") == 3
+          && pref("mouse_sensitivity") == 7,
           "the player's free camera after recording: on %d, freecam= %g, sensitivity_x= %g, autocentre= %g",
           freecam_on(), pref("freecam"), pref("sensitivity_x"), pref("autocentre"));
 }
@@ -490,24 +522,33 @@ static void play_cam(void)
           res->anchors_met, res->drift_most);
     freecam_frame();
     CHECK(!freecam_on() && pref("freecam") == 0 && pref("sensitivity_x") == 2 && pref("deadzone") == 0.3
-          && pref("autocentre") == 1 && pref("invert_x") == 1 && cam_row("Sensitivity Y")->value() == 9,
+          && pref("autocentre") == 1 && pref("invert_x") == 1 && cam_row("Sensitivity Y")->value() == 9
+          && pref("mouse") == 0 && pref("mouse_sensitivity") == 9 && !g_mouse_want(),
           "the player's free camera after playback: on %d, freecam= %g, sensitivity_x= %g, deadzone= %g",
           freecam_on(), pref("freecam"), pref("sensitivity_x"), pref("deadzone"));
 }
 
 /* While it plays: the real right stick hands the game back, though the free
  * camera steers; so does F8, which the game then has, as the player turned
- * it. */
+ * it; so does the player's mouse, while the recording's free camera steers
+ * with Mouse look on, though the player's own is off. */
 static void play_cam_take_over(void)
 {
     How stick = { .frames = 400, .skip_anchor = -1, .wrong_anchor = -1, .right_at = 150 };
     How f8 = { .frames = 400, .skip_anchor = -1, .wrong_anchor = -1, .f8_at = 100 };
+    How mouse = { .frames = 400, .skip_anchor = -1, .wrong_anchor = -1, .mouse_at = 250 };
     const PLAYBACK_RESULT *res = playback_result();
     cam_yours();
     CHECK(playback_play(g_cam_run, 1), "playback couldn't start");
     run(&g_play, &stick);
     CHECK(res->state == PLAYBACK_HANDED_BACK && res->frames == 151 && g_play.eye[149][0] != 0,
           "the right stick at 150, the free camera steering: state %d at frame %u", res->state, res->frames);
+    cam_yours();
+    CHECK(playback_play(g_cam_run, 1), "playback couldn't start");
+    run(&g_play, &mouse);
+    g_mouse[0] = g_mouse[1] = 0;
+    CHECK(res->state == PLAYBACK_HANDED_BACK && res->frames == 251 && g_play.eye[249][0] != 0,
+          "the mouse at 250, the free camera steering: state %d at frame %u", res->state, res->frames);
     cam_yours();
     CHECK(playback_play(g_cam_run, 1), "playback couldn't start");
     run(&g_play, &f8);
@@ -556,10 +597,40 @@ static void by_hand(void)
     freecam_frame();
     CHECK(freecam_on() && playback_state() == PLAYBACK_FINISHED, "by hand: after, the free camera %d, state %d",
           freecam_on(), playback_state());
+    /* The mouse by hand, with the free camera on: 10 counts right at
+     * recorded frames 50 and 60, a degree each at 5; the first anchor,
+     * recorded at 100, reached at frame 5, so frame 6 turns by both at once,
+     * and the next anchor, which the recording doesn't have, stops it. */
+    write_file(folder, "jsrf-pc-recording 1\nfreecam 1 1 0 0 5 5 0.15 0 1 5\nmouse 50 10 0\nmouse 60 10 0\n"
+               "anchor 100 mission.bin 00010001 0000416C\nend 200\n");
+    {
+        How early = { .frames = 30, .late = -95, .late_anchor = 0, .skip_anchor = -1, .wrong_anchor = -1 };
+        double h4, h5, h6;
+        CHECK(playback_play(folder, 0), "a mouse written by hand refused");
+        run(&g_play, &early);
+        h4 = atan2(-g_play.eye[4][0], -g_play.eye[4][2]);
+        h5 = atan2(-g_play.eye[5][0], -g_play.eye[5][2]);
+        h6 = atan2(-g_play.eye[6][0], -g_play.eye[6][2]);
+        CHECK(fabs(h5 - h4) < 1e-6 && fabs((h6 - h5) * 180 / 3.14159265358979 - 2) < 1e-3
+              && playback_state() == PLAYBACK_OFF_ROUTE,
+              "by hand, the mouse past an early anchor: %.4f then %.4f degrees, state %d",
+              (h5 - h4) * 180 / 3.14159265358979, (h6 - h5) * 180 / 3.14159265358979, playback_state());
+        freecam_frame();
+    }
     write_file(folder, "pad 5 0 0010 0000000000000000 0 0 0 0\n");
     CHECK(!playback_play(folder, 0) && playback_state() == PLAYBACK_OFF, "not a recording, played");
     write_file(folder, "jsrf-pc-recording 1\nfreecam 3 0 0 0 11 5 0.15 0\n");
     CHECK(!playback_play(folder, 0), "a sensitivity of 11, played");
+    write_file(folder, "jsrf-pc-recording 1\nfreecam 3 0 0 0 5 5 0.15 0 1 11\n");
+    CHECK(!playback_play(folder, 0), "a mouse sensitivity of 11, played");
+    write_file(folder, "jsrf-pc-recording 1\nfreecam 3 0 0 0 5 5 0.15 0 2 5\n");
+    CHECK(!playback_play(folder, 0), "a Mouse look of 2, played");
+    write_file(folder, "jsrf-pc-recording 1\nfreecam 3 0 0 0 5 5 0.15 0 1\n");
+    CHECK(!playback_play(folder, 0), "a freecam line with Mouse look and no sensitivity, played");
+    write_file(folder, "jsrf-pc-recording 1\nmouse 5 10 0\nmouse 4 10 0\n");
+    CHECK(!playback_play(folder, 0), "a mouse line back in time, played");
+    write_file(folder, "jsrf-pc-recording 1\nmouse 5 10\n");
+    CHECK(!playback_play(folder, 0), "a mouse line without its y, played");
     write_file(folder, "jsrf-pc-recording 1\nfreecam 3 0 0 0 5 5 0.15 0\nfreecam 2 1 0 0 5 5 0.15 0\n");
     CHECK(!playback_play(folder, 0), "a freecam line back in time, played");
     write_file(folder, "jsrf-pc-recording 1\npad 5 0 0010 0000000000000000 0 0 0 0\n"
@@ -630,7 +701,8 @@ int main(int argc, char **argv)
         mkdir(folder, 0755);
     }
     freecam_start();                    /* no keys in the settings: off, at its defaults */
-    CHECK(g_f8 && g_r3 && g_ncam_rows == 8 && !freecam_on(), "the free camera didn't start as it does");
+    CHECK(g_f8 && g_r3 && g_mouse_want && !g_mouse_want() && g_ncam_rows == 10 && !freecam_on(),
+          "the free camera didn't start as it does");
     record();
     play_same();
     play_late(30);

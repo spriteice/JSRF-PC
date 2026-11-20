@@ -7,10 +7,10 @@ whole.
 Takes port/freecam.c as it is, built with the in-game menu, and the
 settings file code from src/nv2a_gl/nv2a_gl.c verbatim (sdl_cfg_path through
 sdl_cfg_set, with nv_window_pref_num between them); test_main.c stands in
-for the window's key hook, the controller layout's hook for the pad's
-Toggle free camera (src/input/input_remap.c), the menu's xbox_MenuAdd and
-input playback's playback_freecam (tests/playback drives freecam.c with the
-real one). Each
+for the window's key hook and its mouse look, the controller layout's hook
+for the pad's Toggle free camera (src/input/input_remap.c), the menu's
+xbox_MenuAdd and input playback's playback_freecam and playback_mouse
+(tests/playback drives freecam.c with the real ones). Each
 case gets its own settings file, passed as JSRF_SETTINGS_FILE, and its own
 run, since the settings are read once.
 Requires GCC on PATH, including MinGW on Windows.
@@ -73,6 +73,20 @@ cases = {
     "centre_60_30": ("freecam=1\nautocentre=3\n", ["auto centre High"]),
     "centre_30_12": ("freecam=1\nautocentre=4\n", ["auto centre Aggressive"]),
     "centre_0_0_bad": ("freecam=1\nautocentre=5\n", ["autocentre=5 is outside 0 to 4; using 0", "auto centre Off"]),
+    # the mouse (port/freecam.c, freecam_frame and freecam_orbit; the window's part is nv2a_gl.c's)
+    "mouse": ("freecam=1\n", ["mouse look on at 5", "[FREECAM] off (F8, the pad or the menu)"]),
+    "mouse_invert": ("freecam=1\ninvert_x=1\ninvert_y=1\n", ["invert x 1 y 1"]),
+    "mouse_sensitivity": ("freecam=1\nmouse_sensitivity=10\n", ["mouse look on at 10"]),
+    "mouse_fallback": ("freecam=1\nmouse=abc\nmouse_sensitivity=11\n",
+                       ["mouse is not a number; using 1",
+                        "mouse_sensitivity=11 is outside 1 to 10; using 5", "mouse look on at 5"]),
+    "mouse_off": ("freecam=1\nmouse=0\n", ["mouse look off at 5"]),
+    "mouse_dropped": ("freecam=1\n", ["held: its camera did not run; keeping the view"]),
+    "mouse_centre": ("freecam=1\nautocentre=3\n", ["auto centre High"]),
+    "mouse_pitch": ("freecam=1\n", []),
+    "mouse_played": ("freecam=1\nmouse=0\n", ["[FREECAM] on (yours again, as playback ended); invert x 0 y 0,"
+                                             " sensitivity x 5 y 5, deadzone 0.15, auto centre Off,"
+                                             " mouse look off at 5"]),
 }
 
 with tempfile.TemporaryDirectory(prefix="freecam-") as directory:

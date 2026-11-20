@@ -42,7 +42,8 @@ Input is four submenus, and nothing else: Controller layout, then Keyboard
 layout, added with their rows by `src/input/input_remap.c` (Layouts, below);
 Free camera, added with its rows by
 `port/freecam.c` (Enable free camera, Auto centre, Invert X, Invert Y,
-Sensitivity X, Sensitivity Y, then Deadzone); then Behaviour, for how the
+Sensitivity X, Sensitivity Y, Deadzone, Mouse look, then Mouse
+sensitivity); then Behaviour, for how the
 game's camera and the keys act: Default cam fix, No skater fade, then
 Keyboard moves. Each of those two modules adds Behaviour with its rows, and
 the second adds nothing, as a submenu named as one before it in its menu adds
@@ -91,7 +92,7 @@ in a submenu of its own.
   (`MENU_HINT_LONGEST`), so it fits in two lines at 640 × 480.
 - A hint names no key, as a label doesn't.
 - The tests of the modules that add rows (tests/audio, camera_walls,
-  draw_distance, intro, keyboard_move, music_info, soul_indicator,
+  draw_distance, freecam, intro, keyboard_move, music_info, soul_indicator,
   developer) check that each has one.
 
 ## (Restart)

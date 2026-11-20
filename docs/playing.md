@@ -49,6 +49,7 @@ moves steers with whatever keys the left stick has.
 - **Return or keypad Enter:** Start.
 - **Esc, or a keyboard's Back key:** Back.
 - **C and V:** Left and right stick click.
+- **The mouse:** The free camera, while it is on (Free camera, below).
 
 ## Settings keys
 
@@ -89,9 +90,21 @@ itself never uses R3, so its own Right stick click starts with no button, and
 Toggle free camera in Input > Controller layout can move the switch to
 another button.
 
+**The mouse** turns the free camera too, as the right stick does, and
+the two add together. While the free camera is on and the in-game menu is
+shut, the game holds the pointer: hidden, and kept in the window. Opening
+the menu, turning the free camera off, or switching to another window
+gives it back. Invert X and Invert Y apply to the mouse as well, Mouse
+sensitivity sets how fast it turns the camera (5 by default: a full turn in
+3,600 of the mouse's counts, about 11 cm at 800 dpi), and turning Mouse
+look off, under Input > Free camera, leaves the mouse and the pointer alone.
+With no mouse, as in Game Mode, nothing changes, and a finger on a touch
+screen doesn't turn the camera.
+
 **Auto centre**, under Input > Free camera, eases the view back behind the
-player once the right stick has been left alone for a while, as the game's
-camera trails them; a push of the stick takes over again at once. It is off by
+player once the right stick and the mouse have been left alone for a while,
+as the game's camera trails them; a push of the stick, or a move of the
+mouse, takes over again at once. It is off by
 default, and has four levels: Mild waits two seconds and comes back slowly,
 Medium a second and a half, High a second, and Aggressive half a second,
 coming back quickly.
@@ -246,7 +259,8 @@ input goes to the menu.
   differs from its default; Reset to default puts its page back. No preset
   changes them. Free camera has [the free
   camera](#free-camera)'s own settings: Enable free camera, Auto centre,
-  Invert X, Invert Y, Sensitivity X, Sensitivity Y, and Deadzone (15% by
+  Invert X, Invert Y, Sensitivity X, Sensitivity Y, Deadzone (15% by
+  default), Mouse look (on by default), and Mouse sensitivity (5 by
   default). Behaviour has Default cam fix, No skater fade, then Keyboard
   moves. Default cam fix keeps the game's own camera out of walls (Near
   walls, above). On by default; off, the game's camera is as on the Xbox. It
@@ -355,30 +369,32 @@ input goes to the menu.
     starts the game as usual. Character is kept in `developer.cfg`.
   - **Playback:** Records what you press, and plays a recording back, for
     testing. Record (Restart) asks first, then restarts the game and
-    records every press the game reads, on every controller, from its first
-    frame, until Stop recording, File > Exit or closing the window. The
-    [free camera](#free-camera) is recorded too: its stick, turning it on
-    and off, and its settings under Input > Free camera, which a recording
-    plays back in place of yours while it plays, leaving yours as they
-    were. Each recording is a folder in `recordings` beside the settings
-    file (`portable/recordings` in portable mode), named by when it
-    started, in UTC, as `2026-11-19-091500`. Play (Restart) lists the
-    recordings there were when the game started, newest first; picking one
-    asks first, then restarts the game and plays it. Press anything on a
-    controller or the keyboard, or turn the free camera on or off or change
-    its settings, and it stops, and the game is yours from there; it stops
-    itself at the recording's end, or if the game has gone another way
-    (below). The launcher plays one with `--play <folder>`, and closes the
-    game at its end. A recording is pressed frame by frame, not by time,
-    and waits for each load, mission and cutscene it reached, so a slower
-    load moves nothing. The game doesn't play exactly the same twice, so a
-    long run can drift: each second the recording knows where your skater
-    was, and when it stood still with nothing pressed playback puts the
-    skater back there. If the skater ends up far from where they were, or
-    the game loads something the recording didn't, playback stops, and the
-    log says where. Start a recording from the same saves and settings you
-    will play it with. Lines starting `[PLAYBACK]` in the log say what it
-    did, with a summary at the end.
+    records every press the game reads, on every controller, from its
+    first frame, until Stop recording, File > Exit or closing the window.
+    The [free camera](#free-camera) is recorded too: its stick, the
+    mouse's turns of it, turning it on and off, and its settings under
+    Input > Free camera, which a recording plays back in place of yours
+    while it plays, leaving yours as they were. Each recording is a folder
+    in `recordings` beside the settings file (`portable/recordings` in
+    portable mode), named by when it started, in UTC, as
+    `2026-11-19-091500`. Play (Restart) lists the recordings there were
+    when the game started, newest first; picking one asks first, then
+    restarts the game and plays it. Press anything on a controller or the
+    keyboard, move the mouse while the free camera steers with it, or turn
+    the free camera on or off or change its settings, and it stops, and
+    the game is yours from there; it stops itself at the recording's end,
+    or if the game has gone another way (below). The launcher plays one
+    with `--play <folder>`, and closes the game at its end. A recording is
+    pressed frame by frame, not by time, and waits for each load, mission
+    and cutscene it reached, so a slower load moves nothing. The game
+    doesn't play exactly the same twice, so a long run can drift: each
+    second the recording knows where your skater was, and when it stood
+    still with nothing pressed playback puts the skater back there. If the
+    skater ends up far from where they were, or the game loads something
+    the recording didn't, playback stops, and the log says where. Start a
+    recording from the same saves and settings you will play it with.
+    Lines starting `[PLAYBACK]` in the log say what it did, with a summary
+    at the end.
   - **Experimental:** Changes to how the game runs, to try out, when there
     are any.
   - **Far buildings test:** Finds which area Far buildings adds draws

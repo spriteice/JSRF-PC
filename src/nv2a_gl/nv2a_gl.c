@@ -1880,6 +1880,69 @@ int nv_window_keys(uint32_t *held, int words)
     return any;
 }
 
+/* The mouse's look (port/freecam.c's): while whoever asked wants it, the
+ * in-game menu is shut and the window has focus, the window holds the
+ * pointer (SDL's relative mode: hidden, and kept in the window), and counts
+ * how far the mouse moves until they take it. Asked and held on the
+ * window's thread, as SDL wants; the counts are taken on the game's. */
+static int (*g_sdl_mouse_want)(void);
+static volatile int g_sdl_mouse_held;
+static SDL_atomic_t g_sdl_mouse_dx, g_sdl_mouse_dy;
+
+/* At start, before the window opens: want says, each time the window's
+ * events are pumped, whether the mouse's motion is wanted now. */
+void nv_window_mouse_look(int (*want)(void));
+void nv_window_mouse_look(int (*want)(void))
+{
+    g_sdl_mouse_want = want;
+}
+
+/* The mouse's motion since the last call, in its own counts, right and down
+ * as SDL gives them, each taken whole and zeroed; and 1 while the window
+ * holds the pointer. On any thread. */
+int nv_window_mouse_take(int *dx, int *dy);
+int nv_window_mouse_take(int *dx, int *dy)
+{
+    *dx = SDL_AtomicSet(&g_sdl_mouse_dx, 0);
+    *dy = SDL_AtomicSet(&g_sdl_mouse_dy, 0);
+    return g_sdl_mouse_held;
+}
+
+/* The mouse moved: counted while the window holds the pointer for it. The
+ * menu takes the mouse as it opens, before the pointer is let go after the
+ * events, so a move after F1 in the same pump is the menu's. A finger on a
+ * touch screen, as the Ally X's, is no mouse: SDL's moves made from it
+ * aren't counted. */
+int nv_window_menu_open(void);
+static void sdl_mouse_moved(const SDL_MouseMotionEvent *m)
+{
+    if (!g_sdl_mouse_held || nv_window_menu_open() > 0 || m->which == SDL_TOUCH_MOUSEID) return;
+    SDL_AtomicAdd(&g_sdl_mouse_dx, m->xrel);
+    SDL_AtomicAdd(&g_sdl_mouse_dy, m->yrel);
+}
+
+/* After each pump's events: holds the pointer or lets it go, as wanted, and
+ * the log says when and why. Nothing counted is carried across a change. */
+static void sdl_mouse_hold(void)
+{
+    static int told;
+    int want = g_sdl_mouse_want && g_sdl_mouse_want();
+    int menu = nv_window_menu_open() > 0;
+    int focus = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_INPUT_FOCUS) != 0;
+    int hold = want && !menu && focus;
+    if (hold == g_sdl_mouse_held) return;
+    if (SDL_SetRelativeMouseMode(hold ? SDL_TRUE : SDL_FALSE) != 0 && !told) {
+        told = 1;
+        fprintf(stderr, "[WIN] the pointer can't be held for the mouse look: %s\n", SDL_GetError());
+    }
+    g_sdl_mouse_held = hold;
+    SDL_AtomicSet(&g_sdl_mouse_dx, 0);
+    SDL_AtomicSet(&g_sdl_mouse_dy, 0);
+    fprintf(stderr, "[WIN] pointer %s\n", hold ? "held for the mouse look"
+            : !want ? "let go: the mouse look is off" : menu ? "let go: the menu is open"
+            : "let go: the window lost focus");
+}
+
 /* A key the window keeps for itself, by its place, which the game never
  * sees and a layout can't have (src/input/input_remap.c): the menu's F1,
  * F9 to F11, and the keys the game bound (nv_window_hotkey). Alt+Return is
@@ -3064,6 +3127,9 @@ static void sdl_pump(void)
                         SDL_CONTROLLER_BUTTON_MAX + (ev.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT),
                         ev.caxis.value > 0 ? ev.caxis.value >> NV_TRIGGER_SHIFT : 0);
             break;
+        case SDL_MOUSEMOTION:
+            sdl_mouse_moved(&ev.motion);
+            break;
         case SDL_WINDOWEVENT:
             /* Losing focus with a key held never delivers its key-up. */
             if (ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST) sdl_keys_release();
@@ -3074,6 +3140,7 @@ static void sdl_pump(void)
             break;
         }
     }
+    sdl_mouse_hold();
 #if defined(XBOXRECOMP_MENU)
     sdl_scale_names();                          /* the shape may have changed */
     xbox_MenuFrame();                           /* nothing once it has shut */

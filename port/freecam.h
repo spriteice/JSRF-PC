@@ -1,4 +1,5 @@
-/* The free camera: the right stick turns the follow camera around the player.
+/* The free camera: the right stick, or the mouse, turns the follow camera
+ * around the player.
  *
  * The game still chooses what the camera looks at, how far away it is and
  * where a wall stops it; this only chooses the direction it looks from, and
@@ -17,7 +18,8 @@
 #include <stdint.h>
 
 /* The steps of sensitivity the settings file takes (and the in-game menu
- * offers), and auto centre's levels: off, mild, medium, high, aggressive. */
+ * offers), the stick's and the mouse's, and auto centre's levels: off, mild,
+ * medium, high, aggressive. */
 #define FREECAM_SENS_MIN      1.0
 #define FREECAM_SENS_MAX      10.0
 #define FREECAM_CENTRE_LEVELS 5
@@ -30,19 +32,25 @@ typedef struct {
     int centre;                 /* autocentre: 0 (off) to FREECAM_CENTRE_LEVELS - 1 */
     double sens_x, sens_y;      /* sensitivity_x and _y: FREECAM_SENS_MIN to _MAX */
     double deadzone;            /* 0 to 1 */
+    int mouse;                  /* mouse: Mouse look, 0 or 1 */
+    double mouse_sens;          /* mouse_sensitivity: FREECAM_SENS_MIN to _MAX */
 } FREECAM_SETTINGS;
 
 /* At start, before the game runs: reads the settings, adds the in-game menu's
- * Free camera submenu, at the top of Input, with its rows, and binds F8 and
- * the pad's button for it (Input > Controller layout's Toggle free camera,
- * R3 by default), which turn freecam on or off. */
+ * Free camera submenu, at the top of Input, with its rows, binds F8 and the
+ * pad's button for it (Input > Controller layout's Toggle free camera, R3 by
+ * default), which turn freecam on or off, and asks the window for the
+ * mouse's moves while freecam and its Mouse look are on. */
 void freecam_start(void);
 
 /* Once a game frame: freecam takes up what the player changed since the last
  * frame (F8, the pad's button and the menu's rows ask on the window's
  * thread), recorded, or a recording's in its place while one plays
  * (port/playback.c); then it steers the camera, and takes the stick, while
- * it is on and the follow camera ran since the last frame. */
+ * it is on and the follow camera ran since the last frame. It takes the
+ * mouse's move since the last frame too, recorded, or the recording's in its
+ * place, for the follow camera to turn by this frame; a move in a frame it
+ * doesn't steer is dropped, so the view doesn't jump when it steers again. */
 void freecam_frame(void);
 
 /* Each camera post-update (sub_000A28B0), whatever its mode: that camera was

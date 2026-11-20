@@ -23,16 +23,20 @@ before; one reached 20 frames early skips to it. Off route: the skater
 pushed 100 units off, a stage the recording doesn't have next, and an
 anchor never reached. A real pad held from the start does nothing, and
 pressed once let go of, hands the game back. With the free camera: turned
-on by F8, steered by the right stick, its sensitivity, invert and auto
-centre changed in the menu, off by R3 and on by F8, recorded with the right
-stick as the pad gave it; played with the player's free camera off and set
-otherwise, the game reads what it read, the eye and the skater go where
-they went, and the player's are back after, the settings file untouched;
-the real right stick while the free camera steers, and F8, hand the game
-back. A recording written by hand plays, with the player's free camera
-until its first freecam line and the recording's from there; one that isn't
-a recording, goes back in time, has a line after its end, a word it doesn't
-know, or a freecam line out of its range is refused, saying where.
+on by F8, steered by the right stick and the mouse, its sensitivity, invert,
+auto centre and mouse sensitivity changed in the menu, off by R3 and on by
+F8, recorded with the right stick as the pad gave it and the mouse's moves
+as it turned by them, none while it was off; played with the player's free
+camera off and set otherwise, Mouse look off among them, the game reads
+what it read, the eye and the skater go where they went, and the player's
+are back after, the settings file untouched; the real right stick while
+the free camera steers, F8, and the player's mouse, hand the game back. A
+recording written by hand plays, with the player's free camera until its
+first freecam line and the recording's from there, a freecam line without
+the mouse's two among them, and its mouse's moves past an early anchor
+taken at once; one that isn't a recording, goes back in time, has a line
+after its end, a word it doesn't know, or a freecam or mouse line out of
+its range or short of a value is refused, saying where.
 As the engine starts: JSRF_RECORD, JSRF_PLAY and JSRF_PLAY_MENU taken out
 of the environment, a recording made beside the settings file, and
 Developer > Playback's rows, each with its hint, Play's choices newest
@@ -74,7 +78,9 @@ with tempfile.TemporaryDirectory(prefix="playback-") as directory:
             "summary: off route", "summary: handed back",
             "idle moment 1: the skater put back",
             "the free camera as recorded at frame",
+            "auto centre 0, mouse look on at 5",
             "the free camera was changed (F8, the pad or the menu): the game is yours",
+            "the mouse was moved: the game is yours",
             "(yours again, as playback ended)",
             "JSRF_RECORD left out: a recording is played, not made"]
     missing = [s for s in said if s not in log]
