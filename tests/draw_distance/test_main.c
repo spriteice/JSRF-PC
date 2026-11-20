@@ -33,6 +33,9 @@
  * shape of the hill's corner: 30 areas, as Stg12's, where the street, area
  * 0, and the corner, area 16, list area 14, only 14 lists area 13, up the
  * hill, and only 13 lists area 11, further up (known bug 69).
+ * Chuo Street's rule for Far shadows (known bug 52) is given a made-up map of
+ * 59 areas, as Stg11's, where the three areas it hides are named only by an
+ * area two crossings from the eye.
  */
 #include <float.h>
 #include <math.h>
@@ -637,6 +640,98 @@ static void check_hill(void)
     printf("dogenzaka hill: area 13 and what lies past it never added from the street or the corner\n");
 }
 
+/* ---- Chuo Street's rule ------------------------------------------------- */
+
+/* A made-up map with the shape of Chuo Street's halfpipe (known bug 52): 59
+ * areas, as Stg11 has, each listing itself, but the halfpipe, area 1, which
+ * lists 2 along it; area 2, which lists 1 and the end, 6; and the end, which
+ * lists 2 and the three scenery areas past the end wall, 47, 48 and 50. So
+ * from the halfpipe 1x adds the end and 2x the three. */
+#define CHUO_AREAS  59
+#define CHUO_STAGE  0x00010001u     /* Stg11, as the mission asks for it */
+#define HALFPIPE    1
+#define ALONG       2
+#define END_WALL    6
+#define SCENERY     (AREA(47 - 32) | AREA(48 - 32) | AREA(50 - 32))     /* in the set's second word */
+static uint32_t s_chuo_self[CHUO_AREAS];
+static const uint32_t k_halfpipe[] = { 1, 2 }, k_along[] = { 2, 1, 6 }, k_end[] = { 6, 2, 47, 48, 50 };
+static DrawArea s_chuo[CHUO_AREAS];
+
+static void chuo_make(void)
+{
+    int i;
+    memset(s_chuo, 0, sizeof s_chuo);
+    for (i = 0; i < CHUO_AREAS; i++) {
+        s_chuo_self[i] = (uint32_t)i;
+        s_chuo[i].list = &s_chuo_self[i];
+        s_chuo[i].nlist = 1;
+    }
+    s_chuo[HALFPIPE].list = k_halfpipe;     s_chuo[HALFPIPE].nlist = 2;
+    s_chuo[ALONG].list = k_along;           s_chuo[ALONG].nlist = 3;
+    s_chuo[END_WALL].list = k_end;          s_chuo[END_WALL].nlist = 5;
+}
+
+/* From an eye in area `in`, n areas of the map: Far buildings' set, and what
+ * the shadow passes see, each a set's second word, where 47, 48 and 50 are;
+ * and whether the shadows' first word is the buildings'. */
+static void chuo_sets(int in, int n, uint32_t *buildings, uint32_t *shadows, int *first_same)
+{
+    uint32_t game[DRAW_SET_WORDS] = { 0 };
+    unsigned e;
+    game[in >> 5] |= 1u << (in & 31);
+    for (e = 0; e < s_chuo[in].nlist; e++) game[s_chuo[in].list[e] >> 5] |= 1u << (s_chuo[in].list[e] & 31);
+    memcpy(s_live, game, sizeof s_live);
+    draw_buildings_widen(s_chuo, n, s_live, 0.0, 0);
+    memset(s_seen, 0xFF, sizeof s_seen);
+    draw_buildings_shadows(s_live, game, shadow_pass);
+    *buildings = s_live[1];
+    *shadows = s_seen[1];
+    *first_same = s_seen[0] == s_live[0];
+}
+
+/* Far buildings 2x and Far shadows 2x from the settings. On Chuo Street's
+ * map after its stage, the shadows never take 47, 48 and 50 from the
+ * halfpipe, at 2x or at All, though Far buildings adds them; the rest of the
+ * shadows' set is Far buildings'. From the end, whose own list names them,
+ * the game draws them and their shadows stay. On a map after another stage,
+ * or on one of 58 areas after Chuo Street's stage, the shadows take them as
+ * before. run.py checks the lines. */
+static void check_chuo(void)
+{
+    uint32_t buildings, shadows;
+    int same;
+    CHECK(draw_far_buildings() == 2 && draw_far_shadows() == 2);
+    chuo_make();
+    draw_buildings_stage(CHUO_STAGE);
+    chuo_sets(HALFPIPE, CHUO_AREAS, &buildings, &shadows, &same);
+    CHECK(buildings == SCENERY && !shadows && same);
+    s_far_row.pick(DRAW_FAR_WHOLE);
+    s_shadow_row.pick(DRAW_FAR_WHOLE);
+    chuo_sets(HALFPIPE, CHUO_AREAS, &buildings, &shadows, &same);
+    CHECK((buildings & SCENERY) == SCENERY && !(shadows & SCENERY) && shadows == (buildings & ~SCENERY) && same);
+    /* Far shadows below Far buildings: the shadows' own step, still without
+     * them. */
+    s_shadow_row.pick(1);
+    chuo_sets(HALFPIPE, CHUO_AREAS, &buildings, &shadows, &same);
+    CHECK((buildings & SCENERY) == SCENERY && !shadows);
+    s_shadow_row.pick(DRAW_FAR_WHOLE);
+    /* From the end the game draws them itself: their shadows stay. */
+    chuo_sets(END_WALL, CHUO_AREAS, &buildings, &shadows, &same);
+    CHECK((shadows & SCENERY) == SCENERY && same);
+    /* Another map after another stage, and one of 58 areas after Chuo
+     * Street's: the shadows take them. */
+    s_far_row.pick(2);
+    s_shadow_row.pick(2);
+    draw_buildings_stage(CHUO_STAGE + 1);
+    s_chuo_self[CHUO_AREAS - 1] = CHUO_AREAS - 2;      /* another map, told from the first */
+    chuo_sets(HALFPIPE, CHUO_AREAS, &buildings, &shadows, &same);
+    CHECK(buildings == SCENERY && shadows == SCENERY);
+    draw_buildings_stage(CHUO_STAGE);
+    chuo_sets(HALFPIPE, CHUO_AREAS - 1, &buildings, &shadows, &same);
+    CHECK(buildings == SCENERY && shadows == SCENERY);
+    printf("chuo street: the shadows of areas 47, 48 and 50 never added\n");
+}
+
 /* The whole map's set, for the free camera when its eye and the game's
  * camera's are both in no area (recomp_manual.c, area_set_from_game_eye;
  * known bug 61): every area some list names, as All has it, whatever Far
@@ -813,6 +908,7 @@ int main(int argc, char **argv)
     if (!strcmp(c, "far_test")) check_far_test();
     if (!strcmp(c, "far_eye")) check_eye();
     if (!strcmp(c, "far_hill")) check_hill();
+    if (!strcmp(c, "far_chuo")) check_chuo();
     if (!strcmp(c, "shadows")) check_shadows();
     if (!strcmp(c, "whole_map")) check_whole_map();
     if (!strcmp(c, "far_pick")) {

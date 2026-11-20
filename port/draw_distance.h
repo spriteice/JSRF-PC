@@ -34,10 +34,13 @@
  * so the areas Far buildings adds have their shadows and a far street's
  * shadows don't pop in as you come near, at the cost of minor visual
  * glitches: patches of light in the shadows (known bug 52), from the shadow
- * volumes of areas the game doesn't draw from where the eye is. Off, the
- * shadows come from the game's own set, and an area only Far buildings adds
- * has no shadows until the game draws it itself. It does nothing with Far
- * buildings off. It changes at once.
+ * volumes of areas the game doesn't draw from where the eye is. A map's rule
+ * can keep an area's shadows out where they make such patches: on Chuo
+ * Street, those of areas 47, 48 and 50, behind the long halfpipe's end wall,
+ * which they lit at All (draw_buildings_stage). Off, the shadows come from
+ * the game's own set, and an area only Far buildings adds has no shadows
+ * until the game draws it itself. It does nothing with Far buildings off. It
+ * changes at once.
  *
  * Before b2.1-hotfix the two rows were toggles, kept as farbuildings= and
  * farshadows= (1 on, 0 off, on drawing the whole map): with no step of its
@@ -169,9 +172,14 @@ int draw_set_whole_map(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WORDS
  * them (known bug 66). A hidden area is a wall: Far buildings doesn't walk
  * through it, so the areas past it, reached only through its list, aren't
  * added either, as the game hides them too: from the street, areas 11 and
- * 12 further up the hill, whose traffic hung in the sky (known bug 69). Each
- * such rule is kept by hand, for one case seen and named; the first call on
- * the map logs each. Before any stage,
+ * 12 further up the hill, whose traffic hung in the sky (known bug 69). A
+ * rule can also hide its areas from Far shadows only, and from every area:
+ * on Chuo Street (stage 0x00010001, its 59 areas), Far shadows never adds
+ * areas 47, 48 and 50, scenery past the long halfpipe's end wall, whose
+ * shadow volumes lit patches on it at All (known bug 52); Far buildings
+ * still adds them, and where the game draws them itself their shadows stay.
+ * Each such rule is kept by hand, for one case seen and named; the first
+ * call on the map logs each. Before any stage,
  * DRAW_STAGE_NONE, which no rule has. */
 #define DRAW_STAGE_NONE 0xFFFFFFFFu
 void draw_buildings_stage(uint32_t stage);
@@ -179,8 +187,9 @@ void draw_buildings_stage(uint32_t stage);
 /* With Far buildings on, the map's shadows: runs run() with set holding
  * game, the set the game made, widened as draw_buildings_widen widens it to
  * Far shadows' step or Far buildings', the nearer, and puts set back as it
- * was after it; with the two at the same step, set is already that. Off
- * (step 0), the game's own set. The game draws its shadows as volumes it
+ * was after it, without the areas a map's rule hides from the shadows
+ * (draw_buildings_stage); with the two at the same step and no such rule,
+ * set is already that. Off (step 0), the game's own set. The game draws its shadows as volumes it
  * counts in the stencil buffer, and a surface is in shadow where the count
  * isn't 0. That is right only for volumes whole along every line of sight
  * from the eye, which the game's own set gives it. The volumes of areas only

@@ -291,7 +291,11 @@ static uint32_t s_stage = DRAW_STAGE_NONE;
  * tells these from the areas Far buildings is there to add
  * (far-buildings-1x/DIAGNOSIS.md in the shared folder): each one is kept by
  * hand, for a case seen and named, with spriteice's OK. A map can have
- * several, each with the areas it hides and the areas it hides them from.
+ * several, each with the areas it hides and the areas it hides them from, or
+ * from every area; and a rule can hide its areas from Far shadows only,
+ * where the game's own lists are right for the buildings but the areas'
+ * shadow volumes, drawn from where the game never draws them, make patches
+ * of light (known bug 52).
  *
  * Dogenzaka Hill (Stg12): area 13, up the hill, is drawn by the game from
  * areas 13 and 14 only, as 14's list names it and the lists of the street
@@ -311,6 +315,24 @@ static uint32_t s_stage = DRAW_STAGE_NONE;
 #define DOGENZAKA_CORNER     16
 static const int k_dogenzaka_never[] = { DOGENZAKA_UPHILL },
                  k_dogenzaka_from[] = { DOGENZAKA_STREET, DOGENZAKA_CORNER };
+/* Chuo Street (Stg11): areas 47, 48 and 50 are scenery only, with no space
+ * of their own, and only areas at the long halfpipe's west end and past it
+ * name them: 47 areas 6, 8, 31 and 32; 48 areas 8 and 10; 50 area 30. From
+ * the halfpipe's middle and east end they are 4 to 7 crossings away, so at
+ * All, Far shadows draws their shadow volumes from there, behind the
+ * halfpipe's end wall, and each takes the shadow off the wall in front of it
+ * in a patch of light (known bug 52, at All only since b2.1-hotfix; the
+ * three named with Developer > Far buildings test by Adri, GitHub issue 2,
+ * 19 November 2026). Far shadows never adds them, from any area: they keep
+ * their shadows where the game draws them itself, and Far buildings still
+ * draws their scenery (spriteice, 20 November 2026, 01:13 UTC: "Hill fix +
+ * Chuo shadows rule"). */
+#define STAGE_CHUO_STREET    0x00010001u    /* as the mission asks for it */
+#define CHUO_AREAS           59             /* its map's, so it's the one */
+#define CHUO_SCENERY_WEST    47
+#define CHUO_SCENERY_SOUTH   48
+#define CHUO_SCENERY_END     50
+static const int k_chuo_never[] = { CHUO_SCENERY_WEST, CHUO_SCENERY_SOUTH, CHUO_SCENERY_END };
 /* A list of areas, and how many it holds, for a rule. */
 #define RULE_AREAS(a) (a), (int)(sizeof (a) / sizeof (a)[0])
 static const struct {
@@ -319,11 +341,13 @@ static const struct {
     int         areas;          /* its map's, so it's the one */
     const int  *never;          /* the areas it hides */
     int         nnever;
-    const int  *from;           /* from the sets these areas make */
+    const int  *from;           /* from the sets these areas make; none: from every set */
     int         nfrom;
+    int         shadows_only;   /* hides them from Far shadows, not Far buildings */
 } k_rules[] = {
     { "Dogenzaka Hill", STAGE_DOGENZAKA_HILL, DOGENZAKA_AREAS,
-      RULE_AREAS(k_dogenzaka_never), RULE_AREAS(k_dogenzaka_from) },
+      RULE_AREAS(k_dogenzaka_never), RULE_AREAS(k_dogenzaka_from), 0 },
+    { "Chuo Street", STAGE_CHUO_STREET, CHUO_AREAS, RULE_AREAS(k_chuo_never), NULL, 0, 1 },
 };
 #define DRAW_RULES ((int)(sizeof k_rules / sizeof k_rules[0]))
 _Static_assert(sizeof k_rules / sizeof k_rules[0] <= 32, "a bit of s_map.rules for each rule");
@@ -410,11 +434,18 @@ static void map_take(const DrawArea *a, int n, uint32_t key)
         }
         s_map.rules |= 1u << i;
         areas_said(never, sizeof never, k_rules[i].never, k_rules[i].nnever);
-        areas_said(from, sizeof from, k_rules[i].from, k_rules[i].nfrom);
-        fprintf(stderr, "[DRAW] Far buildings: %s (stage %08X), area%s %s and what lies past %s never "
-                "added from area%s %s, where the game hides them\n", k_rules[i].map, s_map.stage,
-                k_rules[i].nnever > 1 ? "s" : "", never, k_rules[i].nnever > 1 ? "them" : "it",
-                k_rules[i].nfrom > 1 ? "s" : "", from);
+        if (k_rules[i].nfrom) {
+            int said = snprintf(from, sizeof from, "area%s ", k_rules[i].nfrom > 1 ? "s" : "");
+            areas_said(from + said, (int)sizeof from - said, k_rules[i].from, k_rules[i].nfrom);
+        } else snprintf(from, sizeof from, "any area");
+        if (k_rules[i].shadows_only)
+            fprintf(stderr, "[DRAW] Far shadows: %s (stage %08X), the shadows of area%s %s never added "
+                    "from %s, where they make patches of light\n", k_rules[i].map, s_map.stage,
+                    k_rules[i].nnever > 1 ? "s" : "", never, from);
+        else
+            fprintf(stderr, "[DRAW] Far buildings: %s (stage %08X), area%s %s and what lies past %s never "
+                    "added from %s, where the game hides them\n", k_rules[i].map, s_map.stage,
+                    k_rules[i].nnever > 1 ? "s" : "", never, k_rules[i].nnever > 1 ? "them" : "it", from);
     }
 }
 
@@ -502,17 +533,18 @@ static void set_leave_out(uint32_t set[DRAW_SET_WORDS], const uint32_t game[DRAW
 }
 
 /* The areas the map's rules (k_rules) hide while game is the set one of
- * their areas makes, for set_reach's wall; but none game has: what the game
- * draws itself is never hidden. */
-static void rules_hidden(uint32_t hidden[DRAW_SET_WORDS], const uint32_t game[DRAW_SET_WORDS])
+ * their areas makes, or from every set, for set_reach's wall: for Far
+ * shadows' set (shadows nonzero) or Far buildings'. But none game has: what
+ * the game draws itself is never hidden. */
+static void rules_hidden(uint32_t hidden[DRAW_SET_WORDS], const uint32_t game[DRAW_SET_WORDS], int shadows)
 {
     int r, k, a, w;
     memset(hidden, 0, DRAW_SET_WORDS * sizeof hidden[0]);
     for (r = 0; r < DRAW_RULES; r++) {
-        if (!(s_map.rules >> r & 1u)) continue;
+        if (!(s_map.rules >> r & 1u) || (k_rules[r].shadows_only && !shadows)) continue;
         for (k = 0; k < k_rules[r].nfrom; k++)
             if (set_from_area(game, k_rules[r].from[k])) break;
-        if (k == k_rules[r].nfrom) continue;
+        if (k_rules[r].nfrom && k == k_rules[r].nfrom) continue;
         for (a = 0; a < k_rules[r].nnever; a++)
             if (k_rules[r].never[a] >= 0 && k_rules[r].never[a] < DRAW_AREAS_MAX)
                 set_add(hidden, k_rules[r].never[a]);
@@ -538,7 +570,7 @@ static void eye_note(const uint32_t set[DRAW_SET_WORDS], double now)
         char added[512];
         uint32_t adds[DRAW_SET_WORDS], hidden[DRAW_SET_WORDS];
         memcpy(adds, set, sizeof adds);
-        rules_hidden(hidden, set);
+        rules_hidden(hidden, set, 0);
         set_reach(adds, s_far, hidden);
         for (w = 0; w < DRAW_SET_WORDS; w++) adds[w] &= ~set[w];
         set_print(added, sizeof added, adds);
@@ -601,7 +633,7 @@ void draw_buildings_widen(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WO
     game = set_count(set);
     memcpy(was, set, sizeof was);
     eye_note(set, now);
-    rules_hidden(hidden, was);
+    rules_hidden(hidden, was, 0);
     set_reach(set, reach, hidden);
     for (w = 0; w < DRAW_SET_WORDS; w++) s_added_now[w] = set[w] & ~was[w];
     leave_step();
@@ -627,18 +659,23 @@ int draw_set_whole_map(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WORDS
 void draw_buildings_shadows(uint32_t set[DRAW_SET_WORDS], const uint32_t game[DRAW_SET_WORDS],
                             void (*run)(void))
 {
-    uint32_t wide[DRAW_SET_WORDS], hidden[DRAW_SET_WORDS];
+    uint32_t wide[DRAW_SET_WORDS], hidden[DRAW_SET_WORDS], built[DRAW_SET_WORDS];
     int reach = s_widened, step = s_shadows_far;     /* the set's own, should a row change between */
+    int w, same = 1;
     if (step > reach) step = reach;
     s_shadows++;
     s_shadows_added += set_count(set) - set_count(game);
-    if (step == reach) {      /* the set Far buildings made */
+    if (reach) {        /* what the map's rules hide from the shadows, and from the buildings */
+        rules_hidden(hidden, game, 1);
+        rules_hidden(built, game, 0);
+        for (w = 0; w < DRAW_SET_WORDS; w++) same &= hidden[w] == built[w];
+    }
+    if (step == reach && same) {      /* the set Far buildings made */
         run();
         return;
     }
     memcpy(wide, set, sizeof wide);
     memcpy(set, game, sizeof wide);
-    rules_hidden(hidden, game);
     set_reach(set, step, hidden);
     set_leave_out(set, game, s_leave_out);
     s_shadows_added -= set_count(wide) - set_count(set);

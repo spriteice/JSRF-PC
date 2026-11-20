@@ -178,8 +178,10 @@ input goes to the menu.
   too, as many areas ahead as its own choice, Off to All, and never further
   than Far buildings, so they don't pop in as you come near, at the cost of
   minor visual glitches, such as patches of light in shadows that move with
-  the camera. Off, those areas have no shadows until you're near enough for
-  the game to show them itself. 3x by default; it does nothing with Far
+  the camera. On Chuo Street, the scenery past the long halfpipe's end wall
+  keeps its shadows only where the game shows them, as at All they lit
+  patches on that wall. Off, those areas have no shadows until you're near
+  enough for the game to show them itself. 3x by default; it does nothing with Far
   buildings off, changes at once, and is kept as `farshadowsahead=` (0 for
   Off to 4 for All) in the settings file. Before b2.1-hotfix the two were on
   or off, kept as `farbuildings=` and `farshadows=`: until you choose again,

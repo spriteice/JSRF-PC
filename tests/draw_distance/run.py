@@ -155,6 +155,14 @@ cases = {
                   "Far buildings 1x adding 19",
                   "[DRAW] Far buildings: stage 00010002 has 29 areas, not Dogenzaka Hill's 30, so its rule "
                   "is left out"]),
+    # Chuo Street's rule for Far shadows (test_main.c, check_chuo): logged on
+    # its map, and left out, saying so, on a map of another size after its
+    # stage.
+    "far_chuo": ("farbuildingsahead=2\nfarshadowsahead=2\n",
+                 ["[DRAW] Far shadows: Chuo Street (stage 00010001), the shadows of areas 47, 48 and 50 never "
+                  "added from any area, where they make patches of light",
+                  "[DRAW] Far buildings: stage 00010001 has 58 areas, not Chuo Street's 59, so its rule is "
+                  "left out"]),
     "whole_map": ("farbuildingsahead=0\n", ["[DRAW] Far buildings Off (settings)"]),
     "far_eye": ("farbuildingsahead=1\nfarshadowsahead=0\n",
                 ["[DRAW] the eye at t=0.00: area 0, from -1; Far buildings adds 2 there",
