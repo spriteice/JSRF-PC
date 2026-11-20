@@ -736,7 +736,7 @@ static void jsrf_check_tree(uint32_t node, int depth, uint32_t holder, const cha
  * and draw entries, and the words at +4 (flags: bit 31 set = not updated),
  * +8 and +0xC -- so two runs can be set side by side to see which tasks one
  * of them has switched off. */
-static double pad_now(void);
+#include "pad.h"   /* pad_now, the clock the test hooks share */
 static void jsrf_dump_tree(uint32_t node, int depth)
 {
     uint8_t *m = (uint8_t *)g_xbox_mem_offset;
@@ -1279,13 +1279,12 @@ void sub_0017CAB0(void)
 /* ======================================================================
  * XInput HLE (XPP section)
  *
- * The XDK's pad API sits on a USB stack that talks to the OHCI controllers
- * through MMIO; nothing answers those registers here, so XGetDevices never
- * reported a pad and the title sat on its attract loop for ever. Replace the
- * eight entry points the game calls with direct host input. On the host the
- * pad is whatever xbox_input has (SDL2's controllers);
- * JSRF_PAD_SCRIPT="20 START;26 A;30 A" presses buttons on a schedule for
- * unattended runs (seconds since start, 250 ms per press).
+ * The XDK's pad API, replaced: its eight entry points are at the end of
+ * this section, each calling port/pad.c, which says why. Before them, the
+ * test hooks for unattended runs, which reach the pad through pad.c's
+ * pad_test_start and pad_test_inputs (below, after auto_step):
+ * JSRF_PAD_SCRIPT="20 START;26 A;30 A" presses buttons on a schedule
+ * (seconds since start, 250 ms per press), and the autopilot steers.
  *
  *   0x001BD5FF  XGetDevices(type)                        stdcall 4
  *   0x001BD621  XGetDeviceChanges(type, &ins, &rem)      stdcall 12
@@ -1303,19 +1302,10 @@ void sub_0017CAB0(void)
 #include "keyboard_move.h"
 #include "missions.h"
 #include "soul_indicator.h"
-#define XPP_TYPE_GAMEPAD 0x001BC860u
-#define XPP_HANDLE_BASE  0x58580000u
 
 static struct { double t, dur; uint16_t buttons; uint8_t analog[8];
                 int16_t axis[4]; int has_axis; char name[16]; int said; } s_pad_script[64];
 static int s_pad_script_n = -1;
-static double pad_now(void)
-{
-    static struct timespec t0; struct timespec t;
-    clock_gettime(CLOCK_MONOTONIC, &t);
-    if (!t0.tv_sec) t0 = t;
-    return (t.tv_sec - t0.tv_sec) + (t.tv_nsec - t0.tv_nsec) / 1e9;
-}
 static void pad_script_load(void)
 {
     const char *s = getenv("JSRF_PAD_SCRIPT");
@@ -2620,15 +2610,18 @@ static void auto_step(const float *camf, const float *chf)
                 dist, s_auto_lx, s_auto_ly);
     }
 }
-/* Host pad state for a port: real pad if attached, else the script. */
-static int pad_read(uint32_t port, XBOX_INPUT_STATE *st)
+/* The test hooks' part of each pad read (port/pad.c's pad_read). At the
+ * first read: the press script and the autopilot's waypoints. At each:
+ * JSRF_TRACE_AT's traces, then, on port 0 while a script or the autopilot
+ * is set, the pad they make, in place of the host's. */
+void pad_test_start(void)
 {
-    static int inited; static uint32_t packet;
-    if (!inited) { inited = 1; xbox_InputInit(); pad_script_load(); if (s_auto_n < 0) auto_load(); }
-    { static int polls; if (++polls == 1 || polls == 600)
-        fprintf(stderr, "[PAD] title polled the pad (%d times, t=%.1fs)\n",
-                polls, pad_now()); }
-    memset(st, 0, sizeof *st);
+    pad_script_load();
+    if (s_auto_n < 0) auto_load();
+}
+int pad_test_inputs(uint32_t port, XBOX_INPUT_STATE *st)
+{
+    static uint32_t packet;
     trace_at_step();
     if (port == 0 && (s_pad_script_n > 0 || s_auto_n > 0)) {
         double now = pad_now();
@@ -2681,74 +2674,26 @@ static int pad_read(uint32_t port, XBOX_INPUT_STATE *st)
         st->dwPacketNumber = ++packet;
         return 1;
     }
-    if (xbox_InputGetState(port, st) == 0) return 1;
-    return port == 0;   /* port 0 always "present", idle, so the title never waits for a pad */
-}
-static uint32_t pad_mask(uint32_t type) { return type == XPP_TYPE_GAMEPAD ? 1u : 0u; }
-/* Seed a device-type descriptor the way the console has it by the time a
- * title looks: present mask and last-reported mask equal, no change pending.
- * Idempotent -- only the first sight of a descriptor seeds it. */
-static uint32_t pad_descriptor_sync(uint32_t type)
-{
-    static uint32_t seeded[4]; static int nseeded;
-    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
-    uint32_t mask = pad_mask(type);
-    int i;
-
-    if (!type) return mask;
-    for (i = 0; i < nseeded; i++)
-        if (seeded[i] == type) return mask;
-    if (nseeded < 4) seeded[nseeded++] = type;
-    *(uint32_t *)(m + type)     = mask;   /* connected now                 */
-    *(uint32_t *)(m + type + 4) = 0;      /* no change pending             */
-    *(uint32_t *)(m + type + 8) = mask;   /* ... and already reported once */
-    return mask;
+    return 0;
 }
 
+/* The XDK's pad API, answered by port/pad.c. */
 /* XGetDevices(type) */
 void sub_001BD5FF(void)
 {
-    uint32_t type = GARG(1); uint8_t *m = (uint8_t *)g_xbox_mem_offset;
-    uint32_t mask = pad_descriptor_sync(type);
-    if (type) *(uint32_t *)(m + type + 8) = *(uint32_t *)(m + type);
-    g_eax = mask; g_esp += 4 + 4;
+    g_eax = pad_get_devices((uint8_t *)g_xbox_mem_offset, GARG(1));
+    g_esp += 4 + 4;
 }
-/* XGetDeviceChanges(type, &ins, &rem)
- *
- * Reports what has been plugged in or unplugged since the last call, and
- * returns non-zero when anything has. JSRF's device enumeration
- * (sub_001669A0) treats that non-zero as E_FAIL and gives up -- it wants a
- * settled device list, and on a console it gets one, because the pad was
- * enumerated during XInitDevices long before the title asks.
- *
- * So the pad is modelled as already connected at boot rather than arriving
- * during the first poll: the descriptor's "currently present" and "last
- * reported" masks are seeded together, and this reports no change. Reporting
- * the insertion here instead cost the title its whole input, font and UI
- * init, and the first visible symptom was a 3 GB allocation four subsystems
- * away.
- */
+/* XGetDeviceChanges(type, &ins, &rem): pad.c says why it reports no change. */
 void sub_001BD621(void)
 {
-    uint32_t type = GARG(1), pins = GARG(2), prem = GARG(3);
-    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
-    uint32_t now = 0, last = 0, ins, rem;
-
-    pad_descriptor_sync(type);
-    if (type) { now = *(uint32_t *)(m + type); last = *(uint32_t *)(m + type + 8); }
-    ins = now & ~last;
-    rem = ~now & last;
-    if (pins) *(uint32_t *)(m + pins) = ins;
-    if (prem) *(uint32_t *)(m + prem) = rem;
-    if (type) { *(uint32_t *)(m + type + 4) = 0; *(uint32_t *)(m + type + 8) = now; }
-    g_eax = (ins | rem) ? 1 : 0;
+    g_eax = pad_get_device_changes((uint8_t *)g_xbox_mem_offset, GARG(1), GARG(2), GARG(3));
     g_esp += 4 + 12;
 }
+/* XInputOpen(type, port, slot, polling) */
 void sub_001C3BA1(void)
 {
-    uint32_t type = GARG(1), port = GARG(2);
-    g_eax = (pad_mask(type) >> port) & 1 ? (XPP_HANDLE_BASE | port) : 0;
-    if (getenv("JSRF_DBG")) fprintf(stderr, "[PAD] XInputOpen(type=%08X port=%u) = %08X\n", type, port, g_eax);
+    g_eax = pad_open(GARG(1), GARG(2));
     g_esp += 4 + 16;
 }
 /* XInputClose(h) */
@@ -2759,70 +2704,20 @@ void sub_001C3C16(void)
 /* XInputGetCapabilities(h, caps) */
 void sub_001C3C22(void)
 {
-    uint32_t h = GARG(1), caps = GARG(2); uint8_t *m = (uint8_t *)g_xbox_mem_offset;
-    if ((h & 0xFFFF0000u) != XPP_HANDLE_BASE || !caps) { g_eax = 0x57; g_esp += 12; return; }
-    memset(m + caps, 0, 28);
-    m[caps + 0] = 1;                                  /* XINPUT_DEVSUBTYPE_GC_GAMEPAD */
-    *(uint16_t *)(m + caps + 4) = 0x00FF;             /* In.wButtons: all digital */
-    memset(m + caps + 6, 0xFF, 8);                    /* In.bAnalogButtons */
-    for (int k = 0; k < 4; k++) *(int16_t *)(m + caps + 14 + 2 * k) = 0x7FFF;
-    *(uint16_t *)(m + caps + 22) = 0xFFFF; *(uint16_t *)(m + caps + 24) = 0xFFFF; /* rumble */
-    g_eax = 0; g_esp += 4 + 8;
+    g_eax = pad_get_capabilities((uint8_t *)g_xbox_mem_offset, GARG(1), GARG(2));
+    g_esp += 4 + 8;
 }
 /* XInputGetState(h, state) */
 void sub_001C3E14(void)
 {
-    uint32_t h = GARG(1), st = GARG(2); uint8_t *m = (uint8_t *)g_xbox_mem_offset;
-    XBOX_INPUT_STATE s;
-    static uint16_t last_btn; static uint8_t last_a;
-    if ((h & 0xFFFF0000u) != XPP_HANDLE_BASE || !st) { g_eax = 0x57; g_esp += 12; return; }
-    if (!pad_read(h & 3, &s)) {                                        /* ERROR_DEVICE_NOT_CONNECTED */
-        freecam_pad(h & 3, NULL, NULL);
-        g_eax = 0x48F; g_esp += 12; return;
-    }
-    freecam_pad(h & 3, &s.Gamepad.sThumbRX, &s.Gamepad.sThumbRY);    /* the free camera's, while it steers */
-    kbmove_pad(h & 3, &s.Gamepad.sThumbLX, &s.Gamepad.sThumbLY);     /* the keys', while they steer the skater */
-    *(uint32_t *)(m + st) = s.dwPacketNumber;
-    *(uint16_t *)(m + st + 4) = s.Gamepad.wButtons;
-    memcpy(m + st + 6, s.Gamepad.bAnalogButtons, 8);
-    *(int16_t *)(m + st + 14) = s.Gamepad.sThumbLX; *(int16_t *)(m + st + 16) = s.Gamepad.sThumbLY;
-    *(int16_t *)(m + st + 18) = s.Gamepad.sThumbRX; *(int16_t *)(m + st + 20) = s.Gamepad.sThumbRY;
-    if (getenv("JSRF_DBG") && (s.Gamepad.wButtons != last_btn || s.Gamepad.bAnalogButtons[0] != last_a)) {
-        last_btn = s.Gamepad.wButtons; last_a = s.Gamepad.bAnalogButtons[0];
-        fprintf(stderr, "[PAD] state buttons=%04X A=%u B=%u X=%u Y=%u\n", last_btn, last_a,
-                s.Gamepad.bAnalogButtons[1], s.Gamepad.bAnalogButtons[2], s.Gamepad.bAnalogButtons[3]);
-    }
-    g_eax = 0; g_esp += 4 + 8;
+    g_eax = pad_get_state((uint8_t *)g_xbox_mem_offset, GARG(1), GARG(2));
+    g_esp += 4 + 8;
 }
-/* XInputSetState(h, feedback)
- *
- * The feedback block is a 0x42-byte header, then the two motors' speeds, a
- * word each. The XDK's own XInputSetState (the code at this address) writes
- * the pad's USB report header, its number and length (00 06), into the
- * header's last two bytes and sends the six bytes from there: the report the
- * pad takes, 00 06 then the left motor then the right. So the speeds are at
- * +0x42 and +0x44; +0x40 is the report header, which nothing but the XDK
- * writes (JSRF zeroes the block as it sets its pad up, at 0x00167DF5). Read at
- * +0x40 and +0x42, the pad's big left motor never ran and its small right
- * one played the game's left strength. JSRF's pad update (sub_00167180) sets
- * both speeds at +0x42 in one write and calls this only when they change:
- * the input layer holds them until then (xbox_InputSetState). */
-#define XPP_FEEDBACK_STATUS 0x00u     /* Header.dwStatus */
-#define XPP_FEEDBACK_EVENT  0x04u     /* Header.hEvent */
-#define XPP_FEEDBACK_LEFT   0x42u     /* Rumble.wLeftMotorSpeed, after the header */
-#define XPP_FEEDBACK_RIGHT  0x44u     /* Rumble.wRightMotorSpeed */
+/* XInputSetState(h, feedback): pad.c says where the motors' speeds are. */
 void sub_001C3E85(void)
 {
-    uint32_t fb = GARG(2); uint8_t *m = (uint8_t *)g_xbox_mem_offset;
-    if (fb) {
-        uint32_t ev = *(uint32_t *)(m + fb + XPP_FEEDBACK_EVENT);
-        *(uint32_t *)(m + fb + XPP_FEEDBACK_STATUS) = 0;  /* ERROR_SUCCESS */
-        XBOX_VIBRATION v = { *(uint16_t *)(m + fb + XPP_FEEDBACK_LEFT),
-                             *(uint16_t *)(m + fb + XPP_FEEDBACK_RIGHT) };
-        xbox_InputSetState(GARG(1) & 3, &v);
-        if (ev) { static int once; if (!once++) fprintf(stderr, "[PAD] XInputSetState with hEvent=%08X (not signalled)\n", ev); }
-    }
-    g_eax = 0; g_esp += 4 + 8;
+    g_eax = pad_set_state((uint8_t *)g_xbox_mem_offset, GARG(1), GARG(2));
+    g_esp += 4 + 8;
 }
 /* XInputPoll(h) */
 void sub_001C3EBD(void)

@@ -24,7 +24,10 @@ Future* and nothing else, and these two files are its core.
   feature's setting and logic in plain C that a test links.
 
 The other files here are the port's own features, each with a comment at
-its top saying what it does and where it reaches the game. Developer >
+its top saying what it does and where it reaches the game. `pad.c` is the
+game's pad API answered from the host's pads: `recomp_manual.c` keeps the
+eight entry points the game calls, as the pipeline reads that file for what
+is written by hand, and each calls `pad.c`. Developer >
 Missions, for one, is `missions.c`, which starts the game at a story mission
 through the game flow's update in `recomp_manual.c`, and `missions_menu.c`,
 its rows in the in-game menu, made from the game's own mission files as the

@@ -1,8 +1,12 @@
+/* XInputSetState's replacement (port/pad.c), on a feedback block as JSRF
+ * lays it out. */
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 
-/* The XInputSetState replacement, on a feedback block as JSRF lays it out. */
+#include "pad.h"
 
 #define FEEDBACK 0x1000u        /* the pad object's +0x3F4, where the block is */
-#define STACK    0x2000u
 #define HANDLE   0x58580000u
 
 static uint8_t g_mem[0x4000];
@@ -18,21 +22,27 @@ DWORD xbox_InputSetState(DWORD port, const XBOX_VIBRATION *v)
     return 0;
 }
 
+/* What pad.c's other functions reach, which this test doesn't. */
+void xbox_InputInit(void) {}
+DWORD xbox_InputGetState(DWORD port, XBOX_INPUT_STATE *st) { (void)port; (void)st; return 1; }
+void freecam_pad(unsigned port, short *rx, short *ry) { (void)port; (void)rx; (void)ry; }
+void kbmove_pad(unsigned port, short *lx, short *ly) { (void)port; (void)lx; (void)ly; }
+void pad_test_start(void) {}
+int pad_test_inputs(uint32_t port, XBOX_INPUT_STATE *st) { (void)port; (void)st; return 0; }
+
 /* As sub_00167180 does: the speeds at +0x42, left in the low word and right
  * in the high, written as one dword (from its +0x47C), into a block the
  * game zeroed when it made the pad; then the call, stdcall (h, feedback). */
 static int check(uint16_t left, uint16_t right)
 {
     uint32_t both = (uint32_t)left | (uint32_t)right << 16;
+    uint32_t eax;
     memset(g_mem + FEEDBACK, 0, 0x8C);
     memcpy(g_mem + FEEDBACK + 0x42, &both, 4);
-    *(uint32_t *)(g_mem + STACK + 4) = HANDLE;
-    *(uint32_t *)(g_mem + STACK + 8) = FEEDBACK;
-    g_esp = STACK;
     g_calls = 0;
-    sub_001C3E85();
+    eax = pad_set_state(g_mem, HANDLE, FEEDBACK);
     if (g_calls != 1 || g_got_port != 0 || g_got.wLeftMotorSpeed != left
-     || g_got.wRightMotorSpeed != right || g_esp != STACK + 12) {
+     || g_got.wRightMotorSpeed != right || eax != 0) {
         printf("FAIL: the game set left %u, right %u; the input layer got left %u, right %u "
                "(%d call(s), port %u)\n", left, right, g_got.wLeftMotorSpeed,
                g_got.wRightMotorSpeed, g_calls, (unsigned)g_got_port);
@@ -44,7 +54,6 @@ static int check(uint16_t left, uint16_t right)
 int main(void)
 {
     int bad = 0;
-    g_xbox_mem_offset = (ptrdiff_t)(uintptr_t)g_mem;
     bad |= check(0xFFFF, 0);            /* the big motor alone */
     bad |= check(0, 0x8000);            /* the small one alone */
     bad |= check(0x1234, 0xABCD);
