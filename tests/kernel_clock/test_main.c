@@ -32,6 +32,11 @@
 #ifndef _WIN32
 #include <unistd.h>   /* _exit */
 #endif
+#ifdef TEST_COVERAGE
+/* GCC's, from libgcov: writes the line counts now. tests/run_all.py
+ * --coverage defines TEST_COVERAGE, and links libgcov. */
+void __gcov_dump(void);
+#endif
 #include "xbox_memory_layout.h"
 #include "kernel_bridge.h"
 
@@ -310,6 +315,11 @@ int main(void)
              "must, before it starts, so its lines in the log come in order");
 
     /* The timer thread runs on, as it does until the engine exits. */
+#ifdef TEST_COVERAGE
+    /* _exit() skips the exit handlers, and GCC writes the line counts from
+     * one, so they are written first. */
+    __gcov_dump();
+#endif
     if (s_failures) {
         printf("kernel_clock: %d failures\n", s_failures);
         fflush(stdout);

@@ -32,8 +32,11 @@ on timing leaves those out under it, as cpuprof, heap_lock and nv2a_queue do.
 
 --coverage runs every test built with GCC's line counts: CC, or gcc, and CXX,
 or g++, with --coverage, each test's counts kept in <dir>/<test>/ for
-.github/ci/coverage.py's report. It is for information only: the tests'
-results are shown, and the exit status is 0 whatever they are.
+.github/ci/coverage.py's report. It defines TEST_COVERAGE, so that a test
+that ends with _exit(), as one whose threads run on does, writes its counts
+first with __gcov_dump(): _exit() skips the exit handler that writes them.
+It is for information only: the tests' results are shown, and the exit
+status is 0 whatever they are.
 """
 
 import fnmatch
@@ -259,7 +262,7 @@ def main(argv):
             # names (test.exe) and sources repeat from test to test.
             counts = pathlib.Path(coverage, test.name).resolve()
             counts.mkdir(parents=True, exist_ok=True)
-            flags = " --coverage -fprofile-update=atomic -dumpdir %s/" % counts.as_posix()
+            flags = " --coverage -fprofile-update=atomic -DTEST_COVERAGE -dumpdir %s/" % counts.as_posix()
             env["CC"], env["CXX"] = cc + flags, cxx + flags
         with tempfile.TemporaryDirectory(prefix="sanitizer-") as logs:
             # Reports go to files, whatever run.py does with the test's

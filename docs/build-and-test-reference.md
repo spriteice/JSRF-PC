@@ -429,7 +429,11 @@ between builds).
   and the totals (`.github/ci/coverage.py`). It is for information only:
   it fails nothing, and nothing keeps it. A test that builds a piece cut
   out of a file by text (project rules, How it's written, "Tests link the
-  code they test") counts towards the piece, not the file.
+  code they test") counts towards the piece, not the file. GCC writes a
+  program's counts from an exit handler, which `_exit()` skips, so a test
+  that ends with `_exit()`, as one whose threads run on does, calls
+  `__gcov_dump()` just before it, under `TEST_COVERAGE`, which `--coverage`
+  defines: without that, the files it runs read as never run.
 - **Before a commit,** the jobs the project rules' check 6 gives it run
   on its tree (project rules, Before every commit, 6). Its rows for
   Markdown hold only while no job or test reads a Markdown file, so a

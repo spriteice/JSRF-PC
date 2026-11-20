@@ -10,7 +10,9 @@ ran it. The report gives each such file's lines reached and lines with code,
 and the files no test builds at all, then the totals. It is printed and
 written to <counts dir>/coverage.txt. A test that ends without returning
 from main (an abort, _exit, or a timeout) writes no counts, so its lines
-count as not reached; and a test that builds a copy of a file's text (as
+count as not reached, unless it writes them first: a test that ends with
+_exit() calls __gcov_dump() before it, under TEST_COVERAGE, which
+run_all.py --coverage defines. A test that builds a copy of a file's text (as
 nv2a_queue builds pieces of src/kernel/kernel_mmio.c from its standard
 input) counts towards the copy, not the file. A .gcno file gcov can't read
 is named in the report and left out.

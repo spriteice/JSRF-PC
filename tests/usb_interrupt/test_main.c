@@ -34,6 +34,11 @@
 #ifndef _WIN32
 #include <unistd.h>   /* _exit */
 #endif
+#ifdef TEST_COVERAGE
+/* GCC's, from libgcov: writes the line counts now. tests/run_all.py
+ * --coverage defines TEST_COVERAGE, and links libgcov. */
+void __gcov_dump(void);
+#endif
 #include "xbox_memory_layout.h"
 #include "kernel_bridge.h"
 #include "ohci.h"
@@ -398,6 +403,11 @@ int main(void)
         if (memcmp(before, s_guest, sizeof before))
             fail("an interrupt object or DPC was written at guest address 0");
     }
+#ifdef TEST_COVERAGE
+    /* _exit() skips the exit handlers, and GCC writes the line counts from
+     * one, so they are written first. */
+    __gcov_dump();
+#endif
     if (s_failures) {
         printf("usb_interrupt: %ld failures\n", (long)s_failures);
         fflush(stdout);

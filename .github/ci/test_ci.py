@@ -3,15 +3,17 @@
 at each of a file's sources, how tests/run_all.py names a
 sanitizer's leak, checks that each known bug names its release and counts
 what each tsan.supp entry hides, how count_warnings.py counts a build's
-warnings, how coverage.py adds up the tests' line counts, how
-launcher/images.sh names each image, when llvm_mingw.py uses its copy
-again, and what push_gate.py refuses before a commit or a push."""
+warnings, how coverage.py adds up the tests' line counts and that the
+tests that end with _exit() write theirs, how launcher/images.sh names
+each image, when llvm_mingw.py uses its copy again, and what
+push_gate.py refuses before a commit or a push."""
 
 import hashlib
 import http.server
 import importlib.util
 import os
 import pathlib
+import shutil
 import socket
 import subprocess
 import sys
@@ -365,6 +367,23 @@ def test_coverage_merges_each_tests_counts(tmp_path, monkeypatch):
     found, unread = coverage.coverage(tmp_path)
     assert found == {"src/a.c": (2, 3), "port/b.c": (0, 1)}
     assert unread == ["two/-.gcno"]
+
+
+@pytest.mark.skipif(os.name == "nt" or not shutil.which("gcc") or not shutil.which("gcov"),
+                    reason="GCC's line counts, as CI's GCC job has them")
+def test_tests_that_end_with_exit_write_their_counts(tmp_path):
+    # kernel_clock, usb_interrupt and file_apc end with _exit(), as threads
+    # they start run on. Built for coverage (run_all.py --coverage), each
+    # writes its line counts first: every .gcno its compiles left has its
+    # .gcda beside it, where without the dump there were none.
+    names = ["kernel_clock", "usb_interrupt", "file_apc"]
+    run = subprocess.run([sys.executable, str(root / "tests" / "run_all.py"), "--coverage",
+                          str(tmp_path), *names], capture_output=True, text=True)
+    assert "run_all --coverage: 3 passed" in run.stdout, run.stdout
+    for name in names:
+        notes = sorted((tmp_path / name).glob("*.gcno"))
+        assert notes, name
+        assert [n.name for n in notes if not n.with_suffix(".gcda").exists()] == [], name
 
 
 @pytest.mark.parametrize("groups, recipe", [
