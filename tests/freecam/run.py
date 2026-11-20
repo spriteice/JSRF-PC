@@ -7,8 +7,10 @@ whole.
 Takes port/freecam.c as it is, built with the in-game menu, and the
 settings file code from src/nv2a_gl/nv2a_gl.c verbatim (sdl_cfg_path through
 sdl_cfg_set, with nv_window_pref_num between them); test_main.c stands in
-for the window's key hook, the menu's xbox_MenuAdd and input playback's
-playback_freecam (tests/playback drives freecam.c with the real one). Each
+for the window's key hook, the controller layout's hook for the pad's
+Toggle free camera (src/input/input_remap.c), the menu's xbox_MenuAdd and
+input playback's playback_freecam (tests/playback drives freecam.c with the
+real one). Each
 case gets its own settings file, passed as JSRF_SETTINGS_FILE, and its own
 run, since the settings are read once.
 Requires GCC on PATH, including MinGW on Windows.
@@ -57,9 +59,10 @@ cases = {
     "steer": ("freecam=1\n", ["steering the camera", "idle: the follow camera is not running"]),
     "reset": ("freecam=1\n", ["from heading -90, pitch 0, as the game put it back behind the player"]),
     "toggle": ("game_dir=/games/jsrf\nfreecam=0\nsensitivity_x=7\n",
-               ["[FREECAM] on (F8, R3 or the menu)", "[FREECAM] off (F8, R3 or the menu)",
+               ["[FREECAM] on (F8, the pad or the menu)", "[FREECAM] off (F8, the pad or the menu)",
                 "auto centre Off"]),
-    "r3": ("freecam=0\n", ["[FREECAM] on (F8, R3 or the menu)", "[FREECAM] off (F8, R3 or the menu)"]),
+    "r3": ("freecam=0\n", ["[FREECAM] on (F8, the pad or the menu)",
+                           "[FREECAM] off (F8, the pad or the menu)"]),
     "menu": ("freecam=1\n", ["sensitivity x 5 y 5"]),
     "played": ("freecam=0\n", ["[FREECAM] off (yours again, as playback ended); invert x 0 y 0, sensitivity x 5 y 5"]),
     "held": ("freecam=1\n", ["held: its camera did not run; keeping the view", "steering the camera"]),

@@ -17,8 +17,8 @@ Maps the Xbox controller API to the host's pads, through SDL2's GameController A
 |------|---------|
 | `xinput_xbox.h` | Public header — types, button constants, function prototypes |
 | `xinput_device.c` | Implementation: SDL2's GameController and the window's keyboard, as the Xbox gamepad's state |
-| `input_layout.c`, `input_layout.h` | The layouts, the host's pads' and the keyboard's (its keys and the mouse's buttons): which inputs press each of the Xbox pad's controls, their defaults, a row's bind (a swap), and the state they give (no SDL in it, for tests/input_layout) |
-| `input_remap.c`, `input_remap.h` | The layouts in use: read from `remap.cfg`, beside the settings file, at start, copied to the game's thread under a lock, and the in-game menu's two pages that change them, each change kept and logged (no SDL in it, for tests/input_layout; the inputs' names are `xinput_device.c`'s) |
+| `input_layout.c`, `input_layout.h` | The layouts, the host's pads' and the keyboard's (its keys and the mouse's buttons): which inputs press each of the Xbox pad's controls, and the port's own (the free camera's switch), their defaults, a row's bind (a swap), and the state they give (no SDL in it, for tests/input_layout) |
+| `input_remap.c`, `input_remap.h` | The layouts in use: read from `remap.cfg`, beside the settings file, at start, copied to the game's thread under a lock, and the in-game menu's two pages that change them, each change kept and logged; and a press of a port's own control on a pad, from the window's events, run on the window's thread (no SDL in it, for tests/input_layout; the inputs' names are `xinput_device.c`'s) |
 | `rumble_hold.c`, `rumble_hold.h` | When to send the vibration the game set to the host's pad, so it holds as the console's does (no SDL in it, for tests/rumble) |
 | `input_press.c`, `input_press.h` | What the input latency log (`RECOMP_INPUT_LATENCY`) counts as a press on the first pad or the keyboard: a control held at a read that wasn't at the one before (no SDL in it, for tests/input_latency) |
 
@@ -143,7 +143,7 @@ The pad's layout as it starts (`input_layout_pad_default`), which Input > Contro
 | Back | none | The pad's Back is the in-game menu's button whenever there is a menu, so the game never sees it then, and no layout has it; with no menu, it is the game's Back. The keyboard's Back (Esc) is the game's: F1 opens the menu. Controller layout can give the game's Back a button |
 | D-pad | D-pad | Digital only |
 | L Stick | L Stick | Click = L3 |
-| R Stick | R Stick | Click = R3 |
+| R Stick | R Stick | Click: none; R3 is the port's own, the free camera's switch (Toggle free camera: `port/freecam.c`), which the game never sees |
 
 ## Ports
 

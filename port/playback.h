@@ -33,8 +33,8 @@
  * playback the recording's state takes its place there, and the free camera
  * takes its stick from it as it did. The
  * free camera's switch and tuning are recorded too, as the game's frame takes
- * them up (port/freecam.c): at the start, and whenever F8, R3 or the menu
- * changes them. On playback the recording's are in place of the player's
+ * them up (port/freecam.c): at the start, and whenever F8, the pad or the
+ * menu changes them. On playback the recording's are in place of the player's
  * from its first, and the player's are back once it stops; the player's own
  * are never changed by it. Anything pressed on a real pad or the keyboard,
  * the right stick too, ends playback and gives the game back, once they have

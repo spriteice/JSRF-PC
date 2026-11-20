@@ -14,24 +14,29 @@
 #include <stdlib.h>
 #include <string.h>
 #include "freecam.h"
+#include "input_remap.h"
+/* On Windows input_remap.h brings windows.h, whose near is a macro. */
+#undef near
 #include "menu.h"
 
 static const float tgt[3] = { 0, 0, 0 }, seye[3] = { 0, 0, -10 };
 static const double deg = 3.14159265358979323846 / 180.0;
 #define CAM 0x00401000u
 
-/* The window's key hooks (nv2a_gl.c): the key and the pad's button freecam
- * binds, and what sdl_pump runs for each. */
-static const char *s_key, *s_button;
+/* The window's key hook (nv2a_gl.c) and the controller layout's (src/input/
+ * input_remap.c): the key and the pad's control freecam binds, and what
+ * sdl_pump runs for each. */
+static const char *s_key;
+static int s_control = -1;
 static void (*s_key_run)(void), (*s_button_run)(void);
 void nv_window_hotkey(const char *name, void (*run)(void))
 {
     s_key = name;
     s_key_run = run;
 }
-void nv_window_pad_hotkey(const char *name, void (*run)(void))
+void input_remap_pad_hotkey(int control, void (*run)(void))
 {
-    s_button = name;
+    s_control = control;
     s_button_run = run;
 }
 
@@ -270,10 +275,11 @@ int main(int argc, char **argv)
         assert(!frame(0, 0, eye) && !freecam_on());
         assert(nv_window_pref_num("freecam", &v) == 1 && v == 0);
     } else if (!strcmp(c, "r3")) {
-        /* R3 is bound, with no setting: it turns freecam on and keeps that,
-         * as F8 does, and off, from the next frame. */
+        /* The pad's Toggle free camera (R3 as it starts) is bound, with no
+         * setting: it turns freecam on and keeps that, as F8 does, and off,
+         * from the next frame. */
         double v = -1;
-        assert(s_button && !strcmp(s_button, "rightstick") && s_button_run);
+        assert(s_control == INPUT_CTL_FREECAM && s_button_run);
         assert(!freecam_on());
         s_button_run();
         assert(!freecam_on());

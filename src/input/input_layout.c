@@ -26,11 +26,12 @@ void input_layout_pad_default(InputLayout *l)
         [INPUT_CTL_DPAD_UP] = INPUT_PAD_DPAD_UP, [INPUT_CTL_DPAD_DOWN] = INPUT_PAD_DPAD_DOWN,
         [INPUT_CTL_DPAD_LEFT] = INPUT_PAD_DPAD_LEFT, [INPUT_CTL_DPAD_RIGHT] = INPUT_PAD_DPAD_RIGHT,
         [INPUT_CTL_START] = INPUT_PAD_START, [INPUT_CTL_BACK] = INPUT_NONE,
-        [INPUT_CTL_LTHUMB] = INPUT_PAD_LSTICK, [INPUT_CTL_RTHUMB] = INPUT_PAD_RSTICK,
+        [INPUT_CTL_LTHUMB] = INPUT_PAD_LSTICK, [INPUT_CTL_RTHUMB] = INPUT_NONE,
     };
     int c;
     clear(l);
     for (c = 0; c < INPUT_CTL_STICKS; c++) l->bind[c][0] = k_pad[c];
+    l->bind[INPUT_CTL_FREECAM][0] = INPUT_PAD_RSTICK;
 }
 
 void input_layout_keys_default(InputLayout *l)
@@ -50,6 +51,7 @@ void input_layout_keys_default(InputLayout *l)
         [INPUT_CTL_LSTICK_LEFT] = INPUT_KEY_A, [INPUT_CTL_LSTICK_RIGHT] = INPUT_KEY_D,
         [INPUT_CTL_RSTICK_UP] = INPUT_KEY_UP, [INPUT_CTL_RSTICK_DOWN] = INPUT_KEY_DOWN,
         [INPUT_CTL_RSTICK_LEFT] = INPUT_KEY_LEFT, [INPUT_CTL_RSTICK_RIGHT] = INPUT_KEY_RIGHT,
+        [INPUT_CTL_FREECAM] = INPUT_NONE,
     };
     int c;
     clear(l);
@@ -103,8 +105,8 @@ static void key_stick(int x, int y, short *ax, short *ay)
 int input_layout_keys(const InputLayout *l, const uint32_t held[INPUT_HELD_WORDS],
                       WORD *buttons, unsigned char analog[8], short axes[4])
 {
-    int on[INPUT_CTLS], c, any = 0;
-    for (c = 0; c < INPUT_CTLS; c++) {
+    int on[INPUT_CTL_OWN], c, any = 0;
+    for (c = 0; c < INPUT_CTL_OWN; c++) {
         on[c] = ctl_held(l, held, c);
         any |= on[c];
     }

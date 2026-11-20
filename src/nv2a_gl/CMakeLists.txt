@@ -61,6 +61,11 @@ if(NV2A_GL_CONTEXT STREQUAL "sdl")
     else()
         target_link_libraries(xbox_nv2a_gl PUBLIC OpenGL::GL ${SDL2_LIBRARIES} m)
     endif()
+    # The window hands each pad's buttons and triggers to the input layer
+    # (src/input/input_remap.h, input_remap_pad_event), for the port's own
+    # controls, as the free camera's switch. src/input is added after this
+    # directory: the target is found when the build is generated.
+    target_link_libraries(xbox_nv2a_gl PRIVATE xbox_input)
 else()
     target_link_libraries(xbox_nv2a_gl PUBLIC OpenGL::GL EGL m)
 endif()

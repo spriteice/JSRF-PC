@@ -631,9 +631,9 @@ static int play_freecam(FREECAM_SETTINGS *fc)
 {
     uint32_t f = recorded_frame();
     int c = s_fc_cur;
-    /* The player's own change, by F8, R3 or the menu: the game is theirs. */
+    /* The player's own change, by F8, the pad or the menu: the game is theirs. */
     if (s_fc_player_seen && !same_freecam(fc, &s_fc_player)) {
-        fprintf(stderr, "[PLAYBACK] frame %u: the free camera was changed (F8, R3 or the menu): the game is yours\n",
+        fprintf(stderr, "[PLAYBACK] frame %u: the free camera was changed (F8, the pad or the menu): the game is yours\n",
                 s_frame);
         play_over(PLAYBACK_HANDED_BACK);
         return 0;

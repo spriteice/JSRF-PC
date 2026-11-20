@@ -33,15 +33,18 @@
  * the next -- no acceleration, no smoothing. With auto centre, a stick let go
  * for a while lets the view ease back to the game's own, behind the player,
  * and keep following it there until the stick is pushed: how long it waits
- * and how fast it eases are the level's (k_centre). A pad's R3 flips freecam,
- * as F8 does: the game reads R3 only as one screen's "any button" (0x7DE20,
- * 0x7DED0), so it is free. The settings are read once, at start
- * (freecam_start); F8, R3 and the menu's rows change them on the window's
- * thread, and freecam takes up the change at the start of the game's next
- * frame (freecam_frame), so that input playback can record it by the frame
- * and play it back there (port/playback.c):
+ * and how fast it eases are the level's (k_centre). A pad's button flips
+ * freecam, as F8 does: Input > Controller layout's Toggle free camera row,
+ * R3 by default (src/input/input_remap.c), with none for the game's own
+ * Right stick click, which costs it little: the game reads R3 only as one
+ * screen's "any button" (0x7DE20, 0x7DED0). The settings are read once, at
+ * start (freecam_start); F8, the pad's button and the menu's rows change
+ * them on the window's thread, and freecam takes up the change at the start
+ * of the game's next frame (freecam_frame), so that input playback can
+ * record it by the frame and play it back there (port/playback.c):
  *
- *   freecam        0 / 1    on at start (F8 and R3 flip it and keep it here)
+ *   freecam        0 / 1    on at start (F8 and the pad's button flip it,
+ *                           and keep it here)
  *   autocentre     0 - 4    off, mild, medium, high, aggressive
  *   invert_x       0 / 1    0: right turns the view right
  *   invert_y       0 / 1    0: up tilts the view up
@@ -56,6 +59,7 @@
 #include <math.h>
 #include <stdio.h>
 #include "freecam.h"
+#include "input_remap.h"
 #include "playback.h"
 #if defined(XBOXRECOMP_MENU)
 #  include "menu.h"
@@ -92,7 +96,6 @@ static const double k_rad = 3.14159265358979323846 / 180.0;
 extern int  nv_window_pref_num(const char *key, double *v);
 extern void nv_window_pref_set_num(const char *key, double v);
 extern void nv_window_hotkey(const char *name, void (*run)(void));
-extern void nv_window_pad_hotkey(const char *name, void (*run)(void));
 #else
 /* Without the SDL window (a headless build) there is no settings file: no
  * keys. */
@@ -110,8 +113,8 @@ static int nv_window_pref_num(const char *key, double *v)
 #define FREECAM_CENTRE_DEFAULT   0
 #define FREECAM_SENS_DEFAULT     5.0
 #define FREECAM_DEADZONE_DEFAULT 0.15
-/* The player's: the settings file's, then as F8, R3 and the menu's rows
- * change them, on the window's thread. */
+/* The player's: the settings file's, then as F8, the pad's button and the
+ * menu's rows change them, on the window's thread. */
 static volatile FREECAM_SETTINGS s_asked = {
     FREECAM_ON_DEFAULT, FREECAM_INVERT_DEFAULT, FREECAM_INVERT_DEFAULT, FREECAM_CENTRE_DEFAULT,
     FREECAM_SENS_DEFAULT, FREECAM_SENS_DEFAULT, FREECAM_DEADZONE_DEFAULT };
@@ -152,12 +155,13 @@ static void say(const char *why, const FREECAM_SETTINGS *c)
 }
 
 #if defined(NV2A_GL_USE_SDL)
-/* F8, R3 and the menu's Free camera row: on or off, kept in the settings file
- * as freecam=. On the window's thread; freecam_frame takes it up. */
+/* F8, the pad's button (Toggle free camera) and the menu's Free camera row:
+ * on or off, kept in the settings file as freecam=. On the window's thread;
+ * freecam_frame takes it up. */
 static void freecam_flip(void)
 {
     s_asked.on = !s_asked.on;
-    fprintf(stderr, "[FREECAM] %s (F8, R3 or the menu)\n", s_asked.on ? "on" : "off");
+    fprintf(stderr, "[FREECAM] %s (F8, the pad or the menu)\n", s_asked.on ? "on" : "off");
     nv_window_pref_set_num("freecam", s_asked.on);
 }
 #endif
@@ -182,7 +186,7 @@ void freecam_start(void)
 #endif
 #if defined(NV2A_GL_USE_SDL)
     nv_window_hotkey("F8", freecam_flip);
-    nv_window_pad_hotkey("rightstick", freecam_flip);
+    input_remap_pad_hotkey(INPUT_CTL_FREECAM, freecam_flip);
 #endif
 }
 

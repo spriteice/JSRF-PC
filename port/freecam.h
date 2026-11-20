@@ -33,15 +33,16 @@ typedef struct {
 } FREECAM_SETTINGS;
 
 /* At start, before the game runs: reads the settings, adds the in-game menu's
- * Free camera submenu, at the top of Input, with its rows, and binds F8 and a
- * pad's R3, which turn freecam on or off. */
+ * Free camera submenu, at the top of Input, with its rows, and binds F8 and
+ * the pad's button for it (Input > Controller layout's Toggle free camera,
+ * R3 by default), which turn freecam on or off. */
 void freecam_start(void);
 
 /* Once a game frame: freecam takes up what the player changed since the last
- * frame (F8, R3 and the menu's rows ask on the window's thread), recorded, or
- * a recording's in its place while one plays (port/playback.c); then it steers
- * the camera, and takes the stick, while it is on and the follow camera ran
- * since the last frame. */
+ * frame (F8, the pad's button and the menu's rows ask on the window's
+ * thread), recorded, or a recording's in its place while one plays
+ * (port/playback.c); then it steers the camera, and takes the stick, while
+ * it is on and the follow camera ran since the last frame. */
 void freecam_frame(void);
 
 /* Each camera post-update (sub_000A28B0), whatever its mode: that camera was

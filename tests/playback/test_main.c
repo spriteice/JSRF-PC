@@ -19,6 +19,7 @@
 #endif
 
 #include "freecam.h"
+#include "input_remap.h"
 #include "menu.h"
 #include "pad.h"
 #include "playback.h"
@@ -76,7 +77,7 @@ static const XBOX_MENU_ITEM *cam_row(const char *label)
 }
 
 /* The settings file the free camera reads and keeps its keys in, and F8 and
- * R3, which it binds. */
+ * the pad's Toggle free camera (R3 as it starts), which it binds. */
 static struct { char key[32]; double v; } g_prefs[16];
 static int g_nprefs;
 int nv_window_pref_num(const char *key, double *v)
@@ -102,7 +103,7 @@ static double pref(const char *key)
 }
 static void (*g_f8)(void), (*g_r3)(void);
 void nv_window_hotkey(const char *name, void (*run)(void)) { if (!strcmp(name, "F8")) g_f8 = run; }
-void nv_window_pad_hotkey(const char *name, void (*run)(void)) { if (!strcmp(name, "rightstick")) g_r3 = run; }
+void input_remap_pad_hotkey(int control, void (*run)(void)) { if (control == INPUT_CTL_FREECAM) g_r3 = run; }
 void nv_window_file_path(const char *file, char *buf, size_t n) { snprintf(buf, n, "%s/%s", g_dir, file); }
 void nv_window_close(void) { g_closed++; }
 void nv_window_restart(void)
@@ -127,9 +128,10 @@ static Game g_rec, g_play;
 
 /* The player, while recording: the left stick and A and B, by the frame and
  * the read, with nothing pressed from IDLE_FROM to IDLE_TO. With the free
- * camera (cam), the right stick too, and R3 at CAM_R3. */
+ * camera (cam), the right stick too, and the game's Right stick click at
+ * CAM_R3, which the free camera leaves to the game. */
 #define CAM_F8_ON  60               /* the free camera's player: F8 turns it on */
-#define CAM_R3     600              /* R3 turns it off */
+#define CAM_R3     600              /* R3, the pad's Toggle free camera, turns it off */
 #define CAM_F8_ON2 650              /* and F8 on again */
 static void player(int frame, int read, int cam, XBOX_INPUT_STATE *st)
 {
@@ -147,8 +149,9 @@ static void player(int frame, int read, int cam, XBOX_INPUT_STATE *st)
 }
 
 /* The free camera's player, on the window's thread, before the pass's reads:
- * F8 and R3 turn it on, off and on, and the menu's rows change its
- * sensitivity, its invert and its auto centre while it steers. */
+ * F8 and R3 (Toggle free camera) turn it on, off and on, and the menu's
+ * rows change its sensitivity, its invert and its auto centre while it
+ * steers. */
 static void cam_player(int frame)
 {
     if (frame == CAM_F8_ON || frame == CAM_F8_ON2) g_f8();

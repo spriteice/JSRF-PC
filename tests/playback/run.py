@@ -74,7 +74,7 @@ with tempfile.TemporaryDirectory(prefix="playback-") as directory:
             "summary: off route", "summary: handed back",
             "idle moment 1: the skater put back",
             "the free camera as recorded at frame",
-            "the free camera was changed (F8, R3 or the menu): the game is yours",
+            "the free camera was changed (F8, the pad or the menu): the game is yours",
             "(yours again, as playback ended)",
             "JSRF_RECORD left out: a recording is played, not made"]
     missing = [s for s in said if s not in log]

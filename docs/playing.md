@@ -16,9 +16,10 @@ trigger. The button that control had goes to whichever control had the one
 you pressed, so the two swap. A trigger on a game trigger keeps its
 pressure; a button gives a full press. Any button SDL reports can be used,
 the back paddles, Misc and the touchpad too, but Guide, the system's, and
-Back, the menu's. The sticks stay as they are, and R3 is still the free
-camera's switch, whatever it presses. Reset to default puts every button
-back.
+Back, the menu's. The sticks stay as they are. Its last control, Toggle free
+camera, is the [free camera](#free-camera)'s switch, R3 by default, so the
+game's own Right stick click starts with none. Reset to default puts every
+button back.
 
 ## Keyboard
 
@@ -83,8 +84,10 @@ someone doesn't turn it to them either.
 Inversion, sensitivity, and the deadzone are in the in-game menu under
 Input > Free camera, and in the settings file (see the `README.txt` in the
 download).
-With no keyboard, as in Steam's Game Mode, R3 does what F8 does: the game
-itself never uses R3.
+With no keyboard, as in Steam's Game Mode, R3 does what F8 does. The game
+itself never uses R3, so its own Right stick click starts with no button, and
+Toggle free camera in Input > Controller layout can move the switch to
+another button.
 
 **Auto centre**, under Input > Free camera, eases the view back behind the
 player once the right stick has been left alone for a while, as the game's
@@ -225,10 +228,11 @@ input goes to the menu.
   effects](technical/audio-effects.md) says how they work.
 - **Input:** Four submenus. Controller layout and Keyboard layout set
   which button, or key or mouse button, presses each of the game's
-  controls ([Controller](#controller) and [Keyboard](#keyboard), above). Each
-  change is kept at once in `remap.cfg`, beside the settings file, a
-  `pad_<control>=` or `key_<control>=` line with SDL's name for it, and only
-  for a control that differs from its default; Reset to default puts its page back. No preset
+  controls ([Controller](#controller) and [Keyboard](#keyboard), above),
+  and Controller layout the free camera's switch too. Each change is kept at
+  once in `remap.cfg`, beside the settings file, a `pad_<control>=` or
+  `key_<control>=` line with SDL's name for it, and only for a control that
+  differs from its default; Reset to default puts its page back. No preset
   changes them. Free camera has [the free
   camera](#free-camera)'s own settings: Enable free camera, Auto centre,
   Invert X, Invert Y, Sensitivity X, Sensitivity Y, and Deadzone (15% by

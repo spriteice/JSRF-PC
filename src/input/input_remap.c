@@ -16,8 +16,9 @@ extern int  nv_window_key_reserved(int scancode) __attribute__((weak));
 
 /* Each control: its place, its name in the settings (pad_<name>=,
  * key_<name>=, and _2 for its second input) and its row's label. The
- * buttons, in the controller page's order, then the sticks' directions,
- * which the keyboard's page alone has, above its buttons. */
+ * buttons, in the controller page's order; the sticks' directions, which
+ * the keyboard's page alone has, above its buttons; and the port's own,
+ * which the controller's page alone has, below its buttons. */
 #define INPUT_REMAP_BUTTONS(F) \
     F(A, a, "A") F(B, b, "B") F(X, x, "X") F(Y, y, "Y") \
     F(BLACK, black, "Black") F(WHITE, white, "White") \
@@ -31,19 +32,19 @@ extern int  nv_window_key_reserved(int scancode) __attribute__((weak));
     F(LSTICK_LEFT, lstick_left, "Left stick left") F(LSTICK_RIGHT, lstick_right, "Left stick right") \
     F(RSTICK_UP, rstick_up, "Right stick up") F(RSTICK_DOWN, rstick_down, "Right stick down") \
     F(RSTICK_LEFT, rstick_left, "Right stick left") F(RSTICK_RIGHT, rstick_right, "Right stick right")
+#define INPUT_REMAP_OWN(F) \
+    F(FREECAM, freecam, "Toggle free camera")
 
 #define CTL_NAMES(C, nm, lbl) [INPUT_CTL_##C] = { #nm, lbl },
 static const struct { const char *name, *label; } k_ctl[INPUT_CTLS] = {
-    INPUT_REMAP_BUTTONS(CTL_NAMES) INPUT_REMAP_STICKS(CTL_NAMES)
+    INPUT_REMAP_BUTTONS(CTL_NAMES) INPUT_REMAP_STICKS(CTL_NAMES) INPUT_REMAP_OWN(CTL_NAMES)
 };
 
-/* A layout: what it is, the controls it has (the pad's stop at the
- * sticks, which are the game's as they are), and the layout now. */
+/* A layout: what it is, and the layout now. */
 typedef struct {
     int         layout;                 /* INPUT_REMAP_PAD or INPUT_REMAP_KEYS */
     const char *prefix;                 /* its settings' names start with this */
     const char *title;                  /* for the log */
-    int         ctls;
     void      (*defaults)(InputLayout *l);
     InputLayout now;
     char        text[INPUT_CTLS][64];   /* each row's text(), the window's thread's */
@@ -51,10 +52,18 @@ typedef struct {
 
 static Page g_page[2] = {
     { .layout = INPUT_REMAP_PAD, .prefix = "pad", .title = "controller layout",
-      .ctls = INPUT_CTL_STICKS, .defaults = input_layout_pad_default },
+      .defaults = input_layout_pad_default },
     { .layout = INPUT_REMAP_KEYS, .prefix = "key", .title = "keyboard layout",
-      .ctls = INPUT_CTLS, .defaults = input_layout_keys_default },
+      .defaults = input_layout_keys_default },
 };
+
+/* The controls a layout has: the pad's, the buttons and the port's own (its
+ * sticks are the game's as they are); the keyboard's, the buttons and the
+ * sticks' directions (the free camera's key, F8, is the window's). */
+static int has(const Page *p, int c)
+{
+    return p->layout == INPUT_REMAP_PAD ? c < INPUT_CTL_STICKS || c >= INPUT_CTL_OWN : c < INPUT_CTL_OWN;
+}
 
 /* The layouts are written on the window's thread (the menu) and at start,
  * and read on the game's too: a copy each way, under a spin lock, which
@@ -123,8 +132,8 @@ static void say(const Page *p, const InputLayout *was, const InputLayout *now, c
 {
     char buf[64];
     int c;
-    for (c = 0; c < p->ctls; c++)
-        if (memcmp(was->bind[c], now->bind[c], sizeof now->bind[c])) {
+    for (c = 0; c < INPUT_CTLS; c++)
+        if (has(p, c) && memcmp(was->bind[c], now->bind[c], sizeof now->bind[c])) {
             names(p, now, c, buf, sizeof buf);
             fprintf(stderr, "[INPUT] %s: %s is %s%s\n", p->title, k_ctl[c].label, buf, from);
         }
@@ -148,8 +157,8 @@ static void read_page(Page *p)
     p->defaults(&def);
     l = def;
     if (nv_window_file_str)
-        for (c = 0; c < p->ctls; c++)
-            for (b = 0; b < INPUT_BINDS; b++) {
+        for (c = 0; c < INPUT_CTLS; c++)
+            for (b = 0; has(p, c) && b < INPUT_BINDS; b++) {
                 int in = INPUT_NONE;
                 slot_key(p, c, b, key, sizeof key);
                 if (nv_window_file_str(INPUT_REMAP_FILE, key, val, sizeof val) <= 0) continue;
@@ -189,8 +198,8 @@ static void keep(const Page *p, const InputLayout *was, const InputLayout *now)
     int c, b;
     if (!nv_window_file_set_str) return;
     p->defaults(&def);
-    for (c = 0; c < p->ctls; c++)
-        for (b = 0; b < INPUT_BINDS; b++) {
+    for (c = 0; c < INPUT_CTLS; c++)
+        for (b = 0; has(p, c) && b < INPUT_BINDS; b++) {
             int in = now->bind[c][b];
             if (in == was->bind[c][b]) continue;
             slot_key(p, c, b, key, sizeof key);
@@ -240,6 +249,7 @@ static void reset(Page *p)
     static const char *key_text_##nm(void) { return row_text(&g_page[INPUT_REMAP_KEYS], INPUT_CTL_##C); } \
     static int key_bind_##nm(int in) { return row_bind(&g_page[INPUT_REMAP_KEYS], INPUT_CTL_##C, in); }
 INPUT_REMAP_BUTTONS(PAD_FNS)
+INPUT_REMAP_OWN(PAD_FNS)
 INPUT_REMAP_BUTTONS(KEY_FNS)
 INPUT_REMAP_STICKS(KEY_FNS)
 
@@ -265,6 +275,7 @@ static void remap_menu(void)
         { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_PAD_LAYOUT,
           .hint = "Sets which button presses each control." },
         INPUT_REMAP_BUTTONS(PAD_ROW)
+        INPUT_REMAP_OWN(PAD_ROW)
         { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_ACTION, .label = "Reset to default",
           .group = XBOX_GROUP_PAD_LAYOUT, .run = pad_reset, .presets = XBOX_PRESETS_LEFT,
           .hint = "Puts every control back on its default button." },
@@ -287,4 +298,40 @@ void input_remap_start(void)
 #if defined(XBOXRECOMP_MENU)
     remap_menu();
 #endif
+}
+
+/* ---- the port's own controls on the pad (input_remap.h) ------------------
+ * Each pad's inputs held, a bit each, kept on the window's thread, its only
+ * reader and writer once the game runs; pads told apart by SDL's numbers
+ * for them, modulo INPUT_REMAP_PADS, as the menu tells their triggers
+ * apart (src/menu/menu_sdl.cpp). */
+#define INPUT_REMAP_PADS 8
+_Static_assert(INPUT_PAD_INPUTS <= 32, "a pad's inputs held are a word's bits");
+static uint32_t g_pad_held[INPUT_REMAP_PADS];
+static void (*g_hotkey[INPUT_CTLS - INPUT_CTL_OWN])(void);
+
+void input_remap_pad_hotkey(int control, void (*run)(void))
+{
+    if (control >= INPUT_CTL_OWN && control < INPUT_CTLS) g_hotkey[control - INPUT_CTL_OWN] = run;
+}
+
+void input_remap_pad_event(int pad, int input, int value, int shut)
+{
+    uint32_t *held, bit;
+    InputLayout l;
+    int c, b;
+    if (input < 0 || input >= INPUT_PAD_INPUTS) return;
+    held = &g_pad_held[(unsigned)pad % INPUT_REMAP_PADS];
+    bit = 1u << input;
+    if (value < INPUT_LAYOUT_DOWN) { *held &= ~bit; return; }
+    if (*held & bit) return;            /* still held: a trigger moving on */
+    *held |= bit;
+    if (!shut) return;                  /* the menu's, and not once it shuts */
+    input_remap_layouts(&l, NULL);
+    for (c = INPUT_CTL_OWN; c < INPUT_CTLS; c++)
+        for (b = 0; b < INPUT_BINDS; b++)
+            if (l.bind[c][b] == input && g_hotkey[c - INPUT_CTL_OWN]) {
+                g_hotkey[c - INPUT_CTL_OWN]();
+                break;
+            }
 }

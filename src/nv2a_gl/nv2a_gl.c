@@ -1831,11 +1831,12 @@ static void sdl_mouse_button(Uint8 button, int down)
 
 /* A key the game binds for itself (port/freecam.c's F8), by SDL's name for
  * it, at start, before the window opens. It runs on the window's thread, as
- * F9 to F11 do, after them, and the game does not see the key. */
-#define NV_WINDOW_HOTKEYS 8     /* places for such keys and buttons */
+ * F9 to F11 do, after them, and the game does not see the key. A pad's
+ * button for the free camera is the controller's layout's instead
+ * (sdl_pad). */
+#define NV_WINDOW_HOTKEYS 8     /* places for such keys */
 static struct {
-    SDL_Scancode key;                   /* or SDL_SCANCODE_UNKNOWN for a pad's button */
-    SDL_GameControllerButton button;    /* or SDL_CONTROLLER_BUTTON_INVALID for a key */
+    SDL_Scancode key;
     void (*run)(void);
 } g_sdl_hotkey[NV_WINDOW_HOTKEYS];
 static int g_sdl_hotkeys;
@@ -1850,27 +1851,6 @@ void nv_window_hotkey(const char *name, void (*run)(void))
         return;
     }
     g_sdl_hotkey[g_sdl_hotkeys].key = k;
-    g_sdl_hotkey[g_sdl_hotkeys].button = SDL_CONTROLLER_BUTTON_INVALID;
-    g_sdl_hotkey[g_sdl_hotkeys].run = run;
-    g_sdl_hotkeys++;
-}
-
-/* A pad's button the game binds for itself (port/freecam.c's R3), by SDL's
- * name for it ("rightstick"), as nv_window_hotkey binds a key. It runs on the
- * window's thread too, from the pad's SDL event, as a pad's Back opens the
- * menu; not while the menu is open, when the pad is the menu's. The game
- * still sees the button. */
-void nv_window_pad_hotkey(const char *name, void (*run)(void));
-void nv_window_pad_hotkey(const char *name, void (*run)(void))
-{
-    SDL_GameControllerButton b = SDL_GameControllerGetButtonFromString(name);
-    if (b == SDL_CONTROLLER_BUTTON_INVALID || g_sdl_hotkeys == NV_WINDOW_HOTKEYS) {
-        fprintf(stderr, "  [GL] pad button %s not bound: %s\n", name,
-                b == SDL_CONTROLLER_BUTTON_INVALID ? "SDL has no button by that name" : "no place left");
-        return;
-    }
-    g_sdl_hotkey[g_sdl_hotkeys].key = SDL_SCANCODE_UNKNOWN;
-    g_sdl_hotkey[g_sdl_hotkeys].button = b;
     g_sdl_hotkey[g_sdl_hotkeys].run = run;
     g_sdl_hotkeys++;
 }
@@ -1880,22 +1860,11 @@ static int sdl_hotkey(SDL_Scancode k)
 {
     int i;
     for (i = 0; i < g_sdl_hotkeys; i++)
-        if (g_sdl_hotkey[i].button == SDL_CONTROLLER_BUTTON_INVALID && g_sdl_hotkey[i].key == k) {
+        if (g_sdl_hotkey[i].key == k) {
             g_sdl_hotkey[i].run();
             return 1;
         }
     return 0;
-}
-
-/* A pad's button the game bound, while the menu is shut: runs it. */
-int nv_window_menu_open(void);
-static void sdl_pad_hotkey(Uint8 b)
-{
-    int i;
-    if (nv_window_menu_open() > 0) return;
-    for (i = 0; i < g_sdl_hotkeys; i++)
-        if (g_sdl_hotkey[i].button != SDL_CONTROLLER_BUTTON_INVALID && g_sdl_hotkey[i].button == b)
-            g_sdl_hotkey[i].run();
 }
 
 /* Read by the input layer (xinput_device.c): the keys and mouse buttons
@@ -1925,8 +1894,7 @@ int nv_window_key_reserved(int scancode)
     if (scancode == SDL_SCANCODE_F9 || scancode == SDL_SCANCODE_F10 || scancode == SDL_SCANCODE_F11)
         return 1;
     for (i = 0; i < g_sdl_hotkeys; i++)
-        if (g_sdl_hotkey[i].button == SDL_CONTROLLER_BUTTON_INVALID && (int)g_sdl_hotkey[i].key == scancode)
-            return 1;
+        if ((int)g_sdl_hotkey[i].key == scancode) return 1;
     return 0;
 }
 
@@ -3030,6 +2998,21 @@ void nv_window_close(void)
     SDL_PushEvent(&e);
 }
 
+/* A pad's button or trigger changed: handed to the input layer, which runs
+ * what a press of the port's own controls in the controller's layout does
+ * (port/freecam.c's free camera: src/input/input_remap.h), here on the
+ * window's thread, as a pad's Back opens the menu; and not while the menu
+ * is open, when the pad is the menu's. The game sees whatever else the
+ * layout has the input press. Its value is 0 to 255, as the input layer
+ * reads a pad (xinput_device.c). */
+#define NV_PAD_FULL      255    /* a button held */
+#define NV_TRIGGER_SHIFT 7      /* a trigger's 0 to 32767, to 0 to 255 */
+void input_remap_pad_event(int pad, int input, int value, int shut);
+static void sdl_pad(SDL_JoystickID pad, int input, int value)
+{
+    input_remap_pad_event((int)pad, input, value, nv_window_menu_open() <= 0);
+}
+
 static void sdl_pump(void)
 {
     SDL_Event ev;
@@ -3069,7 +3052,17 @@ static void sdl_pump(void)
             sdl_mouse_button(ev.button.button, ev.type == SDL_MOUSEBUTTONDOWN);
             break;
         case SDL_CONTROLLERBUTTONDOWN:
-            sdl_pad_hotkey(ev.cbutton.button);
+        case SDL_CONTROLLERBUTTONUP:
+            sdl_pad(ev.cbutton.which, ev.cbutton.button,
+                    ev.type == SDL_CONTROLLERBUTTONDOWN ? NV_PAD_FULL : 0);
+            break;
+        case SDL_CONTROLLERAXISMOTION:
+            /* The triggers follow the buttons, as the layouts number them. */
+            if (ev.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT
+             || ev.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT)
+                sdl_pad(ev.caxis.which,
+                        SDL_CONTROLLER_BUTTON_MAX + (ev.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT),
+                        ev.caxis.value > 0 ? ev.caxis.value >> NV_TRIGGER_SHIFT : 0);
             break;
         case SDL_WINDOWEVENT:
             /* Losing focus with a key held never delivers its key-up. */

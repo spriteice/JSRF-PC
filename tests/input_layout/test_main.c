@@ -1,9 +1,9 @@
 /* tests/input_layout: the layouts (src/input/input_layout.c), linked whole,
  * against the fixed tables they replaced, kept here as what the defaults
- * must give; and the layouts in use, their settings and their menu pages
- * (src/input/input_remap.c), linked whole, with remap.cfg, the
- * window's keys, the inputs' names and the menu stood in for (run.py says
- * which cases). */
+ * must give; and the layouts in use, their settings, their menu pages and
+ * the free camera's switch on the pad (src/input/input_remap.c), linked
+ * whole, with remap.cfg, the window's keys, the inputs' names and the menu
+ * stood in for (run.py says which cases). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -81,14 +81,17 @@ static int old_move(unsigned short kb, int *x, int *y)
 
 /* ---- the cases ---------------------------------------------------------- */
 
-/* Each default names each of its controls' inputs, as the tables did. */
+/* Each default names each of its controls' inputs, as the tables did, but
+ * the pad's R3: the free camera's switch, the port's own, and the game's
+ * Right stick click none. The keys have none for the free camera (F8 is
+ * the window's). */
 static void case_defaults(void)
 {
     static const short pad[INPUT_CTL_STICKS] = {
         INPUT_PAD_A, INPUT_PAD_B, INPUT_PAD_X, INPUT_PAD_Y,
         INPUT_PAD_LSHOULDER, INPUT_PAD_RSHOULDER, INPUT_PAD_LTRIGGER, INPUT_PAD_RTRIGGER,
         INPUT_PAD_DPAD_UP, INPUT_PAD_DPAD_DOWN, INPUT_PAD_DPAD_LEFT, INPUT_PAD_DPAD_RIGHT,
-        INPUT_PAD_START, INPUT_NONE, INPUT_PAD_LSTICK, INPUT_PAD_RSTICK,
+        INPUT_PAD_START, INPUT_NONE, INPUT_PAD_LSTICK, INPUT_NONE,
     };
     static const short keys[INPUT_CTLS] = {
         INPUT_KEY_SPACE, INPUT_KEY_K, INPUT_KEY_H, INPUT_KEY_L,
@@ -97,12 +100,14 @@ static void case_defaults(void)
         INPUT_KEY_RETURN, INPUT_KEY_ESCAPE, INPUT_KEY_C, INPUT_KEY_V,
         INPUT_KEY_W, INPUT_KEY_S, INPUT_KEY_A, INPUT_KEY_D,
         INPUT_KEY_UP, INPUT_KEY_DOWN, INPUT_KEY_LEFT, INPUT_KEY_RIGHT,
+        INPUT_NONE,
     };
     InputLayout l;
     int c, b;
     input_layout_pad_default(&l);
     for (c = 0; c < INPUT_CTLS; c++) {
-        CHECK(l.bind[c][0] == (c < INPUT_CTL_STICKS ? pad[c] : INPUT_NONE),
+        CHECK(l.bind[c][0] == (c < INPUT_CTL_STICKS ? pad[c] : c == INPUT_CTL_FREECAM ? INPUT_PAD_RSTICK
+                               : INPUT_NONE),
               "pad default: control %d has %d", c, l.bind[c][0]);
         for (b = 1; b < INPUT_BINDS; b++)
             CHECK(l.bind[c][b] == INPUT_NONE, "pad default: control %d has a second input", c);
@@ -117,12 +122,13 @@ static void case_defaults(void)
     }
 }
 
-/* The pad's layout gives what the pad's table gave with the menu there
- * (the pad's Back is none of the layout's: xinput_device.c gives it to the
- * game itself when there is no menu): every one of the fourteen buttons
- * the table read, on or off together, with the triggers at their edges and
- * half way, and the pad's Back handed to the layout or not; and the other
- * buttons SDL has change nothing. */
+/* The pad's layout, with R3 given back to Right stick click, gives what
+ * the pad's table gave with the menu there (the pad's Back is none of the
+ * layout's: xinput_device.c gives it to the game itself when there is no
+ * menu): every one of the fourteen buttons the table read, on or off
+ * together, with the triggers at their edges and half way, and the pad's
+ * Back handed to the layout or not; and the other buttons SDL has change
+ * nothing. As it starts, R3 presses nothing the game sees. */
 static void case_pad(void)
 {
     static const int read[] = {
@@ -140,6 +146,14 @@ static void case_pad(void)
     unsigned mask;
     int t1, t2, back, i, n = 0, bad = 0;
     input_layout_pad_default(&l);
+    {
+        unsigned char value[INPUT_PAD_INPUTS] = { 0 }, analog[8] = { 0 };
+        WORD out = 0;
+        value[INPUT_PAD_RSTICK] = 255;
+        input_layout_pad(&l, value, &out, analog);
+        CHECK(out == 0 && !memchr(analog, 255, sizeof analog), "R3 presses %04x as it starts", out);
+    }
+    l.bind[INPUT_CTL_RTHUMB][0] = INPUT_PAD_RSTICK;
     for (mask = 0; mask < (1u << nread); mask++)
         for (t1 = 0; t1 < (int)sizeof trig; t1++)
             for (t2 = 0; t2 < (int)sizeof trig; t2++)
@@ -527,32 +541,36 @@ static const XBOX_MENU_ITEM *row(const char *group, const char *label)
 
 /* The log, what input_remap.c writes to stderr, kept: run.py checks it. */
 
-/* The rows: Controller layout's sixteen, Keyboard layout's
- * twenty-four, each page's Reset to default, each submenu first, in one
- * add; each row Input's, left alone by the presets, with a hint in a
- * sentence the strip can hold; each bind row whole; and what they show at
- * the defaults, with no settings and nothing said in the log. */
+/* The rows: Controller layout's seventeen, its buttons then Toggle free
+ * camera, Keyboard layout's twenty-four, with no Toggle free camera, each
+ * page's Reset to default, each submenu first, in one add; each row
+ * Input's, left alone by the presets, with a hint in a sentence the strip
+ * can hold; each bind row whole; and what they show at the defaults, with
+ * no settings and nothing said in the log. */
 static void case_rows(void)
 {
     static const char *const pad_rows[] = {
         "A", "B", "X", "Y", "Black", "White", "L trigger", "R trigger", "Start", "Back",
         "Left stick click", "Right stick click", "D-pad up", "D-pad down", "D-pad left", "D-pad right",
+        "Toggle free camera",
     };
     int i;
     input_remap_start();
-    CHECK(s_adds == 1 && s_nrows == 1 + 16 + 1 + 1 + 24 + 1, "%d adds, %d rows", s_adds, s_nrows);
+    CHECK(s_adds == 1 && s_nrows == 1 + 17 + 1 + 1 + 24 + 1, "%d adds, %d rows", s_adds, s_nrows);
     CHECK(s_rows[0].kind == XBOX_ITEM_GROUP && !strcmp(s_rows[0].label, PAD) && !s_rows[0].group,
           "Controller layout first");
-    CHECK(s_rows[18].kind == XBOX_ITEM_GROUP && !strcmp(s_rows[18].label, KEYS) && !s_rows[18].group,
+    CHECK(s_rows[19].kind == XBOX_ITEM_GROUP && !strcmp(s_rows[19].label, KEYS) && !s_rows[19].group,
           "then Keyboard layout");
-    for (i = 0; i < 16; i++)
+    for (i = 0; i < 17; i++)
         CHECK(!strcmp(s_rows[1 + i].label, pad_rows[i]), "the controller's row %d is %s", i, s_rows[1 + i].label);
-    CHECK(!strcmp(s_rows[19].label, "Left stick up") && !strcmp(s_rows[27].label, "A"),
+    CHECK(!strcmp(s_rows[20].label, "Left stick up") && !strcmp(s_rows[28].label, "A"),
           "the keyboard's sticks, then its buttons");
-    CHECK(!strcmp(s_rows[17].label, "Reset to default") && s_rows[17].kind == XBOX_ITEM_ACTION
-          && !strcmp(s_rows[17].group, PAD), "the controller's reset");
-    CHECK(!strcmp(s_rows[43].label, "Reset to default") && s_rows[43].kind == XBOX_ITEM_ACTION
-          && !strcmp(s_rows[43].group, KEYS), "the keyboard's reset");
+    for (i = 20; i < 44; i++)
+        CHECK(strcmp(s_rows[i].label, "Toggle free camera"), "the keyboard has no Toggle free camera row");
+    CHECK(!strcmp(s_rows[18].label, "Reset to default") && s_rows[18].kind == XBOX_ITEM_ACTION
+          && !strcmp(s_rows[18].group, PAD), "the controller's reset");
+    CHECK(!strcmp(s_rows[44].label, "Reset to default") && s_rows[44].kind == XBOX_ITEM_ACTION
+          && !strcmp(s_rows[44].group, KEYS), "the keyboard's reset");
     for (i = 0; i < s_nrows; i++) {
         const XBOX_MENU_ITEM *r = &s_rows[i];
         size_t h = r->hint ? strlen(r->hint) : 0;
@@ -560,12 +578,13 @@ static void case_rows(void)
         CHECK(h > 0 && h <= MENU_HINT_LONGEST && r->hint[h - 1] == '.', "%s: its hint", r->label);
         CHECK(r->kind == XBOX_ITEM_GROUP || r->presets == XBOX_PRESETS_LEFT, "%s: left by the presets", r->label);
         if (r->kind == XBOX_ITEM_BIND)
-            CHECK(r->bind && r->text && r->takes == (i < 18 ? XBOX_BIND_PAD : XBOX_BIND_KEYS),
+            CHECK(r->bind && r->text && r->takes == (i < 19 ? XBOX_BIND_PAD : XBOX_BIND_KEYS),
                   "%s: a whole bind row", r->label);
     }
     ROW_SHOWS(PAD, "A", "A"); ROW_SHOWS(PAD, "Black", "LB"); ROW_SHOWS(PAD, "R trigger", "RT");
-    ROW_SHOWS(PAD, "Back", "None"); ROW_SHOWS(PAD, "Right stick click", "R3");
+    ROW_SHOWS(PAD, "Back", "None"); ROW_SHOWS(PAD, "Right stick click", "None");
     ROW_SHOWS(PAD, "D-pad left", "D-pad left");
+    ROW_SHOWS(PAD, "Toggle free camera", "R3");
     ROW_SHOWS(KEYS, "A", "Space, J"); ROW_SHOWS(KEYS, "Start", "Return, Keypad Enter");
     ROW_SHOWS(KEYS, "Back", "Escape, AC Back"); ROW_SHOWS(KEYS, "Left stick up", "W");
     ROW_SHOWS(KEYS, "Right stick left", "Left");
@@ -652,15 +671,18 @@ static void case_reset(void)
     input_remap_start();
     row(PAD, "A")->bind(INPUT_PAD_Y);
     row(PAD, "Start")->bind(INPUT_PAD_PADDLE2);
+    row(PAD, "Toggle free camera")->bind(INPUT_PAD_PADDLE3);
     row(KEYS, "A")->bind(INPUT_KEY_MOUSE);
     row(KEYS, "Start")->bind(INPUT_KEY_SPACE);
-    /* pad_a, pad_y, pad_start; key_a, key_a_2, key_start, key_start_2 */
-    CHECK(s_ncfg == 7, "%d lines kept", s_ncfg);
+    /* pad_a, pad_y, pad_start, pad_freecam; key_a, key_a_2, key_start, key_start_2 */
+    CHECK(s_ncfg == 8, "%d lines kept", s_ncfg);
     row(PAD, "Reset to default")->run();
     input_remap_layouts(&pad, &keys);
     input_layout_pad_default(&def);
     CHECK(!memcmp(&pad, &def, sizeof pad), "the controller back at its defaults");
-    CHECK(!cfg_val("pad_a") && !cfg_val("pad_y") && !cfg_val("pad_start") && s_ncfg == 4, "its lines gone");
+    CHECK(!cfg_val("pad_a") && !cfg_val("pad_y") && !cfg_val("pad_start") && !cfg_val("pad_freecam")
+          && s_ncfg == 4, "its lines gone");
+    ROW_SHOWS(PAD, "Toggle free camera", "R3");
     input_layout_keys_default(&def);
     CHECK(memcmp(&keys, &def, sizeof keys), "the keyboard's left alone");
     row(KEYS, "Reset to default")->run();
@@ -669,21 +691,25 @@ static void case_reset(void)
     ROW_SHOWS(KEYS, "A", "Space, J");
 }
 
-/* At start, from remap.cfg: what the rows kept reads back as it was;
- * an unknown name, or an input a layout can't have, keeps the default and
- * the log says so; none is none. */
+/* At start, from remap.cfg: what the rows kept reads back as it was,
+ * Toggle free camera's too; an unknown name, or an input a layout can't
+ * have, keeps the default and the log says so; none is none; and the
+ * keyboard has no free camera's line to read. */
 static void case_settings(void)
 {
     InputLayout pad, keys, want;
     cfg("pad_a", "x"); cfg("pad_x", "a"); cfg("pad_back", "lefttrigger"); cfg("pad_ltrigger", "none");
     cfg("pad_b", "flipper"); cfg("pad_y", "guide"); cfg("pad_start", "back");
+    cfg("pad_rthumb", "rightstick"); cfg("pad_freecam", "none");
     cfg("key_b", "J"); cfg("key_a_2", "K"); cfg("key_y", "Mouse right"); cfg("key_x", "Left Ctrl");
     cfg("key_lthumb", "F9"); cfg("key_rthumb", "Hyper"); cfg("key_lstick_up", "I");
+    cfg("key_freecam", "K");
     input_remap_start();
     input_remap_layouts(&pad, &keys);
     input_layout_pad_default(&want);
     input_layout_bind(&want, INPUT_CTL_A, INPUT_PAD_X);
     input_layout_bind(&want, INPUT_CTL_BACK, INPUT_PAD_LTRIGGER);
+    input_layout_bind(&want, INPUT_CTL_RTHUMB, INPUT_PAD_RSTICK);
     CHECK(!memcmp(&pad, &want, sizeof pad), "the controller's lines read back as the rows made them");
     input_layout_keys_default(&want);
     input_layout_bind(&want, INPUT_CTL_B, INPUT_KEY_J);
@@ -692,8 +718,94 @@ static void case_settings(void)
     want.bind[INPUT_CTL_LSTICK_UP][0] = 12;
     CHECK(!memcmp(&keys, &want, sizeof keys), "the keyboard's lines read back");
     ROW_SHOWS(PAD, "B", "B"); ROW_SHOWS(PAD, "Y", "Y"); ROW_SHOWS(PAD, "Start", "Start");
+    ROW_SHOWS(PAD, "Right stick click", "R3"); ROW_SHOWS(PAD, "Toggle free camera", "None");
     ROW_SHOWS(KEYS, "Left stick click", "C"); ROW_SHOWS(KEYS, "Right stick click", "V");
+    CHECK(keys.bind[INPUT_CTL_FREECAM][0] == INPUT_NONE, "key_freecam= not read");
     CHECK(s_writes == 0, "reading writes nothing");
+}
+
+/* The port's own control on the pad (input_remap_pad_event), as the
+ * window's thread hands it each change of a pad's buttons and triggers:
+ * R3, Toggle free camera's as it starts, runs its hotkey once a press, and
+ * not while held, nor with the menu open, then or once it shuts; a trigger
+ * from half way; each pad its own; and Toggle free camera bound to A, A
+ * runs it, and R3 presses the game's A. A hotkey for one of the Xbox pad's
+ * controls, or an input out of range, runs nothing. */
+static int s_flips, s_a_runs;
+static void flip(void) { s_flips++; }
+static void a_run(void) { s_a_runs++; }
+#define FULL 255
+static void case_hotkey(void)
+{
+    InputLayout pad;
+    unsigned char value[INPUT_PAD_INPUTS] = { 0 }, analog[8] = { 0 };
+    WORD out = 0;
+    input_remap_start();
+    input_remap_pad_event(0, INPUT_PAD_RSTICK, FULL, 1);   /* no hotkey yet */
+    input_remap_pad_event(0, INPUT_PAD_RSTICK, 0, 1);
+    input_remap_pad_hotkey(INPUT_CTL_FREECAM, flip);
+    input_remap_pad_hotkey(INPUT_CTL_A, a_run);
+    input_remap_pad_event(0, INPUT_PAD_RSTICK, FULL, 1);
+    CHECK(s_flips == 1, "R3 flips once: %d", s_flips);
+    input_remap_pad_event(0, INPUT_PAD_RSTICK, FULL, 1);
+    CHECK(s_flips == 1, "held, nothing more: %d", s_flips);
+    input_remap_pad_event(0, INPUT_PAD_RSTICK, 0, 1);
+    input_remap_pad_event(0, INPUT_PAD_RSTICK, FULL, 1);
+    CHECK(s_flips == 2, "let go and pressed again, again: %d", s_flips);
+    input_remap_pad_event(0, INPUT_PAD_RSTICK, 0, 1);
+    /* The menu open: pressed there, nothing, nor once it shuts while held. */
+    input_remap_pad_event(0, INPUT_PAD_RSTICK, FULL, 0);
+    input_remap_pad_event(0, INPUT_PAD_RSTICK, FULL, 1);
+    CHECK(s_flips == 2, "pressed with the menu open: %d", s_flips);
+    input_remap_pad_event(0, INPUT_PAD_RSTICK, 0, 1);
+    input_remap_pad_event(0, INPUT_PAD_RSTICK, FULL, 1);
+    CHECK(s_flips == 3, "then pressed with it shut: %d", s_flips);
+    input_remap_pad_event(0, INPUT_PAD_RSTICK, 0, 1);
+    /* A, one of the Xbox pad's controls, isn't the port's own. */
+    input_remap_pad_event(0, INPUT_PAD_A, FULL, 1);
+    input_remap_pad_event(0, INPUT_PAD_A, 0, 1);
+    CHECK(s_a_runs == 0 && s_flips == 3, "A runs nothing: %d %d", s_a_runs, s_flips);
+    /* On the R trigger: from half way, once, and each pad its own. */
+    CHECK(row(PAD, "Toggle free camera")->bind(INPUT_PAD_RTRIGGER) == 1, "Toggle free camera takes RT");
+    ROW_SHOWS(PAD, "Toggle free camera", "RT"); ROW_SHOWS(PAD, "R trigger", "R3");
+    input_remap_pad_event(0, INPUT_PAD_RSTICK, FULL, 1);
+    input_remap_pad_event(0, INPUT_PAD_RSTICK, 0, 1);
+    input_remap_pad_event(0, INPUT_PAD_RTRIGGER, INPUT_LAYOUT_DOWN - 1, 1);
+    CHECK(s_flips == 3, "R3 and RT short of half way flip nothing: %d", s_flips);
+    input_remap_pad_event(0, INPUT_PAD_RTRIGGER, INPUT_LAYOUT_DOWN, 1);
+    input_remap_pad_event(0, INPUT_PAD_RTRIGGER, FULL, 1);
+    CHECK(s_flips == 4, "RT at half way, once: %d", s_flips);
+    input_remap_pad_event(1, INPUT_PAD_RTRIGGER, FULL, 1);
+    CHECK(s_flips == 5, "the second pad's own RT: %d", s_flips);
+    input_remap_pad_event(0, INPUT_PAD_RTRIGGER, INPUT_LAYOUT_DOWN - 1, 1);
+    input_remap_pad_event(0, INPUT_PAD_RTRIGGER, FULL, 1);
+    CHECK(s_flips == 6, "the first's again, the second's still held: %d", s_flips);
+    input_remap_pad_event(0, INPUT_PAD_RTRIGGER, 0, 1);
+    input_remap_pad_event(1, INPUT_PAD_RTRIGGER, 0, 1);
+    /* On A: A flips, and R3, which A had, presses the game's A. */
+    CHECK(row(PAD, "Toggle free camera")->bind(INPUT_PAD_A) == 1, "Toggle free camera takes A");
+    ROW_SHOWS(PAD, "Toggle free camera", "A"); ROW_SHOWS(PAD, "A", "RT");
+    CHECK(row(PAD, "A")->bind(INPUT_PAD_RSTICK) == 1, "A takes R3");
+    ROW_SHOWS(PAD, "A", "R3"); ROW_SHOWS(PAD, "Right stick click", "None"); ROW_SHOWS(PAD, "R trigger", "RT");
+    CHECK(!strcmp(cfg_val("pad_freecam"), "a") && !strcmp(cfg_val("pad_a"), "rightstick"),
+          "kept as pad_freecam=a, pad_a=rightstick");
+    input_remap_pad_event(0, INPUT_PAD_A, FULL, 1);
+    input_remap_pad_event(0, INPUT_PAD_RSTICK, FULL, 1);
+    CHECK(s_flips == 7 && s_a_runs == 0, "A flips, R3 doesn't: %d", s_flips);
+    input_remap_layouts(&pad, NULL);
+    value[INPUT_PAD_RSTICK] = FULL;
+    input_layout_pad(&pad, value, &out, analog);
+    CHECK(analog[0] == FULL && out == 0, "R3 presses the game's A alone");
+    memset(value, 0, sizeof value);
+    memset(analog, 0, sizeof analog);
+    value[INPUT_PAD_A] = FULL;
+    input_layout_pad(&pad, value, &out, analog);
+    CHECK(out == 0 && !memchr(analog, FULL, sizeof analog), "A presses nothing the game sees");
+    /* Out of range: nothing. */
+    input_remap_pad_event(0, -1, FULL, 1);
+    input_remap_pad_event(0, INPUT_PAD_INPUTS, FULL, 1);
+    input_remap_pad_hotkey(INPUT_CTLS, a_run);
+    CHECK(s_flips == 7 && s_a_runs == 0, "out of range runs nothing");
 }
 
 int main(int argc, char **argv)
@@ -710,6 +822,7 @@ int main(int argc, char **argv)
     else if (!strcmp(c, "bind_rows")) case_bind_rows();
     else if (!strcmp(c, "reset"))    case_reset();
     else if (!strcmp(c, "settings")) case_settings();
+    else if (!strcmp(c, "hotkey"))   case_hotkey();
     else { printf("no case %s\n", c); return 2; }
     if (!g_fail) printf("input_layout %s: pass\n", c);
     return g_fail;

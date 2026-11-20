@@ -149,10 +149,13 @@ in a submenu of its own.
 - Input's first two submenus are the layouts (`src/input/input_remap.c`):
   Controller layout, a bind row for each of the game's buttons (A, B, X, Y,
   Black, White, L trigger, R trigger, Start, Back, Left stick click, Right
-  stick click, then the d-pad's four), and Keyboard layout, a row for each
-  of the sticks' directions, then the same buttons, which keys and mouse
-  buttons press. Each ends with Reset to default, which puts every row of
-  its page back.
+  stick click, then the d-pad's four), then Toggle free camera, the port's
+  own (the free camera's switch, `port/freecam.c`, which the game never
+  sees: R3 by default, so Right stick click starts with none); and Keyboard
+  layout, a row for each of the sticks' directions, then the game's buttons,
+  which keys and mouse buttons press (the free camera's key is F8, the
+  window's). Each ends with Reset to default, which puts every row of its
+  page back.
 - A row shows its control's inputs, by the names the menu gives them ("LB",
   "LT", "Paddle 1"; a key by SDL's name, "Space"; "Mouse right"), two with a
   comma where the default has a second key ("Space, J"), or None.

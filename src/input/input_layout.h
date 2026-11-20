@@ -1,10 +1,10 @@
 /* The layouts: which of the host's buttons and keys press each of the Xbox
- * pad's controls. One for the host's pads, one for the window's keyboard;
- * xinput_device.c reads what is held and asks them for the Xbox pad's state.
- * Each control has up to INPUT_BINDS inputs, and is pressed while any of
- * them is. A pad's sticks are the game's as they are: only the keyboard
- * pushes a stick, through the sticks' directions. No SDL in it, for
- * tests/input_layout. */
+ * pad's controls, and the port's own. One for the host's pads, one for the
+ * window's keyboard; xinput_device.c reads what is held and asks them for
+ * the Xbox pad's state. Each control has up to INPUT_BINDS inputs, and is
+ * pressed while any of them is. A pad's sticks are the game's as they are:
+ * only the keyboard pushes a stick, through the sticks' directions. No SDL
+ * in it, for tests/input_layout. */
 #ifndef XBOX_INPUT_LAYOUT_H
 #define XBOX_INPUT_LAYOUT_H
 
@@ -15,9 +15,12 @@
 extern "C" {
 #endif
 
-/* The Xbox pad's controls a layout presses: bAnalogButtons' eight in its
- * order, then wButtons' eight in its bits' order, then the sticks'
- * directions. */
+/* The controls a layout presses: the Xbox pad's, bAnalogButtons' eight in
+ * its order, then wButtons' eight in its bits' order, then the sticks'
+ * directions; then the port's own, which are no control of the Xbox pad's
+ * and which the game never sees: the free camera's switch
+ * (port/freecam.c), which a press of one of its inputs runs
+ * (input_remap.h, input_remap_pad_hotkey). */
 enum {
     INPUT_CTL_A, INPUT_CTL_B, INPUT_CTL_X, INPUT_CTL_Y,
     INPUT_CTL_BLACK, INPUT_CTL_WHITE, INPUT_CTL_LTRIGGER, INPUT_CTL_RTRIGGER,
@@ -25,10 +28,12 @@ enum {
     INPUT_CTL_START, INPUT_CTL_BACK, INPUT_CTL_LTHUMB, INPUT_CTL_RTHUMB,
     INPUT_CTL_LSTICK_UP, INPUT_CTL_LSTICK_DOWN, INPUT_CTL_LSTICK_LEFT, INPUT_CTL_LSTICK_RIGHT,
     INPUT_CTL_RSTICK_UP, INPUT_CTL_RSTICK_DOWN, INPUT_CTL_RSTICK_LEFT, INPUT_CTL_RSTICK_RIGHT,
+    INPUT_CTL_FREECAM,
     INPUT_CTLS
 };
 #define INPUT_CTL_BUTTONS INPUT_CTL_DPAD_UP     /* from here, wButtons' bit (c - this) */
 #define INPUT_CTL_STICKS  INPUT_CTL_LSTICK_UP   /* from here, the sticks' directions */
+#define INPUT_CTL_OWN     INPUT_CTL_FREECAM     /* from here, the port's own */
 
 /* A host pad's inputs: its buttons in SDL's order (SDL_GameControllerButton,
  * which xinput_device.c checks against it), then its two triggers. */
@@ -78,11 +83,13 @@ typedef struct InputLayout {
     short bind[INPUT_CTLS][INPUT_BINDS];   /* each control's inputs, INPUT_NONE where it has fewer */
 } InputLayout;
 
-/* The layouts as they always were: the host pad's buttons at their Xbox
- * places, with the bumpers as Black and White, and its Back none of the
- * game's (xinput_device.c gives it to the game when there is no menu); and
- * the keys as docs/playing.md lists them, with a second key on A (J), on
- * Start (keypad Enter) and on Back (a keyboard's Back key). */
+/* The layouts as they start: the host pad's buttons at their Xbox places,
+ * with the bumpers as Black and White, its Back none of the game's
+ * (xinput_device.c gives it to the game when there is no menu), and its R3
+ * the free camera's switch, so the game's own R3 has none; and the keys as
+ * docs/playing.md lists them, with a second key on A (J), on Start (keypad
+ * Enter) and on Back (a keyboard's Back key), and none for the free camera
+ * (its key, F8, is the window's: nv2a_gl.c). */
 void input_layout_pad_default(InputLayout *l);
 void input_layout_keys_default(InputLayout *l);
 
@@ -98,7 +105,7 @@ void input_layout_pad(const InputLayout *l, const unsigned char value[INPUT_PAD_
  * button fully; a stick a direction is held on is at full tilt that way, a
  * diagonal scaled onto the circle, in place of the pad's (axes: the left
  * stick's x and y, then the right's); a stick with none keeps the pad's.
- * Returns 1 when a key the layout uses is held. */
+ * Returns 1 when a key one of the Xbox pad's controls has is held. */
 int input_layout_keys(const InputLayout *l, const uint32_t held[INPUT_HELD_WORDS],
                       WORD *buttons, unsigned char analog[8], short axes[4]);
 

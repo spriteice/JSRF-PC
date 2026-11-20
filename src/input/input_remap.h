@@ -37,6 +37,20 @@ void input_remap_start(void);
 const char *input_remap_name(int layout, int input, int how);
 int input_remap_from_name(int layout, const char *name);
 
+/* The port's own controls (input_layout.h, from INPUT_CTL_OWN), which only
+ * the pad's layout has: what a press of one of a control's inputs runs, set
+ * at start (port/freecam.c sets the free camera's switch). */
+void input_remap_pad_hotkey(int control, void (*run)(void));
+
+/* Each change of a host pad's button or trigger, from the window's thread
+ * (nv2a_gl.c): pad, SDL's number for it; input, which (input_layout.h);
+ * value, how far it is pressed, 0 to 255; shut, 1 while the in-game menu
+ * is shut or there is none. A press, from below INPUT_LAYOUT_DOWN to at
+ * least it, of an input a port's own control has in the pad's layout runs
+ * that control's hotkey there, while shut. A press made while the menu is
+ * open runs nothing, then or once it shuts. */
+void input_remap_pad_event(int pad, int input, int value, int shut);
+
 #ifdef __cplusplus
 }
 #endif
