@@ -82,6 +82,13 @@ skater heads off, the game's own camera shows it. Pausing keeps the view
 where you left it. Near a wall, it keeps the wall out of the view as the
 game's camera does (Near walls, below).
 
+The game splits each map into areas, and draws only what the area the
+camera is in can see. The free camera can look from outside every area, as
+from beside a tower on the way down, where the game would draw nothing of
+the level: the level is then drawn as from where the game's own camera
+stands, or, when that is outside every area too, the whole map is, and your
+skater is drawn even when they fall outside every area themselves.
+
 ## Near walls
 
 The camera keeps walls out of the view, the game's own and the free camera
@@ -100,11 +107,19 @@ it, and the end of a wall you skate past doesn't jerk it. Something narrower
 than the picture, such as a pole or a rail between you and the camera, doesn't
 move it. The view never comes closer to the player than just in front of them:
 right up against a wall with the camera turned into it, you see through that
-wall rather than the view turning over. While you spray graffiti, the game
-frames the shot itself, as on the Xbox, and the camera leaves it as it is.
-Input > Behaviour > Default cam fix turns this off for the game's own camera,
-which then stops at walls as on the Xbox; the free camera keeps walls out of
-its view either way.
+wall rather than the view turning over. That close, your skater fades out,
+as the game fades them when its camera comes near and hides them when it's
+right on them, as on the Xbox. Input > Behaviour > No skater fade, right
+under Default cam fix (off by default), keeps the camera further out
+instead, where the game shows the player whole: with a wall nearer than that
+on the camera's side, as when you fall down a tower with the free camera
+turned to it, you see through the wall and still see the player. Where the
+game itself puts its own camera that close, it stays there, as on the Xbox.
+While you spray graffiti, the game frames the shot itself, as on the Xbox,
+and the camera leaves it as it is. Input > Behaviour >
+Default cam fix turns this off for the game's own camera, which then stops at
+walls as on the Xbox, with No skater fade or without it; the free camera keeps
+walls out of its view either way.
 
 ## In-game menu
 
@@ -190,10 +205,17 @@ input goes to the menu.
 - **Input:** Two submenus. Free camera has [the free
   camera](#free-camera)'s own settings: Enable free camera, Auto centre,
   Invert X, Invert Y, Sensitivity X, Sensitivity Y, and Deadzone (15% by
-  default). Behaviour has Default cam fix, then Keyboard moves. Default cam
-  fix keeps the game's own camera out of walls (Near walls, above). On by
-  default; off, the game's camera is as on the Xbox. It changes at once,
-  and is kept as `dcamfix=` (1 or 0) in the settings file. Keyboard moves
+  default). Behaviour has Default cam fix, No skater fade, then Keyboard
+  moves. Default cam fix keeps the game's own camera out of walls (Near
+  walls, above). On by default; off, the game's camera is as on the Xbox. It
+  changes at once, and is kept as `dcamfix=` (1 or 0) in the settings file.
+  No skater fade keeps the camera as far from your skater as the game shows
+  them whole, seeing through a wall nearer than that ([Near
+  walls](#near-walls), above): the free camera always, and the game's own
+  while Default cam fix is on. Off by default, and in each preset: the
+  camera comes in to the wall and your skater fades out as it nears them. It
+  changes at once, and is kept as `noskaterfade=` (1 or 0) in the settings
+  file. Keyboard moves
   sets how W A S D move the skater ([Keyboard](#keyboard), above): from the
   way the camera faces (Camera, the default), or from the way the skater
   faces (Skater), which the camera turning, the free camera or the game's

@@ -8,8 +8,9 @@ each menu's rows live with the setting they change (File in
 `src/nv2a_gl/nv2a_gl.c`, Display's Draw distance and Building distance, with
 Far buildings and Far shadows, in `port/draw_distance.c` and Music info in
 pause in `port/music_info.c`, Audio in `port/audio.c`, Input's Free camera in
-`port/freecam.c`, and its Default cam fix in `port/camera_walls.c` and
-Keyboard moves in `port/keyboard_move.c`, Gameplay's Skip intro in
+`port/freecam.c`, and its Default cam fix and No skater fade in
+`port/camera_walls.c` and Keyboard moves in `port/keyboard_move.c`,
+Gameplay's Skip intro in
 `port/intro.c`, Skip cutscenes in `port/cutscene_skip.c` and Visual indicator
 in `port/soul_indicator.c`, Developer in `port/developer.c`, with Missions'
 rows in `port/missions_menu.c` and its Far buildings test in
@@ -39,9 +40,10 @@ Graffiti, Sharpness, Edge strength, then Cleanup, a row of two ticks.
 Input is two submenus, and nothing else: Free camera, added with its rows by
 `port/freecam.c` (Enable free camera, Auto centre, Invert X, Invert Y,
 Sensitivity X, Sensitivity Y, then Deadzone), then Behaviour, for how the
-game's camera and the keys act: Default cam fix, then Keyboard moves. Each of
-those two modules adds Behaviour with its row, and the second adds nothing,
-as a submenu named as one before it in its menu adds nothing (`group` in
+game's camera and the keys act: Default cam fix, No skater fade, then
+Keyboard moves. Each of those two modules adds Behaviour with its rows, and
+the second adds nothing, as a submenu named as one before it in its menu adds
+nothing (`group` in
 `menu.h`). A new input setting goes in one of them, or in a submenu of its
 own. Gameplay, after Input, is submenus too, and nothing else, for how the
 game plays: Skips, for the parts of the game a player can leave out (Skip

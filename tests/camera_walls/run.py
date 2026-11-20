@@ -19,21 +19,38 @@ wall it sits on, turned 50 degrees, cuts the view only once widescreen
 widens it, and at 70 degrees at 4:3 too; a wall along the view 0.9 away
 only in widescreen; each cut view is cleared by moving across; and under a
 half pipe's wall, or behind a wall that came between, it comes in to the
-surface. camwall_share and camwall_across: in, or across, at
-once; held for 20 frames; back by a tenth of the gap a frame; and all the
+surface. No skater fade's floor (least), where the game draws the player
+whole, 15 units of an eye 38.2 out: a wall right by the player and a
+corridor whose wall the eye's line meets 5.85 out keep the free camera's
+eye at 15; a gap narrower than the view whose corners clear only at 9.9
+keeps it on its own line; an eye 10 out keeps all of it, and open ground is
+nothing; the game's own eye, behind a wall 5 behind the player, comes in to
+it with no floor, and stays at 15 with it, as the free camera's does; the
+game's own eye that the game put 10 out keeps all of it; and with the hold
+off (No skater fade off, least 0), the free camera's eye comes in to the
+wall right by the player, to where the view starts, 2.52 out, as before the
+hold. camwall_share and camwall_across: in, or across, at once; held for 20 frames; back by a tenth of the gap a frame; and all the
 way out once the camera starts again (camwall_reset). camwall_for: each
 camera's own, started again when its key changes, the one seen longest ago
 given up for a new one. camwall_mode_on: every mode the follow camera's
 post-update serves kept out of walls, but graffiti's (13).
-Default cam fix (dcamfix=): the same port/camera_walls.c, with the
-settings file code from src/nv2a_gl/nv2a_gl.c verbatim (sdl_cfg_path
-through sdl_cfg_set, with nv_window_pref_num between them), as tests/intro
-does; test_setting.c stands in for the menu. On with no dcamfix= and with
+Default cam fix (dcamfix=) and No skater fade (noskaterfade=):
+the same port/camera_walls.c, with the settings file code from
+src/nv2a_gl/nv2a_gl.c verbatim (sdl_cfg_path through sdl_cfg_set, with
+nv_window_pref_num between them), as tests/intro does; test_setting.c
+stands in for the menu. Default cam fix: on with no dcamfix= and with
 dcamfix=1, off with dcamfix=0, and its row, after Input's Behaviour
 submenu (with its hint) and in it, turning it off at once and keeping
-dcamfix=0, and off in File > Presets' Xbox mode, on in the other two. Each case gets its own settings file,
-passed as JSRF_SETTINGS_FILE, and its own run, since the setting is read
-once.
+dcamfix=0, and off in File > Presets' Xbox mode, on in the other two.
+No skater fade: off with no noskaterfade= and with noskaterfade=0, on
+with noskaterfade=1, and its row right under Default cam fix's in Input >
+Behaviour (with its hint), turning it on at once, off again and on,
+keeping noskaterfade=1 with dcamfix= as it was, and off in each of File >
+Presets' three. The hold the two give (camwall_least): the free camera's
+eye and the game's with both on, the free camera's alone with Default cam
+fix off, neither with No skater fade off, each as its row turns it. Each case
+gets its own settings file, passed as JSRF_SETTINGS_FILE, and its own run,
+since the settings are read once.
 Requires GCC on PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
 """
@@ -92,17 +109,44 @@ cases = {
     "game_wall_70": ["game_wall_70 0: share 1.0000", "game_wall_70 2: share 1.0000"],
     "game_alongside": ["game_alongside 0: share 1.0000, 0.00 across, by 0",
                        "game_alongside 1: share 1.0000", "game_alongside 2: share 1.0000"],
+    # the free camera's floor (least), 15 units of 38.2: where the game
+    # draws the player whole
+    "least_hugging": ["least_hugging: share 0.3927, 0.00 across, by 5"],
+    "least_hugging_off": ["least_hugging_off: share 0.0661, 0.00 across, by 5"],
+    "least_corridor": ["least_corridor: share 0.3927, 0.00 across, by 5"],
+    "least_gap": ["least_gap: share 1.0000, 0.00 across, by 3"],
+    "least_short": ["least_short: share 1.0000, 0.00 across, by 5",
+                    "least_short open: share 1.0000, 0.00 across, by 0, 5 lines"],
+    "least_game": ["least_game: share 0.1309, 0.00 across, by 1",
+                   "least_game held: share 0.3927, 0.00 across, by 5",
+                   "least_game free: share 0.3927, 0.00 across, by 5"],
+    "least_game_short": ["least_game_short: share 1.0000, 0.00 across, by 5"],
     "cameras": [],
     "modes": [],
 }
 
-# Default cam fix: case: (settings file or None for none, log lines it must print)
+# Default cam fix and No skater fade: case: (settings file or None for
+# none, log lines it must print)
 setting_cases = {
-    "default": (None, ["[CAMWALL] default cam fix on (settings)"]),
-    "on": ("dcamfix=1\n", ["[CAMWALL] default cam fix on (settings)"]),
+    "default": (None, ["[CAMWALL] default cam fix on (settings)",
+                       "[CAMWALL] no skater fade off (settings)"]),
+    "on": ("dcamfix=1\n", ["[CAMWALL] default cam fix on (settings)",
+                           "[CAMWALL] no skater fade off (settings)"]),
     "off": ("dcamfix=0\n", ["[CAMWALL] default cam fix off (settings)"]),
-    "flip": ("game_dir=/games/jsrf\n",
-             ["[CAMWALL] default cam fix on (settings)", "[CAMWALL] default cam fix off (the menu)"]),
+    "flip": ("game_dir=/games/jsrf\nnoskaterfade=1\n",
+             ["[CAMWALL] default cam fix on (settings)", "[CAMWALL] no skater fade on (settings)",
+              "[CAMWALL] default cam fix off (the menu)"]),
+    "whole_on": ("noskaterfade=1\n", ["[CAMWALL] no skater fade on (settings)"]),
+    "whole_off": ("noskaterfade=0\n", ["[CAMWALL] no skater fade off (settings)"]),
+    "whole_flip": ("game_dir=/games/jsrf\ndcamfix=0\n",
+                   ["[CAMWALL] no skater fade off (settings)",
+                    "[CAMWALL] no skater fade on (the menu)",
+                    "[CAMWALL] no skater fade off (the menu)"]),
+    "whole_game": ("dcamfix=1\n",
+                   ["[CAMWALL] default cam fix on (settings)",
+                    "[CAMWALL] no skater fade off (settings)",
+                    "[CAMWALL] no skater fade on (the menu)",
+                    "[CAMWALL] no skater fade off (the menu)"]),
 }
 
 with tempfile.TemporaryDirectory(prefix="camera_walls-") as directory:
@@ -142,7 +186,13 @@ with tempfile.TemporaryDirectory(prefix="camera_walls-") as directory:
                 raise SystemExit(f"setting {name}: no '{line}' in the log:\n{run.stderr}")
         if name == "flip":
             kept = path.read_text()
-            if "dcamfix=0\n" not in kept or "game_dir=/games/jsrf\n" not in kept:
+            if ("dcamfix=0\n" not in kept or "game_dir=/games/jsrf\n" not in kept
+                    or "noskaterfade=1\n" not in kept):
                 raise SystemExit("setting flip: the row did not keep dcamfix=0 alone:\n" + kept)
+        if name == "whole_flip":
+            kept = path.read_text()
+            if ("noskaterfade=1\n" not in kept or "dcamfix=0\n" not in kept
+                    or "game_dir=/games/jsrf\n" not in kept):
+                raise SystemExit("setting whole_flip: the row did not keep noskaterfade=1 alone:\n" + kept)
         print(run.stdout.strip())
 print("camera_walls: all", len(cases) + len(setting_cases), "cases pass")

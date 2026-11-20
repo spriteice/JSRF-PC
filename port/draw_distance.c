@@ -551,6 +551,17 @@ void draw_buildings_widen(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WO
     draw_log(now, frame);
 }
 
+int draw_set_whole_map(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WORDS])
+{
+    int i;
+    unsigned e;
+    if (n > DRAW_AREAS_MAX) n = DRAW_AREAS_MAX;
+    for (i = 0; areas && i < n; i++)
+        for (e = 0; areas[i].list && e < areas[i].nlist; e++)
+            if (areas[i].list[e] < (uint32_t)n) set_add(set, (int)areas[i].list[e]);
+    return set_count(set);
+}
+
 void draw_buildings_shadows(uint32_t set[DRAW_SET_WORDS], const uint32_t game[DRAW_SET_WORDS],
                             void (*run)(void))
 {

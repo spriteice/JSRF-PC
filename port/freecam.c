@@ -2,8 +2,16 @@
  *
  * The follow camera keeps what it works out for itself -- what it looks at,
  * how far it stays, where a wall stops it -- and freecam only moves the eye
- * around that target, by the right stick. Two angles say where: yaw, the way
- * the view faces, and pitch, how far the eye is above (or below) the target.
+ * around that target, by the right stick. The follow camera's hook then keeps
+ * that eye's view out of walls, and, with No skater fade on (off by default;
+ * camera_walls.h), the eye no nearer the player than the game draws them
+ * whole, as the game fades your skater out when its camera's eye comes
+ * nearer. While
+ * that eye is in none of the map's areas, the areas drawn are the game's own
+ * eye's, and your skater is drawn while in none itself (recomp_manual.c,
+ * sub_0006A970 and sub_0006AC10). Two angles say where:
+ * yaw, the way the view faces, and pitch, how far the eye is above (or
+ * below) the target.
  * They start from the game's own view each time freecam takes over, and again
  * whenever the game puts its camera back behind the player (the L trigger).
  * A camera the game does not post-update -- paused, the task manager runs

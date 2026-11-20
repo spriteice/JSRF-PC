@@ -11,10 +11,16 @@
  * free camera (freecam.h) places, whose own line it tests as well; for the
  * game's, the eye's line counts only when what it meets is wider than the
  * view, as a wall or a half pipe's curve the eye has gone behind is, where
- * the game's test runs only when the eye's move crosses a surface. For the
- * game's own eye it is a setting, Default cam fix (camwall_start), on by
- * default. The hooks are in recomp_manual.c: sub_000A6100, the follow
- * camera's post-update. */
+ * the game's test runs only when the eye's move crosses a surface. Neither
+ * eye is brought nearer the player than the game draws them whole, a
+ * distance of the game's own that its caller gives: nearer, the game fades
+ * your skater out, and nearer still doesn't draw it, so a wall nearer than
+ * that is seen through from there. An eye the game itself put nearer stays
+ * there. Each is a setting (camwall_start): Default cam fix, on by default,
+ * for the game's own eye, and No skater fade, off by default, for that hold,
+ * of the free camera's eye and, while Default cam fix is on, the game's.
+ * Off, an eye comes as near as its view allows. The hooks are in recomp_manual.c:
+ * sub_000A6100, the follow camera's post-update. */
 #ifndef JSRF_CAMERA_WALLS_H
 #define JSRF_CAMERA_WALLS_H
 
@@ -32,7 +38,7 @@ enum {
     CAMWALL_CORNER,    /* a corner of the view, cleared by coming in */
     CAMWALL_NO_ROOM,   /* corners that neither clears: the eye's line alone */
     CAMWALL_ACROSS,    /* a corner of the view, cleared by moving across */
-    CAMWALL_NEAREST    /* the eye's line meets a wall right by the target */
+    CAMWALL_NEAREST    /* the eye's line meets a wall nearer the target than it may come */
 };
 
 /* After a wall (camwall_share): game frames the eye stays where the wall put
@@ -59,16 +65,40 @@ struct camwall {
 /* CAMWALL_START: as a camera that starts again. */
 void camwall_reset(struct camwall *w);
 
-/* Default cam fix: dcamfix= in the settings file (1, the default, or 0),
- * or Input > Behaviour > Default cam fix. Read once, at
- * start, before the game runs, which also adds the row: it changes the
- * setting at once and keeps it in the settings file, on the window's
- * thread. Off, the game's own eye stands where the game's wall test put it,
- * as on the Xbox; the free camera's is kept out of walls either way. */
+/* Off with no noskaterfade= in the settings, and in each of File >
+ * Presets' three: an eye held where the game draws the player whole only
+ * when it's turned on (spriteice, 19 November 2026, testing freecam4's
+ * hold: "it definitely needs to be a toggle"; testing freecam5, for the
+ * game's camera too while Default cam fix is on, under it in Input >
+ * Behaviour, named No skater fade; testing freecam6: "No skater fade should
+ * be off by default", "In all presets"). */
+#define CAMWALL_WHOLE_DEFAULT 0
+
+/* The two settings, read once, at start, before the game runs, which also
+ * adds their rows: each changes its setting at once and keeps it in the
+ * settings file, on the window's thread.
+ * Default cam fix: dcamfix= in the settings file (1, the default, or 0), or
+ * Input > Behaviour > Default cam fix. Off, the game's own eye stands where
+ * the game's wall test put it, as on the Xbox; the free camera's is kept out
+ * of walls either way.
+ * No skater fade: noskaterfade= (1, or 0, the default), or Input >
+ * Behaviour > No skater fade. On, the free camera's eye, and the game's own
+ * while Default cam fix is on, is not brought nearer the player than the
+ * game draws them whole. Off, neither eye has a floor of its own (least 0 in
+ * camwall_clear), as before known bug 61's fix: it comes in to a wall near
+ * the player, as near as where the view starts, and the game fades your
+ * skater out, or hides it, there. */
 void camwall_start(void);
 
 /* Whether the game's own eye is kept out of walls (Default cam fix). */
 int camwall_on(void);
+
+/* camwall_clear's least for an eye: whole, where the game draws the player
+ * whole, with No skater fade on, for the free camera's eye (freecam 1) and
+ * for the game's own while Default cam fix is on, a nearer wall seen
+ * through; else 0, the view's floor alone, and the game fades the player
+ * where the eye comes nearer, as on the Xbox. */
+double camwall_least(int freecam, double whole);
 
 /* The graffiti camera's mode (the camera's +0x208): the spray code
  * (sub_0008D280) asks for it, and it frames the spot being sprayed, then
@@ -110,10 +140,15 @@ struct camwall *camwall_for(uint32_t cam, uint32_t key);
  * let be, as the game lets it. When a surface cuts across the view, the eye
  * moves across, away from it, or else comes in until lines from tgt to the
  * view's corners are clear, if either clears them. Never nearer tgt than
- * where the view starts in front of it. by says what set it. */
+ * where the view starts in front of it, nor than least, a distance (0 for
+ * none): the caller gives where the game draws the player whole, with No
+ * skater fade on, as the game fades its own skater out when its camera's eye
+ * comes nearer. Where the eye's line meets a wall nearer than either, the eye
+ * stays out at it, and the wall is seen through; an eye whose own distance
+ * is under it keeps all of it. by says what set it. */
 double camwall_clear(const float tgt[3], const float eye[3], double most, int eye_line,
-                     double ahead, double half_w, double half_h, camwall_line_fn line,
-                     void *ctx, double push[3], int *by);
+                     double least, double ahead, double half_w, double half_h,
+                     camwall_line_fn line, void *ctx, double push[3], int *by);
 
 /* After camwall_clear, each frame: open is the share it gave. Returns the
  * share to put the eye at: in at once when open is less than last frame's,

@@ -622,6 +622,46 @@ static void check_hill(void)
     printf("dogenzaka hill: area 13 never added from the street or the corner\n");
 }
 
+/* The whole map's set, for the free camera when its eye and the game's
+ * camera's are both in no area (recomp_manual.c, area_set_from_game_eye;
+ * known bug 61): every area some list names, as All has it, whatever Far
+ * buildings' step, Off included; never the area no list names; added to
+ * what the set holds; nothing for no map. */
+static void check_whole_map(void)
+{
+    uint32_t set[DRAW_SET_WORDS];
+    int w;
+    CHECK(draw_far_buildings() == 0);
+    map_make();
+    memset(set, 0, sizeof set);
+    CHECK(draw_set_whole_map(s_areas, AREAS, set) == 10);
+    CHECK(set[0] == RUN(0, 9) && !(set[0] & AREA(UNLISTED)));
+    for (w = 1; w < DRAW_SET_WORDS; w++) CHECK(!set[w]);
+    /* Over a set that holds some already, and over the area no list names:
+     * added to, never taken from. */
+    memset(set, 0, sizeof set);
+    set[0] = AREA(UNLISTED);
+    CHECK(draw_set_whole_map(s_areas, AREAS, set) == 11 && set[0] == (RUN(0, 9) | AREA(UNLISTED)));
+    /* The map without the area no list names: the same 10. */
+    memset(set, 0, sizeof set);
+    CHECK(draw_set_whole_map(s_areas, AREAS - 1, set) == 10 && set[0] == RUN(0, 9));
+    /* No map, or none of it read: the set as it was. */
+    memset(set, 0, sizeof set);
+    CHECK(draw_set_whole_map(NULL, AREAS, set) == 0 && !set[0]);
+    CHECK(draw_set_whole_map(s_areas, 0, set) == 0 && !set[0]);
+    /* A list naming an area past the map's end is left out, as Far
+     * buildings leaves it. */
+    {
+        static const uint32_t far_list[] = { 0, 40 };
+        DrawArea one = s_areas[0];
+        one.list = far_list;
+        one.nlist = 2;
+        memset(set, 0, sizeof set);
+        CHECK(draw_set_whole_map(&one, 1, set) == 1 && set[0] == AREA(0) && !set[1]);
+    }
+    printf("whole map: %X\n", (unsigned)RUN(0, 9));
+}
+
 int main(int argc, char **argv)
 {
     const char *c = argc > 1 ? argv[1] : "";
@@ -759,6 +799,7 @@ int main(int argc, char **argv)
     if (!strcmp(c, "far_eye")) check_eye();
     if (!strcmp(c, "far_hill")) check_hill();
     if (!strcmp(c, "shadows")) check_shadows();
+    if (!strcmp(c, "whole_map")) check_whole_map();
     if (!strcmp(c, "far_pick")) {
         /* Off from its own key, whatever the old toggle says; then the row:
          * 2x at once (and kept, which run.py checks); a choice the row

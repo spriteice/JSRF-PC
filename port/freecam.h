@@ -2,7 +2,11 @@
  *
  * The game still chooses what the camera looks at, how far away it is and
  * where a wall stops it; this only chooses the direction it looks from, and
- * camera_walls.h keeps its view out of walls there. The hooks are in
+ * camera_walls.h keeps its view out of walls there, with the eye no nearer
+ * the player than the game draws them whole while No skater fade is on.
+ * While its eye is in none of the map's areas, the areas drawn are the game's
+ * own eye's (sub_0006A970), and your skater is drawn while in none itself
+ * (sub_0006AC10). The hooks are in
  * recomp_manual.c: sub_000A6100 (the follow camera), sub_000A5070
  * (the camera update, for graffiti and talking), sub_000A28B0 (the camera's
  * post-update), sub_001C3E14 (XInputGetState) and sub_00116E30 (once a game

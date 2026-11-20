@@ -6112,6 +6112,11 @@ void sub_0007D8B0(void)
 #define CAM_WALL_POINT_1   0x2Cu       /* the point in a hit from the record's first list */
 #define CAM_WALL_POINT_2   0x50u       /* and from its second */
 #define CAM_WALL_ENDS      0x18u       /* a line's two ends, kept past those locals */
+#define CAM_SKATER_WHOLE   0x001C4BA4u /* the game's 15.0: a skater whose camera's eye is nearer is faded (sub_00081860) */
+#define CAM_SKATER_HIDDEN  0x001CC624u /* the game's 3.0: nearer than this, it isn't drawn at all */
+#define CAM_SKATER_FADE    0x001CD098u /* the game's 1/12: the fade a unit, from CAM_SKATER_HIDDEN out */
+#define CAM_ID             0x008u      /* what the frame's camera is known by (GAME_FRAME_CAM) */
+#define CAM_DISTANCE       0x230u      /* the eye's distance from the target (sub_000A28B0) */
 #define DEV_CLASS          0x001E0F00u /* the graphics device the camera is set on (s_cam_dev) */
 #define DEV_NEAR           0x40u       /* its near plane: where the view starts, ahead of the eye */
 #define DEV_TAN_HALF       0x54u       /* tan of half its view's width (SetCamera, sub_00153FE0) */
@@ -6437,20 +6442,30 @@ void sub_000A76E0(void)
  * curve, a bump in the ground -- can cut into it while the line stays clear,
  * or meet it where the eye sits on the surface, as it does wherever the
  * eye's line meets a wall; widescreen widens the view, and so how far it
- * reaches across. camwall_clear (port/camera_walls.c) tests lines across
- * the view where it starts, and when a surface cuts across it, moves the eye
+ * reaches across. camwall_clear (port/camera_walls.c) tests lines across the
+ * view where it starts, and when a surface cuts across it, moves the eye
  * across, away from it, or else brings it in to where lines from the target
  * to the view's corners are clear. It keeps the eye from coming nearer the
- * player than where the view starts in front of them. For the free camera's
- * eye it tests the eye's line first. The game's own eye, every camera's but
- * the one the free camera places, gets the same test of its view, and of its
- * line only where what the line meets hides the whole of where the view
- * starts: a half pipe's curve, or a wall that came between, the eye behind
- * it, which the game's own test misses, as it runs only when the smoothed
- * eye's move crosses a surface. A pole or a rail the game lets pass between
- * the player and the eye still passes, and the camera moves only then or
- * while a surface cuts across its view. It changes only the working eye,
- * so the game's smoothing and following go on as before. The graffiti
+ * player than where the view starts in front of them, nor from coming nearer
+ * than the game draws the player whole (CAM_SKATER_WHOLE, the distance the
+ * skaters' draw, sub_00081860, reads from the camera's +0x230 once
+ * sub_000A28B0 has worked it out): nearer, the game fades your skater out,
+ * and under CAM_SKATER_HIDDEN doesn't draw it. The free camera, turned toward
+ * a wall by the player, would come that near; the game's own camera trails
+ * the player and lifts when they drop, and comes that near where a wall
+ * brings its view in. That hold is Input > Behaviour > No skater fade
+ * (camwall_least), off by default, right under Default cam fix, as the
+ * game's own eye has it only while that is on; an eye the game itself put
+ * nearer stays there. Off, either eye comes as near as its view allows. For
+ * the free camera's eye it tests the eye's line first. The game's own eye, every
+ * camera's but the one the free camera places, gets the same test of its
+ * view, and of its line only where what the line meets hides the whole of
+ * where the view starts: a half pipe's curve, or a wall that came between,
+ * the eye behind it, which the game's own test misses, as it runs only when
+ * the smoothed eye's move crosses a surface. A pole or a rail the game lets
+ * pass between the player and the eye still passes, and the camera moves only
+ * then or while a surface cuts across its view. It changes only the working
+ * eye, so the game's smoothing and following go on as before. The graffiti
  * camera (mode 13) is the one mode it leaves be (camwall_mode_on): the game
  * aims that shot at the spot being sprayed, so the surface is right by the
  * target, and the test would bring the eye in to a first-person view.
@@ -6498,6 +6513,45 @@ static double camwall_game_line(uint32_t cam, uint32_t scr, const double a[3], c
     along /= len2;
     return along < 0 ? 0 : along > 1 ? 1 : along;
 }
+/* What placed each camera's eye this frame, for the skaters' log
+ * (skater_drawn_log) and the skaters' and the areas' draws while the free
+ * camera places it (sub_0006AC10, sub_0006A970): the camera's post-update
+ * (sub_000A28B0) notes the game's own mode first, and the follow camera's
+ * hook below, which it runs, notes what it did; with the free camera, also
+ * the eye the game had put there, before the free camera placed its own.
+ * A camera the game doesn't post-update (paused) keeps what it last had. */
+enum { EYE_SCENE, EYE_GAME, EYE_DCAMFIX, EYE_FREECAM };
+static struct { uint32_t cam; int by; float game_eye[3]; } s_eye_by[CAMWALL_CAMERAS];
+static void cam_eye_note(uint32_t cam, int by, const float game_eye[3])
+{
+    static unsigned next;
+    unsigned i;
+    for (i = 0; i < CAMWALL_CAMERAS && s_eye_by[i].cam != cam; i++) {}
+    if (i == CAMWALL_CAMERAS) i = next++ % CAMWALL_CAMERAS;    /* the one noted longest ago */
+    s_eye_by[i].cam = cam;
+    s_eye_by[i].by = by;
+    if (game_eye) memcpy(s_eye_by[i].game_eye, game_eye, sizeof s_eye_by[i].game_eye);
+}
+/* What placed camera cam's eye (EYE_), or -1 for a camera not seen; game_eye,
+ * when not NULL, set to the eye the game put there, for EYE_FREECAM. */
+static int cam_eye_placed(uint32_t cam, const float **game_eye)
+{
+    unsigned i;
+    for (i = 0; i < CAMWALL_CAMERAS; i++)
+        if (s_eye_by[i].cam == cam) {
+            if (game_eye) *game_eye = s_eye_by[i].game_eye;
+            return s_eye_by[i].by;
+        }
+    return -1;
+}
+static const char *cam_eye_by(uint32_t cam)
+{
+    static const char *const by_text[] = {                  /* EYE_ */
+        "the game's camera, in a mode of its own", "the game's camera, as the game put it",
+        "the game's camera, kept out of walls (Default cam fix)", "the free camera" };
+    int by = cam_eye_placed(cam, NULL);
+    return by < 0 ? "a camera not seen" : by_text[by];
+}
 /* camwall_clear's line test: the scratch on the guest stack, for this camera. */
 struct camwall_line_at { uint32_t cam, scr; };
 static double camwall_line(void *ctx, const double a[3], const double b[3])
@@ -6517,13 +6571,16 @@ static void camera_walls(uint32_t cam, struct camwall *w, int freecam)
         "with nothing in the way", "by the eye's line", "by a corner of the view",
         "by the eye's line (the corners have no room)", "for a corner of the view",
         "as near as it goes (the eye's line meets a wall by the player)" };
+    /* CAMWALL_NEAREST with No skater fade on, whose floor is the game's. */
+    static const char by_whole[] =
+        "held where the game draws the player whole (the eye's line meets a wall nearer)";
     uint8_t *m = (uint8_t *)g_xbox_mem_offset;
     float *cf = (float *)(m + cam);
     const float *tgt = cf + CAM_TARGET / 4;
     float *eye = cf + CAM_EYE / 4;
     uint32_t sv_ecx = g_ecx;
     struct camwall_line_at at;
-    double u[3], need[3], push[3], d, half, ahead, hw, hh, open, eased;
+    double u[3], need[3], push[3], d, half, ahead, hw, hh, least, open, eased;
     int k, by;
     /* The camera device, as the widescreen re-set checks it: not set yet,
      * the view's size is not known, and only the eye's line is tested. */
@@ -6546,6 +6603,17 @@ static void camera_walls(uint32_t cam, struct camwall *w, int freecam)
                   pad_now(), 2 * atan(half) * 180 / 3.14159265358979323846, ahead, hw, hh);
       } }
     if (!(hw >= 0 && hw < HUGE_VAL && hh >= 0 && hh < HUGE_VAL)) hw = hh = 0;
+    /* The eye no nearer the player than the game draws them whole, with No
+     * skater fade on (camwall_least): the game's own distance, which the
+     * skaters' draw reads. Nearer, the game fades your skater out, and under
+     * CAM_SKATER_HIDDEN doesn't draw it. The free camera's eye and the
+     * game's alike, the game's only with Default cam fix on, as only then
+     * does it come here (sub_000A6100). Off, either has the view's floor
+     * alone, and the game fades the player where the eye comes that near, as
+     * on the Xbox. */
+    least = camwall_least(freecam, *(const float *)(m + CAM_SKATER_WHOLE));
+    if (!RECOMP_CHECK(least >= 0 && least < HUGE_VAL, "the game's whole-draw distance reads %g", least))
+        least = 0;
     g_esp -= CAM_WALL_LOCALS + CAM_WALL_ENDS;
     at.cam = cam;
     at.scr = g_esp;
@@ -6554,11 +6622,12 @@ static void camera_walls(uint32_t cam, struct camwall *w, int freecam)
      * (port/camera_walls.c) -- and, when that is short of it, its view there
      * tested too, with how far across it moves there; then how far across
      * this frame, the same way. */
-    open = camwall_clear(tgt, eye, 1.0, freecam, ahead, hw, hh, camwall_line, &at, need, &by);
+    open = camwall_clear(tgt, eye, 1.0, freecam, least, ahead, hw, hh, camwall_line, &at, need,
+                         &by);
     eased = camwall_share(w, open);
     if (eased < open) {
-        double there = camwall_clear(tgt, eye, eased, freecam, ahead, hw, hh, camwall_line, &at,
-                                     need, &by);
+        double there = camwall_clear(tgt, eye, eased, freecam, least, ahead, hw, hh, camwall_line,
+                                     &at, need, &by);
         if (there < eased) eased = camwall_share(w, there);
     }
     camwall_across(w, tgt, eye, eased, need, ahead, hw, hh, camwall_line, &at, push);
@@ -6579,7 +6648,8 @@ static void camera_walls(uint32_t cam, struct camwall *w, int freecam)
                     eased * 100, d,
                     sqrt(push[0] * push[0] + push[1] * push[1] + push[2] * push[2]),
                     (eased < open || push[0] != need[0] || push[1] != need[1] || push[2] != need[2])
-                        && by == CAMWALL_CLEAR ? "waiting or easing back out" : by_text[by],
+                        && by == CAMWALL_CLEAR ? "waiting or easing back out"
+                    : by == CAMWALL_NEAREST && least > 0 ? by_whole : by_text[by],
                     eye[0], eye[1], eye[2]);
         }
     }
@@ -6590,7 +6660,7 @@ void sub_000A6100(void)
     uint8_t *m = (uint8_t *)g_xbox_mem_offset;
     const uint32_t lim = 64u << 20;
     uint32_t cam = g_ecx, who = 0, asked = 0, mode;
-    float *cf, eye[3];
+    float *cf, eye[3], game_eye[3];
     int placed = FREECAM_OFF, behind;
     struct camwall *w;
     if (cam >= 0x10000u && cam + 0x240u < lim) {
@@ -6607,8 +6677,10 @@ void sub_000A6100(void)
     if (placed != FREECAM_OFF) {
         w = camwall_for(cam, CAM_WALLS_FREECAM);
         if (placed == FREECAM_STARTED) camwall_reset(w);
+        memcpy(game_eye, cf + CAM_EYE / 4, sizeof game_eye);  /* the game's, for the areas' draw */
         memcpy(cf + CAM_EYE / 4, eye, sizeof eye);
         camera_walls(cam, w, 1);
+        cam_eye_note(cam, EYE_FREECAM, game_eye);
         return;
     }
     /* The game's own eye: its state goes with its mode, and starts again
@@ -6619,6 +6691,7 @@ void sub_000A6100(void)
      * (camwall_mode_on); its state is still taken, so the follow mode after
      * it starts again, as before. */
     w = camwall_for(cam, mode);
+    cam_eye_note(cam, EYE_GAME, NULL);
     if (!camwall_on()) {
         camwall_reset(w);
         return;
@@ -6634,6 +6707,7 @@ void sub_000A6100(void)
         return;
     }
     camera_walls(cam, w, 0);
+    cam_eye_note(cam, EYE_DCAMFIX, NULL);
 }
 
 /* ---- camera call counters (JSRF_CAM_LOG=1): which camera methods and mode
@@ -6641,9 +6715,26 @@ void sub_000A6100(void)
 static unsigned long jsrf_camcnt[18];
 static const uint32_t jsrf_camva[18] = { 0x000A28B0u, 0x000A2960u, 0x000A3A70u, 0x000A3BD0u, 0x000A3D10u, 0x000A59B0u, 0x000A58B0u, 0x000A58C0u, 0x000A58E0u, 0x000A3E50u, 0x000A4100u, 0x000A5A00u, 0x000A5A70u, 0x000A5AC0u, 0x000A5AF0u, 0x000A4890u, 0x000A4D80u, 0x000A4C30u };
 extern void sub_000A28B0_gen(void);
-void sub_000A28B0(void) { jsrf_camcnt[0]++; freecam_ran(g_ecx); sub_000A28B0_gen(); }
+void sub_000A28B0(void)
+{
+    jsrf_camcnt[0]++;
+    freecam_ran(g_ecx);
+    cam_eye_note(g_ecx, EYE_SCENE, NULL);   /* the follow camera's hook, which this runs, says more */
+    sub_000A28B0_gen();
+}
+/* The follow camera's draw: the camera it is, while it runs, for the set
+ * of areas it makes from its eye (sub_0006A970). */
+static uint32_t s_cam_drawing;
 extern void sub_000A2960_gen(void);
-void sub_000A2960(void) { jsrf_camcnt[1]++; sub_000A2960_gen(); wide_haze_corners("sub_000A2960"); }
+void sub_000A2960(void)
+{
+    uint32_t was = s_cam_drawing;
+    jsrf_camcnt[1]++;
+    s_cam_drawing = g_ecx;
+    sub_000A2960_gen();
+    s_cam_drawing = was;
+    wide_haze_corners("sub_000A2960");
+}
 extern void sub_000A3A70_gen(void);
 void sub_000A3A70(void) { jsrf_camcnt[2]++; sub_000A3A70_gen(); }
 extern void sub_000A3BD0_gen(void);
@@ -7089,17 +7180,86 @@ static int dd_areas(DrawArea *out)
     return (int)n;
 }
 
-/* sub_0006A970(eye), thiscall on AREA_SET: the game's set, then, with Far
- * buildings on, the areas added to it. */
+/* ---- the free camera's eye in no area (known bug 61) ----------------------
+ * The game makes the set from its camera's eye alone, and a point in no area
+ * gives an empty set: nothing of the map is drawn, nor anything that tests
+ * its area, your skater among them. The game's own camera trails the player
+ * inside the map's areas, and lifts when they drop; the free camera turns the
+ * eye around the player at the game's distance, and so can put it outside
+ * every area, as beside a tower on the way down (freecam4's tower fall). So,
+ * while the free camera places the follow camera's eye (cam_eye_placed) and
+ * the set made from it is empty, the set is made again from the eye the game
+ * had put there that frame: the level is drawn as from where the game's
+ * camera stands, and Far buildings widens that as usual. Only the set: what
+ * the call answers, and the fog and light the draw takes from the eye's area
+ * after it, stay as the free camera's eye gave them. (An area whose list
+ * names none would give an empty set too, and is taken the same way.) Where
+ * the game's eye is in no area too, the set made from it is empty as well:
+ * as near the bottom of freecam5's tower fall, where the game's camera,
+ * trailing the player down beside the tower, leaves the map's areas for
+ * about two seconds. Then every area some list names is drawn
+ * (draw_set_whole_map), as Far buildings' All draws them, for those frames
+ * only. The game's own cameras are left as the game has them.
+ * Nothing in sub_0006A970 is wrong: the set is the game's design, made for
+ * its own camera, and the free camera is ours. Said in the log at most once a
+ * second. */
+#define AREA_SET_POINT 16u          /* the point made again from, on the guest stack */
 extern void sub_0006A970_gen(void);
+static int area_set_empty(const uint32_t set[DRAW_SET_WORDS])
+{
+    int w;
+    for (w = 0; w < DRAW_SET_WORDS; w++)
+        if (set[w]) return 0;
+    return 1;
+}
+static void area_set_from_game_eye(uint32_t set[DRAW_SET_WORDS], uint32_t ra)
+{
+    static double next;
+    static DrawArea areas[DRAW_AREAS_MAX];
+    const float *game_eye = NULL;
+    uint32_t cam = s_cam_drawing, a[1];
+    int whole;
+    if (!cam || !area_set_empty(set) || cam_eye_placed(cam, &game_eye) != EYE_FREECAM) return;
+    g_esp -= AREA_SET_POINT;
+    memcpy((uint8_t *)g_xbox_mem_offset + g_esp, game_eye, 3 * sizeof(float));
+    a[0] = g_esp;
+    {
+        uint32_t sv_ecx = g_ecx;
+        g_ecx = AREA_SET;
+        guest_call_cdecl(sub_0006A970_gen, ra, 1, a);
+        g_ecx = sv_ecx;
+    }
+    g_esp += AREA_SET_POINT;
+    whole = area_set_empty(set);
+    if (whole) draw_set_whole_map(areas, dd_areas(areas), set);
+    if (pad_now() >= next) {
+        int n = 0, i;
+        next = pad_now() + 1.0;
+        for (i = 0; i < DRAW_AREAS_MAX; i++) n += (set[i >> 5] >> (i & 31)) & 1;
+        if (whole)
+            fprintf(stderr, "[FREECAM] t=%.2f camera %08X's eye is in no area, and the game's camera's too, at "
+                            "(%.1f %.1f %.1f): the whole map's %d areas are drawn\n",
+                    pad_now(), cam, game_eye[0], game_eye[1], game_eye[2], n);
+        else
+            fprintf(stderr, "[FREECAM] t=%.2f camera %08X's eye is in no area: the areas drawn are the game's "
+                            "camera's, from (%.1f %.1f %.1f): %d areas\n",
+                    pad_now(), cam, game_eye[0], game_eye[1], game_eye[2], n);
+    }
+}
+
+/* sub_0006A970(eye), thiscall on AREA_SET: the game's set; made again from
+ * the game's eye while the free camera's is in no area (above); then, with
+ * Far buildings on, the areas added to it. */
 void sub_0006A970(void)
 {
     static DrawArea areas[DRAW_AREAS_MAX];
-    uint32_t self = g_ecx;
+    uint32_t self = g_ecx, ra = GARG(0);
     uint32_t *set = (uint32_t *)((uint8_t *)g_xbox_mem_offset + AREA_SET + AREA_SET_BITS);
     int n;
     sub_0006A970_gen();
-    if (!draw_far_buildings() || self != AREA_SET) return;
+    if (self != AREA_SET) return;
+    area_set_from_game_eye(set, ra);
+    if (!draw_far_buildings()) return;
     n = dd_areas(areas);
     if (!n) return;
     memcpy(s_game_set, set, sizeof s_game_set);
@@ -7116,6 +7276,117 @@ void sub_00012C80(void)
         memcpy((uint8_t *)g_xbox_mem_offset + AREA_SET + AREA_SET_BITS, s_game_set, sizeof s_game_set);
         s_set_widened = 0;
     }
+}
+
+/* ---- your own skater not drawn whole: the log (known bug 61) ---------------
+ * The skaters' draw (sub_00081860, thiscall on the skater) first finds the
+ * skater's area (sub_0006AAA0 on AREA_SET, from a point of its own and its
+ * last area at +0xA40; -1 for none), and draws nothing of a skater whose area
+ * isn't in the set drawn from the eye (sub_0006AC10, which answers 0 for -1
+ * too). Then, for the skater whose camera the frame is drawn from (its
+ * camera's id at +0xC98 finds it, sub_000128C0, and that camera's +8 is the
+ * object manager's +0x87F0), in every state (+0xE50) but 0x14 to 0x16 and
+ * 0x1A, it fades the skater by its camera's distance (+0x230): not drawn
+ * under CAM_SKATER_HIDDEN, faded by CAM_SKATER_FADE a unit from there to
+ * CAM_SKATER_WHOLE, and never past the skater's own +0xC40; at 0, nothing of
+ * it is drawn. The free camera's eye came nearer than the game's camera does
+ * (known bug 61); this says, at most once a second each, when your own
+ * skater isn't drawn whole and why: its area, or its camera's distance and
+ * what placed that camera's eye (cam_eye_by). It hooks the area test where
+ * the skaters' draw makes it, known by its return address, and reads the
+ * rest as the draw does, without calling anything. Nothing in these
+ * functions is wrong: the answers are the game's, and this only says them,
+ * but for one (sub_0006AC10's hook, below). */
+#define GAME_OBJECTS       0x0022FCE0u /* -> the game's object manager */
+#define GAME_OBJECT_TABLE  0x098u      /* its objects, by id (sub_000128C0) */
+#define GAME_FRAME_CAM     0x87F0u     /* the id the camera the frame is drawn from is known by */
+#define CHR_LAST_AREA      0xA40u      /* the area it was last in */
+#define CHR_CAM_ID         0xC98u      /* its camera's id */
+#define CHR_ALPHA_MOST     0xC40u      /* the most it is drawn at, 0 to 1 */
+#define CHR_STATE          0xE50u      /* its state: */
+#define CHR_STATE_UNFADED_LO 0x14u     /*   0x14 to 0x16 and 0x1A aren't faded by the camera */
+#define CHR_STATE_UNFADED_HI 0x16u
+#define CHR_STATE_UNFADED  0x1Au
+#define SKATER_AREA_RET    0x000819D5u /* where the skaters' draw's area test returns to */
+
+/* The camera of skater, when it is the camera the frame is drawn from: your
+ * own skater's. 0 for another skater. */
+static uint32_t skater_frame_cam(uint32_t skater)
+{
+    uint32_t gm = dd_u32(GAME_OBJECTS), id, at, cam;
+    if (!dd_guest(skater, CHR_STATE + 4) || !dd_guest(gm, GAME_FRAME_CAM + 4)) return 0;
+    id = dd_u32(skater + CHR_CAM_ID);
+    at = gm + GAME_OBJECT_TABLE + id * 4;
+    if ((int32_t)id < 0 || at < gm || !dd_guest(at, 4)) return 0;
+    cam = dd_u32(at);
+    if (!dd_guest(cam, CAM_DISTANCE + 4) || dd_u32(cam + CAM_ID) != dd_u32(gm + GAME_FRAME_CAM))
+        return 0;
+    return cam;
+}
+
+/* Your own skater, whose camera is cam (skater_frame_cam). */
+static void skater_drawn_log(uint32_t skater, uint32_t cam, int32_t area, uint32_t in_set)
+{
+    static double next_area, next_fade;
+    uint32_t state;
+    float d, whole, hidden, alpha, most;
+    if (!in_set) {
+        if (pad_now() >= next_area) {
+            next_area = pad_now() + 1.0;
+            if (area < 0)
+                fprintf(stderr, "[SKATER] t=%.2f your skater %08X isn't drawn: it is in no area (it was last in %d)\n",
+                        pad_now(), skater, (int32_t)dd_u32(skater + CHR_LAST_AREA));
+            else
+                fprintf(stderr, "[SKATER] t=%.2f your skater %08X isn't drawn: its area, %d, isn't in the set drawn from the eye (%s)\n",
+                        pad_now(), skater, area,
+                        s_set_widened ? "widened by Far buildings" : "the game's own");
+        }
+        return;
+    }
+    state = dd_u32(skater + CHR_STATE);
+    if ((state >= CHR_STATE_UNFADED_LO && state <= CHR_STATE_UNFADED_HI) || state == CHR_STATE_UNFADED)
+        return;
+    d = *dd_float(cam + CAM_DISTANCE);
+    whole = *dd_float(CAM_SKATER_WHOLE);
+    hidden = *dd_float(CAM_SKATER_HIDDEN);
+    if (!(d < whole) || pad_now() < next_fade) return;
+    next_fade = pad_now() + 1.0;
+    alpha = d < hidden ? 0 : (d - hidden) * *dd_float(CAM_SKATER_FADE);
+    most = *dd_float(skater + CHR_ALPHA_MOST);
+    if (alpha > most) alpha = most;
+    fprintf(stderr, "[SKATER] t=%.2f your skater %08X %s %.0f%%: its camera %08X's eye is %.1f from it (not drawn under %.0f, whole from %.0f), placed by %s\n",
+            pad_now(), skater, alpha > 0 ? "drawn at" : "isn't drawn, at", alpha * 100, cam, d,
+            hidden, whole, cam_eye_by(cam));
+}
+
+/* sub_0006AC10(area), thiscall on AREA_SET: whether area is in the set.
+ * Where the skaters' draw asks it, for your own skater in no area (-1) while
+ * the free camera places its camera's eye: yes, so it is drawn. The game
+ * hides a skater whose point is in no area, whatever the camera; in
+ * freecam4's tower fall your skater's point was in no area for two seconds,
+ * as well as the free camera's eye (sub_0006A970, above), and the skater was
+ * gone. The free camera turns around your skater, which is what it shows, so
+ * it is drawn while the free camera places the eye. Every other skater, and
+ * yours with the game's own camera, keep the game's answer. */
+extern void sub_0006AC10_gen(void);
+void sub_0006AC10(void)
+{
+    uint32_t from = GARG(0), self = g_ecx, skater = g_ebx, cam;
+    int32_t area = (int32_t)GARG(1);
+    sub_0006AC10_gen();
+    if (from != SKATER_AREA_RET || self != AREA_SET) return;
+    cam = skater_frame_cam(skater);
+    if (!cam) return;                   /* not the skater the frame is drawn for */
+    if (area < 0 && !g_eax && cam_eye_placed(cam, NULL) == EYE_FREECAM) {
+        static double next;
+        g_eax = 1;
+        if (pad_now() >= next) {
+            next = pad_now() + 1.0;
+            fprintf(stderr, "[SKATER] t=%.2f your skater %08X is in no area: drawn, as the free camera places its camera's eye\n",
+                    pad_now(), skater);
+        }
+    }
+    skater_drawn_log(skater, cam, area, g_eax);
 }
 
 /* sub_0006BA80, thiscall on the map task's +0x44: the map's shadows. The map

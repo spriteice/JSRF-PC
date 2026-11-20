@@ -21,6 +21,13 @@ int nv_window_pref_num(const char *key, double *v) { (void)key; (void)v; abort()
 void nv_window_pref_set_num(const char *key, double v) { (void)key; (void)v; abort(); }
 void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count) { (void)items; (void)count; abort(); }
 
+/* The free camera's floor, as recomp_manual.c gives it: the game's own
+ * distance from which it draws your skater whole (CAM_SKATER_WHOLE, 15.0).
+ * And the eye's distance in the cases that test it: the game's own in play,
+ * as the logs give it. */
+#define GAME_WHOLE 15.0
+#define CAM_FAR 38.2
+
 static void near(double got, double want, const char *what)
 {
     if (fabs(got - want) > 1e-3) {
@@ -170,13 +177,13 @@ int main(int argc, char **argv)
         int by, i;
         s_solids = 0;
         add_plane(-1, 0, 0, -0.5);              /* a wall along the view, half a unit to the right */
-        camwall_clear(t3, e3, 1.0, 1, 1.0, 1.0, 0.57, world_line, NULL, need, &by);
+        camwall_clear(t3, e3, 1.0, 1, 0, 1.0, 1.0, 0.57, world_line, NULL, need, &by);
         assert(by == CAMWALL_ACROSS && need[0] < 0);
         camwall_across(&w, t3, e3, 1.0, need, 1.0, 1.0, 0.57, world_line, NULL, out);
         near(out[0], need[0], "a wall: across at once");
         first = out[0];
         s_solids = 0;                           /* skated past its end */
-        camwall_clear(t3, e3, 1.0, 1, 1.0, 1.0, 0.57, world_line, NULL, need, &by);
+        camwall_clear(t3, e3, 1.0, 1, 0, 1.0, 1.0, 0.57, world_line, NULL, need, &by);
         assert(by == CAMWALL_CLEAR && need[0] == 0);
         for (i = 0; i < 20; i++) {
             camwall_across(&w, t3, e3, 1.0, need, 1.0, 1.0, 0.57, world_line, NULL, out);
@@ -187,7 +194,7 @@ int main(int argc, char **argv)
         for (i = 0; i < 10; i++) camwall_across(&w, t3, e3, 1.0, need, 1.0, 1.0, 0.57, world_line, NULL, out);
         near(out[0], first * pow(0.9, 11), "two thirds of the way back in 11 frames");
         add_plane(-1, 0, 0, -0.5);              /* the wall again */
-        camwall_clear(t3, e3, 1.0, 1, 1.0, 1.0, 0.57, world_line, NULL, need, &by);
+        camwall_clear(t3, e3, 1.0, 1, 0, 1.0, 1.0, 0.57, world_line, NULL, need, &by);
         camwall_across(&w, t3, e3, 1.0, need, 1.0, 1.0, 0.57, world_line, NULL, out);
         near(out[0], first, "the wall again, the view cut where it was: across at once");
         assert(view_clear(t3, e3, 1.0, out, 1.0, 1.0, 0.57));
@@ -197,7 +204,7 @@ int main(int argc, char **argv)
             camwall_across(&w, t3, e3, 1.0, need, 1.0, 1.0, 0.57, world_line, NULL, out);
         assert(out[0] == 0 && out[1] == 0 && out[2] == 0);
         add_plane(-1, 0, 0, -0.5);
-        camwall_clear(t3, e3, 1.0, 1, 1.0, 1.0, 0.57, world_line, NULL, need, &by);
+        camwall_clear(t3, e3, 1.0, 1, 0, 1.0, 1.0, 0.57, world_line, NULL, need, &by);
         camwall_across(&w, t3, e3, 1.0, need, 1.0, 1.0, 0.57, world_line, NULL, out);
         camwall_reset(&w);
         s_solids = 0;
@@ -259,7 +266,7 @@ int main(int argc, char **argv)
             fprintf(stderr, "no case %s\n", c);
             return 2;
         }
-        got = camwall_clear(t3, e3, 1.0, 1, 1.0, 1.0, 0.57, world_line, NULL, push, &by);
+        got = camwall_clear(t3, e3, 1.0, 1, 0, 1.0, 1.0, 0.57, world_line, NULL, push, &by);
         moved = sqrt(push[0] * push[0] + push[1] * push[1] + push[2] * push[2]);
         fprintf(stderr, "%s: share %.4f, %.2f across, by %d, %d lines\n", c, got, moved, by, s_lines);
         if (by != want_by) {
@@ -314,7 +321,7 @@ int main(int argc, char **argv)
         /* And the held eye's view, tested where it is (camwall_clear up to
          * it), with the eye moved across there. */
         if (!strcmp(c, "clear_floor")) {
-            double held = camwall_clear(t3, e3, 0.6, 1, 1.0, 1.0, 0.57, world_line, NULL, push, &by);
+            double held = camwall_clear(t3, e3, 0.6, 1, 0, 1.0, 1.0, 0.57, world_line, NULL, push, &by);
             assert(held <= 0.6 && view_clear(t3, e3, held, push, 1.0, 1.0, 0.57));
         }
     } else if (!strncmp(c, "game_", 5)) {
@@ -381,7 +388,7 @@ int main(int argc, char **argv)
             const double hw = 0.767 * shape[k] / (4.0 / 3), hh = 0.575;
             double moved;
             s_lines = 0;
-            got = camwall_clear(t3, e3, 1.0, 0, 1.0, hw, hh, world_line, NULL, push, &by);
+            got = camwall_clear(t3, e3, 1.0, 0, 0, 1.0, hw, hh, world_line, NULL, push, &by);
             moved = sqrt(push[0] * push[0] + push[1] * push[1] + push[2] * push[2]);
             fprintf(stderr, "%s %d: share %.4f, %.2f across, by %d, %d lines\n",
                     c, k, got, moved, by, s_lines);
@@ -412,8 +419,139 @@ int main(int argc, char **argv)
         if (!strcmp(c, "game_pole")) {
             /* The free camera's eye, whose own line is tested (eye_line 1),
              * comes in to the pole; the game's own camera never did. */
-            got = camwall_clear(t3, e3, 1.0, 1, 1.0, 0.767, 0.575, world_line, NULL, push, &by);
+            got = camwall_clear(t3, e3, 1.0, 1, 0, 1.0, 0.767, 0.575, world_line, NULL, push, &by);
             assert(by == CAMWALL_EYE && got < 0.53);
+        }
+    } else if (!strncmp(c, "least_", 6)) {
+        /* The free camera's floor (least): the game draws your skater whole
+         * only from GAME_WHOLE units out, fades it nearer and hides it under
+         * 3, so the free camera's eye never comes nearer than that, as
+         * recomp_manual.c's camera_walls gives it. The player at (0, 3, 0),
+         * the eye 38.2 units out (the game's own distance in play), the view
+         * starting 1 ahead of it, 1 by 0.57 either side. Before, each of
+         * these came in nearer, down to where the view starts (2.54), under
+         * which the game draws no player. With No skater fade off,
+         * camera_walls gives no floor (least 0), and the eye comes in so
+         * far again (least_hugging_off). */
+        const double whole = GAME_WHOLE / CAM_FAR;
+        const float t3[3] = { 0, 3, 0 };
+        float e3[3] = { 0, 3, -CAM_FAR };
+        double got, push[3], moved, least = GAME_WHOLE;
+        int by, want_by;
+        const char *what;
+        s_solids = s_lines = 0;
+        if (!strcmp(c, "least_hugging") || !strcmp(c, "least_hugging_off")) {
+            /* The player right against a wall, the eye turned 60 degrees
+             * into it, as when falling down a tower's side with the view
+             * turned to it: the eye's line meets the wall 0.35 out. */
+            add_plane(-1, 0, 0, -0.3);
+            e3[0] = (float)(CAM_FAR * sin(60 * 3.14159265358979323846 / 180));
+            e3[2] = (float)(-CAM_FAR * cos(60 * 3.14159265358979323846 / 180));
+            want_by = CAMWALL_NEAREST;
+            what = "a wall right by the player: the eye stays where the game draws them whole";
+            if (!strcmp(c, "least_hugging_off")) {
+                least = 0;
+                what = "the hold off: the eye comes in to where the view starts, as before";
+            }
+        } else if (!strcmp(c, "least_corridor")) {
+            /* A corridor 4 wide, the eye turned 20 degrees toward one wall:
+             * its line meets the wall 5.85 out, nearer than GAME_WHOLE. */
+            const double a[3] = { 0, 3, 0 };
+            double b[3];
+            add_plane(-1, 0, 0, -2);
+            add_plane(1, 0, 0, -2);
+            e3[0] = (float)(CAM_FAR * sin(20 * 3.14159265358979323846 / 180));
+            e3[2] = (float)(-CAM_FAR * cos(20 * 3.14159265358979323846 / 180));
+            b[0] = e3[0]; b[1] = e3[1]; b[2] = e3[2];
+            assert(world_line(NULL, a, b) < 0.5 * whole);
+            want_by = CAMWALL_NEAREST;
+            what = "a corridor narrower than that: the eye stays there, and no nearer";
+        } else if (!strcmp(c, "least_gap")) {
+            /* A gap narrower than the view, from 10 behind the player:
+             * coming in clears the view's corners only at 9.9 units, nearer
+             * than GAME_WHOLE, so the eye stays where its own line puts it,
+             * as it does where nothing clears them. */
+            add_box(0.5, -10, -60, 10, 10, -10);
+            add_box(-10, -10, -60, -0.5, 10, -10);
+            want_by = CAMWALL_NO_ROOM;
+            what = "the corners clear only nearer than that: the eye's line alone";
+        } else if (!strcmp(c, "least_short")) {
+            /* The eye's own distance under GAME_WHOLE: it keeps all of it,
+             * the wall seen through, and open ground is nothing. */
+            add_plane(-1, 0, 0, -0.3);          /* the player right against a wall, */
+            e3[0] = 8.66f; e3[2] = -5;          /* the eye 10 out, turned 60 degrees into it */
+            want_by = CAMWALL_NEAREST;
+            what = "an eye nearer than that: all of its distance";
+        } else if (!strcmp(c, "least_game")) {
+            /* The game's own eye (eye_line 0) behind a wall that came
+             * between, 5 behind the player. With no floor (least 0, as
+             * camera_walls gives it with No skater fade off): in to it,
+             * nearer than GAME_WHOLE, as before. With No skater fade on
+             * and Default cam fix on (least GAME_WHOLE), it stays at
+             * GAME_WHOLE and the wall is seen through, as the free
+             * camera's does in the same place. */
+            const double hw = 0.767 * (16.0 / 9) / (4.0 / 3), hh = 0.575;
+            add_box(-6, -10, -6, 6, 10, -5);
+            got = camwall_clear(t3, e3, 1.0, 0, 0, 1.0, hw, hh, world_line, NULL, push, &by);
+            fprintf(stderr, "%s: share %.4f, %.2f across, by %d\n", c, got,
+                    sqrt(push[0] * push[0] + push[1] * push[1] + push[2] * push[2]), by);
+            assert(by == CAMWALL_EYE);
+            near(got, 5 / CAM_FAR, "the game's own eye, no floor: in to the wall, as before");
+            got = camwall_clear(t3, e3, 1.0, 0, GAME_WHOLE, 1.0, hw, hh, world_line, NULL, push, &by);
+            fprintf(stderr, "%s held: share %.4f, %.2f across, by %d\n", c, got,
+                    sqrt(push[0] * push[0] + push[1] * push[1] + push[2] * push[2]), by);
+            assert(by == CAMWALL_NEAREST);
+            near(got, whole, "the game's own eye, held: where the game draws the player whole");
+            got = camwall_clear(t3, e3, 1.0, 1, GAME_WHOLE, 1.0, hw, hh, world_line, NULL, push, &by);
+            fprintf(stderr, "%s free: share %.4f, %.2f across, by %d\n", c, got,
+                    sqrt(push[0] * push[0] + push[1] * push[1] + push[2] * push[2]), by);
+            assert(by == CAMWALL_NEAREST);
+            near(got, whole, "the free camera's: where the game draws the player whole");
+            printf("ok %s\n", c);
+            return 0;
+        } else if (!strcmp(c, "least_game_short")) {
+            /* The game's own eye where the game itself put it nearer than
+             * GAME_WHOLE, 10 out, behind the wall the player is right
+             * against: held, it keeps all of its distance, never sent out
+             * past where the game put it. */
+            const double hw = 0.767 * (16.0 / 9) / (4.0 / 3), hh = 0.575;
+            add_plane(-1, 0, 0, -0.3);
+            e3[0] = 8.66f; e3[2] = -5;
+            got = camwall_clear(t3, e3, 1.0, 0, GAME_WHOLE, 1.0, hw, hh, world_line, NULL, push, &by);
+            fprintf(stderr, "%s: share %.4f, %.2f across, by %d\n", c, got,
+                    sqrt(push[0] * push[0] + push[1] * push[1] + push[2] * push[2]), by);
+            assert(by == CAMWALL_NEAREST);
+            near(got, 1, "the game's own eye nearer than that: all of its distance");
+            printf("ok %s\n", c);
+            return 0;
+        } else {
+            fprintf(stderr, "no case %s\n", c);
+            return 2;
+        }
+        got = camwall_clear(t3, e3, 1.0, 1, least, 1.0, 1.0, 0.57, world_line, NULL, push, &by);
+        moved = sqrt(push[0] * push[0] + push[1] * push[1] + push[2] * push[2]);
+        fprintf(stderr, "%s: share %.4f, %.2f across, by %d\n", c, got, moved, by);
+        if (by != want_by) {
+            fprintf(stderr, "FAIL %s: by %d, not %d\n", c, by, want_by);
+            return 1;
+        }
+        assert(moved == 0);
+        if (!strcmp(c, "least_short")) {
+            near(got, 1, what);
+            s_solids = s_lines = 0;
+            got = camwall_clear(t3, e3, 1.0, 1, GAME_WHOLE, 1.0, 1.0, 0.57, world_line, NULL, push, &by);
+            fprintf(stderr, "%s open: share %.4f, %.2f across, by %d, %d lines\n", c, got,
+                    sqrt(push[0] * push[0] + push[1] * push[1] + push[2] * push[2]), by, s_lines);
+            assert(by == CAMWALL_CLEAR && got == 1);
+        } else if (!strcmp(c, "least_gap")) {
+            near(got, 1, what);
+        } else if (!strcmp(c, "least_hugging_off")) {
+            /* Where the view starts in front of the player: 1 ahead, and a
+             * view's reach, to its corner 1 by 0.57 either side. */
+            near(got, (1.0 + sqrt(1.0 + 1.0 + 0.57 * 0.57)) / CAM_FAR, what);
+            assert(got < 3 / CAM_FAR);         /* under the game's 3: the player isn't drawn */
+        } else {
+            near(got, whole, what);
         }
     } else if (!strcmp(c, "cameras")) {
         /* Each camera its own: one camera brought in leaves another out;

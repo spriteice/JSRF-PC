@@ -146,6 +146,15 @@ typedef struct {
 void draw_buildings_widen(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WORDS],
                           double now, unsigned frame);
 
+/* Adds to set every area some list names, as Far buildings' All has it,
+ * whatever Far buildings' own step, and says how many set then holds. For
+ * the free camera when its eye and the game's camera's are both in no area,
+ * where the game's set is empty (known bug 61: recomp_manual.c,
+ * area_set_from_game_eye). The map's rules (draw_buildings_stage) aren't
+ * taken: they hold only while the game's set is the one some areas make,
+ * and an empty set is none's. */
+int draw_set_whole_map(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WORDS]);
+
 /* The stage the mission asks for (0x0001000N for Stg1N), from the flow's
  * steps that ask for it (port/resource_load.c), before its map loads. Far
  * buildings keeps it with the next map it reads, and that map's own rule, if

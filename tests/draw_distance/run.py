@@ -155,6 +155,7 @@ cases = {
                   "Far buildings 1x adding 19",
                   "[DRAW] Far buildings: stage 00010002 has 29 areas, not Dogenzaka Hill's 30, so its rule "
                   "is left out"]),
+    "whole_map": ("farbuildingsahead=0\n", ["[DRAW] Far buildings Off (settings)"]),
     "far_eye": ("farbuildingsahead=1\nfarshadowsahead=0\n",
                 ["[DRAW] the eye at t=0.00: area 0, from -1; Far buildings adds 2 there",
                  "[DRAW] the eye at t=0.10: area 8, from 0; Far buildings adds 6 there",
@@ -173,6 +174,7 @@ unwanted = {
     "off": ["[DRAW] Far buildings Off:"],
     "reach_1x": ["[DRAW] area 10:"],
     "reach_all": ["[DRAW] area 10:"],
+    "whole_map": ["[DRAW] area", ": the map has"],
     "legacy_on": ["[DRAW] settings:"],
 }
 # The pickers: each keeps its own key, and nothing else of Far buildings' or

@@ -3,8 +3,10 @@
  * What a camera keeps from one frame to the next, the share and the move
  * across, is each camera's own (camwall_for), or the caller's. Default cam
  * fix, whether the game's own eye is kept out of walls, is dcamfix= in the
- * settings file, or its row in Input > Behaviour (camwall_start); it runs on
- * the window's thread, and the follow camera's hook reads it on the
+ * settings file, or its row in Input > Behaviour; No skater fade, whether a
+ * camera's eye is held where the game draws the player whole, is
+ * noskaterfade=, or its row right under it (both camwall_start). Their rows
+ * run on the window's thread, and the follow camera's hook reads them on the
  * game's. */
 #include <math.h>
 #include <stdio.h>
@@ -32,6 +34,7 @@ static int nv_window_pref_num(const char *key, double *v)
 #define CAMWALL_DEFAULT 1
 
 static volatile int s_on = CAMWALL_DEFAULT;
+static volatile int s_whole = CAMWALL_WHOLE_DEFAULT;
 
 #if defined(XBOXRECOMP_MENU)
 static int  menu_on(void) { return s_on; }
@@ -41,16 +44,27 @@ static void menu_flip(void)
     fprintf(stderr, "[CAMWALL] default cam fix %s (the menu)\n", s_on ? "on" : "off");
     nv_window_pref_set_num("dcamfix", s_on);
 }
+static int  menu_whole(void) { return s_whole; }
+static void menu_whole_flip(void)
+{
+    s_whole = !s_whole;
+    fprintf(stderr, "[CAMWALL] no skater fade %s (the menu)\n", s_whole ? "on" : "off");
+    nv_window_pref_set_num("noskaterfade", s_whole);
+}
 #endif
 
 void camwall_start(void)
 {
     double v;
     s_on = nv_window_pref_num("dcamfix", &v) > 0 ? v != 0 : CAMWALL_DEFAULT;
+    s_whole = nv_window_pref_num("noskaterfade", &v) > 0 ? v != 0 : CAMWALL_WHOLE_DEFAULT;
     fprintf(stderr, "[CAMWALL] default cam fix %s (settings)\n", s_on ? "on" : "off");
+    fprintf(stderr, "[CAMWALL] no skater fade %s (settings)\n", s_whole ? "on" : "off");
 #if defined(XBOXRECOMP_MENU)
     {
-        /* The first row of Input > Behaviour, which it adds too (menu.h). */
+        /* The first two rows of Input > Behaviour, which it adds too
+         * (menu.h): No skater fade right under Default cam fix, as it holds
+         * the game's own eye only while that is on. */
         const XBOX_MENU_ITEM rows[] = {
             { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_BEHAVIOUR,
               .hint = XBOX_GROUP_BEHAVIOUR_HINT },
@@ -59,6 +73,13 @@ void camwall_start(void)
               /* File > Presets: the Xbox's own camera in Xbox mode. */
               .presets = XBOX_PRESETS_SET, .preset = { 0, CAMWALL_DEFAULT, CAMWALL_DEFAULT },
               .hint = "Fixes the default camera clipping through walls, mostly in widescreen." },
+            { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_TOGGLE, .label = "No skater fade",
+              .group = XBOX_GROUP_BEHAVIOUR, .state = menu_whole, .run = menu_whole_flip,
+              /* File > Presets: off in each, as a new install starts
+               * (CAMWALL_WHOLE_DEFAULT): Xbox mode has no free camera and no
+               * Default cam fix, and the other two take the default. */
+              .presets = XBOX_PRESETS_SET, .preset = { 0, CAMWALL_WHOLE_DEFAULT, CAMWALL_WHOLE_DEFAULT },
+              .hint = "Keeps the camera back at a wall instead of fading your skater." },
         };
         xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
     }
@@ -68,6 +89,11 @@ void camwall_start(void)
 int camwall_on(void)
 {
     return s_on;
+}
+
+double camwall_least(int freecam, double whole)
+{
+    return s_whole && (freecam || s_on) ? whole : 0;
 }
 
 /* How many times camwall_clear moves the eye across, and then brings it
@@ -165,11 +191,11 @@ static int view_frame(const float tgt[3], const float eye[3], double u[3], doubl
 }
 
 double camwall_clear(const float tgt[3], const float eye[3], double most, int eye_line,
-                     double ahead, double half_w, double half_h, camwall_line_fn line,
-                     void *ctx, double push[3], int *by)
+                     double least, double ahead, double half_w, double half_h,
+                     camwall_line_fn line, void *ctx, double push[3], int *by)
 {
     static const double none[3] = { 0, 0, 0 };
-    double a[3], b[3], u[3], f[3], rt[3], up[3], p[3], t[4], d, wl, nearest, s0, s;
+    double a[3], b[3], u[3], f[3], rt[3], up[3], p[3], t[4], d, wl, lo, nearest, s0, s;
     int i, k, n, viewed, framed = view_frame(tgt, eye, u, &d, f, rt, up);
     for (k = 0; k < 3; k++) {
         a[k] = tgt[k];
@@ -204,7 +230,24 @@ double camwall_clear(const float tgt[3], const float eye[3], double most, int ey
         }
     }
     if (s0 < most) *by = CAMWALL_EYE;
-    if (!viewed) return s0;
+    /* The caller's own floor, as a share: with No skater fade, where the
+     * game draws the player whole. Nearer, the game fades its own skater
+     * out, and nearer still hides it (sub_00081860), so an eye brought in
+     * further shows the player less, then not at all. Where the eye's line
+     * meets a wall nearer than that, the eye stays out at it, and the wall,
+     * which no eye on that side clears without hiding the player, is seen
+     * through. An eye whose own distance is under it keeps all of it: the
+     * game's own eye where the game itself put it that near. Without it,
+     * the eye comes as near as its view allows, and the game fades the
+     * player there, as on the Xbox. */
+    lo = least > 0 ? least / d : 0;
+    if (!viewed) {
+        if (s0 < most && s0 < lo) {
+            *by = CAMWALL_NEAREST;
+            return most < lo ? most : lo;
+        }
+        return s0;
+    }
     /* The eye no nearer the target than where its view starts a view's
      * reach (wl, from the eye to a corner of where the view starts) in
      * front of the target. Nearer, the view starts at or past the player:
@@ -212,10 +255,11 @@ double camwall_clear(const float tgt[3], const float eye[3], double most, int ey
      * turns over. That is when the player is right against the wall the
      * eye's line meets: the eye stays this far out, and that wall, which
      * no eye on that side clears, is seen through, as the game's camera
-     * would see through it with its eye on the player. */
+     * would see through it with its eye on the player. The caller's floor
+     * (above), when it is further, holds the eye out further. */
     wl = sqrt(ahead * ahead + half_w * half_w + half_h * half_h);
-    nearest = (ahead + wl) / d;
-    if (s0 < nearest) {
+    nearest = fmax((ahead + wl) / d, lo);
+    if (s0 < most && s0 < nearest) {
         *by = CAMWALL_NEAREST;
         return most < nearest ? most : nearest;
     }
@@ -280,9 +324,9 @@ double camwall_clear(const float tgt[3], const float eye[3], double most, int ey
         }
         s = s * open - (1 - open) * wl / d;
     }
-    /* Neither clears it -- a space narrower than the view all the way in --
-     * so the eye stays where its own line puts it, as the game's camera
-     * would. */
+    /* Neither clears it -- a space narrower than the view all the way in to
+     * where the eye may come -- so the eye stays where its own line puts
+     * it, as the game's camera would. */
     *by = CAMWALL_NO_ROOM;
     return s0;
 }
