@@ -178,9 +178,9 @@ int draw_set_whole_map(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WORDS
  * areas 47, 48 and 50, scenery past the long halfpipe's end wall, whose
  * shadow volumes lit patches on it at All (known bug 52); Far buildings
  * still adds them, and where the game draws them itself their shadows stay.
- * Each such rule is kept by hand, for one case seen and named; the first
- * call on the map logs each. Before any stage,
- * DRAW_STAGE_NONE, which no rule has. */
+ * A rule's areas are runs, first to last. Each such rule is kept by hand,
+ * for one case seen and named; the first call on the map logs each. Before
+ * any stage, DRAW_STAGE_NONE, which no rule has. */
 #define DRAW_STAGE_NONE 0xFFFFFFFFu
 void draw_buildings_stage(uint32_t stage);
 
