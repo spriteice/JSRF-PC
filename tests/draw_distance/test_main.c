@@ -31,8 +31,8 @@
  * of the made-up map and of two tiny ones.
  * Dogenzaka Hill's own rule (known bug 66) is given a made-up map with the
  * shape of the hill's corner: 30 areas, as Stg12's, where the street, area
- * 0, and the corner, area 16, list area 14, and only 14 lists area 13, up the
- * hill.
+ * 0, and the corner, area 16, list area 14, only 14 lists area 13, up the
+ * hill, and only 13 lists area 11, further up (known bug 69).
  */
 #include <float.h>
 #include <math.h>
@@ -530,19 +530,21 @@ static void check_eye(void)
  * 30 areas, as Stg12 has, each listing itself, but the street, area 0,
  * which lists the corner, 16, and area 14 up from them; the corner, which
  * lists 0, 14 and a side area, 19; and area 14, which lists 13, further up
- * the hill, as well as 0 and 16; and 13, which lists 14. So the game draws
- * 13 from 13 and 14 only, and 1x adds it from 0 and 16 through 14's list.
- * `last` is area 29's list, so a second map, told from the first, can be
- * made. */
+ * the hill, as well as 0 and 16; and 13, which lists 14 and 11, further up
+ * still. So the game draws 13 from 13 and 14 only, and 1x adds it from 0
+ * and 16 through 14's list; and it draws 11 from 11 and 13 only, and 2x adds
+ * it from 0 and 16 through 13's (known bug 69). `last` is area 29's list, so
+ * a second map, told from the first, can be made. */
 #define HILL_AREAS  30
 #define HILL_STAGE  0x00010002u     /* Stg12, as the mission asks for it */
 #define STREET      0
+#define PAST_UPHILL 11
 #define UPHILL      13
 #define CORNER      16
 #define SIDE_AREA   19
 static uint32_t s_hill_self[HILL_AREAS];
 static const uint32_t k_street[] = { 0, 14, 16 }, k_up14[] = { 14, 13, 16, 0 },
-                      k_corner[] = { 16, 0, 14, 19 }, k_uphill[] = { 13, 14 };
+                      k_corner[] = { 16, 0, 14, 19 }, k_uphill[] = { 13, 14, 11 };
 static DrawArea s_hill[HILL_AREAS];
 
 static void hill_make(uint32_t last)
@@ -558,7 +560,7 @@ static void hill_make(uint32_t last)
     s_hill[STREET].list = k_street;     s_hill[STREET].nlist = 3;
     s_hill[14].list = k_up14;           s_hill[14].nlist = 4;
     s_hill[CORNER].list = k_corner;     s_hill[CORNER].nlist = 4;
-    s_hill[UPHILL].list = k_uphill;     s_hill[UPHILL].nlist = 2;
+    s_hill[UPHILL].list = k_uphill;     s_hill[UPHILL].nlist = 3;
 }
 
 /* The set from an eye in area `in` on the hill, widened, as a mask; n areas
@@ -578,24 +580,33 @@ static uint32_t hill_widened(int in, int n)
 /* Far buildings 1x and Far shadows 1x from the settings. On the hill's map
  * after its stage, area 13 is never added from the street or the corner, at
  * 1x, 3x or All, nor to their shadows, and is still drawn from 13 and 14,
- * where the game draws it itself; the side area is still added. On a map
- * after another stage, or on one of 29 areas after the hill's stage, 13 is
- * added from the street as before. run.py checks the lines. */
+ * where the game draws it itself; the side area is still added. Nor is area
+ * 11, past 13, reached only through 13's list, at 2x, 3x or All, from the
+ * street or the corner (known bug 69); from 14, where the game draws 13, 1x
+ * adds it. On a map after another stage, or on one of 29 areas after the
+ * hill's stage, 13 and 11 are added from the street as before. run.py checks
+ * the lines. */
 static void check_hill(void)
 {
     uint32_t game[DRAW_SET_WORDS] = { AREA(STREET) | AREA(14) | AREA(CORNER) };
+    int step;
     CHECK(draw_far_buildings() == 1 && draw_far_shadows() == 1);
     hill_make(HILL_AREAS - 1);
     draw_buildings_stage(HILL_STAGE);
     CHECK(hill_widened(STREET, HILL_AREAS) == (game[0] | AREA(SIDE_AREA)));
     CHECK(hill_widened(CORNER, HILL_AREAS) == (game[0] | AREA(SIDE_AREA)));
     CHECK(hill_widened(14, HILL_AREAS) & AREA(UPHILL));
+    CHECK(hill_widened(14, HILL_AREAS) & AREA(PAST_UPHILL));
     CHECK(hill_widened(UPHILL, HILL_AREAS) & AREA(UPHILL));
-    /* Further: not at 3x or All either. */
-    s_far_row.pick(3);
-    CHECK(!(hill_widened(STREET, HILL_AREAS) & AREA(UPHILL)));
-    s_far_row.pick(DRAW_FAR_WHOLE);
-    CHECK(!(hill_widened(CORNER, HILL_AREAS) & AREA(UPHILL)));
+    /* Further: not at 2x, 3x or All either, nor what lies past 13; at All,
+     * every other area, as each lists itself. */
+    for (step = 2; step <= DRAW_FAR_WHOLE; step++) {
+        uint32_t all = ~(AREA(UPHILL) | AREA(PAST_UPHILL)) & RUN(0, HILL_AREAS - 1);
+        s_far_row.pick(step);
+        CHECK(hill_widened(STREET, HILL_AREAS) == (step < DRAW_FAR_WHOLE ? game[0] | AREA(SIDE_AREA) : all));
+        CHECK(hill_widened(CORNER, HILL_AREAS) == (step < DRAW_FAR_WHOLE ? game[0] | AREA(SIDE_AREA) : all));
+        CHECK(hill_widened(14, HILL_AREAS) & AREA(PAST_UPHILL));
+    }
     /* The shadows, at 1x under All: the game's set and the side area. */
     memcpy(s_live, game, sizeof s_live);
     draw_buildings_widen(s_hill, HILL_AREAS, s_live, 0.0, 0);
@@ -609,17 +620,21 @@ static void check_hill(void)
     CHECK(hill_widened(STREET, HILL_AREAS) == game[0] && s_leave_row.value() == SIDE_AREA);
     leave_press(1);
     CHECK(hill_widened(STREET, HILL_AREAS) == (game[0] | AREA(SIDE_AREA)) && s_leave_row.value() == -1);
-    /* Another map after another stage: 13 added from the street. */
+    /* Another map after another stage: 13 added from the street, and 11
+     * past it at 2x. */
     hill_make(HILL_AREAS - 2);
     draw_buildings_stage(HILL_STAGE + 1);
     CHECK(hill_widened(STREET, HILL_AREAS) & AREA(UPHILL));
+    s_far_row.pick(2);
+    CHECK(hill_widened(STREET, HILL_AREAS) & AREA(PAST_UPHILL));
+    s_far_row.pick(1);
     /* The hill's stage, but a map of 29 areas: not the one, so no rule. */
     draw_buildings_stage(HILL_STAGE);
     CHECK(hill_widened(STREET, HILL_AREAS - 1) & AREA(UPHILL));
     /* The hill again: the rule again. */
     hill_make(HILL_AREAS - 1);
     CHECK(hill_widened(STREET, HILL_AREAS) == (game[0] | AREA(SIDE_AREA)));
-    printf("dogenzaka hill: area 13 never added from the street or the corner\n");
+    printf("dogenzaka hill: area 13 and what lies past it never added from the street or the corner\n");
 }
 
 /* The whole map's set, for the free camera when its eye and the game's

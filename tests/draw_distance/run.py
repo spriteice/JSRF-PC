@@ -147,8 +147,8 @@ cases = {
     # Dogenzaka Hill's rule (test_main.c, check_hill): logged on the hill's
     # map, and left out, saying so, on a map of another size after its stage.
     "far_hill": ("farbuildingsahead=1\nfarshadowsahead=1\n",
-                 ["[DRAW] Far buildings: Dogenzaka Hill (stage 00010002), area 13 never added from areas 0 "
-                  "and 16, where the game hides it",
+                 ["[DRAW] Far buildings: Dogenzaka Hill (stage 00010002), area 13 and what lies past it never "
+                  "added from areas 0 and 16, where the game hides them",
                   "[DRAW] the eye at t=0.00: area 0, from -1; Far buildings adds 19 there",
                   "[DRAW] the eye at t=0.00: area 16, from 0; Far buildings adds none there",
                   "[DRAW] Far buildings test: leaving out area 19 (the menu); the eye in area 0, "

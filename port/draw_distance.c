@@ -411,34 +411,67 @@ static void map_take(const DrawArea *a, int n, uint32_t key)
         s_map.rules |= 1u << i;
         areas_said(never, sizeof never, k_rules[i].never, k_rules[i].nnever);
         areas_said(from, sizeof from, k_rules[i].from, k_rules[i].nfrom);
-        fprintf(stderr, "[DRAW] Far buildings: %s (stage %08X), area%s %s never added from area%s %s, "
-                "where the game hides %s\n", k_rules[i].map, s_map.stage, k_rules[i].nnever > 1 ? "s" : "",
-                never, k_rules[i].nfrom > 1 ? "s" : "", from, k_rules[i].nnever > 1 ? "them" : "it");
+        fprintf(stderr, "[DRAW] Far buildings: %s (stage %08X), area%s %s and what lies past %s never "
+                "added from area%s %s, where the game hides them\n", k_rules[i].map, s_map.stage,
+                k_rules[i].nnever > 1 ? "s" : "", never, k_rules[i].nnever > 1 ? "them" : "it",
+                k_rules[i].nfrom > 1 ? "s" : "", from);
     }
 }
 
-/* Widens set to step: for 1 to 3, as many crossings ahead, each adding the
- * areas the lists of the areas the last one added name, from set itself;
- * for the whole map, every area some list names. s_map is the map's. */
-static void set_reach(uint32_t set[DRAW_SET_WORDS], int step)
+/* Up to `crossings` crossings ahead from set: each adds the areas the lists
+ * of the areas the last one added name, from set itself, and stops once one
+ * adds nothing. The walk never steps into hidden, a wall the map's rules make
+ * (rules_hidden), so it never reads a hidden area's list either. s_map is the
+ * map's. */
+static void set_walk(uint32_t set[DRAW_SET_WORDS], int crossings, const uint32_t hidden[DRAW_SET_WORDS])
 {
-    uint32_t from[DRAW_SET_WORDS], next[DRAW_SET_WORDS];
+    uint32_t from[DRAW_SET_WORDS], next[DRAW_SET_WORDS], more;
     int i, w, cross;
-    if (step >= DRAW_FAR_WHOLE) {
-        for (w = 0; w < DRAW_SET_WORDS; w++) set[w] |= s_map.listed[w];
-        return;
-    }
     memcpy(from, set, sizeof from);
-    for (cross = 0; cross < step; cross++) {
+    for (cross = 0; cross < crossings; cross++) {
         memcpy(next, set, sizeof next);
         for (i = 0; i < s_map.n; i++)
             if (set_has(from, i))
                 for (w = 0; w < DRAW_SET_WORDS; w++) next[w] |= s_map.list[i][w];
-        for (w = 0; w < DRAW_SET_WORDS; w++) {
+        for (w = 0, more = 0; w < DRAW_SET_WORDS; w++) {
+            next[w] &= ~hidden[w];
             from[w] = next[w] & ~set[w];
             set[w] = next[w];
+            more |= from[w];
         }
+        if (!more) break;
     }
+}
+
+/* Widens set to step: for 1 to 3, as many crossings ahead (set_walk); for
+ * the whole map, every area some list names. Never into hidden, nor past it:
+ * at 1x to 3x the walk doesn't cross it, and for the whole map the areas the
+ * walk would reach from set only through it are left out too, as they are
+ * behind the line the game draws there (known bug 69: area 13 of Dogenzaka
+ * Hill is hidden from the street below it, and the areas up the hill past
+ * it, reached only through its list, hang in the sky from there). With
+ * nothing hidden, the whole map is every listed area, as before. s_map is
+ * the map's. */
+static void set_reach(uint32_t set[DRAW_SET_WORDS], int step, const uint32_t hidden[DRAW_SET_WORDS])
+{
+    static const uint32_t k_none[DRAW_SET_WORDS];
+    uint32_t open[DRAW_SET_WORDS], walled[DRAW_SET_WORDS], any = 0;
+    int w;
+    if (step < DRAW_FAR_WHOLE) {
+        set_walk(set, step, hidden);
+        return;
+    }
+    for (w = 0; w < DRAW_SET_WORDS; w++) any |= hidden[w];
+    if (!any) {
+        for (w = 0; w < DRAW_SET_WORDS; w++) set[w] |= s_map.listed[w];
+        return;
+    }
+    memcpy(open, set, sizeof open);
+    memcpy(walled, set, sizeof walled);
+    set_walk(open, DRAW_AREAS_MAX, k_none);
+    set_walk(walled, DRAW_AREAS_MAX, hidden);
+    for (w = 0; w < DRAW_SET_WORDS; w++)
+        set[w] |= s_map.listed[w] & ~hidden[w] & ~(open[w] & ~walled[w]);
 }
 
 /* "2, 11, 12", or "none". */
@@ -468,18 +501,23 @@ static void set_leave_out(uint32_t set[DRAW_SET_WORDS], const uint32_t game[DRAW
     if (a >= 0 && a < DRAW_AREAS_MAX && !set_has(game, a)) set[a >> 5] &= ~(1u << (a & 31));
 }
 
-/* The map's rules (k_rules) on set, widened from game: each one's areas
- * taken out while game is the set one of its areas makes. */
-static void map_rule(uint32_t set[DRAW_SET_WORDS], const uint32_t game[DRAW_SET_WORDS])
+/* The areas the map's rules (k_rules) hide while game is the set one of
+ * their areas makes, for set_reach's wall; but none game has: what the game
+ * draws itself is never hidden. */
+static void rules_hidden(uint32_t hidden[DRAW_SET_WORDS], const uint32_t game[DRAW_SET_WORDS])
 {
-    int r, k, a;
+    int r, k, a, w;
+    memset(hidden, 0, DRAW_SET_WORDS * sizeof hidden[0]);
     for (r = 0; r < DRAW_RULES; r++) {
         if (!(s_map.rules >> r & 1u)) continue;
         for (k = 0; k < k_rules[r].nfrom; k++)
             if (set_from_area(game, k_rules[r].from[k])) break;
         if (k == k_rules[r].nfrom) continue;
-        for (a = 0; a < k_rules[r].nnever; a++) set_leave_out(set, game, k_rules[r].never[a]);
+        for (a = 0; a < k_rules[r].nnever; a++)
+            if (k_rules[r].never[a] >= 0 && k_rules[r].never[a] < DRAW_AREAS_MAX)
+                set_add(hidden, k_rules[r].never[a]);
     }
+    for (w = 0; w < DRAW_SET_WORDS; w++) hidden[w] &= ~game[w];
 }
 
 /* The eye's area, for the log, from the game's set: the area that makes it
@@ -498,10 +536,10 @@ static void eye_note(const uint32_t set[DRAW_SET_WORDS], double now)
     }
     if (eye != s_eye) {
         char added[512];
-        uint32_t adds[DRAW_SET_WORDS];
+        uint32_t adds[DRAW_SET_WORDS], hidden[DRAW_SET_WORDS];
         memcpy(adds, set, sizeof adds);
-        set_reach(adds, s_far);
-        map_rule(adds, set);
+        rules_hidden(hidden, set);
+        set_reach(adds, s_far, hidden);
         for (w = 0; w < DRAW_SET_WORDS; w++) adds[w] &= ~set[w];
         set_print(added, sizeof added, adds);
         if (s_eye_lines < DRAW_EYE_LINES) {
@@ -549,7 +587,7 @@ void draw_buildings_widen(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WO
                           double now, unsigned frame)
 {
     int game, reach = s_far, w;
-    uint32_t key, was[DRAW_SET_WORDS];
+    uint32_t key, was[DRAW_SET_WORDS], hidden[DRAW_SET_WORDS];
     s_widened = 0;
     if (!reach || !areas || n <= 0) {
         memset(s_added_now, 0, sizeof s_added_now);
@@ -563,8 +601,8 @@ void draw_buildings_widen(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WO
     game = set_count(set);
     memcpy(was, set, sizeof was);
     eye_note(set, now);
-    set_reach(set, reach);
-    map_rule(set, was);
+    rules_hidden(hidden, was);
+    set_reach(set, reach, hidden);
     for (w = 0; w < DRAW_SET_WORDS; w++) s_added_now[w] = set[w] & ~was[w];
     leave_step();
     set_leave_out(set, was, s_leave_out);
@@ -589,7 +627,7 @@ int draw_set_whole_map(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WORDS
 void draw_buildings_shadows(uint32_t set[DRAW_SET_WORDS], const uint32_t game[DRAW_SET_WORDS],
                             void (*run)(void))
 {
-    uint32_t wide[DRAW_SET_WORDS];
+    uint32_t wide[DRAW_SET_WORDS], hidden[DRAW_SET_WORDS];
     int reach = s_widened, step = s_shadows_far;     /* the set's own, should a row change between */
     if (step > reach) step = reach;
     s_shadows++;
@@ -600,8 +638,8 @@ void draw_buildings_shadows(uint32_t set[DRAW_SET_WORDS], const uint32_t game[DR
     }
     memcpy(wide, set, sizeof wide);
     memcpy(set, game, sizeof wide);
-    set_reach(set, step);
-    map_rule(set, game);
+    rules_hidden(hidden, game);
+    set_reach(set, step, hidden);
     set_leave_out(set, game, s_leave_out);
     s_shadows_added -= set_count(wide) - set_count(set);
     run();

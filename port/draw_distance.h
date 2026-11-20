@@ -22,9 +22,11 @@
  * draws what the game never shows from where the eye is, such as Dogenzaka
  * Hill's top in its bottom's sky (known bug 57). An area no list names is
  * never added. Nor is an area a map's own rule hides from where the eye is,
- * where the game hides it on purpose and the lists can't tell: on Dogenzaka
- * Hill, area 13, up the hill, from the street below it and the corner
- * between them (known bug 66; draw_buildings_stage). It changes at once.
+ * where the game hides it on purpose and the lists can't tell, nor what lies
+ * past it, reached only through its list: on Dogenzaka Hill, area 13, up
+ * the hill, and the hill past it, from the street below it and the corner
+ * between them (known bugs 66 and 69; draw_buildings_stage). It changes at
+ * once.
  *
  * Far shadows, below it, kept as farshadowsahead= (the same steps, 3 the
  * default): the map's shadows are drawn from the game's set widened the same
@@ -164,8 +166,12 @@ int draw_set_whole_map(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WORDS
  * hill, while the game's set is area 0's, the street below it, or area
  * 16's, the corner between them. The game draws area 13 from areas 13 and 14
  * only, and from the street its buildings hang in the sky with nothing under
- * them (known bug 66). Each such rule is kept by hand, for one case seen and
- * named; the first call on the map logs each. Before any stage,
+ * them (known bug 66). A hidden area is a wall: Far buildings doesn't walk
+ * through it, so the areas past it, reached only through its list, aren't
+ * added either, as the game hides them too: from the street, areas 11 and
+ * 12 further up the hill, whose traffic hung in the sky (known bug 69). Each
+ * such rule is kept by hand, for one case seen and named; the first call on
+ * the map logs each. Before any stage,
  * DRAW_STAGE_NONE, which no rule has. */
 #define DRAW_STAGE_NONE 0xFFFFFFFFu
 void draw_buildings_stage(uint32_t stage);

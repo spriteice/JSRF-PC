@@ -169,10 +169,11 @@ input goes to the menu.
   game would show from the areas one, two or three areas ahead; and All draws
   every area the game ever shows, which can put a part of the map in view
   where the game never shows it, such as the top of Dogenzaka Hill in the sky
-  at its bottom. At any choice, a stretch partway up Dogenzaka Hill isn't
-  drawn from the street below it, where the game hides it too: from there its
-  buildings would hang in the sky. It changes at once, costs more the further
-  it goes, and is kept as `farbuildingsahead=` (0 for Off to 4 for All) in the settings file.
+  at its bottom. At any choice, a stretch partway up Dogenzaka Hill, and the
+  hill past it, isn't drawn from the street below it, where the game hides it
+  too: from there its buildings and traffic would hang in the sky. It changes
+  at once, costs more the further it goes, and is kept as
+  `farbuildingsahead=` (0 for Off to 4 for All) in the settings file.
   Far shadows, below it, draws the shadows of the areas Far buildings adds
   too, as many areas ahead as its own choice, Off to All, and never further
   than Far buildings, so they don't pop in as you come near, at the cost of
