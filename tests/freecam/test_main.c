@@ -3,9 +3,10 @@
  * The free camera without the game: port/freecam.c as it is, reading its keys
  * through the engine's own settings code (taken from src/nv2a_gl/nv2a_gl.c by
  * run.py), with a camera that looks at the origin from 10 units behind it
- * (-z), and the Input page's rows caught for their submenu and their File >
- * Presets values. Each case is its own run, as the settings are read once; run.py
- * writes the settings file and checks the log.
+ * (-z), the Input page's rows caught for their submenu and their File >
+ * Presets values, and input playback's hook standing in for a recording's
+ * switch and tuning. Each case is its own run, as the settings are read once;
+ * run.py writes the settings file and checks the log.
  */
 #include <assert.h>
 #include <math.h>
@@ -32,6 +33,16 @@ void nv_window_pad_hotkey(const char *name, void (*run)(void))
 {
     s_button = name;
     s_button_run = run;
+}
+
+/* Input playback (port/playback.c): while set, a recording's switch and
+ * tuning in place of the player's. */
+static const FREECAM_SETTINGS *s_played;
+int playback_freecam(FREECAM_SETTINGS *fc)
+{
+    if (!s_played) return 0;
+    *fc = *s_played;
+    return 1;
 }
 
 /* The menu's xbox_MenuAdd: the Input page's rows, caught. */
@@ -243,29 +254,71 @@ int main(int argc, char **argv)
         near(h, -87, "turning on from the game's view");
     } else if (!strcmp(c, "toggle")) {
         /* freecam=0 in the file: F8 turns it on and keeps that there,
-         * leaving the other lines as they were, and off again. */
+         * leaving the other lines as they were, and off again; freecam takes
+         * it up at the start of the next frame. */
         double v = -1;
         assert(s_key && !strcmp(s_key, "F8") && s_key_run);
         assert(!frame(0, 0, eye) && !freecam_on());
         s_key_run();
-        assert(frame(0, 0, eye) && freecam_on());
         assert(nv_window_pref_num("freecam", &v) == 1 && v == 1);
+        assert(!frame(0, 0, eye) && !freecam_on());
+        freecam_frame();
+        assert(frame(0, 0, eye) && freecam_on());
         assert(nv_window_pref_num("sensitivity_x", &v) == 1 && v == 7);
         s_key_run();
+        freecam_frame();
         assert(!frame(0, 0, eye) && !freecam_on());
         assert(nv_window_pref_num("freecam", &v) == 1 && v == 0);
     } else if (!strcmp(c, "r3")) {
         /* R3 is bound, with no setting: it turns freecam on and keeps that,
-         * as F8 does, and off. */
+         * as F8 does, and off, from the next frame. */
         double v = -1;
         assert(s_button && !strcmp(s_button, "rightstick") && s_button_run);
         assert(!freecam_on());
         s_button_run();
+        assert(!freecam_on());
+        freecam_frame();
         assert(freecam_on() && frame(0, 0, eye));
         assert(nv_window_pref_num("freecam", &v) == 1 && v == 1);
         s_button_run();
+        freecam_frame();
         assert(!freecam_on());
         assert(nv_window_pref_num("freecam", &v) == 1 && v == 0);
+    } else if (!strcmp(c, "menu")) {
+        /* A row changes the tuning from the next frame, as F8 does the
+         * switch: Sensitivity X at 10 turns full right by 6 degrees, once a
+         * frame has taken it up. */
+        const XBOX_MENU_ITEM *sx = NULL;
+        int i;
+        double v = -1;
+        for (i = 0; i < s_nrows; i++)
+            if (!strcmp(s_rows[i].label, "Sensitivity X")) sx = &s_rows[i];
+        assert(sx);
+        sx->set(10);
+        assert(sx->value() == 10 && nv_window_pref_num("sensitivity_x", &v) == 1 && v == 10);
+        for (i = 0; i < 10; i++) assert(frame(32767, 0, eye));
+        angles(eye, &h, &p);
+        near(h, 30, "turned at 5, the change not taken up yet");
+        turn(32767, 0, &h, &p);
+        near(h, 6, "full right at 10, from the next frame");
+    } else if (!strcmp(c, "played")) {
+        /* A recording's switch and tuning in place of the player's (off, at
+         * 5): on, at 10, so full right turns by 6 degrees; the player's own
+         * stay in the file and the menu. Once it stops, the player's are back,
+         * from the next frame, and the log says so. */
+        static const FREECAM_SETTINGS rec = { 1, 0, 0, 0, 10, 10, 0.15 };
+        double v = -1;
+        assert(!freecam_on());
+        s_played = &rec;
+        turn(32767, 0, &h, &p);
+        assert(freecam_on());
+        near(h, 6, "the recording's sensitivity");
+        assert(nv_window_pref_num("freecam", &v) == 1 && v == 0);
+        assert(!s_rows[1].state());
+        s_played = NULL;
+        assert(freecam_on());
+        freecam_frame();
+        assert(!freecam_on() && !frame(32767, 0, eye));
     } else if (!strcmp(c, "held")) {
         /* The view turned, then frames where the camera does not run at all
          * (the game paused): the view stays, and the stick is the game's

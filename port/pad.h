@@ -22,7 +22,9 @@
  * Each returns what the game's function returns in eax. The test hooks that
  * press buttons in unattended runs (JSRF_PAD_SCRIPT, the autopilot) stay in
  * recomp_manual.c, beside the camera hook whose state they share, and come
- * in through pad_test_start and pad_test_inputs. */
+ * in through pad_test_start and pad_test_inputs. Input playback
+ * (port/playback.c) records what XInputGetState hands the game, or hands it
+ * a recording's. */
 #ifndef JSRF_PAD_H
 #define JSRF_PAD_H
 

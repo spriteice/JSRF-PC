@@ -180,6 +180,8 @@ void recomp_restart_self(void);
 void recomp_restart_self(void)
 {
     if (!g_argv || !g_argv[0]) return;
+    /* A recording ends here, as the new run doesn't run this one's exit. */
+    { extern void playback_stop(void); playback_stop(); }
     { extern void developer_restart(void); developer_restart(); }
     fflush(stdout); fflush(stderr);
 #if defined(_WIN32)
@@ -764,6 +766,10 @@ static int host_main(void)
     /* Whether the game starts at a mission (JSRF_START_MISSION), read once
      * and taken out of the environment (port/missions.c). */
     { extern void missions_start(void); missions_start(); }
+    /* Whether this run records the pad or plays a recording (JSRF_RECORD,
+     * JSRF_PLAY, JSRF_PLAY_MENU), read once and taken out of the
+     * environment, and Developer > Playback's rows (port/playback.c). */
+    { extern void playback_start(void); playback_start(); }
     /* Whether the pause menus show the song playing, and its row in
      * Display > Enhancements (port/music_info.c). */
     { extern void music_info_start(void); music_info_start(); }

@@ -1301,6 +1301,7 @@ void sub_0017CAB0(void)
 #include "intro.h"
 #include "keyboard_move.h"
 #include "missions.h"
+#include "playback.h"
 #include "soul_indicator.h"
 
 static struct { double t, dur; uint16_t buttons; uint8_t analog[8];
@@ -1462,7 +1463,14 @@ static void test_hooks_step(uint8_t *ch)
  * JSRF_MISSION="101:196@20" (test only): from 20 s on, a request for 0101 is
  * turned into one for 0196 -- straight to the end of the tutorial. Up to four
  * pairs, comma-separated, share the time: "0x10001:0x200FA,0x10064:0x200FA@45"
- * sends New Game's tutorial and Load Game's garage alike to 99th Street. */
+ * sends New Game's tutorial and Load Game's garage alike to 99th Street.
+ * Each request, as it goes on, is an anchor for input playback
+ * (port/playback.c), as are the stage the flow asks for and a cutscene's
+ * start and end, below: with the game's random generator, which playback
+ * keeps there and puts back. */
+#define GAME_RANDOM 0x0022E58Cu  /* the game's random generator: seed * 0x55 + 0x7F, drawn by
+                                  * sub_0014C2B0 and sub_0014C2D0, seeded 0x416C at 0x00012335 */
+static uint32_t *game_random(void) { return (uint32_t *)((uint8_t *)g_xbox_mem_offset + GAME_RANDOM); }
 static uint32_t s_mission_mgr;   /* the object whose vtable requests missions */
 static void mission_hook(const char *what)
 {
@@ -1510,6 +1518,7 @@ static void mission_hook(const char *what)
             *arg = to[i];
             break;
         }
+    playback_anchor(what[1] == 'b' ? PLAYBACK_MISSION_BIN : PLAYBACK_MISSION_DAT, *arg, game_random());
 }
 /* ---- sub_00046FD0: fill in one storage device's record for the save menu
  * (slot 8 is the hard disk: +0 present, +4 ?, +8 room for a save, +0xC the
@@ -2432,7 +2441,8 @@ void sub_00191440(void)
  * (the graffiti soul indicator, after the gauge, below).
  * JSRF_FRAME_LOG=1: once a second, how many passes ran, how many of them
  * presented (+0x74 set = no Present this pass) and how many waited a vblank
- * (+0x94), and the vblank counter the game keeps at 0x265174. */
+ * (+0x94), and the vblank counter the game keeps at 0x265174. Input playback
+ * keys the pad to these passes, the game's own frames (port/playback.c). */
 static unsigned s_loop_passes;  /* the main loop's passes so far */
 extern void sub_00013A80_gen(void);
 void sub_00013A80(void)
@@ -2442,6 +2452,7 @@ void sub_00013A80(void)
     uint32_t o = g_ecx;
     uint32_t w94 = (o > 0x10000u && o < (64u << 20)) ? *(uint32_t *)(m + o + 0x94) : 0;
     s_loop_passes++;
+    playback_pass();
     if (on < 0) on = getenv("JSRF_FRAME_LOG") ? 1 : 0;
     sub_00013A80_gen();
     if (!on || o < 0x10000u || o >= (64u << 20)) return;
@@ -2519,10 +2530,12 @@ void sub_0002D9D0(void)
     resource_load_graffiti_release((uint8_t *)g_xbox_mem_offset, mgr, xbox_HeapIsFreeSpace);
 }
 /* Each also tells Far buildings the stage asked for, which its rules for one
- * map know it by (draw_buildings_stage). */
+ * map know it by (draw_buildings_stage), and input playback, as an anchor. */
 static void stage_asked(uint32_t stage)
 {
-    if (stage != RESOURCE_LOAD_NO_STAGE) draw_buildings_stage(stage);
+    if (stage == RESOURCE_LOAD_NO_STAGE) return;
+    draw_buildings_stage(stage);
+    playback_anchor(PLAYBACK_STAGE, stage, game_random());
 }
 void sub_0004AC80(void)
 {
@@ -5127,7 +5140,8 @@ void sub_0003D5D0(void)
  * font's cap and A are drawn in its place, and the log says so once.
  * tests/cutscene_skip checks the presses, the fades and the places; that a
  * scene ends cleanly, and how the prompt looks, need the game: the test
- * build's steps. */
+ * build's steps. A scene starting to play, and ending, is an anchor for
+ * input playback (port/playback.c), whether or not it was skipped. */
 #include "cutscene_skip.h"
 #define SCENE_CLASS      0x001C4BA8u  /* the scene's class (its vtable) */
 #define SCENE_STATE      0x88u        /* 0 loading, 1 fading in, 2 playing */
@@ -5158,14 +5172,17 @@ static int scene_playing(uint32_t scene)
 void sub_00023790(void)
 {
     const uint32_t scene = g_ecx;
+    const int was = scene_playing(scene);
     sub_00023790_gen();
-    if (!cutscene_skip_on() || !scene_playing(scene)) return;
-    if (cutscene_skip_frame(scene, (MEM8(PAD_PRESSED) & PAD_PRESSED_A) != 0, jsrf_now())) {
+    if (cutscene_skip_on() && scene_playing(scene)
+        && cutscene_skip_frame(scene, (MEM8(PAD_PRESSED) & PAD_PRESSED_A) != 0, jsrf_now())) {
         const uint32_t sv_ecx = g_ecx;
         g_ecx = scene;
         guest_call_cdecl(sub_0001E8C0, SCENE_END_RA, 0, NULL);
         g_ecx = sv_ecx;
     }
+    if (scene_playing(scene) != was)
+        playback_anchor(was ? PLAYBACK_SCENE_END : PLAYBACK_SCENE, 0, game_random());
 }
 
 /* Skater previews (spriteice, 12:58 UTC on 16 November 2026: "skip
@@ -6029,6 +6046,7 @@ void sub_0007D8B0(void)
 #define CAM_VIEW_EYE       0x044u      /* the eye the view is built from (sub_000A28B0 puts it there) */
 #define CAM_VIEW_TARGET    0x05Cu      /* and what it looks at: up on the stick is from one to the other */
 #define CHR_TURN           0xCC0u      /* its turn on the ground, 0x10000 a turn: +z to (sin, cos) (sub_000A32B0) */
+#define CHR_POSITION       0xCA4u      /* where it is: x, y and z (JSRF_TELEPORT puts the player there) */
 #define CAM_HEADING        0x228u      /* the heading the controls follow, 0x10000 a turn (sub_000A28B0 sets it) */
 #define CAM_HELD_HEADING   0x234u      /* the heading kept when a mode is switched to (sub_000A58E0) */
 #define CAM_HOLDS          0x238u      /* set while the controls follow that kept heading */
@@ -6137,7 +6155,9 @@ void sub_000A5070(void)
      * and the skater's turn, for the pad's port, which the keys steer by. The
      * main player's manager names DRV_MAIN_PAD, not a port: its port is the
      * game's GAME_MAIN_PORT. And the manager, the camera and the skater, for
-     * the manager's update (sub_000A76E0, below). */
+     * the manager's update (sub_000A76E0, below). The main player's skater,
+     * and the camera's mode, for input playback's checks and idle moments
+     * (port/playback.c). */
     if (cam >= 0x10000u && cam + 0x240u < lim && cam_pad_steered(m, cam, 0)) {
         const float *cf = (const float *)(m + cam);
         uint32_t who = ((const uint32_t *)(m + cam))[CAM_FOLLOWS / 4];
@@ -6153,6 +6173,10 @@ void sub_000A5070(void)
             s_keys_cam[port].cam = cam;
             s_keys_cam[port].who = who;
             s_keys_cam[port].at = pad_now();
+            if ((uint32_t)port == *(const uint32_t *)(m + GAME_MAIN_PORT))
+                playback_view((float *)(uintptr_t)(m + who + CHR_POSITION),
+                              (uint32_t *)(uintptr_t)(m + who + CHR_TURN),
+                              ((const uint32_t *)(m + cam))[CAM_MODE / 4]);
         }
     }
     if (cam >= 0x10000u && cam + 0x240u < lim)

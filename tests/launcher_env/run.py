@@ -17,6 +17,9 @@ refuses and a saved one is dropped. A scale only when the player chose one:
 with none, or a saved one dropped, no RECOMP_GL_SCALE, even one set in the
 launcher's own environment, so the engine takes its own default (3x).
 
+What it hands the engine for --play: the recording's folder, by its whole
+path, as JSRF_PLAY, and none without it.
+
 What it does, as the shell script before it did (b2 row 4b): a default.xbe
 given for its folder; a disc image, or a folder with one in it, checked and
 unpacked once by the engine, and found unpacked the next time; a folder with
@@ -443,6 +446,24 @@ refused("--install, portable", ["--install"], "does not add itself to the", case
 c = Case()
 p = c.run(["--version"])
 result("--version", [b for b in [p.stdout != "test\n" and "said %r" % p.stdout] if b], "VERSION's line")
+
+# --play: a recording's folder (Developer > Playback), handed over as
+# JSRF_PLAY by its whole path, since the engine runs in another folder; none
+# without it, even one in the launcher's own environment; a folder that
+# isn't there refused.
+c = Case()
+(c.home / "run").mkdir()
+c.run([c.game, "--play", c.home / "run/../run"])
+played = c.handed()[0].get("JSRF_PLAY") if c.started() else None
+c.run([c.game], outside={"JSRF_PLAY": str(c.home / "run")})
+again = c.handed()[0].get("JSRF_PLAY", "") if c.started() else None
+result("--play", [b for b in [
+    played != str(c.home / "run") and "handed JSRF_PLAY=%r" % played,
+    again != "" and "without it, JSRF_PLAY=%r" % again] if b],
+    "the recording's whole path, and none without it")
+refused("--play, no such folder", [lambda c: c.game, "--play", lambda c: c.home / "none"],
+        "--play takes a recording's folder.")
+refused("--play, no folder", [lambda c: c.game, "--play"], "--play takes a recording's folder.")
 
 # A package with a kit: the setup when the engine isn't the kit's, else play.
 def kit_case(engine_sha256, engine=True):

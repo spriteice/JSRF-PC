@@ -121,6 +121,8 @@ ERRORS = (
     ("The shader cache", r"^\[SHADERS\] (?:cannot write|could not remove) "),
     ("A restart that couldn't relaunch", r"^\[WIN\] could not relaunch"),
     ("A start refused (Developer > Missions, JSRF_START_*)", r"^\[MISSION\] .*(?:refused|couldn't restart)"),
+    ("A recording or playback not started (Developer > Playback, --play)",
+     r"^\[PLAYBACK\] (?:(?:Record|Play): the game couldn't restart|can't (?:write|read) )"),
     ("An indirect call not resolved", r"^\[ICALL\] Failed to resolve "),
     ("The sound library's errors", r"^\[(?:ADXERR|ADXTRAP|ADXSTALL)\] |^\[ADXREC\] t="),
     ("A model's tree or bones corrupt", r"^\[TREE\] bad node |^\[BONE\] .* corrupt"),

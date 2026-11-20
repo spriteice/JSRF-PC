@@ -9,6 +9,7 @@
 
 #include "freecam.h"
 #include "keyboard_move.h"
+#include "playback.h"
 
 /* What the game's pad functions return (Win32's error numbers). */
 #define XPP_ERROR_SUCCESS              0x000u
@@ -149,18 +150,27 @@ uint32_t pad_get_capabilities(uint8_t *m, uint32_t h, uint32_t caps)
     return XPP_ERROR_SUCCESS;
 }
 
-/* XInputGetState(h, state) */
+/* XInputGetState(h, state)
+ *
+ * The state the game reads is decided here: the host's pad (pad_read), with
+ * the keys' moves, is recorded, or the recording's takes its place
+ * (port/playback.c); then the free camera takes its stick from it, so that a
+ * recording has the free camera's stick and plays it back. */
 uint32_t pad_get_state(uint8_t *m, uint32_t h, uint32_t st)
 {
     XBOX_INPUT_STATE s;
     static uint16_t last_btn; static uint8_t last_a;
+    uint32_t port = h & XPP_HANDLE_PORT;
+    int connected;
     if ((h & XPP_HANDLE_HIGH) != XPP_HANDLE_BASE || !st) return XPP_ERROR_INVALID_PARAMETER;
-    if (!pad_read(h & XPP_HANDLE_PORT, &s)) {
-        freecam_pad(h & XPP_HANDLE_PORT, NULL, NULL);
+    connected = pad_read(port, &s);
+    if (connected) kbmove_pad(port, &s.Gamepad.sThumbLX, &s.Gamepad.sThumbLY);  /* the keys', while they steer the skater */
+    connected = playback_pad(port, &s, connected);
+    if (!connected) {
+        freecam_pad(port, NULL, NULL);
         return XPP_ERROR_DEVICE_NOT_CONNECTED;
     }
-    freecam_pad(h & XPP_HANDLE_PORT, &s.Gamepad.sThumbRX, &s.Gamepad.sThumbRY);  /* the free camera's, while it steers */
-    kbmove_pad(h & XPP_HANDLE_PORT, &s.Gamepad.sThumbLX, &s.Gamepad.sThumbLY);   /* the keys', while they steer the skater */
+    freecam_pad(port, &s.Gamepad.sThumbRX, &s.Gamepad.sThumbRY);   /* the free camera's, while it steers */
     W32(m, st + XPP_STATE_PACKET) = s.dwPacketNumber;
     W16(m, st + XPP_STATE_BUTTONS) = s.Gamepad.wButtons;
     memcpy(m + st + XPP_STATE_ANALOG, s.Gamepad.bAnalogButtons, 8);

@@ -1,0 +1,942 @@
+/* Input playback (playback.h says what it is, and how a recording reads).
+ *
+ * Everything here is called from the game's own code, which runs one guest
+ * thread at a time, but for the menu's rows and playback_stop, on the
+ * window's thread, and the end of a recording when the game closes: a lock
+ * keeps them apart. */
+#define _POSIX_C_SOURCE 200112L    /* setenv, unsetenv */
+#include "playback.h"
+
+#include <math.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#if defined(_WIN32)
+#  include <direct.h>
+#endif
+
+#include "pad.h"
+#if defined(XBOXRECOMP_MENU)
+#  include "menu.h"
+#endif
+
+#ifndef JSRF_VERSION
+#define JSRF_VERSION "dev"
+#endif
+#if defined(_WIN32)
+#  define PB_PLATFORM "windows"
+#else
+#  define PB_PLATFORM "linux"
+#endif
+#define PB_FORMAT     "jsrf-pc-recording 1"
+
+/* What counts as pressed: a button, an analog button past the game's own
+ * threshold, or a stick past XInput's dead zone for it
+ * (XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE, ..._RIGHT_...): a stick at rest reads
+ * a little off centre. */
+#define PB_LEFT_DEAD  7849
+#define PB_RIGHT_DEAD 8689
+
+#define PB_LINE       512
+#define PB_LIST       16          /* recordings Play offers at most, newest first */
+#define PB_NAME       32          /* a recording's folder name: its date and time */
+
+typedef struct { uint32_t frame, read; int none; XBOX_GAMEPAD pad; } PbPad;
+typedef struct { uint32_t frame; PLAYBACK_ANCHOR kind; uint32_t value, random; } PbAnchor;
+typedef struct { uint32_t frame, turn, camera; float pos[3]; } PbSpot;     /* a check or an idle moment */
+typedef struct { uint32_t frame; FREECAM_SETTINGS fc; } PbFreecam;
+typedef struct { void *at; int n, cap; } PbList;
+
+static const char *const k_kind[PLAYBACK_ANCHOR_KINDS] = {
+    "mission.bin", "mission.dat", "stage", "scene", "scene-end"
+};
+
+static volatile int s_lock;
+static void pb_lock(void)   { while (__atomic_exchange_n(&s_lock, 1, __ATOMIC_ACQUIRE)) { } }
+static void pb_unlock(void) { __atomic_store_n(&s_lock, 0, __ATOMIC_RELEASE); }
+
+static PLAYBACK_RESULT s_res;
+static uint32_t s_frame;                    /* the game's passes so far */
+static uint32_t s_reads[PLAYBACK_PORTS];    /* each port's reads in this pass */
+static char s_folder[1024];
+static int s_exit_hooked;
+
+/* Both: whether the skater is idle, from what the game read; and the start
+ * of a run, its frame 0 (a run starts before the game's first pass). */
+static uint32_t s_pressed_at;               /* the last frame anything was pressed */
+static int s_pressed_ever;
+static float s_still_pos[3];
+static uint32_t s_still_since, s_still_camera, s_idle_said;
+static int s_still_valid;
+
+static void run_start(void)
+{
+    s_frame = 0;
+    memset(s_reads, 0, sizeof s_reads);
+    s_pressed_ever = 0;
+    s_still_valid = 0;
+    s_idle_said = 0;
+    memset(&s_res, 0, sizeof s_res);
+}
+
+/* Recording. */
+static FILE *s_out;
+static struct { int seen, none; XBOX_GAMEPAD pad; } s_last[PLAYBACK_PORTS];
+static struct { int seen; FREECAM_SETTINGS fc; } s_fc_last;
+static uint32_t s_next_check;
+
+/* Playing. */
+static PbList s_pads[PLAYBACK_PORTS], s_freecams, s_anchors, s_checks, s_idles;
+static int s_cur[PLAYBACK_PORTS] = { -1, -1, -1, -1 };
+static int s_fc_cur = -1, s_fc_player_seen;
+static FREECAM_SETTINGS s_fc_player;        /* the player's, as the last frame had them */
+static int s_anchor_next, s_check_next, s_idle_next;
+static int64_t s_offset;                    /* the frame played less the frame recorded */
+static uint32_t s_end, s_wait_from;
+static int s_exit_at_end, s_drift_run, s_armed[PLAYBACK_PORTS];
+static float s_drift_said = -1;
+static uint32_t s_packet[PLAYBACK_PORTS];
+
+#define PB_PADS(p)  ((PbPad *)s_pads[p].at)
+#define PB_FREECAM  ((PbFreecam *)s_freecams.at)
+#define PB_ANCHOR   ((PbAnchor *)s_anchors.at)
+#define PB_CHECK    ((PbSpot *)s_checks.at)
+#define PB_IDLE     ((PbSpot *)s_idles.at)
+
+#if defined(NV2A_GL_USE_SDL)
+/* nv2a_gl.c: a file beside the settings file, the restart, and the window's
+ * close, as File > Exit closes it. */
+extern void nv_window_file_path(const char *file, char *buf, size_t n);
+extern void nv_window_restart(void);
+extern void nv_window_close(void);
+#endif
+
+static void set_env(const char *name, const char *val)
+{
+#if defined(_WIN32)
+    _putenv_s(name, val);               /* "" takes it out */
+#else
+    if (*val) setenv(name, val, 1);
+    else      unsetenv(name);
+#endif
+}
+
+static int make_folder(const char *path)
+{
+    struct stat st;
+#if defined(_WIN32)
+    _mkdir(path);
+#else
+    mkdir(path, 0755);
+#endif
+    return !stat(path, &st) && S_ISDIR(st.st_mode);
+}
+
+static int pressed(const XBOX_GAMEPAD *g)
+{
+    int k;
+    if (g->wButtons) return 1;
+    for (k = 0; k < 8; k++)
+        if (g->bAnalogButtons[k] > XBOX_ANALOG_BUTTON_THRESHOLD) return 1;
+    return abs(g->sThumbLX) > PB_LEFT_DEAD || abs(g->sThumbLY) > PB_LEFT_DEAD
+        || abs(g->sThumbRX) > PB_RIGHT_DEAD || abs(g->sThumbRY) > PB_RIGHT_DEAD;
+}
+
+static int same_pad(const XBOX_GAMEPAD *a, const XBOX_GAMEPAD *b)
+{
+    return a->wButtons == b->wButtons
+        && !memcmp(a->bAnalogButtons, b->bAnalogButtons, sizeof a->bAnalogButtons)
+        && a->sThumbLX == b->sThumbLX && a->sThumbLY == b->sThumbLY
+        && a->sThumbRX == b->sThumbRX && a->sThumbRY == b->sThumbRY;
+}
+
+static int same_freecam(const FREECAM_SETTINGS *a, const FREECAM_SETTINGS *b)
+{
+    return a->on == b->on && a->invert_x == b->invert_x && a->invert_y == b->invert_y
+        && a->centre == b->centre && a->sens_x == b->sens_x && a->sens_y == b->sens_y
+        && a->deadzone == b->deadzone;
+}
+
+static float distance(const float a[3], const float b[3])
+{
+    float x = a[0] - b[0], y = a[1] - b[1], z = a[2] - b[2];
+    return sqrtf(x * x + y * y + z * z);
+}
+
+static void *add(PbList *l, size_t size)
+{
+    if (l->n == l->cap) {
+        int cap = l->cap ? l->cap * 2 : 256;
+        void *at = realloc(l->at, (size_t)cap * size);
+        if (!at) return NULL;
+        l->at = at;
+        l->cap = cap;
+    }
+    return (char *)l->at + (size_t)l->n++ * size;
+}
+
+/* ---- the end of a run -------------------------------------------------- */
+
+static const char *outcome(void)
+{
+    switch (s_res.state) {
+    case PLAYBACK_FINISHED:    return "finished on route";
+    case PLAYBACK_OFF_ROUTE:   return "off route";
+    case PLAYBACK_HANDED_BACK: return "handed back";
+    default:                   return "stopped";
+    }
+}
+
+static void summary(void)
+{
+    fprintf(stderr, "[PLAYBACK] t=%.1f summary: %s%s%s; %u frames played; anchors met %d of %d"
+            " (%d skipped); %d checks, the largest drift %.1f units at recorded frame %u;"
+            " idle moments put back %d of %d\n",
+            pad_now(), outcome(), s_res.why[0] ? ": " : "", s_res.why, s_res.frames,
+            s_res.anchors_met, s_res.anchors, s_res.anchors_skipped, s_res.checks,
+            s_res.drift_most, s_res.drift_most_at, s_res.idles_put_back, s_idles.n);
+}
+
+/* A playback over: said, and the game closed for an unattended run. */
+static void play_over(PLAYBACK_STATE state)
+{
+    s_res.state = state;
+    summary();
+    if (!s_exit_at_end || state == PLAYBACK_HANDED_BACK) return;
+#if defined(NV2A_GL_USE_SDL)
+    fprintf(stderr, "[PLAYBACK] closing the game, as --play asks\n");
+    nv_window_close();
+#else
+    fprintf(stderr, "[PLAYBACK] no window to close: the game goes on\n");
+#endif
+}
+
+static void off_route(const char *fmt, ...)
+{
+    va_list a;
+    va_start(a, fmt);
+    vsnprintf(s_res.why, sizeof s_res.why, fmt, a);
+    va_end(a);
+    fprintf(stderr, "[PLAYBACK] frame %u: off route: %s\n", s_frame, s_res.why);
+    play_over(PLAYBACK_OFF_ROUTE);
+}
+
+/* Not under the lock. */
+static void end_recording(const char *why)
+{
+    if (!s_out) return;
+    fprintf(s_out, "end %u\n", s_frame);
+    fclose(s_out);
+    s_out = NULL;
+    s_res.state = PLAYBACK_RECORDED;
+    s_res.frames = s_frame;
+    fprintf(stderr, "[PLAYBACK] t=%.1f recording ended at frame %u (%s): %s/" PLAYBACK_FILE "\n",
+            pad_now(), s_frame, why, s_folder);
+}
+
+static void at_exit(void)
+{
+    pb_lock();
+    end_recording("the game closed");
+    if (s_res.state == PLAYBACK_PLAYING || s_res.state == PLAYBACK_WAITING) {
+        snprintf(s_res.why, sizeof s_res.why, "the game closed at frame %u", s_frame);
+        s_res.state = PLAYBACK_OFF;
+        summary();
+    }
+    pb_unlock();
+}
+
+static void hook_exit(void)
+{
+    if (!s_exit_hooked) { s_exit_hooked = 1; atexit(at_exit); }
+}
+
+/* ---- recording ---------------------------------------------------------- */
+
+int playback_record(const char *folder)
+{
+    char path[sizeof s_folder + 32];
+    time_t now = time(NULL);
+    struct tm *utc = gmtime(&now);
+    pb_lock();
+    snprintf(s_folder, sizeof s_folder, "%s", folder);
+    snprintf(path, sizeof path, "%s/" PLAYBACK_FILE, folder);
+    if (!make_folder(folder) || !(s_out = fopen(path, "w"))) {
+        fprintf(stderr, "[PLAYBACK] can't write %s: nothing is recorded\n", path);
+        pb_unlock();
+        return 0;
+    }
+    fprintf(s_out, PB_FORMAT "\nversion %s " PB_PLATFORM "\n", JSRF_VERSION);
+    if (utc)
+        fprintf(s_out, "# started %04d-%02d-%02d %02d:%02d:%02d UTC\n", utc->tm_year + 1900,
+                utc->tm_mon + 1, utc->tm_mday, utc->tm_hour, utc->tm_min, utc->tm_sec);
+    fflush(s_out);
+    run_start();
+    s_res.state = PLAYBACK_RECORDING;
+    s_next_check = 0;
+    memset(s_last, 0, sizeof s_last);
+    s_fc_last.seen = 0;
+    hook_exit();
+    fprintf(stderr, "[PLAYBACK] recording from the first frame into %s (JSRF-PC %s, " PB_PLATFORM ")\n",
+            path, JSRF_VERSION);
+    pb_unlock();
+    return 1;
+}
+
+void playback_stop(void)
+{
+    pb_lock();
+    if (s_out) end_recording("Stop recording");
+    else fprintf(stderr, "[PLAYBACK] Stop recording: nothing is being recorded\n");
+    pb_unlock();
+}
+
+static void record_pad(uint32_t port, const XBOX_GAMEPAD *p, int none)
+{
+    if (s_last[port].seen && s_last[port].none == none && (none || same_pad(&s_last[port].pad, p)))
+        return;
+    s_last[port].seen = 1;
+    s_last[port].none = none;
+    s_last[port].pad = *p;
+    if (none) {
+        fprintf(s_out, "pad %u.%u %u none\n", s_frame, s_reads[port], port);
+        return;
+    }
+    fprintf(s_out, "pad %u.%u %u %04X %02X%02X%02X%02X%02X%02X%02X%02X %d %d %d %d\n", s_frame,
+            s_reads[port], port, p->wButtons, p->bAnalogButtons[0], p->bAnalogButtons[1],
+            p->bAnalogButtons[2], p->bAnalogButtons[3], p->bAnalogButtons[4], p->bAnalogButtons[5],
+            p->bAnalogButtons[6], p->bAnalogButtons[7], p->sThumbLX, p->sThumbLY, p->sThumbRX,
+            p->sThumbRY);
+}
+
+/* A number, as short as reads back the same. */
+static void put_number(double v)
+{
+    char b[32];
+    int digits;
+    for (digits = 15; digits < 17; digits++) {
+        snprintf(b, sizeof b, "%.*g", digits, v);
+        if (strtod(b, NULL) == v) break;
+    }
+    fprintf(s_out, " %.*g", digits, v);
+}
+
+static void record_freecam(const FREECAM_SETTINGS *fc)
+{
+    if (s_fc_last.seen && same_freecam(&s_fc_last.fc, fc)) return;
+    s_fc_last.seen = 1;
+    s_fc_last.fc = *fc;
+    fprintf(s_out, "freecam %u %d %d %d", s_frame, fc->on, fc->invert_x, fc->invert_y);
+    put_number(fc->sens_x);
+    put_number(fc->sens_y);
+    put_number(fc->deadzone);
+    fprintf(s_out, " %d\n", fc->centre);
+}
+
+/* ---- reading a recording ------------------------------------------------ */
+
+static int read_pad(const char *s, PbPad *p, uint32_t *port)
+{
+    unsigned b, a[8], f, r = 0;
+    int lx, ly, rx, ry, used = 0, k;
+    char none[8];
+    if (sscanf(s, "%u.%u %u %n", &f, &r, port, &used) < 3 || !used) {
+        r = 0;
+        used = 0;
+        if (sscanf(s, "%u %u %n", &f, port, &used) < 2 || !used) return 0;
+    }
+    if (*port >= PLAYBACK_PORTS) return 0;
+    p->frame = f;
+    p->read = r;
+    memset(&p->pad, 0, sizeof p->pad);
+    s += used;
+    if (sscanf(s, "%7s", none) == 1 && !strcmp(none, "none")) { p->none = 1; return 1; }
+    p->none = 0;
+    if (sscanf(s, "%x %2x%2x%2x%2x%2x%2x%2x%2x %d %d %d %d", &b, &a[0], &a[1], &a[2], &a[3], &a[4],
+               &a[5], &a[6], &a[7], &lx, &ly, &rx, &ry) != 13)
+        return 0;
+    p->pad.wButtons = (WORD)b;
+    for (k = 0; k < 8; k++) p->pad.bAnalogButtons[k] = (BYTE)a[k];
+    p->pad.sThumbLX = (SHORT)lx; p->pad.sThumbLY = (SHORT)ly;
+    p->pad.sThumbRX = (SHORT)rx; p->pad.sThumbRY = (SHORT)ry;
+    return 1;
+}
+
+/* A freecam line, each value in its range in the settings file. */
+static int read_freecam(const char *s, PbFreecam *e)
+{
+    FREECAM_SETTINGS *c = &e->fc;
+    return sscanf(s, "%u %d %d %d %lf %lf %lf %d", &e->frame, &c->on, &c->invert_x, &c->invert_y,
+                  &c->sens_x, &c->sens_y, &c->deadzone, &c->centre) == 8
+        && (c->on == 0 || c->on == 1) && (c->invert_x == 0 || c->invert_x == 1)
+        && (c->invert_y == 0 || c->invert_y == 1)
+        && c->sens_x >= FREECAM_SENS_MIN && c->sens_x <= FREECAM_SENS_MAX
+        && c->sens_y >= FREECAM_SENS_MIN && c->sens_y <= FREECAM_SENS_MAX
+        && c->deadzone >= 0 && c->deadzone <= 1 && c->centre >= 0 && c->centre < FREECAM_CENTRE_LEVELS;
+}
+
+static int read_spot(const char *s, PbSpot *p)
+{
+    return sscanf(s, "%u %f %f %f %x %u", &p->frame, &p->pos[0], &p->pos[1], &p->pos[2], &p->turn,
+                  &p->camera) == 6;
+}
+
+static void forget(void)
+{
+    int p;
+    for (p = 0; p < PLAYBACK_PORTS; p++) { free(s_pads[p].at); memset(&s_pads[p], 0, sizeof s_pads[p]); }
+    free(s_freecams.at); free(s_anchors.at); free(s_checks.at); free(s_idles.at);
+    memset(&s_freecams, 0, sizeof s_freecams);
+    memset(&s_anchors, 0, sizeof s_anchors);
+    memset(&s_checks, 0, sizeof s_checks);
+    memset(&s_idles, 0, sizeof s_idles);
+}
+
+/* The recording in folder, every line checked: 0, saying where, at the
+ * first that can't be read or goes back in time. */
+static int load(const char *path)
+{
+    char line[PB_LINE], word[16], version[64], platform[16];
+    uint32_t last = 0, port;
+    int n = 0, format = 0, ended = 0;
+    FILE *f = fopen(path, "r");
+    forget();
+    s_end = 0;
+    if (!f) { fprintf(stderr, "[PLAYBACK] can't read %s: nothing is played\n", path); return 0; }
+    while (fgets(line, sizeof line, f)) {
+        const char *s = line;
+        int used = 0, ok = 1;
+        uint32_t frame = 0;
+        n++;
+        while (*s == ' ' || *s == '\t') s++;
+        if (!*s || *s == '#' || *s == '\r' || *s == '\n') continue;
+        if (ended) { ok = 0; goto bad; }
+        if (!format) {
+            format = !strncmp(s, PB_FORMAT, strlen(PB_FORMAT));
+            if (!format) goto bad;
+            continue;
+        }
+        if (sscanf(s, "%15s %n", word, &used) != 1) { ok = 0; goto bad; }
+        s += used;
+        if (!strcmp(word, "version")) {
+            if (sscanf(s, "%63s %15s", version, platform) == 2)
+                fprintf(stderr, "[PLAYBACK] recorded on JSRF-PC %s, %s; this is %s, " PB_PLATFORM "\n",
+                        version, platform, JSRF_VERSION);
+            continue;
+        }
+        if (!strcmp(word, "pad")) {
+            PbPad p, *to;
+            ok = read_pad(s, &p, &port);
+            if (ok && s_pads[port].n) {
+                const PbPad *before = &PB_PADS(port)[s_pads[port].n - 1];
+                ok = p.frame > before->frame || (p.frame == before->frame && p.read > before->read);
+            }
+            if (ok && (ok = (to = add(&s_pads[port], sizeof *to)) != NULL)) *to = p;
+            frame = p.frame;
+        } else if (!strcmp(word, "freecam")) {
+            PbFreecam e, *to;
+            memset(&e, 0, sizeof e);
+            ok = read_freecam(s, &e) && (!s_freecams.n || e.frame >= PB_FREECAM[s_freecams.n - 1].frame);
+            if (ok && (ok = (to = add(&s_freecams, sizeof *to)) != NULL)) *to = e;
+            frame = e.frame;
+        } else if (!strcmp(word, "anchor")) {
+            PbAnchor a, *to;
+            char kind[16];
+            int k;
+            ok = sscanf(s, "%u %15s %x %x", &a.frame, kind, &a.value, &a.random) == 4;
+            for (k = 0; ok && k < PLAYBACK_ANCHOR_KINDS && strcmp(kind, k_kind[k]); k++) { }
+            ok = ok && k < PLAYBACK_ANCHOR_KINDS
+                 && (!s_anchors.n || a.frame >= PB_ANCHOR[s_anchors.n - 1].frame);
+            a.kind = (PLAYBACK_ANCHOR)k;
+            if (ok && (ok = (to = add(&s_anchors, sizeof *to)) != NULL)) *to = a;
+            frame = a.frame;
+        } else if (!strcmp(word, "check") || !strcmp(word, "idle")) {
+            PbList *l = word[0] == 'c' ? &s_checks : &s_idles;
+            PbSpot sp, *to;
+            ok = read_spot(s, &sp) && (!l->n || sp.frame > ((PbSpot *)l->at)[l->n - 1].frame);
+            if (ok && (ok = (to = add(l, sizeof *to)) != NULL)) *to = sp;
+            frame = sp.frame;
+        } else if (!strcmp(word, "end")) {
+            ok = sscanf(s, "%u", &s_end) == 1 && s_end >= last;
+            frame = s_end;
+        } else
+            ok = 0;
+        if (ok && frame > last) last = frame;
+        ended = ok && !strcmp(word, "end");
+bad:
+        if (!ok || !format) {
+            fprintf(stderr, "[PLAYBACK] %s, line %d: %s; nothing is played\n", path, n,
+                    !format ? "not a recording (no \"" PB_FORMAT "\" first)"
+                    : ended ? "a line after the end" : "can't be read, or goes back in time");
+            fclose(f);
+            forget();
+            return 0;
+        }
+    }
+    fclose(f);
+    if (!format) {
+        fprintf(stderr, "[PLAYBACK] %s: empty; nothing is played\n", path);
+        return 0;
+    }
+    if (!ended) {
+        s_end = last;
+        fprintf(stderr, "[PLAYBACK] %s has no end line (the game closed while recording?):"
+                " played to its last, frame %u\n", path, last);
+    }
+    return 1;
+}
+
+int playback_play(const char *folder, int exit_at_end)
+{
+    char path[sizeof s_folder + 32];
+    int p, pads = 0;
+    pb_lock();
+    snprintf(s_folder, sizeof s_folder, "%s", folder);
+    snprintf(path, sizeof path, "%s/" PLAYBACK_FILE, folder);
+    run_start();
+    if (!load(path)) {
+        s_res.state = PLAYBACK_OFF;
+        pb_unlock();
+        return 0;
+    }
+    for (p = 0; p < PLAYBACK_PORTS; p++) {
+        s_cur[p] = -1;
+        s_armed[p] = 0;
+        pads += s_pads[p].n;
+    }
+    s_fc_cur = -1;
+    s_fc_player_seen = 0;
+    s_anchor_next = s_check_next = s_idle_next = 0;
+    s_offset = 0;
+    s_exit_at_end = exit_at_end;
+    s_drift_run = 0;
+    s_drift_said = -1;
+    s_res.state = PLAYBACK_PLAYING;
+    s_res.anchors = s_anchors.n;
+    hook_exit();
+    fprintf(stderr, "[PLAYBACK] playing %s: %d pad changes, %d free camera changes, %d anchors, %d checks,"
+            " %d idle moments, %u frames%s\n", path, pads, s_freecams.n, s_anchors.n, s_checks.n, s_idles.n, s_end,
+            exit_at_end ? "; the game closes at its end" : "; the game is yours at its end");
+    pb_unlock();
+    return 1;
+}
+
+/* ---- playing ------------------------------------------------------------- */
+
+static int playing(void)
+{
+    return s_res.state == PLAYBACK_PLAYING || s_res.state == PLAYBACK_WAITING;
+}
+
+/* The recording's frame now: held at the next anchor's while waiting. */
+static uint32_t recorded_frame(void)
+{
+    int64_t f = (int64_t)s_frame - s_offset;
+    if (s_res.state == PLAYBACK_WAITING) return PB_ANCHOR[s_anchor_next].frame;
+    return f < 0 ? 0u : (uint32_t)f;
+}
+
+/* At the start of each pass: the next anchor waited for, or past the end. */
+static void play_pass(void)
+{
+    uint32_t f = recorded_frame();
+    if (s_res.state == PLAYBACK_PLAYING && s_anchor_next < s_anchors.n
+        && f >= PB_ANCHOR[s_anchor_next].frame) {
+        const PbAnchor *a = &PB_ANCHOR[s_anchor_next];
+        s_res.state = PLAYBACK_WAITING;
+        s_wait_from = s_frame;
+        fprintf(stderr, "[PLAYBACK] frame %u: waiting for anchor %d of %d (%s %08X), recorded at frame %u\n",
+                s_frame, s_anchor_next + 1, s_anchors.n, k_kind[a->kind], a->value, a->frame);
+    }
+    if (s_res.state == PLAYBACK_WAITING) {
+        s_res.frames++;
+        if (s_frame - s_wait_from > PLAYBACK_ANCHOR_WAIT)
+            off_route("anchor %d (%s %08X) not reached within %u frames of recorded frame %u",
+                      s_anchor_next + 1, k_kind[PB_ANCHOR[s_anchor_next].kind],
+                      PB_ANCHOR[s_anchor_next].value, PLAYBACK_ANCHOR_WAIT, PB_ANCHOR[s_anchor_next].frame);
+        return;
+    }
+    if (f > s_end) {
+        fprintf(stderr, "[PLAYBACK] frame %u: past the recording's end, frame %u\n", s_frame, s_end);
+        play_over(PLAYBACK_FINISHED);
+        return;
+    }
+    s_res.frames++;
+}
+
+static void play_anchor(PLAYBACK_ANCHOR kind, uint32_t value, uint32_t *random)
+{
+    uint32_t was = recorded_frame();
+    int j;
+    for (j = s_anchor_next; j < s_anchors.n && j <= s_anchor_next + PLAYBACK_ANCHOR_AHEAD; j++)
+        if (PB_ANCHOR[j].kind == kind && PB_ANCHOR[j].value == value) break;
+    if (j >= s_anchors.n || j > s_anchor_next + PLAYBACK_ANCHOR_AHEAD) {
+        if (s_anchor_next < s_anchors.n)
+            off_route("%s %08X reached where the recording has %s %08X next", k_kind[kind], value,
+                      k_kind[PB_ANCHOR[s_anchor_next].kind], PB_ANCHOR[s_anchor_next].value);
+        else
+            off_route("%s %08X reached after the recording's last anchor", k_kind[kind], value);
+        return;
+    }
+    /* Reached late, the pad was held for it (recorded_frame); reached
+     * early, the recording skips to it. Either way it goes on from there. */
+    fprintf(stderr, "[PLAYBACK] frame %u: anchor %d of %d met (%s %08X), recorded at frame %u: %u frames"
+            " %s%s\n", s_frame, j + 1, s_anchors.n, k_kind[kind], value, PB_ANCHOR[j].frame,
+            s_res.state == PLAYBACK_WAITING ? s_frame - s_wait_from : PB_ANCHOR[j].frame - was,
+            s_res.state == PLAYBACK_WAITING ? "late" : "early",
+            j > s_anchor_next ? ", past anchors the game didn't reach" : "");
+    s_res.anchors_skipped += j - s_anchor_next;
+    s_res.anchors_met++;
+    s_offset = (int64_t)s_frame - PB_ANCHOR[j].frame;
+    s_anchor_next = j + 1;
+    s_res.state = PLAYBACK_PLAYING;
+    if (random) *random = PB_ANCHOR[j].random;
+}
+
+/* The recording's pad for this read of this port. */
+static int play_pad(uint32_t port, XBOX_INPUT_STATE *st, int connected)
+{
+    uint32_t f = recorded_frame(), r = s_reads[port];
+    const PbPad *ev = PB_PADS(port);
+    int c = s_cur[port];
+    /* A real pad or the keyboard, once let go of since playback started. */
+    if (connected && pressed(&st->Gamepad)) {
+        if (s_armed[port]) {
+            fprintf(stderr, "[PLAYBACK] frame %u: something was pressed on port %u: the game is yours\n",
+                    s_frame, port);
+            play_over(PLAYBACK_HANDED_BACK);
+            return connected;
+        }
+    } else
+        s_armed[port] = 1;
+    while (c + 1 < s_pads[port].n
+           && (ev[c + 1].frame < f || (ev[c + 1].frame == f && ev[c + 1].read <= r)))
+        c++;
+    s_cur[port] = c;
+    memset(st, 0, sizeof *st);
+    st->dwPacketNumber = ++s_packet[port];
+    if (c < 0) return port == 0;          /* before the recording's first read: as pad_read has it */
+    if (ev[c].none) return 0;
+    st->Gamepad = ev[c].pad;
+    return 1;
+}
+
+/* The recording's free camera for this frame, in place of the player's:
+ * from its first freecam line (before it, or with none, the player's). */
+static int play_freecam(FREECAM_SETTINGS *fc)
+{
+    uint32_t f = recorded_frame();
+    int c = s_fc_cur;
+    /* The player's own change, by F8, R3 or the menu: the game is theirs. */
+    if (s_fc_player_seen && !same_freecam(fc, &s_fc_player)) {
+        fprintf(stderr, "[PLAYBACK] frame %u: the free camera was changed (F8, R3 or the menu): the game is yours\n",
+                s_frame);
+        play_over(PLAYBACK_HANDED_BACK);
+        return 0;
+    }
+    s_fc_player = *fc;
+    s_fc_player_seen = 1;
+    while (c + 1 < s_freecams.n && PB_FREECAM[c + 1].frame <= f) c++;
+    if (c < 0) return 0;
+    if (c != s_fc_cur) {
+        const FREECAM_SETTINGS *r = &PB_FREECAM[c].fc;
+        fprintf(stderr, "[PLAYBACK] frame %u: the free camera as recorded at frame %u: %s; invert x %d y %d,"
+                " sensitivity x %g y %g, deadzone %g, auto centre %d\n", s_frame, PB_FREECAM[c].frame,
+                r->on ? "on" : "off", r->invert_x, r->invert_y, r->sens_x, r->sens_y, r->deadzone, r->centre);
+    }
+    s_fc_cur = c;
+    *fc = PB_FREECAM[c].fc;
+    return 1;
+}
+
+static void play_view(float position[3], uint32_t *turn, uint32_t camera, int still)
+{
+    uint32_t f = recorded_frame();
+    int last = -1;
+    while (s_check_next < s_checks.n && PB_CHECK[s_check_next].frame <= f) last = s_check_next++;
+    if (last >= 0 && f - PB_CHECK[last].frame < PLAYBACK_CHECK_EVERY) {
+        const PbSpot *c = &PB_CHECK[last];
+        float d = distance(position, c->pos);
+        s_res.checks++;
+        if (d > s_res.drift_most) { s_res.drift_most = d; s_res.drift_most_at = c->frame; }
+        /* Said when it changes much: by half, or a unit, whichever is more. */
+        if (s_drift_said < 0 || d - s_drift_said > (s_drift_said > 2 ? s_drift_said / 2 : 1)
+            || s_drift_said - d > (s_drift_said > 2 ? s_drift_said / 2 : 1)) {
+            fprintf(stderr, "[PLAYBACK] frame %u: check at recorded frame %u: %.1f units off,"
+                    " camera %u (recorded %u)\n", s_frame, c->frame, d, camera, c->camera);
+            s_drift_said = d;
+        }
+        s_drift_run = d > PLAYBACK_DRIFT_LIMIT ? s_drift_run + 1 : 0;
+        if (s_drift_run >= PLAYBACK_DRIFT_CHECKS) {
+            off_route("%.1f units from the recorded spot at recorded frame %u, %d checks in a row"
+                      " past %.0f", d, c->frame, s_drift_run, PLAYBACK_DRIFT_LIMIT);
+            return;
+        }
+    }
+    /* An idle moment: the skater put back, once still here too. */
+    while (s_idle_next < s_idles.n && f >= PB_IDLE[s_idle_next].frame) {
+        const PbSpot *i = &PB_IDLE[s_idle_next];
+        float d = distance(position, i->pos);
+        if (f - i->frame >= PLAYBACK_CHECK_EVERY) {
+            fprintf(stderr, "[PLAYBACK] frame %u: idle moment %d (recorded frame %u) passed without the skater"
+                    " still: not put back\n", s_frame, s_idle_next + 1, i->frame);
+            s_idle_next++;
+            continue;
+        }
+        if (!still) break;                  /* not yet: wait for it */
+        if (camera != i->camera || d > PLAYBACK_DRIFT_LIMIT)
+            fprintf(stderr, "[PLAYBACK] frame %u: idle moment %d: not put back (%.1f units off, camera %u,"
+                    " recorded %u)\n", s_frame, s_idle_next + 1, d, camera, i->camera);
+        else {
+            fprintf(stderr, "[PLAYBACK] frame %u: idle moment %d: the skater put back on the recorded spot,"
+                    " %.1f units away, turn %08X to %08X\n", s_frame, s_idle_next + 1, d, *turn, i->turn);
+            memcpy(position, i->pos, sizeof i->pos);
+            *turn = i->turn;
+            s_res.idles_put_back++;
+        }
+        s_idle_next++;
+    }
+}
+
+/* ---- the game's calls ---------------------------------------------------- */
+
+void playback_pass(void)
+{
+    pb_lock();
+    s_frame++;
+    memset(s_reads, 0, sizeof s_reads);
+    if (playing()) play_pass();
+    pb_unlock();
+}
+
+int playback_pad(uint32_t port, XBOX_INPUT_STATE *st, int connected)
+{
+    if (port >= PLAYBACK_PORTS) return connected;
+    pb_lock();
+    if (playing()) connected = play_pad(port, st, connected);
+    else if (s_out) record_pad(port, &st->Gamepad, !connected);
+    if (connected && pressed(&st->Gamepad)) { s_pressed_at = s_frame; s_pressed_ever = 1; }
+    s_reads[port]++;
+    pb_unlock();
+    return connected;
+}
+
+int playback_freecam(FREECAM_SETTINGS *fc)
+{
+    int played = 0;
+    pb_lock();
+    if (playing()) played = play_freecam(fc);
+    else if (s_out) record_freecam(fc);
+    pb_unlock();
+    return played;
+}
+
+void playback_anchor(PLAYBACK_ANCHOR kind, uint32_t value, uint32_t *random)
+{
+    if ((unsigned)kind >= PLAYBACK_ANCHOR_KINDS) return;
+    pb_lock();
+    if (s_out) {
+        fprintf(s_out, "anchor %u %s %08X %08X\n", s_frame, k_kind[kind], value, random ? *random : 0u);
+        fflush(s_out);
+    } else if (playing())
+        play_anchor(kind, value, random);
+    pb_unlock();
+}
+
+void playback_view(float position[3], uint32_t *turn, uint32_t camera)
+{
+    int still;
+    pb_lock();
+    if (!s_out && !playing()) { pb_unlock(); return; }
+    /* Still: within PLAYBACK_STILL of where it stopped, in one camera mode,
+     * with nothing pressed since, for PLAYBACK_IDLE_FRAMES. */
+    if (!s_still_valid || distance(position, s_still_pos) > PLAYBACK_STILL || camera != s_still_camera
+        || (s_pressed_ever && s_pressed_at >= s_still_since)) {
+        memcpy(s_still_pos, position, sizeof s_still_pos);
+        s_still_since = s_frame;
+        s_still_camera = camera;
+        s_still_valid = 1;
+    }
+    still = s_frame - s_still_since >= PLAYBACK_IDLE_FRAMES;
+    if (s_out) {
+        if (s_frame >= s_next_check) {
+            fprintf(s_out, "check %u %.9g %.9g %.9g %08X %u\n", s_frame, position[0], position[1],
+                    position[2], *turn, camera);
+            fflush(s_out);
+            s_next_check = s_frame + PLAYBACK_CHECK_EVERY;
+            s_res.checks++;
+        }
+        if (still && s_idle_said != s_still_since + 1) {
+            fprintf(s_out, "idle %u %.9g %.9g %.9g %08X %u\n", s_frame, position[0], position[1],
+                    position[2], *turn, camera);
+            s_idle_said = s_still_since + 1;
+        }
+    } else
+        play_view(position, turn, camera, still);
+    pb_unlock();
+}
+
+PLAYBACK_STATE playback_state(void)
+{
+    PLAYBACK_STATE s;
+    pb_lock();
+    s = s_res.state;
+    pb_unlock();
+    return s;
+}
+
+const PLAYBACK_RESULT *playback_result(void) { return &s_res; }
+
+/* ---- starting, and Developer > Playback -------------------------------- */
+
+/* The folder recordings are kept in, beside the settings file: "" when
+ * there is no settings file (a build without the window). */
+static void recordings_folder(char *buf, size_t n)
+{
+#if defined(NV2A_GL_USE_SDL)
+    nv_window_file_path(PLAYBACK_FOLDER, buf, n);
+#else
+    if (n) buf[0] = '\0';
+#endif
+}
+
+#if defined(XBOXRECOMP_MENU) && defined(NV2A_GL_USE_SDL)
+static char s_list[PB_LIST][PB_NAME];
+static const char *s_choice[PB_LIST];
+static int s_nlist;
+
+/* The recordings in the folder, newest first: each folder with a
+ * recording.txt in it, by its name, the date and time it was made. */
+static int newest_first(const void *a, const void *b) { return strcmp(b, a); }
+static void list_recordings(const char *folder)
+{
+    char all[256][PB_NAME], path[1200];
+    struct stat st;
+    struct dirent *e;
+    DIR *d = opendir(folder);
+    int n = 0, i;
+    if (!d) return;
+    while ((e = readdir(d)) != NULL && n < 256) {
+        size_t len = strlen(e->d_name);
+        if (e->d_name[0] == '.' || len >= PB_NAME) continue;
+        snprintf(path, sizeof path, "%s/%s/" PLAYBACK_FILE, folder, e->d_name);
+        if (!stat(path, &st)) memcpy(all[n++], e->d_name, len + 1);
+    }
+    closedir(d);
+    qsort(all, (size_t)n, sizeof all[0], newest_first);
+    for (i = 0; i < n && i < PB_LIST; i++) {
+        memcpy(s_list[i], all[i], PB_NAME);
+        s_choice[i] = s_list[i];
+    }
+    s_nlist = i;
+}
+
+static void record_pick(void)
+{
+    set_env("JSRF_RECORD", "1");
+    fprintf(stderr, "[PLAYBACK] Record picked in Developer > Playback: restarting\n");
+    nv_window_restart();                /* does not return when it restarts */
+    set_env("JSRF_RECORD", "");
+    fprintf(stderr, "[PLAYBACK] Record: the game couldn't restart; nothing is recorded\n");
+}
+
+static int  play_none(void) { return -1; }     /* no recording is ticked */
+static void play_pick(int i)
+{
+    char folder[1024], path[1100];
+    if (i < 0 || i >= s_nlist) return;
+    recordings_folder(folder, sizeof folder);
+    snprintf(path, sizeof path, "%s/%s", folder, s_list[i]);
+    set_env("JSRF_PLAY_MENU", path);
+    fprintf(stderr, "[PLAYBACK] Play %s picked in Developer > Playback: restarting\n", s_list[i]);
+    nv_window_restart();                /* does not return when it restarts */
+    set_env("JSRF_PLAY_MENU", "");
+    fprintf(stderr, "[PLAYBACK] Play: the game couldn't restart; nothing is played\n");
+}
+
+static void rows(void)
+{
+    char folder[1024];
+    XBOX_MENU_ITEM row[3];
+    int n = 0;
+    recordings_folder(folder, sizeof folder);
+    list_recordings(folder);
+    memset(row, 0, sizeof row);
+    row[n].menu = XBOX_MENU_DEVELOPER;
+    row[n].kind = XBOX_ITEM_ACTION;
+    row[n].label = "Record (Restart)";
+    row[n].group = XBOX_GROUP_PLAYBACK;
+    row[n].run = record_pick;
+    row[n].confirm = "Restart the game and record from the start, losing unsaved progress?";
+    row[n++].hint = "Restarts the game and records every press, until Stop recording.";
+    row[n].menu = XBOX_MENU_DEVELOPER;
+    row[n].kind = XBOX_ITEM_ACTION;
+    row[n].label = "Stop recording";
+    row[n].group = XBOX_GROUP_PLAYBACK;
+    row[n].run = playback_stop;
+    row[n++].hint = "Ends the recording and keeps it.";
+    /* Play only with a recording to play: the ones there were as the game
+     * started, so one made since shows from the next start. */
+    if (s_nlist) {
+        row[n].menu = XBOX_MENU_DEVELOPER;
+        row[n].kind = XBOX_ITEM_CHOICE;
+        row[n].label = "Play (Restart)";
+        row[n].group = XBOX_GROUP_PLAYBACK;
+        row[n].state = play_none;
+        row[n].pick = play_pick;
+        row[n].choices = s_choice;
+        row[n].nchoices = s_nlist;
+        row[n].confirm = "Restart the game and play this recording, losing unsaved progress?";
+        row[n++].hint = "Restarts the game and plays a recording. Any press ends it.";
+    }
+    xbox_MenuAdd(row, n);
+    fprintf(stderr, "[PLAYBACK] Developer > Playback: %d recordings in %s%s\n", s_nlist, folder,
+            s_nlist == PB_LIST ? " shown (the newest)" : "");
+}
+#endif
+
+/* A variable read once and taken out of the environment, so the game's own
+ * restart (File > Restart) starts afresh: its value, kept, or NULL. */
+static const char *take_env(const char *name, char *buf, size_t n)
+{
+    const char *v = getenv(name);
+    if (!v || !*v) return NULL;
+    snprintf(buf, n, "%s", v);
+    set_env(name, "");
+    return buf;
+}
+
+void playback_start(void)
+{
+    char rec[16], play[1024], menu[1024], folder[1024], path[1100];
+    const char *r = take_env("JSRF_RECORD", rec, sizeof rec);
+    const char *p = take_env("JSRF_PLAY", play, sizeof play);
+    const char *m = take_env("JSRF_PLAY_MENU", menu, sizeof menu);
+#if defined(XBOXRECOMP_MENU) && defined(NV2A_GL_USE_SDL)
+    rows();
+#endif
+    if (p || m) {
+        if (r) fprintf(stderr, "[PLAYBACK] JSRF_RECORD left out: a recording is played, not made\n");
+        playback_play(p ? p : m, p != NULL);
+        return;
+    }
+    if (!r) return;
+    recordings_folder(folder, sizeof folder);
+    if (!folder[0] || !make_folder(folder)) {
+        fprintf(stderr, "[PLAYBACK] JSRF_RECORD: no folder for recordings beside the settings file (%s);"
+                " nothing is recorded\n", folder[0] ? folder : "none");
+        return;
+    }
+    {
+        time_t now = time(NULL);
+        struct tm *utc = gmtime(&now);
+        if (!utc) return;
+        snprintf(path, sizeof path, "%s/%04d-%02d-%02d-%02d%02d%02d", folder, utc->tm_year + 1900,
+                 utc->tm_mon + 1, utc->tm_mday, utc->tm_hour, utc->tm_min, utc->tm_sec);
+    }
+    playback_record(path);
+}

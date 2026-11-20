@@ -7,9 +7,10 @@ whole.
 Takes port/freecam.c as it is, built with the in-game menu, and the
 settings file code from src/nv2a_gl/nv2a_gl.c verbatim (sdl_cfg_path through
 sdl_cfg_set, with nv_window_pref_num between them); test_main.c stands in
-for the window's key hook and the menu's xbox_MenuAdd. Each case gets its
-own settings file, passed as JSRF_SETTINGS_FILE, and its own run, since the
-settings are read once.
+for the window's key hook, the menu's xbox_MenuAdd and input playback's
+playback_freecam (tests/playback drives freecam.c with the real one). Each
+case gets its own settings file, passed as JSRF_SETTINGS_FILE, and its own
+run, since the settings are read once.
 Requires GCC on PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
 """
@@ -59,6 +60,8 @@ cases = {
                ["[FREECAM] on (F8, R3 or the menu)", "[FREECAM] off (F8, R3 or the menu)",
                 "auto centre Off"]),
     "r3": ("freecam=0\n", ["[FREECAM] on (F8, R3 or the menu)", "[FREECAM] off (F8, R3 or the menu)"]),
+    "menu": ("freecam=1\n", ["sensitivity x 5 y 5"]),
+    "played": ("freecam=0\n", ["[FREECAM] off (yours again, as playback ended); invert x 0 y 0, sensitivity x 5 y 5"]),
     "held": ("freecam=1\n", ["held: its camera did not run; keeping the view", "steering the camera"]),
     # auto centre: centre_<wait>_<ease>, the level's frames and share (port/freecam.c, k_centre)
     "centre_0_0": ("freecam=1\n", ["auto centre Off"]),
@@ -72,8 +75,8 @@ cases = {
 with tempfile.TemporaryDirectory(prefix="freecam-") as directory:
     work = pathlib.Path(directory)
     exe = str(work / "test.exe")
-    command = cc + ["-std=c11", "-DNV2A_GL_USE_SDL=1", "-DXBOXRECOMP_MENU=1", "-Iport", "-Isrc/menu",
-               "-x", "c", "-", "port/freecam.c", "-o", exe, "-lm"]
+    command = cc + ["-std=c11", "-DNV2A_GL_USE_SDL=1", "-DXBOXRECOMP_MENU=1", "-Iport", "-Isrc",
+               "-Isrc/input", "-Isrc/menu", "-x", "c", "-", "port/freecam.c", "-o", exe, "-lm"]
     subprocess.run(command, cwd=root, input=source, text=True, check=True)
     for name, (text, logs) in cases.items():
         path = work / (name + ".cfg")

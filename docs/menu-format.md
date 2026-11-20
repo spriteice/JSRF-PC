@@ -13,8 +13,8 @@ pause in `port/music_info.c`, Audio in `port/audio.c`, Input's Free camera in
 Gameplay's Skip intro in
 `port/intro.c`, Skip cutscenes in `port/cutscene_skip.c` and Visual indicator
 in `port/soul_indicator.c`, Developer in `port/developer.c`, with Missions'
-rows in `port/missions_menu.c` and its Far buildings test in
-`port/draw_distance.c`). A row marked last goes below any added later
+rows in `port/missions_menu.c`, Playback's in `port/playback.c` and its Far
+buildings test in `port/draw_distance.c`). A row marked last goes below any added later
 (`last` in `menu.h`). A row can instead go right below another row of its
 menu, which it names, whichever of the two was added first (`under` in
 `menu.h`): rows added as the game starts can sit among the window's, as Draw
@@ -261,6 +261,14 @@ Dear ImGui
   the levels share one function, which each row tells which level it is
   (`pick_with` and `data` in `menu.h`). tests/developer and tests/missions
   check.
+- Playback is the submenu right below Missions (`XBOX_GROUP_PLAYBACK`,
+  added by `port/developer.c`). Its rows are `port/playback.c`'s, in this
+  order: Record (Restart), Stop recording, then Play (Restart), a choice
+  of the recordings found as the engine starts, newest first, shown only
+  when there is one. Record and Play ask first and restart, as a (Restart)
+  row does; Stop recording applies at once. A recording's steps can't run
+  Record or Play, as `menu_path_run` refuses a row that asks first.
+  tests/developer and tests/playback check.
 - A new experiment, an environment variable that tries out a change that may
   become the default later, also gets a row, but under Developer >
   Experimental (`k_tries`), with a name of its own in `k_tries_row`.

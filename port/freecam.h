@@ -16,13 +16,32 @@
 
 #include <stdint.h>
 
+/* The steps of sensitivity the settings file takes (and the in-game menu
+ * offers), and auto centre's levels: off, mild, medium, high, aggressive. */
+#define FREECAM_SENS_MIN      1.0
+#define FREECAM_SENS_MAX      10.0
+#define FREECAM_CENTRE_LEVELS 5
+
+/* Freecam's switch and tuning, as the settings file names them (freecam.c):
+ * the player's, or a recording's while one plays (port/playback.c). */
+typedef struct {
+    int on;                     /* freecam */
+    int invert_x, invert_y;     /* 0 or 1 */
+    int centre;                 /* autocentre: 0 (off) to FREECAM_CENTRE_LEVELS - 1 */
+    double sens_x, sens_y;      /* sensitivity_x and _y: FREECAM_SENS_MIN to _MAX */
+    double deadzone;            /* 0 to 1 */
+} FREECAM_SETTINGS;
+
 /* At start, before the game runs: reads the settings, adds the in-game menu's
  * Free camera submenu, at the top of Input, with its rows, and binds F8 and a
  * pad's R3, which turn freecam on or off. */
 void freecam_start(void);
 
-/* Once a game frame: freecam steers the camera, and takes the stick, while it
- * is on and the follow camera ran since the last frame. */
+/* Once a game frame: freecam takes up what the player changed since the last
+ * frame (F8, R3 and the menu's rows ask on the window's thread), recorded, or
+ * a recording's in its place while one plays (port/playback.c); then it steers
+ * the camera, and takes the stick, while it is on and the follow camera ran
+ * since the last frame. */
 void freecam_frame(void);
 
 /* Each camera post-update (sub_000A28B0), whatever its mode: that camera was
@@ -32,8 +51,10 @@ void freecam_frame(void);
  * (the game is paused) keeps the view. */
 void freecam_ran(uint32_t cam);
 
-/* Each pad read: notes where the right stick is and, while freecam steers,
- * zeroes it for the game. NULLs: the pad on that port is gone. */
+/* Each pad read, after input playback has recorded the pad or put the
+ * recording's in its place (port/pad.c): notes where the right stick is and,
+ * while freecam steers, zeroes it for the game. NULLs: the pad on that port is
+ * gone. */
 void freecam_pad(unsigned port, short *rx, short *ry);
 
 /* What freecam_orbit did. */

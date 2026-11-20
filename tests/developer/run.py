@@ -223,8 +223,10 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
         if run.returncode != 0 or list(pages) != ["Logging", "Engine switches", "Performance"]:
             raise SystemExit(f"menu: exit {run.returncode}, pages {list(pages)}\n{run.stderr}")
         # The menu's rows: Missions, a submenu port/missions_menu.c fills,
-        # right below Performance (spriteice, 15 November 2026).
-        if shown != ["Log to file", "Logging", "Engine switches", "Performance", "Missions"]:
+        # right below Performance (spriteice, 15 November 2026), then
+        # Playback, which port/playback.c fills.
+        if shown != ["Log to file", "Logging", "Engine switches", "Performance", "Missions",
+                     "Playback"]:
             raise SystemExit(f"menu: the Developer menu's rows are {shown}")
         return pages, ticks
     pages, ticks = menu("")

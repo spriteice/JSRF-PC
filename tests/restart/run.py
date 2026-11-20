@@ -1,7 +1,8 @@
 """Compile the game's restart, and see what the new run is handed.
 
 Cut by text: from port/main.c, unchanged, which doesn't link without the
-generated code.
+generated code. What recomp_restart_self calls before it restarts,
+developer_restart and playback_stop, are stand-ins that do nothing.
 
 Takes recomp_restart_self from port/main.c verbatim, with the helpers before
 it (from "A restart hands the new run" to game_dir). The first run opens files
@@ -42,6 +43,7 @@ source = """
 static char **g_argv;
 static int g_scale_env_ours;
 void developer_restart(void) { }
+void playback_stop(void) { }
 """ + restart + (root / "tests/restart/test_main.c").read_text(encoding="utf-8")
 
 # variant: (extra compiler flags, case, lines its output must have)

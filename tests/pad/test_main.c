@@ -33,18 +33,40 @@ DWORD xbox_InputGetState(DWORD port, XBOX_INPUT_STATE *st)
 }
 DWORD xbox_InputSetState(DWORD port, const XBOX_VIBRATION *v) { (void)port; (void)v; return 0; }
 
-/* The free camera takes the right stick, the keys the left, when set. */
+/* The free camera takes the right stick, the keys the left, when set; the
+ * free camera notes the stick it was given. */
 static int g_freecam_null, g_cam_on, g_keys_on;
+static short g_cam_given;
 void freecam_pad(unsigned port, short *rx, short *ry)
 {
     (void)port;
     if (!rx || !ry) { g_freecam_null++; return; }
+    g_cam_given = *rx;
     if (g_cam_on) { *rx = 111; *ry = -111; }
 }
 void kbmove_pad(unsigned port, short *lx, short *ly)
 {
     (void)port;
     if (g_keys_on) { *lx = 222; *ly = -222; }
+}
+
+/* Input playback (port/playback.c): told the pad with the keys' moves, before
+ * the free camera takes its stick; while set, a recording's pad in its place,
+ * on port 0, and port 1 with none. */
+static int g_play_on, g_play_seen;
+static XBOX_INPUT_STATE g_play_given;
+int playback_pad(uint32_t port, XBOX_INPUT_STATE *st, int connected)
+{
+    g_play_seen = connected;
+    g_play_given = *st;
+    if (!g_play_on) return connected;
+    if (port != 0) return 0;
+    memset(st, 0, sizeof *st);
+    st->dwPacketNumber = 99;
+    st->Gamepad.bAnalogButtons[XBOX_BUTTON_X] = 255;
+    st->Gamepad.sThumbLY = 32767;
+    st->Gamepad.sThumbRX = 1234;
+    return 1;
 }
 
 /* recomp_manual.c's test hooks: a pad of their own on port 0 when set. */
@@ -140,7 +162,33 @@ static void state(void)
     CHECK(S16(STATE + 14) == 222 && S16(STATE + 16) == -222 && S16(STATE + 18) == 111 && S16(STATE + 20) == -111,
           "the free camera's and the keys' sticks: %d %d %d %d",
           S16(STATE + 14), S16(STATE + 16), S16(STATE + 18), S16(STATE + 20));
+    /* ... and playback is told the state with the keys' stick, before the
+     * free camera takes the host's right stick, so that it is recorded. */
+    CHECK(g_play_seen == 1 && g_play_given.Gamepad.sThumbLX == 222 && g_play_given.Gamepad.sThumbRX == 3
+          && g_play_given.Gamepad.wButtons == (XBOX_GAMEPAD_DPAD_UP | XBOX_GAMEPAD_BACK) && g_cam_given == 3,
+          "playback was told %d, sticks %d %d, buttons %04X; the free camera given %d", g_play_seen,
+          g_play_given.Gamepad.sThumbLX, g_play_given.Gamepad.sThumbRX, g_play_given.Gamepad.wButtons, g_cam_given);
     g_cam_on = g_keys_on = 0;
+
+    /* A recording's pad in place of the host's, and the free camera given
+     * its right stick; a port it says has no pad has none, the free camera
+     * told so, and one with no host pad has the recording's. */
+    g_play_on = 1;
+    pad_get_state(g_mem, XPP_HANDLE_BASE, STATE);
+    CHECK(W32(STATE) == 99 && W16(STATE + 4) == 0 && g_mem[STATE + 6 + XBOX_BUTTON_X] == 255
+          && S16(STATE + 16) == 32767 && S16(STATE + 14) == 0 && S16(STATE + 18) == 1234 && g_cam_given == 1234,
+          "the recording's pad: packet %u, buttons %04X, X %u, sticks %d %d %d; the free camera given %d",
+          W32(STATE), W16(STATE + 4), g_mem[STATE + 6 + XBOX_BUTTON_X], S16(STATE + 14), S16(STATE + 16),
+          S16(STATE + 18), g_cam_given);
+    g_host_ports = 3;
+    g_freecam_null = 0;
+    CHECK(pad_get_state(g_mem, XPP_HANDLE_BASE | 1, STATE) == 0x48F && g_freecam_null == 1,
+          "port 1: the recording has no pad there, or the free camera wasn't told");
+    g_host_ports = 0;
+    CHECK(pad_get_state(g_mem, XPP_HANDLE_BASE, STATE) == 0 && W32(STATE) == 99,
+          "port 0 with no host pad: not the recording's");
+    g_host_ports = 1;
+    g_play_on = 0;
 
     /* The test hooks' pad, over the host's, on port 0. */
     g_hooks_on = 1;

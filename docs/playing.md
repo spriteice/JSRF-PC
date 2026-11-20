@@ -314,6 +314,32 @@ input goes to the menu.
     the story up to that mission done instead. A run started here keeps its saves in `mission-saves` in the save folder,
     apart from your own, which it never opens. File > Restart afterwards
     starts the game as usual. Character is kept in `developer.cfg`.
+  - **Playback:** Records what you press, and plays a recording back, for
+    testing. Record (Restart) asks first, then restarts the game and
+    records every press the game reads, on every controller, from its first
+    frame, until Stop recording, File > Exit or closing the window. The
+    [free camera](#free-camera) is recorded too: its stick, turning it on
+    and off, and its settings under Input > Free camera, which a recording
+    plays back in place of yours while it plays, leaving yours as they
+    were. Each recording is a folder in `recordings` beside the settings
+    file (`portable/recordings` in portable mode), named by when it
+    started, in UTC, as `2026-11-19-091500`. Play (Restart) lists the
+    recordings there were when the game started, newest first; picking one
+    asks first, then restarts the game and plays it. Press anything on a
+    controller or the keyboard, or turn the free camera on or off or change
+    its settings, and it stops, and the game is yours from there; it stops
+    itself at the recording's end, or if the game has gone another way
+    (below). The launcher plays one with `--play <folder>`, and closes the
+    game at its end. A recording is pressed frame by frame, not by time,
+    and waits for each load, mission and cutscene it reached, so a slower
+    load moves nothing. The game doesn't play exactly the same twice, so a
+    long run can drift: each second the recording knows where your skater
+    was, and when it stood still with nothing pressed playback puts the
+    skater back there. If the skater ends up far from where they were, or
+    the game loads something the recording didn't, playback stops, and the
+    log says where. Start a recording from the same saves and settings you
+    will play it with. Lines starting `[PLAYBACK]` in the log say what it
+    did, with a summary at the end.
   - **Experimental:** Changes to how the game runs, to try out, when there
     are any.
   - **Far buildings test:** Finds which area Far buildings adds draws

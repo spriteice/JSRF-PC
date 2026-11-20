@@ -92,6 +92,7 @@ set(JSRF_SOURCES
     main.c
     recomp_manual.c
     pad.c
+    playback.c
     freecam.c
     camera_walls.c
     keyboard_move.c

@@ -190,6 +190,11 @@ typedef struct XBOX_MENU_ITEM {
  * puts its rows in it). */
 #define XBOX_GROUP_MISSIONS     "Missions"
 
+/* And right below Missions (port/developer.c adds it too): Playback, the
+ * player's presses recorded and played back (port/playback.c puts its rows
+ * in it). */
+#define XBOX_GROUP_PLAYBACK     "Playback"
+
 /* Two lines at 640 x 480, beside the pad's buttons. */
 #define MENU_HINT_LONGEST 70
 

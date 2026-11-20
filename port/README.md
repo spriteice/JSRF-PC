@@ -27,7 +27,11 @@ The other files here are the port's own features, each with a comment at
 its top saying what it does and where it reaches the game. `pad.c` is the
 game's pad API answered from the host's pads: `recomp_manual.c` keeps the
 eight entry points the game calls, as the pipeline reads that file for what
-is written by hand, and each calls `pad.c`. Developer >
+is written by hand, and each calls `pad.c`. `playback.c` is input
+playback (Developer > Playback): the pad as the game read it, and the free
+camera's switch and tuning, recorded by the game's own frame and played
+back, from `pad.c`, from `freecam.c` and from hooks in `recomp_manual.c` on
+the game's main loop, its loads, its cutscenes and its camera. Developer >
 Missions, for one, is `missions.c`, which starts the game at a story mission
 through the game flow's update in `recomp_manual.c`, and `missions_menu.c`,
 its rows in the in-game menu, made from the game's own mission files as the

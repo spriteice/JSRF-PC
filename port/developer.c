@@ -2,8 +2,10 @@
  * the engine's own diagnostic switches, Engine switches, which change what
  * the engine does, to compare one way with the other, Performance, the same
  * for what the engine does for speed, Missions, which restarts the game at a
- * story mission (its rows are port/missions_menu.c's), and Experimental,
- * which changes what the game does, for a comparison.
+ * story mission (its rows are port/missions_menu.c's), Playback, which
+ * records the pad and plays a recording back (its rows are
+ * port/playback.c's), and Experimental, which changes what the game does,
+ * for a comparison.
  *
  * Log to file is logging= in the settings file, on when it is not there. Off,
  * the game's output -- what the launchers keep as last-run.log -- goes to the
@@ -290,6 +292,9 @@ void developer_start(void)
              * once port/missions_menu.c has put the missions in it. */
             { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_MISSIONS,
               .hint = "Restarts the game at a story mission, with the story up to it done." },
+            /* Right below Missions, filled by port/playback.c. */
+            { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_PLAYBACK,
+              .hint = "Records your presses, and plays a recording back." },
             { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_TOGGLES, .label = "Experimental",
               .state = tries_on, .pick = tries_flip, .choices = k_tries_row,
               .nchoices = DEV_TRIES,

@@ -36,7 +36,10 @@
  * and how fast it eases are the level's (k_centre). A pad's R3 flips freecam,
  * as F8 does: the game reads R3 only as one screen's "any button" (0x7DE20,
  * 0x7DED0), so it is free. The settings are read once, at start
- * (freecam_start):
+ * (freecam_start); F8, R3 and the menu's rows change them on the window's
+ * thread, and freecam takes up the change at the start of the game's next
+ * frame (freecam_frame), so that input playback can record it by the frame
+ * and play it back there (port/playback.c):
  *
  *   freecam        0 / 1    on at start (F8 and R3 flip it and keep it here)
  *   autocentre     0 - 4    off, mild, medium, high, aggressive
@@ -53,6 +56,7 @@
 #include <math.h>
 #include <stdio.h>
 #include "freecam.h"
+#include "playback.h"
 #if defined(XBOXRECOMP_MENU)
 #  include "menu.h"
 #endif
@@ -60,10 +64,6 @@
 /* Degrees per game frame, at full tilt, for each step of sensitivity: 36 a
  * second at the game's 60 frames a second. */
 #define FREECAM_STEP_DEG 0.6
-/* The steps of sensitivity the settings file takes (and the in-game menu
- * offers). */
-#define FREECAM_SENS_MIN 1.0
-#define FREECAM_SENS_MAX 10.0
 /* How far the eye goes above or below the target, in degrees. The view is
  * built from an eye, a target and an up direction, which turns over at
  * straight up or down; this stays short of it. */
@@ -80,7 +80,7 @@ static const struct { int wait; double ease; } k_centre[] = {
     { 60, 30.0 },       /* 1 s, then 0.55 s */
     { 30, 12.0 },       /* 0.5 s, then 0.2 s */
 };
-#define FREECAM_CENTRE_LEVELS ((int)(sizeof k_centre / sizeof k_centre[0]))
+_Static_assert(sizeof k_centre / sizeof k_centre[0] == FREECAM_CENTRE_LEVELS, "freecam.h's levels");
 _Static_assert(sizeof k_centre_names / sizeof k_centre_names[0] == FREECAM_CENTRE_LEVELS,
                "a name for each level");
 
@@ -103,20 +103,22 @@ static int nv_window_pref_num(const char *key, double *v)
 }
 #endif
 
-/* The tuning with no keys in the settings: neither way inverted, auto centre
- * off, 5 either way, and a 15% deadzone. */
+/* With no keys in the settings: off (the game's own camera), neither way
+ * inverted, auto centre off, 5 either way, and a 15% deadzone. */
+#define FREECAM_ON_DEFAULT       0
 #define FREECAM_INVERT_DEFAULT   0
 #define FREECAM_CENTRE_DEFAULT   0
 #define FREECAM_SENS_DEFAULT     5.0
 #define FREECAM_DEADZONE_DEFAULT 0.15
-static struct {
-    int invert_x, invert_y, centre;     /* centre: auto centre's level, 0 off */
-    double sens_x, sens_y, deadzone;
-} s_cfg = { FREECAM_INVERT_DEFAULT, FREECAM_INVERT_DEFAULT, FREECAM_CENTRE_DEFAULT,
-            FREECAM_SENS_DEFAULT, FREECAM_SENS_DEFAULT, FREECAM_DEADZONE_DEFAULT };
-/* Off with no freecam= in the settings: the game's own camera. */
-#define FREECAM_ON_DEFAULT 0
-static volatile int s_on;
+/* The player's: the settings file's, then as F8, R3 and the menu's rows
+ * change them, on the window's thread. */
+static volatile FREECAM_SETTINGS s_asked = {
+    FREECAM_ON_DEFAULT, FREECAM_INVERT_DEFAULT, FREECAM_INVERT_DEFAULT, FREECAM_CENTRE_DEFAULT,
+    FREECAM_SENS_DEFAULT, FREECAM_SENS_DEFAULT, FREECAM_DEADZONE_DEFAULT };
+/* What freecam goes by: the player's as freecam_frame last took them, or a
+ * recording's. */
+static FREECAM_SETTINGS s_cfg;
+static int s_played;            /* s_cfg is a recording's */
 static volatile int s_steer;    /* on, and the follow camera ran last frame */
 static int s_follow_ran;        /* the follow camera ran since freecam_frame */
 static int s_cam_ran;           /* and s_cam's update did */
@@ -141,15 +143,22 @@ static double cfg_num(const char *key, double def, double lo, double hi)
     return def;
 }
 
+/* The switch and tuning, to the log: why is where they came from. */
+static void say(const char *why, const FREECAM_SETTINGS *c)
+{
+    fprintf(stderr, "[FREECAM] %s (%s); invert x %d y %d, sensitivity x %g y %g, deadzone %g, auto centre %s\n",
+            c->on ? "on" : "off", why, c->invert_x, c->invert_y, c->sens_x, c->sens_y, c->deadzone,
+            k_centre_names[c->centre]);
+}
+
 #if defined(NV2A_GL_USE_SDL)
 /* F8, R3 and the menu's Free camera row: on or off, kept in the settings file
- * as freecam=. On the window's thread. */
+ * as freecam=. On the window's thread; freecam_frame takes it up. */
 static void freecam_flip(void)
 {
-    s_on = !s_on;
-    s_cam = 0;
-    fprintf(stderr, "[FREECAM] %s (F8, R3 or the menu)\n", s_on ? "on" : "off");
-    nv_window_pref_set_num("freecam", s_on);
+    s_asked.on = !s_asked.on;
+    fprintf(stderr, "[FREECAM] %s (F8, R3 or the menu)\n", s_asked.on ? "on" : "off");
+    nv_window_pref_set_num("freecam", s_asked.on);
 }
 #endif
 
@@ -159,16 +168,15 @@ static void freecam_menu(void);
 
 void freecam_start(void)
 {
-    s_on = cfg_num("freecam", FREECAM_ON_DEFAULT, -HUGE_VAL, HUGE_VAL) != 0;
-    s_cfg.invert_x = cfg_num("invert_x", s_cfg.invert_x, -HUGE_VAL, HUGE_VAL) != 0;
-    s_cfg.invert_y = cfg_num("invert_y", s_cfg.invert_y, -HUGE_VAL, HUGE_VAL) != 0;
-    s_cfg.sens_x = cfg_num("sensitivity_x", s_cfg.sens_x, FREECAM_SENS_MIN, FREECAM_SENS_MAX);
-    s_cfg.sens_y = cfg_num("sensitivity_y", s_cfg.sens_y, FREECAM_SENS_MIN, FREECAM_SENS_MAX);
-    s_cfg.deadzone = cfg_num("deadzone", s_cfg.deadzone, 0, 1);
-    s_cfg.centre = (int)cfg_num("autocentre", s_cfg.centre, 0, FREECAM_CENTRE_LEVELS - 1);
-    fprintf(stderr, "[FREECAM] %s (settings); invert x %d y %d, sensitivity x %g y %g, deadzone %g, auto centre %s\n",
-            s_on ? "on" : "off", s_cfg.invert_x, s_cfg.invert_y, s_cfg.sens_x, s_cfg.sens_y,
-            s_cfg.deadzone, k_centre_names[s_cfg.centre]);
+    s_asked.on = cfg_num("freecam", s_asked.on, -HUGE_VAL, HUGE_VAL) != 0;
+    s_asked.invert_x = cfg_num("invert_x", s_asked.invert_x, -HUGE_VAL, HUGE_VAL) != 0;
+    s_asked.invert_y = cfg_num("invert_y", s_asked.invert_y, -HUGE_VAL, HUGE_VAL) != 0;
+    s_asked.sens_x = cfg_num("sensitivity_x", s_asked.sens_x, FREECAM_SENS_MIN, FREECAM_SENS_MAX);
+    s_asked.sens_y = cfg_num("sensitivity_y", s_asked.sens_y, FREECAM_SENS_MIN, FREECAM_SENS_MAX);
+    s_asked.deadzone = cfg_num("deadzone", s_asked.deadzone, 0, 1);
+    s_asked.centre = (int)cfg_num("autocentre", s_asked.centre, 0, FREECAM_CENTRE_LEVELS - 1);
+    s_cfg = s_asked;
+    say("settings", &s_cfg);
 #if defined(XBOXRECOMP_MENU)
     freecam_menu();
 #endif
@@ -180,12 +188,18 @@ void freecam_start(void)
 
 void freecam_frame(void)
 {
-    int steer = s_on && s_follow_ran;
-    int held = s_on && s_cam && !s_follow_ran && !s_cam_ran;
+    FREECAM_SETTINGS c = s_asked;
+    int played = playback_freecam(&c), steer, held;
+    if (!played && s_played) say("yours again, as playback ended", &c);
+    if (c.on != s_cfg.on) s_cam = 0;                /* on or off: from the game's view next time */
+    s_cfg = c;
+    s_played = played;
+    steer = s_cfg.on && s_follow_ran;
+    held = s_cfg.on && s_cam && !s_follow_ran && !s_cam_ran;
     if (steer != s_steer || held != s_held)
         fprintf(stderr, "[FREECAM] %s\n", steer ? "steering the camera"
                 : held ? "held: its camera did not run; keeping the view"
-                : s_on ? "idle: the follow camera is not running" : "idle");
+                : s_cfg.on ? "idle: the follow camera is not running" : "idle");
     if (!s_follow_ran && s_cam_ran) s_cam = 0;      /* the game has it, in a mode of its own */
     s_steer = steer;
     s_held = held;
@@ -229,7 +243,7 @@ int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float s
     double v[3], d, x, y, cp, gyaw, gpitch;
     int again = 0;
     s_follow_ran = 1;
-    if (!s_on) return FREECAM_OFF;
+    if (!s_cfg.on) return FREECAM_OFF;
     v[0] = seye[0] - tgt[0]; v[1] = seye[1] - tgt[1]; v[2] = seye[2] - tgt[2];
     d = sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
     if (!(d > 0)) return FREECAM_OFF;
@@ -270,29 +284,30 @@ int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float s
 
 int freecam_on(void)
 {
-    return s_on;
+    return s_cfg.on;
 }
 
 #if defined(XBOXRECOMP_MENU)
 /* The in-game menu's Input page, its Free camera submenu (src/menu/menu.h,
- * XBOX_GROUP_FREECAM), at the top of the page. A row changes what
- * freecam uses at once and keeps it in the settings file, as F8 keeps
- * freecam=; it runs on the window's thread, as F8 does. The deadzone is
- * shown, and stepped, in percent. */
+ * XBOX_GROUP_FREECAM), at the top of the page. A row changes what the player
+ * asks of freecam, which takes it up from the next frame, and keeps it in the
+ * settings file, as F8 keeps freecam=; it runs on the window's thread, as F8
+ * does. The rows show the player's, also while a recording plays its own. The
+ * deadzone is shown, and stepped, in percent. */
 
-static int    menu_on(void)            { return s_on; }
-static int    menu_centre(void)        { return s_cfg.centre; }
-static void   menu_centre_pick(int i)  { s_cfg.centre = i; nv_window_pref_set_num("autocentre", i); }
-static int    menu_inv_x(void)         { return s_cfg.invert_x; }
-static void   menu_inv_x_run(void)     { s_cfg.invert_x = !s_cfg.invert_x; nv_window_pref_set_num("invert_x", s_cfg.invert_x); }
-static int    menu_inv_y(void)         { return s_cfg.invert_y; }
-static void   menu_inv_y_run(void)     { s_cfg.invert_y = !s_cfg.invert_y; nv_window_pref_set_num("invert_y", s_cfg.invert_y); }
-static double menu_sens_x(void)        { return s_cfg.sens_x; }
-static void   menu_sens_x_set(double v) { s_cfg.sens_x = v; nv_window_pref_set_num("sensitivity_x", v); }
-static double menu_sens_y(void)        { return s_cfg.sens_y; }
-static void   menu_sens_y_set(double v) { s_cfg.sens_y = v; nv_window_pref_set_num("sensitivity_y", v); }
-static double menu_dz(void)            { return s_cfg.deadzone * 100; }
-static void   menu_dz_set(double v)    { s_cfg.deadzone = v / 100; nv_window_pref_set_num("deadzone", v / 100); }
+static int    menu_on(void)            { return s_asked.on; }
+static int    menu_centre(void)        { return s_asked.centre; }
+static void   menu_centre_pick(int i)  { s_asked.centre = i; nv_window_pref_set_num("autocentre", i); }
+static int    menu_inv_x(void)         { return s_asked.invert_x; }
+static void   menu_inv_x_run(void)     { s_asked.invert_x = !s_asked.invert_x; nv_window_pref_set_num("invert_x", s_asked.invert_x); }
+static int    menu_inv_y(void)         { return s_asked.invert_y; }
+static void   menu_inv_y_run(void)     { s_asked.invert_y = !s_asked.invert_y; nv_window_pref_set_num("invert_y", s_asked.invert_y); }
+static double menu_sens_x(void)        { return s_asked.sens_x; }
+static void   menu_sens_x_set(double v) { s_asked.sens_x = v; nv_window_pref_set_num("sensitivity_x", v); }
+static double menu_sens_y(void)        { return s_asked.sens_y; }
+static void   menu_sens_y_set(double v) { s_asked.sens_y = v; nv_window_pref_set_num("sensitivity_y", v); }
+static double menu_dz(void)            { return s_asked.deadzone * 100; }
+static void   menu_dz_set(double v)    { s_asked.deadzone = v / 100; nv_window_pref_set_num("deadzone", v / 100); }
 
 static void freecam_menu(void)
 {

@@ -11,6 +11,7 @@
  *   ./jsrf-pc --choose         ask where the game is again
  *   ./jsrf-pc --scale N        internal resolution, 1 to 6 times 640x480 (default 3); remembered
  *   ./jsrf-pc --fullscreen     start full screen
+ *   ./jsrf-pc --play FOLDER    play a recording (Developer > Playback), and close at its end
  *   ./jsrf-pc --install        add JSRF-PC to your applications menu
  *   ./jsrf-pc --version        which version this is
  *
@@ -64,6 +65,7 @@ static const char HELP[] =
     "  ./jsrf-pc --choose         ask where the game is again\n"
     "  ./jsrf-pc --scale N        internal resolution, 1 to 6 times 640x480 (default 3); remembered\n"
     "  ./jsrf-pc --fullscreen     start full screen\n"
+    "  ./jsrf-pc --play FOLDER    play a recording (Developer > Playback), and close at its end\n"
     "  ./jsrf-pc --install        add JSRF-PC to your applications menu\n"
     "  ./jsrf-pc --version        which version this is\n"
     "\n"
@@ -693,7 +695,7 @@ static int scale_ok(const char *s)
 int main(int argc, char **argv)
 {
     char exe[PATH_MAX], p[PATH_MAX + 64], game[PATH_MAX * 2], last[PATH_MAX * 2], why[4096];
-    char log[PATH_MAX + 64], scale[16];
+    char log[PATH_MAX + 64], scale[16], play[PATH_MAX] = "";
     const char *arg = NULL, *ld;
     int i, choose = 0, fullscreen = 0, status;
     ssize_t l = readlink("/proc/self/exe", exe, sizeof exe - 1);
@@ -759,6 +761,11 @@ int main(int argc, char **argv)
             if (scale_ok(v)) cfg_set("scale", v);
             else failf("--scale takes 1 to %d.", SCALE_MAX);
         } else if (!strcmp(a, "--fullscreen")) fullscreen = 1;
+        else if (!strcmp(a, "--play")) {
+            const char *v = i + 1 < argc ? argv[++i] : "";
+            if (!*v || !realpath(v, play) || !js_is_dir(play))
+                failf("--play takes a recording's folder.");
+        }
         else if (!strcmp(a, "--install")) { install_desktop(); return 0; }
         else if (!strcmp(a, "--version")) {
             FILE *f;
@@ -872,6 +879,9 @@ int main(int argc, char **argv)
     if (scale[0]) setenv("RECOMP_GL_SCALE", scale, 1);
     else unsetenv("RECOMP_GL_SCALE");
     if (fullscreen) setenv("RECOMP_FULLSCREEN", "1", 1);
+    /* A recording to play, by its whole path, as the engine runs elsewhere. */
+    if (play[0]) setenv("JSRF_PLAY", play, 1);
+    else unsetenv("JSRF_PLAY");
     setenv("JSRF_GAME_DIR", game, 1);
     setenv("JSRF_SAVE_DIR", g_save, 1);
     setenv("JSRF_SETTINGS_FILE", g_cfg, 1);

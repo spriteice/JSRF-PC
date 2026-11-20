@@ -2,7 +2,7 @@
 
 Builds port/pad.c and src/input/rumble_hold.c whole, as the engine builds
 them; test_hook.c stands in for the input layer, the free camera, the
-keyboard's moves and recomp_manual.c's test hooks.
+keyboard's moves, input playback and recomp_manual.c's test hooks.
 
 Known bug 54. test_hook.c lays a feedback block out in guest memory as JSRF's
 pad update does (sub_00167180: the block zeroed, both motors' speeds written

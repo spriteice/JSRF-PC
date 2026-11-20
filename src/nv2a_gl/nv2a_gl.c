@@ -2995,6 +2995,18 @@ static double pres_lock(double base, double *ref, double *refresh)
     return n * p;
 }
 
+/* The window closed, as its close button and File > Exit close it (sdl_pump's
+ * SDL_QUIT), from any thread: the end of an unattended playback run
+ * (port/playback.c). */
+void nv_window_close(void);
+void nv_window_close(void)
+{
+    SDL_Event e;
+    SDL_zero(e);
+    e.type = SDL_QUIT;
+    SDL_PushEvent(&e);
+}
+
 static void sdl_pump(void)
 {
     SDL_Event ev;

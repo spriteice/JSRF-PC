@@ -14,6 +14,8 @@
  *   JSRF-PC.exe --scale N          internal resolution, 1 to 6 times 640x480
  *                                  (default 3); remembered
  *   JSRF-PC.exe --fullscreen       start full screen
+ *   JSRF-PC.exe --play <folder>    play a recording (Developer > Playback),
+ *                                  and close at its end
  *   JSRF-PC.exe --version          which version this is
  *
  * Settings, saves, logs, and unpacked disc images live in
@@ -57,6 +59,7 @@ static wchar_t g_cfg[MAX_PATH];        /* ...\settings (portable\settings.cfg), 
 static wchar_t g_save[MAX_PATH];       /* the engine's cache: ...\save (portable\cache) */
 static wchar_t g_log[MAX_PATH];        /* ...\last-run.log (portable\logs\last-run.log) */
 static wchar_t g_logs[MAX_PATH];       /* the logs before it: ...\logs (portable\logs) */
+static wchar_t g_play[MAX_PATH * 2];   /* --play's recording, its whole path; "" for none */
 static wchar_t g_saves[MAX_PATH];      /* portable\saves: the game's saves, in portable mode */
 
 /* ---- small helpers -------------------------------------------------------- */
@@ -531,6 +534,8 @@ static int run(const wchar_t *game, int scale, int fullscreen)
         SetEnvironmentVariableW(L"RECOMP_GL_SCALE", NULL);
     }
     if (fullscreen) SetEnvironmentVariableW(L"RECOMP_FULLSCREEN", L"1");
+    /* A recording to play, by its whole path, as the engine runs elsewhere. */
+    SetEnvironmentVariableW(L"JSRF_PLAY", g_play[0] ? g_play : NULL);
     SetEnvironmentVariableW(L"JSRF_GAME_DIR", game);
     SetEnvironmentVariableW(L"JSRF_SAVE_DIR", g_save);
     SetEnvironmentVariableW(L"JSRF_SETTINGS_FILE", g_cfg);
@@ -692,7 +697,10 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
     for (i = 1; i < argc; i++) {
         if (!wcscmp(argv[i], L"--choose")) choose = 1;
         else if (!wcscmp(argv[i], L"--fullscreen")) fullscreen = 1;
-        else if (!wcscmp(argv[i], L"--scale") && i + 1 < argc) {
+        else if (!wcscmp(argv[i], L"--play")) {
+            DWORD n = i + 1 < argc ? GetFullPathNameW(argv[++i], MAX_PATH * 2, g_play, NULL) : 0;
+            if (!n || n >= MAX_PATH * 2 || !is_dir(g_play)) return fail(L"--play takes a recording's folder.");
+        } else if (!wcscmp(argv[i], L"--scale") && i + 1 < argc) {
             int s = _wtoi(argv[++i]);
             if (s < 1 || s > SCALE_MAX) {
                 wchar_t msg[64];
