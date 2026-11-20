@@ -271,11 +271,11 @@ static int set_count(const uint32_t *set)
 }
 
 /* What Far buildings keeps of a map, worked out on the first call on it:
- * the stage asked for before it, its rule (k_rules; -1 none), the areas some
- * list names, and each area's list. */
+ * the stage asked for before it, its rules (k_rules, a bit each), the areas
+ * some list names, and each area's list. */
 static struct {
-    int      built, n, rule;
-    uint32_t key, stage;
+    int      built, n;
+    uint32_t key, stage, rules;
     uint32_t listed[DRAW_SET_WORDS];
     uint32_t list[DRAW_AREAS_MAX][DRAW_SET_WORDS];
 } s_map;
@@ -284,13 +284,14 @@ static struct {
  * thread. */
 static uint32_t s_stage = DRAW_STAGE_NONE;
 
-/* The maps' own rules: an area Far buildings never adds while the game's set
- * is the one some areas make, where the game hides it on purpose and the
+/* The maps' own rules: areas Far buildings never adds while the game's set
+ * is the one some areas make, where the game hides them on purpose and the
  * lists can't tell (draw_distance.h, known bug 66). The stage files don't say
  * which areas the game hides from which side, and no rule from the lists
  * tells these from the areas Far buildings is there to add
  * (far-buildings-1x/DIAGNOSIS.md in the shared folder): each one is kept by
- * hand, for a case seen and named, with spriteice's OK.
+ * hand, for a case seen and named, with spriteice's OK. A map can have
+ * several, each with the areas it hides and the areas it hides them from.
  *
  * Dogenzaka Hill (Stg12): area 13, up the hill, is drawn by the game from
  * areas 13 and 14 only, as 14's list names it and the lists of the street
@@ -308,16 +309,24 @@ static uint32_t s_stage = DRAW_STAGE_NONE;
 #define DOGENZAKA_UPHILL     13
 #define DOGENZAKA_STREET     0
 #define DOGENZAKA_CORNER     16
-#define DRAW_RULE_FROM       2              /* the most areas a rule hides from */
+static const int k_dogenzaka_never[] = { DOGENZAKA_UPHILL },
+                 k_dogenzaka_from[] = { DOGENZAKA_STREET, DOGENZAKA_CORNER };
+/* A list of areas, and how many it holds, for a rule. */
+#define RULE_AREAS(a) (a), (int)(sizeof (a) / sizeof (a)[0])
 static const struct {
-    const char *map;
-    uint32_t    stage;
-    int         areas, never, from[DRAW_RULE_FROM];
+    const char *map;            /* its name, for the log */
+    uint32_t    stage;          /* as the mission asks for it */
+    int         areas;          /* its map's, so it's the one */
+    const int  *never;          /* the areas it hides */
+    int         nnever;
+    const int  *from;           /* from the sets these areas make */
+    int         nfrom;
 } k_rules[] = {
-    { "Dogenzaka Hill", STAGE_DOGENZAKA_HILL, DOGENZAKA_AREAS, DOGENZAKA_UPHILL,
-      { DOGENZAKA_STREET, DOGENZAKA_CORNER } },
+    { "Dogenzaka Hill", STAGE_DOGENZAKA_HILL, DOGENZAKA_AREAS,
+      RULE_AREAS(k_dogenzaka_never), RULE_AREAS(k_dogenzaka_from) },
 };
 #define DRAW_RULES ((int)(sizeof k_rules / sizeof k_rules[0]))
+_Static_assert(sizeof k_rules / sizeof k_rules[0] <= 32, "a bit of s_map.rules for each rule");
 
 void draw_buildings_stage(uint32_t stage)
 {
@@ -342,6 +351,15 @@ static uint32_t map_key(const DrawArea *a, int n)
     return h;
 }
 
+/* "13", "0 and 16", or "47, 48 and 50": a rule's areas, for the log. */
+static void areas_said(char *out, int room, const int *a, int n)
+{
+    int i, len = 0;
+    out[0] = 0;
+    for (i = 0; i < n && len >= 0 && len < room; i++)
+        len += snprintf(out + len, room - len, "%s%d", !i ? "" : i == n - 1 ? " and " : ", ", a[i]);
+}
+
 static void map_take(const DrawArea *a, int n, uint32_t key)
 {
     char line[2048];
@@ -364,7 +382,6 @@ static void map_take(const DrawArea *a, int n, uint32_t key)
     s_map.n = n;
     s_map.key = key;
     s_map.stage = s_stage;      /* asked for before the map loads */
-    s_map.rule = -1;
     for (i = 0; i < n; i++)
         for (e = 0; a[i].list && e < a[i].nlist; e++)
             if (a[i].list[e] < (uint32_t)n) {
@@ -384,16 +401,19 @@ static void map_take(const DrawArea *a, int n, uint32_t key)
             fprintf(stderr, "[DRAW] area %d: fog %g to %g, density %g\n",
                     i, a[i].fog_start, a[i].fog_end, a[i].fog_density);
     for (i = 0; i < DRAW_RULES; i++) {
+        char never[512], from[512];
         if (k_rules[i].stage != s_map.stage) continue;
         if (k_rules[i].areas != n) {
             fprintf(stderr, "[DRAW] Far buildings: stage %08X has %d areas, not %s's %d, so its rule is "
                     "left out\n", s_map.stage, n, k_rules[i].map, k_rules[i].areas);
             continue;
         }
-        s_map.rule = i;
-        fprintf(stderr, "[DRAW] Far buildings: %s (stage %08X), area %d never added from areas %d and %d, "
-                "where the game hides it\n", k_rules[i].map, s_map.stage, k_rules[i].never,
-                k_rules[i].from[0], k_rules[i].from[1]);
+        s_map.rules |= 1u << i;
+        areas_said(never, sizeof never, k_rules[i].never, k_rules[i].nnever);
+        areas_said(from, sizeof from, k_rules[i].from, k_rules[i].nfrom);
+        fprintf(stderr, "[DRAW] Far buildings: %s (stage %08X), area%s %s never added from area%s %s, "
+                "where the game hides %s\n", k_rules[i].map, s_map.stage, k_rules[i].nnever > 1 ? "s" : "",
+                never, k_rules[i].nfrom > 1 ? "s" : "", from, k_rules[i].nnever > 1 ? "them" : "it");
     }
 }
 
@@ -448,14 +468,18 @@ static void set_leave_out(uint32_t set[DRAW_SET_WORDS], const uint32_t game[DRAW
     if (a >= 0 && a < DRAW_AREAS_MAX && !set_has(game, a)) set[a >> 5] &= ~(1u << (a & 31));
 }
 
-/* The map's rule (k_rules) on set, widened from game: its area taken out
- * while game is the set one of its areas makes. */
+/* The map's rules (k_rules) on set, widened from game: each one's areas
+ * taken out while game is the set one of its areas makes. */
 static void map_rule(uint32_t set[DRAW_SET_WORDS], const uint32_t game[DRAW_SET_WORDS])
 {
-    int k, r = s_map.rule;
-    if (r < 0) return;
-    for (k = 0; k < DRAW_RULE_FROM; k++)
-        if (set_from_area(game, k_rules[r].from[k])) set_leave_out(set, game, k_rules[r].never);
+    int r, k, a;
+    for (r = 0; r < DRAW_RULES; r++) {
+        if (!(s_map.rules >> r & 1u)) continue;
+        for (k = 0; k < k_rules[r].nfrom; k++)
+            if (set_from_area(game, k_rules[r].from[k])) break;
+        if (k == k_rules[r].nfrom) continue;
+        for (a = 0; a < k_rules[r].nnever; a++) set_leave_out(set, game, k_rules[r].never[a]);
+    }
 }
 
 /* The eye's area, for the log, from the game's set: the area that makes it

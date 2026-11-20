@@ -157,15 +157,15 @@ int draw_set_whole_map(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WORDS
 
 /* The stage the mission asks for (0x0001000N for Stg1N), from the flow's
  * steps that ask for it (port/resource_load.c), before its map loads. Far
- * buildings keeps it with the next map it reads, and that map's own rule, if
- * it has one, takes an area out of what draw_buildings_widen and
+ * buildings keeps it with the next map it reads, and that map's own rules, if
+ * it has any, each take areas out of what draw_buildings_widen and
  * draw_buildings_shadows add while the game's set is the one some areas
  * make: on Dogenzaka Hill (stage 0x00010002, its 30 areas), area 13, up the
  * hill, while the game's set is area 0's, the street below it, or area
  * 16's, the corner between them. The game draws area 13 from areas 13 and 14
  * only, and from the street its buildings hang in the sky with nothing under
  * them (known bug 66). Each such rule is kept by hand, for one case seen and
- * named; the first call on the map logs it. Before any stage,
+ * named; the first call on the map logs each. Before any stage,
  * DRAW_STAGE_NONE, which no rule has. */
 #define DRAW_STAGE_NONE 0xFFFFFFFFu
 void draw_buildings_stage(uint32_t stage);
