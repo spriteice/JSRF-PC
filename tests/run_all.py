@@ -32,7 +32,8 @@ on timing leaves those out under it, as cpuprof, heap_lock and nv2a_queue do.
 
 --coverage runs every test built with GCC's line counts: CC, or gcc, and CXX,
 or g++, with --coverage, each test's counts kept in <dir>/<test>/ for
-.github/ci/coverage.py's report. It defines TEST_COVERAGE, so that a test
+.github/ci/coverage.py's report, under names of their own for each
+compile (tests/coverage_cc.py). It defines TEST_COVERAGE, so that a test
 that ends with _exit(), as one whose threads run on does, writes its counts
 first with __gcov_dump(): _exit() skips the exit handler that writes them.
 It is for information only: the tests' results are shown, and the exit
@@ -44,6 +45,7 @@ import glob
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -262,8 +264,11 @@ def main(argv):
             # names (test.exe) and sources repeat from test to test.
             counts = pathlib.Path(coverage, test.name).resolve()
             counts.mkdir(parents=True, exist_ok=True)
-            flags = " --coverage -fprofile-update=atomic -DTEST_COVERAGE -dumpdir %s/" % counts.as_posix()
-            env["CC"], env["CXX"] = cc + flags, cxx + flags
+            # Each compile's counts under names of their own, in that folder.
+            wrap = [str(root / "tests/coverage_cc.py"), "--coverage-counts=" + counts.as_posix()]
+            flags = " --coverage -fprofile-update=atomic -DTEST_COVERAGE"
+            env["CC"], env["CXX"] = (shlex.join(wrap + ["--coverage-compiler=" + c]) + flags
+                                     for c in (cc, cxx))
         with tempfile.TemporaryDirectory(prefix="sanitizer-") as logs:
             # Reports go to files, whatever run.py does with the test's
             # output; and they don't change its exit status, so each of its

@@ -3,16 +3,20 @@
 at each of a file's sources, how tests/run_all.py names a
 sanitizer's leak, checks that each known bug names its release and counts
 what each tsan.supp entry hides, how count_warnings.py counts a build's
-warnings, how coverage.py adds up the tests' line counts and that the
-tests that end with _exit() write theirs, how launcher/images.sh names
-each image, when llvm_mingw.py uses its copy again, and what
-push_gate.py refuses before a commit or a push."""
+warnings, how coverage.py adds up the tests' line counts, that the tests
+that end with _exit() write theirs and how tests/coverage_cc.py keeps
+each compile's apart, how launcher/images.sh names each image, when
+llvm_mingw.py uses its copy again, and what push_gate.py refuses before
+a commit or a push."""
 
 import hashlib
 import http.server
 import importlib.util
+import json
 import os
 import pathlib
+import re
+import shlex
 import shutil
 import socket
 import subprocess
@@ -384,6 +388,61 @@ def test_tests_that_end_with_exit_write_their_counts(tmp_path):
         notes = sorted((tmp_path / name).glob("*.gcno"))
         assert notes, name
         assert [n.name for n in notes if not n.with_suffix(".gcda").exists()] == [], name
+
+
+def test_coverage_cc_names_each_compile_apart(tmp_path):
+    # tests/coverage_cc.py, run_all.py --coverage's compiler, runs the
+    # compiler it is given (a command, as CC is) with the other arguments, its
+    # own two options wherever a run.py put them (developer's run.py puts
+    # -pthread straight after the compiler's name), and a -dumpdir in the
+    # test's counts folder new for each call. The compiler here prints what
+    # it was given.
+    counts = (tmp_path / "counts").as_posix()
+    printer = shlex.join([sys.executable, "-c", "import json, sys; print(json.dumps(sys.argv[1:]))"])
+
+    def call(*args):
+        run = subprocess.run([str(root / "tests" / "coverage_cc.py"), *args],
+                             capture_output=True, text=True, check=True)
+        return json.loads(run.stdout)
+
+    first = call("-pthread", "--coverage-counts=" + counts, "--coverage-compiler=" + printer,
+                 "--coverage", "-c", "a.c", "-o", "a.o")
+    second = call("--coverage-counts=" + counts, "--coverage-compiler=" + printer, "a.c")
+    assert first[:-1] == ["-pthread", "--coverage", "-c", "a.c", "-o", "a.o", "-dumpdir"]
+    assert second[:-1] == ["a.c", "-dumpdir"]
+    for args in (first, second):
+        assert re.fullmatch(re.escape(counts) + "/[0-9a-f]{12}-", args[-1])
+    assert first[-1] != second[-1]
+    without = subprocess.run([str(root / "tests" / "coverage_cc.py"), "a.c"],
+                             capture_output=True, text=True)
+    assert without.returncode != 0 and "usage" in without.stderr
+
+
+@pytest.mark.skipif(os.name == "nt" or not shutil.which("gcc") or not shutil.which("gcov"),
+                    reason="GCC's line counts, as CI's GCC job has them")
+def test_coverage_cc_keeps_each_programs_counts(tmp_path):
+    # Two programs built from the same file through coverage_cc.py, each
+    # running a line of it the other doesn't: both lines are counted. With
+    # one -dumpdir for both, as run_all.py had, CI's GCC (11) kept only the
+    # last program's counts ("overwriting an existing profile data with a
+    # different timestamp"), and line 4 read as never run.
+    (tmp_path / "lib.c").write_text("int lib(int x)\n{\n    if (x)\n        return 1;\n    return 2;\n}\n")
+    for name, arg, result in (("a", 1, 1), ("b", 0, 2)):
+        (tmp_path / (name + ".c")).write_text(
+            "int lib(int);\nint main(void) { return lib(%d) != %d; }\n" % (arg, result))
+    counts = tmp_path / "counts"
+    counts.mkdir()
+    cc = [str(root / "tests" / "coverage_cc.py"), "--coverage-counts=" + counts.as_posix(),
+          "--coverage-compiler=gcc", "--coverage"]
+    for name in ("a", "b"):
+        subprocess.run(cc + [name + ".c", "lib.c", "-o", name], cwd=tmp_path, check=True)
+        subprocess.run([str(tmp_path / name)], check=True)
+    reached = set()
+    for note in counts.glob("*lib.gcno"):
+        for report in coverage.gcov(note) or []:
+            for f in report["files"]:
+                reached |= {line["line_number"] for line in f["lines"] if line["count"]}
+    assert {4, 5} <= reached
 
 
 @pytest.mark.parametrize("groups, recipe", [
