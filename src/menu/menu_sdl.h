@@ -21,8 +21,9 @@ int  xbox_MenuInit(SDL_Window *window, void *gl_context, const char *about_gpu,
                    const char *about_gl);
 
 /* Each event, from sdl_pump, before the game's own handling. 1: it was the
- * menu's (F1, a pad's Back, or a key or click while it is open) and the game
- * must not see it. */
+ * menu's (F1, a pad's Back, a key or click while it is open, or a press a
+ * bind row's box takes: menu.h, XBOX_ITEM_BIND) and the game must not see
+ * it. */
 int  xbox_MenuEvent(const SDL_Event *ev);
 
 /* Once a frame on the GL thread, after the events: builds the menu, as it

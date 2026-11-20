@@ -26,7 +26,7 @@
  *     #endif
  *
  * Plain C; menu.cpp draws the rows with Dear ImGui. Labels, hints,
- * (Restart), boxes, File > About and File > Presets follow
+ * (Restart), boxes, bind rows, File > About and File > Presets follow
  * docs/menu-format.md.
  */
 #ifndef XBOX_MENU_H
@@ -61,8 +61,12 @@ typedef enum {
                              * step down or up, from min to max; set(v)       */
     XBOX_ITEM_TOGGLES,      /* a submenu of choices[], each ticked while its
                              * bit in state() is set; pick(i) flips it        */
-    XBOX_ITEM_GROUP         /* a submenu of the rows of its menu whose group
+    XBOX_ITEM_GROUP,        /* a submenu of the rows of its menu whose group
                              * is its label (below, group)                    */
+    XBOX_ITEM_BIND          /* a control, with text() beside it: the input that
+                             * presses it. Chosen, a box waits for the next
+                             * press it takes, and hands it to bind() (below,
+                             * takes)                                         */
 } XBOX_ITEM_KIND;
 
 /* File > Presets' presets, in its order (docs/menu-format.md). */
@@ -75,14 +79,31 @@ typedef enum {
 } XBOX_PRESET;
 
 /* What the presets do with a row (XBOX_MENU_ITEM's presets). A preset sets
- * every setting but Developer's: each row of Display, Graphics, Audio,
- * Input and Gameplay gives its value in each preset, and the log says so
- * once for one that doesn't, which no preset then sets. */
+ * every setting but Developer's, and those its row says it leaves alone:
+ * each other row of Display, Graphics, Audio, Input and Gameplay gives its
+ * value in each preset, and the log says so once for one that says
+ * nothing, which no preset then sets. */
 typedef enum {
     XBOX_PRESETS_UNSAID,    /* nothing said: File's and Developer's rows, which
                              * no preset sets                                 */
-    XBOX_PRESETS_SET        /* each preset sets it, to its value in preset[]   */
+    XBOX_PRESETS_SET,       /* each preset sets it, to its value in preset[]   */
+    XBOX_PRESETS_LEFT       /* no preset sets it: a player's own, not a quality
+                             * setting, with a way of its own back to its
+                             * default (docs/menu-format.md, File > Presets)  */
 } XBOX_PRESETS_USE;
+
+/* What a bind row (XBOX_ITEM_BIND) takes, and the number bind() is handed
+ * for each input. A pad's: a button, as SDL numbers them
+ * (SDL_GameControllerButton), or a trigger pressed past half way, the left
+ * SDL_CONTROLLER_BUTTON_MAX and the right one past it. The keyboard's and
+ * the mouse's: a key, by its place (SDL_Scancode), or a mouse button,
+ * SDL_NUM_SCANCODES and on, from SDL's first button. menu_sdl.cpp finds
+ * them in SDL's events; the owner names them. */
+typedef enum {
+    XBOX_BIND_NONE,         /* not a bind row                                 */
+    XBOX_BIND_PAD,          /* any pad's buttons and triggers                 */
+    XBOX_BIND_KEYS          /* the keyboard's keys and the mouse's buttons    */
+} XBOX_BIND_TAKES;
 
 /* A preset's value for a row that has no fixed most, as Max quality's
  * anisotropic filtering: past a choice's last, a number's max, or a row of
@@ -90,9 +111,9 @@ typedef enum {
  * device has, which can stop short of the names a row could show. */
 #define XBOX_PRESET_MOST 1e9
 
-/* state, run, pick, text, value, set and keep are called on the window's
- * thread while the game runs on: keep them to what the owner's hotkey would
- * do. */
+/* state, run, pick, text, value, set, keep and bind are called on the
+ * window's thread while the game runs on: keep them to what the owner's
+ * hotkey would do. */
 typedef struct XBOX_MENU_ITEM {
     XBOX_MENU_ID    menu;
     XBOX_ITEM_KIND  kind;
@@ -157,6 +178,13 @@ typedef struct XBOX_MENU_ITEM {
      * the owner's, kept as it is: the menu never reads it. */
     void          (*pick_with)(const void *data, int index);
     const void     *data;
+    /* XBOX_ITEM_BIND: what it takes, and bind(), handed the input pressed
+     * (XBOX_BIND_TAKES): nonzero when the row has it now, 0 when it can't,
+     * and the box waits on. text() names the input it has. The pad's Back
+     * and F1 cancel the box, so they can't be bound and no layout can shut
+     * the menu out. */
+    XBOX_BIND_TAKES takes;
+    int           (*bind)(int input);
 } XBOX_MENU_ITEM;
 
 /* Display's submenu, at its foot (nv2a_gl.c adds it): Enhancements, for
@@ -252,8 +280,9 @@ typedef enum {
     MENU_PATH_BAD_NUMBER,   /* not a number, or past the row's min or max    */
     MENU_PATH_ASKS,         /* the row asks first                            */
     MENU_PATH_NOT_RUN,      /* nothing to choose: a submenu with nothing after
-                             * it, a box of text, or a row that needs a choice
-                             * or a number after it                          */
+                             * it, a box of text, a bind row (its box waits
+                             * for a press), or a row that needs a choice or
+                             * a number after it                             */
     MENU_PATH_TOO_LONG      /* more after what is chosen                     */
 } MENU_PATH;
 int menu_path_check(const char *path);
@@ -264,6 +293,18 @@ const char *menu_path_why(int result);
  * row the pad is on, else the one the pointer is on; NULL on the bar, or in
  * a box. Read by tests/menu. */
 const char *menu_hint(void);
+
+/* A bind row's box (XBOX_ITEM_BIND), for the window's events (menu_sdl.cpp,
+ * and tests/menu), on the window's thread, before the next menu_build:
+ * what the row waiting takes, or 0 when none is; the input pressed, handed
+ * to its bind(); and cancel, for Back or F1. Either ends the wait, and the
+ * box shuts at the next menu_build, back on the row. From then until no
+ * pad button or stick is held, Dear ImGui's pad navigation is held off,
+ * and so is B as the menu's Back: the press that binds, or cancels, acts
+ * in the menu no further. */
+int  menu_bind_waiting(void);
+void menu_bind_press(int input);
+void menu_bind_cancel(void);
 
 /* The window's side too, before ImGui::NewFrame(): how far the menu has
  * faded in, from 0 (gone) to 1, `seconds` after it was `fade`, as it opens

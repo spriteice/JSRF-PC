@@ -10,7 +10,8 @@ as that file needs SDL, a window and OpenGL.
    its null backends (third_party/imgui) as the engine builds them -- no
    exceptions, no RTTI -- and test_main.cpp.
 2. The window's side (xbox_MenuFrame, xbox_MenuDraw and xbox_MenuBusy, with
-   set_open and the state they share, from src/menu/menu_sdl.cpp), with the
+   set_open and the state they share, and xbox_MenuEvent with what finds a
+   bind row's press in SDL's events, from src/menu/menu_sdl.cpp), with the
    same and test_window.cpp, which stands in for SDL and the backends.
 3. The input layer's gate (menu_gate in src/input/xinput_device.c), taken
    from that file verbatim, with test_gate.c.
@@ -66,6 +67,7 @@ if groups.count("{ .menu") != len(found):
 window = (root / "src/menu/menu_sdl.cpp").read_text(encoding="utf-8")
 window_cut = (cut(window, "#define OV_GAME_LINES", "/* ---- File:")
               + cut(window, "/* With g_mu held. */", "/* ---- the calls from the window")
+              + cut(window, "/* ---- a bind row's press", "static void scale_to_window(void)")
               + cut(window, "static void scale_to_window(void)", 'extern "C" int xbox_MenuIsOpen(void)'))
 
 with tempfile.TemporaryDirectory(prefix="menu-") as tmp:
@@ -100,17 +102,21 @@ with tempfile.TemporaryDirectory(prefix="menu-") as tmp:
     # set (the button and the row of too many ticks after it aren't said, but
     # are left alone too, or the test would have failed setting them). And a
     # preset's lines, one a row it changes: a row of ticks' by the ticks'
-    # names, or none.
+    # names, or none. And a bind row with no bind, told as it arrives.
     for line in ["Last row: nothing said about presets",
                  "Asks, keeps nothing: asks first, and keeps nothing for a preset",
                  "[MENU] preset: Scale (Restart) to 1x, from the next start",
                  "[MENU] preset: Filtering to 4x\n",
                  "[MENU] preset: Cleanup to none\n",
-                 "[MENU] preset: Cleanup to Deblock, Dedither\n"]:
+                 "[MENU] preset: Cleanup to Deblock, Dedither\n",
+                 "Broken: a bind row without what it takes, its bind or its text"]:
         if run.stderr.count(line) != 1:
             sys.exit(f"menu: {line!r} is in the log {run.stderr.count(line)} times, not once")
-    # Submenus are no setting, so say nothing about presets, and aren't told.
-    for line in ["Skips: nothing said about presets", "Enhancements: nothing said about presets"]:
+    # Submenus are no setting, so say nothing about presets, and aren't told;
+    # nor are rows the presets leave alone, as the layouts' bind rows.
+    for line in ["Skips: nothing said about presets", "Enhancements: nothing said about presets",
+                 "Controller layout: nothing said about presets", "A: nothing said about presets",
+                 "Left stick up: nothing said about presets"]:
         if line in run.stderr:
             sys.exit(f"menu: {line!r} is in the log")
 

@@ -132,23 +132,24 @@ static void preset_pick(int i)
 
 /* Every field, in order: C++11 has no designated initializers. */
 #define FILE_NO_PRESETS XBOX_PRESETS_UNSAID, { 0, 0, 0 }, NULL
+#define FILE_NO_BIND    XBOX_BIND_NONE, NULL
 static const XBOX_MENU_ITEM k_file[] = {
     { XBOX_MENU_FILE, XBOX_ITEM_INFO,      "About", NULL, NULL,      NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-      "Shows the engine version and relevant system details.", FILE_NO_PRESETS, NULL, NULL, NULL },
+      "Shows the engine version and relevant system details.", FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },
     { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL,    NULL, NULL,      NULL, NULL, 0, NULL,       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-      NULL, FILE_NO_PRESETS, NULL, NULL, NULL },
+      NULL, FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },
     { XBOX_MENU_FILE, XBOX_ITEM_CHOICE,    "Presets (Restart)", menu_preset_now, NULL, preset_pick,
       k_preset_names, XBOX_PRESETS, NULL,
       "Apply selection and restart, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-      "Sets many settings at once: the Xbox's own, ours, or the highest.", FILE_NO_PRESETS, NULL, NULL, NULL },
+      "Sets many settings at once: the Xbox's own, ours, or the highest.", FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },
     { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL,    NULL, NULL,      NULL, NULL, 0, NULL,       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-      NULL, FILE_NO_PRESETS, NULL, NULL, NULL },
+      NULL, FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },
     { XBOX_MENU_FILE, XBOX_ITEM_ACTION,    "Restart", NULL, nv_window_restart, NULL, NULL, 0, NULL,
       "Restart the game, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-      "Restarts the game, losing unsaved progress.", FILE_NO_PRESETS, NULL, NULL, NULL },
+      "Restarts the game, losing unsaved progress.", FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },
     { XBOX_MENU_FILE, XBOX_ITEM_ACTION,    "Exit",  NULL, exit_game, NULL, NULL, 0, NULL,
       "Close the game, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-      "Closes the game, losing unsaved progress.", FILE_NO_PRESETS, NULL, NULL, NULL },
+      "Closes the game, losing unsaved progress.", FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },
 };
 
 /* ---- opening and closing ------------------------------------------------ */
@@ -209,13 +210,80 @@ extern "C" int xbox_MenuInit(SDL_Window *window, void *gl_context, const char *a
     return 1;
 }
 
+/* ---- a bind row's press (menu.h, XBOX_ITEM_BIND) ------------------------- */
+
+/* A trigger is pressed past half way, as the input layer presses a button
+ * with one (src/input/input_layout.h, INPUT_LAYOUT_DOWN); each pad's two
+ * as they were at their last events, by SDL's id for the pad, so a press
+ * is a trigger going past it, not one held there already. */
+#define OV_TRIGGER_DOWN 16384
+#define OV_TRIGGER_PADS 8           /* pads told apart: their ids, modulo this */
+static unsigned char g_trigger_down[OV_TRIGGER_PADS][2];
+
+/* A trigger's event: 1 when it goes past half way, kept for the next. */
+static int trigger_pressed(const SDL_ControllerAxisEvent *a)
+{
+    unsigned char *was;
+    int down;
+    if (a->axis != SDL_CONTROLLER_AXIS_TRIGGERLEFT && a->axis != SDL_CONTROLLER_AXIS_TRIGGERRIGHT) return 0;
+    was = &g_trigger_down[(unsigned)a->which % OV_TRIGGER_PADS][a->axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT];
+    down = a->value >= OV_TRIGGER_DOWN;
+    if (down == *was) return 0;
+    *was = (unsigned char)down;
+    return down;
+}
+
+/* While a bind row waits for a press (menu_bind_waiting), with g_mu held:
+ * the next it takes, handed to it, and the pad's Back or F1 cancelling.
+ * 1: the event was the wait's, and neither the menu nor the game sees it:
+ * every pad button, and every key and mouse button while it waits for
+ * keys. While it waits for a pad, the keys and the mouse are the box's, as
+ * any box's are: Esc cancels it there (menu_build). */
+static int bind_event(const SDL_Event *ev, int takes, int trigger)
+{
+    switch (ev->type) {
+    case SDL_CONTROLLERBUTTONDOWN:
+        if (ev->cbutton.button == SDL_CONTROLLER_BUTTON_BACK) menu_bind_cancel();
+        else if (takes == XBOX_BIND_PAD)                      menu_bind_press(ev->cbutton.button);
+        return 1;
+    case SDL_CONTROLLERAXISMOTION:
+        if (trigger && takes == XBOX_BIND_PAD)
+            menu_bind_press(SDL_CONTROLLER_BUTTON_MAX + (ev->caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT));
+        return 0;
+    case SDL_KEYDOWN:
+        if (ev->key.keysym.scancode == SDL_SCANCODE_F1) {
+            if (!ev->key.repeat) menu_bind_cancel();
+            return 1;
+        }
+        if (takes != XBOX_BIND_KEYS) return 0;
+        if (!ev->key.repeat) menu_bind_press(ev->key.keysym.scancode);
+        return 1;
+    case SDL_MOUSEBUTTONDOWN:
+        if (takes != XBOX_BIND_KEYS) return 0;
+        menu_bind_press(SDL_NUM_SCANCODES + ev->button.button - SDL_BUTTON_LEFT);
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 extern "C" int xbox_MenuEvent(const SDL_Event *ev)
 {
+    int trigger = 0;
     if (!g_ready) return 0;
     /* Which the player has in hand, for the buttons the menu shows: the
      * last pressed, in the game or the menu. The mouse leaves it be. */
     if (ev->type == SDL_CONTROLLERBUTTONDOWN) g_pad = 1;
     else if (ev->type == SDL_KEYDOWN) g_pad = 0;
+    if (ev->type == SDL_CONTROLLERAXISMOTION) trigger = trigger_pressed(&ev->caxis);
+    if (g_open) {
+        int takes, bound;
+        SDL_LockMutex(g_mu);
+        takes = menu_bind_waiting();
+        bound = takes && bind_event(ev, takes, trigger);
+        SDL_UnlockMutex(g_mu);
+        if (bound) return 1;
+    }
     if ((ev->type == SDL_KEYDOWN && ev->key.keysym.scancode == SDL_SCANCODE_F1 && !ev->key.repeat)
      || (ev->type == SDL_CONTROLLERBUTTONDOWN && ev->cbutton.button == SDL_CONTROLLER_BUTTON_BACK)) {
         SDL_LockMutex(g_mu);

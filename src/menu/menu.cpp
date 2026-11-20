@@ -25,6 +25,11 @@ static ImVector<XBOX_MENU_ITEM> g_items;
 static int g_ask = -1;          /* waiting for OK: its confirm text */
 static int g_ask_pick;          /* ... and the choice, for a CHOICE or TOGGLES */
 static int g_info = -1;         /* an INFO box to open */
+static int g_bind = -1;         /* a BIND row's box: waiting for a press */
+static int g_bind_over;         /* ... which has come, or been cancelled: it shuts */
+static int g_bind_refused;      /* ... and the last press was one it can't have */
+static int g_pad_quiet;         /* since then, a pad's button or stick held */
+static int g_reopen_row = -1;   /* ... and the pad back on its row: box_closed */
 
 /* Rows come from any thread -- the input layer's, the game's -- and are drawn
  * on the window's, so xbox_MenuAdd only queues them, and each frame takes the
@@ -56,6 +61,13 @@ extern "C" void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count)
 /* For each row, whether the log has said its row to go under (menu.h,
  * under), or its submenu (group), isn't there. */
 static ImVector<unsigned char> g_under_told;
+
+/* A bind row with all it needs (menu.h, takes): what it takes, its bind,
+ * and its text. */
+static int bind_whole(const XBOX_MENU_ITEM &it)
+{
+    return (it.takes == XBOX_BIND_PAD || it.takes == XBOX_BIND_KEYS) && it.bind && it.text;
+}
 
 static void take_queued(void)
 {
@@ -93,6 +105,10 @@ static void take_queued(void)
             g_items[i].presets = XBOX_PRESETS_UNSAID;
         /* A submenu goes in its menu, not in another (menu.h, group). */
         RECOMP_CHECK(it.kind != XBOX_ITEM_GROUP || !it.group, "%s: a submenu in a submenu", name);
+        /* A bind row says what it takes, and has its bind and its text;
+         * one without does nothing when chosen (bind_whole). */
+        RECOMP_CHECK(it.kind != XBOX_ITEM_BIND || bind_whole(it),
+                     "%s: a bind row without what it takes, its bind or its text", name);
     }
 }
 
@@ -375,6 +391,7 @@ static int path_do(const char *path, int run)
         if (run) it->set(v < it->min ? it->min : v > it->max ? it->max : v);
         return MENU_PATH_OK;
     }
+    case XBOX_ITEM_BIND:    /* its box waits for a press, which a path can't give */
     default:
         return MENU_PATH_NOT_RUN;
     }
@@ -512,12 +529,20 @@ static void draw_item(const XBOX_MENU_ITEM *it, const number_cols *cols)
         break;
     case XBOX_ITEM_GROUP: {
         /* Its rows, in the order added; shown with one at least, and only
-         * the first of its name (menu.h, group). */
+         * the first of its name (menu.h, group). Opened again, with its
+         * menu, when a bind row's box in it has shut (box_closed). */
         int any = 0;
         for (const XBOX_MENU_ITEM &r : g_items)
             any |= r.menu == it->menu && drawn_in_is(r, it->label);
         if (!any || group_row(it->menu, it->label) != it) break;
+        ImGuiWindow *in = ImGui::GetCurrentWindow();
+        bool reopen = g_reopen_row >= 0 && g_items[g_reopen_row].menu == it->menu
+                   && drawn_in_is(g_items[g_reopen_row], it->label);
+        if (reopen) ImGui::OpenPopup(it->label);
         bool open = ImGui::BeginMenu(it->label);
+        /* Opened again, B goes back to this row, where the pad was, as it
+         * would had the pad opened it: not to the menu's first. */
+        if (reopen) in->NavLastIds[ImGuiNavLayer_Main] = ImGui::GetItemID();
         take_hint(it);
         if (open) {
             number_cols in = number_columns(it->menu, it->label);
@@ -527,6 +552,19 @@ static void draw_item(const XBOX_MENU_ITEM *it, const number_cols *cols)
         }
         break;
     }
+    case XBOX_ITEM_BIND:
+        /* The input beside the control, as a shortcut is drawn, but in the
+         * text's own colour: it is what the row says, not an aside. */
+        ImGui::PushStyleColor(ImGuiCol_TextDisabled, ImGui::GetStyleColorVec4(ImGuiCol_Text));
+        if (ImGui::MenuItem(it->label, it->text ? it->text() : NULL) && bind_whole(*it)) {
+            g_bind = g_items.index_from_ptr(it);
+            g_bind_over = g_bind_refused = 0;
+        }
+        ImGui::PopStyleColor();
+        /* Back from its box: the pad on it again (box_closed). */
+        if (g_items.index_from_ptr(it) == g_reopen_row) ImGui::SetItemDefaultFocus();
+        take_hint(it);
+        break;
     }
 }
 
@@ -569,13 +607,15 @@ static int menu_has_items(int m)
 }
 
 /* A box ends: back to the menu it was asked from, so a pad is never left
- * with nothing selected. */
+ * with nothing selected. A bind row's goes back to the row, in its submenu
+ * where it has one, so the next control is a step away. */
 static int g_last_menu, g_reopen = -1;
 
-static void box_closed(void)
+static void box_closed(int row = -1)
 {
     ImGui::CloseCurrentPopup();
     g_reopen = g_last_menu;
+    g_reopen_row = row;
 }
 
 /* ---- the room between the bar and the strip ------------------------------ */
@@ -612,13 +652,16 @@ static void room_end(const menu_room &whole)
 
 /* ---- the strip along the bottom: the row's hint, and the buttons --------- */
 
-/* The pad's buttons, or the keys, and what each does in the menu. */
+/* The pad's buttons, or the keys, and what each does in the menu; in a
+ * bind row's box, the one that cancels it, as every other is the row's. */
 struct prompt { const char *name; menu_cap cap; const char *does; };
 #define MENU_PROMPTS 3
 static const prompt k_pad_prompts[MENU_PROMPTS] = {
     { "A", MENU_CAP_A, "Select" }, { "B", MENU_CAP_B, "Back" }, { "Back", MENU_CAP_KEY, "Close" } };
 static const prompt k_key_prompts[MENU_PROMPTS] = {
     { "Enter", MENU_CAP_KEY, "Select" }, { "Esc", MENU_CAP_KEY, "Back" }, { "F1", MENU_CAP_KEY, "Close" } };
+static const prompt k_pad_bind_prompt = { "Back", MENU_CAP_KEY, "Cancel" };
+static const prompt k_key_bind_prompt = { "F1", MENU_CAP_KEY, "Cancel" };
 
 /* A cap is this many times the text's height across, so its name has room
  * round it: a round one for a letter, and for a word, one this much of its
@@ -626,13 +669,13 @@ static const prompt k_key_prompts[MENU_PROMPTS] = {
 #define MENU_CAP_SIZE 1.25f
 #define MENU_CAP_WORD 0.6f
 
-/* The prompts from at.x rightwards, centred on at.y; their width. With dl
+/* The n prompts from at.x rightwards, centred on at.y; their width. With dl
  * NULL, only the width. */
-static float draw_prompts(ImDrawList *dl, const prompt *ps, ImVec2 at)
+static float draw_prompts(ImDrawList *dl, const prompt *ps, int n, ImVec2 at)
 {
     const ImGuiStyle &st = ImGui::GetStyle();
     float h = ImGui::GetFontSize() * MENU_CAP_SIZE, x = at.x;
-    for (int i = 0; i < MENU_PROMPTS; i++) {
+    for (int i = 0; i < n; i++) {
         const prompt &p = ps[i];
         ImVec2 name = ImGui::CalcTextSize(p.name), does = ImGui::CalcTextSize(p.does);
         float w = p.name[1] ? name.x + h * MENU_CAP_WORD : h;
@@ -658,7 +701,12 @@ static void draw_strip(int pad)
     const ImGuiIO &io = ImGui::GetIO();
     const ImGuiStyle &st = ImGui::GetStyle();
     const prompt *ps = pad ? k_pad_prompts : k_key_prompts;
-    float prompts = draw_prompts(NULL, ps, ImVec2(0.0f, 0.0f));
+    int n = MENU_PROMPTS;
+    if (g_bind >= 0) {
+        ps = pad ? &k_pad_bind_prompt : &k_key_bind_prompt;
+        n = 1;
+    }
+    float prompts = draw_prompts(NULL, ps, n, ImVec2(0.0f, 0.0f));
     float wrap = io.DisplaySize.x - st.WindowPadding.x * 2 - st.ItemSpacing.x * 2 - prompts;
     float tall = ImGui::GetFontSize() * MENU_CAP_SIZE;
     g_hint_shown = g_hint_pad ? g_hint_pad : g_hint_pointer;
@@ -681,7 +729,7 @@ static void draw_strip(int pad)
             ImGui::TextUnformatted(g_hint_shown);
             ImGui::PopTextWrapPos();
         }
-        draw_prompts(ImGui::GetWindowDrawList(), ps,
+        draw_prompts(ImGui::GetWindowDrawList(), ps, n,
                      ImVec2(io.DisplaySize.x - st.WindowPadding.x - prompts, at.y + tall * 0.5f));
     }
     ImGui::End();
@@ -694,6 +742,34 @@ extern "C" const char *menu_hint(void)
     return g_hint_shown;
 }
 
+/* ---- a bind row's box (menu.h, XBOX_ITEM_BIND) --------------------------- */
+
+extern "C" int menu_bind_waiting(void)
+{
+    return g_bind >= 0 && !g_bind_over ? g_items[g_bind].takes : 0;
+}
+
+extern "C" void menu_bind_press(int input)
+{
+    if (!menu_bind_waiting()) return;
+    g_bind_refused = !g_items[g_bind].bind(input);
+    if (!g_bind_refused) g_bind_over = g_pad_quiet = 1;
+}
+
+extern "C" void menu_bind_cancel(void)
+{
+    if (menu_bind_waiting()) g_bind_over = g_pad_quiet = 1;
+}
+
+/* A pad's button or stick held, as Dear ImGui's SDL backend reads them: all
+ * of the pad's, any pad's, so its navigation comes back with none held. */
+static int pad_held(void)
+{
+    for (int k = ImGuiKey_Gamepad_BEGIN; k < ImGuiKey_Gamepad_END; k++)
+        if (ImGui::IsKeyDown((ImGuiKey)k)) return 1;
+    return 0;
+}
+
 /* Every box sits in the middle of the window, and stays there: put back each
  * frame, so it follows the window when that changes size. */
 static void box_centre(void)
@@ -702,6 +778,9 @@ static void box_centre(void)
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
                             ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 }
+
+/* A bind row's box: its id, after the title it shows (menu_build). */
+#define MENU_BIND_BOX "###bind"
 
 /* A box over the menu: as big as what it says, and not to be dragged off. */
 static bool box_begin(const char *title)
@@ -713,10 +792,17 @@ static bool box_begin(const char *title)
 extern "C" void menu_build(int just_opened, int pad)
 {
     ImGuiContext &g = *ImGui::GetCurrentContext();
+    ImGuiIO &io = ImGui::GetIO();
+    /* A bind row's box, and the pad held after it (menu_bind_waiting): the
+     * pad isn't the menu's. Its press was the row's, or the box's cancel. */
+    if (g_pad_quiet && g_bind < 0 && !pad_held()) g_pad_quiet = 0;
+    const bool pad_not_menus = g_bind >= 0 || g_pad_quiet;
     /* B, or Esc: ImGui's own cancel (ImGuiKey_NavGamepadCancel reads g). */
-    bool back = ImGui::IsKeyPressed(ImGuiKey_Escape, false) || ImGui::IsKeyPressed(ImGuiKey_NavGamepadCancel, false);
+    bool back = ImGui::IsKeyPressed(ImGuiKey_Escape, false)
+             || (!pad_not_menus && ImGui::IsKeyPressed(ImGuiKey_NavGamepadCancel, false));
     int m, fold = 0, first = -1;
-    const XBOX_MENU_ITEM *ask, *info;
+    const XBOX_MENU_ITEM *ask, *info, *bind;
+    char bind_title[128];
     ImGuiWindow *bar;
 
     take_queued();
@@ -732,7 +818,7 @@ extern "C" void menu_build(int just_opened, int pad)
         for (m = 0; m < XBOX_MENU_COUNT && !menu_has_items(m); m++) { }
         if (m < XBOX_MENU_COUNT) fold = 1, first = m;
         if (g.OpenPopupStack.Size) ImGui::ClosePopupToLevel(0, false);
-        g_ask = g_info = g_reopen = -1;
+        g_ask = g_info = g_reopen = g_reopen_row = g_bind = -1;
     }
     if (ImGui::BeginMainMenuBar()) {
         bar = ImGui::GetCurrentWindow();
@@ -800,13 +886,17 @@ extern "C" void menu_build(int just_opened, int pad)
         ImGui::EndMainMenuBar();
     }
     draw_strip(pad);
+    /* Back on a bind row: once, as its menu and submenu open again. */
+    if (g_reopen < 0) g_reopen_row = -1;
 
     /* Opened from the top level: a popup opened inside a menu would close
      * with it. */
     ask  = g_ask  >= 0 ? &g_items[g_ask]  : NULL;
     info = g_info >= 0 ? &g_items[g_info] : NULL;
+    bind = g_bind >= 0 ? &g_items[g_bind] : NULL;
     if (ask && !ImGui::IsPopupOpen("Are you sure?")) ImGui::OpenPopup("Are you sure?");
     if (info && !ImGui::IsPopupOpen(info->label)) ImGui::OpenPopup(info->label);
+    if (bind && !ImGui::IsPopupOpen(MENU_BIND_BOX)) ImGui::OpenPopup(MENU_BIND_BOX);
 
     if (ask && box_begin("Are you sure?")) {
         ImGui::TextUnformatted(g_ask_pick >= 0 ? ask->choices[g_ask_pick] : ask->label);
@@ -830,6 +920,30 @@ extern "C" void menu_build(int just_opened, int pad)
         if (ok || back) { g_info = -1; box_closed(); }
         ImGui::EndPopup();
     }
+
+    /* A bind row's: no buttons, as the next press is the row's (menu.h,
+     * menu_bind_waiting). Titled with its submenu, as the layout's page,
+     * where it has one. Esc reaches it only while it waits for a pad. */
+    if (bind) snprintf(bind_title, sizeof bind_title, "%s" MENU_BIND_BOX, bind->group ? bind->group : bind->label);
+    if (bind && box_begin(bind_title)) {
+        ImGui::Text(bind->takes == XBOX_BIND_PAD ? "Press a button for %s." : "Press a key or mouse button for %s.",
+                    bind->label);
+        if (g_bind_refused) {
+            ImGui::Spacing();
+            ImGui::TextUnformatted("That one can't be used.");
+        }
+        if (g_bind_over || back) {
+            int row = g_bind;
+            g_bind = -1;
+            g_pad_quiet = 1;
+            box_closed(row);
+        }
+        ImGui::EndPopup();
+    }
+    /* The pad's navigation off from the next frame while the pad isn't the
+     * menu's, and on again with nothing held. */
+    if (g_bind >= 0 || g_pad_quiet) io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
+    else                            io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
 }
 
 /* Open, the fade is never quite 0: Dear ImGui skips the rows of a window

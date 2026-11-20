@@ -38,8 +38,17 @@
  * the wrong thing about presets left alone, and said in the log (run.py).
  * Long lists, at 1920 x 1080 and 640 x 480: every menu and list of
  * choices between the bar and the strip, scrolling where it is taller,
- * and a list opened at the room's foot going up to fit. Last, the busy
- * box (menu_build_busy) with no menu, in the middle of the window.
+ * and a list opened at the room's foot going up to fit. Rows that take
+ * the next press (XBOX_ITEM_BIND), as the layouts' pages: the box, which
+ * hands the press the window found to the row, once, and shuts back on
+ * the row; the pad held off the menu from the box until it is let go, so
+ * the press that binds, or cancels, does nothing more -- B there is a
+ * button for the row, not Back; a press the row can't have, and the box
+ * waiting on; Esc cancelling only a box that waits for a pad; the strip
+ * with the one way to cancel; a row with no bind doing nothing; and File >
+ * Presets leaving the rows alone (run.py: and saying nothing of them).
+ * Last, the busy box (menu_build_busy) with no menu, in the middle of the
+ * window.
  */
 #include "menu.h"
 #include "menu_style.h"
@@ -62,6 +71,7 @@ static int g_fail;
  * menus' say nothing either, but for the presets' own, at the end: the log
  * says so once, for the first (run.py), and no preset sets them. */
 #define NO_PRESETS XBOX_PRESETS_UNSAID, { 0, 0, 0 }, NULL
+#define NO_BIND    XBOX_BIND_NONE, NULL
 
 static int s_full, s_wide, s_scale = 1, s_exit, s_full_runs, s_wide_runs, s_picks = -1;
 /* Each row drawn that counts takes the next number, so the order they are
@@ -95,7 +105,7 @@ static int  late_state(void)
 static void late_run(void)   { }
 static const XBOX_MENU_ITEM k_late = {
     XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Late", late_state, late_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-    "Came late.", NO_PRESETS, NULL, NULL, NULL };
+    "Came late.", NO_PRESETS, NULL, NULL, NULL, NO_BIND };
 
 /* A row marked last, as Display's submenus: added before the others, and
  * drawn below them all. */
@@ -103,7 +113,7 @@ static int  last_state(void) { s_last_at = ++s_drawn_seq; return 0; }
 static void last_run(void)   { }
 static const XBOX_MENU_ITEM k_last = {
     XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Last row", last_state, last_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 1, NULL,
-    "Starts at the title screen.", NO_PRESETS, NULL, NULL, NULL };
+    "Starts at the title screen.", NO_PRESETS, NULL, NULL, NULL, NO_BIND };
 
 /* Rows placed under another, as Display's Draw distance under Render scale:
  * added in one call before the row they name, and one naming a row that
@@ -117,13 +127,13 @@ static int  under_last_state(void) { s_under_last_at = ++s_drawn_seq; return 0; 
 static void under_run(void)      { }
 static const XBOX_MENU_ITEM k_under[] = {
     { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Under one", under0_state, under_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, "Render scale", "The first under it.", NO_PRESETS, NULL, NULL, NULL },
+      0, 0, 0, NULL, 0, "Render scale", "The first under it.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Under two", under1_state, under_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, "Render scale", "The second under it.", NO_PRESETS, NULL, NULL, NULL },
+      0, 0, 0, NULL, 0, "Render scale", "The second under it.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Unplaced", unplaced_state, under_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, "No such row", "Has nowhere to go.", NO_PRESETS, NULL, NULL, NULL },
+      0, 0, 0, NULL, 0, "No such row", "Has nowhere to go.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Under the last", under_last_state, under_run, NULL, NULL, 0, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, "Last row", "Goes under the last.", NO_PRESETS, NULL, NULL, NULL },
+      NULL, NULL, 0, 0, 0, NULL, 0, "Last row", "Goes under the last.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
 };
 
 /* Submenus (group), as Gameplay's Skips and Display's Enhancements, both in
@@ -138,27 +148,27 @@ static void music_run(void)   { s_music_runs++; }
 static void see_run(void)     { s_see_runs++; }
 static const XBOX_MENU_ITEM k_in_first[] = {
     { XBOX_MENU_AUDIO, XBOX_ITEM_TOGGLE, "Skip intro", in_state, skip_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, NULL, "Skips the logos.", NO_PRESETS, "Skips", NULL, NULL },
+      0, 0, 0, NULL, 0, NULL, "Skips the logos.", NO_PRESETS, "Skips", NULL, NULL, NO_BIND },
     { XBOX_MENU_AUDIO, XBOX_ITEM_TOGGLE, "Music info", in_state, music_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, NULL, "Shows the song.", NO_PRESETS, "Enhancements", NULL, NULL },
+      0, 0, 0, NULL, 0, NULL, "Shows the song.", NO_PRESETS, "Enhancements", NULL, NULL, NO_BIND },
     { XBOX_MENU_AUDIO, XBOX_ITEM_TOGGLE, "Lost", in_state, under_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, NULL, "Has no submenu to go in.", NO_PRESETS, "Nowhere", NULL, NULL },
+      0, 0, 0, NULL, 0, NULL, "Has no submenu to go in.", NO_PRESETS, "Nowhere", NULL, NULL, NO_BIND },
     { XBOX_MENU_AUDIO, XBOX_ITEM_TOGGLE, "Effects", in_state, under_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, NULL, "Plays the effects.", NO_PRESETS, NULL, NULL, NULL },
+      0, 0, 0, NULL, 0, NULL, "Plays the effects.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
 };
 static const XBOX_MENU_ITEM k_groups[] = {
     { XBOX_MENU_AUDIO, XBOX_ITEM_GROUP, "Skips", NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 1, NULL, "Leaves out parts.", NO_PRESETS, NULL, NULL, NULL },
+      0, 0, 0, NULL, 1, NULL, "Leaves out parts.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_AUDIO, XBOX_ITEM_GROUP, "Enhancements", NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 1, NULL, "Goes further.", NO_PRESETS, NULL, NULL, NULL },
+      0, 0, 0, NULL, 1, NULL, "Goes further.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_AUDIO, XBOX_ITEM_GROUP, "Enhancements", NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 1, NULL, "A second of its name.", NO_PRESETS, NULL, NULL, NULL },
+      0, 0, 0, NULL, 1, NULL, "A second of its name.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_AUDIO, XBOX_ITEM_GROUP, "Empty", NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-      0, 0, 0, NULL, 0, NULL, "Has nothing in it.", NO_PRESETS, NULL, NULL, NULL },
+      0, 0, 0, NULL, 0, NULL, "Has nothing in it.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
 };
 static const XBOX_MENU_ITEM k_in_after = {
     XBOX_MENU_AUDIO, XBOX_ITEM_TOGGLE, "See through", in_state, see_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-    0, 0, 0, NULL, 0, NULL, "Shows what is behind glass.", NO_PRESETS, "Enhancements", NULL, NULL };
+    0, 0, 0, NULL, 0, NULL, "Shows what is behind glass.", NO_PRESETS, "Enhancements", NULL, NULL, NO_BIND };
 /* A choice row that tells its pick which row it is (menu.h, pick_with), as
  * Developer > Missions' levels do: in Skips, after Skip intro, with no plain
  * pick and nothing ticked. */
@@ -209,6 +219,52 @@ static XBOX_MENU_ITEM long_row(XBOX_ITEM_KIND kind, const char *label, int nchoi
     it.nchoices = nchoices;
     it.hint = hint;
     return it;
+}
+
+/* Rows that take the next press (XBOX_ITEM_BIND), as Input's layouts: a
+ * page of the pad's, two rows, and one of the keyboard's, with a row that
+ * has no bind, in Gameplay here, which has one row of its own. Each row
+ * keeps what it was handed; the pad's refuse the Guide button's number, as
+ * the layout will. The presets leave them alone (XBOX_PRESETS_LEFT). */
+#define BIND_GUIDE 5                    /* SDL_CONTROLLER_BUTTON_GUIDE */
+#define BIND_B     1                    /* SDL_CONTROLLER_BUTTON_B */
+#define BIND_ESC   41                   /* SDL_SCANCODE_ESCAPE */
+static int s_bind_a = -1, s_bind_b = -1, s_bind_key = -1, s_binds;
+static int bind_pad(int *to, int input)
+{
+    s_binds++;
+    if (input == BIND_GUIDE) return 0;
+    *to = input;
+    return 1;
+}
+static int bind_a(int input)            { return bind_pad(&s_bind_a, input); }
+static int bind_b(int input)            { return bind_pad(&s_bind_b, input); }
+static int bind_key(int input)          { s_binds++; s_bind_key = input; return 1; }
+static const char *bind_a_now(void)     { return s_bind_a < 0 ? "A" : "Changed"; }
+static const char *bind_b_now(void)     { return "B"; }
+static const char *bind_key_now(void)   { return "W"; }
+#define BIND_LEFT XBOX_PRESETS_LEFT, { 0, 0, 0 }, NULL
+static const XBOX_MENU_ITEM k_binds[] = {
+    { XBOX_MENU_GAMEPLAY, XBOX_ITEM_GROUP, "Controller layout", NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL,
+      0, 0, 0, NULL, 0, NULL, "Sets which button presses each control.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
+    { XBOX_MENU_GAMEPLAY, XBOX_ITEM_BIND, "A", NULL, NULL, NULL, NULL, 0, bind_a_now, NULL, NULL, NULL,
+      0, 0, 0, NULL, 0, NULL, "Jumps.", BIND_LEFT, "Controller layout", NULL, NULL, XBOX_BIND_PAD, bind_a },
+    { XBOX_MENU_GAMEPLAY, XBOX_ITEM_BIND, "B", NULL, NULL, NULL, NULL, 0, bind_b_now, NULL, NULL, NULL,
+      0, 0, 0, NULL, 0, NULL, "Sprays.", BIND_LEFT, "Controller layout", NULL, NULL, XBOX_BIND_PAD, bind_b },
+    { XBOX_MENU_GAMEPLAY, XBOX_ITEM_GROUP, "Keyboard and mouse layout", NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL,
+      NULL, 0, 0, 0, NULL, 0, NULL, "Sets which key presses each control.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
+    { XBOX_MENU_GAMEPLAY, XBOX_ITEM_BIND, "Left stick up", NULL, NULL, NULL, NULL, 0, bind_key_now, NULL, NULL, NULL,
+      0, 0, 0, NULL, 0, NULL, "Skates forward.", BIND_LEFT, "Keyboard and mouse layout", NULL, NULL,
+      XBOX_BIND_KEYS, bind_key },
+    { XBOX_MENU_GAMEPLAY, XBOX_ITEM_BIND, "Broken", NULL, NULL, NULL, NULL, 0, bind_key_now, NULL, NULL, NULL,
+      0, 0, 0, NULL, 0, NULL, "Has no bind.", BIND_LEFT, "Keyboard and mouse layout", NULL, NULL,
+      XBOX_BIND_KEYS, NULL },
+};
+
+/* The pad's navigation is the menu's: on, or held off (menu_bind_waiting). */
+static int pad_navigates(void)
+{
+    return (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_NavEnableGamepad) != 0;
 }
 
 /* Numbers, as the Input menu's: a sensitivity in whole steps, and a
@@ -274,34 +330,34 @@ static const char *k_p_many[MENU_PRESET_TICKS + 1];
 #define P_ASK "Apply selection and restart, losing unsaved progress?"
 static const XBOX_MENU_ITEM k_presets[] = {
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLE, "SMAA", p_smaa_state, p_smaa_run, NULL, NULL, 0, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Smooths edges.", XBOX_PRESETS_SET, { 0, 1, 1 }, NULL, NULL, NULL, NULL },
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Smooths edges.", XBOX_PRESETS_SET, { 0, 1, 1 }, NULL, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_CHOICE, "Filtering", p_aniso_state, NULL, p_aniso_pick, k_p_aniso, 3, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sharpens textures.", XBOX_PRESETS_SET, { 0, 3, XBOX_PRESET_MOST }, NULL, NULL, NULL, NULL },
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sharpens textures.", XBOX_PRESETS_SET, { 0, 3, XBOX_PRESET_MOST }, NULL, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_INPUT, XBOX_ITEM_NUMBER, "Deadzone %", NULL, NULL, NULL, NULL, 0, NULL, NULL,
-      p_dz_value, p_dz_set, 0, 100, 5, "%g%%", 0, NULL, "Sets the stick's slack.", XBOX_PRESETS_SET, { 0, 15, 15 }, NULL, NULL, NULL, NULL },
+      p_dz_value, p_dz_set, 0, 100, 5, "%g%%", 0, NULL, "Sets the stick's slack.", XBOX_PRESETS_SET, { 0, 15, 15 }, NULL, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_DISPLAY, XBOX_ITEM_CHOICE, "Scale (Restart)", p_scale_state, NULL, p_scale_pick, k_p_scales, 6, NULL,
       P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sets the scale.", XBOX_PRESETS_SET, { 0, 2, XBOX_PRESET_MOST },
-      p_scale_keep, NULL, NULL, NULL },
+      p_scale_keep, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_AUDIO, XBOX_ITEM_TOGGLE, "Effects (Restart)", p_effects_state, p_effects_run, NULL, NULL, 0, NULL,
-      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Adds the effects.", XBOX_PRESETS_SET, { 1, 1, 1 }, p_effects_keep, NULL, NULL, NULL },
+      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Adds the effects.", XBOX_PRESETS_SET, { 1, 1, 1 }, p_effects_keep, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_AUDIO, XBOX_ITEM_TOGGLE, "Glass", p_glass_state, p_glass_run, NULL, NULL, 0, NULL, NULL,
       NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Tints what is behind.", XBOX_PRESETS_SET, { 0, 1, 1 }, NULL,
-      "Enhancements", NULL, NULL },
+      "Enhancements", NULL, NULL, NO_BIND },
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLES, "Cleanup", p_ticks_state, NULL, p_ticks_pick, k_p_ticks, 2, NULL,
       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Cleans the copies.", XBOX_PRESETS_SET,
-      { 0, 1, XBOX_PRESET_MOST }, NULL, NULL, NULL, NULL },
+      { 0, 1, XBOX_PRESET_MOST }, NULL, NULL, NULL, NULL, NO_BIND },
     /* Three that say the wrong thing, which no preset can set, and are left
      * alone: one that asks first but keeps nothing, told once in the log,
      * then a button and a row of more ticks than an int has bits for, which
      * the same check has told of already (the rows standing in for the
      * other menus', which say nothing, are told too, run.py). */
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLE, "Asks, keeps nothing", p_bad_state, p_bad_run, NULL, NULL, 0, NULL,
-      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Asks first.", XBOX_PRESETS_SET, { 1, 1, 1 }, NULL, NULL, NULL, NULL },
+      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Asks first.", XBOX_PRESETS_SET, { 1, 1, 1 }, NULL, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_ACTION, "A button", NULL, p_bad_run, NULL, NULL, 0, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Does a thing.", XBOX_PRESETS_SET, { 1, 1, 1 }, NULL, NULL, NULL, NULL },
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Does a thing.", XBOX_PRESETS_SET, { 1, 1, 1 }, NULL, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLES, "Too many ticks", p_bad_state, NULL, p_bad_pick,
       k_p_many, MENU_PRESET_TICKS + 1, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Has too many.",
-      XBOX_PRESETS_SET, { 1, 1, 1 }, NULL, NULL, NULL, NULL },
+      XBOX_PRESETS_SET, { 1, 1, 1 }, NULL, NULL, NULL, NULL, NO_BIND },
 };
 
 /* Widescreen's owner adds a row as it runs, on the window's thread. */
@@ -502,37 +558,37 @@ int main(void)
      * Before them all, Display's last row. */
     const XBOX_MENU_ITEM developer[] = {
         { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLE, "Log to file", log_state, log_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-          "Writes the log to a file.", NO_PRESETS, NULL, NULL, NULL },
+          "Writes the log to a file.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
         { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLES, "Logging", switches_state, NULL, switch_pick, k_switches, 3, NULL, NULL,
-          NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Adds lines to the log.", NO_PRESETS, NULL, NULL, NULL },
+          NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Adds lines to the log.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
         { XBOX_MENU_DEVELOPER, XBOX_ITEM_TOGGLE, "Asks (Restart)", asked_state, asked_run, NULL, NULL, 0, NULL,
-          "The game restarts to apply it.", NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Asks first.", NO_PRESETS, NULL, NULL, NULL },
+          "The game restarts to apply it.", NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Asks first.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
     };
     const XBOX_MENU_ITEM gameplay[] = {
         { XBOX_MENU_GAMEPLAY, XBOX_ITEM_TOGGLE, "Indicator", in_state, under_run, NULL, NULL, 0, NULL, NULL, NULL,
-          NULL, 0, 0, 0, NULL, 0, NULL, "Shows how a challenge is going.", NO_PRESETS, NULL },
+          NULL, 0, 0, 0, NULL, 0, NULL, "Shows how a challenge is going.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
     };
     const XBOX_MENU_ITEM input[] = {
         { XBOX_MENU_INPUT, XBOX_ITEM_NUMBER, "Sensitivity", NULL, NULL, NULL, NULL, 0, NULL, NULL,
-          sens_value, sens_set, 1, 10, 1, "%g", 0, NULL, "Sets how fast the camera turns.", NO_PRESETS, NULL, NULL, NULL },
+          sens_value, sens_set, 1, 10, 1, "%g", 0, NULL, "Sets how fast the camera turns.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
         { XBOX_MENU_INPUT, XBOX_ITEM_NUMBER, "Deadzone", NULL, NULL, NULL, NULL, 0, NULL, NULL,
-          dead_value, dead_set, 0, 100, 5, "%g%%", 0, NULL, "Sets how far the stick moves first.", NO_PRESETS, NULL, NULL, NULL },
+          dead_value, dead_set, 0, 100, 5, "%g%%", 0, NULL, "Sets how far the stick moves first.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
     };
     const XBOX_MENU_ITEM display[] = {
         { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Fullscreen", full_state, full_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-          "Fills the screen.", NO_PRESETS, NULL, NULL, NULL },
+          "Fills the screen.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
         { XBOX_MENU_DISPLAY, XBOX_ITEM_TOGGLE, "Widescreen (16:9)", wide_state, wide_run, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-          k_wide_hint, NO_PRESETS, NULL, NULL, NULL },
+          k_wide_hint, NO_PRESETS, NULL, NULL, NULL, NO_BIND },
         { XBOX_MENU_DISPLAY, XBOX_ITEM_CHOICE, "Render scale", scale_state, NULL, scale_pick, k_scales, 4, NULL,
           "Apply selection and restart, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-          k_scale_hint, NO_PRESETS, NULL, NULL, NULL },
+          k_scale_hint, NO_PRESETS, NULL, NULL, NULL, NO_BIND },
     };
     const XBOX_MENU_ITEM file[] = {
         { XBOX_MENU_FILE, XBOX_ITEM_INFO, "About", NULL, NULL, NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-          "Shows the version.", NO_PRESETS, NULL, NULL, NULL },
-        { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL, NULL, NO_PRESETS, NULL, NULL, NULL },
+          "Shows the version.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
+        { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL, NULL, NO_PRESETS, NULL, NULL, NULL, NO_BIND },
         { XBOX_MENU_FILE, XBOX_ITEM_ACTION, "Exit", NULL, exit_run, NULL, NULL, 0, NULL,
-          "Close the game, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Closes the game.", NO_PRESETS, NULL, NULL, NULL },
+          "Close the game, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Closes the game.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
     };
     xbox_MenuAdd(&k_last, 1);
     xbox_MenuAdd(k_under, 4);
@@ -1308,7 +1364,7 @@ int main(void)
             /* Added after the last frame: found all the same. */
             static const XBOX_MENU_ITEM added = {
                 XBOX_MENU_AUDIO, XBOX_ITEM_ACTION, "Just added", NULL, skip_run, NULL, NULL, 0, NULL, NULL, NULL, NULL,
-                0, 0, 0, NULL, 0, NULL, "Was added a moment ago.", NO_PRESETS, NULL, NULL, NULL };
+                0, 0, 0, NULL, 0, NULL, "Was added a moment ago.", NO_PRESETS, NULL, NULL, NULL, NO_BIND };
             int skips = s_skip_runs;
             xbox_MenuAdd(&added, 1);
             CHECK(menu_path_run("Audio > Just added") == MENU_PATH_OK && s_skip_runs == skips + 1);
@@ -1318,6 +1374,123 @@ int main(void)
         CHECK(strcmp(menu_path_why(99), "not a result") == 0);
         frames(2);
     }
+    /* Rows that take the next press (above). From Developer's title, Left:
+     * Gameplay; A, Down, Right: Controller layout, the pad on A, which
+     * shows what it has. A: the box, titled with its page, waiting for a
+     * pad; no hint, and in the strip the one way to cancel; the pad's
+     * navigation held off. */
+    xbox_MenuAdd(k_binds, (int)(sizeof k_binds / sizeof k_binds[0]));
+    frame(ImGuiKey_GamepadDpadLeft); frames(2);
+    frame(ImGuiKey_GamepadFaceDown); frames(2);
+    CHECK(strstr(open_menu(), "Gameplay") != NULL);
+    frame(ImGuiKey_GamepadDpadDown); frames(1);
+    CHECK(hint_is("Sets which button presses each control."));
+    frame(ImGuiKey_GamepadDpadRight); frames(2);
+    fprintf(stderr, "binds: [%s] %s\n", open_menu(), nav_state());
+    CHECK(strstr(open_menu(), "Controller layout") != NULL && hint_is("Jumps."));
+    CHECK(menu_bind_waiting() == 0 && pad_navigates());
+    frame(ImGuiKey_GamepadFaceDown); frames(2);
+    fprintf(stderr, "bind A: [%s], waiting %d\n", open_menu(), menu_bind_waiting());
+    CHECK(menu_bind_waiting() == XBOX_BIND_PAD && s_binds == 0);
+    CHECK(strstr(open_menu(), "###bind") && centred("Controller layout###bind"));
+    CHECK(hint_is(NULL) && strip_fits(0) && !strip_has_a());
+    CHECK(!pad_navigates());
+    /* B in the box is no cancel: the window hands it to the row (below). */
+    frame(ImGuiKey_GamepadFaceRight); frames(2);
+    CHECK(menu_bind_waiting() == XBOX_BIND_PAD);
+    /* The press, as the window finds it, before the frame that reads the
+     * pad: B, held. The row has it, once; the box shuts, back on A in its
+     * page; and B, still held, neither goes back a level nor moves the
+     * pad, until let go. */
+    {
+        ImGuiIO &io = ImGui::GetIO();
+        io.AddKeyEvent(ImGuiKey_GamepadFaceRight, true);
+        menu_bind_press(BIND_B);
+        CHECK(menu_bind_waiting() == 0);
+        frames(6);
+        fprintf(stderr, "bound A to B, B held: [%s] %s, binds %d, A has %d\n", open_menu(), nav_state(), s_binds,
+                s_bind_a);
+        CHECK(s_binds == 1 && s_bind_a == BIND_B);
+        CHECK(!strstr(open_menu(), "###bind"));
+        CHECK(strstr(open_menu(), "Controller layout") != NULL && hint_is("Jumps."));
+        CHECK(!pad_navigates());
+        io.AddKeyEvent(ImGuiKey_GamepadFaceRight, false);
+        frames(2);
+    }
+    CHECK(pad_navigates() && strstr(open_menu(), "Controller layout") != NULL && hint_is("Jumps."));
+    CHECK(strip_has_a());
+    /* Down: B, a step away. A: its box; the Guide button's number, which
+     * the row refuses: the box waits on. Esc: cancelled, back on B, and
+     * nothing more handed to it. */
+    frame(ImGuiKey_GamepadDpadDown); frames(1);
+    CHECK(hint_is("Sprays."));
+    frame(ImGuiKey_GamepadFaceDown); frames(2);
+    CHECK(menu_bind_waiting() == XBOX_BIND_PAD);
+    menu_bind_press(BIND_GUIDE);
+    frames(2);
+    CHECK(menu_bind_waiting() == XBOX_BIND_PAD && s_binds == 2 && s_bind_b == -1);
+    frame(ImGuiKey_Escape); frames(3);
+    fprintf(stderr, "Esc in B's box: [%s], waiting %d, binds %d\n", open_menu(), menu_bind_waiting(), s_binds);
+    CHECK(menu_bind_waiting() == 0 && s_binds == 2 && s_bind_b == -1);
+    CHECK(strstr(open_menu(), "Controller layout") != NULL && hint_is("Sprays.") && pad_navigates());
+    /* A again, and the pad's Back, as the window hands it over: cancelled,
+     * held off the menu until let go. */
+    frame(ImGuiKey_GamepadFaceDown); frames(2);
+    CHECK(menu_bind_waiting() == XBOX_BIND_PAD);
+    {
+        ImGuiIO &io = ImGui::GetIO();
+        io.AddKeyEvent(ImGuiKey_GamepadBack, true);
+        menu_bind_cancel();
+        frames(3);
+        CHECK(menu_bind_waiting() == 0 && s_binds == 2 && !pad_navigates());
+        io.AddKeyEvent(ImGuiKey_GamepadBack, false);
+        frames(2);
+    }
+    CHECK(strstr(open_menu(), "Controller layout") != NULL && hint_is("Sprays.") && pad_navigates());
+    /* With no box, a press or a cancel is no one's. */
+    menu_bind_press(BIND_B);
+    menu_bind_cancel();
+    frames(2);
+    CHECK(s_binds == 2 && pad_navigates());
+    /* A menu path stops at a bind row: no box, and nothing bound. */
+    CHECK(menu_path_check("Gameplay > Controller layout > A") == MENU_PATH_NOT_RUN);
+    CHECK(menu_path_run("Gameplay > Controller layout > A") == MENU_PATH_NOT_RUN);
+    CHECK(menu_path_run("Gameplay > Controller layout > A > B") == MENU_PATH_NOT_RUN);
+    frames(2);
+    CHECK(menu_bind_waiting() == 0 && s_binds == 2 && pad_navigates());
+    /* B, Down, Right: the keyboard's page, on Left stick up. A: its box,
+     * waiting for a key; on the keyboard, the strip has F1 to cancel. Esc,
+     * as the window hands it over: the row's, once. */
+    frame(ImGuiKey_GamepadFaceRight); frames(2);
+    CHECK(strstr(open_menu(), "Gameplay") != NULL);
+    frame(ImGuiKey_GamepadDpadDown); frames(1);
+    CHECK(hint_is("Sets which key presses each control."));
+    frame(ImGuiKey_GamepadDpadRight); frames(2);
+    CHECK(strstr(open_menu(), "Keyboard and mouse layout") != NULL && hint_is("Skates forward."));
+    frame(ImGuiKey_GamepadFaceDown); frames(2);
+    CHECK(menu_bind_waiting() == XBOX_BIND_KEYS && centred("Keyboard and mouse layout###bind"));
+    g_pad = 0;
+    frames(1);
+    CHECK(strip_fits(0) && !strip_has_a());
+    menu_bind_press(BIND_ESC);
+    frames(3);
+    g_pad = 1;
+    CHECK(menu_bind_waiting() == 0 && s_binds == 3 && s_bind_key == BIND_ESC);
+    CHECK(strstr(open_menu(), "Keyboard and mouse layout") != NULL && hint_is("Skates forward."));
+    /* Down: the row with no bind. A: no box. */
+    frame(ImGuiKey_GamepadDpadDown); frames(1);
+    CHECK(hint_is("Has no bind."));
+    frame(ImGuiKey_GamepadFaceDown); frames(2);
+    CHECK(menu_bind_waiting() == 0 && !strstr(open_menu(), "###bind"));
+    /* B, B, B: Gameplay's title, the pad never left with nothing to stand
+     * on. File > Presets: still at JSRF-PC default, and a preset hands the
+     * rows nothing. */
+    s_bare = 0;
+    for (int i = 0; i < 3; i++) { frame(ImGuiKey_GamepadFaceRight); frames(2); }
+    fprintf(stderr, "binds done: [%s] %s, frames bare %d\n", open_menu(), nav_state(), s_bare);
+    CHECK(!strcmp(open_menu(), "") && bar_focused() && s_bare == 0);
+    CHECK(menu_preset_now() == XBOX_PRESET_JSRF_PC);
+    CHECK(menu_preset_apply(XBOX_PRESET_JSRF_PC) == 0 && s_binds == 3);
 
     /* The busy box, centred. */
     busy_frame();

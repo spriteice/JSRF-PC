@@ -115,6 +115,31 @@ in a submenu of its own.
 - Every box sits in the middle of the window and cannot be dragged
   (`box_begin` and `box_centre` in menu.cpp). New boxes use them.
 - B or Esc is Cancel. A box closes back to the menu it was opened from.
+- A bind row's box is the exception (Bind rows, below): B is a button it
+  takes, so the pad's Back or F1 cancels it, and Esc too while it waits
+  for a pad. It closes back on its row, in its submenu.
+
+## Bind rows
+
+- A bind row (`XBOX_ITEM_BIND` in `menu.h`) is a control, with the input
+  that presses it beside it, in the text's own colour. Choosing it opens a
+  box with no buttons, titled with its submenu ("Controller layout"):
+  "Press a button for A." for a pad's row, or "Press a key or mouse button
+  for A." for the keyboard's (`takes`).
+- The next press it takes is the row's, handed to its `bind`, and reaches
+  neither the menu nor the game: a pad's button, or a trigger pressed past
+  half way, on any pad; or a key, by its place, or a mouse button. The
+  window finds it in SDL's events (`xbox_MenuEvent` in `menu_sdl.cpp`).
+  A press the row can't have leaves the box waiting, with "That one can't
+  be used." under its message.
+- The pad's Back and F1 cancel the box, as they open and shut the menu, so
+  neither can be bound, and no layout can shut a player out of the menu.
+- Dear ImGui reads the pad itself, so from the box until the pad is let go,
+  its pad navigation is held off, and B is no Back: the press that binds,
+  or cancels, does nothing more in the menu.
+- The box closes back on its row, so the next control is a step away.
+- A menu path (`menu_path_run` in `menu.h`) stops at a bind row, and
+  doesn't run it: its box waits for a press, which a path can't give.
 
 ## Look
 
@@ -137,7 +162,8 @@ in a submenu of its own.
 - The strip along the bottom, in the bar's colour, shows the row's hint on
   the left and on the right the buttons to press: A Select, B Back, and Back
   Close on a pad, or Enter Select, Esc Back, and F1 Close on the keyboard,
-  whichever was pressed last. Each button or key is on a cap: A in the dark
+  whichever was pressed last. In a bind row's box, only the one that
+  cancels it: Back Cancel, or F1 Cancel. Each button or key is on a cap: A in the dark
   green and B in a red as dark, as the pad colours them, and the rest grey
   (`menu_style_cap`). The strip is as tall as the longest hint needs at the
   window's width, so it stays still as the pad moves.
@@ -179,7 +205,10 @@ in a submenu of its own.
   through its own function, as choosing that row would, and saves it as the
   row does. A (Restart) row keeps its value instead, and the game restarts
   once, after them all, if one changed.
-- **A preset sets every setting but Developer's.** Every row of Display,
+- **A preset sets every setting but Developer's, and the rows that say a
+  preset leaves them alone** (`XBOX_PRESETS_LEFT` in `menu.h`): a player's
+  own choices, not a quality setting, each with its own way back to its
+  default, as bind rows are. Every other row of Display,
   Graphics, Audio, Input and Gameplay, in a submenu or not, gives its value in
   each preset where it's added (`presets` and `preset` in `menu.h`), with
   JSRF-PC default's from the constant its own default comes from, so the
