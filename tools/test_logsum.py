@@ -241,7 +241,7 @@ def linux_run():
     return "".join([
         render("port/main.c", "=== JSRF-PC %s", "b1.4"),
         render("port/developer.c", "[DEV] %s=%s from ", "RECOMP_GL_PROFILE", "1"),
-        render(GL, "[WIN] SDL window (%s video)", "x11", "1280x800", ""),
+        render(GL, "[WIN] SDL window (%s video)", "x11", "1280x800", "", ""),
         render(GL, "  [GL] %s | %s | GLSL %s", "4.6 (Compatibility Profile) Mesa 25.0", "AMD Radeon", "4.60"),
         render(GL, "[GL] anti-aliasing: SMAA", "off", 4, "the settings", 8, ""),
         render(GL, "[GL] anisotropic filtering: %dx from %s", 16, "the settings", 16),
@@ -268,7 +268,7 @@ def linux_run():
 def windows_run():
     return "".join([
         render("port/main.c", "=== JSRF-PC %s", "b1.4"),
-        render(GL, "[WIN] SDL window (%s video)", "windows", "1920x1080", ""),
+        render(GL, "[WIN] SDL window (%s video)", "windows", "1920x1080", "", ""),
         render("port/developer.c", "[DEV] Log to file off: nothing"),
         pace(600, 0, 0, 0, 0), render(*PRESENT_HZ),
         pace(1200, 10, 0, 0, 0),

@@ -62,7 +62,11 @@ These work in a window or full screen, and each one is remembered.
 
 - **F1, or Back on a controller:** The in-game menu.
 - **F11 or Alt+Return:** Full screen or a window. The game starts full
-  screen until you choose a window.
+  screen until you choose a window. Started with `--minimized`
+  (`JSRF-PC.exe --minimized`, `./jsrf-pc --minimized`), it opens minimized,
+  in a window, leaving the keyboard where it was, for that start only:
+  restore it to play. On Linux it may show for a moment first, and in Game
+  Mode it opens as usual.
 - **F10:** 4:3, and back to widescreen at Match screen, your screen's own
   shape, which the game starts at until you choose. Display > Aspect ratio
   has the other shapes. Widescreen widens the

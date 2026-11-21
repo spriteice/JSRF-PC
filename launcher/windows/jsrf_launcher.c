@@ -14,6 +14,8 @@
  *   JSRF-PC.exe --scale N          internal resolution, 1 to 6 times 640x480
  *                                  (default 3); remembered
  *   JSRF-PC.exe --fullscreen       start full screen
+ *   JSRF-PC.exe --minimized        start minimized, in a window, leaving the
+ *                                  keyboard where it is
  *   JSRF-PC.exe --play <folder>    play a recording (Developer > Playback),
  *                                  and close at its end
  *   JSRF-PC.exe --version          which version this is
@@ -507,7 +509,7 @@ static int copy_saves(const wchar_t *game)
 
 /* ---- the run ---------------------------------------------------------------- */
 
-static int run(const wchar_t *game, int scale, int fullscreen)
+static int run(const wchar_t *game, int scale, int fullscreen, int minimized)
 {
     wchar_t engine[MAX_PATH * 2], cmd[MAX_PATH * 6], sc[8], msg[2048];
     SECURITY_ATTRIBUTES sa;
@@ -534,6 +536,7 @@ static int run(const wchar_t *game, int scale, int fullscreen)
         SetEnvironmentVariableW(L"RECOMP_GL_SCALE", NULL);
     }
     if (fullscreen) SetEnvironmentVariableW(L"RECOMP_FULLSCREEN", L"1");
+    if (minimized) SetEnvironmentVariableW(L"RECOMP_MINIMIZED", L"1");
     /* A recording to play, by its whole path, as the engine runs elsewhere. */
     SetEnvironmentVariableW(L"JSRF_PLAY", g_play[0] ? g_play : NULL);
     SetEnvironmentVariableW(L"JSRF_GAME_DIR", game);
@@ -639,7 +642,7 @@ static int setup_find_game(void *vctx, char *path, size_t n)
 
 int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
 {
-    int argc = 0, i, choose = 0, fullscreen = 0, scale = 0;
+    int argc = 0, i, choose = 0, fullscreen = 0, minimized = 0, scale = 0;
     wchar_t **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     wchar_t game[MAX_PATH * 2] = L"", arg[MAX_PATH * 2] = L"", *slash;
     char u8[MAX_PATH * 4], val[64];
@@ -697,6 +700,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
     for (i = 1; i < argc; i++) {
         if (!wcscmp(argv[i], L"--choose")) choose = 1;
         else if (!wcscmp(argv[i], L"--fullscreen")) fullscreen = 1;
+        else if (!wcscmp(argv[i], L"--minimized")) minimized = 1;
         else if (!wcscmp(argv[i], L"--play")) {
             DWORD n = i + 1 < argc ? GetFullPathNameW(argv[++i], MAX_PATH * 2, g_play, NULL) : 0;
             if (!n || n >= MAX_PATH * 2 || !is_dir(g_play)) return fail(L"--play takes a recording's folder.");
@@ -812,5 +816,5 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
         int s = atoi(val);
         if (s >= 1 && s <= SCALE_MAX) scale = s;
     }
-    return run(game, scale, fullscreen);
+    return run(game, scale, fullscreen, minimized);
 }

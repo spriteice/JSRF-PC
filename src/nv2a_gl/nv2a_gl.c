@@ -1429,8 +1429,16 @@ static int  sdl_cfg_get(const char *key, int def); /* the settings file, below *
 static void sdl_menu_display(void);  /* the in-game menu's rows, below */
 #endif
 
+/* The window opened minimized on Windows (sdl_show_minimized), and not shown
+ * since: the presenter measures the display once it is (pres_main). Set
+ * before the presenter starts, and cleared under its lock (sdl_min_shown). */
+static int g_min_start;
+
+static void sdl_show_minimized(void);  /* --minimized's window, below */
+
 static int gl_init(uint32_t w, uint32_t h)
 {
+    int minimized;
     /* A real window, sized to the guest surface. The frame is still built in
      * an FBO exactly as the headless path builds it -- what the window adds
      * is somewhere to show it and, on a machine with a GPU, a driver worth
@@ -1473,15 +1481,23 @@ static int gl_init(uint32_t w, uint32_t h)
         }
         if ((e = getenv("RECOMP_WINDOW_W")) && atoi(e) >= 320) ww = atoi(e);
         if ((e = getenv("RECOMP_WINDOW_H")) && atoi(e) >= 240) wh = atoi(e);
-        /* Full screen as the player last left it (sdl_choose_fullscreen), and
-         * full screen until they choose, unless RECOMP_FULLSCREEN says
-         * otherwise: the launchers' --fullscreen, or a new scale's restart
+        /* Minimized, with RECOMP_MINIMIZED: the launchers' --minimized, or a
+         * restart while the window was (sdl_restart). A window for this
+         * start, made hidden and then shown minimized (sdl_show_minimized):
+         * full screen as kept is left for the next. Otherwise full screen as
+         * the player last left it (sdl_choose_fullscreen), and full screen
+         * until they choose, unless RECOMP_FULLSCREEN says otherwise: the
+         * launchers' --fullscreen, or a new scale's restart
          * (sdl_restart_at). */
-        if ((e = getenv("RECOMP_FULLSCREEN")) && *e ? atoi(e) : sdl_cfg_get("fullscreen", SDL_CFG_FULLSCREEN_DEFAULT))
+        minimized = (e = getenv("RECOMP_MINIMIZED")) && atoi(e);
+        if (minimized)
+            flags |= SDL_WINDOW_HIDDEN;
+        else if ((e = getenv("RECOMP_FULLSCREEN")) && *e ? atoi(e) : sdl_cfg_get("fullscreen", SDL_CFG_FULLSCREEN_DEFAULT))
             flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
         g_window = SDL_CreateWindow("JSRF-PC",
                                     SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                     ww, wh, flags);
+        if (g_window && minimized) sdl_show_minimized();
     }
     if (!g_window) {
         fprintf(stderr, "  [GL] SDL_CreateWindow failed: %s\n", SDL_GetError());
@@ -1519,8 +1535,9 @@ static int gl_init(uint32_t w, uint32_t h)
                    (double)nv2a_wide_aspect());
       else
           snprintf(shape, sizeof shape, "4:3");
-      fprintf(stderr, "  [WIN] SDL window (%s video), %s%s\n", SDL_GetCurrentVideoDriver(), shape,
-              (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) ? ", full screen" : ""); }
+      fprintf(stderr, "  [WIN] SDL window (%s video), %s%s%s\n", SDL_GetCurrentVideoDriver(), shape,
+              (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) ? ", full screen" : "",
+              minimized ? ", minimized (RECOMP_MINIMIZED)" : ""); }
 
     fprintf(stderr, "  [GL] %s | %s | GLSL %s\n",
             (const char *)glGetString(GL_VERSION),
@@ -2031,14 +2048,18 @@ static void sdl_wide_window(void)
  * (port/main.c) -- in full screen again if that is where it was. */
 extern void recomp_restart_self(void) __attribute__((weak));
 
-/* The engine started again, in full screen again if that is where it was:
- * for a new scale, and for Graphics > Shader cache. */
+/* The engine started again, in full screen again if that is where it was,
+ * and minimized again if the window is now (RECOMP_MINIMIZED, gl_init): for
+ * a new scale, and for Graphics > Shader cache. */
 static void sdl_restart(int fs)
 {
+    int minimized = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_MINIMIZED) != 0;
 #if defined(_WIN32)
     _putenv_s("RECOMP_FULLSCREEN", fs ? "1" : "0");
+    _putenv_s("RECOMP_MINIMIZED", minimized ? "1" : "0");
 #else
     setenv("RECOMP_FULLSCREEN", fs ? "1" : "0", 1);
+    setenv("RECOMP_MINIMIZED", minimized ? "1" : "0", 1);
 #endif
     recomp_restart_self();      /* does not return when it works */
 }
@@ -2710,6 +2731,69 @@ static int dwm_vblank(double *last, double *period)
 }
 #endif
 
+#if defined(_WIN32)
+#include <SDL2/SDL_syswm.h>      /* the window's own handle, for sdl_show_minimized */
+
+/* The window's own handle, shown minimized by it (sdl_show_minimized): what
+ * sdl_min_shown asks Windows about. */
+static HWND g_min_hwnd;
+#endif
+
+/* --minimized (RECOMP_MINIMIZED): the window, made hidden, shown minimized
+ * and not made the active one, so the keyboard stays where it was. On
+ * Windows by its own handle (SW_SHOWMINNOACTIVE). Elsewhere it is shown,
+ * then minimized: SDL's minimized flag isn't kept on X11, where the window
+ * is iconified before it is mapped, which the window manager ignores; so it
+ * may be seen for a moment, and given the keyboard. Under gamescope there
+ * is nothing to minimize to, and it stays as shown. */
+static void sdl_show_minimized(void)
+{
+#if defined(_WIN32)
+    SDL_SysWMinfo wm;
+    SDL_VERSION(&wm.version);
+    if (SDL_GetWindowWMInfo(g_window, &wm) && wm.subsystem == SDL_SYSWM_WINDOWS) {
+        g_min_hwnd = wm.info.win.window;
+        ShowWindow(g_min_hwnd, SW_SHOWMINNOACTIVE);
+        g_min_start = 1;
+        return;
+    }
+    fprintf(stderr, "  [WIN] no handle for the window (%s): shown, then minimized\n", SDL_GetError());
+#endif
+    SDL_ShowWindow(g_window);
+    SDL_MinimizeWindow(g_window);
+}
+
+/* The window shown, after it opened minimized on Windows: SDL is told, and
+ * the presenter, waiting for that (pres_main), goes on to measure the
+ * display. On each of the window's events (sdl_pump), while it is still to
+ * come. Windows itself is asked whether it is shown, not SDL: SDL marks a
+ * window shown only when it shows it (SDL_ShowWindow) or is sent
+ * WM_SHOWWINDOW, which a hidden window shown minimized by its own handle
+ * isn't, so SDL has it as hidden until told. SDL_ShowWindow tells it,
+ * without making it the active window (SW_SHOWNA, as the hint asks), which
+ * changes nothing on screen: the window is up already. Its full screen
+ * needs that (F11): SDL changes full screen only on a window it has as
+ * shown. */
+static void sdl_min_shown(void)
+{
+#if defined(_WIN32)
+    Uint32 f;
+    if (!g_min_start || IsIconic(g_min_hwnd) || !IsWindowVisible(g_min_hwnd))
+        return;
+    f = SDL_GetWindowFlags(g_window);
+    fprintf(stderr, "[WIN] the window shown, after starting minimized (SDL had it as %s, %s)\n",
+            (f & SDL_WINDOW_HIDDEN) ? "hidden" : "shown",
+            (f & SDL_WINDOW_MINIMIZED) ? "minimized" : "not minimized");
+    SDL_SetHint(SDL_HINT_WINDOW_NO_ACTIVATION_WHEN_SHOWN, "1");
+    SDL_ShowWindow(g_window);
+    SDL_ResetHint(SDL_HINT_WINDOW_NO_ACTIVATION_WHEN_SHOWN);
+    if (g_gs_mu) SDL_LockMutex(g_gs_mu);
+    g_min_start = 0;
+    if (g_gs_cv) SDL_CondSignal(g_gs_cv);
+    if (g_gs_mu) SDL_UnlockMutex(g_gs_mu);
+#endif
+}
+
 static int ps_bucket(double dt)
 {
     double p = g_vs_period;
@@ -2864,6 +2948,17 @@ static int SDLCALL pres_main(void *arg)
     if (SDL_GL_SetSwapInterval(1) != 0)
         fprintf(stderr, "[WIN] no synchronised swap: %s\n", SDL_GetError());
     glGenFramebuffers(3, fbo);
+    /* A window opened minimized has no swaps to time: the display is
+     * measured once it is first shown (sdl_min_shown). Until then nothing is
+     * put on screen, and frames are paced as pres_lock says: by the
+     * compositor's refresh where Windows gives it, else by the game's clock. */
+    SDL_LockMutex(g_gs_mu);
+    if (g_min_start) {
+        fprintf(stderr, "[WIN] the window is minimized: the display is measured when it is "
+                "first shown\n");
+        while (g_min_start) SDL_CondWait(g_gs_cv, g_gs_mu);
+    }
+    SDL_UnlockMutex(g_gs_mu);
     pres_calibrate();
 #if defined(_WIN32)
     { double l = 0.0, p = 0.0;
@@ -3135,6 +3230,8 @@ static void sdl_pump(void)
             if (ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST) sdl_keys_release();
             /* Onto another display: Match screen takes its shape. */
             if (ev.window.event == SDL_WINDOWEVENT_DISPLAY_CHANGED) sdl_wide_display();
+            /* Opened minimized, and now shown: restored or maximized. */
+            sdl_min_shown();
             break;
         default:
             break;

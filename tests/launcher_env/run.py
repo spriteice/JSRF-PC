@@ -8,14 +8,16 @@ writes down its arguments and environment, answers --check-game,
 stand-in game folder (default.xbe and Media).
 
 What it hands the engine: the paths and the player's settings
-(RECOMP_GL_SCALE, RECOMP_FULLSCREEN) and no other RECOMP_ switch: what the
-game needs to work is the engine's own default (docs/project-rules.md, Where
-code goes 5). Up to b1.3 the launcher set twelve of them. Played with, as
-given, with a scale and full screen, and in portable mode; with each end of
-the scales, 1 to 6, given and saved, and one past them, which --scale
-refuses and a saved one is dropped. A scale only when the player chose one:
-with none, or a saved one dropped, no RECOMP_GL_SCALE, even one set in the
-launcher's own environment, so the engine takes its own default (3x).
+(RECOMP_GL_SCALE, RECOMP_FULLSCREEN, RECOMP_MINIMIZED) and no other RECOMP_
+switch: what the game needs to work is the engine's own default
+(docs/project-rules.md, Where code goes 5). Up to b1.3 the launcher set
+twelve of them. Played with, as given, with a scale and full screen,
+minimized (--minimized), alone and with full screen, and in portable mode;
+with each end of the scales, 1 to 6, given and saved, and one past them,
+which --scale refuses and a saved one is dropped. A scale only when the
+player chose one: with none, or a saved one dropped, no RECOMP_GL_SCALE,
+even one set in the launcher's own environment, so the engine takes its
+own default (3x).
 
 What it hands the engine for --play: the recording's folder, by its whole
 path, as JSRF_PLAY, and none without it.
@@ -32,7 +34,7 @@ one to ask: nothing.
 
 The Windows launcher can't run here (it is a windowed program, and CI builds
 it), so the switches it names in launcher/windows/jsrf_launcher.c are
-checked instead: only those two.
+checked instead: only those three.
 
 Which package it is: one with a kit/ folder (the package without the
 engine) opens the setup when the engine is missing or isn't the kit's, and
@@ -54,7 +56,7 @@ import tempfile
 root = pathlib.Path(__file__).resolve().parents[2]
 
 # The player's settings: the only switches a launcher may pass.
-SETTINGS = {"RECOMP_GL_SCALE", "RECOMP_FULLSCREEN"}
+SETTINGS = {"RECOMP_GL_SCALE", "RECOMP_FULLSCREEN", "RECOMP_MINIMIZED"}
 
 # Windows: every switch the launcher's source names.
 windows = sorted(set(re.findall(r'L"(RECOMP_[A-Z0-9_]+)',
@@ -220,7 +222,7 @@ def result(name, bad, good):
         print("launcher_env %s: %s" % (name, good))
 
 
-def check(name, args, scale, fullscreen, portable=False, saved=None, outside=None):
+def check(name, args, scale, fullscreen, portable=False, saved=None, outside=None, minimized=False):
     """scale: the RECOMP_GL_SCALE the engine is handed, None for none."""
     c = Case(portable, saved)
     p = c.run([c.game] + args, outside)
@@ -234,6 +236,8 @@ def check(name, args, scale, fullscreen, portable=False, saved=None, outside=Non
     want = {"RECOMP_GL_SCALE": str(scale)} if scale is not None else {}
     if fullscreen:
         want["RECOMP_FULLSCREEN"] = "1"
+    if minimized:
+        want["RECOMP_MINIMIZED"] = "1"
     got = {k: env[k] for k in switches if k in SETTINGS}
     paths = ["JSRF_GAME_DIR", "JSRF_SAVE_DIR", "JSRF_SETTINGS_FILE"] + (
         ["JSRF_USER_DIR"] if portable else [])
@@ -276,6 +280,8 @@ check("as given", [], None, False)
 check("as given, with a scale in the launcher's environment", [], None, False,
       outside={"RECOMP_GL_SCALE": "5"})
 check("with a scale and full screen", ["--scale", "3", "--fullscreen"], 3, True)
+check("minimized", ["--minimized"], None, False, minimized=True)
+check("minimized, and full screen", ["--fullscreen", "--minimized"], None, True, minimized=True)
 check("portable", [], None, False, portable=True)
 check("the largest scale", ["--scale", "6"], 6, False)
 check("the smallest scale", ["--scale", "1"], 1, False)
