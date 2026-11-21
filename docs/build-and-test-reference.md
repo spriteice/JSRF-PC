@@ -230,11 +230,16 @@ changed:
 - `launcher/windows/deps.sh`'s downloads and SDL's source, each still
   checked by its SHA-256 every time it is used;
 - the generated code, tagged with default.xbe's SHA-256 and one hash of
-  what makes it: every tracked file in `tools/` and `port/recomp_manual.c`,
-  and the versions of Python and capstone that ran the pipeline
-  (docs/building-on-linux.md installs capstone 5.0.9, the version CI
-  tests the tools with). It is used
-  only when both match, and made again otherwise;
+  what makes it: every tracked file in `tools/`, `templates/runtime/` and
+  `port/recomp_manual.c` (`git ls-files -s -- tools templates/runtime
+  port/recomp_manual.c`), and the versions of Python and capstone that ran
+  the pipeline (docs/building-on-linux.md installs capstone 5.0.9, the
+  version CI tests the tools with). It is used only when both match, and
+  made again otherwise. `templates/runtime/` is in it because the pipeline
+  copies its recomp_types.h into the generated code, and the engine
+  compiles against that copy. `port/CMakeLists.txt` refuses to build with a
+  copy that isn't the tree's header, so a kept copy that missed a change to
+  it stops the build instead of building without the change;
 - the last tested packages, for the comparison (Compatibility checks).
 
 Nothing else is kept. Every build of SDL and the engine, and every test,
@@ -256,8 +261,10 @@ accounted for there before delivery, as the package comparison's
 differences are: by what the change does, one reason covering as many
 functions as it explains, or by what you found when you looked. A change
 that shouldn't alter the code, such as a new tool or test in `tools/`,
-lists none. The sandbox keeps no generated code between threads, so there
-the kept copy is made from the base commit first.
+lists none, and a change to `templates/runtime/` alone changes only the
+copy of its recomp_types.h, whose functions have no address. The sandbox
+keeps no generated code between threads, so there the kept copy is made
+from the base commit first.
 
 The cloud's sandbox keeps its build images the same way, for as long as
 the thread lasts. A build image made there or on the PC, while one isn't
@@ -536,8 +543,9 @@ built:
 Every object and static library is compared by SHA-256, and every one must
 be the same. A linked program isn't compared, as its link's timestamp
 differs on every build. No build here has the generated code, so a change
-to what makes it (the parts of `tools/` the pipeline runs, and
-`port/recomp_manual.c`) can't be shown this way. The shared folder's
+to what makes it (the parts of `tools/` the pipeline runs,
+`port/recomp_manual.c`, and `templates/runtime/`, which it compiles
+against) can't be shown this way. The shared folder's
 rules-review/code-quality-2026-11-05/ci/masks/evidence/engine-objects-before-and-after.txt
 is an example.
 

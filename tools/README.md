@@ -265,6 +265,12 @@ making them again loses nothing. A function written by hand lives in `port/`
 recompiler which functions those are, so it leaves their bodies out. A bug in
 the generated code is fixed in the recompiler, and the code is made again.
 
+The recompiler also copies `templates/runtime/recomp_types.h`, the runtime's
+register model, into the generated code, and the engine compiles against that
+copy. [port/CMakeLists.txt](../port/CMakeLists.txt) refuses to build with a
+copy that isn't the tree's header, so after a change to it the code is made
+again too.
+
 ## Reading a log: logsum
 
 `tools/logsum.py` turns JSRF-PC's logs into tables of how the game ran, one

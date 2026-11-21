@@ -61,6 +61,30 @@ if(NOT EXISTS "${JSRF_GEN_DIR}/recomp_types.h")
                         "own default.xbe with tools/recomp (see docs/GETTING_STARTED.md), "
                         "or set JSRF_GEN_DIR.")
 endif()
+# The generated code carries a copy of templates/runtime/recomp_types.h, the
+# runtime's register model (tools/recomp/translator.py writes it beside
+# recomp_funcs.h), and the engine compiles against that copy. One made before
+# a change to the header would build the engine with the old runtime and
+# nothing to say so, so a copy that isn't this tree's header stops the build
+# here. Line endings don't count: the translator writes LF, and a checkout
+# may have CRLF.
+set(_jsrf_types_copy "${JSRF_GEN_DIR}/recomp_types.h")
+set(_jsrf_types_header "${JSRF_REPO}/templates/runtime/recomp_types.h")
+file(READ "${_jsrf_types_copy}" _jsrf_copy)
+file(READ "${_jsrf_types_header}" _jsrf_header)
+string(REPLACE "\r\n" "\n" _jsrf_copy "${_jsrf_copy}")
+string(REPLACE "\r\n" "\n" _jsrf_header "${_jsrf_header}")
+if(NOT "${_jsrf_copy}" STREQUAL "${_jsrf_header}")
+    message(FATAL_ERROR "The generated code's recomp_types.h (${_jsrf_types_copy}) isn't "
+                        "templates/runtime/recomp_types.h: it was made before a change to "
+                        "the runtime's header. Generate it again with tools/recomp "
+                        "(see docs/building-on-linux.md, step 4).")
+endif()
+# So a build already configured checks again when either changes.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+             "${_jsrf_types_copy}" "${_jsrf_types_header}")
+unset(_jsrf_copy)
+unset(_jsrf_header)
 # recomp_manual.c includes "recomp/gen/recomp_types.h": the folder two
 # levels above the generated code goes on the include path.
 get_filename_component(JSRF_GEN_ROOT "${JSRF_GEN_DIR}/../.." ABSOLUTE)

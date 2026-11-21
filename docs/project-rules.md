@@ -50,8 +50,9 @@ needs no test build. When unsure, it counts. A change to what the game runs
 that leaves the engine the same, byte for byte, in every way it's built
 needs no test build either: its review pack shows the comparison instead
 (docs/build-and-test-reference.md, The same engine). A change to what makes
-the generated code (the parts of `tools/` the pipeline runs, and
-`port/recomp_manual.c`) can't show that, so it still gets one. A
+the generated code (the parts of `tools/` the pipeline runs,
+`port/recomp_manual.c`, and `templates/runtime/`, which it compiles
+against) can't show that, so it still gets one. A
 release's change to the default settings is tested by the release's own
 packages (docs/release-checklist.md, step 7).
 
