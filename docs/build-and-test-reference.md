@@ -181,6 +181,11 @@ unattended, and read their logs.
 - **Never by hand:** you never record a run, or press anything during
   one. A run's log shows what a log can; how anything looks or feels
   stays mine to judge (project rules, Workflow 4).
+- **Minimized and muted:** every run, on the PC and on the Ally X, starts
+  the game with the launcher's `--minimized`, and with `mute=1` (Audio >
+  Mute) in the run's own copy of the settings, so a run doesn't take my
+  screen, keyboard or sound while I use the machine. On Linux the window
+  may show for a moment as it opens (docs/playing.md, Settings keys).
 - **On the PC:** through a Remote Control session, under the PC's claim
   (When the PC is busy), in the build's folder, on a copy of my portable
   folder made as for testing (Delivery package), and alone on the PC.
@@ -589,7 +594,8 @@ up:
 
 - **How:** with the shared folder's building-on-pc/idle-run/ script (its
   README says how), on a second copy of my portable folder, made as for
-  testing (Delivery package), so the copy I test with isn't touched. The
+  testing (Delivery package), so the copy I test with isn't touched,
+  minimized and muted as a playback run is (Playback runs). The
   game shows its title and the scene behind it, and about 3 minutes 40
   seconds in (the game's frame 13415) goes back to the intro, loading the
   title again. The run ends there, and the game is closed through its
@@ -606,7 +612,11 @@ up:
 - **Its pacing,** for information only: `tools/logsum.py`'s totals and
   finish line for the run go in TESTING.md beside the last tested build's
   idle run. The title plays the same way each time, so a build that drops
-  frames shows there. They fail nothing.
+  frames shows there. They fail nothing. A run started minimized is
+  compared only with one started minimized too (the first has none): a
+  window opened minimized on Windows puts no frame on screen until it is
+  shown, so the presenter's lines (`[PRESENT]`) count none, and no display
+  is measured.
 
 ### Linux and Windows: package contents
 
@@ -747,8 +757,9 @@ breaking a stage nobody was looking at.
   and the platform layer, and the build itself (the CMake files, the build
   images, the flags). When unsure, it is one.
 - **Where:** on the PC and on the Ally X, with nobody at the pad, as
-  input-playback/RUNS.md says. Each run is a step in TESTING.md, and it
-  passes when its log, read in full, shows what the step says I'd see.
+  input-playback/RUNS.md says, minimized and muted as every playback run
+  is (Playback runs). Each run is a step in TESTING.md, and it passes when
+  its log, read in full, shows what the step says I'd see.
 - **Until input playback's release is out** (RUNS.md lists the saved
   runs from then), there is no smoke set and nothing waits for it: I test
   by hand what a saved run would. From then, a new feature's own saved run
