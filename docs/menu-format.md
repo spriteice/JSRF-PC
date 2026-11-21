@@ -145,10 +145,10 @@ in a submenu of its own.
 - Dear ImGui reads the pad itself, so from the box until the pad is let go,
   its pad navigation is held off, and B is no Back: the press that binds,
   or is none, does nothing more in the menu.
-- A row whose control has a second input (`bind_second`) takes two
-  presses: "Press a key or mouse button for A, or F1 for none.", then
-  "Press a second key or mouse button for A, or F1 for none." ("a button",
-  and Back, for a pad's). The
+- A row whose control has a second input (`bind_second`), as each of
+  Keyboard layout's has a second key, takes two presses: "Press a key or
+  mouse button for A, or F1 for none.", then "Press a second key or mouse
+  button for A, or F1 for none." ("a button", and Back, for a pad's). The
   first is handed to its `bind`, the second to `bind_second`. At either,
   the pad's Back or F1 is none, so a control can be left with nothing:
   Back twice.
@@ -170,10 +170,16 @@ in a submenu of its own.
   page back.
 - A row shows its control's inputs, by the names the menu gives them ("LB",
   "LT", "Paddle 1"; a key by SDL's name, "Space"; "Mouse right"), two with a
-  comma where the default has a second key ("Space, J"), or None.
-- A press binds that input to the row's control alone, and the control that
-  had it gets the row's old input, so the two swap. The pad's Back or F1
-  leaves the control with none.
+  comma where it has a second ("Space, J"), or None.
+- On Controller layout, a press binds that button to the row's control
+  alone, and the control that had it gets the row's old button, so the two
+  swap. The pad's Back or F1 leaves the control with none.
+- On Keyboard layout, a row takes two presses (Bind rows): the control's
+  first key, then its second. Either can be none (F1 or the pad's Back; the
+  first key again, for the second), so a control can have no key. Each
+  goes in its place, and the control that had that key gets the place's
+  old key, so the two swap; a key moved between a row's own two places
+  swaps them.
 - A row can't have the pad's Guide or Back, or the window's keys: F1, F9 to
   F11 and the keys the game binds, as F8. Nor a key SDL has no name for,
   which the settings couldn't keep.

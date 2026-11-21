@@ -181,9 +181,13 @@ static void read_page(Page *p)
 /* ---- the menu's pages (menu.h, XBOX_GROUP_PAD_LAYOUT and
  * XBOX_GROUP_KEY_LAYOUT) -------------------------------------------------
  * On the window's thread, the layouts' only writer once the game runs. A
- * row binds the input pressed to its control alone, or none (the pad's
- * Back or F1, XBOX_BIND_NO_INPUT), and whatever control had that input
- * gets the row's old one (input_layout_bind); Reset to
+ * controller's row binds the button pressed to its control alone, or
+ * none, and whatever control had it gets the row's old one
+ * (input_layout_bind). A
+ * keyboard's row takes two presses (menu.h, bind_second): the control's
+ * first key, then its second, either of them none; each in its place,
+ * whatever control had it getting the place's old one
+ * (input_layout_bind_key). Reset to
  * default puts each control back. Each change is kept in remap.cfg at
  * once, and said in the log. */
 
@@ -218,6 +222,15 @@ static const char *row_text(Page *p, int c)
     return p->text[c];
 }
 
+/* The layout changed by one row: kept, and said. */
+static void row_put(Page *p, const InputLayout *was, const InputLayout *now)
+{
+    put(p, now);
+    keep(p, was, now);
+    say(p, was, now, "");
+}
+
+/* A controller's row: the button pressed, or none (XBOX_BIND_NO_INPUT). */
 static int row_bind(Page *p, int c, int input)
 {
     InputLayout was, now;
@@ -226,9 +239,23 @@ static int row_bind(Page *p, int c, int input)
     get(p, &was);
     now = was;
     input_layout_bind(&now, c, input);
-    put(p, &now);
-    keep(p, &was, &now);
-    say(p, &was, &now, "");
+    row_put(p, &was, &now);
+    return 1;
+}
+
+/* A keyboard's row: its first press, in the control's first place, then
+ * its second in its second; either can be none (XBOX_BIND_NO_INPUT). The
+ * first key pressed again for the second is none too: one key is all it
+ * has. */
+static int row_bind_key(Page *p, int c, int place, int input)
+{
+    InputLayout was, now;
+    get(p, &was);
+    if (input == XBOX_BIND_NO_INPUT || (place && input == was.bind[c][0])) input = INPUT_NONE;
+    else if (!usable(p, input)) return 0;
+    now = was;
+    input_layout_bind_key(&now, c, place, input);
+    row_put(p, &was, &now);
     return 1;
 }
 
@@ -249,7 +276,8 @@ static void reset(Page *p)
     static int pad_bind_##nm(int in) { return row_bind(&g_page[INPUT_REMAP_PAD], INPUT_CTL_##C, in); }
 #define KEY_FNS(C, nm, lbl) \
     static const char *key_text_##nm(void) { return row_text(&g_page[INPUT_REMAP_KEYS], INPUT_CTL_##C); } \
-    static int key_bind_##nm(int in) { return row_bind(&g_page[INPUT_REMAP_KEYS], INPUT_CTL_##C, in); }
+    static int key_bind_##nm(int in) { return row_bind_key(&g_page[INPUT_REMAP_KEYS], INPUT_CTL_##C, 0, in); } \
+    static int key_bind2_##nm(int in) { return row_bind_key(&g_page[INPUT_REMAP_KEYS], INPUT_CTL_##C, 1, in); }
 INPUT_REMAP_BUTTONS(PAD_FNS)
 INPUT_REMAP_OWN(PAD_FNS)
 INPUT_REMAP_BUTTONS(KEY_FNS)
@@ -268,8 +296,9 @@ static void key_reset(void) { reset(&g_page[INPUT_REMAP_KEYS]); }
 #define KEY_ROW(C, nm, lbl) \
     { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_BIND, .label = lbl, \
       .group = XBOX_GROUP_KEY_LAYOUT, .takes = XBOX_BIND_KEYS, \
-      .text = key_text_##nm, .bind = key_bind_##nm, .presets = XBOX_PRESETS_LEFT, \
-      .hint = "Sets the key or mouse button that presses this control." },
+      .text = key_text_##nm, .bind = key_bind_##nm, .bind_second = key_bind2_##nm, \
+      .presets = XBOX_PRESETS_LEFT, \
+      .hint = "Sets the two keys or mouse buttons that press this control." },
 
 static void remap_menu(void)
 {

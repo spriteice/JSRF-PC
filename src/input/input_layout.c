@@ -153,6 +153,20 @@ void input_layout_bind(InputLayout *l, int c, int input)
     l->bind[c][0] = (short)input;
 }
 
+void input_layout_bind_key(InputLayout *l, int c, int place, int input)
+{
+    int was, o, b;
+    if (c < 0 || c >= INPUT_CTLS || place < 0 || place >= INPUT_BINDS) return;
+    was = l->bind[c][place];
+    if (input == was) return;
+    if (input != INPUT_NONE)
+        for (o = 0; o < INPUT_CTLS; o++)
+            for (b = 0; b < INPUT_BINDS; b++)
+                if ((o != c || b != place) && l->bind[o][b] == input)
+                    l->bind[o][b] = (short)(o != c && has(l, o, was) ? INPUT_NONE : was);
+    l->bind[c][place] = (short)input;
+}
+
 void input_layout_used(const InputLayout *l, uint32_t used[INPUT_HELD_WORDS])
 {
     int c, b;

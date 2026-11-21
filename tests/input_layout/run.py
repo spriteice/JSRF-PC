@@ -27,7 +27,10 @@ of them; a trigger on Start from half way; an input out of range, or none,
 pressing nothing; a key no control uses, not held as far as the game knows;
 Space and J each pressing A alone; a mouse button and the last key. A row's
 bind: the swap, a control's own input again, a second key kept, two
-controls' input, and none. The inputs a layout uses, for the latency log.
+controls' input, and none. One of a control's places, as Keyboard layout's
+rows set its two keys: the swap place by place, a row's own two swapping,
+none, and an input that would be one control's twice. The inputs a layout
+uses, for the latency log.
 The pages: Controller layout's seventeen rows, Toggle free camera last,
 and Keyboard layout's twenty-four, each with Reset to default, in one add, each Input's, left
 alone by the presets, with a hint, and showing the defaults' inputs.
@@ -35,7 +38,9 @@ Binding through them: the swap, kept in remap.cfg line by line and back
 to no line at a default, said in the log; none, as the pad's Back or F1
 hands it; Guide, the pad's Back, the window's keys and a key with no name
 refused, changing nothing; a mouse
-button; and Keyboard moves following the left stick's rows. Reset to
+button; Keyboard moves following the left stick's rows; and the keyboard's
+rows taking two presses, the first key again or none for the second, and
+none for the first, refusing as the first does. Reset to
 default on each page alone. At start, the lines the rows kept read back as
 they were, Toggle free camera's too, an unknown name or an input a layout
 can't have keeps the default, which the log says, and the keyboard reads no
@@ -74,6 +79,11 @@ with tempfile.TemporaryDirectory(prefix="input_layout-") as directory:
             "[INPUT] keyboard layout: B is J",
             "[INPUT] keyboard layout: Y is Mouse right",
             "[INPUT] keyboard layout: Left stick up is I",
+            "[INPUT] keyboard layout: Start is Keypad Enter, Return",
+            "[INPUT] keyboard layout: Start is Keypad Enter",
+            "[INPUT] keyboard layout: Back is Escape, Mouse middle",
+            "[INPUT] keyboard layout: Back is Escape",
+            "[INPUT] keyboard layout: Back is None",
         ],
         "reset": [
             "[INPUT] controller layout: reset to default",
@@ -96,7 +106,7 @@ with tempfile.TemporaryDirectory(prefix="input_layout-") as directory:
             "[INPUT] controller layout: A is R3", "[INPUT] controller layout: R trigger is RT",
         ],
     }
-    for case in ("defaults", "pad", "keys", "move", "binds", "bind", "used",
+    for case in ("defaults", "pad", "keys", "move", "binds", "bind", "bind_key", "used",
                  "rows", "bind_rows", "reset", "settings", "hotkey"):
         run = subprocess.run([exe, case], capture_output=True, text=True, timeout=120)
         print(run.stdout + run.stderr, end="")

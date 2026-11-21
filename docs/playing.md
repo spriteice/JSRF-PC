@@ -24,13 +24,14 @@ button back.
 ## Keyboard
 
 Keys go by position, so W A S D on a QWERTY keyboard is Z Q S D on an AZERTY
-one. These are the defaults: Input > Keyboard layout changes which key, or
-mouse button, presses each control, as Controller layout does for the pad,
-and Reset to default puts them back. Any key can be used but F1 and F8 to
-F11, and the mouse's left, middle, right, back and forward buttons. A
-control has one key once you choose it: the second keys below (J, keypad
-Enter, a keyboard's Back key) stay until you change their control. Keyboard
-moves steers with whatever keys the left stick has.
+one. These are the defaults: Input > Keyboard layout changes which keys, or
+mouse buttons, press each control, and Reset to default puts them back.
+Each control has two: choose its row, press its first key, then its second.
+F1, or Back on a controller, is none at either, so pressing it twice leaves
+the control with no key. The control that had a key you press gets the one
+it replaces, so the two swap, as on Controller layout. Any key can be used but
+F1 and F8 to F11, and the mouse's left, middle, right, back and forward
+buttons. Keyboard moves steers with whatever keys the left stick has.
 
 - **W A S D:** Move, and the menus. They are the left stick, so W goes away
   from the camera. With Input > Behaviour > Keyboard moves at Skater, W goes

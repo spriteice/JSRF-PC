@@ -120,6 +120,14 @@ int input_layout_keys_move(const InputLayout *l, const uint32_t held[INPUT_HELD_
  * input presses two controls that it didn't before. */
 void input_layout_bind(InputLayout *l, int c, int input);
 
+/* Input in one of control c's places (0 to INPUT_BINDS - 1), as Keyboard
+ * layout's rows set a control's two keys, or none there: the swap above,
+ * place by place. Every other control that had input has the place's old
+ * input in its place instead (none if the place had none, or if that
+ * control has it already); c's own other place, if it had input, gets the
+ * old one, so the two swap within the row. */
+void input_layout_bind_key(InputLayout *l, int c, int place, int input);
+
 /* The inputs any control has, a bit each (the latency log counts a press
  * of those alone). */
 void input_layout_used(const InputLayout *l, uint32_t used[INPUT_HELD_WORDS]);
