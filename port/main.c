@@ -758,6 +758,10 @@ static int host_main(void)
     /* Whether the keyboard steers the skater from the way it faces, and its
      * row in Input > Behaviour, after Default cam fix (port/keyboard_move.c). */
     { extern void kbmove_start(void); kbmove_start(); }
+    /* Whether the pad's sticks are stretched to the square's corners, and
+     * its row, the last in Input > Behaviour, after Keyboard moves
+     * (src/input/stick_shape.c). */
+    { extern void stick_shape_start(void); stick_shape_start(); }
     /* Whether the intro is skipped, and its row in Gameplay > Skips
      * (port/intro.c). */
     { extern void intro_start(void); intro_start(); }

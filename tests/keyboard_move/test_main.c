@@ -317,7 +317,7 @@ int main(int argc, char **argv)
     CHECK(s_rows == 2);
     CHECK(s_group.menu == XBOX_MENU_INPUT && s_group.kind == XBOX_ITEM_GROUP);
     CHECK(!strcmp(s_group.label, XBOX_GROUP_BEHAVIOUR) && !strcmp(s_group.label, "Behaviour"));
-    CHECK(s_group.hint && !strcmp(s_group.hint, "Configure the keyboard movement in relation to the camera."));
+    CHECK(s_group.hint && !strcmp(s_group.hint, "Sets how the camera, the keys and the sticks act."));
     CHECK(s_row.menu == XBOX_MENU_INPUT && s_row.kind == XBOX_ITEM_CHOICE);
     CHECK(s_row.group && !strcmp(s_row.group, XBOX_GROUP_BEHAVIOUR) && !s_row.under && !s_row.last);
     CHECK(!strcmp(s_row.label, "Keyboard moves") && s_row.nchoices == 2);

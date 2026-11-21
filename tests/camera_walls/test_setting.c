@@ -63,7 +63,7 @@ int main(int argc, char **argv)
     whole = s_added[2];
     CHECK(group.menu == XBOX_MENU_INPUT && group.kind == XBOX_ITEM_GROUP);
     CHECK(!strcmp(group.label, XBOX_GROUP_BEHAVIOUR) && !strcmp(group.label, "Behaviour"));
-    CHECK(group.hint && !strcmp(group.hint, "Configure the keyboard movement in relation to the camera."));
+    CHECK(group.hint && !strcmp(group.hint, "Sets how the camera, the keys and the sticks act."));
     CHECK(row.menu == XBOX_MENU_INPUT && row.kind == XBOX_ITEM_TOGGLE && !row.last);
     CHECK(!strcmp(row.label, "Default cam fix") && !row.confirm);
     CHECK(row.group && !strcmp(row.group, XBOX_GROUP_BEHAVIOUR) && !row.under);

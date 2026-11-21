@@ -151,6 +151,7 @@ static int host_pad_off(void)
 
 #include <SDL.h>
 #include "rumble_hold.h"
+#include "stick_shape.h"
 
 static SDL_GameController *g_pads[XBOX_MAX_CONTROLLERS];
 static BOOL  g_controller_connected[XBOX_MAX_CONTROLLERS];
@@ -403,6 +404,10 @@ DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
             axes[1] = (short)(-1 - SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTY));
             axes[2] = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_RIGHTX);
             axes[3] = (short)(-1 - SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_RIGHTY));
+            /* Round or square, as Input > Behaviour > Stick shape has them
+             * (stick_shape.h): the pad's sticks only, before the keys go
+             * over them. */
+            stick_shape_pad(axes);
             pad_held = input_press_pad(out, analog, axes);
         }
     }

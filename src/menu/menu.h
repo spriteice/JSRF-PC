@@ -216,15 +216,16 @@ typedef struct XBOX_MENU_ITEM {
 /* Input's submenus, in its order: Controller layout, then Keyboard layout,
  * which press each of the game's controls (src/input/input_remap.c adds
  * them, with their rows); Free camera (port/freecam.c adds it, with its
- * rows); then Behaviour, for how the game's camera and the keys act
- * (Default cam fix, port/camera_walls.c, then Keyboard moves,
- * port/keyboard_move.c: each adds it with its row, and the second adds
- * nothing). */
+ * rows); then Behaviour, for how the game's camera, the keys and the
+ * sticks act (Default cam fix and No skater fade, port/camera_walls.c, then
+ * Keyboard moves, port/keyboard_move.c, then Stick shape,
+ * src/input/stick_shape.c: each adds it with its rows, and those after the
+ * first add nothing). */
 #define XBOX_GROUP_PAD_LAYOUT   "Controller layout"
 #define XBOX_GROUP_KEY_LAYOUT   "Keyboard layout"
 #define XBOX_GROUP_FREECAM      "Free camera"
 #define XBOX_GROUP_BEHAVIOUR    "Behaviour"
-#define XBOX_GROUP_BEHAVIOUR_HINT "Configure the keyboard movement in relation to the camera."
+#define XBOX_GROUP_BEHAVIOUR_HINT "Sets how the camera, the keys and the sticks act."
 
 /* Developer's submenu right below Performance (port/developer.c adds it):
  * Missions, the game restarted at a story mission (port/missions_menu.c

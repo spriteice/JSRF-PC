@@ -9,7 +9,7 @@
 > out of date there: say so. The generated code is never edited, and a bug
 > is fixed where it starts, not stubbed out or guarded around.
 
-Maps the Xbox controller API to the host's pads, through SDL2's GameController API on Linux and Windows. The original Xbox used `XInputGetState` with a slightly different structure layout than the XInput API on Windows; this layer keeps the Xbox's layout and fills it from SDL2, with the window's keyboard and mouse merged in, each through its layout: which of the host's buttons, or keys and mouse buttons, press each of the Xbox pad's controls (`input_layout.h`). A player sets the layouts in the in-game menu, Input > Controller layout and Input > Keyboard layout, and `remap.cfg`, beside the settings file, keeps them (`input_remap.h`). src/usb's controller (`usb_gamepad.c`) reports that state to the game's own USB driver. While the in-game menu is open it has the pad, and the game sees nothing pressed. With `RECOMP_INPUT_LATENCY`, each press on the first pad or the keyboard that the game reads is handed to the window, which follows it to the screen (`src/nv2a_gl/nv2a_latency.h`).
+Maps the Xbox controller API to the host's pads, through SDL2's GameController API on Linux and Windows. The original Xbox used `XInputGetState` with a slightly different structure layout than the XInput API on Windows; this layer keeps the Xbox's layout and fills it from SDL2, with the window's keyboard and mouse merged in, each through its layout: which of the host's buttons, or keys and mouse buttons, press each of the Xbox pad's controls (`input_layout.h`). A player sets the layouts in the in-game menu, Input > Controller layout and Input > Keyboard layout, and `remap.cfg`, beside the settings file, keeps them (`input_remap.h`). A pad's sticks go to the game stretched onto the Xbox controller's square, as Input > Behaviour > Stick shape has them by default (Square), or as SDL reads them, with Round (`stick_shape.h`), before the keyboard's keys go over them and before input playback records them. src/usb's controller (`usb_gamepad.c`) reports that state to the game's own USB driver. While the in-game menu is open it has the pad, and the game sees nothing pressed. With `RECOMP_INPUT_LATENCY`, each press on the first pad or the keyboard that the game reads is handed to the window, which follows it to the screen (`src/nv2a_gl/nv2a_latency.h`).
 
 ## Files
 
@@ -20,6 +20,7 @@ Maps the Xbox controller API to the host's pads, through SDL2's GameController A
 | `input_layout.c`, `input_layout.h` | The layouts, the host's pads' and the keyboard's (its keys and the mouse's buttons): which inputs press each of the Xbox pad's controls, and the port's own (the free camera's switch), their defaults, a row's bind (a swap: a control's whole, or one of its two places), and the state they give (no SDL in it, for tests/input_layout) |
 | `input_remap.c`, `input_remap.h` | The layouts in use: read from `remap.cfg`, beside the settings file, at start, copied to the game's thread under a lock, and the in-game menu's two pages that change them, each change kept and logged; and a press of a port's own control on a pad, from the window's events, run on the window's thread (no SDL in it, for tests/input_layout; the inputs' names are `xinput_device.c`'s) |
 | `rumble_hold.c`, `rumble_hold.h` | When to send the vibration the game set to the host's pad, so it holds as the console's does (no SDL in it, for tests/rumble) |
+| `stick_shape.c`, `stick_shape.h` | The sticks' shape, Input > Behaviour > Stick shape (`stick_shape=` in the settings file): Square, the default, each stick's circle stretched onto the square, its direction kept and a full push full on both axes at any angle, or Round, the pad's sticks as they come; and its row, the last in Behaviour (no SDL in it, for tests/stick_shape) |
 | `input_press.c`, `input_press.h` | What the input latency log (`RECOMP_INPUT_LATENCY`) counts as a press on the first pad or the keyboard: a control held at a read that wasn't at the one before (no SDL in it, for tests/input_latency) |
 
 ## Quick Start
@@ -127,7 +128,7 @@ XBOX_ANALOG_BUTTON_THRESHOLD  30   // Recommended press threshold
 
 ### Xbox → Modern Controller Mapping
 
-The pad's layout as it starts (`input_layout_pad_default`), which Input > Controller layout changes. The sticks are the game's as they are; only the keyboard's layout pushes a stick.
+The pad's layout as it starts (`input_layout_pad_default`), which Input > Controller layout changes. The sticks are the pad's as they are, or stretched onto the square with Input > Behaviour > Stick shape (`stick_shape.h`); only the keyboard's layout pushes a stick.
 
 | Xbox Button | Host Pad (SDL2) | Notes |
 |-------------|------------------|-------|

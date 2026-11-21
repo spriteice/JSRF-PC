@@ -228,8 +228,9 @@ input goes to the menu.
   Shader cache and Audio effects: each
   one also puts the game
   full screen, Upscaling's Cleanup as a new install has it, the free
-  camera's own settings back to their defaults, and Keyboard moves at
-  Camera. The one ticked is the one your settings match, if any.
+  camera's own settings back to their defaults, Keyboard moves at
+  Camera, and Stick shape at Square. The one ticked is the one your settings
+  match, if any.
 - **Display:** Full screen, the resolution (its choices as F9 gives them),
   the aspect ratio, the HUD submenu, the draw distance, the Building distance submenu (Far
   buildings and Far shadows), and a submenu at the end, Enhancements, with
@@ -326,9 +327,9 @@ input goes to the menu.
   camera](#free-camera)'s own settings: Enable free camera, Auto centre,
   Invert X, Invert Y, Sensitivity X, Sensitivity Y, Deadzone (15% by
   default), Mouse look (on by default), and Mouse sensitivity (5 by
-  default). Behaviour has Default cam fix, No skater fade, then Keyboard
-  moves. Default cam fix keeps the game's own camera out of walls (Near
-  walls, above). On by default; off, the game's camera is as on the Xbox. It
+  default). Behaviour has Default cam fix, No skater fade, Keyboard moves,
+  then Stick shape. Default cam fix keeps the game's own camera out of
+  walls (Near walls, above). On by default; off, the game's camera is as on the Xbox. It
   changes at once, and is kept as `dcamfix=` (1 or 0) in the settings file.
   No skater fade keeps the camera as far from your skater as the game shows
   them whole, seeing through a wall nearer than that ([Near
@@ -341,7 +342,19 @@ input goes to the menu.
   way the camera faces (Camera, the default), or from the way the skater
   faces (Skater), which the camera turning, the free camera or the game's
   own, doesn't change. It changes at once, and is kept as `keyboard_moves=`
-  (0 Camera, 1 Skater) in the settings file.
+  (0 Camera, 1 Skater) in the settings file. Stick shape sets how far a
+  controller's sticks reach on a diagonal: Square, the default, each
+  stick's circle stretched onto the square the Xbox controller's sticks
+  reach, so a full push is full on both axes at any angle, or Round, as the
+  pad gives them. The game takes the skater's push from how far the stick is
+  pushed, whichever way, so Round already skates at full speed on a
+  diagonal; with Square, a part push on a diagonal counts up to 41% more
+  than the same push straight, as on the Xbox, and turns the free camera
+  that much faster. The keys stay as they are. It changes at once, is
+  Square in each preset,
+  and is kept as `stick_shape=` (0 Square, 1 Round) in the settings file. A
+  recording holds the sticks as the game got them, so it plays back the
+  same whichever shape is set.
 - **Gameplay:** Two submenus: Skips, with Skip intro and Skip cutscenes,
   then Graffiti souls, with Visual indicator. Skip intro leaves out the
   logos and the graffiti disclaimer the game opens with, and starts at the
