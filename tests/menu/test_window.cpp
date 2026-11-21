@@ -18,8 +18,10 @@
  * SDL's events: the next press it takes, a pad's button, a trigger going
  * past half way on its pad (not one held there already, or another pad's),
  * a key, a mouse button, handed to the row and kept from the menu and the
- * game; the pad's Back and F1 cancelling it, not shutting the menu; and
- * what it doesn't take left to the menu as before.
+ * game; the pad's Back and F1 handing it none, not shutting the menu; what
+ * it doesn't take left to the menu as before; and a row that takes two
+ * keys, its second a key or a mouse button, and F1 or the pad's Back none
+ * at either press.
  */
 #include "menu.h"
 #include "imgui.h"
@@ -47,7 +49,8 @@ enum { SDL_KEYDOWN = 0x300, SDL_KEYUP, SDL_TEXTINPUT = 0x303, SDL_MOUSEBUTTONDOW
 enum { SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_B, SDL_CONTROLLER_BUTTON_BACK = 4,
        SDL_CONTROLLER_BUTTON_GUIDE, SDL_CONTROLLER_BUTTON_MAX = 21 };
 enum { SDL_CONTROLLER_AXIS_LEFTX, SDL_CONTROLLER_AXIS_TRIGGERLEFT = 4, SDL_CONTROLLER_AXIS_TRIGGERRIGHT };
-enum { SDL_SCANCODE_W = 26, SDL_SCANCODE_ESCAPE = 41, SDL_SCANCODE_F1 = 58, SDL_NUM_SCANCODES = 512 };
+enum { SDL_SCANCODE_J = 13, SDL_SCANCODE_W = 26, SDL_SCANCODE_ESCAPE = 41, SDL_SCANCODE_SPACE = 44,
+       SDL_SCANCODE_F1 = 58, SDL_NUM_SCANCODES = 512 };
 enum { SDL_BUTTON_LEFT = 1, SDL_BUTTON_RIGHT = 3 };
 typedef struct { unsigned type; unsigned char repeat; struct { int scancode; } keysym; } SDL_KeyboardEvent;
 typedef struct { unsigned type; int which; unsigned char button; } SDL_ControllerButtonEvent;
@@ -104,10 +107,12 @@ static void press_back(int on)
 }
 
 /* Bind rows (menu.h, XBOX_ITEM_BIND) in Input, the only menu here: one for
- * a pad, one for the keys, each keeping what it was handed. */
-static int s_pad_input = -1, s_key_input = -1, s_handed;
+ * a pad, one for the keys, and one for two keys, as Keyboard layout's,
+ * each keeping what it was handed. */
+static int s_pad_input = -1, s_key_input = -1, s_second_input = -2, s_handed;
 static int bind_pad(int input) { s_pad_input = input; s_handed++; return 1; }
 static int bind_key(int input) { s_key_input = input; s_handed++; return 1; }
+static int bind_second(int input) { s_second_input = input; s_handed++; return 1; }
 static const char *bind_now(void) { return "A"; }
 static XBOX_MENU_ITEM bind_row(const char *label, XBOX_BIND_TAKES takes, int (*bind)(int))
 {
@@ -248,9 +253,11 @@ int main(void)
      * F1 opens the menu; A opens Input, on the pad's row; A: its box, which
      * waits for a pad. */
     {
-        const XBOX_MENU_ITEM rows[] = { bind_row("A", XBOX_BIND_PAD, bind_pad),
-                                        bind_row("Left stick up", XBOX_BIND_KEYS, bind_key) };
-        xbox_MenuAdd(rows, 2);
+        XBOX_MENU_ITEM rows[] = { bind_row("A", XBOX_BIND_PAD, bind_pad),
+                                  bind_row("Left stick up", XBOX_BIND_KEYS, bind_key),
+                                  bind_row("Jump", XBOX_BIND_KEYS, bind_key) };
+        rows[2].bind_second = bind_second;
+        xbox_MenuAdd(rows, 3);
     }
     io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
     CHECK(event(SDL_KEYDOWN, SDL_SCANCODE_F1) && g_open);
@@ -288,14 +295,16 @@ int main(void)
     CHECK(event(SDL_CONTROLLERBUTTONDOWN, SDL_CONTROLLER_BUTTON_B) && s_to_imgui == 0);
     CHECK(s_handed == 2 && s_pad_input == SDL_CONTROLLER_BUTTON_B && g_open);
     for (int i = 0; i < 3; i++) show();
-    /* Again: the pad's Back, then F1, each cancels, and the menu stays. */
+    /* Again: the pad's Back, then F1, each the row's none, and the menu
+     * stays. */
     pad_frame(ImGuiKey_GamepadFaceDown); show();
     CHECK(event(SDL_CONTROLLERBUTTONDOWN, SDL_CONTROLLER_BUTTON_BACK));
-    CHECK(menu_bind_waiting() == 0 && s_handed == 2 && g_open);
+    CHECK(menu_bind_waiting() == 0 && s_handed == 3 && s_pad_input == XBOX_BIND_NO_INPUT && g_open);
     for (int i = 0; i < 3; i++) show();
+    s_pad_input = -2;
     pad_frame(ImGuiKey_GamepadFaceDown); show();
     CHECK(event(SDL_KEYDOWN, SDL_SCANCODE_F1));
-    CHECK(menu_bind_waiting() == 0 && s_handed == 2 && g_open);
+    CHECK(menu_bind_waiting() == 0 && s_handed == 4 && s_pad_input == XBOX_BIND_NO_INPUT && g_open);
     for (int i = 0; i < 3; i++) show();
     /* Down: the keys' row. A: its box, which waits for a key. A pad's
      * button: nobody's. Esc: the row's, as is the mouse's right button
@@ -305,19 +314,56 @@ int main(void)
     pad_frame(ImGuiKey_GamepadFaceDown); show();
     CHECK(menu_bind_waiting() == XBOX_BIND_KEYS);
     s_to_imgui = 0;
-    CHECK(event(SDL_CONTROLLERBUTTONDOWN, SDL_CONTROLLER_BUTTON_A) && s_handed == 2);
-    CHECK(event(SDL_KEYDOWN, SDL_SCANCODE_ESCAPE, 1) && s_handed == 2);
-    CHECK(event(SDL_KEYDOWN, SDL_SCANCODE_ESCAPE) && s_handed == 3 && s_key_input == SDL_SCANCODE_ESCAPE);
+    CHECK(event(SDL_CONTROLLERBUTTONDOWN, SDL_CONTROLLER_BUTTON_A) && s_handed == 4);
+    CHECK(event(SDL_KEYDOWN, SDL_SCANCODE_ESCAPE, 1) && s_handed == 4);
+    CHECK(event(SDL_KEYDOWN, SDL_SCANCODE_ESCAPE) && s_handed == 5 && s_key_input == SDL_SCANCODE_ESCAPE);
     for (int i = 0; i < 3; i++) show();
     pad_frame(ImGuiKey_GamepadFaceDown); show();
     CHECK(menu_bind_waiting() == XBOX_BIND_KEYS);
     CHECK(event(SDL_MOUSEBUTTONDOWN, SDL_BUTTON_RIGHT));
     fprintf(stderr, "bind: the mouse's right button, handed %d: %d; to the menu %d\n", s_handed, s_key_input,
             s_to_imgui);
-    CHECK(s_handed == 4 && s_key_input == SDL_NUM_SCANCODES + 2 && s_to_imgui == 0);
+    CHECK(s_handed == 6 && s_key_input == SDL_NUM_SCANCODES + 2 && s_to_imgui == 0);
     /* Its let go reaches the game, as a key's does, so the game doesn't see
      * a mouse button that can press a control held on; the menu sees it too. */
     CHECK(!event(SDL_MOUSEBUTTONUP, SDL_BUTTON_RIGHT) && s_to_imgui == 1);
+    for (int i = 0; i < 3; i++) show();
+    /* Down: the row that takes two keys. A: its box. Space: its first,
+     * and the box waits on, taking the next key; F1 there: none for the
+     * second, the box shuts and the menu stays. Again: J, then the pad's
+     * Back: none. Again: Space, then the mouse's left button: its second.
+     * None of them reaches the menu. */
+    pad_frame(ImGuiKey_GamepadDpadDown); show();
+    pad_frame(ImGuiKey_GamepadFaceDown); show();
+    CHECK(menu_bind_waiting() == XBOX_BIND_KEYS && !menu_bind_second());
+    s_to_imgui = 0;
+    CHECK(event(SDL_KEYDOWN, SDL_SCANCODE_SPACE));
+    CHECK(s_handed == 7 && s_key_input == SDL_SCANCODE_SPACE && menu_bind_second());
+    show();
+    CHECK(menu_bind_waiting() == XBOX_BIND_KEYS && menu_bind_second());
+    CHECK(event(SDL_KEYDOWN, SDL_SCANCODE_F1));
+    fprintf(stderr, "bind: two keys, F1 at the second: handed %d, second %d, open %d\n", s_handed,
+            s_second_input, g_open);
+    CHECK(s_handed == 8 && s_second_input == XBOX_BIND_NO_INPUT && menu_bind_waiting() == 0 && g_open);
+    for (int i = 0; i < 3; i++) show();
+    pad_frame(ImGuiKey_GamepadFaceDown); show();
+    CHECK(event(SDL_KEYDOWN, SDL_SCANCODE_J) && s_key_input == SDL_SCANCODE_J && menu_bind_second());
+    s_second_input = -2;
+    CHECK(event(SDL_CONTROLLERBUTTONDOWN, SDL_CONTROLLER_BUTTON_BACK));
+    CHECK(s_handed == 10 && s_second_input == XBOX_BIND_NO_INPUT && menu_bind_waiting() == 0 && g_open);
+    for (int i = 0; i < 3; i++) show();
+    pad_frame(ImGuiKey_GamepadFaceDown); show();
+    CHECK(event(SDL_KEYDOWN, SDL_SCANCODE_SPACE) && menu_bind_second());
+    CHECK(event(SDL_MOUSEBUTTONDOWN, SDL_BUTTON_LEFT));
+    CHECK(s_handed == 12 && s_second_input == SDL_NUM_SCANCODES && menu_bind_waiting() == 0);
+    CHECK(s_to_imgui == 0);
+    for (int i = 0; i < 3; i++) show();
+    /* Again: the pad's Back, then F1: none for each, and the menu stays. */
+    pad_frame(ImGuiKey_GamepadFaceDown); show();
+    CHECK(event(SDL_CONTROLLERBUTTONDOWN, SDL_CONTROLLER_BUTTON_BACK));
+    CHECK(s_handed == 13 && s_key_input == XBOX_BIND_NO_INPUT && menu_bind_second());
+    CHECK(event(SDL_KEYDOWN, SDL_SCANCODE_F1));
+    CHECK(s_handed == 14 && s_second_input == XBOX_BIND_NO_INPUT && menu_bind_waiting() == 0 && g_open);
     for (int i = 0; i < 3; i++) show();
     /* No box: F1 shuts the menu, as ever. */
     CHECK(event(SDL_KEYDOWN, SDL_SCANCODE_F1) && !g_open);

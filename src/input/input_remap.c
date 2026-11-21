@@ -181,8 +181,9 @@ static void read_page(Page *p)
 /* ---- the menu's pages (menu.h, XBOX_GROUP_PAD_LAYOUT and
  * XBOX_GROUP_KEY_LAYOUT) -------------------------------------------------
  * On the window's thread, the layouts' only writer once the game runs. A
- * row binds the input pressed to its control alone, and whatever control
- * had that input gets the row's old one (input_layout_bind); Reset to
+ * row binds the input pressed to its control alone, or none (the pad's
+ * Back or F1, XBOX_BIND_NO_INPUT), and whatever control had that input
+ * gets the row's old one (input_layout_bind); Reset to
  * default puts each control back. Each change is kept in remap.cfg at
  * once, and said in the log. */
 
@@ -220,7 +221,8 @@ static const char *row_text(Page *p, int c)
 static int row_bind(Page *p, int c, int input)
 {
     InputLayout was, now;
-    if (!usable(p, input)) return 0;
+    if (input == XBOX_BIND_NO_INPUT) input = INPUT_NONE;
+    else if (!usable(p, input)) return 0;
     get(p, &was);
     now = was;
     input_layout_bind(&now, c, input);

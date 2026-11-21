@@ -28,6 +28,7 @@ static int g_info = -1;         /* an INFO box to open */
 static int g_bind = -1;         /* a BIND row's box: waiting for a press */
 static int g_bind_over;         /* ... which has come, or been cancelled: it shuts */
 static int g_bind_refused;      /* ... and the last press was one it can't have */
+static int g_bind_second;       /* ... and it has its first, and waits for its second */
 static int g_pad_quiet;         /* since then, a pad's button or stick held */
 static int g_reopen_row = -1;   /* ... and the pad back on its row: box_closed */
 
@@ -558,7 +559,7 @@ static void draw_item(const XBOX_MENU_ITEM *it, const number_cols *cols)
         ImGui::PushStyleColor(ImGuiCol_TextDisabled, ImGui::GetStyleColorVec4(ImGuiCol_Text));
         if (ImGui::MenuItem(it->label, it->text ? it->text() : NULL) && bind_whole(*it)) {
             g_bind = g_items.index_from_ptr(it);
-            g_bind_over = g_bind_refused = 0;
+            g_bind_over = g_bind_refused = g_bind_second = 0;
         }
         ImGui::PopStyleColor();
         /* Back from its box: the pad on it again (box_closed). */
@@ -660,8 +661,8 @@ static const prompt k_pad_prompts[MENU_PROMPTS] = {
     { "A", MENU_CAP_A, "Select" }, { "B", MENU_CAP_B, "Back" }, { "Back", MENU_CAP_KEY, "Close" } };
 static const prompt k_key_prompts[MENU_PROMPTS] = {
     { "Enter", MENU_CAP_KEY, "Select" }, { "Esc", MENU_CAP_KEY, "Back" }, { "F1", MENU_CAP_KEY, "Close" } };
-static const prompt k_pad_bind_prompt = { "Back", MENU_CAP_KEY, "Cancel" };
-static const prompt k_key_bind_prompt = { "F1", MENU_CAP_KEY, "Cancel" };
+static const prompt k_pad_bind_prompt = { "Back", MENU_CAP_KEY, "None" };
+static const prompt k_key_bind_prompt = { "F1", MENU_CAP_KEY, "None" };
 
 /* A cap is this many times the text's height across, so its name has room
  * round it: a round one for a letter, and for a word, one this much of its
@@ -749,16 +750,26 @@ extern "C" int menu_bind_waiting(void)
     return g_bind >= 0 && !g_bind_over ? g_items[g_bind].takes : 0;
 }
 
+/* The first press to bind(), and with a bind_second the box waits on for
+ * the second, handed to that. */
 extern "C" void menu_bind_press(int input)
 {
     if (!menu_bind_waiting()) return;
-    g_bind_refused = !g_items[g_bind].bind(input);
-    if (!g_bind_refused) g_bind_over = g_pad_quiet = 1;
+    const XBOX_MENU_ITEM &it = g_items[g_bind];
+    g_bind_refused = !(g_bind_second ? it.bind_second(input) : it.bind(input));
+    if (g_bind_refused) return;
+    if (!g_bind_second && it.bind_second) g_bind_second = 1;
+    else                                  g_bind_over = g_pad_quiet = 1;
 }
 
-extern "C" void menu_bind_cancel(void)
+extern "C" void menu_bind_none(void)
 {
-    if (menu_bind_waiting()) g_bind_over = g_pad_quiet = 1;
+    menu_bind_press(XBOX_BIND_NO_INPUT);
+}
+
+extern "C" int menu_bind_second(void)
+{
+    return menu_bind_waiting() && g_bind_second;
 }
 
 /* A pad's button or stick held, as Dear ImGui's SDL backend reads them: all
@@ -923,11 +934,13 @@ extern "C" void menu_build(int just_opened, int pad)
 
     /* A bind row's: no buttons, as the next press is the row's (menu.h,
      * menu_bind_waiting). Titled with its submenu, as the layout's page,
-     * where it has one. Esc reaches it only while it waits for a pad. */
+     * where it has one. Esc reaches it only while it waits for a pad, and
+     * then shuts it, handing over nothing more. */
     if (bind) snprintf(bind_title, sizeof bind_title, "%s" MENU_BIND_BOX, bind->group ? bind->group : bind->label);
     if (bind && box_begin(bind_title)) {
-        ImGui::Text(bind->takes == XBOX_BIND_PAD ? "Press a button for %s." : "Press a key or mouse button for %s.",
-                    bind->label);
+        ImGui::Text(bind->takes == XBOX_BIND_PAD ? "Press a %sbutton for %s, or %s for none."
+                                                 : "Press a %skey or mouse button for %s, or %s for none.",
+                    g_bind_second ? "second " : "", bind->label, pad ? "Back" : "F1");
         if (g_bind_refused) {
             ImGui::Spacing();
             ImGui::TextUnformatted("That one can't be used.");

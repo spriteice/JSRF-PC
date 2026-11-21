@@ -132,7 +132,7 @@ static void preset_pick(int i)
 
 /* Every field, in order: C++11 has no designated initializers. */
 #define FILE_NO_PRESETS XBOX_PRESETS_UNSAID, { 0, 0, 0 }, NULL
-#define FILE_NO_BIND    XBOX_BIND_NONE, NULL
+#define FILE_NO_BIND    XBOX_BIND_NONE, NULL, NULL
 static const XBOX_MENU_ITEM k_file[] = {
     { XBOX_MENU_FILE, XBOX_ITEM_INFO,      "About", NULL, NULL,      NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
       "Shows the engine version and relevant system details.", FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },
@@ -234,7 +234,8 @@ static int trigger_pressed(const SDL_ControllerAxisEvent *a)
 }
 
 /* While a bind row waits for a press (menu_bind_waiting), with g_mu held:
- * the next it takes, handed to it, and the pad's Back or F1 cancelling.
+ * the next it takes, handed to it, and the pad's Back or F1 handing it
+ * none (menu_bind_none).
  * 1: the event was the wait's, and neither the menu nor the game sees it:
  * every pad button, and every key and mouse button while it waits for
  * keys. While it waits for a pad, the keys and the mouse are the box's, as
@@ -243,7 +244,7 @@ static int bind_event(const SDL_Event *ev, int takes, int trigger)
 {
     switch (ev->type) {
     case SDL_CONTROLLERBUTTONDOWN:
-        if (ev->cbutton.button == SDL_CONTROLLER_BUTTON_BACK) menu_bind_cancel();
+        if (ev->cbutton.button == SDL_CONTROLLER_BUTTON_BACK) menu_bind_none();
         else if (takes == XBOX_BIND_PAD)                      menu_bind_press(ev->cbutton.button);
         return 1;
     case SDL_CONTROLLERAXISMOTION:
@@ -252,7 +253,7 @@ static int bind_event(const SDL_Event *ev, int takes, int trigger)
         return 0;
     case SDL_KEYDOWN:
         if (ev->key.keysym.scancode == SDL_SCANCODE_F1) {
-            if (!ev->key.repeat) menu_bind_cancel();
+            if (!ev->key.repeat) menu_bind_none();
             return 1;
         }
         if (takes != XBOX_BIND_KEYS) return 0;

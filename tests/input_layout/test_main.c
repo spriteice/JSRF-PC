@@ -619,9 +619,17 @@ static void case_bind_rows(void)
     input_remap_layouts(&def, NULL);
     CHECK(row(PAD, "Y")->bind(INPUT_PAD_GUIDE) == 0, "Guide refused");
     CHECK(row(PAD, "Y")->bind(INPUT_PAD_BACK) == 0, "the pad's Back refused");
-    CHECK(row(PAD, "Y")->bind(INPUT_PAD_INPUTS) == 0 && row(PAD, "Y")->bind(-1) == 0, "no such input");
+    CHECK(row(PAD, "Y")->bind(INPUT_PAD_INPUTS) == 0 && row(PAD, "Y")->bind(-2) == 0, "no such input");
     input_remap_layouts(&pad, NULL);
     CHECK(!memcmp(&pad, &def, sizeof pad) && s_writes == 0, "a refusal changes nothing");
+    /* None, as the pad's Back or F1 hands it: Y has no button, kept as
+     * pad_y=none; then its own again, and the line goes. */
+    CHECK(row(PAD, "Y")->bind(XBOX_BIND_NO_INPUT) == 1, "Y takes none");
+    ROW_SHOWS(PAD, "Y", "None");
+    CHECK(!strcmp(cfg_val("pad_y"), "none"), "kept as pad_y=none");
+    input_remap_layouts(&pad, NULL);
+    CHECK(pad.bind[INPUT_CTL_Y][0] == INPUT_NONE, "nothing presses Y");
+    CHECK(row(PAD, "Y")->bind(INPUT_PAD_Y) == 1 && !cfg_val("pad_y"), "Y takes its own back, the line gone");
     /* Back to A's own button: the line goes. */
     CHECK(row(PAD, "A")->bind(INPUT_PAD_A) == 1, "A takes its own back");
     CHECK(!cfg_val("pad_a") && !cfg_val("pad_x"), "A and X back at their defaults, their lines gone");

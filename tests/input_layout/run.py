@@ -32,8 +32,9 @@ The pages: Controller layout's seventeen rows, Toggle free camera last,
 and Keyboard layout's twenty-four, each with Reset to default, in one add, each Input's, left
 alone by the presets, with a hint, and showing the defaults' inputs.
 Binding through them: the swap, kept in remap.cfg line by line and back
-to no line at a default, said in the log; Guide, the pad's Back, the
-window's keys and a key with no name refused, changing nothing; a mouse
+to no line at a default, said in the log; none, as the pad's Back or F1
+hands it; Guide, the pad's Back, the window's keys and a key with no name
+refused, changing nothing; a mouse
 button; and Keyboard moves following the left stick's rows. Reset to
 default on each page alone. At start, the lines the rows kept read back as
 they were, Toggle free camera's too, an unknown name or an input a layout
@@ -68,6 +69,7 @@ with tempfile.TemporaryDirectory(prefix="input_layout-") as directory:
         "bind_rows": [
             "[INPUT] controller layout: A is X", "[INPUT] controller layout: X is A",
             "[INPUT] controller layout: L trigger is None", "[INPUT] controller layout: Back is LT",
+            "[INPUT] controller layout: Y is None", "[INPUT] controller layout: Y is Y",
             "[INPUT] keyboard layout: A is Space, K",
             "[INPUT] keyboard layout: B is J",
             "[INPUT] keyboard layout: Y is Mouse right",

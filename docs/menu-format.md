@@ -120,27 +120,38 @@ in a submenu of its own.
   (`box_begin` and `box_centre` in menu.cpp). New boxes use them.
 - B or Esc is Cancel. A box closes back to the menu it was opened from.
 - A bind row's box is the exception (Bind rows, below): B is a button it
-  takes, so the pad's Back or F1 cancels it, and Esc too while it waits
-  for a pad. It closes back on its row, in its submenu.
+  takes, and the pad's Back or F1 is none, so Esc alone shuts it unchanged,
+  and only while it waits for a pad. It closes back on its row, in its
+  submenu.
 
 ## Bind rows
 
 - A bind row (`XBOX_ITEM_BIND` in `menu.h`) is a control, with the input
   that presses it beside it, in the text's own colour. Choosing it opens a
   box with no buttons, titled with its submenu ("Controller layout"):
-  "Press a button for A." for a pad's row, or "Press a key or mouse button
-  for A." for the keyboard's (`takes`).
+  "Press a button for A, or Back for none." for a pad's row, or "Press a
+  key or mouse button for A, or F1 for none." for the keyboard's (`takes`).
 - The next press it takes is the row's, handed to its `bind`, and reaches
   neither the menu nor the game: a pad's button, or a trigger pressed past
   half way, on any pad; or a key, by its place, or a mouse button. The
   window finds it in SDL's events (`xbox_MenuEvent` in `menu_sdl.cpp`).
   A press the row can't have leaves the box waiting, with "That one can't
   be used." under its message.
-- The pad's Back and F1 cancel the box, as they open and shut the menu, so
-  neither can be bound, and no layout can shut a player out of the menu.
+- The pad's Back and F1 are none (`XBOX_BIND_NO_INPUT`, handed to the row
+  as a press), so a control can be left with nothing. As they open and shut
+  the menu, neither can be bound, and no layout can shut a player out of
+  the menu. There is no cancel but Esc, while the box waits for a pad: it
+  shuts the box with nothing handed over.
 - Dear ImGui reads the pad itself, so from the box until the pad is let go,
   its pad navigation is held off, and B is no Back: the press that binds,
-  or cancels, does nothing more in the menu.
+  or is none, does nothing more in the menu.
+- A row whose control has a second input (`bind_second`) takes two
+  presses: "Press a key or mouse button for A, or F1 for none.", then
+  "Press a second key or mouse button for A, or F1 for none." ("a button",
+  and Back, for a pad's). The
+  first is handed to its `bind`, the second to `bind_second`. At either,
+  the pad's Back or F1 is none, so a control can be left with nothing:
+  Back twice.
 - The box closes back on its row, so the next control is a step away.
 - A menu path (`menu_path_run` in `menu.h`) stops at a bind row, and
   doesn't run it: its box waits for a press, which a path can't give.
@@ -161,10 +172,11 @@ in a submenu of its own.
   "LT", "Paddle 1"; a key by SDL's name, "Space"; "Mouse right"), two with a
   comma where the default has a second key ("Space, J"), or None.
 - A press binds that input to the row's control alone, and the control that
-  had it gets the row's old input, so the two swap. A row can't have the
-  pad's Guide or Back, or the window's keys: F1, F9 to F11 and the keys the
-  game binds, as F8. Nor a key SDL has no name for, which the settings
-  couldn't keep.
+  had it gets the row's old input, so the two swap. The pad's Back or F1
+  leaves the control with none.
+- A row can't have the pad's Guide or Back, or the window's keys: F1, F9 to
+  F11 and the keys the game binds, as F8. Nor a key SDL has no name for,
+  which the settings couldn't keep.
 - The layouts are a player's own: no preset sets them (File > Presets).
 
 ## Look
@@ -189,7 +201,7 @@ in a submenu of its own.
   the left and on the right the buttons to press: A Select, B Back, and Back
   Close on a pad, or Enter Select, Esc Back, and F1 Close on the keyboard,
   whichever was pressed last. In a bind row's box, only the one that
-  cancels it: Back Cancel, or F1 Cancel. Each button or key is on a cap: A in the dark
+  leaves its control none: Back None, or F1 None. Each button or key is on a cap: A in the dark
   green and B in a red as dark, as the pad colours them, and the rest grey
   (`menu_style_cap`). The strip is as tall as the longest hint needs at the
   window's width, so it stays still as the pad moves.

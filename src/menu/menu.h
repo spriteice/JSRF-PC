@@ -66,7 +66,7 @@ typedef enum {
     XBOX_ITEM_BIND          /* a control, with text() beside it: the input that
                              * presses it. Chosen, a box waits for the next
                              * press it takes, and hands it to bind() (below,
-                             * takes)                                         */
+                             * takes); with bind_second, then a second one    */
 } XBOX_ITEM_KIND;
 
 /* File > Presets' presets, in its order (docs/menu-format.md). */
@@ -104,6 +104,10 @@ typedef enum {
     XBOX_BIND_PAD,          /* any pad's buttons and triggers                 */
     XBOX_BIND_KEYS          /* the keyboard's keys and the mouse's buttons    */
 } XBOX_BIND_TAKES;
+
+/* What a bind row is handed for none (bind and bind_second, below): the
+ * pad's Back or F1, at any of its box's presses. */
+#define XBOX_BIND_NO_INPUT (-1)
 
 /* A preset's value for a row that has no fixed most, as Max quality's
  * anisotropic filtering: past a choice's last, a number's max, or a row of
@@ -179,12 +183,17 @@ typedef struct XBOX_MENU_ITEM {
     void          (*pick_with)(const void *data, int index);
     const void     *data;
     /* XBOX_ITEM_BIND: what it takes, and bind(), handed the input pressed
-     * (XBOX_BIND_TAKES): nonzero when the row has it now, 0 when it can't,
-     * and the box waits on. text() names the input it has. The pad's Back
-     * and F1 cancel the box, so they can't be bound and no layout can shut
-     * the menu out. */
+     * (XBOX_BIND_TAKES), or XBOX_BIND_NO_INPUT for none, the pad's Back or
+     * F1: nonzero when the row has it now, 0 when it can't, and the box
+     * waits on. text() names the input it has. Back and F1 are never
+     * bound, so no layout can shut the menu out. */
     XBOX_BIND_TAKES takes;
     int           (*bind)(int input);
+    /* XBOX_ITEM_BIND, set: the row's control has a second input, as a
+     * control on Keyboard layout can. Once bind() has the first press, the
+     * box waits for a second, handed here as bind() is: the input pressed,
+     * or XBOX_BIND_NO_INPUT for none. */
+    int           (*bind_second)(int input);
 } XBOX_MENU_ITEM;
 
 /* Display's submenu, at its foot (nv2a_gl.c adds it): Enhancements, for
@@ -301,14 +310,17 @@ const char *menu_hint(void);
 /* A bind row's box (XBOX_ITEM_BIND), for the window's events (menu_sdl.cpp,
  * and tests/menu), on the window's thread, before the next menu_build:
  * what the row waiting takes, or 0 when none is; the input pressed, handed
- * to its bind(); and cancel, for Back or F1. Either ends the wait, and the
- * box shuts at the next menu_build, back on the row. From then until no
- * pad button or stick is held, Dear ImGui's pad navigation is held off,
- * and so is B as the menu's Back: the press that binds, or cancels, acts
- * in the menu no further. */
+ * to its bind(), or at a row's second press (bind_second) to that; and
+ * none, for the pad's Back or F1, handed over as XBOX_BIND_NO_INPUT. A
+ * press the row has, but a first with a second to come, ends the wait, and
+ * the box shuts at the next menu_build, back on the row. From then until
+ * no pad button or stick is held, Dear ImGui's pad navigation is held off,
+ * and so is B as the menu's Back: the press that binds acts in the menu no
+ * further. And whether the box waits for a row's second press. */
 int  menu_bind_waiting(void);
 void menu_bind_press(int input);
-void menu_bind_cancel(void);
+void menu_bind_none(void);
+int  menu_bind_second(void);
 
 /* The window's side too, before ImGui::NewFrame(): how far the menu has
  * faded in, from 0 (gone) to 1, `seconds` after it was `fade`, as it opens

@@ -42,11 +42,15 @@
  * the next press (XBOX_ITEM_BIND), as the layouts' pages: the box, which
  * hands the press the window found to the row, once, and shuts back on
  * the row; the pad held off the menu from the box until it is let go, so
- * the press that binds, or cancels, does nothing more -- B there is a
- * button for the row, not Back; a press the row can't have, and the box
- * waiting on; Esc cancelling only a box that waits for a pad; the strip
- * with the one way to cancel; a row with no bind doing nothing; and File >
- * Presets leaving the rows alone (run.py: and saying nothing of them).
+ * the press that binds, or hands it none, does nothing more -- B there
+ * is a button for the row, not Back; a press the row can't have, and the
+ * box waiting on; Esc shutting only a box that waits for a pad, handing
+ * nothing; the pad's Back none for a pad's row; the strip with the one
+ * way to leave a control none; a row with no bind doing nothing; a row
+ * that takes a second press (bind_second): its first, then the box
+ * waiting on for the second, refusing as the first does, and F1 or the
+ * pad's Back none at either, with no cancel; and File > Presets
+ * leaving the rows alone (run.py: and saying nothing of them).
  * Last, the busy box (menu_build_busy) with no menu, in the middle of the
  * window.
  */
@@ -223,13 +227,19 @@ static XBOX_MENU_ITEM long_row(XBOX_ITEM_KIND kind, const char *label, int nchoi
 
 /* Rows that take the next press (XBOX_ITEM_BIND), as Input's layouts: a
  * page of the pad's, two rows, and one of the keyboard's, with a row that
- * has no bind, in Gameplay here, which has one row of its own. Each row
- * keeps what it was handed; the pad's refuse the Guide button's number, as
- * the layout will. The presets leave them alone (XBOX_PRESETS_LEFT). */
+ * has no bind, and one that takes a second key (bind_second), as
+ * Keyboard layout's do, in Gameplay here, which has one row of its own.
+ * Each row keeps what it was handed; the pad's refuse the Guide button's
+ * number, as the layout will, and the second key a key with no name. The
+ * presets leave them alone (XBOX_PRESETS_LEFT). */
 #define BIND_GUIDE 5                    /* SDL_CONTROLLER_BUTTON_GUIDE */
 #define BIND_B     1                    /* SDL_CONTROLLER_BUTTON_B */
 #define BIND_ESC   41                   /* SDL_SCANCODE_ESCAPE */
-static int s_bind_a = -1, s_bind_b = -1, s_bind_key = -1, s_binds;
+#define BIND_SPACE 44                   /* SDL_SCANCODE_SPACE */
+#define BIND_J     13                   /* SDL_SCANCODE_J */
+#define BIND_NAMELESS 300               /* a key SDL has no name for */
+static int s_bind_a = -1, s_bind_b = -2, s_bind_key = -1, s_binds;
+static int s_two_first = -2, s_two_second = -2, s_twos;
 static int bind_pad(int *to, int input)
 {
     s_binds++;
@@ -243,6 +253,15 @@ static int bind_key(int input)          { s_binds++; s_bind_key = input; return 
 static const char *bind_a_now(void)     { return s_bind_a < 0 ? "A" : "Changed"; }
 static const char *bind_b_now(void)     { return "B"; }
 static const char *bind_key_now(void)   { return "W"; }
+static int bind_two(int input)          { s_twos++; s_two_first = input; return 1; }
+static int bind_two_second(int input)
+{
+    s_twos++;
+    if (input == BIND_NAMELESS) return 0;
+    s_two_second = input;
+    return 1;
+}
+static const char *bind_two_now(void)   { return "Space, J"; }
 #define BIND_LEFT XBOX_PRESETS_LEFT, { 0, 0, 0 }, NULL
 static const XBOX_MENU_ITEM k_binds[] = {
     { XBOX_MENU_GAMEPLAY, XBOX_ITEM_GROUP, "Controller layout", NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL,
@@ -259,6 +278,9 @@ static const XBOX_MENU_ITEM k_binds[] = {
     { XBOX_MENU_GAMEPLAY, XBOX_ITEM_BIND, "Broken", NULL, NULL, NULL, NULL, 0, bind_key_now, NULL, NULL, NULL,
       0, 0, 0, NULL, 0, NULL, "Has no bind.", BIND_LEFT, "Keyboard and mouse layout", NULL, NULL,
       XBOX_BIND_KEYS, NULL },
+    { XBOX_MENU_GAMEPLAY, XBOX_ITEM_BIND, "Jump", NULL, NULL, NULL, NULL, 0, bind_two_now, NULL, NULL, NULL,
+      0, 0, 0, NULL, 0, NULL, "Takes two keys.", BIND_LEFT, "Keyboard and mouse layout", NULL, NULL,
+      XBOX_BIND_KEYS, bind_two, bind_two_second },
 };
 
 /* The pad's navigation is the menu's: on, or held off (menu_bind_waiting). */
@@ -1377,8 +1399,8 @@ int main(void)
     /* Rows that take the next press (above). From Developer's title, Left:
      * Gameplay; A, Down, Right: Controller layout, the pad on A, which
      * shows what it has. A: the box, titled with its page, waiting for a
-     * pad; no hint, and in the strip the one way to cancel; the pad's
-     * navigation held off. */
+     * pad; no hint, and in the strip the one way to leave it none; the
+     * pad's navigation held off. */
     xbox_MenuAdd(k_binds, (int)(sizeof k_binds / sizeof k_binds[0]));
     frame(ImGuiKey_GamepadDpadLeft); frames(2);
     frame(ImGuiKey_GamepadFaceDown); frames(2);
@@ -1395,7 +1417,7 @@ int main(void)
     CHECK(strstr(open_menu(), "###bind") && centred("Controller layout###bind"));
     CHECK(hint_is(NULL) && strip_fits(0) && !strip_has_a());
     CHECK(!pad_navigates());
-    /* B in the box is no cancel: the window hands it to the row (below). */
+    /* B in the box is no Back: the window hands it to the row (below). */
     frame(ImGuiKey_GamepadFaceRight); frames(2);
     CHECK(menu_bind_waiting() == XBOX_BIND_PAD);
     /* The press, as the window finds it, before the frame that reads the
@@ -1420,46 +1442,46 @@ int main(void)
     CHECK(pad_navigates() && strstr(open_menu(), "Controller layout") != NULL && hint_is("Jumps."));
     CHECK(strip_has_a());
     /* Down: B, a step away. A: its box; the Guide button's number, which
-     * the row refuses: the box waits on. Esc: cancelled, back on B, and
-     * nothing more handed to it. */
+     * the row refuses: the box waits on. Esc: the box shuts, back on B,
+     * and nothing more handed to it. */
     frame(ImGuiKey_GamepadDpadDown); frames(1);
     CHECK(hint_is("Sprays."));
     frame(ImGuiKey_GamepadFaceDown); frames(2);
     CHECK(menu_bind_waiting() == XBOX_BIND_PAD);
     menu_bind_press(BIND_GUIDE);
     frames(2);
-    CHECK(menu_bind_waiting() == XBOX_BIND_PAD && s_binds == 2 && s_bind_b == -1);
+    CHECK(menu_bind_waiting() == XBOX_BIND_PAD && s_binds == 2 && s_bind_b == -2);
     frame(ImGuiKey_Escape); frames(3);
     fprintf(stderr, "Esc in B's box: [%s], waiting %d, binds %d\n", open_menu(), menu_bind_waiting(), s_binds);
-    CHECK(menu_bind_waiting() == 0 && s_binds == 2 && s_bind_b == -1);
+    CHECK(menu_bind_waiting() == 0 && s_binds == 2 && s_bind_b == -2);
     CHECK(strstr(open_menu(), "Controller layout") != NULL && hint_is("Sprays.") && pad_navigates());
-    /* A again, and the pad's Back, as the window hands it over: cancelled,
-     * held off the menu until let go. */
+    /* A again, and the pad's Back, as the window hands it over: none for
+     * B, and the pad held off the menu until let go. */
     frame(ImGuiKey_GamepadFaceDown); frames(2);
     CHECK(menu_bind_waiting() == XBOX_BIND_PAD);
     {
         ImGuiIO &io = ImGui::GetIO();
         io.AddKeyEvent(ImGuiKey_GamepadBack, true);
-        menu_bind_cancel();
+        menu_bind_none();
         frames(3);
-        CHECK(menu_bind_waiting() == 0 && s_binds == 2 && !pad_navigates());
+        CHECK(menu_bind_waiting() == 0 && s_binds == 3 && s_bind_b == XBOX_BIND_NO_INPUT && !pad_navigates());
         io.AddKeyEvent(ImGuiKey_GamepadBack, false);
         frames(2);
     }
     CHECK(strstr(open_menu(), "Controller layout") != NULL && hint_is("Sprays.") && pad_navigates());
-    /* With no box, a press or a cancel is no one's. */
+    /* With no box, a press or none is no one's. */
     menu_bind_press(BIND_B);
-    menu_bind_cancel();
+    menu_bind_none();
     frames(2);
-    CHECK(s_binds == 2 && pad_navigates());
+    CHECK(s_binds == 3 && pad_navigates());
     /* A menu path stops at a bind row: no box, and nothing bound. */
     CHECK(menu_path_check("Gameplay > Controller layout > A") == MENU_PATH_NOT_RUN);
     CHECK(menu_path_run("Gameplay > Controller layout > A") == MENU_PATH_NOT_RUN);
     CHECK(menu_path_run("Gameplay > Controller layout > A > B") == MENU_PATH_NOT_RUN);
     frames(2);
-    CHECK(menu_bind_waiting() == 0 && s_binds == 2 && pad_navigates());
+    CHECK(menu_bind_waiting() == 0 && s_binds == 3 && pad_navigates());
     /* B, Down, Right: the keyboard's page, on Left stick up. A: its box,
-     * waiting for a key; on the keyboard, the strip has F1 to cancel. Esc,
+     * waiting for a key; on the keyboard, the strip has F1 for none. Esc,
      * as the window hands it over: the row's, once. */
     frame(ImGuiKey_GamepadFaceRight); frames(2);
     CHECK(strstr(open_menu(), "Gameplay") != NULL);
@@ -1475,13 +1497,60 @@ int main(void)
     menu_bind_press(BIND_ESC);
     frames(3);
     g_pad = 1;
-    CHECK(menu_bind_waiting() == 0 && s_binds == 3 && s_bind_key == BIND_ESC);
+    CHECK(menu_bind_waiting() == 0 && s_binds == 4 && s_bind_key == BIND_ESC);
     CHECK(strstr(open_menu(), "Keyboard and mouse layout") != NULL && hint_is("Skates forward."));
     /* Down: the row with no bind. A: no box. */
     frame(ImGuiKey_GamepadDpadDown); frames(1);
     CHECK(hint_is("Has no bind."));
     frame(ImGuiKey_GamepadFaceDown); frames(2);
     CHECK(menu_bind_waiting() == 0 && !strstr(open_menu(), "###bind"));
+    /* Down: the row that takes two keys. A: its box, at its first press.
+     * Space: the row's first, and the box waits on for the second, with
+     * the strip still fitting and the pad still held off. A key with no
+     * name: refused there, waiting on. J: the second, and the box shuts,
+     * back on the row. */
+    frame(ImGuiKey_GamepadDpadDown); frames(1);
+    CHECK(hint_is("Takes two keys."));
+    frame(ImGuiKey_GamepadFaceDown); frames(2);
+    CHECK(menu_bind_waiting() == XBOX_BIND_KEYS && !menu_bind_second() && s_twos == 0);
+    menu_bind_press(BIND_SPACE);
+    frames(2);
+    fprintf(stderr, "two keys, first: [%s], waiting %d, second %d, first %d\n", open_menu(),
+            menu_bind_waiting(), menu_bind_second(), s_two_first);
+    CHECK(s_twos == 1 && s_two_first == BIND_SPACE && s_two_second == -2);
+    CHECK(menu_bind_waiting() == XBOX_BIND_KEYS && menu_bind_second());
+    CHECK(strstr(open_menu(), "###bind") && centred("Keyboard and mouse layout###bind"));
+    CHECK(strip_fits(0) && !pad_navigates());
+    menu_bind_press(BIND_NAMELESS);
+    frames(2);
+    CHECK(s_twos == 2 && s_two_second == -2 && menu_bind_second());
+    menu_bind_press(BIND_J);
+    frames(3);
+    CHECK(s_twos == 3 && s_two_second == BIND_J && menu_bind_waiting() == 0 && !menu_bind_second());
+    CHECK(!strstr(open_menu(), "###bind") && hint_is("Takes two keys."));
+    /* A again, Space, then F1 or the pad's Back, as the window hands them
+     * over: none for the second, and the box shuts. */
+    frames(2);
+    frame(ImGuiKey_GamepadFaceDown); frames(2);
+    menu_bind_press(BIND_SPACE);
+    menu_bind_none();
+    frames(3);
+    CHECK(s_twos == 5 && s_two_second == XBOX_BIND_NO_INPUT && menu_bind_waiting() == 0);
+    CHECK(!strstr(open_menu(), "###bind") && hint_is("Takes two keys."));
+    /* A again, and F1 or the pad's Back at the first press: none for the
+     * first, and the box waits on for the second; again: none for that,
+     * and the box shuts. There is no cancel. */
+    frames(2);
+    frame(ImGuiKey_GamepadFaceDown); frames(2);
+    CHECK(menu_bind_waiting() == XBOX_BIND_KEYS);
+    menu_bind_none();
+    frames(2);
+    CHECK(s_twos == 6 && s_two_first == XBOX_BIND_NO_INPUT && menu_bind_second());
+    CHECK(strstr(open_menu(), "###bind") != NULL);
+    menu_bind_none();
+    frames(3);
+    CHECK(s_twos == 7 && s_two_second == XBOX_BIND_NO_INPUT && menu_bind_waiting() == 0);
+    CHECK(!strstr(open_menu(), "###bind") && hint_is("Takes two keys."));
     /* B, B, B: Gameplay's title, the pad never left with nothing to stand
      * on. File > Presets: still at JSRF-PC default, and a preset hands the
      * rows nothing. */
@@ -1490,7 +1559,7 @@ int main(void)
     fprintf(stderr, "binds done: [%s] %s, frames bare %d\n", open_menu(), nav_state(), s_bare);
     CHECK(!strcmp(open_menu(), "") && bar_focused() && s_bare == 0);
     CHECK(menu_preset_now() == XBOX_PRESET_JSRF_PC);
-    CHECK(menu_preset_apply(XBOX_PRESET_JSRF_PC) == 0 && s_binds == 3);
+    CHECK(menu_preset_apply(XBOX_PRESET_JSRF_PC) == 0 && s_binds == 4 && s_twos == 7);
 
     /* The busy box, centred. */
     busy_frame();

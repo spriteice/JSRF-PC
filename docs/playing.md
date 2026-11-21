@@ -12,11 +12,11 @@ Esc on the keyboard, unless you give it a button of the pad's.
 
 Input > Controller layout changes which button presses each of the game's
 controls, for every pad: choose a control, then press its button or pull its
-trigger. The button that control had goes to whichever control had the one
-you pressed, so the two swap. A trigger on a game trigger keeps its
-pressure; a button gives a full press. Any button SDL reports can be used,
-the back paddles, Misc and the touchpad too, but Guide, the system's, and
-Back, the menu's. The sticks stay as they are. Its last control, Toggle free
+trigger, or press Back (or F1) to leave it with none. The button that control
+had goes to whichever control had the one you pressed, so the two swap. A
+trigger on a game trigger keeps its pressure; a button gives a full press.
+Any button SDL reports can be used, the back paddles, Misc and the touchpad
+too, but Guide, the system's, and Back, the menu's. The sticks stay as they are. Its last control, Toggle free
 camera, is the [free camera](#free-camera)'s switch, R3 by default, so the
 game's own Right stick click starts with none. Reset to default puts every
 button back.
