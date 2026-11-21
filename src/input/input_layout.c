@@ -36,17 +36,17 @@ void input_layout_pad_default(InputLayout *l)
 
 void input_layout_keys_default(InputLayout *l)
 {
-    /* W A S D are the left stick and the d-pad both: the skater reads the
-     * stick, the menus the d-pad. */
+    /* W A S D are the left stick, the skater's, and U H J K the d-pad, the
+     * menus'; each key and mouse button is on one control. */
     static const short k_keys[INPUT_CTLS] = {
-        [INPUT_CTL_A] = INPUT_KEY_SPACE, [INPUT_CTL_B] = INPUT_KEY_K,
-        [INPUT_CTL_X] = INPUT_KEY_H, [INPUT_CTL_Y] = INPUT_KEY_L,
-        [INPUT_CTL_BLACK] = INPUT_KEY_R, [INPUT_CTL_WHITE] = INPUT_KEY_F,
+        [INPUT_CTL_A] = INPUT_KEY_SPACE, [INPUT_CTL_B] = INPUT_KEY_LSHIFT,
+        [INPUT_CTL_X] = INPUT_KEY_C, [INPUT_CTL_Y] = INPUT_KEY_V,
+        [INPUT_CTL_BLACK] = INPUT_KEY_R, [INPUT_CTL_WHITE] = INPUT_KEY_T,
         [INPUT_CTL_LTRIGGER] = INPUT_KEY_Q, [INPUT_CTL_RTRIGGER] = INPUT_KEY_E,
-        [INPUT_CTL_DPAD_UP] = INPUT_KEY_W, [INPUT_CTL_DPAD_DOWN] = INPUT_KEY_S,
-        [INPUT_CTL_DPAD_LEFT] = INPUT_KEY_A, [INPUT_CTL_DPAD_RIGHT] = INPUT_KEY_D,
+        [INPUT_CTL_DPAD_UP] = INPUT_KEY_U, [INPUT_CTL_DPAD_DOWN] = INPUT_KEY_J,
+        [INPUT_CTL_DPAD_LEFT] = INPUT_KEY_H, [INPUT_CTL_DPAD_RIGHT] = INPUT_KEY_K,
         [INPUT_CTL_START] = INPUT_KEY_RETURN, [INPUT_CTL_BACK] = INPUT_KEY_ESCAPE,
-        [INPUT_CTL_LTHUMB] = INPUT_KEY_C, [INPUT_CTL_RTHUMB] = INPUT_KEY_V,
+        [INPUT_CTL_LTHUMB] = INPUT_KEY_LCTRL, [INPUT_CTL_RTHUMB] = INPUT_KEY_RCTRL,
         [INPUT_CTL_LSTICK_UP] = INPUT_KEY_W, [INPUT_CTL_LSTICK_DOWN] = INPUT_KEY_S,
         [INPUT_CTL_LSTICK_LEFT] = INPUT_KEY_A, [INPUT_CTL_LSTICK_RIGHT] = INPUT_KEY_D,
         [INPUT_CTL_RSTICK_UP] = INPUT_KEY_UP, [INPUT_CTL_RSTICK_DOWN] = INPUT_KEY_DOWN,
@@ -56,7 +56,9 @@ void input_layout_keys_default(InputLayout *l)
     int c;
     clear(l);
     for (c = 0; c < INPUT_CTLS; c++) l->bind[c][0] = k_keys[c];
-    l->bind[INPUT_CTL_A][1] = INPUT_KEY_J;
+    l->bind[INPUT_CTL_A][1] = INPUT_KEY_MOUSE_LEFT;
+    l->bind[INPUT_CTL_B][1] = INPUT_KEY_MOUSE_MIDDLE;
+    l->bind[INPUT_CTL_RTRIGGER][1] = INPUT_KEY_MOUSE_RIGHT;
     l->bind[INPUT_CTL_START][1] = INPUT_KEY_KP_ENTER;
     l->bind[INPUT_CTL_BACK][1] = INPUT_KEY_AC_BACK;
 }

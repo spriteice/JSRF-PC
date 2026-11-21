@@ -13,8 +13,12 @@
 
 static int g_fail;
 
-/* The window's fixed places for keys before the layouts. */
+/* The window's fixed places for keys before the layouts, and two keys they
+ * had that no default has now, by SDL's places for them (input_layout.h
+ * names the defaults'). */
 #define INPUT_KEYS_OLD 20
+#define OLD_KEY_F 9
+#define OLD_KEY_L 15
 
 #define CHECK(cond, ...) do { if (!(cond)) { g_fail = 1; printf("FAIL: " __VA_ARGS__); printf("\n"); } } while (0)
 
@@ -81,10 +85,11 @@ static int old_move(unsigned short kb, int *x, int *y)
 
 /* ---- the cases ---------------------------------------------------------- */
 
-/* Each default names each of its controls' inputs, as the tables did, but
- * the pad's R3: the free camera's switch, the port's own, and the game's
- * Right stick click none. The keys have none for the free camera (F8 is
- * the window's). */
+/* Each default names each of its controls' inputs: the pad's as its table
+ * did, but R3, the free camera's switch, the port's own, and the game's
+ * Right stick click none; the keys as docs/playing.md lists them (spriteice's
+ * own, of 2026-11-20), each on one control, with none for the free camera
+ * (F8 is the window's). */
 static void case_defaults(void)
 {
     static const short pad[INPUT_CTL_STICKS] = {
@@ -93,16 +98,23 @@ static void case_defaults(void)
         INPUT_PAD_DPAD_UP, INPUT_PAD_DPAD_DOWN, INPUT_PAD_DPAD_LEFT, INPUT_PAD_DPAD_RIGHT,
         INPUT_PAD_START, INPUT_NONE, INPUT_PAD_LSTICK, INPUT_NONE,
     };
-    static const short keys[INPUT_CTLS] = {
-        INPUT_KEY_SPACE, INPUT_KEY_K, INPUT_KEY_H, INPUT_KEY_L,
-        INPUT_KEY_R, INPUT_KEY_F, INPUT_KEY_Q, INPUT_KEY_E,
-        INPUT_KEY_W, INPUT_KEY_S, INPUT_KEY_A, INPUT_KEY_D,
-        INPUT_KEY_RETURN, INPUT_KEY_ESCAPE, INPUT_KEY_C, INPUT_KEY_V,
-        INPUT_KEY_W, INPUT_KEY_S, INPUT_KEY_A, INPUT_KEY_D,
-        INPUT_KEY_UP, INPUT_KEY_DOWN, INPUT_KEY_LEFT, INPUT_KEY_RIGHT,
-        INPUT_NONE,
+    static const short keys[INPUT_CTLS][INPUT_BINDS] = {
+        { INPUT_KEY_SPACE, INPUT_KEY_MOUSE_LEFT }, { INPUT_KEY_LSHIFT, INPUT_KEY_MOUSE_MIDDLE },
+        { INPUT_KEY_C, INPUT_NONE }, { INPUT_KEY_V, INPUT_NONE },
+        { INPUT_KEY_R, INPUT_NONE }, { INPUT_KEY_T, INPUT_NONE },
+        { INPUT_KEY_Q, INPUT_NONE }, { INPUT_KEY_E, INPUT_KEY_MOUSE_RIGHT },
+        { INPUT_KEY_U, INPUT_NONE }, { INPUT_KEY_J, INPUT_NONE },
+        { INPUT_KEY_H, INPUT_NONE }, { INPUT_KEY_K, INPUT_NONE },
+        { INPUT_KEY_RETURN, INPUT_KEY_KP_ENTER }, { INPUT_KEY_ESCAPE, INPUT_KEY_AC_BACK },
+        { INPUT_KEY_LCTRL, INPUT_NONE }, { INPUT_KEY_RCTRL, INPUT_NONE },
+        { INPUT_KEY_W, INPUT_NONE }, { INPUT_KEY_S, INPUT_NONE },
+        { INPUT_KEY_A, INPUT_NONE }, { INPUT_KEY_D, INPUT_NONE },
+        { INPUT_KEY_UP, INPUT_NONE }, { INPUT_KEY_DOWN, INPUT_NONE },
+        { INPUT_KEY_LEFT, INPUT_NONE }, { INPUT_KEY_RIGHT, INPUT_NONE },
+        { INPUT_NONE, INPUT_NONE },
     };
     InputLayout l;
+    uint32_t used[INPUT_HELD_WORDS] = { 0 };
     int c, b;
     input_layout_pad_default(&l);
     for (c = 0; c < INPUT_CTLS; c++) {
@@ -113,13 +125,14 @@ static void case_defaults(void)
             CHECK(l.bind[c][b] == INPUT_NONE, "pad default: control %d has a second input", c);
     }
     input_layout_keys_default(&l);
-    for (c = 0; c < INPUT_CTLS; c++) {
-        /* A second key on A, Start and Back, as the window held them. */
-        short second = c == INPUT_CTL_A ? INPUT_KEY_J : c == INPUT_CTL_START ? INPUT_KEY_KP_ENTER
-                     : c == INPUT_CTL_BACK ? INPUT_KEY_AC_BACK : INPUT_NONE;
-        CHECK(l.bind[c][0] == keys[c], "keys default: control %d has %d", c, l.bind[c][0]);
-        CHECK(l.bind[c][1] == second, "keys default: control %d has %d second", c, l.bind[c][1]);
-    }
+    for (c = 0; c < INPUT_CTLS; c++)
+        for (b = 0; b < INPUT_BINDS; b++) {
+            int in = l.bind[c][b];
+            CHECK(in == keys[c][b], "keys default: control %d has %d in place %d", c, in, b);
+            if (in == INPUT_NONE) continue;
+            CHECK(!(used[in / 32] & (1u << (in % 32))), "keys default: input %d on two controls", in);
+            used[in / 32] |= 1u << (in % 32);
+        }
 }
 
 /* The pad's layout, with R3 given back to Right stick click, gives what
@@ -192,7 +205,7 @@ static const short k_old_place[INPUT_KEYS_OLD][2] = {
     { INPUT_KEY_DOWN, INPUT_NONE }, { INPUT_KEY_LEFT, INPUT_NONE }, { INPUT_KEY_RIGHT, INPUT_NONE },
     { INPUT_KEY_C, INPUT_NONE }, { INPUT_KEY_V, INPUT_NONE },
     { INPUT_KEY_SPACE, INPUT_KEY_J }, { INPUT_KEY_K, INPUT_NONE }, { INPUT_KEY_H, INPUT_NONE },
-    { INPUT_KEY_L, INPUT_NONE }, { INPUT_KEY_R, INPUT_NONE }, { INPUT_KEY_F, INPUT_NONE },
+    { OLD_KEY_L, INPUT_NONE }, { INPUT_KEY_R, INPUT_NONE }, { OLD_KEY_F, INPUT_NONE },
     { INPUT_KEY_Q, INPUT_NONE }, { INPUT_KEY_E, INPUT_NONE },
 };
 
@@ -214,11 +227,38 @@ static void old_held(unsigned mask, int how, uint32_t held[INPUT_HELD_WORDS])
     }
 }
 
-/* The keys' layout gives what kb_merge gave: every one of the window's
- * twenty places, held or not together, by its first key, its second, or
- * both, over a pad that held nothing, one that held everything, and one
- * with its sticks and analog buttons part way; and it says a key was held
- * when one was. */
+/* The keys' layout as the window's twenty places held them, and as the
+ * defaults were until spriteice's (2026-11-20): W A S D both the d-pad and
+ * the left stick, with J, keypad Enter and a keyboard's Back key second on
+ * A, Start and Back. case_keys and case_move read the layout against
+ * kb_merge on it, and case_bind and case_bind_key have a key on two
+ * controls in it. */
+static void old_layout(InputLayout *l)
+{
+    static const short first[INPUT_CTLS] = {
+        INPUT_KEY_SPACE, INPUT_KEY_K, INPUT_KEY_H, OLD_KEY_L,
+        INPUT_KEY_R, OLD_KEY_F, INPUT_KEY_Q, INPUT_KEY_E,
+        INPUT_KEY_W, INPUT_KEY_S, INPUT_KEY_A, INPUT_KEY_D,
+        INPUT_KEY_RETURN, INPUT_KEY_ESCAPE, INPUT_KEY_C, INPUT_KEY_V,
+        INPUT_KEY_W, INPUT_KEY_S, INPUT_KEY_A, INPUT_KEY_D,
+        INPUT_KEY_UP, INPUT_KEY_DOWN, INPUT_KEY_LEFT, INPUT_KEY_RIGHT,
+        INPUT_NONE,
+    };
+    int c, b;
+    for (c = 0; c < INPUT_CTLS; c++) {
+        l->bind[c][0] = first[c];
+        for (b = 1; b < INPUT_BINDS; b++) l->bind[c][b] = INPUT_NONE;
+    }
+    l->bind[INPUT_CTL_A][1] = INPUT_KEY_J;
+    l->bind[INPUT_CTL_START][1] = INPUT_KEY_KP_ENTER;
+    l->bind[INPUT_CTL_BACK][1] = INPUT_KEY_AC_BACK;
+}
+
+/* The keys' layout gives what kb_merge gave: on the window's own layout
+ * (old_layout), every one of its twenty places, held or not together, by
+ * its first key, its second, or both, over a pad that held nothing, one
+ * that held everything, and one with its sticks and analog buttons part
+ * way; and it says a key was held when one was. */
 static void case_keys(void)
 {
     static const struct { WORD out; unsigned char analog[8]; short axes[4]; } pads[] = {
@@ -229,7 +269,7 @@ static void case_keys(void)
     InputLayout l;
     unsigned mask;
     int p, i, how, n = 0, bad = 0;
-    input_layout_keys_default(&l);
+    old_layout(&l);
     for (p = 0; p < (int)(sizeof pads / sizeof pads[0]); p++)
         for (how = 0; how < 3; how++)
         for (mask = 0; mask < (1u << INPUT_KEYS_OLD); mask++) {
@@ -260,14 +300,15 @@ static void case_keys(void)
     printf("keys: %d states, %d differ from kb_merge\n", n, bad);
 }
 
-/* The movement keys alone, as xbox_InputKeyboardMove read them: every
- * one of the twenty places held or not, by either key or both. */
+/* The movement keys alone, as xbox_InputKeyboardMove read them: on the
+ * window's own layout, every one of the twenty places held or not, by
+ * either key or both. */
 static void case_move(void)
 {
     InputLayout l;
     unsigned mask;
     int bad = 0, how;
-    input_layout_keys_default(&l);
+    old_layout(&l);
     for (how = 0; how < 3; how++)
     for (mask = 0; mask < (1u << INPUT_KEYS_OLD); mask++) {
         uint32_t held[INPUT_HELD_WORDS];
@@ -320,9 +361,9 @@ static void case_binds(void)
     CHECK(analog[0] == 0 && analog[1] == 255, "Space on B, not A: %u %u", analog[0], analog[1]);
     l.bind[INPUT_CTL_B][1] = INPUT_NONE;
     CHECK(input_layout_keys(&l, held, &out, analog, axes) == 0, "a key no control uses");
-    /* Space and J each A's: letting go of one leaves A held while the other
-     * is (the window held them as one place, so letting go of J let A go
-     * with Space still down). */
+    /* Space and the mouse's left button each A's: letting go of one leaves
+     * A held while the other is (the window held Space and J as one place,
+     * so letting go of J let A go with Space still down). */
     input_layout_keys_default(&l);
     memset(held, 0, sizeof held);
     hold(held, INPUT_KEY_SPACE);
@@ -330,10 +371,10 @@ static void case_binds(void)
     input_layout_keys(&l, held, &out, analog, axes);
     CHECK(analog[0] == 255, "Space alone: A %u", analog[0]);
     memset(held, 0, sizeof held);
-    hold(held, INPUT_KEY_J);
+    hold(held, INPUT_KEY_MOUSE_LEFT);
     memset(analog, 0, sizeof analog);
     input_layout_keys(&l, held, &out, analog, axes);
-    CHECK(analog[0] == 255, "J alone: A %u", analog[0]);
+    CHECK(analog[0] == 255, "the mouse's left alone: A %u", analog[0]);
     /* A mouse button, and the last key, as any other input. */
     l.bind[INPUT_CTL_Y][1] = INPUT_KEYS - 1;
     l.bind[INPUT_CTL_X][1] = INPUT_KEY_SCANCODES - 1;
@@ -362,23 +403,27 @@ static void case_bind(void)
     input_layout_bind(&l, INPUT_CTL_START, INPUT_PAD_PADDLE1);
     CHECK(l.bind[INPUT_CTL_START][0] == INPUT_PAD_PADDLE1 && l.bind[INPUT_CTL_BACK][0] == INPUT_PAD_START,
           "Start on the paddle, Back on Start's button");
-    /* A control's input bound to it again: nothing moves. */
-    input_layout_keys_default(&l);
+    /* A control's input bound to it again: nothing moves, and a control
+     * that has it too keeps it (W on the window's own layout). */
+    old_layout(&l);
     input_layout_bind(&l, INPUT_CTL_DPAD_UP, INPUT_KEY_W);
     CHECK(l.bind[INPUT_CTL_DPAD_UP][0] == INPUT_KEY_W && l.bind[INPUT_CTL_LSTICK_UP][0] == INPUT_KEY_W,
           "W on d-pad up again: the left stick keeps it");
-    /* J for B: B has J alone, and A gets K where it had J, keeping Space. */
+    /* The mouse's left for B: B has it alone, and A gets Left Shift where
+     * it had it, keeping Space. */
     input_layout_keys_default(&l);
-    input_layout_bind(&l, INPUT_CTL_B, INPUT_KEY_J);
-    CHECK(l.bind[INPUT_CTL_B][0] == INPUT_KEY_J && l.bind[INPUT_CTL_B][1] == INPUT_NONE, "B on J");
-    CHECK(l.bind[INPUT_CTL_A][0] == INPUT_KEY_SPACE && l.bind[INPUT_CTL_A][1] == INPUT_KEY_K,
-          "A on Space and K: %d %d", l.bind[INPUT_CTL_A][0], l.bind[INPUT_CTL_A][1]);
-    /* Space for A: A has Space alone; J goes. */
+    input_layout_bind(&l, INPUT_CTL_B, INPUT_KEY_MOUSE_LEFT);
+    CHECK(l.bind[INPUT_CTL_B][0] == INPUT_KEY_MOUSE_LEFT && l.bind[INPUT_CTL_B][1] == INPUT_NONE,
+          "B on the mouse's left");
+    CHECK(l.bind[INPUT_CTL_A][0] == INPUT_KEY_SPACE && l.bind[INPUT_CTL_A][1] == INPUT_KEY_LSHIFT,
+          "A on Space and Left Shift: %d %d", l.bind[INPUT_CTL_A][0], l.bind[INPUT_CTL_A][1]);
+    /* Space for A: A has Space alone; the mouse's left goes. */
     input_layout_keys_default(&l);
     input_layout_bind(&l, INPUT_CTL_A, INPUT_KEY_SPACE);
     CHECK(l.bind[INPUT_CTL_A][0] == INPUT_KEY_SPACE && l.bind[INPUT_CTL_A][1] == INPUT_NONE, "A on Space alone");
-    /* W for A: both of W's controls get Space, as W pressed both. */
-    input_layout_keys_default(&l);
+    /* W for A on the window's own layout: both of W's controls get Space,
+     * as W pressed both. */
+    old_layout(&l);
     input_layout_bind(&l, INPUT_CTL_A, INPUT_KEY_W);
     CHECK(l.bind[INPUT_CTL_A][0] == INPUT_KEY_W && l.bind[INPUT_CTL_DPAD_UP][0] == INPUT_KEY_SPACE
           && l.bind[INPUT_CTL_LSTICK_UP][0] == INPUT_KEY_SPACE, "A on W: d-pad up and the stick on Space");
@@ -392,8 +437,8 @@ static void case_bind(void)
     /* An input a control has in both its places can't come of a swap: the
      * one that would have it twice gets none in the second. */
     input_layout_keys_default(&l);
-    l.bind[INPUT_CTL_B][1] = INPUT_KEY_SPACE;        /* B: K and Space */
-    input_layout_bind(&l, INPUT_CTL_A, INPUT_KEY_K);  /* A was Space first */
+    l.bind[INPUT_CTL_B][1] = INPUT_KEY_SPACE;             /* B: Left Shift and Space */
+    input_layout_bind(&l, INPUT_CTL_A, INPUT_KEY_LSHIFT);  /* A was Space first */
     CHECK(l.bind[INPUT_CTL_B][0] == INPUT_NONE && l.bind[INPUT_CTL_B][1] == INPUT_KEY_SPACE,
           "B keeps Space once: %d %d", l.bind[INPUT_CTL_B][0], l.bind[INPUT_CTL_B][1]);
     /* No input, or a control out of range: as asked, or nothing. */
@@ -411,23 +456,34 @@ static void case_bind(void)
 static void case_bind_key(void)
 {
     InputLayout l, def;
-    /* K in A's second: B, which had K, gets J, A's second's old key. */
+    /* Left Shift in A's second: B, which had it first, gets the mouse's
+     * left, A's second's old one. */
     input_layout_keys_default(&l);
-    input_layout_bind_key(&l, INPUT_CTL_A, 1, INPUT_KEY_K);
-    CHECK(l.bind[INPUT_CTL_A][0] == INPUT_KEY_SPACE && l.bind[INPUT_CTL_A][1] == INPUT_KEY_K
-          && l.bind[INPUT_CTL_B][0] == INPUT_KEY_J && l.bind[INPUT_CTL_B][1] == INPUT_NONE,
-          "A on Space and K, B on J: %d %d, %d", l.bind[INPUT_CTL_A][0], l.bind[INPUT_CTL_A][1],
-          l.bind[INPUT_CTL_B][0]);
-    /* J, A's second, in its first: the row's two swap. */
+    input_layout_bind_key(&l, INPUT_CTL_A, 1, INPUT_KEY_LSHIFT);
+    CHECK(l.bind[INPUT_CTL_A][0] == INPUT_KEY_SPACE && l.bind[INPUT_CTL_A][1] == INPUT_KEY_LSHIFT
+          && l.bind[INPUT_CTL_B][0] == INPUT_KEY_MOUSE_LEFT && l.bind[INPUT_CTL_B][1] == INPUT_KEY_MOUSE_MIDDLE,
+          "A on Space and Left Shift, B on the mouse's left and middle: %d %d, %d %d",
+          l.bind[INPUT_CTL_A][0], l.bind[INPUT_CTL_A][1], l.bind[INPUT_CTL_B][0], l.bind[INPUT_CTL_B][1]);
+    /* The mouse's middle, B's second, in the R trigger's second: B gets the
+     * mouse's right, a swap from a second place to a second place. */
     input_layout_keys_default(&l);
-    input_layout_bind_key(&l, INPUT_CTL_A, 0, INPUT_KEY_J);
-    CHECK(l.bind[INPUT_CTL_A][0] == INPUT_KEY_J && l.bind[INPUT_CTL_A][1] == INPUT_KEY_SPACE,
-          "A on J, then Space: %d %d", l.bind[INPUT_CTL_A][0], l.bind[INPUT_CTL_A][1]);
-    /* None in A's second: J is nobody's. */
+    input_layout_bind_key(&l, INPUT_CTL_RTRIGGER, 1, INPUT_KEY_MOUSE_MIDDLE);
+    CHECK(l.bind[INPUT_CTL_RTRIGGER][1] == INPUT_KEY_MOUSE_MIDDLE
+          && l.bind[INPUT_CTL_B][0] == INPUT_KEY_LSHIFT && l.bind[INPUT_CTL_B][1] == INPUT_KEY_MOUSE_RIGHT,
+          "R trigger's second the mouse's middle, B's its right: %d, %d %d",
+          l.bind[INPUT_CTL_RTRIGGER][1], l.bind[INPUT_CTL_B][0], l.bind[INPUT_CTL_B][1]);
+    /* The mouse's left, A's second, in its first: the row's two swap. */
+    input_layout_keys_default(&l);
+    input_layout_bind_key(&l, INPUT_CTL_A, 0, INPUT_KEY_MOUSE_LEFT);
+    CHECK(l.bind[INPUT_CTL_A][0] == INPUT_KEY_MOUSE_LEFT && l.bind[INPUT_CTL_A][1] == INPUT_KEY_SPACE,
+          "A on the mouse's left, then Space: %d %d", l.bind[INPUT_CTL_A][0], l.bind[INPUT_CTL_A][1]);
+    /* None in A's second: Space is nobody's. */
     input_layout_bind_key(&l, INPUT_CTL_A, 1, INPUT_NONE);
-    CHECK(l.bind[INPUT_CTL_A][0] == INPUT_KEY_J && l.bind[INPUT_CTL_A][1] == INPUT_NONE, "A on J alone");
-    /* W in A's second: both of W's controls get Space, the place's old key. */
-    input_layout_keys_default(&l);
+    CHECK(l.bind[INPUT_CTL_A][0] == INPUT_KEY_MOUSE_LEFT && l.bind[INPUT_CTL_A][1] == INPUT_NONE,
+          "A on the mouse's left alone");
+    /* W in A's second on the window's own layout: both of W's controls get
+     * J, the place's old key. */
+    old_layout(&l);
     input_layout_bind_key(&l, INPUT_CTL_A, 1, INPUT_KEY_W);
     CHECK(l.bind[INPUT_CTL_A][0] == INPUT_KEY_SPACE && l.bind[INPUT_CTL_A][1] == INPUT_KEY_W
           && l.bind[INPUT_CTL_DPAD_UP][0] == INPUT_KEY_J && l.bind[INPUT_CTL_LSTICK_UP][0] == INPUT_KEY_J,
@@ -435,15 +491,16 @@ static void case_bind_key(void)
     /* A key into a second that had none: the control that had it gets
      * none in its place. */
     input_layout_keys_default(&l);
-    input_layout_bind_key(&l, INPUT_CTL_B, 1, INPUT_KEY_SPACE);
-    CHECK(l.bind[INPUT_CTL_B][0] == INPUT_KEY_K && l.bind[INPUT_CTL_B][1] == INPUT_KEY_SPACE
-          && l.bind[INPUT_CTL_A][0] == INPUT_NONE && l.bind[INPUT_CTL_A][1] == INPUT_KEY_J,
-          "B on K and Space, A on J alone: %d %d", l.bind[INPUT_CTL_A][0], l.bind[INPUT_CTL_A][1]);
+    input_layout_bind_key(&l, INPUT_CTL_X, 1, INPUT_KEY_SPACE);
+    CHECK(l.bind[INPUT_CTL_X][0] == INPUT_KEY_C && l.bind[INPUT_CTL_X][1] == INPUT_KEY_SPACE
+          && l.bind[INPUT_CTL_A][0] == INPUT_NONE && l.bind[INPUT_CTL_A][1] == INPUT_KEY_MOUSE_LEFT,
+          "X on C and Space, A on the mouse's left alone: %d %d", l.bind[INPUT_CTL_A][0],
+          l.bind[INPUT_CTL_A][1]);
     /* The other control has the place's old key already: none, not twice. */
     input_layout_keys_default(&l);
-    l.bind[INPUT_CTL_B][1] = INPUT_KEY_SPACE;               /* B: K and Space */
-    input_layout_bind_key(&l, INPUT_CTL_A, 0, INPUT_KEY_K); /* A's first was Space */
-    CHECK(l.bind[INPUT_CTL_A][0] == INPUT_KEY_K && l.bind[INPUT_CTL_A][1] == INPUT_KEY_J
+    l.bind[INPUT_CTL_B][1] = INPUT_KEY_SPACE;                    /* B: Left Shift and Space */
+    input_layout_bind_key(&l, INPUT_CTL_A, 0, INPUT_KEY_LSHIFT); /* A's first was Space */
+    CHECK(l.bind[INPUT_CTL_A][0] == INPUT_KEY_LSHIFT && l.bind[INPUT_CTL_A][1] == INPUT_KEY_MOUSE_LEFT
           && l.bind[INPUT_CTL_B][0] == INPUT_NONE && l.bind[INPUT_CTL_B][1] == INPUT_KEY_SPACE,
           "B keeps Space once: %d %d", l.bind[INPUT_CTL_B][0], l.bind[INPUT_CTL_B][1]);
     /* The key a place has, again, or a control or place out of range:
@@ -466,9 +523,11 @@ static void case_used(void)
     input_layout_keys_default(&l);
     input_layout_used(&l, used);
     for (i = 0; i < INPUT_KEYS; i++) n += (used[i / 32] >> (i % 32)) & 1;
-    CHECK(n == 23, "the default keys: %d used", n);   /* 24 controls, 3 second keys, W A S D twice */
+    CHECK(n == 29, "the default keys: %d used", n);   /* 24 controls, 5 second inputs, each once */
     CHECK(used[INPUT_KEY_AC_BACK / 32] & (1u << (INPUT_KEY_AC_BACK % 32)), "the Back key used");
-    CHECK(!(used[INPUT_KEY_MOUSE / 32] & (1u << (INPUT_KEY_MOUSE % 32))), "no mouse button");
+    for (i = INPUT_KEY_MOUSE_LEFT; i <= INPUT_KEY_MOUSE_RIGHT; i++)
+        CHECK(used[i / 32] & (1u << (i % 32)), "the mouse's button %d used", i - INPUT_KEY_MOUSE);
+    CHECK(!(used[(INPUT_KEYS - 1) / 32] & (1u << ((INPUT_KEYS - 1) % 32))), "not its forward button");
     l.bind[INPUT_CTL_Y][0] = INPUT_KEYS - 1;
     input_layout_used(&l, used);
     CHECK(used[(INPUT_KEYS - 1) / 32] & (1u << ((INPUT_KEYS - 1) % 32)), "the mouse's forward button");
@@ -537,10 +596,12 @@ static const char *const k_pad_shown[INPUT_PAD_INPUTS] = {
 };
 static const struct { int sc; const char *name; } k_keys[] = {
     { 4, "A" }, { 6, "C" }, { 7, "D" }, { 8, "E" }, { 9, "F" }, { 11, "H" }, { 12, "I" }, { 13, "J" },
-    { 14, "K" }, { 15, "L" }, { 20, "Q" }, { 21, "R" }, { 22, "S" }, { 25, "V" }, { 26, "W" },
+    { 14, "K" }, { 15, "L" }, { 20, "Q" }, { 21, "R" }, { 22, "S" }, { 23, "T" }, { 24, "U" },
+    { 25, "V" }, { 26, "W" },
     { 40, "Return" }, { 41, "Escape" }, { 44, "Space" }, { SC_F1, "F1" }, { SC_F8, "F8" },
     { 66, "F9" }, { SC_F11, "F11" }, { 79, "Right" }, { 80, "Left" }, { 81, "Down" }, { 82, "Up" },
-    { 88, "Keypad Enter" }, { 224, "Left Ctrl" }, { 270, "AC Back" },
+    { 88, "Keypad Enter" }, { 224, "Left Ctrl" }, { 225, "Left Shift" }, { 228, "Right Ctrl" },
+    { 270, "AC Back" },
 };
 static const char *const k_mouse[INPUT_KEY_MOUSE_BUTTONS] = {
     "Mouse left", "Mouse middle", "Mouse right", "Mouse back", "Mouse forward",
@@ -639,9 +700,12 @@ static void case_rows(void)
     ROW_SHOWS(PAD, "Back", "None"); ROW_SHOWS(PAD, "Right stick click", "None");
     ROW_SHOWS(PAD, "D-pad left", "D-pad left");
     ROW_SHOWS(PAD, "Toggle free camera", "R3");
-    ROW_SHOWS(KEYS, "A", "Space, J"); ROW_SHOWS(KEYS, "Start", "Return, Keypad Enter");
+    ROW_SHOWS(KEYS, "A", "Space, Mouse left"); ROW_SHOWS(KEYS, "B", "Left Shift, Mouse middle");
+    ROW_SHOWS(KEYS, "R trigger", "E, Mouse right"); ROW_SHOWS(KEYS, "White", "T");
+    ROW_SHOWS(KEYS, "Start", "Return, Keypad Enter");
     ROW_SHOWS(KEYS, "Back", "Escape, AC Back"); ROW_SHOWS(KEYS, "Left stick up", "W");
-    ROW_SHOWS(KEYS, "Right stick left", "Left");
+    ROW_SHOWS(KEYS, "D-pad up", "U"); ROW_SHOWS(KEYS, "Left stick click", "Left Ctrl");
+    ROW_SHOWS(KEYS, "Right stick click", "Right Ctrl"); ROW_SHOWS(KEYS, "Right stick left", "Left");
     CHECK(s_writes == 0 && s_ncfg == 0, "nothing kept");
 }
 
@@ -687,11 +751,12 @@ static void case_bind_rows(void)
     /* Back to A's own button: the line goes. */
     CHECK(row(PAD, "A")->bind(INPUT_PAD_A) == 1, "A takes its own back");
     CHECK(!cfg_val("pad_a") && !cfg_val("pad_x"), "A and X back at their defaults, their lines gone");
-    /* The keys: J for B, so A has Space and K. */
-    CHECK(row(KEYS, "B")->bind(INPUT_KEY_J) == 1, "B takes J");
-    ROW_SHOWS(KEYS, "B", "J"); ROW_SHOWS(KEYS, "A", "Space, K");
-    CHECK(!strcmp(cfg_val("key_b"), "J") && !strcmp(cfg_val("key_a_2"), "K") && !cfg_val("key_a"),
-          "kept as key_b=J and key_a_2=K");
+    /* The keys: the mouse's left first for B, so A has Space and Left
+     * Shift. */
+    CHECK(row(KEYS, "B")->bind(INPUT_KEY_MOUSE_LEFT) == 1, "B takes the mouse's left");
+    ROW_SHOWS(KEYS, "B", "Mouse left, Mouse middle"); ROW_SHOWS(KEYS, "A", "Space, Left Shift");
+    CHECK(!strcmp(cfg_val("key_b"), "Mouse left") && !strcmp(cfg_val("key_a_2"), "Left Shift")
+          && !cfg_val("key_a") && !cfg_val("key_b_2"), "kept as key_b=Mouse left and key_a_2=Left Shift");
     /* Refused: F1, F8, F9, F11, a key SDL has no name for, past the inputs. */
     s_writes = 0;
     CHECK(row(KEYS, "Y")->bind(SC_F1) == 0 && row(KEYS, "Y")->bind(SC_F8) == 0
@@ -699,18 +764,18 @@ static void case_bind_rows(void)
     CHECK(row(KEYS, "Y")->bind(300) == 0, "a key with no name refused");
     CHECK(row(KEYS, "Y")->bind(INPUT_KEYS) == 0, "no such input");
     CHECK(s_writes == 0, "a refusal keeps nothing");
-    /* A mouse button, and a key past the defaults'. */
-    CHECK(row(KEYS, "Y")->bind(INPUT_KEY_MOUSE + 2) == 1 && row(KEYS, "X")->bind(224) == 1, "Y and X");
-    ROW_SHOWS(KEYS, "Y", "Mouse right"); ROW_SHOWS(KEYS, "X", "Left Ctrl");
-    CHECK(!strcmp(cfg_val("key_y"), "Mouse right") && !strcmp(cfg_val("key_x"), "Left Ctrl"), "kept by name");
+    /* A mouse button, and a key, that no default has. */
+    CHECK(row(KEYS, "Y")->bind(INPUT_KEY_MOUSE + 3) == 1 && row(KEYS, "X")->bind(OLD_KEY_L) == 1, "Y and X");
+    ROW_SHOWS(KEYS, "Y", "Mouse back"); ROW_SHOWS(KEYS, "X", "L");
+    CHECK(!strcmp(cfg_val("key_y"), "Mouse back") && !strcmp(cfg_val("key_x"), "L"), "kept by name");
     /* Space for A, then none: A has it alone, and its second goes as none. */
     CHECK(row(KEYS, "A")->bind(INPUT_KEY_SPACE) == 1, "A takes Space");
-    ROW_SHOWS(KEYS, "A", "Space, K");
+    ROW_SHOWS(KEYS, "A", "Space, Left Shift");
     CHECK(row(KEYS, "A")->bind_second(XBOX_BIND_NO_INPUT) == 1, "and none second");
     ROW_SHOWS(KEYS, "A", "Space");
     CHECK(!cfg_val("key_a") && !strcmp(cfg_val("key_a_2"), "none"), "kept as key_a_2=none");
-    /* Keyboard moves follow the left stick's rows: I for up, and W is the
-     * d-pad's alone. */
+    /* Keyboard moves follow the left stick's rows: I for up, and W is
+     * nobody's; U, the d-pad's, moves nothing. */
     CHECK(row(KEYS, "Left stick up")->bind(12) == 1, "the left stick up takes I");
     input_remap_layouts(NULL, &keys);
     hold(held, 12);
@@ -722,8 +787,13 @@ static void case_bind_rows(void)
     out = 0;
     {
         short axes[4] = { 0 };
+        CHECK(input_layout_keys(&keys, held, &out, analog, axes) == 0 && out == 0 && axes[1] == 0,
+              "W presses nothing");
+        memset(held, 0, sizeof held);
+        hold(held, INPUT_KEY_U);
+        CHECK(input_layout_keys_move(&keys, held, &x, &y) == 0, "U moves nothing");
         input_layout_keys(&keys, held, &out, analog, axes);
-        CHECK(out == XBOX_GAMEPAD_DPAD_UP && axes[1] == 0, "W is d-pad up alone");
+        CHECK(out == XBOX_GAMEPAD_DPAD_UP && axes[1] == 0, "U is d-pad up alone");
     }
     /* Two presses, as Keyboard layout's box hands them over. Keypad Enter,
      * Start's second, first: the two swap. Keypad Enter again second: none,
@@ -734,12 +804,13 @@ static void case_bind_rows(void)
     ROW_SHOWS(KEYS, "Start", "Keypad Enter");
     CHECK(!strcmp(cfg_val("key_start"), "Keypad Enter") && !strcmp(cfg_val("key_start_2"), "none"),
           "kept as key_start=Keypad Enter, key_start_2=none");
-    /* Esc, Back's own, first, and the mouse's middle button second; then
+    /* Esc, Back's own, first, and the mouse's forward button second; then
      * the window's keys and a key with no name refused there, and none. */
     CHECK(row(KEYS, "Back")->bind(INPUT_KEY_ESCAPE) == 1, "Back takes Esc again");
-    CHECK(row(KEYS, "Back")->bind_second(INPUT_KEY_MOUSE + 1) == 1, "and the mouse's middle button second");
-    ROW_SHOWS(KEYS, "Back", "Escape, Mouse middle");
-    CHECK(!cfg_val("key_back") && !strcmp(cfg_val("key_back_2"), "Mouse middle"), "kept as key_back_2=Mouse middle");
+    CHECK(row(KEYS, "Back")->bind_second(INPUT_KEY_MOUSE + 4) == 1, "and the mouse's forward button second");
+    ROW_SHOWS(KEYS, "Back", "Escape, Mouse forward");
+    CHECK(!cfg_val("key_back") && !strcmp(cfg_val("key_back_2"), "Mouse forward"),
+          "kept as key_back_2=Mouse forward");
     s_writes = 0;
     CHECK(row(KEYS, "Back")->bind_second(SC_F1) == 0 && row(KEYS, "Back")->bind_second(300) == 0
           && row(KEYS, "Back")->bind_second(INPUT_KEYS) == 0, "refused second");
@@ -780,7 +851,7 @@ static void case_reset(void)
     row(KEYS, "Reset to default")->run();
     input_remap_layouts(NULL, &keys);
     CHECK(!memcmp(&keys, &def, sizeof keys) && s_ncfg == 0, "the keyboard back at its defaults, its lines gone");
-    ROW_SHOWS(KEYS, "A", "Space, J");
+    ROW_SHOWS(KEYS, "A", "Space, Mouse left");
 }
 
 /* At start, from remap.cfg: what the rows kept reads back as it was,
@@ -793,7 +864,7 @@ static void case_settings(void)
     cfg("pad_a", "x"); cfg("pad_x", "a"); cfg("pad_back", "lefttrigger"); cfg("pad_ltrigger", "none");
     cfg("pad_b", "flipper"); cfg("pad_y", "guide"); cfg("pad_start", "back");
     cfg("pad_rthumb", "rightstick"); cfg("pad_freecam", "none");
-    cfg("key_b", "J"); cfg("key_a_2", "K"); cfg("key_y", "Mouse right"); cfg("key_x", "Left Ctrl");
+    cfg("key_b", "Mouse left"); cfg("key_a_2", "Left Shift"); cfg("key_y", "Mouse back"); cfg("key_x", "L");
     cfg("key_lthumb", "F9"); cfg("key_rthumb", "Hyper"); cfg("key_lstick_up", "I");
     cfg("key_freecam", "K");
     input_remap_start();
@@ -804,15 +875,33 @@ static void case_settings(void)
     input_layout_bind(&want, INPUT_CTL_RTHUMB, INPUT_PAD_RSTICK);
     CHECK(!memcmp(&pad, &want, sizeof pad), "the controller's lines read back as the rows made them");
     input_layout_keys_default(&want);
-    input_layout_bind(&want, INPUT_CTL_B, INPUT_KEY_J);
-    want.bind[INPUT_CTL_Y][0] = INPUT_KEY_MOUSE + 2;
-    want.bind[INPUT_CTL_X][0] = 224;
+    input_layout_bind_key(&want, INPUT_CTL_B, 0, INPUT_KEY_MOUSE_LEFT);
+    want.bind[INPUT_CTL_Y][0] = INPUT_KEY_MOUSE + 3;
+    want.bind[INPUT_CTL_X][0] = OLD_KEY_L;
     want.bind[INPUT_CTL_LSTICK_UP][0] = 12;
     CHECK(!memcmp(&keys, &want, sizeof keys), "the keyboard's lines read back");
     ROW_SHOWS(PAD, "B", "B"); ROW_SHOWS(PAD, "Y", "Y"); ROW_SHOWS(PAD, "Start", "Start");
     ROW_SHOWS(PAD, "Right stick click", "R3"); ROW_SHOWS(PAD, "Toggle free camera", "None");
-    ROW_SHOWS(KEYS, "Left stick click", "C"); ROW_SHOWS(KEYS, "Right stick click", "V");
+    ROW_SHOWS(KEYS, "Left stick click", "Left Ctrl"); ROW_SHOWS(KEYS, "Right stick click", "Right Ctrl");
     CHECK(keys.bind[INPUT_CTL_FREECAM][0] == INPUT_NONE, "key_freecam= not read");
+    CHECK(s_writes == 0, "reading writes nothing");
+}
+
+/* spriteice's remap.cfg, kept under the old defaults (2026-11-20), the
+ * new defaults' source: read over them, it is the defaults, and nothing
+ * is said in the log. A file kept before them holds only the keys a player
+ * set, so every other control takes the new default. */
+static void case_old_cfg(void)
+{
+    InputLayout keys, def;
+    cfg("key_dpad_up", "U"); cfg("key_a_2", "Mouse left"); cfg("key_b", "Left Shift");
+    cfg("key_x", "C"); cfg("key_lthumb", "Left Ctrl"); cfg("key_y", "V");
+    cfg("key_rthumb", "Right Ctrl"); cfg("key_white", "T"); cfg("key_dpad_down", "J");
+    cfg("key_dpad_left", "H"); cfg("key_dpad_right", "K");
+    input_remap_start();
+    input_remap_layouts(NULL, &keys);
+    input_layout_keys_default(&def);
+    CHECK(!memcmp(&keys, &def, sizeof keys), "spriteice's file reads as the defaults");
     CHECK(s_writes == 0, "reading writes nothing");
 }
 
@@ -915,6 +1004,7 @@ int main(int argc, char **argv)
     else if (!strcmp(c, "bind_rows")) case_bind_rows();
     else if (!strcmp(c, "reset"))    case_reset();
     else if (!strcmp(c, "settings")) case_settings();
+    else if (!strcmp(c, "old_cfg"))  case_old_cfg();
     else if (!strcmp(c, "hotkey"))   case_hotkey();
     else { printf("no case %s\n", c); return 2; }
     if (!g_fail) printf("input_layout %s: pass\n", c);

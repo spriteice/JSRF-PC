@@ -52,19 +52,25 @@ enum {
 /* The keyboard's and the mouse's inputs: a key by its place, as SDL numbers
  * them (SDL_Scancode, which xinput_device.c checks these against), then the
  * mouse's buttons from SDL's first, its left (SDL_BUTTON_LEFT): left,
- * middle, right, back and forward. The keys the defaults use are named. */
+ * middle, right, back and forward. The keys and buttons the defaults use
+ * are named. */
 enum {
-    INPUT_KEY_A = 4, INPUT_KEY_C = 6, INPUT_KEY_D = 7, INPUT_KEY_E = 8, INPUT_KEY_F = 9,
-    INPUT_KEY_H = 11, INPUT_KEY_J = 13, INPUT_KEY_K = 14, INPUT_KEY_L = 15,
-    INPUT_KEY_Q = 20, INPUT_KEY_R = 21, INPUT_KEY_S = 22, INPUT_KEY_V = 25, INPUT_KEY_W = 26,
+    INPUT_KEY_A = 4, INPUT_KEY_C = 6, INPUT_KEY_D = 7, INPUT_KEY_E = 8,
+    INPUT_KEY_H = 11, INPUT_KEY_J = 13, INPUT_KEY_K = 14,
+    INPUT_KEY_Q = 20, INPUT_KEY_R = 21, INPUT_KEY_S = 22, INPUT_KEY_T = 23, INPUT_KEY_U = 24,
+    INPUT_KEY_V = 25, INPUT_KEY_W = 26,
     INPUT_KEY_RETURN = 40, INPUT_KEY_ESCAPE = 41, INPUT_KEY_SPACE = 44,
     INPUT_KEY_RIGHT = 79, INPUT_KEY_LEFT = 80, INPUT_KEY_DOWN = 81, INPUT_KEY_UP = 82,
     INPUT_KEY_KP_ENTER = 88,
+    INPUT_KEY_LCTRL = 224, INPUT_KEY_LSHIFT = 225, INPUT_KEY_RCTRL = 228,
     INPUT_KEY_AC_BACK = 270                 /* a keyboard's Back key */
 };
 #define INPUT_KEY_SCANCODES     512         /* SDL_NUM_SCANCODES */
 #define INPUT_KEY_MOUSE         INPUT_KEY_SCANCODES
 #define INPUT_KEY_MOUSE_BUTTONS 5
+#define INPUT_KEY_MOUSE_LEFT    (INPUT_KEY_MOUSE + 0)
+#define INPUT_KEY_MOUSE_MIDDLE  (INPUT_KEY_MOUSE + 1)
+#define INPUT_KEY_MOUSE_RIGHT   (INPUT_KEY_MOUSE + 2)
 #define INPUT_KEYS              (INPUT_KEY_MOUSE + INPUT_KEY_MOUSE_BUTTONS)
 
 /* The keys and mouse buttons held: a bit for each of the keyboard's
@@ -87,9 +93,10 @@ typedef struct InputLayout {
  * with the bumpers as Black and White, its Back none of the game's
  * (xinput_device.c gives it to the game when there is no menu), and its R3
  * the free camera's switch, so the game's own R3 has none; and the keys as
- * docs/playing.md lists them, with a second key on A (J), on Start (keypad
- * Enter) and on Back (a keyboard's Back key), and none for the free camera
- * (its key, F8, is the window's: nv2a_gl.c). */
+ * docs/playing.md lists them, each on one control, with a second on A (the
+ * mouse's left button), on B (its middle), on the R trigger (its right), on
+ * Start (keypad Enter) and on Back (a keyboard's Back key), and none for
+ * the free camera (its key, F8, is the window's: nv2a_gl.c). */
 void input_layout_pad_default(InputLayout *l);
 void input_layout_keys_default(InputLayout *l);
 

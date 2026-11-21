@@ -33,24 +33,28 @@ it replaces, so the two swap, as on Controller layout. Any key can be used but
 F1 and F8 to F11, and the mouse's left, middle, right, back and forward
 buttons. Keyboard moves steers with whatever keys the left stick has.
 
-- **W A S D:** Move, and the menus. They are the left stick, so W goes away
-  from the camera. With Input > Behaviour > Keyboard moves at Skater, W goes
-  the way the skater faces, however the camera turns, A and D turn it while
-  held, W with A or D turns it wider, and S turns it round.
+- **W A S D:** Move. They are the left stick, so W goes away from the
+  camera. With Input > Behaviour > Keyboard moves at Skater, W goes the way
+  the skater faces, however the camera turns, A and D turn it while held, W
+  with A or D turns it wider, and S turns it round.
+- **U, H, J and K:** The d-pad's up, left, down and right, for the menus.
 - **Arrow keys:** The camera (right stick).
-- **Space or J:** A, to jump. Each is A on its own, so letting go of one
-  while the other is held keeps A held.
-- **K:** B.
-- **H:** X.
-- **L:** Y.
-- **E:** R trigger, to talk and spray.
+- **Space or the left mouse button:** A, to jump. Each is A on its own, so
+  letting go of one while the other is held keeps A held.
+- **Left Shift or the middle mouse button:** B, to boost.
+- **C:** X.
+- **V:** Y.
+- **E or the right mouse button:** R trigger, to talk and spray.
 - **Q:** L trigger.
 - **R:** Black.
-- **F:** White.
+- **T:** White.
 - **Return or keypad Enter:** Start.
 - **Esc, or a keyboard's Back key:** Back.
-- **C and V:** Left and right stick click.
+- **Left Ctrl:** Left stick click, to grind on the floor.
+- **Right Ctrl:** Right stick click.
 - **The mouse:** The free camera, while it is on (Free camera, below).
+
+Every key and mouse button above is on one control only.
 
 ## Settings keys
 

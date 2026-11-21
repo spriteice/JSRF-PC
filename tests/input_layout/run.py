@@ -12,21 +12,23 @@ the settings file, and no other), the window's own keys, the inputs' names
 The defaults: each control's inputs, the pad's at their Xbox places with
 the bumpers as Black and White and its Back none of the game's, its R3 the
 free camera's switch and the game's Right stick click none, and the keys
-by their places, with J, keypad Enter and a keyboard's Back key second on A,
-Start and Back, and none for the free camera. The pad, with R3 given back
-to Right stick click: every one of the fourteen buttons the table read,
-on or off together, with the triggers at their edges and half way and the
-pad's Back handed over or not, gives what the table gave with the menu
-there, and SDL's other buttons change nothing; as it starts, R3 presses
-nothing the game sees. The keys: every one of the
-window's twenty places, held or not together, by its first key, its second
-or both, over three pads, gives what kb_merge gave, and says a key was held
-when one was. The movement keys: what xbox_InputKeyboardMove gave for every
-one of the twenty. A layout's other uses: two inputs on a control, the most
-of them; a trigger on Start from half way; an input out of range, or none,
-pressing nothing; a key no control uses, not held as far as the game knows;
-Space and J each pressing A alone; a mouse button and the last key. A row's
-bind: the swap, a control's own input again, a second key kept, two
+by their places, each input on one control, with the mouse's left, middle
+and right buttons second on A, B and the R trigger, keypad Enter on Start
+and a keyboard's Back key on Back, and none for the free camera. The pad,
+with R3 given back to Right stick click: every one of the fourteen buttons
+the table read, on or off together, with the triggers at their edges and
+half way and the pad's Back handed over or not, gives what the table gave
+with the menu there, and SDL's other buttons change nothing; as it starts,
+R3 presses nothing the game sees. The keys, on the window's own layout
+(the defaults until 2026-11-20): every one of its twenty places, held or
+not together, by its first key, its second or both, over three pads, gives
+what kb_merge gave, and says a key was held when one was. The movement keys: what
+xbox_InputKeyboardMove gave for every one of the twenty. A layout's other
+uses: two inputs on a control, the most of them; a trigger on Start from
+half way; an input out of range, or none, pressing nothing; a key no
+control uses, not held as far as the game knows; Space and the mouse's left
+each pressing A alone; a mouse button and the last key. A row's bind: the
+swap, a control's own input again, a second key kept, two
 controls' input, and none. One of a control's places, as Keyboard layout's
 rows set its two keys: the swap place by place, a row's own two swapping,
 none, and an input that would be one control's twice. The inputs a layout
@@ -44,9 +46,10 @@ none for the first, refusing as the first does. Reset to
 default on each page alone. At start, the lines the rows kept read back as
 they were, Toggle free camera's too, an unknown name or an input a layout
 can't have keeps the default, which the log says, and the keyboard reads no
-free camera's line. The free camera's switch on the pad, as the window
-hands over each button and trigger: R3 runs it once a press, not while
-held, nor with the menu open, then or once it shuts; a trigger from half
+free camera's line; and spriteice's remap.cfg, kept under the old defaults,
+reads as the new ones, saying nothing. The free camera's switch on the pad,
+as the window hands over each button and trigger: R3 runs it once a press,
+not while held, nor with the menu open, then or once it shuts; a trigger from half
 way; each pad its own; bound to A, A runs it and R3 presses the game's A;
 nothing for the Xbox pad's own controls or an input out of range.
 Requires GCC on PATH, including MinGW on Windows.
@@ -75,13 +78,13 @@ with tempfile.TemporaryDirectory(prefix="input_layout-") as directory:
             "[INPUT] controller layout: A is X", "[INPUT] controller layout: X is A",
             "[INPUT] controller layout: L trigger is None", "[INPUT] controller layout: Back is LT",
             "[INPUT] controller layout: Y is None", "[INPUT] controller layout: Y is Y",
-            "[INPUT] keyboard layout: A is Space, K",
-            "[INPUT] keyboard layout: B is J",
-            "[INPUT] keyboard layout: Y is Mouse right",
+            "[INPUT] keyboard layout: A is Space, Left Shift",
+            "[INPUT] keyboard layout: B is Mouse left, Mouse middle",
+            "[INPUT] keyboard layout: Y is Mouse back",
             "[INPUT] keyboard layout: Left stick up is I",
             "[INPUT] keyboard layout: Start is Keypad Enter, Return",
             "[INPUT] keyboard layout: Start is Keypad Enter",
-            "[INPUT] keyboard layout: Back is Escape, Mouse middle",
+            "[INPUT] keyboard layout: Back is Escape, Mouse forward",
             "[INPUT] keyboard layout: Back is Escape",
             "[INPUT] keyboard layout: Back is None",
         ],
@@ -98,7 +101,7 @@ with tempfile.TemporaryDirectory(prefix="input_layout-") as directory:
             "[INPUT] controller layout: Toggle free camera is None (remap.cfg)",
             "[INPUT] remap.cfg: key_lthumb=F9 is not one a layout can have; Left stick click keeps its default",
             "[INPUT] remap.cfg: key_rthumb=Hyper is no input known; Right stick click keeps its default",
-            "[INPUT] keyboard layout: A is Space, K (remap.cfg)",
+            "[INPUT] keyboard layout: A is Space, Left Shift (remap.cfg)",
         ],
         "hotkey": [
             "[INPUT] controller layout: R trigger is R3", "[INPUT] controller layout: Toggle free camera is RT",
@@ -107,7 +110,7 @@ with tempfile.TemporaryDirectory(prefix="input_layout-") as directory:
         ],
     }
     for case in ("defaults", "pad", "keys", "move", "binds", "bind", "bind_key", "used",
-                 "rows", "bind_rows", "reset", "settings", "hotkey"):
+                 "rows", "bind_rows", "reset", "settings", "old_cfg", "hotkey"):
         run = subprocess.run([exe, case], capture_output=True, text=True, timeout=120)
         print(run.stdout + run.stderr, end="")
         if run.returncode != 0 or f"input_layout {case}: pass" not in run.stdout:
@@ -118,8 +121,8 @@ with tempfile.TemporaryDirectory(prefix="input_layout-") as directory:
             if want not in lines[at:]:
                 sys.exit(f"input_layout {case}: the log doesn't say, in order: {want}")
             at = lines.index(want, at) + 1
-        if case == "rows" and any(line.startswith("[INPUT]") for line in lines):
-            sys.exit("input_layout rows: the defaults said something in the log")
+        if case in ("rows", "old_cfg") and any(line.startswith("[INPUT]") for line in lines):
+            sys.exit(f"input_layout {case}: the defaults said something in the log")
         if case == "settings" and any("key_freecam" in line for line in lines):
             sys.exit("input_layout settings: the keyboard read a free camera line")
 print("input_layout: all cases pass")
