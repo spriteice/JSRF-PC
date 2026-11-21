@@ -343,6 +343,70 @@ could not, refused, crash, frozen, fatal, corrupt, bad, unable, abort) must
 be in `ERRORS` or `NOT_ERRORS`, and not in both, so a new error line in the
 engine fails the test until the tool has it.
 
+## Holding logs to numbered checks: logcompare
+
+`tools/logcompare.py` holds one build's logs to a row's numbered checks,
+before against after: each check's before, its after, and PASS or FAIL. It
+sits beside logdigest, which finds new kinds of line; this finds numbers
+that moved.
+
+```bash
+python3 tools/logcompare.py tools/checks/finish-line.ini after.log [more.log ...] > checks.md
+python3 tools/logcompare.py tools/checks/finish-line.ini after.log --before before.log [more.log ...]
+```
+
+A checks file is INI, in `tools/checks/`, one section a check named by its
+number as the row numbers it, with `#` for comments:
+
+```ini
+[3]
+name = No frame over 50 ms on entering a level
+line = [HITCH] frame {}: {ms} ms flip to flip
+from = [LOAD] t={} mission ... asks for stage
+take = max
+limit = <= 50
+```
+
+- **What it reads:** `line`, a template of a line the engine prints: its
+  text, `{name}` for a number taken from it, `{}` for a number not used,
+  `...` for any text, and a run of spaces for any run of spaces, matched
+  from the line's start (the spaces before it ignored); a line worded two
+  ways gives a template a line. `measure` names the number, where the
+  template has more than one. Or `measure = report KEY`, one of logsum's
+  values (`late_pct`, `held`, `worst_ms` and the rest), for each full
+  10 s report, the first and last of each run left out as logsum's finish
+  line leaves them out.
+- **What it takes** over each log: `take` is max, min, mean, sum, count,
+  first, last or a percentile (`p95`, the nearest rank). `skip = N` leaves
+  out the first N matched in each run, and `from` and `until`, templates,
+  open and close the part of each run counted (one stage's `[LOAD]` line
+  to the next; those lines aren't counted, and a line that matches both
+  opens). `device = linux` or `windows` counts only that device's logs, as
+  logsum tells them apart.
+- **The before:** `before`, a number or a range (`65..71`), today's figure;
+  logs given with `--before`, such as five replays of a saved run, take its
+  place as a range, the spread with no change to the code.
+- **The limit:** `<`, `<=`, `>`, `>=` or `=` and a number, or (but `=`)
+  `before`, `before + N`, `before - N` or `before * N`, where against a
+  range `before` is its edge on the limit's side: `<= before` is no
+  higher than the highest.
+
+A check passes when every after log of its device passes. One with no
+line in a log has no value there (a count is 0), and the table says so.
+Under the table, each value is traced to the log's line, or to the lines it
+was taken over, so a figure can be checked before it is leaned on. Its exit
+status is 0 when every check measured passes, 1 when one fails, has no line
+or has no before its limit needs, and 2 when it can't run.
+
+It needs only Python's standard library, and logsum beside it. Its test,
+`tools/test_logcompare.py`, writes its logs from the engine's own lines, as
+logsum's does, and holds every template in `tools/checks/` to the engine's
+source: its fixed text must be a line the engine prints, with a number
+where the engine prints one (`%d`, `%u`, `%f` and the like), so a change
+that rewords a line a check reads fails until the check changes with it.
+`tools/checks/finish-line.ini` is the performance review's finish line, as
+the b3.1 plan proposes it.
+
 ## Which generated functions a change alters: gen_diff
 
 `tools/gen_diff.py` compares two folders of generated code made from
