@@ -3,7 +3,8 @@ without the game.
 
 Builds port/pad.c whole, as the engine builds it; test_main.c stands in for
 the input layer (src/input), the free camera, the keyboard's moves, input
-playback (port/playback.c, which tests/playback drives with pad.c) and
+playback (port/playback.c, which tests/playback drives with pad.c), photo
+mode (port/photo_mode.c, which tests/photo_mode drives) and
 recomp_manual.c's test hooks, and lays the game's blocks out in a guest
 memory of its own.
 
@@ -19,8 +20,9 @@ host has none, and says the other ports have none; takes the test hooks'
 pad over the host's while they drive it; and tells input playback the pad
 with the keys' moves, before the free camera takes the right stick, and
 writes what playback gives in its place, a pad or none, with the free
-camera given the stick from it, or told the port has none. The input layer
-and the test hooks are started once, at the first read.
+camera given the stick from it, or told the port has none; and, while photo
+mode holds the world, writes an empty pad, playback still told the host's.
+The input layer and the test hooks are started once, at the first read.
 Requires GCC on PATH, including MinGW on Windows, and POSIX threads there
 (winpthreads), whose clock_gettime pad.c reads.
 CC, when set, is the compiler instead of gcc.

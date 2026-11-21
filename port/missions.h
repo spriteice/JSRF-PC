@@ -90,9 +90,10 @@ void missions_flow(uint8_t *mem, uint32_t size, uint32_t flow, missions_title_fn
 /* Developer > Missions' rows (missions_menu.c), once the game's program is
  * in guest memory `mem` (`size` bytes) and the path layer is up: the story's
  * missions, read from the game's own mission files, by level, with the
- * game's own names for the levels and the characters, and Load game. A
- * pick sets JSRF_START_MISSION and JSRF_START_SKATER, or JSRF_START_LOAD,
- * and restarts. Nothing without the in-game menu. */
+ * game's own names for the levels and the characters, Load game, and Photo
+ * mode's tick (photo_mode.h). A pick sets JSRF_START_MISSION and
+ * JSRF_START_SKATER, or JSRF_START_LOAD, with JSRF_START_PHOTO=1 while Photo
+ * mode is ticked, and restarts. Nothing without the in-game menu. */
 void missions_menu_start(const uint8_t *mem, uint32_t size);
 
 #endif

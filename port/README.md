@@ -35,7 +35,11 @@ the game's main loop, its loads, its cutscenes and its camera. Developer >
 Missions, for one, is `missions.c`, which starts the game at a story mission
 through the game flow's update in `recomp_manual.c`, and `missions_menu.c`,
 its rows in the in-game menu, made from the game's own mission files as the
-engine starts.
+engine starts. Missions' Photo mode row is `photo_mode.c`: the world held
+with the game's own hold, the HUD hidden and a camera that flies, through
+the map's portals as a skater goes, from hooks in `recomp_manual.c` on the
+game's main loop (which reads the portals from the game's own list), its
+frame's draw, its camera's draw and the set of areas it draws.
 
 The bulk of the port — the hundreds of thousands of lines of C the pipeline
 generates from the XBE — is **not** here and will not be: it is derived from a

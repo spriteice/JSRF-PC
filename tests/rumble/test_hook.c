@@ -27,6 +27,7 @@ void xbox_InputInit(void) {}
 DWORD xbox_InputGetState(DWORD port, XBOX_INPUT_STATE *st) { (void)port; (void)st; return 1; }
 void freecam_pad(unsigned port, short *rx, short *ry) { (void)port; (void)rx; (void)ry; }
 void kbmove_pad(unsigned port, short *lx, short *ly) { (void)port; (void)lx; (void)ly; }
+void photo_mode_pad(XBOX_INPUT_STATE *st) { (void)st; }
 void pad_test_start(void) {}
 int pad_test_inputs(uint32_t port, XBOX_INPUT_STATE *st) { (void)port; (void)st; return 0; }
 int playback_pad(uint32_t port, XBOX_INPUT_STATE *st, int connected) { (void)port; (void)st; return connected; }

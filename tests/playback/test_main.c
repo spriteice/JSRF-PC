@@ -53,6 +53,7 @@ DWORD xbox_InputGetState(DWORD port, XBOX_INPUT_STATE *st)
 }
 DWORD xbox_InputSetState(DWORD port, const XBOX_VIBRATION *v) { (void)port; (void)v; return 0; }
 void kbmove_pad(unsigned port, short *lx, short *ly) { (void)port; (void)lx; (void)ly; }
+void photo_mode_pad(XBOX_INPUT_STATE *st) { (void)st; }
 void pad_test_start(void) {}
 int pad_test_inputs(uint32_t port, XBOX_INPUT_STATE *st) { (void)port; (void)st; return 0; }
 

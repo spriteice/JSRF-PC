@@ -50,6 +50,14 @@ void kbmove_pad(unsigned port, short *lx, short *ly)
     if (g_keys_on) { *lx = 222; *ly = -222; }
 }
 
+/* Photo mode (port/photo_mode.c) empties the pad the game reads, after the
+ * free camera, while it holds the world: set. */
+static int g_photo_on;
+void photo_mode_pad(XBOX_INPUT_STATE *st)
+{
+    if (g_photo_on) memset(&st->Gamepad, 0, sizeof st->Gamepad);
+}
+
 /* Input playback (port/playback.c): told the pad with the keys' moves, before
  * the free camera takes its stick; while set, a recording's pad in its place,
  * on port 0, and port 1 with none. */
@@ -169,6 +177,24 @@ static void state(void)
           "playback was told %d, sticks %d %d, buttons %04X; the free camera given %d", g_play_seen,
           g_play_given.Gamepad.sThumbLX, g_play_given.Gamepad.sThumbRX, g_play_given.Gamepad.wButtons, g_cam_given);
     g_cam_on = g_keys_on = 0;
+
+    /* Photo mode, while it holds the world: the game reads an empty pad, the
+     * packet as it was; and the host's again once it lets go. */
+    g_photo_on = 1;
+    pad_get_state(g_mem, XPP_HANDLE_BASE, STATE);
+    CHECK(W32(STATE) == 5 && W16(STATE + 4) == 0 && S16(STATE + 14) == 0 && S16(STATE + 16) == 0
+          && S16(STATE + 18) == 0 && S16(STATE + 20) == 0,
+          "photo mode: packet %u, buttons %04X, sticks %d %d %d %d", W32(STATE), W16(STATE + 4),
+          S16(STATE + 14), S16(STATE + 16), S16(STATE + 18), S16(STATE + 20));
+    for (int k = 0; k < 8; k++) CHECK(g_mem[STATE + 6 + k] == 0, "photo mode: analog button %d", k);
+    CHECK(g_play_given.Gamepad.wButtons == (XBOX_GAMEPAD_DPAD_UP | XBOX_GAMEPAD_BACK),
+          "photo mode: playback wasn't told the host's pad (buttons %04X)", g_play_given.Gamepad.wButtons);
+    g_photo_on = 0;
+    pad_get_state(g_mem, XPP_HANDLE_BASE, STATE);
+    CHECK(W16(STATE + 4) == (XBOX_GAMEPAD_DPAD_UP | XBOX_GAMEPAD_BACK) && g_mem[STATE + 6] == 10
+          && S16(STATE + 14) == 1 && S16(STATE + 20) == 4,
+          "after photo mode: buttons %04X, A %u, sticks %d %d", W16(STATE + 4), g_mem[STATE + 6],
+          S16(STATE + 14), S16(STATE + 20));
 
     /* A recording's pad in place of the host's, and the free camera given
      * its right stick; a port it says has no pad has none, the free camera

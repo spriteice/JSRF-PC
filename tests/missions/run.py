@@ -52,9 +52,11 @@ once, a fight's not), its set in Other sets, and whether start-states.txt
 marks it off the story's way. Without the game's names, levels go by their
 sets and characters by number. Character is all 24 characters, in the
 game's order from its table (by number when the table isn't one), Galam
-shown as Garam, kept in developer.cfg; then Load game between two lines.
-A pick asks first, sets the start's variables and restarts, or takes them
-out again when the restart comes back. Every file it opens is closed, read
+shown as Garam, kept in developer.cfg; then Load game between two lines;
+then Photo mode, a tick, and a line below it. A pick asks first, sets the
+start's variables (JSRF_START_PHOTO=1 too while Photo mode is ticked, for a
+mission or Load game) and restarts, or takes them out again when the
+restart comes back. Every file it opens is closed, read
 only.
 Requires GCC on PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
@@ -280,6 +282,8 @@ def rows(skaters=CHARACTERS, ticked=0, named=True):
             "row: ACTION Load game in Missions; asks \"Restart at Load Game with the mission saves, losing"
             " unsaved progress?\"",
             "row: SEPARATOR - in Missions",
+            "row: TOGGLE Photo mode in Missions [ticked 0]",
+            "row: SEPARATOR - in Missions",
             "row: CHOICE Garage (stg00) in Missions: 0100 (scene) | 0197 (scene, not on the story's way)"
             " [ticked -1]" + CONFIRM,
             f"row: CHOICE {name(2, 'stg12')} in Missions: 0110 (free play) | 0112 (race, Char0) | 0113 (fight)"
@@ -319,24 +323,46 @@ menu_cases = {
     "no_folder": ("no_folder", LINES, None, [],
                   "[MISSION] Developer > Missions: no story mission files in D:\\Media\\Mission; not shown\n"),
     "pick": ("pick", LINES, None,
-             rows() + [f"restart: JSRF_START_MISSION=0112 JSRF_START_SKATER={ORDER[1]} JSRF_START_LOAD=-"],
+             rows() + [f"restart: JSRF_START_MISSION=0112 JSRF_START_SKATER={ORDER[1]} JSRF_START_LOAD=-"
+                        " JSRF_START_PHOTO=-"],
              SUMMARY.format(who="Char6")
              + f"[MISSION] Developer > Missions > Character: Char{ORDER[1]} (skater {ORDER[1]}), from the next"
              " mission picked\n"
              f"[MISSION] 0112 picked in Developer > Missions, skater {ORDER[1]}: restarting\n"),
     "pick_fails": ("pick_fails", LINES, None,
-                   rows() + [f"restart: JSRF_START_MISSION=0112 JSRF_START_SKATER={ORDER[1]} JSRF_START_LOAD=-"],
+                   rows() + [f"restart: JSRF_START_MISSION=0112 JSRF_START_SKATER={ORDER[1]} JSRF_START_LOAD=-"
+                              " JSRF_START_PHOTO=-"],
                    SUMMARY.format(who="Char6")
                    + f"[MISSION] Developer > Missions > Character: Char{ORDER[1]} (skater {ORDER[1]}), from the"
                    " next mission picked\n"
                    f"[MISSION] 0112 picked in Developer > Missions, skater {ORDER[1]}: restarting\n"
                    "[MISSION] 0112: the game couldn't restart; nothing started\n"),
-    "menu_load": ("load", LINES, None, rows() + ["restart: JSRF_START_MISSION=- JSRF_START_SKATER=- JSRF_START_LOAD=1"],
-             SUMMARY.format(who="Char6") + "[MISSION] Load game picked in Developer > Missions: restarting\n"),
+    "menu_load": ("load", LINES, None,
+                  rows() + ["restart: JSRF_START_MISSION=- JSRF_START_SKATER=- JSRF_START_LOAD=1"
+                            " JSRF_START_PHOTO=-"],
+                  SUMMARY.format(who="Char6") + "[MISSION] Load game picked in Developer > Missions: restarting\n"),
     "menu_load_fails": ("load_fails", LINES, None,
-                   rows() + ["restart: JSRF_START_MISSION=- JSRF_START_SKATER=- JSRF_START_LOAD=1"],
+                   rows() + ["restart: JSRF_START_MISSION=- JSRF_START_SKATER=- JSRF_START_LOAD=1"
+                             " JSRF_START_PHOTO=-"],
                    SUMMARY.format(who="Char6") + "[MISSION] Load game picked in Developer > Missions: restarting\n"
                    "[MISSION] Load game: the game couldn't restart; nothing started\n"),
+    # Photo mode ticked: carried over a pick's restart, and taken out again
+    # when the restart comes back.
+    "photo": ("photo", LINES, None,
+              rows() + ["restart: JSRF_START_MISSION=0110 JSRF_START_SKATER=6 JSRF_START_LOAD=- JSRF_START_PHOTO=1"],
+              SUMMARY.format(who="Char6")
+              + "[MISSION] 0110 picked in Developer > Missions, skater 6, in photo mode: restarting\n"),
+    "photo_fails": ("photo_fails", LINES, None,
+                    rows() + ["restart: JSRF_START_MISSION=0110 JSRF_START_SKATER=6 JSRF_START_LOAD=-"
+                              " JSRF_START_PHOTO=1"],
+                    SUMMARY.format(who="Char6")
+                    + "[MISSION] 0110 picked in Developer > Missions, skater 6, in photo mode: restarting\n"
+                    "[MISSION] 0110: the game couldn't restart; nothing started\n"),
+    "photo_load": ("photo_load", LINES, None,
+                   rows() + ["restart: JSRF_START_MISSION=- JSRF_START_SKATER=- JSRF_START_LOAD=1"
+                             " JSRF_START_PHOTO=1"],
+                   SUMMARY.format(who="Char6")
+                   + "[MISSION] Load game picked in Developer > Missions, in photo mode: restarting\n"),
 }
 
 failed = 0
@@ -362,7 +388,7 @@ with tempfile.TemporaryDirectory(prefix="missions-") as directory:
     missions_o = str(work / "missions.o")
     subprocess.run([*flags, "-c", "port/missions.c", "-o", missions_o], cwd=root, check=True)
     subprocess.run([*flags, str(main_c), missions_o, "-o", exe], cwd=root, check=True)
-    subprocess.run([*flags, "-DXBOXRECOMP_MENU=1", "-Isrc/menu", str(menu_c), missions_o,
+    subprocess.run([*flags, "-DXBOXRECOMP_MENU=1", "-Isrc/menu", "-Isrc/input", str(menu_c), missions_o,
                     "port/missions_menu.c", "-o", menu_exe], cwd=root, check=True)
 
     def run(name, exe, arg, extra, lines, dev):

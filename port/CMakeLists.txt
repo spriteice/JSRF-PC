@@ -100,6 +100,7 @@ set(JSRF_SOURCES
     cutscene_skip.c
     missions.c
     missions_menu.c
+    photo_mode.c
     music_info.c
     soul_indicator.c
     draw_distance.c

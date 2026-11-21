@@ -770,6 +770,10 @@ static int host_main(void)
     /* Whether the game starts at a mission (JSRF_START_MISSION), read once
      * and taken out of the environment (port/missions.c). */
     { extern void missions_start(void); missions_start(); }
+    /* Whether Developer > Missions > Photo mode is ticked (JSRF_START_PHOTO,
+     * from a pick there), read once and taken out of the environment
+     * (port/photo_mode.c). */
+    { extern void photo_mode_start(void); photo_mode_start(); }
     /* Whether this run records the pad or plays a recording (JSRF_RECORD,
      * JSRF_PLAY, JSRF_PLAY_MENU), read once and taken out of the
      * environment, and Developer > Playback's rows (port/playback.c). */

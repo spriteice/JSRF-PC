@@ -4,8 +4,9 @@ without the game.
 
 Builds port/playback.c, port/pad.c and port/freecam.c whole, as the engine
 builds them, with the in-game menu's rows; test_main.c stands in for the
-input layer (src/input), the keyboard's moves, recomp_manual.c's test
-hooks, the settings file, the menu and the window, and plays the game: a
+input layer (src/input), the keyboard's moves, photo mode,
+recomp_manual.c's test hooks, the settings file, the menu and the window,
+and plays the game: a
 loop of passes, each reading the pad twice through XInputGetState's
 replacement, running the free camera once a frame and then around the
 skater as the follow camera does, but in the cutscene, moving the skater by

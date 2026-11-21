@@ -14,7 +14,8 @@ camera in `port/freecam.c`, and its Default cam fix and No skater fade in
 Gameplay's Skip intro in
 `port/intro.c`, Skip cutscenes in `port/cutscene_skip.c` and Visual indicator
 in `port/soul_indicator.c`, Developer in `port/developer.c`, with Missions'
-rows in `port/missions_menu.c`, Playback's in `port/playback.c` and its Far
+rows in `port/missions_menu.c` (its Photo mode's tick in `port/photo_mode.c`),
+Playback's in `port/playback.c` and its Far
 buildings test in `port/draw_distance.c`). A row marked last goes below any added later
 (`last` in `menu.h`). A row can instead go right below another row of its
 menu, which it names, whichever of the two was added first (`under` in
@@ -330,8 +331,10 @@ Dear ImGui
   added by `port/developer.c`). Its rows are `port/missions_menu.c`'s, made
   as the engine starts from the game's own files and the names in its
   program, so nothing of the game's, its missions, levels or characters, is
-  written into the repository. Each level is a choice of its missions, and
-  the levels share one function, which each row tells which level it is
+  written into the repository. In this order: Character, a line, Load
+  game, a line, Photo mode, a tick (`port/photo_mode.c`'s, not kept), a
+  line, then the levels. Each level is a choice of its missions, and the
+  levels share one function, which each row tells which level it is
   (`pick_with` and `data` in `menu.h`). tests/developer and tests/missions
   check.
 - Playback is the submenu right below Missions (`XBOX_GROUP_PLAYBACK`,

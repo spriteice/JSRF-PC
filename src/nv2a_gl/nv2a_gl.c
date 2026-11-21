@@ -1234,16 +1234,27 @@ static const Nv2aUpClean *up_clean(uint32_t k, Nv2aUpClean *c)
  * window's hudscale= setting, 1x unless set otherwise
  * (NV2A_HUD_TENTHS_DEFAULT); and Disable HUD, from hudoff=, off unless set.
  * Either can change while the game runs (the in-game menu), and the next HUD
- * piece drawn takes it.
+ * piece drawn takes it. Photo mode hides the HUD as Disable HUD does while
+ * it holds the world (port/photo_mode.h), without changing hudoff=.
  */
 static volatile int g_hud_tenths = NV2A_HUD_TENTHS_DEFAULT;
 static volatile int g_hud_off;
+static volatile int g_hud_held;
 
 /* For the game side (port/recomp_manual.c): whether the HUD is drawn at
  * another size than its own, or not at all, so that its pieces are marked
  * at 4:3 too (port/widescreen_hud.h). */
 int nv2a_hud_sized(void);
-int nv2a_hud_sized(void) { return g_hud_off || g_hud_tenths != NV2A_HUD_TENTHS_DEFAULT; }
+int nv2a_hud_sized(void) { return g_hud_off || g_hud_held || g_hud_tenths != NV2A_HUD_TENTHS_DEFAULT; }
+
+/* For photo mode (port/photo_mode.c): the HUD hidden, as Disable HUD hides
+ * it, while on. */
+void nv2a_hud_hold(int on);
+void nv2a_hud_hold(int on)
+{
+    g_hud_held = on != 0;
+    fprintf(stderr, "  [HUD] HUD %s for photo mode\n", on ? "hidden" : "back");
+}
 
 /* ---- helpers ------------------------------------------------------------ */
 
@@ -1897,7 +1908,7 @@ int nv_window_keys(uint32_t *held, int words)
     return any;
 }
 
-/* The mouse's look (port/freecam.c's): while one
+/* The mouse's look (port/freecam.c's and port/photo_mode.c's): while one
  * who asked wants it, the in-game menu is shut and the window has focus, the
  * window holds the pointer (SDL's relative mode: hidden, and kept in the
  * window), and counts how far the mouse moves for each who wants it then,
@@ -7420,16 +7431,17 @@ static void do_draw_body(void)
           }
       } }
 
-    /* Display > HUD > Disable HUD (nv2a_hud_scale.h): nothing between the
-     * marks of a HUD piece the HUD scale sizes is drawn, 2D, 3D and text
-     * alike, in any view. After the sticky attributes above, which the
-     * hardware fetches whether or not the draw is made. The first draw left
-     * out of each piece is logged. */
-    if ((g_hud_flags & NV2A_WIDE_HUD_SIZED) && g_hud_off) {
+    /* Display > HUD > Disable HUD (nv2a_hud_scale.h), or photo mode's hold:
+     * nothing between the marks of a HUD piece the HUD scale sizes is drawn,
+     * 2D, 3D and text alike, in any view. After the sticky attributes above,
+     * which the hardware fetches whether or not the draw is made. The first
+     * draw left out of each piece is logged. */
+    if ((g_hud_flags & NV2A_WIDE_HUD_SIZED) && (g_hud_off || g_hud_held)) {
         static unsigned char told[256];
         if (!told[g_hud_piece & 0xFFu]) {
             told[g_hud_piece & 0xFFu] = 1;
-            fprintf(stderr, "[HUD] piece %u: not drawn (HUD disabled)\n", g_hud_piece);
+            fprintf(stderr, "[HUD] piece %u: not drawn (HUD %s)\n", g_hud_piece,
+                    g_hud_off ? "disabled" : "hidden for photo mode");
         }
         return;
     }

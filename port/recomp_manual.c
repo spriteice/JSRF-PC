@@ -1301,6 +1301,7 @@ void sub_0017CAB0(void)
 #include "intro.h"
 #include "keyboard_move.h"
 #include "missions.h"
+#include "photo_mode.h"
 #include "playback.h"
 #include "soul_indicator.h"
 
@@ -2444,6 +2445,7 @@ void sub_00191440(void)
  * (+0x94), and the vblank counter the game keeps at 0x265174. Input playback
  * keys the pad to these passes, the game's own frames (port/playback.c). */
 static unsigned s_loop_passes;  /* the main loop's passes so far */
+static void photo_frame(uint32_t gm);
 extern void sub_00013A80_gen(void);
 void sub_00013A80(void)
 {
@@ -2453,6 +2455,7 @@ void sub_00013A80(void)
     uint32_t w94 = (o > 0x10000u && o < (64u << 20)) ? *(uint32_t *)(m + o + 0x94) : 0;
     s_loop_passes++;
     playback_pass();
+    photo_frame(o);             /* before the pass takes up the holds asked for */
     if (on < 0) on = getenv("JSRF_FRAME_LOG") ? 1 : 0;
     sub_00013A80_gen();
     if (!on || o < 0x10000u || o >= (64u << 20)) return;
@@ -5791,10 +5794,11 @@ static void prompt_draw(void)
     wide_hud_end(WIDE_HUD_SKIP, marked);
     g_esp = esp;
 }
+static void photo_draw(void);
 void sub_000131F0(void)
 {
     uint32_t sv_eax, sv_ecx, sv_edx;
-    sub_000131F0_gen();
+    photo_draw();               /* the game's draw, as in play while photo mode holds */
     sv_eax = g_eax;
     sv_ecx = g_ecx;
     sv_edx = g_edx;
@@ -6591,6 +6595,8 @@ void sub_000A6100(void)
     cf = (float *)(m + cam);
     mode = ((const uint32_t *)cf)[CAM_MODE / 4];
     behind = asked && !*(uint32_t *)(m + who + CHR_CAM_BEHIND);
+    if (mode != CAMWALL_MODE_GRAFFITI && cam_pad_steered(m, cam, 0))
+        photo_mode_followed(cam);                   /* the player has control */
     if (cam_pad_steered(m, cam, 1))
         placed = freecam_orbit(cam, mode, cf + CAM_TARGET / 4, cf + CAM_SMOOTH_EYE / 4, behind, eye);
     if (placed != FREECAM_OFF) {
@@ -6642,16 +6648,28 @@ void sub_000A28B0(void)
     sub_000A28B0_gen();
 }
 /* The follow camera's draw: the camera it is, while it runs, for the set
- * of areas it makes from its eye (sub_0006A970). */
+ * of areas it makes from its eye (sub_0006A970), and whether photo mode
+ * placed that eye (port/photo_mode.h): photo mode places the eye and the
+ * look point the draw builds the view from first, while it holds the world
+ * and this is its camera. */
 static uint32_t s_cam_drawing;
+static int s_photo_drawing;
 extern void sub_000A2960_gen(void);
 void sub_000A2960(void)
 {
-    uint32_t was = s_cam_drawing;
+    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
+    uint32_t was = s_cam_drawing, cam = g_ecx;
+    int photo_was = s_photo_drawing;
     jsrf_camcnt[1]++;
-    s_cam_drawing = g_ecx;
+    s_cam_drawing = cam;
+    s_photo_drawing = 0;
+    if (photo_mode_holding() && cam >= 0x10000u && cam + CAM_VIEW_TARGET + 3 * sizeof(float) < (64u << 20)) {
+        float *cf = (float *)(m + cam);
+        s_photo_drawing = photo_mode_place(cam, cf + CAM_VIEW_EYE / 4, cf + CAM_VIEW_TARGET / 4);
+    }
     sub_000A2960_gen();
     s_cam_drawing = was;
+    s_photo_drawing = photo_was;
     wide_haze_corners("sub_000A2960");
 }
 extern void sub_000A3A70_gen(void);
@@ -7170,18 +7188,41 @@ static void area_set_from_game_eye(uint32_t set[DRAW_SET_WORDS], uint32_t ra)
     }
 }
 
+/* ---- photo mode's eye in no area -------------------------------------------
+ * Photo mode's camera goes through walls, under the floor and out of the
+ * map, and a point in no area gives an empty set. While it places the eye
+ * (s_photo_drawing), the set is made from that eye, as the game makes it;
+ * empty, it is made again from the last point the eye was in an area
+ * (photo_mode_area), so going through a wall shows what was seen from where
+ * the camera came from, until it comes out in another area. Should that
+ * give none too, every area some list names is drawn, as for the free
+ * camera. The free camera's way, from the game's camera's eye, would be
+ * wrong here: the game's camera stays where photo mode took over. */
+static void area_set_from_photo(uint32_t set[DRAW_SET_WORDS], uint32_t eye_at, uint32_t ra)
+{
+    static DrawArea areas[DRAW_AREAS_MAX];
+    float eye[3], from[3];
+    if (eye_at < 0x10000u || eye_at + sizeof eye >= (64u << 20)) return;
+    memcpy(eye, (uint8_t *)g_xbox_mem_offset + eye_at, sizeof eye);
+    if (!photo_mode_area(area_set_empty(set), eye, from)) return;
+    area_set_remake(from, ra);
+    if (area_set_empty(set)) draw_set_whole_map(areas, dd_areas(areas), set);
+}
+
 /* sub_0006A970(eye), thiscall on AREA_SET: the game's set; made again from
- * the game's eye while the free camera's is in no area (above); then, with
- * Far buildings on, the areas added to it. */
+ * the game's eye while the free camera's is in no area (above), or from the
+ * last point in an area while photo mode's is in none; then, with Far
+ * buildings on, the areas added to it. */
 void sub_0006A970(void)
 {
     static DrawArea areas[DRAW_AREAS_MAX];
-    uint32_t self = g_ecx, ra = GARG(0);
+    uint32_t self = g_ecx, ra = GARG(0), eye_at = GARG(1);
     uint32_t *set = (uint32_t *)((uint8_t *)g_xbox_mem_offset + AREA_SET + AREA_SET_BITS);
     int n;
     sub_0006A970_gen();
     if (self != AREA_SET) return;
-    area_set_from_game_eye(set, ra);
+    if (s_photo_drawing) area_set_from_photo(set, eye_at, ra);
+    else area_set_from_game_eye(set, ra);
     if (!draw_far_buildings()) return;
     n = dd_areas(areas);
     if (!n) return;
@@ -7199,6 +7240,133 @@ void sub_00012C80(void)
         memcpy((uint8_t *)g_xbox_mem_offset + AREA_SET + AREA_SET_BITS, s_game_set, sizeof s_game_set);
         s_set_widened = 0;
     }
+}
+
+/* ---- photo mode (port/photo_mode.c): the world held -----------------------
+ * The game manager has four holds of its own, a dword each from +0x40, which
+ * its main loop's pass (sub_00013A80) takes up from the requests the game's
+ * own calls leave (sub_000126D0, sub_000126F0, sub_00012710 and
+ * sub_00012730, each on or off), before its update (sub_000123E0). While one
+ * is on, the update walks the tasks with that hold's own slots in place of
+ * each object's update and post-update, which do nothing for nearly every
+ * object, and the frame's draw (sub_000131F0) draws each through that hold's
+ * own draw slot. The fourth, at +0x4C, is the one whose draw slot is the
+ * camera's usual draw (0xB3DE0, to the vtable's +0xC), so the world stays
+ * drawn: the game takes it for its fades (the one at 0x6662F lets it go as a
+ * fade from black ends) and its missions' held moments. Photo mode takes it,
+ * once a pass, through sub_00012730, only when none of the four is on, and
+ * lets it go the same way; going, the camera's view is put back as the game
+ * had it. Some objects draw nothing in that hold, so while photo mode has it
+ * the frame's draw runs with it down, every object drawn by its usual draw,
+ * as in play: nothing has moved since. Nothing in these functions is wrong:
+ * the holds are the game's design, and photo mode is ours. */
+#define GM_HOLDS        0x40u       /* the game manager's holds, a dword each */
+#define GM_HOLD_COUNT   4
+#define GM_HOLD_PHOTO   0x4Cu       /* the fades' hold, photo mode's */
+#define GM_HOLD_SET_RET 0x00066641u /* where a call of sub_00012730 returns to, at a fade's end */
+extern void sub_00012730(void);
+
+/* The map's portals, for photo mode's camera (port/photo_mode.h). The game's
+ * portal manager, a static object, keeps each loaded stage's in a list, made
+ * from the stage's data as it loads (sub_0006F7B0): each portal its quad as
+ * two triangles, of which each keeps its first corner and points to its
+ * other two in the stage's data; then the offset crossing it moves a skater
+ * by, and the next. Read as they are each game frame, as the game tests
+ * them (sub_0006F8C0), so a stage loaded or let go is seen at once. Only a
+ * skater's step is tested against them, so photo mode tests its own;
+ * nothing in the game's test is wrong: the portals are the game's design,
+ * and photo mode's camera is ours. */
+#define PORTALS         0x0020CC58u /* the portal manager */
+#define PORTALS_FIRST   0x04u       /* its first portal; 0 for none */
+#define PORTAL_TRI      0x30u       /* a triangle's size: the two from +0x00 */
+#define PORTAL_TRI_B    0x20u       /* a triangle's second corner, a pointer */
+#define PORTAL_TRI_C    0x24u       /* and its third */
+#define PORTAL_BY       0x60u       /* the offset */
+#define PORTAL_NEXT     0x70u
+#define PORTAL_SIZE     0x74u
+
+static int photo_in_ram(uint32_t at, uint32_t size)
+{
+    return at >= 0x10000u && at + size < (64u << 20);
+}
+
+static int photo_portals(PHOTO_PORTAL out[PHOTO_PORTALS_MOST])
+{
+    static int said;
+    const uint8_t *m = (const uint8_t *)g_xbox_mem_offset;
+    uint32_t p = *(const uint32_t *)(m + PORTALS + PORTALS_FIRST), tri, b, c;
+    int n = 0, t;
+    for (; p; p = *(const uint32_t *)(m + p + PORTAL_NEXT)) {
+        if (!photo_in_ram(p, PORTAL_SIZE)) break;
+        if (n == PHOTO_PORTALS_MOST) {
+            if (!said) {
+                said = 1;
+                fprintf(stderr, "[PHOTO] the map has more than %d portals; photo mode's camera goes "
+                                "through the first %d\n", PHOTO_PORTALS_MOST, PHOTO_PORTALS_MOST);
+            }
+            break;
+        }
+        for (t = 0; t < 2; t++) {
+            tri = p + PORTAL_TRI * (uint32_t)t;
+            b = *(const uint32_t *)(m + tri + PORTAL_TRI_B);
+            c = *(const uint32_t *)(m + tri + PORTAL_TRI_C);
+            if (!photo_in_ram(b, sizeof out[n].tri[t][1]) || !photo_in_ram(c, sizeof out[n].tri[t][2])) break;
+            memcpy(out[n].tri[t][0], m + tri, sizeof out[n].tri[t][0]);
+            memcpy(out[n].tri[t][1], m + b, sizeof out[n].tri[t][1]);
+            memcpy(out[n].tri[t][2], m + c, sizeof out[n].tri[t][2]);
+        }
+        if (t < 2) break;
+        memcpy(out[n].by, m + p + PORTAL_BY, sizeof out[n].by);
+        n++;
+    }
+    return n;
+}
+
+static void photo_frame(uint32_t gm)
+{
+    static PHOTO_PORTAL portals[PHOTO_PORTALS_MOST];
+    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
+    PLAYBACK_STATE ps = playback_state();
+    PHOTO_GAME g;
+    uint32_t a[1], cam, sv_ecx;
+    float eye[3], look[3];
+    int i, act;
+    if (gm < 0x10000u || gm + GM_HOLDS + 4 * GM_HOLD_COUNT >= (64u << 20)) return;
+    g.holds = 0;
+    for (i = 0; i < GM_HOLD_COUNT; i++)
+        if (*(const uint32_t *)(m + gm + GM_HOLDS + 4u * i)) g.holds |= 1u << i;
+    g.playback = ps == PLAYBACK_RECORDING || ps == PLAYBACK_PLAYING || ps == PLAYBACK_WAITING;
+    g.portals = portals;
+    g.nportals = photo_mode_ticked() ? photo_portals(portals) : 0;     /* only photo mode's camera needs them */
+    act = photo_mode_frame(&g);
+    if (act == PHOTO_NOTHING) return;
+    if (act == PHOTO_ASK_LET_GO && photo_mode_game_view(&cam, eye, look)
+     && cam >= 0x10000u && cam + CAM_VIEW_TARGET + sizeof look < (64u << 20)) {
+        memcpy(m + cam + CAM_VIEW_EYE, eye, sizeof eye);
+        memcpy(m + cam + CAM_VIEW_TARGET, look, sizeof look);
+    }
+    a[0] = act == PHOTO_ASK_HOLD;
+    sv_ecx = g_ecx;
+    g_ecx = gm;
+    guest_call_cdecl(sub_00012730, GM_HOLD_SET_RET, 1, a);
+    g_ecx = sv_ecx;
+}
+
+/* The game's own frame's draw (sub_000131F0_gen), called from that
+ * function's hook (with the cutscene prompt's), thiscall on the game
+ * manager: as in play while photo mode holds the world (above). */
+static void photo_draw(void)
+{
+    uint32_t gm = g_ecx, *hold, was;
+    if (!photo_mode_holding() || gm < 0x10000u || gm + GM_HOLD_PHOTO + 4 >= (64u << 20)) {
+        sub_000131F0_gen();
+        return;
+    }
+    hold = (uint32_t *)((uint8_t *)g_xbox_mem_offset + gm + GM_HOLD_PHOTO);
+    was = *hold;
+    *hold = 0;
+    sub_000131F0_gen();
+    *hold = was;
 }
 
 /* ---- your own skater not drawn whole: the log (known bug 61) ---------------

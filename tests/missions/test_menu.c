@@ -12,9 +12,11 @@
  * Character's second choice then a mission, and the restart stands in by
  * printing the start's variables and ending the run, as the real one ends
  * it; "pick_fails" has the restart come back; "load" and "load_fails" do the
- * same with Load game; "no_folder" has no mission folder; "no_names" no
- * names or order of the characters in guest memory; "bad_order" an order
- * that names a character twice. A "check" line for each check. */
+ * same with Load game; "photo" ticks Photo mode then picks a mission,
+ * "photo_fails" has that restart come back, and "photo_load" ticks it then
+ * picks Load game; "no_folder" has no mission folder; "no_names" no names or
+ * order of the characters in guest memory; "bad_order" an order that names a
+ * character twice. A "check" line for each check. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -158,7 +160,12 @@ NTSTATUS __stdcall xbox_NtQueryFullAttributesFile(PXBOX_OBJECT_ATTRIBUTES oa,
 }
 void xbox_path_set_user_dir(const char *dir) { (void)dir; }
 
-/* ---- the menu and the restart, stood in for ---- */
+/* ---- the menu, the restart and Photo mode's tick, stood in for ---- */
+
+/* port/photo_mode.c's tick, which tests/photo_mode drives. */
+static int s_photo;
+int photo_mode_ticked(void) { return s_photo; }
+void photo_mode_flip(void) { s_photo = !s_photo; }
 
 static XBOX_MENU_ITEM s_rows[MAX_ROWS];
 static int s_nrows;
@@ -174,7 +181,7 @@ void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count)
         s_rows[s_nrows++] = *r;
         printf("row: %s %s in %s", kind[r->kind], r->label ? r->label : "-", r->group ? r->group : "-");
         for (k = 0; k < r->nchoices; k++) printf("%s%s", k ? " | " : ": ", r->choices[k]);
-        if (r->kind == XBOX_ITEM_CHOICE) printf(" [ticked %d]", r->state());
+        if (r->kind == XBOX_ITEM_CHOICE || r->kind == XBOX_ITEM_TOGGLE) printf(" [ticked %d]", r->state());
         if (r->confirm) printf("; asks \"%s\"", r->confirm);
         printf("\n");
         check("in Developer", r->menu == XBOX_MENU_DEVELOPER);
@@ -185,17 +192,19 @@ void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count)
             check("a level's pick tells its row", r->pick_with && r->data && !r->pick);
         if (r->kind == XBOX_ITEM_ACTION)
             check("an action runs", r->run && !r->pick && !r->pick_with);
+        if (r->kind == XBOX_ITEM_TOGGLE)
+            check("a tick flips", r->run && r->state && !r->pick && !r->pick_with && !r->confirm);
     }
 }
 
 void nv_window_restart(void)
 {
     const char *m = getenv("JSRF_START_MISSION"), *k = getenv("JSRF_START_SKATER"),
-               *l = getenv("JSRF_START_LOAD");
-    printf("restart: JSRF_START_MISSION=%s JSRF_START_SKATER=%s JSRF_START_LOAD=%s\n", m ? m : "-",
-           k ? k : "-", l ? l : "-");
+               *l = getenv("JSRF_START_LOAD"), *p = getenv("JSRF_START_PHOTO");
+    printf("restart: JSRF_START_MISSION=%s JSRF_START_SKATER=%s JSRF_START_LOAD=%s JSRF_START_PHOTO=%s\n",
+           m ? m : "-", k ? k : "-", l ? l : "-", p ? p : "-");
     fflush(stdout);
-    if (strcmp(s_case, "pick_fails") && strcmp(s_case, "load_fails"))
+    if (strcmp(s_case, "pick_fails") && strcmp(s_case, "load_fails") && strcmp(s_case, "photo_fails"))
         exit(s_failed);                 /* a restart doesn't come back */
 }
 
@@ -282,6 +291,17 @@ int main(int argc, char **argv)
         s_rows[l].pick_with(s_rows[l].data, 1);    /* 0112 */
         check("the start's variables taken out again",
               !getenv("JSRF_START_MISSION") && !getenv("JSRF_START_SKATER"));
+    }
+    if (!strncmp(s_case, "photo", 5)) {
+        int t = row_named("Photo mode"), g = row_named("Load game"), l = row_named("Name 2 (stg12)");
+        check("the rows there", t >= 0 && g >= 0 && l >= 0);
+        if (t < 0 || g < 0 || l < 0) return 1;
+        check("Photo mode not ticked to begin with", s_rows[t].state() == 0);
+        s_rows[t].run();
+        check("Photo mode ticked", s_rows[t].state() == 1);
+        if (!strcmp(s_case, "photo_load")) s_rows[g].run();
+        else s_rows[l].pick_with(s_rows[l].data, 0);    /* 0110 */
+        check("JSRF_START_PHOTO taken out again", !getenv("JSRF_START_PHOTO"));
     }
     if (!strcmp(s_case, "load") || !strcmp(s_case, "load_fails")) {
         int g = row_named("Load game");

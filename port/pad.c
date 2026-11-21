@@ -9,6 +9,7 @@
 
 #include "freecam.h"
 #include "keyboard_move.h"
+#include "photo_mode.h"
 #include "playback.h"
 
 /* What the game's pad functions return (Win32's error numbers). */
@@ -171,6 +172,7 @@ uint32_t pad_get_state(uint8_t *m, uint32_t h, uint32_t st)
         return XPP_ERROR_DEVICE_NOT_CONNECTED;
     }
     freecam_pad(port, &s.Gamepad.sThumbRX, &s.Gamepad.sThumbRY);   /* the free camera's, while it steers */
+    photo_mode_pad(&s);                     /* none of it, while photo mode holds the world */
     W32(m, st + XPP_STATE_PACKET) = s.dwPacketNumber;
     W16(m, st + XPP_STATE_BUTTONS) = s.Gamepad.wButtons;
     memcpy(m + st + XPP_STATE_ANALOG, s.Gamepad.bAnalogButtons, 8);

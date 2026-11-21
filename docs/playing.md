@@ -52,7 +52,8 @@ buttons. Keyboard moves steers with whatever keys the left stick has.
 - **Esc, or a keyboard's Back key:** Back.
 - **Left Ctrl:** Left stick click, to grind on the floor.
 - **Right Ctrl:** Right stick click.
-- **The mouse:** The free camera, while it is on (Free camera, below).
+- **The mouse:** The free camera, while it is on (Free camera, below), and
+  photo mode's camera (Photo mode, below).
 
 Every key and mouse button above is on one control only.
 
@@ -130,6 +131,43 @@ from beside a tower on the way down, where the game would draw nothing of
 the level: the level is then drawn as from where the game's own camera
 stands, or, when that is outside every area too, the whole map is, and your
 skater is drawn even when they fall outside every area themselves.
+
+## Photo mode
+
+Developer > Missions > Photo mode, ticked, holds the world still, hides the
+HUD, and gives you a camera that flies anywhere: through walls and floors,
+and out of the map. It starts once you have control: no scene, fade or talk
+running, the game's pause menu shut, and the game's camera following you for
+half a second. The camera starts where the game's was. Unticking it (Back or
+F1 for the in-game menu) lets the world go on, brings the HUD back and gives
+the camera back to the game; ticking it again holds the world again.
+
+- **Left stick (W A S D):** Forward, back and sideways, along where the view
+  faces.
+- **Right stick, and the mouse:** Turn and tilt the view.
+- **R trigger and L trigger:** Straight up and down.
+- **White held (R1, or T):** Four times as fast.
+- **Black held (L1, or R):** A quarter as fast.
+- **Y:** Back to where photo mode started.
+
+A, B and X do nothing, so your right thumb can turn the view while you fly.
+
+The look goes by Input > Free camera's settings: Invert X and Invert Y, the
+sensitivities, the deadzone, Mouse look and Mouse sensitivity. While the
+world is held, the game sees nothing you press, so nothing jumps or moves
+on. The game holds the pointer as it does for the free camera.
+
+What's drawn is drawn from where the camera is: Far buildings, Far shadows
+and Draw distance go from there, as from the game's own camera. Outside every
+area of the map, as inside a wall, the level is drawn as from the last place
+the camera was in one, until it comes into another. Where the map joins two
+of its parts, as Kibogaoka Hill's tunnel does, the camera goes through as
+you would, and comes out in the other part.
+
+The tick carries over a mission or Load game picked in Developer >
+Missions, so mission after mission starts in photo mode; it is off when the
+game starts afresh, or after File > Restart. It doesn't start while
+Developer > Playback records or plays a recording.
 
 ## Near walls
 
@@ -366,7 +404,8 @@ input goes to the menu.
     does in the story. Character is who you start as: any of the game's 24
     characters, Garam among them, Yoyo to begin with, as in a new game.
     Load game, between two lines below it, restarts the game at the title's
-    Load Game screen, with the saves of the runs started here. Below that,
+    Load Game screen, with the saves of the runs started here. Below it,
+    with a line under it, is [Photo mode](#photo-mode)'s tick. Below that,
     each level, in story order, as "Dogenzaka Hill (stg12)", is a list of
     its missions, each with its number, its kind and, for a race or a
     battle, who it is against, as "0252 (flag game, Rapid99)". The garage
@@ -379,7 +418,9 @@ input goes to the menu.
     made from the game's files and is never in a package, it starts with
     the story up to that mission done instead. A run started here keeps its saves in `mission-saves` in the save folder,
     apart from your own, which it never opens. File > Restart afterwards
-    starts the game as usual. Character is kept in `developer.cfg`.
+    starts the game as usual. Character is kept in `developer.cfg`; Photo
+    mode is kept from pick to pick, but not after File > Restart or when
+    the game starts afresh.
   - **Playback:** Records what you press, and plays a recording back, for
     testing. Record (Restart) asks first, then restarts the game and
     records every press the game reads, on every controller, from its

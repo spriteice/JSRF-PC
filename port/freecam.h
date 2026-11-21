@@ -11,7 +11,9 @@
  * recomp_manual.c: sub_000A6100 (the follow camera), sub_000A5070
  * (the camera update, for graffiti and talking), sub_000A28B0 (the camera's
  * post-update), sub_001C3E14 (XInputGetState) and sub_00116E30 (once a game
- * frame). */
+ * frame). Photo mode (photo_mode.h) turns its own camera by the player's
+ * look settings here (freecam_settings, freecam_deadzone, freecam_turn), and
+ * asks the window for the mouse beside the free camera. */
 #ifndef JSRF_FREECAM_H
 #define JSRF_FREECAM_H
 
@@ -85,6 +87,11 @@ int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float s
 /* Whether freecam is on: the camera update leaves out the graffiti camera
  * and the look at whoever the player talks to while it is. */
 int freecam_on(void);
+
+/* The player's switch and tuning, as the settings file, F8, the pad's button
+ * and the menu's rows last made them, whatever a recording plays: photo
+ * mode's look goes by them (port/photo_mode.h). */
+void freecam_settings(FREECAM_SETTINGS *out);
 
 /* A stick, -1..1 on each axis, past c's radial deadzone, rescaled so that
  * its edge is 0 and full tilt is 1. */

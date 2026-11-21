@@ -56,6 +56,12 @@
  * Developer > Far buildings test holds two rows, not kept, to find which
  * area Far buildings adds draws what it shouldn't (draw_far_test_backdrop).
  *
+ * Photo mode's camera (photo_mode.h) is the eye all of it goes from while
+ * photo mode holds the world: the game's set is made from it, and Far
+ * buildings, Far shadows and Draw distance go from there. In no area, the set
+ * is made from the last point its eye was in one (recomp_manual.c,
+ * area_set_from_photo).
+ *
  * The hooks are in recomp_manual.c, under "draw distance"; the steps' maths,
  * the settings, the areas added, the shadows' set and the [DRAW] log are
  * here. */
@@ -162,7 +168,9 @@ void draw_buildings_widen(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WO
  * whatever Far buildings' own step, and says how many set then holds. For
  * the free camera when its eye and the game's camera's are both in no area,
  * where the game's set is empty (known bug 61: recomp_manual.c,
- * area_set_from_game_eye). The map's rules (draw_buildings_stage) aren't
+ * area_set_from_game_eye), and for photo mode's camera when its eye and the
+ * last point it was in an area give none (area_set_from_photo). The map's
+ * rules (draw_buildings_stage) aren't
  * taken: they hold only while the game's set is the one some areas make,
  * and an empty set is none's. */
 int draw_set_whole_map(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WORDS]);

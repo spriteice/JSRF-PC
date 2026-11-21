@@ -369,6 +369,11 @@ int freecam_on(void)
     return s_cfg.on;
 }
 
+void freecam_settings(FREECAM_SETTINGS *out)
+{
+    *out = s_asked;
+}
+
 #if defined(XBOXRECOMP_MENU)
 /* The in-game menu's Input page, its Free camera submenu (src/menu/menu.h,
  * XBOX_GROUP_FREECAM), below the layouts' two. A row changes what the player
