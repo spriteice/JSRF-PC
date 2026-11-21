@@ -42,16 +42,20 @@ void input_remap_pad_hotkey(int control, void (*run)(void))
 }
 
 /* The window's mouse look (nv2a_gl.c): who asks whether the moves are
- * wanted, and the moves, given by mouse() and taken whole, as the window's
- * counts are, right and down. */
+ * wanted, its number (7, to show it is the one taken by), and the moves,
+ * given by mouse() and taken whole, as the window's counts are, right and
+ * down. */
+#define MOUSE_ASKER 7
 static int (*s_mouse_want)(void);
 static int s_mouse_dx, s_mouse_dy;
-void nv_window_mouse_look(int (*want)(void))
+int nv_window_mouse_look(int (*want)(void))
 {
     s_mouse_want = want;
+    return MOUSE_ASKER;
 }
-int nv_window_mouse_take(int *dx, int *dy)
+int nv_window_mouse_take(int asker, int *dx, int *dy)
 {
+    assert(asker == MOUSE_ASKER);
     *dx = s_mouse_dx;
     *dy = s_mouse_dy;
     s_mouse_dx = s_mouse_dy = 0;

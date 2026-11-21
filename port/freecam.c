@@ -38,10 +38,11 @@
  * The mouse turns it too, while Mouse look is on: the window holds the
  * pointer while freecam is on and the in-game menu is shut
  * (nv_window_mouse_look), and freecam takes how far it moved once a game
- * frame, which input playback records and plays back as it does the stick
- * (freecam_frame). Its turn is in proportion to the mouse's counts, with
- * nothing else -- no acceleration, no smoothing, and the frame rate plays no
- * part -- and adds to the stick's. Invert X and Y turn both, and moving it
+ * frame, counted for freecam apart from anyone else who asks, which input
+ * playback records and plays back as it does the stick (freecam_frame). Its
+ * turn is in proportion to the mouse's counts, with nothing else -- no
+ * acceleration, no smoothing, and the frame rate plays no part -- and adds
+ * to the stick's. Invert X and Y turn both, and moving it
  * counts as pushing the stick for auto centre. A move in a frame freecam
  * doesn't steer (paused, a scene) is dropped. The mouse is player 1's, as the
  * keyboard is (port 0, xinput_device.c's kb_merge): with a free camera for
@@ -116,8 +117,8 @@ extern int  nv_window_pref_num(const char *key, double *v);
 extern void nv_window_pref_set_num(const char *key, double v);
 extern void nv_window_hotkey(const char *name, void (*run)(void));
 /* And the mouse's look: who wants the mouse's moves, and the moves. */
-extern void nv_window_mouse_look(int (*want)(void));
-extern int  nv_window_mouse_take(int *dx, int *dy);
+extern int  nv_window_mouse_look(int (*want)(void));
+extern int  nv_window_mouse_take(int asker, int *dx, int *dy);
 #else
 /* Without the SDL window (a headless build) there is no settings file: no
  * keys. And no mouse. */
@@ -126,8 +127,9 @@ static int nv_window_pref_num(const char *key, double *v)
     (void)key; (void)v;
     return 0;
 }
-static int nv_window_mouse_take(int *dx, int *dy)
+static int nv_window_mouse_take(int asker, int *dx, int *dy)
 {
+    (void)asker;
     *dx = *dy = 0;
     return 0;
 }
@@ -155,6 +157,7 @@ static FREECAM_SETTINGS s_cfg;
 static int s_played;            /* s_cfg is a recording's */
 static volatile int s_steer;    /* on, and the follow camera ran last frame */
 static volatile int s_mouse_on; /* on, with Mouse look: the window asks it */
+static int s_mouse_asker = -1;  /* freecam's number with the window, for its own counts */
 static int s_mouse[2];          /* the mouse's move for this frame, counts right and up */
 static int s_follow_ran;        /* the follow camera ran since freecam_frame */
 static int s_cam_ran;           /* and s_cam's update did */
@@ -233,7 +236,7 @@ void freecam_start(void)
 #if defined(NV2A_GL_USE_SDL)
     nv_window_hotkey("F8", freecam_flip);
     input_remap_pad_hotkey(INPUT_CTL_FREECAM, freecam_flip);
-    nv_window_mouse_look(freecam_mouse_wanted);
+    s_mouse_asker = nv_window_mouse_look(freecam_mouse_wanted);
 #endif
 }
 
@@ -252,7 +255,7 @@ void freecam_frame(void)
      * points down), for the follow camera to turn by this frame: only while
      * it steers with Mouse look on, else dropped. Recorded, or the
      * recording's in its place. */
-    nv_window_mouse_take(&dx, &dy);
+    nv_window_mouse_take(s_mouse_asker, &dx, &dy);
     dy = -dy;
     mouse = steer && s_cfg.mouse;
     if (!mouse) dx = dy = 0;
@@ -282,28 +285,41 @@ void freecam_pad(unsigned port, short *rx, short *ry)
     if (s_steer) *rx = *ry = 0;
 }
 
-/* The farthest-pushed right stick, -1..1 on each axis, past a radial
- * deadzone and rescaled so that its edge is 0 and full tilt is 1. */
+void freecam_deadzone(const FREECAM_SETTINGS *c, double *x, double *y)
+{
+    double m = sqrt(*x * *x + *y * *y), k;
+    if (m <= c->deadzone || c->deadzone >= 1) { *x = *y = 0; return; }
+    k = ((m > 1 ? 1 : m) - c->deadzone) / (1 - c->deadzone) / m;
+    *x *= k; *y *= k;
+}
+
+void freecam_turn(const FREECAM_SETTINGS *c, double x, double y, double mx, double my,
+                  double *right, double *up)
+{
+    const double step = FREECAM_STEP_DEG * k_rad, mstep = FREECAM_MOUSE_STEP_DEG * k_rad;
+    *right = x * c->sens_x * step + mx * c->mouse_sens * mstep;
+    *up = y * c->sens_y * step + my * c->mouse_sens * mstep;
+    if (c->invert_x) *right = -*right;
+    if (c->invert_y) *up = -*up;
+}
+
+/* The farthest-pushed right stick, -1..1 on each axis, past the deadzone. */
 static void freecam_stick(double *x, double *y)
 {
-    double best = -1, m, k;
+    double best = -1;
     int p;
     *x = *y = 0;
     for (p = 0; p < 4; p++) {
         double sx = s_stick[p][0] / 32767.0, sy = s_stick[p][1] / 32767.0;
         if (sx * sx + sy * sy > best) { best = sx * sx + sy * sy; *x = sx; *y = sy; }
     }
-    m = sqrt(best);
-    if (m <= s_cfg.deadzone || s_cfg.deadzone >= 1) { *x = *y = 0; return; }
-    k = ((m > 1 ? 1 : m) - s_cfg.deadzone) / (1 - s_cfg.deadzone) / m;
-    *x *= k; *y *= k;
+    freecam_deadzone(&s_cfg, x, y);
 }
 
 int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float seye[3],
                   int reset, float eye[3])
 {
-    const double pmax = FREECAM_PITCH_MAX_DEG * k_rad, step = FREECAM_STEP_DEG * k_rad;
-    const double mstep = FREECAM_MOUSE_STEP_DEG * k_rad;
+    const double pmax = FREECAM_PITCH_MAX_DEG * k_rad;
     double v[3], d, x, y, mx, my, cp, gyaw, gpitch;
     int again = 0;
     s_follow_ran = 1;
@@ -331,12 +347,7 @@ int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float s
     s_mouse[0] = s_mouse[1] = 0;
     if (x != 0 || y != 0 || mx != 0 || my != 0) s_idle = 0;
     else if (s_idle < k_centre[s_cfg.centre].wait) s_idle++;
-    /* The turn this frame, radians: the stick's per frame, and the mouse's
-     * per count. */
-    x = x * s_cfg.sens_x * step + mx * s_cfg.mouse_sens * mstep;
-    y = y * s_cfg.sens_y * step + my * s_cfg.mouse_sens * mstep;
-    if (s_cfg.invert_x) x = -x;
-    if (s_cfg.invert_y) y = -y;
+    freecam_turn(&s_cfg, x, y, mx, my, &x, &y);
     s_yaw = remainder(s_yaw + x, 2 * 180.0 * k_rad);
     s_pitch -= y;                           /* up tilts the view up: the eye goes down */
     if (s_cfg.centre && s_idle >= k_centre[s_cfg.centre].wait) {

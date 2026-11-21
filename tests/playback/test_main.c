@@ -104,9 +104,10 @@ static double pref(const char *key)
 static void (*g_f8)(void), (*g_r3)(void);
 static int (*g_mouse_want)(void);
 static int g_mouse[2];              /* the player's mouse, right and down, since the game's frame took it */
-void nv_window_mouse_look(int (*want)(void)) { g_mouse_want = want; }
-int nv_window_mouse_take(int *dx, int *dy)
+int nv_window_mouse_look(int (*want)(void)) { g_mouse_want = want; return 0; }
+int nv_window_mouse_take(int asker, int *dx, int *dy)
 {
+    (void)asker;
     *dx = g_mouse[0];
     *dy = g_mouse[1];
     g_mouse[0] = g_mouse[1] = 0;

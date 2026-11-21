@@ -86,4 +86,15 @@ int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float s
  * and the look at whoever the player talks to while it is. */
 int freecam_on(void);
 
+/* A stick, -1..1 on each axis, past c's radial deadzone, rescaled so that
+ * its edge is 0 and full tilt is 1. */
+void freecam_deadzone(const FREECAM_SETTINGS *c, double *x, double *y);
+
+/* The turn this frame by c's tuning, in radians: right, and the view's tilt
+ * up, from a stick past its deadzone (x, y: per game frame) and the mouse's
+ * move (mx, my: its counts, right and up), each by its sensitivity, then
+ * inverted as c asks. */
+void freecam_turn(const FREECAM_SETTINGS *c, double x, double y, double mx, double my,
+                  double *right, double *up);
+
 #endif

@@ -7131,24 +7131,28 @@ static int area_set_empty(const uint32_t set[DRAW_SET_WORDS])
         if (set[w]) return 0;
     return 1;
 }
+/* The set made again from point, as the game's own call makes it (ra, the
+ * return address it was called from). */
+static void area_set_remake(const float point[3], uint32_t ra)
+{
+    uint32_t a[1], sv_ecx = g_ecx;
+    g_esp -= AREA_SET_POINT;
+    memcpy((uint8_t *)g_xbox_mem_offset + g_esp, point, 3 * sizeof(float));
+    a[0] = g_esp;
+    g_ecx = AREA_SET;
+    guest_call_cdecl(sub_0006A970_gen, ra, 1, a);
+    g_ecx = sv_ecx;
+    g_esp += AREA_SET_POINT;
+}
 static void area_set_from_game_eye(uint32_t set[DRAW_SET_WORDS], uint32_t ra)
 {
     static double next;
     static DrawArea areas[DRAW_AREAS_MAX];
     const float *game_eye = NULL;
-    uint32_t cam = s_cam_drawing, a[1];
+    uint32_t cam = s_cam_drawing;
     int whole;
     if (!cam || !area_set_empty(set) || cam_eye_placed(cam, &game_eye) != EYE_FREECAM) return;
-    g_esp -= AREA_SET_POINT;
-    memcpy((uint8_t *)g_xbox_mem_offset + g_esp, game_eye, 3 * sizeof(float));
-    a[0] = g_esp;
-    {
-        uint32_t sv_ecx = g_ecx;
-        g_ecx = AREA_SET;
-        guest_call_cdecl(sub_0006A970_gen, ra, 1, a);
-        g_ecx = sv_ecx;
-    }
-    g_esp += AREA_SET_POINT;
+    area_set_remake(game_eye, ra);
     whole = area_set_empty(set);
     if (whole) draw_set_whole_map(areas, dd_areas(areas), set);
     if (pad_now() >= next) {

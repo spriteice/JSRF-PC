@@ -1897,31 +1897,55 @@ int nv_window_keys(uint32_t *held, int words)
     return any;
 }
 
-/* The mouse's look (port/freecam.c's): while whoever asked wants it, the
- * in-game menu is shut and the window has focus, the window holds the
- * pointer (SDL's relative mode: hidden, and kept in the window), and counts
- * how far the mouse moves until they take it. Asked and held on the
- * window's thread, as SDL wants; the counts are taken on the game's. */
-static int (*g_sdl_mouse_want)(void);
+/* The mouse's look (port/freecam.c's): while one
+ * who asked wants it, the in-game menu is shut and the window has focus, the
+ * window holds the pointer (SDL's relative mode: hidden, and kept in the
+ * window), and counts how far the mouse moves for each who wants it then,
+ * apart, until that one takes its own, so one taking doesn't take the
+ * other's. Asked and held on the window's thread, as SDL wants; the counts
+ * are taken on the game's. */
+#define SDL_MOUSE_ASKERS 2
+static int (*g_sdl_mouse_want[SDL_MOUSE_ASKERS])(void);
 static volatile int g_sdl_mouse_held;
-static SDL_atomic_t g_sdl_mouse_dx, g_sdl_mouse_dy;
+static SDL_atomic_t g_sdl_mouse_dx[SDL_MOUSE_ASKERS], g_sdl_mouse_dy[SDL_MOUSE_ASKERS];
 
 /* At start, before the window opens: want says, each time the window's
- * events are pumped, whether the mouse's motion is wanted now. */
-void nv_window_mouse_look(int (*want)(void));
-void nv_window_mouse_look(int (*want)(void))
+ * events are pumped, whether the mouse's motion is wanted now. The asker's
+ * number, for nv_window_mouse_take, or -1 when there are already
+ * SDL_MOUSE_ASKERS. */
+int nv_window_mouse_look(int (*want)(void));
+int nv_window_mouse_look(int (*want)(void))
 {
-    g_sdl_mouse_want = want;
+    int i;
+    for (i = 0; i < SDL_MOUSE_ASKERS && g_sdl_mouse_want[i]; i++) {}
+    if (i < SDL_MOUSE_ASKERS) {
+        g_sdl_mouse_want[i] = want;
+        return i;
+    }
+    fprintf(stderr, "[WIN] more than %d ask for the mouse look; one left out\n", SDL_MOUSE_ASKERS);
+    return -1;
 }
 
-/* The mouse's motion since the last call, in its own counts, right and down
- * as SDL gives them, each taken whole and zeroed; and 1 while the window
- * holds the pointer. On any thread. */
-int nv_window_mouse_take(int *dx, int *dy);
-int nv_window_mouse_take(int *dx, int *dy)
+/* Whether one who asked for the mouse's motion wants it now. */
+static int sdl_mouse_wanted(void)
 {
-    *dx = SDL_AtomicSet(&g_sdl_mouse_dx, 0);
-    *dy = SDL_AtomicSet(&g_sdl_mouse_dy, 0);
+    int i;
+    for (i = 0; i < SDL_MOUSE_ASKERS; i++)
+        if (g_sdl_mouse_want[i] && g_sdl_mouse_want[i]()) return 1;
+    return 0;
+}
+
+/* The mouse's motion since asker's last call, while it wanted it, in the
+ * mouse's own counts, right and down as SDL gives them, each taken whole and
+ * zeroed (none for an asker that isn't one); and 1 while the window holds the
+ * pointer. On any thread. */
+int nv_window_mouse_take(int asker, int *dx, int *dy);
+int nv_window_mouse_take(int asker, int *dx, int *dy)
+{
+    *dx = *dy = 0;
+    if (asker < 0 || asker >= SDL_MOUSE_ASKERS) return g_sdl_mouse_held;
+    *dx = SDL_AtomicSet(&g_sdl_mouse_dx[asker], 0);
+    *dy = SDL_AtomicSet(&g_sdl_mouse_dy[asker], 0);
     return g_sdl_mouse_held;
 }
 
@@ -1933,9 +1957,13 @@ int nv_window_mouse_take(int *dx, int *dy)
 int nv_window_menu_open(void);
 static void sdl_mouse_moved(const SDL_MouseMotionEvent *m)
 {
+    int i;
     if (!g_sdl_mouse_held || nv_window_menu_open() > 0 || m->which == SDL_TOUCH_MOUSEID) return;
-    SDL_AtomicAdd(&g_sdl_mouse_dx, m->xrel);
-    SDL_AtomicAdd(&g_sdl_mouse_dy, m->yrel);
+    for (i = 0; i < SDL_MOUSE_ASKERS; i++)
+        if (g_sdl_mouse_want[i] && g_sdl_mouse_want[i]()) {
+            SDL_AtomicAdd(&g_sdl_mouse_dx[i], m->xrel);
+            SDL_AtomicAdd(&g_sdl_mouse_dy[i], m->yrel);
+        }
 }
 
 /* After each pump's events: holds the pointer or lets it go, as wanted, and
@@ -1943,7 +1971,7 @@ static void sdl_mouse_moved(const SDL_MouseMotionEvent *m)
 static void sdl_mouse_hold(void)
 {
     static int told;
-    int want = g_sdl_mouse_want && g_sdl_mouse_want();
+    int want = sdl_mouse_wanted(), i;
     int menu = nv_window_menu_open() > 0;
     int focus = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_INPUT_FOCUS) != 0;
     int hold = want && !menu && focus;
@@ -1953,8 +1981,10 @@ static void sdl_mouse_hold(void)
         fprintf(stderr, "[WIN] the pointer can't be held for the mouse look: %s\n", SDL_GetError());
     }
     g_sdl_mouse_held = hold;
-    SDL_AtomicSet(&g_sdl_mouse_dx, 0);
-    SDL_AtomicSet(&g_sdl_mouse_dy, 0);
+    for (i = 0; i < SDL_MOUSE_ASKERS; i++) {
+        SDL_AtomicSet(&g_sdl_mouse_dx[i], 0);
+        SDL_AtomicSet(&g_sdl_mouse_dy[i], 0);
+    }
     fprintf(stderr, "[WIN] pointer %s\n", hold ? "held for the mouse look"
             : !want ? "let go: the mouse look is off" : menu ? "let go: the menu is open"
             : "let go: the window lost focus");
