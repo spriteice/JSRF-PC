@@ -134,11 +134,13 @@ reads the file again. It clears the claim when the session ends, moving
 its entry to the top of `PC-HISTORY.md` beside it. The Claude app pauses
 a thread's folder tools while its session runs, and sometimes they don't
 come back after it: the thread then uses the PC's Filesystem tool, which
-keeps working and reaches my Claude folder. Through it, the thread clears
-the claim and moves its entry with `edit_file`, the claim's exact text as
-the guard, places the test list in `Testing\`, and reads the run's reports
-and my results and logs. It carries text only, so whatever else the run
-needs goes to the PC before the session. While another thread has
+keeps working and reaches my Claude folder, and which the repository's
+`.claude/settings.json` lets every thread use without asking. Through it,
+the thread clears the claim and moves its entry with `edit_file`, the
+claim's exact text as the guard, places the test list in `Testing\`, and
+reads the run's reports and my results and logs. It carries text only, so
+whatever else the run needs goes to the PC before the session. While
+another thread has
 the PC, or the thread can't reach the folder, a test build doesn't wait: it
 is made in the cloud, in the thread's sandbox.
 A release build still waits for the PC, as it checks its generated code

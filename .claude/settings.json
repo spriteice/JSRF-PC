@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__remote-devices__Filesystem__list_allowed_directories",
+      "mcp__remote-devices__Filesystem__get_file_info",
+      "mcp__remote-devices__Filesystem__list_directory",
+      "mcp__remote-devices__Filesystem__read_text_file",
+      "mcp__remote-devices__Filesystem__edit_file",
+      "mcp__remote-devices__Filesystem__write_file"
+    ]
+  }
+}
