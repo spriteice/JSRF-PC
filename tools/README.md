@@ -276,7 +276,17 @@ table, its settings and Developer switches, and its frames over 50 ms.
 
 ```bash
 python3 tools/logsum.py last-run.log [more.log ...] > summary.md
+python3 tools/logsum.py --json last-run.log [more.log ...] > summary.json
 ```
+
+With `--json` it prints the same for a program: each log's runs, each with
+its header (the version, `linux` or `windows`, the settings and Developer
+switches), every report's values by name (`frames`, `late`, `late_pct`,
+`held`, `held30`, `worst_ms`, `draws_per_frame`, `kwords_per_frame`,
+`voices`, the game and GPU threads, the GPU thread's split, the card, the
+presenter and the display), the run's totals, the finish line's counts and
+the frames over 50 ms, as numbers, with null where the log has no line.
+`worst_ms` is null when no frame took 25 ms or longer.
 
 It needs only Python's standard library. Its test, `tools/test_logsum.py`,
 takes each line it reads from the engine's own source, so a log line changed

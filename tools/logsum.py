@@ -2,6 +2,7 @@
 """Read JSRF-PC logs into per-10 s tables of how the game ran.
 
     python3 tools/logsum.py LOG [LOG ...]  > summary.md
+    python3 tools/logsum.py --json LOG [LOG ...]  > summary.json
 
 Written for the b1.2 performance review, and kept here with
 tools/test_logsum.py, which checks each line it reads against the line the
@@ -53,8 +54,15 @@ otherwise the Ally X's: at most 5% late and 3 held in each 10 s; the first
 report, from the first frame, and the last, at exit, are shorter and left
 out), and the frames over 50 ms with what [HITCH] says they spent their time
 on (the finish line for entering a level is none). A value the log has no
-line for is "-". Standard library only.
+line for is "-".
+
+With --json, the same for a program: each log's runs, each with its header,
+each report's values by name (`values`, below, with the two threads, the
+GPU thread's split, the card and the presenter as objects), the totals, the
+finish line's counts and the frames over 50 ms, as numbers; a value the log
+has no line for is null. Standard library only.
 """
+import json
 import re
 import sys
 
@@ -396,6 +404,44 @@ def slow_frames(run):
     return [h for h in run["hitches"] if h[1] > SLOW_FRAME_MS]
 
 
+SPLIT = ("draws", "present", "pacing", "walk_rest", "idle")    # the GPU thread's split, in values' order
+
+
+def thread_json(t):
+    if t is None:
+        return None
+    return {"tid": int(t["tid"]), "name": t["name"], "core_pct": t["core"], "samples": t["samples"],
+            "top": [[name, share] for name, share in t["top"]]}
+
+
+def run_json(run):
+    """A run's header, reports, totals, finish line and slow frames, as
+    plain values for --json: what the table shows, by name."""
+    sp, tm, fw = run.get("spin"), run.get("tmake"), run.get("fence")
+    reports = []
+    for row in run["windows"]:
+        v = values(row)
+        v["game_thread"], v["gpu_thread"] = thread_json(v["game_thread"]), thread_json(v["gpu_thread"])
+        v["gpu_split"] = dict(zip(SPLIT, v["gpu_split"])) if v["gpu_split"] else None
+        v["card"] = {"avg_ms": v["card"][0], "worst_ms": v["card"][1]} if v["card"] else None
+        v["present"] = dict(zip(("shown", "replaced", "held"), v["present"])) if v["present"] else None
+        reports.append(v)
+    num = lambda g: None if g is None else float(g) if "." in g else int(g)     # a number the log printed
+    return {
+        "version": run["version"], "device": "windows" if run["windows_os"] else "linux",
+        "info": run["info"], "dev": run["dev"], "display": run["display"], "notes": run["notes"],
+        "pacing_spin": dict(zip(("last_ms", "most_ms", "widened", "sleep_past_ms"), map(num, sp.groups())))
+        if sp else None,
+        "textures_made": dict(zip(("made", "ms", "decoding_ms", "handing_ms", "each_ms", "longest_ms",
+                                   "dxt_as_they_are", "dxt_as_they_are_ms", "dxt_decoded", "dxt_decoded_ms"),
+                                  map(num, tm.groups()))) if tm else None,
+        "fence_waits": dict(zip(("asleep", "ms", "longest_ms", "spun"), fw)) if fw else None,
+        "reports": reports, "totals": totals(run), "finish_line": finish_line(run),
+        "slow_frames": [dict(zip(("frame", "ms", "draws", "programs", "programs_ms", "textures", "textures_ms",
+                                  "rest_ms", "dxt"), h)) for h in slow_frames(run)],
+    }
+
+
 def fmt(v, spec="{}", none="-"):
     return none if v is None else spec.format(v)
 
@@ -481,12 +527,18 @@ def report(path, runs):
 
 
 def main(argv):
-    if len(argv) < 2:
+    paths = [a for a in argv[1:] if a != "--json"]
+    if not paths:
         print(__doc__)
         return 2
+    if "--json" in argv[1:]:
+        json.dump({"logs": [{"path": p, "runs": [run_json(r) for r in parse(p)]} for p in paths]},
+                  sys.stdout, indent=1)
+        print()
+        return 0
     print("# JSRF-PC log summary")
     print()
-    for path in argv[1:]:
+    for path in paths:
         print(report(path, parse(path)))
     return 0
 

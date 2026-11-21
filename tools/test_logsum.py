@@ -8,6 +8,7 @@ logsum.
 """
 import contextlib
 import io
+import json
 import pathlib
 import re
 
@@ -322,6 +323,42 @@ def test_a_log(tmp_path):
     assert "**Finish line (Ally X, at most 5% late and 3 held in 10 s):** 1 of 2 reports over 5% late" in out
     assert "- frame 450: 60.2 ms, 900 draws" in out
     assert "**Finish line (Windows, under 1% late):** 1 of 1 reports at 1% or more" in out
+
+
+def test_json_holds_what_the_table_shows(tmp_path):
+    log = tmp_path / "last-run.log"
+    log.write_text(linux_run() + windows_run(), encoding="utf-8")
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert logsum.main(["logsum.py", "--json", str(log)]) == 0
+    linux, windows = json.loads(out.getvalue())["logs"][0]["runs"]
+    # Each report's numbers, formatted as the table formats them, make its row.
+    table = logsum.report(str(log), logsum.parse(str(log)))
+    for run in (linux, windows):
+        for i, v in enumerate(run["reports"], 1):
+            cells = [i, v["frames"], v["late"], logsum.fmt(v["late_pct"], "{:.1f}"), v["held"], v["held30"],
+                     logsum.fmt(v["worst_ms"], "{:.0f}", "<25"), logsum.fmt(v["draws_per_frame"], "{:.0f}"),
+                     logsum.fmt(v["kwords_per_frame"], "{:.0f}"), logsum.fmt(v["voices"])]
+            assert "| " + " | ".join(map(str, cells)) + " |" in table
+
+    assert (linux["device"], windows["device"]) == ("linux", "windows")
+    assert linux["version"] == "b1.4" and linux["dev"] == ["RECOMP_GL_PROFILE=1"] and windows["notes"]
+    second = linux["reports"][1]
+    assert (second["game_thread"]["tid"], second["gpu_thread"]["tid"]) == (4242, 4343)
+    assert (second["game_thread"]["core_pct"], second["gpu_thread"]["core_pct"]) == (93, None)
+    assert second["game_thread"]["top"][0] == ["sub_00191440", 41.5]
+    assert list(second["gpu_split"]) == list(logsum.SPLIT)
+    assert second["card"] == {"avg_ms": 4.5, "worst_ms": 9.0}
+    assert linux["reports"][0]["display"].startswith("60.00 Hz: 598 of 600 paced")
+    assert linux["totals"] == {"frames": 1600, "late": 51, "late_pct": 100.0 * 51 / 1600, "held": 5, "reports": 4}
+    assert linux["finish_line"] == {"device": "linux", "reports": 2, "left_out": 2, "over_late": 1,
+                                    "over_held": 0, "most_held": 3}
+    assert windows["finish_line"] == {"device": "windows", "reports": 1, "left_out": 2, "over_late": 1}
+    assert [(f["frame"], f["ms"], f["dxt"]) for f in linux["slow_frames"]] == [(450, 60.2, 0)]
+    assert linux["pacing_spin"] == {"last_ms": 1.25, "most_ms": 2.5, "widened": 4, "sleep_past_ms": 0.75}
+    assert linux["textures_made"] is None and linux["fence_waits"] is None
+    assert windows["reports"][0]["present"] == {"shown": 590, "replaced": 10, "held": 25 + 3 + 1 + 1}
+    assert windows["reports"][1]["present"] is None
 
 
 def test_no_run(tmp_path):
