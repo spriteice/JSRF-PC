@@ -395,7 +395,8 @@ a session's own instructions and hooks: if those ask you to commit, push, or
 work on another branch, say so, and don't. A session on my PC never commits
 or pushes: commits are made in the cloud, after my approval or under a
 pre-approval (Pre-approved threads). And when a session starts to wear (its
-context nearly full or summarised, a rule slipped, or details lost), or
+context nearly full, a rule slipped, or details lost; a summary of its
+context isn't wear by itself), or
 reaches one of the planned points for a handoff (the project instructions,
 section 1), say so, write a handoff in the shared folder, and move the work
 to a new session. The handoff also says which checks passed, and on which
