@@ -1,4 +1,4 @@
-"""Compile the Audio menu's setting and the settings file code, and drive them without the game.
+"""Compile the Audio menu's settings and the settings file code, and drive them without the game.
 
 Cut by text: the settings file code from src/nv2a_gl/nv2a_gl.c,
 unchanged. nv2a_gl.c doesn't link on its own.
@@ -6,13 +6,16 @@ unchanged. nv2a_gl.c doesn't link on its own.
 Takes port/audio.c as it is, built with the in-game menu, and the settings
 file code from src/nv2a_gl/nv2a_gl.c verbatim (sdl_cfg_path through
 sdl_cfg_set, with nv_window_pref_num between them), as tests/intro does;
-test_main.c stands in for the menu, the effects and the restart. Each case
-gets its own settings file, passed as JSRF_SETTINGS_FILE, and its own run,
-since the setting is read once: on with no audioeffects= or with 1, off
-with 0, and RECOMP_APU_GPFX in the environment winning over it. The row
-keeps its change in the settings file and asks for a restart; a preset
-(File > Presets) keeps it through the row's keep, which doesn't. Requires GCC
-on PATH, including MinGW on Windows.
+test_main.c stands in for the menu, the effects, the sound output and the
+restart. Each case gets its own settings file, passed as
+JSRF_SETTINGS_FILE, and its own run, since the settings are read once.
+Mute, the first row: off with no mute=, which the log doesn't mention, on
+with mute=1, which it does; the row changes it at once, without asking or
+a restart, and keeps it in the settings file. Audio effects: on with no
+audioeffects= or with 1, off with 0, and RECOMP_APU_GPFX in the environment
+winning over it. The row keeps its change in the settings file and asks for
+a restart; a preset (File > Presets) keeps it through the row's keep, which
+doesn't. Requires GCC on PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
 """
 import os
@@ -41,6 +44,13 @@ source = """
 # it must print, what the settings file must hold after)
 cases = {
     "default": (None, None, ["[AUDIO] effects on (settings)"], None),
+    "mute_on": ("mute=1\n", None, ["[AUDIO] effects on (settings)", "[AUDIO] muted (settings)"], None),
+    "mute_flip_on": ("game_dir=/games/jsrf\n", None,
+                     ["[AUDIO] effects on (settings)", "[AUDIO] muted (the menu)"],
+                     "game_dir=/games/jsrf\nmute=1\n"),
+    "mute_flip_off": ("game_dir=/games/jsrf\nmute=1\n", None,
+                      ["[AUDIO] muted (settings)", "[AUDIO] unmuted (the menu)"],
+                      "game_dir=/games/jsrf\nmute=0\n"),
     "on": ("audioeffects=1\n", None, ["[AUDIO] effects on (settings)"], None),
     "off": ("audioeffects=0\n", None, ["[AUDIO] effects off (settings)"], None),
     "env_off": ("audioeffects=1\n", "0",
@@ -81,6 +91,8 @@ with tempfile.TemporaryDirectory(prefix="audio-") as directory:
         for line in logs:
             if line not in run.stderr:
                 raise SystemExit(f"{name}: no '{line}' in the log:\n{run.stderr}")
+        if "mute" not in name and "muted" in run.stderr:
+            raise SystemExit(f"{name}: not muted, and the log says so:\n{run.stderr}")
         if kept is not None and path.read_text() != kept:
             raise SystemExit(f"{name}: the settings file holds:\n" + path.read_text())
         if kept is None and text is not None and path.read_text() != text:

@@ -10,7 +10,11 @@ runs mcpx_apu_frame_thread's loop with the work left out, for three seconds,
 with the ring (the default) and on the wall clock (the argument "wall": no
 ring, as with XAudio2). The voice processor must make its frames at 48 kHz,
 close together: DirectSound waits for the next one each time it restarts a
-sound. With the ring, the device must never run dry.
+sound. With the ring, the device must never run dry. And with the ring
+muted (the argument "mute", xa2_set_mute, as Audio > Mute): the same
+pacing, the device still taking every frame from the ring, and given
+silence in their place, where without it, it is given what was sent (the
+fake sink's RECOMP_APU_SINK_RAW).
 
 A stall of the machine is set aside and counted apart, with the tenth of a
 second after it (test_main.c says how one is told from the pacing): known
@@ -142,14 +146,24 @@ with tempfile.TemporaryDirectory(prefix="apu_pacing-") as directory:
     command = cc + ["-O2", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread", "-x", "c", "-",
                "-o", exe]
     subprocess.run(command, cwd=root, input=source, text=True, check=True)
+    raw = pathlib.Path(directory) / "sink.raw"
     for name, args, stalled in (("ring", [], False), ("wall clock", ["wall"], False),
+                                ("ring, muted", ["mute"], False),
                                 ("ring, the machine stalled", [], True),
                                 ("wall clock, the machine stalled", ["wall"], True)):
         env = {k: v for k, v in os.environ.items()
                if k not in ("RECOMP_APU_RING_MS", "RECOMP_APU_SINK_RAW", "RECOMP_APU_STATS")}
+        if args != ["wall"] and not stalled:
+            env["RECOMP_APU_SINK_RAW"] = str(raw)    # what the device was given
         code, text = run_case(exe, args, env, stalled)
         if code != 0:
             raise SystemExit(f"apu_pacing {name}: exit {code}\n{text}")
+        if "RECOMP_APU_SINK_RAW" in env:
+            given = raw.read_bytes()
+            sound = given.count(0) < len(given)
+            if len(given) < 48000 * 4 or sound == (args == ["mute"]):
+                raise SystemExit(f"apu_pacing {name}: the device was given {len(given)} bytes, "
+                                 f"{'not ' if sound else ''}all silence")
         stalls, measured = re.search(r"stalls of the machine set aside: (\d+), .*; ([\d.]+) s measured",
                                      text).groups()
         rate = float(re.search(r"frames a second: (\d+)", text).group(1))
@@ -172,7 +186,7 @@ with tempfile.TemporaryDirectory(prefix="apu_pacing-") as directory:
         if wait > 1.0 or p99 > 2.5:
             raise SystemExit(f"apu_pacing {name}: frames too far apart "
                              f"({wait:.2f} ms to the next on average, 99% of gaps under {p99:.2f} ms)")
-        if not args and under:
+        if args != ["wall"] and under:
             raise SystemExit(f"apu_pacing {name}: the device ran dry {under} times")
-print("apu_pacing: all four cases ran; timings not checked under the sanitizer" if sanitizer
-      else "apu_pacing: all four cases pass")
+print("apu_pacing: all five cases ran; timings not checked under the sanitizer" if sanitizer
+      else "apu_pacing: all five cases pass")

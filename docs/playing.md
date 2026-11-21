@@ -247,12 +247,16 @@ input goes to the menu.
   default; it changes at once, and is kept as `seethru=` (1 or 0) in the
   settings file.
 - **Graphics:** The [graphics options](#graphics-options) below.
-- **Audio:** Audio effects, our own versions of the console's sound effects:
-  the 3D sounds placed to your left or right as the game sets them, the
-  characters' voices kept on them as they move, the reverb the game sets for
-  a place, as in the sewers, and a limiter of their own for the 3D sounds,
-  so a busy moment no longer turns the music and voices down. On by default;
-  off, the sound is as before them. It is kept as `audioeffects=` in the
+- **Audio:** Mute, then Audio effects. Mute silences the game's sound at
+  once, and ticked again, brings it back; the game and its sound run on as
+  ever, only silent. Off by default, it is kept as `mute=` (1 or 0) in the
+  settings file, and no preset changes it. Audio effects are our own
+  versions of the console's sound effects: the 3D sounds placed to your left
+  or right as the game sets them, the characters' voices kept on them as
+  they move, the reverb the game sets for a place, as in the sewers, and a
+  limiter of their own for the 3D sounds, so a busy moment no longer turns
+  the music and voices down. On by default; off, the sound is as before
+  them. It is kept as `audioeffects=` in the
   settings file, and changing it restarts the game. [The audio
   effects](technical/audio-effects.md) says how they work.
 - **Input:** Four submenus. Controller layout and Keyboard layout set

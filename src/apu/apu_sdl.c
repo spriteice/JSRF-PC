@@ -6,7 +6,9 @@
  * and a ring between them absorbs the difference. Underrun plays silence rather than stalling the guest. The
  * ring level and the time since the device last pulled are what the APU
  * paces itself on (apu_core.c, throttle), so the game's audio runs on the
- * sound card's clock rather than drifting against it.
+ * sound card's clock rather than drifting against it. Audio > Mute
+ * (xa2_set_mute) plays silence in place of each pull, which still takes
+ * from the ring, so the pacing is the same muted or not.
  */
 
 #include "apu_xaudio2.h"
@@ -32,6 +34,7 @@ static _Atomic uint32_t g_wr, g_rd;
 static _Atomic uint32_t g_underruns;
 static _Atomic uint32_t g_drops;
 static _Atomic uint64_t g_last_pull_ms;
+static _Atomic int      g_muted;        /* Audio > Mute (xa2_set_mute) */
 
 static uint64_t sa_now_ms(void)
 {
@@ -55,6 +58,10 @@ static void sa_pull(int16_t (*out)[SA_CHANNELS], uint32_t want)
         memset(out[n], 0, (want - n) * sizeof g_ring[0]);
         atomic_fetch_add_explicit(&g_underruns, 1, memory_order_relaxed);
     }
+    /* Muted: taken from the ring as ever, so the APU's pacing on the pulls
+     * is the same, and silence played in its place. */
+    if (atomic_load_explicit(&g_muted, memory_order_relaxed))
+        memset(out, 0, want * sizeof g_ring[0]);
     atomic_store_explicit(&g_rd, rd + n, memory_order_release);
 }
 
@@ -149,6 +156,10 @@ void xa2_shutdown(void)
 int xa2_is_active(void) { return g_active; }
 
 int xa2_get_buffer_size(void) { return SA_BUF_FRAMES; }
+
+void xa2_set_mute(int on) { atomic_store_explicit(&g_muted, on != 0, memory_order_relaxed); }
+
+int xa2_muted(void) { return atomic_load_explicit(&g_muted, memory_order_relaxed); }
 
 int xa2_ring_level(void)
 {

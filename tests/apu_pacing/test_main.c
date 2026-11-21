@@ -6,7 +6,11 @@
  * encode processor's 256 samples to the ring, as mcpx_apu_monitor_frame does.
  * The device is the SDL ring's fake sink (verbatim): 512 frames every
  * 10.7 ms. With the argument "wall", there is no ring and no device, as with
- * XAudio2 (xa2_ring_level is -1), and throttle paces by the wall clock.
+ * XAudio2 (xa2_ring_level is -1), and throttle paces by the wall clock. With
+ * "mute", the ring and the device muted from the start (xa2_set_mute, as
+ * Audio > Mute): the device is given silence, and takes from the ring as
+ * ever, so the pacing is the ring's (run.py reads what it was given, from
+ * RECOMP_APU_SINK_RAW). The samples sent are never silence.
  * DirectSound waits for the next voice processor frame each time it
  * restarts a sound, so what matters is how long, from any moment, until the
  * next frame: the mean of that is the sum of the squared gaps over twice
@@ -30,6 +34,7 @@
 #define STALL_US    20000       /* lost to the machine, not asked for */
 #define SETTLE_US   100000      /* set aside after a stall */
 #define PULL_MS     (SA_BUF_FRAMES * 1000 / SA_RATE)    /* the device's, whole ms */
+#define SENT        1000        /* every sample sent: not silence */
 
 static int64_t now_us(void)
 {
@@ -64,8 +69,12 @@ int main(int argc, char **argv)
     uint32_t dry = 0;
     int64_t t0, sum = 0, sq = 0, longest = 0, settled = 0;
     int wall = argc > 1 && !strcmp(argv[1], "wall");
+    int mute = argc > 1 && !strcmp(argv[1], "mute");
 
     (void)g_dev; (void)sa_callback;         /* the real device's side: not here */
+    for (i = 0; i < (int)(sizeof eight / sizeof eight[0]); i++) eight[i] = SENT;
+    xa2_set_mute(mute);
+    if (xa2_muted() != mute) return 4;
     pthread_mutex_init(&d->lock, NULL);
     pthread_cond_init(&d->cond, NULL);
     if (!wall) {

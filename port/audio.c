@@ -1,14 +1,18 @@
-/* The Audio menu (audio.h): audioeffects= in the settings file, or Audio >
- * Audio effects.
+/* The Audio menu (audio.h): mute= and audioeffects= in the settings file,
+ * or Audio > Mute and Audio > Audio effects.
  *
- * Read once, at start (audio_start), and passed to the effects
- * (apu_gpfx_choose) before the APU starts. The effects are set up as the
- * game starts, so the menu's row keeps the change in the settings file and,
- * after asking, restarts the game, as Graphics > Shader cache does. */
+ * Both read once, at start (audio_start). Mute is passed to the sound
+ * output (xa2_set_mute), which plays silence in place of the game's sound
+ * while the game and its sound run on as ever, and its row changes it at
+ * once. The effects are passed to apu_gpfx_choose before the APU starts;
+ * they are set up as the game starts, so their row keeps the change in the
+ * settings file and, after asking, restarts the game, as Graphics > Shader
+ * cache does. */
 #include <stdio.h>
 #include <stdlib.h>
 #include "audio.h"
 #include "apu_gpfx.h"
+#include "apu_xaudio2.h"
 #if defined(XBOXRECOMP_MENU)
 #  include "menu.h"
 #endif
@@ -17,6 +21,9 @@
 #define AUDIO_EFFECTS_ENV "RECOMP_APU_GPFX"
 /* On with no audioeffects= in the settings. */
 #define AUDIO_EFFECTS_DEFAULT 1
+#define AUDIO_MUTE_KEY "mute"
+/* Off with no mute= in the settings. */
+#define AUDIO_MUTE_DEFAULT 0
 
 #if defined(NV2A_GL_USE_SDL)
 /* nv2a_gl.c: a number from the settings file the engine already keeps, and a
@@ -25,7 +32,7 @@ extern int  nv_window_pref_num(const char *key, double *v);
 extern void nv_window_pref_set_num(const char *key, double v);
 #else
 /* Without the SDL window (a headless build) there is no settings file: no
- * keys, so the effects are on. */
+ * keys, so the effects are on and the sound isn't muted. */
 static int nv_window_pref_num(const char *key, double *v)
 {
     (void)key; (void)v;
@@ -39,9 +46,19 @@ static int nv_window_pref_num(const char *key, double *v)
 extern void nv_window_restart(void);
 #endif
 
-static volatile int s_effects;
+static volatile int s_effects, s_mute;
 
 #if defined(XBOXRECOMP_MENU)
+static int  menu_mute(void) { return s_mute; }
+/* At once, and kept. */
+static void menu_mute_flip(void)
+{
+    s_mute = !s_mute;
+    xa2_set_mute(s_mute);
+    nv_window_pref_set_num(AUDIO_MUTE_KEY, s_mute);
+    fprintf(stderr, "[AUDIO] %s (the menu)\n", s_mute ? "muted" : "unmuted");
+}
+
 static int  menu_effects(void) { return s_effects; }
 /* Kept for the next start, which reads it (audio_start). */
 static void menu_effects_keep(int on)
@@ -70,18 +87,27 @@ void audio_start(void)
                 AUDIO_EFFECTS_KEY "=%d)\n", atoi(env) ? "on" : "off", env, s_effects);
     else
         fprintf(stderr, "[AUDIO] effects %s (settings)\n", s_effects ? "on" : "off");
+    s_mute = nv_window_pref_num(AUDIO_MUTE_KEY, &v) > 0 ? v != 0 : AUDIO_MUTE_DEFAULT;
+    xa2_set_mute(s_mute);
+    if (s_mute) fprintf(stderr, "[AUDIO] muted (settings)\n");
 #if defined(XBOXRECOMP_MENU)
     {
-        const XBOX_MENU_ITEM row = {
-            .menu = XBOX_MENU_AUDIO, .kind = XBOX_ITEM_TOGGLE, .label = "Audio effects (Restart)",
-            .state = menu_effects, .run = menu_effects_flip,
-            .confirm = "Apply selection and restart, losing unsaved progress?",
-            /* File > Presets: on in each, Xbox mode's too, as they are the
-             * console's own; kept for the restart it gives after every row. */
-            .presets = XBOX_PRESETS_SET, .keep = menu_effects_keep,
-            .preset = { 1, AUDIO_EFFECTS_DEFAULT, AUDIO_EFFECTS_DEFAULT },
-            .hint = "Replicates the console's 3D sound, voices, and reverb." };
-        xbox_MenuAdd(&row, 1);
+        const XBOX_MENU_ITEM rows[] = {
+            /* First in Audio. File > Presets leave it: the player's own,
+             * with its tick the way back. */
+            { .menu = XBOX_MENU_AUDIO, .kind = XBOX_ITEM_TOGGLE, .label = "Mute",
+              .state = menu_mute, .run = menu_mute_flip, .presets = XBOX_PRESETS_LEFT,
+              .hint = "Silences the game's sound." },
+            { .menu = XBOX_MENU_AUDIO, .kind = XBOX_ITEM_TOGGLE, .label = "Audio effects (Restart)",
+              .state = menu_effects, .run = menu_effects_flip,
+              .confirm = "Apply selection and restart, losing unsaved progress?",
+              /* File > Presets: on in each, Xbox mode's too, as they are the
+               * console's own; kept for the restart it gives after every row. */
+              .presets = XBOX_PRESETS_SET, .keep = menu_effects_keep,
+              .preset = { 1, AUDIO_EFFECTS_DEFAULT, AUDIO_EFFECTS_DEFAULT },
+              .hint = "Replicates the console's 3D sound, voices, and reverb." },
+        };
+        xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
     }
 #endif
 }

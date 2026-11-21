@@ -31,4 +31,15 @@ int xa2_ring_level(void);
 /* Milliseconds since the device last pulled from the ring, or -1. */
 int xa2_ms_since_pull(void);
 
+/* Audio > Mute (port/audio.c): muted (1) or not (0). Muted, the device
+ * plays silence in place of what it takes from the ring, and takes it at
+ * its own pace as ever, so the APU, which paces itself on those pulls, and
+ * the game run the same either way. Any time, from any thread, before the
+ * device opens too. */
+void xa2_set_mute(int on);
+
+/* Whether it is muted: for an output that doesn't pull from the ring, as
+ * apu_core.c's waveOut fallback on Windows, to play silence too. */
+int xa2_muted(void);
+
 #endif /* APU_XAUDIO2_H */

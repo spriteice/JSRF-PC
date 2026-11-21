@@ -41,7 +41,7 @@ The sound goes out through SDL2's audio (`apu_sdl.c`), on Linux and Windows, at 
 | `apu_dsp.c` | The GP and EP, not run: the mixbins passed through |
 | `apu_gpfx.c`, `apu_gpfx.h` | The GP's effects settings, followed, and JSRF-PC's own effects run from them |
 | `apu_reverb.h`, `apu_hrtf.h` | JSRF-PC's reverb, and the 3D voices placed from their HRTF settings |
-| `apu_sdl.c`, `apu_xaudio2.h` | The output, with SDL2's audio, behind the entry points apu_xaudio2.h declares (named for the toolkit's XAudio2 output) |
+| `apu_sdl.c`, `apu_xaudio2.h` | The output, with SDL2's audio, behind the entry points apu_xaudio2.h declares (named for the toolkit's XAudio2 output); with Audio > Mute (`xa2_set_mute`), silence in place of what the device takes from the ring, at the same pace |
 | `apu_channels.c`, `apu_channels.h` | The two sides of the sound, in the log (Developer > Logging > RECOMP_APU_CHANNELS) |
 | `apu_shim.h` | QEMU compatibility (threads, atomics, clocks), on `qemu_shim.h` |
 | `qemu_shim.h` | The QEMU types xemu's code is written against (below) |

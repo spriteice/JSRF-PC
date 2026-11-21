@@ -22,6 +22,7 @@ int xa2_submit_samples(const int16_t *samples, int num_samples) { (void)samples;
 int xa2_get_buffer_size(void) { return 0; }
 int xa2_ring_level(void) { return 0; }
 int xa2_ms_since_pull(void) { return 0; }
+int xa2_muted(void) { return 0; }
 
 extern MCPXAPUState *g_apu_state;
 extern unsigned long g_apu_notifies, g_apu_voice_offs;

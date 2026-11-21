@@ -508,8 +508,12 @@ void mcpx_apu_monitor_frame(MCPXAPUState *d)
         if (!g_audio_muted)
             mixer_render(d->monitor.frame_buf, chunk);
 
-        /* Copy to waveOut buffer */
-        memcpy(out + out_offset * 2, d->monitor.frame_buf, chunk * 2 * sizeof(int16_t));
+        /* Copy to waveOut buffer: silence while Audio > Mute is on, as the
+         * sound back end plays (apu_xaudio2.h, xa2_muted) */
+        if (xa2_muted())
+            memset(out + out_offset * 2, 0, chunk * 2 * sizeof(int16_t));
+        else
+            memcpy(out + out_offset * 2, d->monitor.frame_buf, chunk * 2 * sizeof(int16_t));
         out_offset += chunk;
         remaining -= chunk;
     }
