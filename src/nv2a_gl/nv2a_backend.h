@@ -457,6 +457,15 @@ typedef struct Nv2aGfx {
     uint32_t (*tex_upscale)(uint32_t tex, uint32_t w, uint32_t h, int factor,
                             int keep_alpha, float weight, float edge,
                             const struct Nv2aUpClean *clean, const Nv2aSampler *s);
+
+    /* Target `rt` made again at pw x ph raster pixels, with what it holds
+     * carried across: its colour filtered to the new size, its depth and
+     * stencil to the nearest, multisampled or not. Its handle stays, so
+     * whatever holds it needn't know; bound, its viewport is the new size.
+     * For a new internal resolution while the game runs (nv2a_scale.h). 0,
+     * and the target as it was, where the device won't have the new size.
+     * NULL where the backend has none. */
+    int      (*target_resize)(uint32_t rt, uint32_t pw, uint32_t ph);
 } Nv2aGfx;
 
 /* The implementation: OpenGL's. */

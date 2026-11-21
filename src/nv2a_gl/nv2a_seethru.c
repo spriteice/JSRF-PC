@@ -1426,6 +1426,12 @@ static int w_samples(int n)
     flush(FL_OTHER);
     return D->samples(n);
 }
+static int w_target_resize(uint32_t rt, uint32_t pw, uint32_t ph)
+{
+    hold_break("the device's own work");
+    flush(FL_OTHER);
+    return D->target_resize(rt, pw, ph);
+}
 static void w_fill_sides(uint32_t rt, uint32_t src_l, uint32_t src_r)
 {
     hold_break("the device's own work");
@@ -1484,6 +1490,7 @@ const Nv2aGfx *nv2a_seethru_wrap(const Nv2aGfx *dev)
     if (dev->texture_opaque) W.texture_opaque = w_texture_opaque;
     if (dev->fill_sides)     W.fill_sides = w_fill_sides;
     if (dev->fill_strip)     W.fill_strip = w_fill_strip;
+    if (dev->target_resize)  W.target_resize = w_target_resize;
     fprintf(stderr, "  [SEETHRU] what shows through see-through surfaces is drawn %s\n",
             hold_on() ? "behind them: their see-through pixels held back to the pass's end"
             : "over them: their see-through pixels in place (RECOMP_GL_SEETHRU_HOLD=0)");
