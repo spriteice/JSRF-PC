@@ -17,9 +17,9 @@
  *     census: program 909's 3,462 after five draws of 984, 1,386, 558, 222
  *     and 312). The body's depth, faded pixels too, hides the inside of that
  *     copy, so split, a faded body filled with it, black and brown. Those
- *     pieces are learnt and kept whole (seethru3): faded characters keep
+ *     pieces were learnt and kept whole (seethru3): faded characters kept
  *     hiding what is behind them, as on the console (spriteice's choice, 12:45
- *     UTC on 2026-11-10).
+ *     UTC on 2026-11-10), until b2.2 row 19 (below).
  *   - In every frame of play, two draws are see-through and write depth
  *     with no alpha test, so they write it where they are invisible: that
  *     depth cuts the speed bar's rectangle into its triangle. Split, the
@@ -57,6 +57,19 @@
  * split as any other now: its see-through half is held back with its
  * stencil state, and tests what the stencil holds at the pass's end, after
  * any shadow drawn since. The census gives each run's stencil state.
+ *
+ * b2.2 row 19: faded characters too (spriteice, 13:16 UTC on 2026-11-20:
+ * "Every outlined model that fades"). spriteice's census at a skater faded
+ * to 19% in the garage (the shared folder's
+ * see-through/faded-characters/PROPOSAL.md) shows each mesh's pieces, then
+ * its outline, with nothing between them; the characters' stencil state
+ * ALWAYS, writing 0 where they pass the depth test (the shadow count under
+ * them cleared), and the rest of the title's stencil use the shadows' counts
+ * with masks FF. So a learnt piece is split like glass, and its outline is
+ * kept off its see-through pixels by a stencil bit of the fix's own, which
+ * the title never sees: set from the held-back halves just before the
+ * outline, with the pieces' own stencil write folded in, and cleared from
+ * them right after it.
  */
 #include "nv2a_seethru.h"
 
@@ -64,13 +77,19 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Blend factors and depth functions as the title writes them. */
+/* Blend factors, depth and stencil functions, and stencil operations, as
+ * the title writes them. */
 #define SEE_ZERO        0x0000
+#define SEE_ONE         0x0001
 #define SEE_LESS        0x0201
+#define SEE_EQUAL       0x0202
 #define SEE_LEQUAL      0x0203
 #define SEE_GREATER     0x0204
 #define SEE_GEQUAL      0x0206
 #define SEE_ALWAYS      0x0207
+#define SEE_ST_ZERO     0x0000
+#define SEE_ST_KEEP     0x1E00
+#define SEE_ST_REPLACE  0x1E01
 
 #define SEE_UNITS 4             /* texture stages */
 
@@ -100,12 +119,14 @@ int  nv2a_seethru_on(void)    { return g_on; }
 enum { CK_SOLID, CK_SEE_Z, CK_SEE, CK_UNTESTED, CK_CLEAR, CK_FLUSH };
 /* Why a draw went as it did. */
 enum { WHY_PLAIN, WHY_SPLIT, WHY_SPLIT_INPLACE, WHY_HELD, WHY_PIECE, WHY_OUTLINE,
-       WHY_NO_ATEST, WHY_OVER, WHY_READS, WHY_FUNC, WHY_OFF, WHY_CUT, WHYS };
+       WHY_NO_ATEST, WHY_OVER, WHY_READS, WHY_FUNC, WHY_OFF, WHY_CUT, WHY_PIECE_SPLIT, WHY_MASKED,
+       WHYS };
 static const char *const k_why[WHYS] = {
     "", ", split", ", split, drawn in place", ", held back", ", kept whole for an outline",
     ", an outline", ", kept whole: no alpha test", ", kept whole: over the finished picture",
     ", kept whole: reads its surface", ", kept whole: its depth function",
-    ", kept whole: the fix is off", ", drawn after what is held back: writes depth everywhere" };
+    ", kept whole: the fix is off", ", drawn after what is held back: writes depth everywhere",
+    ", split, a piece an outline follows", ", an outline, kept off its pieces' see-through pixels" };
 /* What drew the held-back list. */
 enum { FL_CLEAR, FL_SURFACE, FL_READ, FL_FLIP, FL_CUT, FL_FREE, FL_OTHER, FLS };
 static const char *const k_fl[FLS] = {
@@ -128,7 +149,7 @@ static int      g_c_on = -1;
 static CRec    *g_c;
 static int      g_c_n;
 static uint32_t g_c_lost, g_c_frame = 0xFFFFFFFFu, g_c_done = 0xFFFFFFFFu;
-static uint32_t g_c_bytes, g_c_redrawn;
+static uint32_t g_c_bytes, g_c_redrawn, g_c_marked;
 
 static int census_on(void)
 {
@@ -156,7 +177,7 @@ static void census_turn(uint32_t frame)
     if (g_c_frame == 0xFFFFFFFFu && frame % NV2A_SEE_EVERY == 0 && frame != g_c_done) {
         g_c_frame = frame;
         g_c_n = 0;
-        g_c_lost = g_c_bytes = g_c_redrawn = 0;
+        g_c_lost = g_c_bytes = g_c_redrawn = g_c_marked = 0;
     }
 }
 
@@ -175,6 +196,7 @@ static void census_report(void)
 {
     int i, j, k, runs = 0;
     int n_draws = 0, n_see_z = 0, n_split = 0, n_inplace = 0, n_split_st = 0, n_held = 0, n_kept[WHYS];
+    int n_pieces = 0;
     int n_fl[FLS], n_flushes = 0;
     memset(n_kept, 0, sizeof n_kept);
     memset(n_fl, 0, sizeof n_fl);
@@ -184,19 +206,23 @@ static void census_report(void)
         if (r->kind == CK_CLEAR) continue;
         n_draws++;
         n_see_z += r->kind == CK_SEE_Z;
-        n_split += r->why == WHY_SPLIT || r->why == WHY_SPLIT_INPLACE;
+        n_split += r->why == WHY_SPLIT || r->why == WHY_SPLIT_INPLACE || r->why == WHY_PIECE_SPLIT;
         n_inplace += r->why == WHY_SPLIT_INPLACE;
-        n_split_st += (r->why == WHY_SPLIT || r->why == WHY_SPLIT_INPLACE) && r->stencil;
+        n_split_st += (r->why == WHY_SPLIT || r->why == WHY_SPLIT_INPLACE || r->why == WHY_PIECE_SPLIT)
+                      && r->stencil;
+        n_pieces += r->why == WHY_PIECE_SPLIT;
         n_held += r->why == WHY_HELD;
         if (r->kind == CK_SEE_Z) n_kept[r->why]++;
     }
     fprintf(stderr, "  [SEETHRU] frame %u%s: %d draws, %d see-through with depth writes: %d split"
-            " (%d of them drawn in place, %d using the stencil), kept whole %d for an outline,"
-            " %d outlines, %d without the alpha test, %d over the finished picture, %d reading"
+            " (%d of them drawn in place, %d using the stencil, %d pieces an outline follows),"
+            " kept whole %d for an outline, %d outlines (%d of them kept off %u marked pieces),"
+            " %d without the alpha test, %d over the finished picture, %d reading"
             " their surface, %d for their depth function, %d with the fix off; %d more held back"
             " whole; %d held-back lists drawn (", g_c_frame,
             g_c_lost ? " (longer than the record)" : "", n_draws, n_see_z, n_split, n_inplace,
-            n_split_st, n_kept[WHY_PIECE], n_kept[WHY_OUTLINE], n_kept[WHY_NO_ATEST] + n_kept[WHY_CUT],
+            n_split_st, n_pieces, n_kept[WHY_PIECE], n_kept[WHY_OUTLINE] + n_kept[WHY_MASKED],
+            n_kept[WHY_MASKED], g_c_marked, n_kept[WHY_NO_ATEST] + n_kept[WHY_CUT],
             n_kept[WHY_OVER], n_kept[WHY_READS], n_kept[WHY_FUNC], n_kept[WHY_OFF], n_held,
             n_flushes);
     for (i = 0, k = 0; i < FLS; i++)
@@ -309,51 +335,69 @@ static int over_at(uint32_t surf, uint32_t frame)
 }
 
 /* Outlines: the see-through draws with depth writes since the last outline
- * or other draw, and the mesh pieces (where their positions are, and their
- * vertex count) an outline has followed. */
+ * or other draw, each with where its see-through half went (OL_WHOLE: not
+ * split; OL_LOST: split, and not in the held-back list; or its place in the
+ * list), and the mesh pieces (where their positions are, and their vertex
+ * count) an outline has followed, each with whether that outline could be
+ * kept off them. */
 #define OL_RING 32
 #define OL_KEYS 4096            /* a power of two */
+#define OL_WHOLE (-1)
+#define OL_LOST  (-2)
 /* A key's slot, by Fibonacci hashing: the key times 2^64 over the golden
  * ratio, whose high bits (from bit 40) are the slot. */
 #define OL_HASH 0x9E3779B97F4A7C15ull
-static struct { uint64_t key; uint32_t verts; } g_ol_ring[OL_RING];
+static struct { uint64_t key; uint32_t verts; int held; } g_ol_ring[OL_RING];
 static int      g_ol_n;
 static uint64_t g_ol_keys[OL_KEYS];
+static uint8_t  g_ol_maskable[OL_KEYS];
 static uint32_t g_ol_learnt;
+/* The pieces of the outline outline() found last, where their halves went. */
+static int      g_grp[OL_RING], g_grp_n;
+/* The ring's entry for the draw nv2a_seethru_draw split last, for
+ * nv2a_seethru_hold_begin to say where its half went; -1 none. */
+static int      g_ol_pend = -1;
 
 static uint32_t ol_hash(uint64_t key)
 {
     return (uint32_t)(key * OL_HASH >> 40) & (OL_KEYS - 1);
 }
 
-static int ol_has(uint64_t key)
+/* A learnt key's slot, or -1. */
+static int ol_find(uint64_t key)
 {
     uint32_t h = ol_hash(key), i;
     for (i = 0; i < OL_KEYS; i++, h = (h + 1) & (OL_KEYS - 1)) {
-        if (g_ol_keys[h] == key) return 1;
-        if (!g_ol_keys[h]) return 0;
+        if (g_ol_keys[h] == key) return (int)h;
+        if (!g_ol_keys[h]) return -1;
     }
-    return 0;
+    return -1;
 }
 
-static void ol_add(uint64_t key)
+static void ol_add(uint64_t key, int maskable)
 {
     uint32_t h = ol_hash(key), i;
-    if (g_ol_learnt >= OL_KEYS / 2) return;
     for (i = 0; i < OL_KEYS; i++, h = (h + 1) & (OL_KEYS - 1)) {
-        if (g_ol_keys[h] == key) return;
-        if (!g_ol_keys[h]) { g_ol_keys[h] = key; g_ol_learnt++; return; }
+        if (g_ol_keys[h] == key) { g_ol_maskable[h] = (uint8_t)maskable; return; }
+        if (!g_ol_keys[h]) {
+            if (g_ol_learnt >= OL_KEYS / 2) return;
+            g_ol_keys[h] = key;
+            g_ol_maskable[h] = (uint8_t)maskable;
+            g_ol_learnt++;
+            return;
+        }
     }
 }
 
 /* 2: an outline (an untextured see-through draw with depth writes whose
  * vertices are those of the last few such draws together, at least 12),
- * whose pieces are learnt; 1: a piece an outline has followed; 0: neither.
- * Inline draws (no address) are neither. */
+ * whose pieces are in g_grp, to be learnt by ol_learn; 1: a piece an outline
+ * has followed, and kept off it; 3: one whose outline couldn't be; 0:
+ * neither. Inline draws (no address) are neither. */
 static int outline(const Nv2aSeeDraw *d, int see_z)
 {
     uint64_t key;
-    int k;
+    int k, at;
     if (!see_z || !d->pos) { g_ol_n = 0; return 0; }
     key = (uint64_t)d->pos << 32 | d->verts;
     if (!d->textured) {
@@ -364,8 +408,7 @@ static int outline(const Nv2aSeeDraw *d, int see_z)
         }
         if (k <= g_ol_n && sum == d->verts && d->verts >= 12) {
             int j;
-            for (j = g_ol_n - k; j < g_ol_n; j++) ol_add(g_ol_ring[j].key);
-            g_ol_n = 0;
+            for (j = g_ol_n - k, g_grp_n = 0; j < g_ol_n; j++) g_grp[g_grp_n++] = j;
             return 2;
         }
     }
@@ -375,8 +418,18 @@ static int outline(const Nv2aSeeDraw *d, int see_z)
     }
     g_ol_ring[g_ol_n].key = key;
     g_ol_ring[g_ol_n].verts = d->verts;
+    g_ol_ring[g_ol_n].held = OL_WHOLE;
     g_ol_n++;
-    return ol_has(key);
+    at = ol_find(key);
+    return at < 0 ? 0 : g_ol_maskable[at] ? 1 : 3;
+}
+
+/* The pieces of the outline just found, learnt: kept off by it, or not. */
+static void ol_learn(int maskable)
+{
+    int i;
+    for (i = 0; i < g_grp_n; i++) ol_add(g_ol_ring[g_grp[i]].key, maskable);
+    g_ol_n = 0;
 }
 
 /* ---- the device, as the front half has left it --------------------------- */
@@ -528,6 +581,11 @@ typedef struct {
     float    const_attr[16][4];
     size_t   cmd_at;
     uint32_t ncmd;
+    /* A piece's mark (fold): whether its stencil write folds into it, the
+     * reference and write mask that make both; and whether it has made it,
+     * the title's write with it, so that the pass's end makes none. */
+    uint8_t  foldable, marked;
+    uint32_t mark_ref, mark_wmask;
 } Held;
 static Held    *g_held;
 static int      g_nheld, g_capheld;
@@ -535,8 +593,47 @@ static int      g_holding;              /* between hold_begin and hold_end */
 static int      g_flushing;
 static uint32_t g_own_vb;               /* a stream buffer of the wrapper's own */
 static uint32_t g_told;                 /* things said once */
+/* The pieces marked for the outline being drawn: their places in the list. */
+static int      g_mask[OL_RING], g_mask_n;
 
 static void flush(int why);
+static void unmark(void);
+
+/* A piece's mark, with its own stencil write folded in: a REPLACE, where it
+ * passes the depth test, of NV2A_SEE_MARK and what the title writes there,
+ * its reference in *ref and write mask in *wmask. With the stencil test off
+ * the title writes nothing; with ALWAYS, its KEEP, ZERO or REPLACE on a
+ * depth pass and KEEP on a fail fold in. 0: anything else, which the mark
+ * can't make at the title's moment. */
+static int fold(const Nv2aRenderState *rs, uint32_t *ref, uint32_t *wmask)
+{
+    *ref = NV2A_SEE_MARK;
+    *wmask = NV2A_SEE_MARK;
+    if (!rs->stencil_test) return 1;
+    if ((uint32_t)rs->stencil_func != SEE_ALWAYS || rs->stencil_op[1] != SEE_ST_KEEP) return 0;
+    switch (rs->stencil_op[2]) {
+    case SEE_ST_KEEP:
+        return 1;
+    case SEE_ST_ZERO:
+        *wmask = (rs->stencil_wmask & 0xFFu) | NV2A_SEE_MARK;
+        return 1;
+    case SEE_ST_REPLACE:
+        if (rs->stencil_ref & NV2A_SEE_MARK) return 0;
+        *ref = (rs->stencil_ref & 0xFFu) | NV2A_SEE_MARK;
+        *wmask = (rs->stencil_wmask & 0xFFu) | NV2A_SEE_MARK;
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+/* An outline the mark can keep off its pieces: the stencil test off, or
+ * ALWAYS with a reference that leaves the mark's bit alone. */
+static int maskable(const Nv2aRenderState *rs)
+{
+    return !rs->stencil_test
+        || ((uint32_t)rs->stencil_func == SEE_ALWAYS && !(rs->stencil_ref & NV2A_SEE_MARK));
+}
 
 /* Something the held-back list refers to, about to go or change. */
 static int held_tex(uint32_t tex)
@@ -648,6 +745,9 @@ int nv2a_seethru_hold_begin(void)
     }
     if (g_c_on > 0 && g_c_frame != 0xFFFFFFFFu) g_c_bytes += (uint32_t)(g_ar_n - h->uni_at);
     h->cmd_at = (g_ar_n + 7) & ~(size_t)7;
+    h->foldable = (uint8_t)fold(&h->rs, &h->mark_ref, &h->mark_wmask);
+    if (g_ol_pend >= 0 && g_ol_pend < g_ol_n) g_ol_ring[g_ol_pend].held = g_nheld;
+    g_ol_pend = -1;
     g_nheld++;
     g_holding = 1;
     return 1;
@@ -720,7 +820,43 @@ static void restore(void)
     }
 }
 
-static void replay(const Held *h)
+/* How a held-back draw is drawn again: as it was held (at the pass's end),
+ * or with no colour and no depth writes, setting a piece's mark or clearing
+ * it. */
+enum { RP_HELD, RP_MARK, RP_UNMARK };
+
+/* A state the held-back draw `h` is drawn with, as `mode` draws it. */
+static void rp_state(const Nv2aRenderState *rs, const Held *h, int mode)
+{
+    Nv2aRenderState r = *rs;
+    if (mode == RP_HELD) {
+        /* Its stencil write made with its mark, at the title's moment. */
+        if (h->marked && r.stencil_test) r.stencil_wmask = 0;
+    } else {
+        r.blend_enable = 1;
+        r.blend_src = SEE_ZERO;
+        r.blend_dst = SEE_ONE;
+        r.depth_write = 0;
+        r.stencil_test = 1;
+        r.stencil_func = SEE_ALWAYS;
+        r.stencil_rmask = 0xFFu;
+        r.stencil_op[0] = r.stencil_op[1] = SEE_ST_KEEP;
+        if (mode == RP_MARK) {
+            r.stencil_op[2] = SEE_ST_REPLACE;
+            r.stencil_ref = h->mark_ref;
+            r.stencil_wmask = h->mark_wmask;
+        } else {
+            /* Wherever it is, whatever has been drawn in front of it since. */
+            r.depth_func = SEE_ALWAYS;
+            r.stencil_op[2] = SEE_ST_ZERO;
+            r.stencil_ref = 0;
+            r.stencil_wmask = NV2A_SEE_MARK;
+        }
+    }
+    D->state(&r);
+}
+
+static void replay(const Held *h, int mode)
 {
     SeeProg *p = prog_at(h->prog);
     const uint8_t *at;
@@ -756,7 +892,7 @@ static void replay(const Held *h)
         D->texture(u, h->tex[u], h->own[u] ? NULL : &h->smp[u]);
         if (h->opaque[u] >= 0 && D->texture_opaque) D->texture_opaque(u, h->opaque[u]);
     }
-    D->state(&h->rs);
+    rp_state(&h->rs, h, mode);
     switch (h->vkind) {
     case VK_ARRAY:
         D->vertices((const float *)(g_ar + h->v_at), h->nverts, h->stride, h->attr_at, h->const_mask,
@@ -780,10 +916,13 @@ static void replay(const Held *h)
         memcpy(&c, at, sizeof c);
         data = at + sizeof c;
         switch (c.op) {
-        case CMD_STATE:
-            D->state((const Nv2aRenderState *)(const void *)data);
+        case CMD_STATE: {
+            Nv2aRenderState rs;
+            memcpy(&rs, data, sizeof rs);
+            rp_state(&rs, h, mode);
             at = data + sizeof(Nv2aRenderState);
             break;
+        }
         case CMD_UNI_F:
             D->uniform_f(c.id, (const float *)(const void *)data, c.n);
             p->gpu[c.id] = k_dirty;
@@ -820,10 +959,13 @@ static void flush(int why)
     int i;
     CRec *r;
     if (!g_nheld || g_flushing) return;
+    unmark();
     g_flushing = 1;
     g_holding = 0;
-    for (i = 0; i < g_nheld; i++) replay(&g_held[i]);
+    for (i = 0; i < g_nheld; i++) replay(&g_held[i], RP_HELD);
     restore();
+    /* The pieces the ring knows of aren't in the list any more. */
+    for (i = 0; i < g_ol_n; i++) if (g_ol_ring[i].held >= 0) g_ol_ring[i].held = OL_LOST;
     if ((r = census_rec()) != NULL) {
         r->kind = CK_FLUSH;
         r->why = (uint8_t)why;
@@ -837,12 +979,78 @@ static void flush(int why)
     g_flushing = 0;
 }
 
+/* ---- outlines kept off their pieces --------------------------------------- */
+
+/* The marks made for the outline just drawn, cleared from the pieces that
+ * made them, wherever they are. The caller puts the device back. */
+static void unmark(void)
+{
+    int i;
+    for (i = 0; i < g_mask_n; i++) replay(&g_held[g_mask[i]], RP_UNMARK);
+    g_mask_n = 0;
+}
+
+/* An outline (outline()'s 2): its pieces learnt, kept off by it or not;
+ * and, with the fix on, the pieces split and held back marked, if any,
+ * their see-through pixels in the stencil, for it to be drawn
+ * NV2A_SEE_MASK. Pieces kept whole hide it by their depth, as the title
+ * draws them. An outline without the alpha test writes depth where it is
+ * invisible, so it is drawn after what is held back (nv2a_seethru_draw),
+ * its pieces' halves too: it isn't kept off them. */
+static int outline_draw(const Nv2aRenderState *rs, int *why)
+{
+    int i, n = 0, can = hold_on() && maskable(rs) && rs->alpha_test;
+    if (g_mask_n) { unmark(); restore(); }
+    if (g_on && can)
+        for (i = 0; i < g_grp_n; i++) {
+            int h = g_ol_ring[g_grp[i]].held;
+            if (h >= 0 && h < g_nheld && g_held[h].foldable) g_mask[n++] = h;
+        }
+    ol_learn(can);
+    if (!g_on) { *why = WHY_OFF; return NV2A_SEE_KEEP; }
+    if (!n) { *why = WHY_OUTLINE; return NV2A_SEE_KEEP; }
+    for (i = 0; i < n; i++) {
+        replay(&g_held[g_mask[i]], RP_MARK);
+        g_held[g_mask[i]].marked = 1;
+    }
+    restore();
+    g_mask_n = n;
+    if (g_c_on > 0 && g_c_frame != 0xFFFFFFFFu) g_c_marked += (uint32_t)n;
+    *why = WHY_MASKED;
+    return NV2A_SEE_MASK;
+}
+
+void nv2a_seethru_mask(Nv2aRenderState *rs)
+{
+    if (!rs->stencil_test) {
+        rs->stencil_test = 1;
+        rs->stencil_ref = 0;
+        rs->stencil_wmask = 0;
+        rs->stencil_op[0] = rs->stencil_op[1] = rs->stencil_op[2] = SEE_ST_KEEP;
+    }
+    /* Where the mark keeps it off, its depth-fail operation, as where the
+     * body's depth hides it on the console; never on the mark's own bit, so
+     * the outline's own pixels over each other can't clear it. */
+    rs->stencil_op[0] = rs->stencil_op[1];
+    rs->stencil_wmask &= ~NV2A_SEE_MARK;
+    rs->stencil_func = SEE_EQUAL;
+    rs->stencil_rmask = NV2A_SEE_MARK;
+}
+
+void nv2a_seethru_mask_end(void)
+{
+    if (!g_mask_n) return;
+    unmark();
+    restore();
+}
+
 /* ---- the draw ------------------------------------------------------------ */
 
 int nv2a_seethru_draw(const Nv2aRenderState *rs, const Nv2aSeeDraw *d)
 {
     int see = see_is(rs), see_z = see && rs->depth_write, ol, over = 0, i, why, how = NV2A_SEE_KEEP;
     int f = rs->depth_func, read = F.read;
+    uint32_t mref, mwmask;
     CRec *r;
     census_turn(d->frame);
     F.read = 0;
@@ -857,16 +1065,29 @@ int nv2a_seethru_draw(const Nv2aRenderState *rs, const Nv2aSeeDraw *d)
         if (rs->depth_test && !g_ov[i].over) g_ov[i].drawn = 1;
         over = g_ov[i].over;
     }
+    g_ol_pend = -1;
     ol = outline(d, see_z);
-    if (!see_z) why = WHY_PLAIN;
+    /* A piece an outline follows is split like glass where the outline can
+     * be kept off it (outline_draw); where it can't, kept whole, its depth
+     * hiding the outline's inside. */
+    if (ol == 2) how = outline_draw(rs, &why);
+    else if (!see_z) why = WHY_PLAIN;
     else if (!g_on) why = WHY_OFF;
-    else if (ol) why = ol == 2 ? WHY_OUTLINE : WHY_PIECE;
+    else if (ol == 3 || (ol == 1 && !(hold_on() && fold(rs, &mref, &mwmask)))) why = WHY_PIECE;
     else if (over) why = WHY_OVER;
     else if (read) why = WHY_READS;
     else if (!rs->alpha_test || !d->alpha_uniforms) why = WHY_NO_ATEST;
     else if (f != SEE_LESS && f != SEE_LEQUAL && f != SEE_GREATER && f != SEE_GEQUAL && f != SEE_ALWAYS)
         why = WHY_FUNC;
-    else { why = hold_on() ? WHY_SPLIT : WHY_SPLIT_INPLACE; how = NV2A_SEE_SPLIT; }
+    else {
+        why = !hold_on() ? WHY_SPLIT_INPLACE : ol == 1 ? WHY_PIECE_SPLIT : WHY_SPLIT;
+        how = NV2A_SEE_SPLIT;
+        /* Where its see-through half goes, for an outline after it. */
+        if (d->pos) {
+            g_ol_ring[g_ol_n - 1].held = OL_LOST;
+            g_ol_pend = g_ol_n - 1;
+        }
+    }
     /* With something held back: a draw that writes depth where it is
      * invisible, which the held-back pixels behind it never had to pass, is
      * drawn after them; one that writes no depth is held back as well, so

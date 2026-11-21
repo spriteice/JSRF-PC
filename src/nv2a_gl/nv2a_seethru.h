@@ -27,13 +27,28 @@
  * characters do, and it seems the water); its see-through half keeps its
  * stencil state.
  *
+ * A character, or the level's arrow, is drawn in pieces, then its dark
+ * outline: a slightly larger copy of them, untextured, whose inside the
+ * pieces' depth hides. When it fades, its pieces are split like glass, so it
+ * stops hiding what is drawn after it and behind it; and so that its
+ * see-through pixels still hide the inside of its outline, they are marked
+ * in the stencil with a bit of the fix's own (NV2A_SEE_MARK) just before the
+ * outline, the outline is drawn only where the bit is clear, and the bit is
+ * cleared again right after it (NV2A_SEE_MASK), before the title reads the
+ * stencil again. The title's own stencil write for those pixels is made with
+ * the mark, at its moment, not at the pass's end. The outline itself is
+ * drawn as the title draws it, depth writes and all, so its edge still hides
+ * what is drawn after it and behind it. The pieces are learnt from the
+ * outline's vertex count; where the mark can't be made (a piece's or its
+ * outline's stencil state it can't work with, an outline without the alpha
+ * test, or RECOMP_GL_SEETHRU_HOLD=0), a mesh's pieces are kept whole, and it
+ * hides what is behind it, as on the console.
+ *
  * Some draws are left as the title draws them, by draw state and order, not
- * by program: the pieces an outline follows (characters, the level's
- * arrow), learnt from the outline's vertex count, so faded characters keep
- * hiding what is behind them, as on the console; draws without the alpha
- * test (the speed bar's cut), which write depth where they are invisible on
- * purpose; and draws over the finished picture, after a depth clear of a
- * surface the frame has already drawn to (the title's logo, menus, fades).
+ * by program: draws without the alpha test (the speed bar's cut), which
+ * write depth where they are invisible on purpose; and draws over the
+ * finished picture, after a depth clear of a surface the frame has already
+ * drawn to (the title's logo, menus, fades).
  *
  * The held-back list lives in a wrapper round the device (Nv2aGfx): every
  * call goes through, and the wrapper keeps what a held-back draw needs, and
@@ -93,8 +108,16 @@ enum {
                              * alpha function; then with NV2A_PSH_ALPHA_SEE added
                              * and no depth writes, between nv2a_seethru_hold_begin
                              * and _end */
-    NV2A_SEE_HOLD           /* all of it between nv2a_seethru_hold_begin and _end */
+    NV2A_SEE_HOLD,          /* all of it between nv2a_seethru_hold_begin and _end */
+    NV2A_SEE_MASK           /* an outline: in place, with nv2a_seethru_mask's stencil
+                             * test, then nv2a_seethru_mask_end */
 };
+
+/* The stencil bit the fix marks a faded mesh's see-through pixels with, for
+ * the length of its outline's draw. The title keeps its shadow counts in the
+ * stencil too: one would reach this bit only where 128 shadow volumes
+ * overlap. */
+#define NV2A_SEE_MARK 0x80u
 
 /* Just before a draw is made with `rs`: what to do with it. Called for
  * every draw, whatever the setting, as it learns the outlines and the
@@ -108,6 +131,16 @@ int nv2a_seethru_draw(const Nv2aRenderState *rs, const Nv2aSeeDraw *d);
  * hand); then _end needn't be called, though it may be. */
 int  nv2a_seethru_hold_begin(void);
 void nv2a_seethru_hold_end(void);
+
+/* An outline's state, for NV2A_SEE_MASK: drawn only where NV2A_SEE_MARK is
+ * clear; where it isn't, the outline's depth-fail stencil operation, as
+ * where its body hides it on the console; its own stencil test (off, or
+ * ALWAYS) and writes otherwise as the title set them, but on the mark's bit. */
+void nv2a_seethru_mask(Nv2aRenderState *rs);
+
+/* After an NV2A_SEE_MASK outline's draw and its widescreen copies: the mark
+ * cleared, and the device put back as the front half left it. */
+void nv2a_seethru_mask_end(void);
 
 /* A clear of surface `surf`'s depth in frame `frame`, after the device's. */
 void nv2a_seethru_depth_clear(uint32_t surf, uint32_t frame);

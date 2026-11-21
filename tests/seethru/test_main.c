@@ -120,7 +120,10 @@ static void d_vbuf_bind(uint32_t vb, uint32_t stride, const int at[16], uint32_t
 /* A draw, as it would come out: its vertices (the case's marker), program,
  * tint, alpha test, depth write and function, blend source (- off), and
  * where they aren't nothing, its texture, fog, widescreen offset, the
- * stencil test (s) or a write mask alone (m), and target. */
+ * stencil test (s, with its function, reference, read mask, write mask and
+ * depth-pass operation where they aren't the cases' NOTEQUAL 1, FF, FF,
+ * REPLACE, then /, its stencil-fail and depth-fail operations where they
+ * aren't KEEP) or a write mask alone (m), and target. */
 static void d_draw_rec(uint32_t count, int indexed)
 {
     char s[160], *e = s;
@@ -136,8 +139,15 @@ static void d_draw_rec(uint32_t count, int indexed)
     if (dev.uf[p][NV2A_U_FOGCOLOR][0] != 0.0f) e += sprintf(e, " f%g", dev.uf[p][NV2A_U_FOGCOLOR][0]);
     if (dev.uf[p][NV2A_U_WIDEOFF][0] != 0.0f) e += sprintf(e, " w%g", dev.uf[p][NV2A_U_WIDEOFF][0]);
     if (dev.c[p][1][0] != 0.0f || dev.c[p][100][0] != 0.0f) e += sprintf(e, " c%g,%g", dev.c[p][1][0], dev.c[p][100][0]);
-    if (rs->stencil_test) e += sprintf(e, " s");
-    else if (rs->stencil_wmask) e += sprintf(e, " m");
+    if (rs->stencil_test) {
+        e += sprintf(e, " s");
+        if (rs->stencil_func != 0x205 || rs->stencil_ref != 1 || rs->stencil_rmask != 0xFF
+            || rs->stencil_wmask != 0xFF || rs->stencil_op[2] != 0x1E01)
+            e += sprintf(e, "%X,%X,%X,%X,%X", rs->stencil_func, rs->stencil_ref, rs->stencil_rmask,
+                         rs->stencil_wmask, rs->stencil_op[2]);
+        if (rs->stencil_op[0] != 0x1E00 || rs->stencil_op[1] != 0x1E00)
+            e += sprintf(e, "/%X,%X", rs->stencil_op[0], rs->stencil_op[1]);
+    } else if (rs->stencil_wmask) e += sprintf(e, " m");
     if (dev.rt != 1) e += sprintf(e, " rt%u", dev.rt);
     if (count != 3) e += sprintf(e, " n%u", count);
     if (indexed) e += sprintf(e, " i");
@@ -223,7 +233,10 @@ typedef struct {
     int      opaque;            /* -1: not set */
     int      zt, zw, zf;
     int      src;               /* 0: no blending */
-    int      stencil;           /* 1: the stencil test on; 2: a write mask alone, the test off */
+    int      stencil;           /* 1: the stencil test on; 2: a write mask alone, the test off;
+                                 * 3: a character's, ALWAYS, ZERO where it passes the depth test;
+                                 * 4: an outline's, as 3 but ZERO where it fails the depth test too,
+                                 * and INCR where it fails the stencil test, which ALWAYS never does */
     uint32_t pos, verts;
     int      textured;
     int      wide;              /* 1: a widescreen copy; 2: its offset set while held, put back after */
@@ -326,10 +339,16 @@ static int fh_draw(Spec s)
     rs.depth_test = s.zt; rs.depth_write = s.zw; rs.depth_func = s.zf;
     rs.blend_enable = s.src != 0; rs.blend_src = s.src ? s.src : 1; rs.blend_dst = s.src ? 0x303 : 0;
     rs.alpha_test = s.atest;
-    rs.stencil_test = s.stencil == 1; rs.stencil_wmask = s.stencil ? 0xFF : 0;
+    rs.stencil_test = s.stencil == 1 || s.stencil >= 3; rs.stencil_wmask = s.stencil ? 0xFF : 0;
     if (s.stencil == 1) {               /* where the stencil isn't 1: KEEP, KEEP, REPLACE with 1 */
         rs.stencil_func = 0x205; rs.stencil_ref = 1; rs.stencil_rmask = 0xFF;
         rs.stencil_op[0] = rs.stencil_op[1] = 0x1E00; rs.stencil_op[2] = 0x1E01;
+    } else if (s.stencil == 3) {        /* the characters' (seethru7's census) */
+        rs.stencil_func = 0x207; rs.stencil_ref = 1; rs.stencil_rmask = 0xFF;
+        rs.stencil_op[0] = rs.stencil_op[1] = 0x1E00; rs.stencil_op[2] = 0x0000;
+    } else if (s.stencil == 4) {
+        rs.stencil_func = 0x207; rs.stencil_ref = 1; rs.stencil_rmask = 0xFF;
+        rs.stencil_op[0] = 0x1E02; rs.stencil_op[1] = rs.stencil_op[2] = 0x0000;
     }
     G->state(&rs);
     g_fh_rs = rs;
@@ -344,14 +363,19 @@ static int fh_draw(Spec s)
         G->state(&rs);
         G->uniform_i(NV2A_U_ALPHAFUNC, s.af | NV2A_PSH_ALPHA_SEE);
     }
-    if (how != NV2A_SEE_KEEP) held = nv2a_seethru_hold_begin();
+    if (how == NV2A_SEE_MASK) {
+        nv2a_seethru_mask(&rs);
+        G->state(&rs);
+    }
+    if (how == NV2A_SEE_SPLIT || how == NV2A_SEE_HOLD) held = nv2a_seethru_hold_begin();
     if (s.breaks) G->texture(1, 9, NULL);
     if (s.wide == 2) uni1f(NV2A_U_WIDEOFF, 1.0f);
     fh_draw_n(&rs, s.wide == 1);
     if (held) nv2a_seethru_hold_end();
     if (s.wide == 2) uni1f(NV2A_U_WIDEOFF, 0.0f);
-    if (how == NV2A_SEE_SPLIT) {
-        G->uniform_i(NV2A_U_ALPHAFUNC, s.af);
+    if (how == NV2A_SEE_MASK) nv2a_seethru_mask_end();
+    if (how == NV2A_SEE_SPLIT || how == NV2A_SEE_MASK) {
+        if (how == NV2A_SEE_SPLIT) G->uniform_i(NV2A_U_ALPHAFUNC, s.af);
         G->state(&keep);
     }
     return how;
@@ -392,7 +416,7 @@ static void expect_log(const char *name, const char *want)
 
 static void expect_how(const char *name, int got, int want)
 {
-    static const char *const k[] = { "keep", "split", "hold" };
+    static const char *const k[] = { "keep", "split", "hold", "mask" };
     if (got != want) {
         fprintf(stderr, "FAIL %s: %s, not %s\n", name, k[got], k[want]);
         g_fail = 1;
@@ -714,7 +738,9 @@ static void cases_hold(void)
     dev.n = 0;
 
     /* Outlines: five pieces, then an untextured draw with as many vertices
-     * as they have together: kept whole, and the pieces from then on. */
+     * as they have together: the pieces split like glass, known or not, and
+     * the outline kept off their see-through pixels; learnt, and split from
+     * then on. */
     start("outlines");
     {
         static const uint32_t verts[5] = { 984, 1386, 558, 222, 312 };
@@ -724,12 +750,13 @@ static void cases_hold(void)
             expect_how("outlines: a piece, not yet known", fh_draw(s), NV2A_SEE_SPLIT);
         }
         s = glass(2); s.pos = 0x200; s.verts = 3462; s.textured = 0;
-        expect_how("outlines: the outline", fh_draw(s), NV2A_SEE_KEEP);
+        expect_how("outlines: the outline", fh_draw(s), NV2A_SEE_MASK);
+        expect_device("outlines: the outline");
         fh_clear(3);
         g_frame++;
         for (k = 0; k < 5; k++) {
             s = glass(1); s.pos = 0x100 + 0x10 * (uint32_t)k; s.verts = verts[k];
-            expect_how("outlines: a piece", fh_draw(s), NV2A_SEE_KEEP);
+            expect_how("outlines: a piece", fh_draw(s), NV2A_SEE_SPLIT);
         }
         s = glass(1); s.pos = 0x300; s.verts = 984;
         expect_how("outlines: another mesh", fh_draw(s), NV2A_SEE_SPLIT);
@@ -738,6 +765,179 @@ static void cases_hold(void)
         fh_clear(3);
         dev.n = 0;
     }
+
+    /* A character's pieces, with its stencil state (ALWAYS, 0 where it
+     * passes the depth test), then its outline, known from the frame
+     * before. Each piece's opaque pixels in place; at the outline, each
+     * held-back half marks its see-through pixels with NV2A_SEE_MARK and the
+     * title's 0 below it, with no colour or depth; the outline drawn where
+     * the mark is clear; the mark cleared wherever the halves are; and at
+     * the clear the halves drawn, writing no stencil, as theirs was made
+     * with the mark. */
+    start("outlines: the mark");
+    for (kept = 0; kept < 2; kept++) {
+        dev.n = 0;
+        g_frame++;
+        s = glass(1); s.pos = 0x500; s.verts = 6; s.stencil = 3;
+        expect_how("the mark: a piece", fh_draw(s), NV2A_SEE_SPLIT);
+        s = glass(3); s.pos = 0x510; s.verts = 9; s.stencil = 3;
+        expect_how("the mark: another piece", fh_draw(s), NV2A_SEE_SPLIT);
+        s = glass(2); s.pos = 0x520; s.verts = 15; s.textured = 0; s.stencil = 3;
+        expect_how("the mark: the outline", fh_draw(s), NV2A_SEE_MASK);
+        expect_device("the mark: after the outline");
+        fh_clear(3);
+    }
+    expect_log("outlines: the mark", "v1 p1 t0.5 a20/0 z1/203 b302 T5 s207,1,FF,FF,0"
+               " | v3 p1 t0.5 a20/0 z1/203 b302 T5 s207,1,FF,FF,0"
+               " | v1 p1 t0.5 a36/0 z0/203 b0 T5 s207,80,FF,FF,1E01"
+               " | v3 p1 t0.5 a36/0 z0/203 b0 T5 s207,80,FF,FF,1E01"
+               " | v2 p1 t0.5 a4/0 z1/203 b302 T5 s202,1,80,7F,0"
+               " | v1 p1 t0.5 a36/0 z0/207 b0 T5 s207,0,FF,80,0"
+               " | v3 p1 t0.5 a36/0 z0/207 b0 T5 s207,0,FF,80,0"
+               " | v1 p1 t0.5 a36/0 z0/203 b302 T5 s207,1,FF,0,0"
+               " | v3 p1 t0.5 a36/0 z0/203 b302 T5 s207,1,FF,0,0"
+               " | CLEAR 3");
+    expect_device("outlines: the mark");
+
+    /* With the stencil test off (a prop's outline, and glass's own state),
+     * the mark is the bit alone, and the outline tests only it. */
+    start("outlines: no stencil");
+    s = glass(1); s.pos = 0x580; s.verts = 12;
+    fh_draw(s);
+    s = glass(2); s.pos = 0x590; s.verts = 12; s.textured = 0;
+    expect_how("no stencil: the outline", fh_draw(s), NV2A_SEE_MASK);
+    fh_clear(3);
+    expect_log("outlines: no stencil", "v1 p1 t0.5 a20/0 z1/203 b302 T5"
+               " | v1 p1 t0.5 a36/0 z0/203 b0 T5 s207,80,FF,80,1E01"
+               " | v2 p1 t0.5 a4/0 z1/203 b302 T5 s202,0,80,0,1E00"
+               " | v1 p1 t0.5 a36/0 z0/207 b0 T5 s207,0,FF,80,0"
+               " | v1 p1 t0.5 a36/0 z0/203 b302 T5"
+               " | CLEAR 3");
+    expect_device("outlines: no stencil");
+
+    /* An outline that writes the stencil where it fails the depth test, and
+     * names an operation for where it fails the stencil test, which ALWAYS
+     * never does: where the mark keeps it off, its depth-fail operation, as
+     * where its body hides it on the console, and never on the mark's bit,
+     * so its own pixels over each other can't clear the mark. */
+    start("outlines: the outline's own operations");
+    s = glass(1); s.pos = 0x780; s.verts = 12; s.stencil = 3;
+    expect_how("own operations: a piece", fh_draw(s), NV2A_SEE_SPLIT);
+    s = glass(2); s.pos = 0x790; s.verts = 12; s.textured = 0; s.stencil = 4;
+    expect_how("own operations: the outline", fh_draw(s), NV2A_SEE_MASK);
+    fh_clear(3);
+    expect_log("outlines: the outline's own operations", "v1 p1 t0.5 a20/0 z1/203 b302 T5 s207,1,FF,FF,0"
+               " | v1 p1 t0.5 a36/0 z0/203 b0 T5 s207,80,FF,FF,1E01"
+               " | v2 p1 t0.5 a4/0 z1/203 b302 T5 s202,1,80,7F,0/0,0"
+               " | v1 p1 t0.5 a36/0 z0/207 b0 T5 s207,0,FF,80,0"
+               " | v1 p1 t0.5 a36/0 z0/203 b302 T5 s207,1,FF,0,0"
+               " | CLEAR 3");
+    expect_device("outlines: the outline's own operations");
+
+    /* An outline without the alpha test, which writes depth where it is
+     * invisible: drawn after what is held back, its piece's half too, as any
+     * such draw, and its pieces kept whole from then on. */
+    start("outlines: no alpha test");
+    for (kept = 0; kept < 2; kept++) {
+        g_frame++;
+        s = glass(1); s.pos = 0x7A0; s.verts = 12; s.stencil = 3;
+        expect_how("no alpha test: the piece", fh_draw(s), kept ? NV2A_SEE_KEEP : NV2A_SEE_SPLIT);
+        s = glass(2); s.pos = 0x7B0; s.verts = 12; s.textured = 0; s.stencil = 3; s.atest = 0;
+        expect_how("no alpha test: the outline", fh_draw(s), NV2A_SEE_KEEP);
+        fh_clear(3);
+    }
+    expect_log("outlines: no alpha test", "v1 p1 t0.5 a20/0 z1/203 b302 T5 s207,1,FF,FF,0"
+               " | v1 p1 t0.5 a36/0 z0/203 b302 T5 s207,1,FF,FF,0"
+               " | v2 p1 t0.5 a4/0 z1/203 b302 T5 s207,1,FF,FF,0"
+               " | CLEAR 3"
+               " | v1 p1 t0.5 a4/0 z1/203 b302 T5 s207,1,FF,FF,0"
+               " | v2 p1 t0.5 a4/0 z1/203 b302 T5 s207,1,FF,FF,0"
+               " | CLEAR 3");
+    expect_device("outlines: no alpha test");
+
+    /* An outline the mark can't keep off (its stencil test NOTEQUAL): drawn
+     * as the title draws it, and its pieces kept whole from then on, their
+     * depth hiding its inside, as the title draws them. */
+    start("outlines: kept whole");
+    s = glass(1); s.pos = 0x600; s.verts = 12; s.stencil = 3;
+    expect_how("kept whole: a piece, not yet known", fh_draw(s), NV2A_SEE_SPLIT);
+    s = glass(2); s.pos = 0x610; s.verts = 12; s.textured = 0; s.stencil = 1;
+    expect_how("kept whole: the outline", fh_draw(s), NV2A_SEE_KEEP);
+    fh_clear(3);
+    g_frame++;
+    dev.n = 0;
+    s = glass(1); s.pos = 0x600; s.verts = 12; s.stencil = 3;
+    expect_how("kept whole: the piece", fh_draw(s), NV2A_SEE_KEEP);
+    s = glass(2); s.pos = 0x610; s.verts = 12; s.textured = 0; s.stencil = 1;
+    expect_how("kept whole: the outline again", fh_draw(s), NV2A_SEE_KEEP);
+    fh_clear(3);
+    expect_log("outlines: kept whole", "v1 p1 t0.5 a4/0 z1/203 b302 T5 s207,1,FF,FF,0"
+               " | v2 p1 t0.5 a4/0 z1/203 b302 T5 s"
+               " | CLEAR 3");
+
+    /* A piece whose own stencil write can't be made with the mark (here
+     * REPLACE where the stencil isn't 1): kept whole once known, its depth
+     * hiding the outline; the other piece split and marked. */
+    start("outlines: a piece kept whole");
+    for (kept = 0; kept < 2; kept++) {
+        dev.n = 0;
+        g_frame++;
+        s = glass(1); s.pos = 0x700; s.verts = 6; s.stencil = 3;
+        fh_draw(s);
+        s = glass(3); s.pos = 0x710; s.verts = 6; s.stencil = 1;
+        expect_how("a piece kept whole: the piece", fh_draw(s), kept ? NV2A_SEE_KEEP : NV2A_SEE_SPLIT);
+        s = glass(2); s.pos = 0x720; s.verts = 12; s.textured = 0; s.stencil = 3;
+        expect_how("a piece kept whole: the outline", fh_draw(s), NV2A_SEE_MASK);
+        fh_clear(3);
+    }
+    expect_log("outlines: a piece kept whole", "v1 p1 t0.5 a20/0 z1/203 b302 T5 s207,1,FF,FF,0"
+               " | v3 p1 t0.5 a4/0 z1/203 b302 T5 s"
+               " | v1 p1 t0.5 a36/0 z0/203 b0 T5 s207,80,FF,FF,1E01"
+               " | v2 p1 t0.5 a4/0 z1/203 b302 T5 s202,1,80,7F,0"
+               " | v1 p1 t0.5 a36/0 z0/207 b0 T5 s207,0,FF,80,0"
+               " | v1 p1 t0.5 a36/0 z0/203 b302 T5 s207,1,FF,0,0"
+               " | CLEAR 3");
+    expect_device("outlines: a piece kept whole");
+
+    /* The list drawn between a mesh's pieces (here at a change of surface):
+     * the piece drawn by then is no longer in it, so only the one after is
+     * marked. */
+    start("outlines: the list drawn between");
+    s = glass(1); s.pos = 0x800; s.verts = 12;
+    fh_draw(s);
+    G->target_bind(2);
+    G->target_bind(1);
+    s = glass(3); s.pos = 0x810; s.verts = 12;
+    fh_draw(s);
+    s = glass(2); s.pos = 0x820; s.verts = 24; s.textured = 0;
+    expect_how("the list drawn between: the outline", fh_draw(s), NV2A_SEE_MASK);
+    fh_clear(3);
+    expect_log("outlines: the list drawn between", "v1 p1 t0.5 a20/0 z1/203 b302 T5"
+               " | v1 p1 t0.5 a36/0 z0/203 b302 T5"
+               " | BIND 2 | BIND 1"
+               " | v3 p1 t0.5 a20/0 z1/203 b302 T5"
+               " | v3 p1 t0.5 a36/0 z0/203 b0 T5 s207,80,FF,80,1E01"
+               " | v2 p1 t0.5 a4/0 z1/203 b302 T5 s202,0,80,0,1E00"
+               " | v3 p1 t0.5 a36/0 z0/207 b0 T5 s207,0,FF,80,0"
+               " | v3 p1 t0.5 a36/0 z0/203 b302 T5"
+               " | CLEAR 3");
+    expect_device("outlines: the list drawn between");
+
+    /* With the fix off: a known mesh as the title draws it, no mark. */
+    start("outlines: off");
+    nv2a_seethru_set(0);
+    s = glass(1); s.pos = 0x500; s.verts = 6; s.stencil = 3;
+    expect_how("outlines off: a piece", fh_draw(s), NV2A_SEE_KEEP);
+    s = glass(3); s.pos = 0x510; s.verts = 9; s.stencil = 3;
+    fh_draw(s);
+    s = glass(2); s.pos = 0x520; s.verts = 15; s.textured = 0; s.stencil = 3;
+    expect_how("outlines off: the outline", fh_draw(s), NV2A_SEE_KEEP);
+    fh_clear(3);
+    nv2a_seethru_set(1);
+    expect_log("outlines: off", "v1 p1 t0.5 a4/0 z1/203 b302 T5 s207,1,FF,FF,0"
+               " | v3 p1 t0.5 a4/0 z1/203 b302 T5 s207,1,FF,FF,0"
+               " | v2 p1 t0.5 a4/0 z1/203 b302 T5 s207,1,FF,FF,0"
+               " | CLEAR 3");
 
     /* A call that has no place in a held draw: the rest of it drawn in
      * place, said once. */
@@ -778,6 +978,29 @@ static void cases_inplace(void)
                " | v3 p3 t1 a4/0 z0/203 b302 T7"
                " | CLEAR 3");
     expect_device("in place");
+
+    /* No list to mark from: an outline drawn as the title draws it, and its
+     * pieces kept whole once known. */
+    {
+        Spec s;
+        start("in place: outlines");
+        s = glass(1); s.pos = 0x100; s.verts = 12; s.stencil = 3;
+        expect_how("in place: a piece, not yet known", fh_draw(s), NV2A_SEE_SPLIT);
+        s = glass(2); s.pos = 0x110; s.verts = 12; s.textured = 0; s.stencil = 3;
+        expect_how("in place: the outline", fh_draw(s), NV2A_SEE_KEEP);
+        fh_clear(3);
+        g_frame++;
+        dev.n = 0;
+        s = glass(1); s.pos = 0x100; s.verts = 12; s.stencil = 3;
+        expect_how("in place: the piece", fh_draw(s), NV2A_SEE_KEEP);
+        s = glass(2); s.pos = 0x110; s.verts = 12; s.textured = 0; s.stencil = 3;
+        expect_how("in place: the outline again", fh_draw(s), NV2A_SEE_KEEP);
+        fh_clear(3);
+        expect_log("in place: outlines", "v1 p1 t0.5 a4/0 z1/203 b302 T5 s207,1,FF,FF,0"
+                   " | v2 p1 t0.5 a4/0 z1/203 b302 T5 s207,1,FF,FF,0"
+                   " | CLEAR 3");
+        expect_device("in place: outlines");
+    }
 }
 
 /* RECOMP_GL_SEETHRU_LOG=1: frame 600 recorded, and said when 601 starts. */
@@ -785,12 +1008,22 @@ static void cases_census(void)
 {
     Spec s;
     G->target_bind(1);
+    g_frame = 599;                      /* a character's mesh, learnt */
+    s = glass(5); s.pos = 0x900; s.verts = 12; s.stencil = 3;
+    fh_draw(s);
+    s = glass(6); s.pos = 0x910; s.verts = 12; s.textured = 0; s.stencil = 3;
+    fh_draw(s);
+    fh_clear(3);
     g_frame = 600;
     fh_draw(solid(2));
     fh_draw(glass(1));
     s = hud(3); s.stencil = 2;          /* a write mask alone: not marked */
     fh_draw(s);
     s = glass(4); s.stencil = 1;
+    fh_draw(s);
+    s = glass(5); s.pos = 0x900; s.verts = 12; s.stencil = 3;
+    fh_draw(s);
+    s = glass(6); s.pos = 0x910; s.verts = 12; s.textured = 0; s.stencil = 3;
     fh_draw(s);
     fh_clear(3);
     g_frame = 601;
