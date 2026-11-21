@@ -317,6 +317,85 @@ def parse(path):
     return runs
 
 
+def values(row):
+    """A periodic report's values by name, as its row in the table shows
+    them, None where the log has no line for one: worst_ms is None when no
+    frame took 25 ms or longer (the table's "<25"). The two threads are
+    classify's, the GPU thread's split is its five shares (draws, present,
+    pacing, the rest of the walk, idle), the card its average and worst, and
+    present the presenter's shown, replaced and held on screen."""
+    w = row["window"]
+    frames = row["frames"]
+    draws = row.get("draws")
+    kwpf = None
+    walks = [x for x in w["walk"] if x[2]]
+    if walks:
+        kwpf = sum(x[1] / x[2] for x in walks) / len(walks)
+    elif row.get("queue_kb") is not None and frames:
+        kwpf = row["queue_kb"] * 1024 / 4 / 1000 / frames
+    game, gpu = classify(w["cpu"]) if w["cpu"] else (None, None)
+    split = None
+    if w["share"] and w["walk"]:
+        d, pr, p = (sum(x[k] for x in w["share"]) / len(w["share"]) for k in range(3))
+        wk = sum(x[0] for x in w["walk"]) / len(w["walk"])
+        split = (d, pr, p, wk - d - pr - p, 100.0 - wk)
+    card = None
+    if w["card"]:
+        nf = sum(c[0] for c in w["card"])
+        card = (sum(c[0] * c[1] for c in w["card"]) / nf if nf else 0.0, max(c[2] for c in w["card"]))
+    return {"line": row["line"], "frames": frames, "late": row["late"],
+            "late_pct": 100.0 * row["late"] / frames if frames else None,
+            "held": row["held"], "held30": row["held30"], "worst_ms": row["worst"],
+            "draws_per_frame": draws / frames if draws is not None and frames else None,
+            "kwords_per_frame": kwpf, "voices": row.get("voices"),
+            "game_thread": game, "gpu_thread": gpu, "gpu_split": split, "card": card,
+            "present": w["present"], "display": row.get("display")}
+
+
+def full_reports(run):
+    """The reports the finish line counts. The finish line is per 10 s. The
+    reports come every 10 s by the clock, but the first counts from the first
+    frame and the last is the one at exit, so those two are shorter and left
+    out. Frames are no guide: a slow 10 s has few."""
+    return run["windows"][1:-1]
+
+
+def totals(run):
+    """The run's frames, late and held, over all its reports."""
+    rows = run["windows"]
+    frames = sum(r["frames"] for r in rows)
+    late = sum(r["late"] for r in rows)
+    return {"frames": frames, "late": late, "late_pct": 100.0 * late / frames if frames else 0,
+            "held": sum(r["held"] for r in rows), "reports": len(rows)}
+
+
+def finish_line(run):
+    """The review's finish line over the run's full reports, or None when it
+    has none: on Windows, how many were 1% late or more; otherwise the Ally
+    X's, how many were over 5% late, how many had more than 3 held, and the
+    most held."""
+    full = full_reports(run)
+    if not full:
+        return None
+    line = {"device": "windows" if run["windows_os"] else "linux", "reports": len(full),
+            "left_out": len(run["windows"]) - len(full)}
+    if run["windows_os"]:
+        line["over_late"] = sum(1 for r in full if r["late"] >= 0.01 * r["frames"])
+    else:
+        line["over_late"] = sum(1 for r in full if r["late"] > 0.05 * r["frames"])
+        line["over_held"] = sum(1 for r in full if r["held"] > 3)
+        line["most_held"] = max(r["held"] for r in full)
+    return line
+
+
+SLOW_FRAME_MS = 50.0    # the finish line for entering a level: no frame longer
+
+
+def slow_frames(run):
+    """The run's [HITCH] frames over SLOW_FRAME_MS."""
+    return [h for h in run["hitches"] if h[1] > SLOW_FRAME_MS]
+
+
 def fmt(v, spec="{}", none="-"):
     return none if v is None else spec.format(v)
 
@@ -362,62 +441,33 @@ def report(path, runs):
                    + (" display |" if display else ""))
         out.append("|---" * (14 + presenter + display) + "|")
         for i, row in enumerate(run["windows"], 1):
-            w = row["window"]
-            frames = row["frames"]
-            late_pct = 100.0 * row["late"] / frames if frames else None
-            draws = row.get("draws")
-            dpf = draws / frames if draws is not None and frames else None
-            kwpf = None
-            walks = [x for x in w["walk"] if x[2]]
-            if walks:
-                kwpf = sum(x[1] / x[2] for x in walks) / len(walks)
-            elif row.get("queue_kb") is not None and frames:
-                kwpf = row["queue_kb"] * 1024 / 4 / 1000 / frames
-            game, gpu = classify(w["cpu"]) if w["cpu"] else (None, None)
-            split = "-"
-            if w["share"] and w["walk"]:
-                d, pr, p = (sum(x[k] for x in w["share"]) / len(w["share"]) for k in range(3))
-                wk = sum(x[0] for x in w["walk"]) / len(w["walk"])
-                split = f"{d:.0f} / {pr:.0f} / {p:.0f} / {wk - d - pr - p:.0f} / {100.0 - wk:.0f}"
-            card = "-"
-            if w["card"]:
-                nf = sum(c[0] for c in w["card"])
-                avg = sum(c[0] * c[1] for c in w["card"]) / nf if nf else 0.0
-                card = f"{avg:.1f} / {max(c[2] for c in w['card']):.1f}"
-            out.append(f"| {i} | {frames} | {row['late']} | {fmt(late_pct, '{:.1f}')} | {row['held']} | "
-                       f"{row['held30']} | {fmt(row['worst'], '{:.0f}', '<25')} | {fmt(dpf, '{:.0f}')} | "
-                       f"{fmt(kwpf, '{:.0f}')} | {fmt(row.get('voices'))} | {thread_cell(game)} | "
-                       f"{thread_cell(gpu)} | {split} | {card} |"
-                       + (f" {' / '.join(map(str, w['present'])) if w['present'] else '-'} |" if presenter else "")
-                       + (f" {row.get('display') or '-'} |" if display else ""))
+            v = values(row)
+            split = " / ".join(f"{x:.0f}" for x in v["gpu_split"]) if v["gpu_split"] else "-"
+            card = f"{v['card'][0]:.1f} / {v['card'][1]:.1f}" if v["card"] else "-"
+            out.append(f"| {i} | {v['frames']} | {v['late']} | {fmt(v['late_pct'], '{:.1f}')} | {v['held']} | "
+                       f"{v['held30']} | {fmt(v['worst_ms'], '{:.0f}', '<25')} | "
+                       f"{fmt(v['draws_per_frame'], '{:.0f}')} | {fmt(v['kwords_per_frame'], '{:.0f}')} | "
+                       f"{fmt(v['voices'])} | {thread_cell(v['game_thread'])} | {thread_cell(v['gpu_thread'])} | "
+                       f"{split} | {card} |"
+                       + (f" {' / '.join(map(str, v['present'])) if v['present'] else '-'} |" if presenter else "")
+                       + (f" {v['display'] or '-'} |" if display else ""))
         out.append("")
-        frames = sum(r["frames"] for r in run["windows"])
-        late = sum(r["late"] for r in run["windows"])
-        out.append(f"**Run totals:** {frames} frames, {late} late ({100.0 * late / frames if frames else 0:.1f}%), "
-                   f"{sum(r['held'] for r in run['windows'])} held, over {len(run['windows'])} reports.")
-        # The finish line is per 10 s. The reports come every 10 s by the
-        # clock, but the first counts from the first frame and the last is
-        # the one at exit, so those two are shorter and left out. Frames are
-        # no guide: a slow 10 s has few.
-        full = run["windows"][1:-1]
-        short = len(run["windows"]) - len(full)
-        left_out = " (the first and last reports left out: shorter than 10 s)" if short else ""
-        if not full:
-            out.append("")
+        t = totals(run)
+        out.append(f"**Run totals:** {t['frames']} frames, {t['late']} late ({t['late_pct']:.1f}%), "
+                   f"{t['held']} held, over {t['reports']} reports.")
+        line = finish_line(run)
+        left_out = " (the first and last reports left out: shorter than 10 s)" if line and line["left_out"] else ""
+        out.append("")
+        if line is None:
             out.append("**Finish line:** no full 10 s report in this run.")
-        elif run["windows_os"]:
-            over = sum(1 for r in full if r["late"] >= 0.01 * r["frames"])
-            out.append("")
-            out.append(f"**Finish line (Windows, under 1% late):** {over} of {len(full)} reports at 1% or "
-                       f"more{left_out}.")
+        elif line["device"] == "windows":
+            out.append(f"**Finish line (Windows, under 1% late):** {line['over_late']} of {line['reports']} reports "
+                       f"at 1% or more{left_out}.")
         else:
-            over_late = sum(1 for r in full if r["late"] > 0.05 * r["frames"])
-            over_held = sum(1 for r in full if r["held"] > 3)
-            out.append("")
-            out.append(f"**Finish line (Ally X, at most 5% late and 3 held in 10 s):** {over_late} of {len(full)} "
-                       f"reports over 5% late, {over_held} with more than 3 held (the most "
-                       f"{max(r['held'] for r in full)}){left_out}.")
-        big = [h for h in run["hitches"] if h[1] > 50.0]
+            out.append(f"**Finish line (Ally X, at most 5% late and 3 held in 10 s):** {line['over_late']} of "
+                       f"{line['reports']} reports over 5% late, {line['over_held']} with more than 3 held (the most "
+                       f"{line['most_held']}){left_out}.")
+        big = slow_frames(run)
         if big:
             out.append("")
             out.append("**Frames over 50 ms** (the finish line for entering a level):")
