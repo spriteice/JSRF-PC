@@ -78,9 +78,13 @@ These work in a window or full screen, and each one is remembered.
   choices sit at the right edge, clear of the dance, and the title screen
   fills the screen from its first frame, its opening's bars sweeping in from
   the screen's edges.
-- **F9:** Resolution, 1× to 6× the Xbox's 640×480 (3× by default), and as
-  much wider as the shape in widescreen (3× at 16:9 is 2560×1440). The game
-  restarts to apply it, so save first.
+- **F9:** Resolution, in a box of its own over the game: the height the game
+  is drawn at, Default (the Xbox's 640×480), 720p, 900p, 1080p, 1440p, 1600p,
+  2160p, or Match screen, your screen's own height (up to 2160), which the
+  game starts at until you choose. The width follows the aspect ratio (1080p
+  at 16:9 is 1920×1080), and the picture is fitted to the window. It changes
+  at once, with no restart. Esc, B on a controller, Cancel or F9 again shuts
+  the box with nothing chosen.
 - **F8, or R3 on a controller:** The free camera.
 
 ## Free camera
@@ -213,27 +217,32 @@ the buttons to press. The game keeps running while it is open, but your
 input goes to the menu.
 
 - **File:** About (the version and system details), Presets, Restart, and Exit.
-  Presets sets many settings at once. Xbox mode is the game as the Xbox runs it:
-  4:3 at 1×, with everything JSRF-PC adds to how it looks and plays turned off,
-  but the audio effects, which are the console's own. JSRF-PC default is the
-  settings a new install starts with. Max quality is JSRF-PC default with the
-  render scale, draw distance, anisotropic filtering, Upscaling's
+  Presets sets many settings at once, straight away, with no restart. Xbox
+  mode is the game as the Xbox runs it: 4:3 at Default resolution (640×480),
+  with everything JSRF-PC adds to how it looks and plays turned off. JSRF-PC
+  default is the settings a new install starts with. Max quality is JSRF-PC
+  default with the draw distance, anisotropic filtering, Upscaling's
   Menus and HUD, Textures and Graffiti, and both anti-aliasings at their most,
   as far as the graphics card goes, and Far buildings and Far shadows at 3x.
-  A preset sets every setting but Developer's and Input's two layouts: each
+  A preset sets every setting but Developer's, Input's two layouts, Mute,
+  Shader cache and Audio effects: each
   one also puts the game
   full screen, Upscaling's Cleanup as a new install has it, the free
   camera's own settings back to their defaults, and Keyboard moves at
   Camera. The one ticked is the one your settings match, if any.
-- **Display:** Full screen, the render scale (1× to 6×), the aspect ratio,
-  the HUD submenu, the draw distance, the Building distance submenu (Far
+- **Display:** Full screen, the resolution (its choices as F9 gives them),
+  the aspect ratio, the HUD submenu, the draw distance, the Building distance submenu (Far
   buildings and Far shadows), and a submenu at the end, Enhancements, with
   Music info in pause and See through fix. In HUD, HUD scale draws the HUD at 0.5× to 1.5× its size
   (1× the default), a tenth at each − or +, each piece keeping its distance
   from the screen's edges; Disable HUD hides it. Both change at once, and are
   kept as `hudscale=` (0.5 to 1.5) and `hudoff=` (1 for hidden) in the
   settings file. In split screen the HUD keeps its own size, though Disable
-  HUD still hides it. The
+  HUD still hides it. The resolution changes at once, and is kept as
+  `resolution=` (`default`, `720`, `900`, `1080`, `1440`, `1600`, `2160` or
+  `match`) in the settings file; a `scale=` from before it (1 to 6) is taken
+  as the resolution at least that high, up to 2160p. The higher it is, the
+  more it asks of the graphics card. The
   aspect ratio is 4:3 (the Xbox's own, widescreen off), 16:10, 16:9, 21:9, or
   Match screen, the shape of the display the window is on, the default. It changes at once, and is kept as
   `aspect=` (with `widescreen=` for on or off) in the settings file. Draw
@@ -303,7 +312,8 @@ input goes to the menu.
   limiter of their own for the 3D sounds, so a busy moment no longer turns
   the music and voices down. On by default; off, the sound is as before
   them. It is kept as `audioeffects=` in the
-  settings file, and changing it restarts the game. [The audio
+  settings file, and changing it restarts the game. No preset changes it.
+  [The audio
   effects](technical/audio-effects.md) says how they work.
 - **Input:** Four submenus. Controller layout and Keyboard layout set
   which button, or key or mouse button, presses each of the game's
@@ -472,10 +482,10 @@ input goes to the menu.
   Experimental are kept in `developer.cfg` beside the settings file, and
   apply from the next start.
 
-Everything is remembered but Far buildings test. Restart, Exit, a preset, a new render scale, the
+Everything is remembered but Far buildings test. Restart, Exit, the
 shader cache, Audio effects, and Purge shaders ask first, as anything since
-your last save is lost: all but Exit restart the game, a preset only when it
-changes the render scale, the shader cache or Audio effects. The other rows
+your last save is lost: all but Exit restart the game. The resolution and
+the presets change at once, with no restart. The other rows
 marked (Restart) apply from the next start, which File > Restart gives.
 
 ## Graphics options
@@ -484,7 +494,7 @@ These are in the in-game menu, under Graphics.
 
 - **Shader cache:** Keeps the shaders the game builds, and builds them again
   when it starts, so play doesn't pause for them. On by default. Changing it
-  restarts the game.
+  restarts the game, and no preset changes it.
 - **Anisotropic filtering:** 2× to 16×. It keeps textures sharp where they are
   seen at an angle, such as streets running into the distance. 8× by default,
   or as much as the graphics card takes, if that is less.
@@ -495,15 +505,15 @@ These are in the in-game menu, under Graphics.
 - **Upscaling:** A submenu at the foot of Graphics, with six rows:
   - **Menus and HUD:** Off, 2×, 4×, or 8×. The menus, text, HUD and icons are
     drawn from sharper copies of the game's art, which the graphics card makes
-    the first time each piece is shown. It helps from render scale 2× up; at 1×
-    they look as they always have. Each size suits a render scale: 2× for 2×, 4×
-    for 3× and 4×, and 8× for 5× and 6×, whose copies take the most memory. 4×
-    by default.
+    the first time each piece is shown. It helps above Default resolution; at
+    Default they look as they always have. Each size suits a resolution: 2× for
+    720p and 900p, 4× for 1080p to 1600p, and 8× for 2160p, whose copies take
+    the most memory. 4× by default.
   - **Textures:** Off, 2×, 4×, or 8×. The textures of the 3D world (walls, the
     ground, signs and the characters) are drawn from sharper copies, which the
     graphics card makes in a level's first moments, a few a frame. They show
     where a surface is close enough to the camera for its texture to be
-    enlarged, at any render scale and more so the higher it is. Distant
+    enlarged, at any resolution and more so the higher it is. Distant
     surfaces, cut-out edges such as fences, and the characters' light and
     shadow look as they always have. No
     copy is larger than 2048 a side, so 8× enlarges the larger textures 4×. The

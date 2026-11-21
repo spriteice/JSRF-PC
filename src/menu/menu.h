@@ -338,6 +338,31 @@ float menu_fade(float fade, int open, float seconds);
  * the menu or without it. It takes no input. */
 void menu_build_busy(const char *what, int done, int total);
 
+/* A box of the window's own over the game, with no menu round it: F9's
+ * (nv2a_gl.c's Resolution), put up by the window (menu_sdl.h,
+ * xbox_MenuBox). Laid out as the SDL message box before it was: its title,
+ * its text, then a button for each choice, in one row, and Cancel, in the
+ * menu's style. text, state and pick are called on the window's thread. */
+typedef struct XBOX_MENU_BOX {
+    const char        *title;
+    const char      *(*text)(void);     /* a few short lines, asked each frame */
+    const char *const *choices;
+    int                nchoices;
+    int              (*state)(void);    /* the choice in use */
+    void             (*pick)(int index);
+} XBOX_MENU_BOX;
+
+/* The window's side too: one frame of such a box, in the middle of the
+ * window as the menu's boxes are, between ImGui::NewFrame() and
+ * ImGui::Render(), without the menu. The choice in use (state()) is drawn
+ * as a button held down, and the pad starts on it as the box opens
+ * (just_opened: its first frame). MENU_BOX_UP while it stays up;
+ * MENU_BOX_CANCEL for Cancel, Esc or B; else the choice, which the window
+ * hands to pick(). Either of those shuts it. */
+#define MENU_BOX_UP     (-2)
+#define MENU_BOX_CANCEL (-1)
+int menu_build_box(const XBOX_MENU_BOX *box, int just_opened);
+
 #ifdef __cplusplus
 }
 #endif

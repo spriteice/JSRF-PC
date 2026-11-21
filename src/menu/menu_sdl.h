@@ -8,6 +8,7 @@
 #define XBOX_MENU_SDL_H
 
 #include <SDL.h>    /* SDL2::SDL2 adds include/SDL2 only, on MinGW */
+#include "menu.h"   /* XBOX_MENU_BOX */
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,9 +22,9 @@ int  xbox_MenuInit(SDL_Window *window, void *gl_context, const char *about_gpu,
                    const char *about_gl);
 
 /* Each event, from sdl_pump, before the game's own handling. 1: it was the
- * menu's (F1, a pad's Back, a key or click while it is open, or a press a
- * bind row's box takes: menu.h, XBOX_ITEM_BIND) and the game must not see
- * it. */
+ * menu's (F1, a pad's Back, a key or click while it or a box is open, F9
+ * while a box is, or a press a bind row's box takes: menu.h,
+ * XBOX_ITEM_BIND) and the game must not see it. */
 int  xbox_MenuEvent(const SDL_Event *ev);
 
 /* Once a frame on the GL thread, after the events: builds the menu, as it
@@ -39,8 +40,17 @@ void xbox_MenuDraw(void);
  * xbox_MenuFrame until total is 0. */
 void xbox_MenuBusy(const char *what, int done, int total);
 
-/* 1 while the menu has the controls, 0 while it is shut, -1 when there is
- * none (Dear ImGui did not start). Any thread. */
+/* A box of the window's own over the game (menu.h, XBOX_MENU_BOX): F9's,
+ * put up from the next xbox_MenuFrame, unless the menu or a box is up
+ * already, and kept as a copy. The pad starts on the choice in use, which
+ * is marked. A choice is handed to its pick and shuts it; Cancel, Esc and
+ * B shut it with nothing chosen, and so do F9, F1 and the pad's Back. While
+ * it is up the game runs on behind it, and the keys, the mouse and the pad
+ * are the box's (xbox_MenuIsOpen). On the GL thread, from sdl_pump. */
+void xbox_MenuBox(const XBOX_MENU_BOX *box);
+
+/* 1 while the menu or a box has the controls, 0 while both are shut, -1
+ * when there is no menu (Dear ImGui did not start). Any thread. */
 int  xbox_MenuIsOpen(void);
 
 #ifdef __cplusplus

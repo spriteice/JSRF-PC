@@ -974,6 +974,44 @@ extern "C" float menu_fade(float fade, int open, float seconds)
     return ImMax(fade - step, 0.0f);
 }
 
+/* F9's box: its id, after the title it shows. */
+#define MENU_OWN_BOX "###box"
+
+extern "C" int menu_build_box(const XBOX_MENU_BOX *box, int just_opened)
+{
+    ImGuiContext &g = *ImGui::GetCurrentContext();     /* ImGuiKey_NavGamepadCancel reads g */
+    char id[128];
+    int r = MENU_BOX_UP, now = box->state();
+    snprintf(id, sizeof id, "%s" MENU_OWN_BOX, box->title);
+    /* Up afresh, with nothing left open from the last time: ImGui keeps a
+     * box while it isn't built, as it keeps the menu's (menu_build). */
+    if (just_opened && g.OpenPopupStack.Size) ImGui::ClosePopupToLevel(0, false);
+    if (!ImGui::IsPopupOpen(id)) ImGui::OpenPopup(id);
+    /* The pad is the box's, whatever a bind row's box left (menu_build). */
+    g.IO.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+    if (!box_begin(id)) return r;
+    ImGui::TextUnformatted(box->text());
+    ImGui::Spacing();
+    for (int i = 0; i < box->nchoices; i++) {
+        if (i) ImGui::SameLine();
+        /* The choice in use, as a button held down: the style's own colour
+         * for one, so nothing here sets one of its own. */
+        if (i == now) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+        if (ImGui::Button(box->choices[i])) r = i;
+        if (i == now) {
+            ImGui::PopStyleColor();
+            if (just_opened) ImGui::SetItemDefaultFocus();
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape, false)
+     || ImGui::IsKeyPressed(ImGuiKey_NavGamepadCancel, false))
+        r = MENU_BOX_CANCEL;
+    if (r != MENU_BOX_UP) ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+    return r;
+}
+
 extern "C" void menu_build_busy(const char *what, int done, int total)
 {
     const ImGuiIO &io = ImGui::GetIO();

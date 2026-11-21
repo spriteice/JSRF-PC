@@ -61,7 +61,7 @@ in a submenu of its own.
 ## Wording
 
 - **Sentence case.** The first letter of a phrase is a capital and the rest
-  are lower case, as in a sentence: "Render scale", "Shader cache", "Log to
+  are lower case, as in a sentence: "Aspect ratio", "Shader cache", "Log to
   file", "Purge shaders", "Free camera". This covers menu titles, rows,
   choices, box titles, and buttons.
 - Acronyms, names, and axis letters keep their own capitals: SMAA, MSAA, GPU,
@@ -99,7 +99,7 @@ in a submenu of its own.
 ## (Restart)
 
 - A row whose change needs the game to restart ends its label with
-  ` (Restart)`, after its name: "Render scale (Restart)".
+  ` (Restart)`, after its name: "Shader cache (Restart)".
 - Choosing it asks first, with the "Are you sure?" box (the row's `confirm`),
   and a question saying what OK does and what is lost: "<Do what>, losing
   unsaved progress?", as in "Apply selection and restart, losing unsaved
@@ -124,6 +124,13 @@ in a submenu of its own.
   takes, and the pad's Back or F1 is none, so Esc alone shuts it unchanged,
   and only while it waits for a pad. It closes back on its row, in its
   submenu.
+- F9's box, Resolution, is the window's own, over the game with no menu
+  round it (`menu_build_box` in menu.cpp, put up by `xbox_MenuBox` in
+  menu_sdl.cpp). It opens only while the menu is shut, and the game goes on
+  behind it. Its title, its text, then a button for each choice, in one
+  row, the one in use drawn held down, and Cancel last. A choice applies at
+  once and shuts it; Cancel, B and Esc shut it with nothing chosen, and so
+  do F9, F1 and the pad's Back. It closes back to the game.
 
 ## Bind rows
 
@@ -230,14 +237,13 @@ in a submenu of its own.
 
 ## File > Presets
 
-- Presets (Restart) is File's second row, under About, with a separator
+- Presets is File's second row, under About, with a separator
   above and below it, as between About and Restart before it. Its choices
   are Xbox mode, JSRF-PC default and Max quality, in that order
   (`XBOX_PRESET` in `menu.h`).
-- **Xbox mode** is the game as the Xbox runs it: 4:3 at 1x, with everything
-  JSRF-PC adds to how it looks and plays turned off. What the console did
-  itself stays on: the audio effects, which are our versions of its own
-  sound, and the shader cache, which changes nothing on screen.
+- **Xbox mode** is the game as the Xbox runs it: 4:3 at Default, the
+  Xbox's 640x480, with everything JSRF-PC adds to how it looks and plays
+  turned off.
   **JSRF-PC default** is the settings a new install starts with. **Max
   quality** is JSRF-PC default with each graphics and display setting that
   has a most at its most: the last choice, or the most the device has. Far
@@ -246,10 +252,12 @@ in a submenu of its own.
   Dogenzaka Hill's top in its sky.
 - The tick is on the preset whose value every row it sets has now, and on
   none when one differs. A new install is at JSRF-PC default.
-- Choosing one asks first, as a (Restart) row does. OK sets each row
-  through its own function, as choosing that row would, and saves it as the
-  row does. A (Restart) row keeps its value instead, and the game restarts
-  once, after them all, if one changed.
+- Choosing one applies it at once, with no box: it sets each row through
+  its own function, as choosing that row would, and saves it as the row
+  does. No preset sets a (Restart) row, so none restarts the game: Shader
+  cache and Audio effects are left to the player, as Mute is (spriteice's
+  card, 02:00 UTC on 2026-11-21). A (Restart) row a preset did set would keep its value
+  instead, and the game would restart once, after them all, if one changed.
 - **A preset sets every setting but Developer's, and the rows that say a
   preset leaves them alone** (`XBOX_PRESETS_LEFT` in `menu.h`): a player's
   own choices, not a quality setting, each with its own way back to its

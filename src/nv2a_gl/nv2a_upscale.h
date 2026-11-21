@@ -45,7 +45,7 @@
  * took: an entry holds one copy, and the 2D rule wins. Its copy keeps the
  * game's alpha, so cut-out edges stay where they were, and the title's own
  * chain below the new levels, so a surface that isn't magnified samples what
- * it did. It is made at every render scale, as a surface close to the camera
+ * it did. It is made at every resolution, as a surface close to the camera
  * magnifies its texture at any, and only for a texture uploaded before the
  * frame last shown, so one the title rewrites every frame is never copied.
  * A copy is at most NV2A_UP3_OUT_MAX a side (nv2a_up3_factor), and the

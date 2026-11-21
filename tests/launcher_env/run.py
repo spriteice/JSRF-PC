@@ -1,23 +1,27 @@
 """Run the Linux launcher, and see what it hands the engine and what it does.
 
-Builds launcher/linux/jsrf_launcher.c (with the setup's core, and a stand-in
-for its window, which a package with no kit/ folder never opens), and runs it
+Builds launcher/linux/jsrf_launcher.c (with the setup's core, the renderer's
+resolution choices, and a stand-in for its window, which a package with no
+kit/ folder never opens), and runs it
 in a package's layout (bin/, lib/, VERSION) with a stand-in engine that
 writes down its arguments and environment, answers --check-game,
 --check-iso and --unpack-iso as each case asks, and exits as asked; and a
 stand-in game folder (default.xbe and Media).
 
 What it hands the engine: the paths and the player's settings
-(RECOMP_GL_SCALE, RECOMP_FULLSCREEN, RECOMP_MINIMIZED) and no other RECOMP_
-switch: what the game needs to work is the engine's own default
-(docs/project-rules.md, Where code goes 5). Up to b1.3 the launcher set
-twelve of them. Played with, as given, with a scale and full screen,
-minimized (--minimized), alone and with full screen, and in portable mode;
-with each end of the scales, 1 to 6, given and saved, and one past them,
-which --scale refuses and a saved one is dropped. A scale only when the
-player chose one: with none, or a saved one dropped, no RECOMP_GL_SCALE,
-even one set in the launcher's own environment, so the engine takes its
-own default (3x).
+(RECOMP_FULLSCREEN, RECOMP_MINIMIZED) and no other RECOMP_ switch: what the
+game needs to work is the engine's own default (docs/project-rules.md,
+Where code goes 5). Up to b1.3 the launcher set twelve of them. Played
+with, as given, with a resolution and full screen, minimized (--minimized),
+alone and with full screen, and in portable mode.
+
+The resolution isn't handed over: the engine reads resolution= from the
+settings file (src/nv2a_gl/nv2a_scale.h). --resolution saves each of its
+names there, and --scale N from before saves the resolution it maps to (1
+to 6: Default, 1080p, 1440p, 2160p, 2160p, 2160p), over one saved already;
+a name or a scale that isn't one, or none, is refused, and nothing saved.
+One saved is left as it is, and a scale= from before too, for the engine
+to map.
 
 What it hands the engine for --play: the recording's folder, by its whole
 path, as JSRF_PLAY, and none without it.
@@ -34,7 +38,7 @@ one to ask: nothing.
 
 The Windows launcher can't run here (it is a windowed program, and CI builds
 it), so the switches it names in launcher/windows/jsrf_launcher.c are
-checked instead: only those three.
+checked instead: only those two.
 
 Which package it is: one with a kit/ folder (the package without the
 engine) opens the setup when the engine is missing or isn't the kit's, and
@@ -56,7 +60,12 @@ import tempfile
 root = pathlib.Path(__file__).resolve().parents[2]
 
 # The player's settings: the only switches a launcher may pass.
-SETTINGS = {"RECOMP_GL_SCALE", "RECOMP_FULLSCREEN", "RECOMP_MINIMIZED"}
+SETTINGS = {"RECOMP_FULLSCREEN", "RECOMP_MINIMIZED"}
+
+# resolution='s names, Display > Resolution's order (nv2a_scale_key), and
+# what --scale's 1 to 6 save (nv2a_scale_of_old).
+RESOLUTIONS = ["default", "720", "900", "1080", "1440", "1600", "2160", "match"]
+OLD_SCALES = {1: "default", 2: "1080", 3: "1440", 4: "2160", 5: "2160", 6: "2160"}
 
 # Windows: every switch the launcher's source names.
 windows = sorted(set(re.findall(r'L"(RECOMP_[A-Z0-9_]+)',
@@ -117,7 +126,7 @@ def build(out):
     stub.write_text(STUB_UI)
     exe = out / "jsrf-pc"
     srcs = [root / "launcher/linux/jsrf_launcher.c", root / "launcher/setup/setup_core.c",
-            root / "port/xiso.c", root / "port/xbe_check.c", stub]
+            root / "port/xiso.c", root / "port/xbe_check.c", root / "src/nv2a_gl/nv2a_scale.c", stub]
     objs = []
     for s in srcs:
         o = out / (s.name + ".o")
@@ -169,7 +178,7 @@ class Case:
         self.logs = self.state if portable else self.state / "logs"
         if saved is not None:
             self.cfg.parent.mkdir(parents=True, exist_ok=True)
-            self.cfg.write_text("scale=%s\n" % saved)
+            self.cfg.write_text(saved)
 
     @staticmethod
     def make_game(d):
@@ -222,8 +231,9 @@ def result(name, bad, good):
         print("launcher_env %s: %s" % (name, good))
 
 
-def check(name, args, scale, fullscreen, portable=False, saved=None, outside=None, minimized=False):
-    """scale: the RECOMP_GL_SCALE the engine is handed, None for none."""
+def check(name, args, resolution, fullscreen, portable=False, saved=None, outside=None, minimized=False):
+    """resolution: the resolution= the settings file holds after, None for
+    none. saved: the settings file's text before."""
     c = Case(portable, saved)
     p = c.run([c.game] + args, outside)
     if p.returncode != 0 or not c.started():
@@ -233,7 +243,7 @@ def check(name, args, scale, fullscreen, portable=False, saved=None, outside=Non
     game = str(c.game)
     switches = sorted(k for k in env if k.startswith("RECOMP_"))
     extra = [k + "=" + env[k] for k in switches if k not in SETTINGS]
-    want = {"RECOMP_GL_SCALE": str(scale)} if scale is not None else {}
+    want = {}
     if fullscreen:
         want["RECOMP_FULLSCREEN"] = "1"
     if minimized:
@@ -249,17 +259,22 @@ def check(name, args, scale, fullscreen, portable=False, saved=None, outside=Non
         bad.append("settings %s, not %s" % (got, want))
     if missing:
         bad.append("no " + ", ".join(missing))
+    if c.setting("resolution") != resolution:
+        bad.append("resolution=%r saved, not %r" % (c.setting("resolution"), resolution))
+    if c.cfg.exists() and sum(line.startswith("resolution=") for line in c.cfg.read_text().splitlines()) > 1:
+        bad.append("resolution= saved twice")
     if env.get("JSRF_GAME_DIR") != game or argv != [game]:
         bad.append("the game folder %r and arguments %r, not %r" % (env.get("JSRF_GAME_DIR"), argv, game))
     if not env.get("LD_LIBRARY_PATH", "").startswith(str(c.pkg / "lib")):
         bad.append("LD_LIBRARY_PATH %r doesn't start with the package's lib" % env.get("LD_LIBRARY_PATH"))
-    result(name, bad, "the paths and %s, and no other switch"
-           % (", ".join(k + "=" + v for k, v in sorted(want.items()))
-              or "no scale (the engine's default)"))
+    result(name, bad, "the paths%s, and no other switch; %s"
+           % ("".join(" and " + k + "=" + v for k, v in sorted(want.items())),
+              "resolution=%s saved" % resolution if resolution else "no resolution= (the engine's own)"))
 
 
-def refused(name, args, says, case=None, prepare=None):
-    """A run the launcher must stop, saying `says`, before the engine."""
+def refused(name, args, says, case=None, prepare=None, unsaved=None):
+    """A run the launcher must stop, saying `says`, before the engine; and
+    with `unsaved`, a key it saves nothing to."""
     c = case or Case()
     if prepare:
         prepare(c)
@@ -272,24 +287,43 @@ def refused(name, args, says, case=None, prepare=None):
     # As the player reads it: the dialogs' lines are folded at 72.
     if " ".join(says.split()) not in " ".join(p.stderr.split()):
         bad.append("said %r, not %r" % (p.stderr.strip(), says))
+    if unsaved and c.setting(unsaved) is not None:
+        bad.append("%s=%r saved" % (unsaved, c.setting(unsaved)))
     result(name, bad, "refused, %r" % says)
     return c
 
 
 check("as given", [], None, False)
-check("as given, with a scale in the launcher's environment", [], None, False,
-      outside={"RECOMP_GL_SCALE": "5"})
-check("with a scale and full screen", ["--scale", "3", "--fullscreen"], 3, True)
+check("with a resolution and full screen", ["--resolution", "1080", "--fullscreen"], "1080", True)
 check("minimized", ["--minimized"], None, False, minimized=True)
 check("minimized, and full screen", ["--fullscreen", "--minimized"], None, True, minimized=True)
 check("portable", [], None, False, portable=True)
-check("the largest scale", ["--scale", "6"], 6, False)
-check("the smallest scale", ["--scale", "1"], 1, False)
-refused("one scale too many", [lambda c: c.game, "--scale", "7"], "--scale takes 1 to 6.")
-refused("no scale at all", [lambda c: c.game, "--scale", "0"], "--scale takes 1 to 6.")
-refused("a scale with no number", [lambda c: c.game, "--scale"], "--scale takes 1 to 6.")
-check("the largest scale, saved", [], 6, False, saved=6)
-check("one scale too many, saved", [], None, False, saved=7)
+check("portable, with a resolution", ["--resolution", "720"], "720", False, portable=True)
+for key in RESOLUTIONS:
+    check("--resolution " + key, ["--resolution", key], key, False)
+for n, key in sorted(OLD_SCALES.items()):
+    check("--scale %d" % n, ["--scale", str(n)], key, False)
+check("--scale over a resolution saved", ["--scale", "2"], "1080", False, saved="resolution=match\n")
+check("a resolution saved", [], "720", False, saved="resolution=720\n")
+RES_TAKES = "--resolution takes default, 720, 900, 1080, 1440, 1600, 2160 or match."
+refused("a resolution that isn't one", [lambda c: c.game, "--resolution", "4k"], RES_TAKES, unsaved="resolution")
+refused("a scale given as a resolution", [lambda c: c.game, "--resolution", "3"], RES_TAKES, unsaved="resolution")
+refused("a resolution with no name", [lambda c: c.game, "--resolution"], RES_TAKES, unsaved="resolution")
+refused("one scale too many", [lambda c: c.game, "--scale", "7"], "--scale takes 1 to 6.", unsaved="resolution")
+refused("no scale at all", [lambda c: c.game, "--scale", "0"], "--scale takes 1 to 6.", unsaved="resolution")
+refused("a scale with no number", [lambda c: c.game, "--scale"], "--scale takes 1 to 6.", unsaved="resolution")
+refused("a resolution given as a scale", [lambda c: c.game, "--scale", "1080"], "--scale takes 1 to 6.",
+        unsaved="resolution")
+
+# A scale= from before, saved: left for the engine to map (nv2a_scale_of_old).
+c = Case(saved="scale=6\n")
+c.run([c.game])
+result("a scale from before, saved", [b for b in [
+    not c.started() and "the engine didn't start",
+    c.started() and "RECOMP_GL_SCALE" in c.handed()[0] and "RECOMP_GL_SCALE handed over",
+    c.setting("scale") != "6" and "scale=%r" % c.setting("scale"),
+    c.setting("resolution") is not None and "resolution=%r saved" % c.setting("resolution")] if b],
+    "left as it is, for the engine, and nothing handed over")
 
 # ---- what it does besides
 

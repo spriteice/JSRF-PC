@@ -491,16 +491,17 @@ int nv2a_wide_fill_strip(uint32_t pw, uint32_t ph, float s, unsigned width, uint
 int nv2a_wide_fill_copy(uint32_t pw, float s, int side, uint32_t *x0, uint32_t *x1,
                         uint32_t *src, float *k, float *off);
 
-/* The raster a surface w x h is drawn at, at render scale sc, in the
- * device's pixels (*pw x *ph), and the shape it is shown at (*shape, width
- * over height, or 0 for pw:ph). The Xbox's frame in a scene widened to
- * shape a (wider than 4:3) is as many pixels across as a makes of sc times
- * its height, to the nearest -- 1707x960 at 2x and 16:9 -- so that a pixel
- * of it is as wide as it is tall once shown, and is shown at a itself.
- * Anything else, and the frame when a is 4:3 or less (or 0), is sc times
- * its size and its own shape. The title sees none of it: everything it
- * can observe stays w x h. */
-void nv2a_wide_raster(uint32_t w, uint32_t h, uint32_t sc, float a,
+/* The raster a surface w x h is drawn at, with the Xbox's frame drawn at
+ * `lines` (nv2a_scale.h; 0 is its own 480), in the device's pixels (*pw x
+ * *ph), and the shape it is shown at (*shape, width over height, or 0 for
+ * pw:ph). The Xbox's frame in a scene widened to shape a (wider than 4:3)
+ * is as many pixels across as a makes of its lines, to the nearest --
+ * 1707x960 at 960 lines and 16:9 -- so that a pixel of it is as wide as it
+ * is tall once shown, and is shown at a itself. Anything else, and the
+ * frame when a is 4:3 or less (or 0), is lines / 480 times its size, each
+ * side to the nearest pixel (nv2a_scale_px), and its own shape. The title
+ * sees none of it: everything it can observe stays w x h. */
+void nv2a_wide_raster(uint32_t w, uint32_t h, uint32_t lines, float a,
                       uint32_t *pw, uint32_t *ph, float *shape);
 
 /* Where a frame of shape a (width over height, above 0) goes in a ww x wh
@@ -509,10 +510,6 @@ void nv2a_wide_raster(uint32_t w, uint32_t h, uint32_t sc, float a,
  * the window's own shape fills it, whatever its raster's width was rounded
  * to. *dw x *dh is its size there; it is centred. */
 void nv2a_wide_fit(float a, int ww, int wh, int *dw, int *dh);
-
-/* Render scale sc's name for the frame it makes at shape a: "3x  2560x1440"
- * at 16:9, and as nv2a_scale_names has it ("3x  1920x1440") at 4:3. */
-void nv2a_wide_scale_name(char *buf, size_t n, uint32_t sc, float a);
 
 #ifdef __cplusplus
 }

@@ -5,8 +5,7 @@
  * through the engine's own settings code (taken from src/nv2a_gl/nv2a_gl.c
  * by run.py). The menu's xbox_MenuAdd, the effects' apu_gpfx_choose, the
  * sound output's xa2_set_mute and the window's nv_window_restart are stood
- * in for, to catch the rows, the choices and the restart, and the effects
- * row's keep for File > Presets, which doesn't restart. Each case is its
+ * in for, to catch the rows, the choices and the restart. Each case is its
  * own run, as the settings are read once; run.py writes the settings file
  * and checks the log and the file.
  */
@@ -78,18 +77,14 @@ int main(int argc, char **argv)
     /* A hint, a sentence short enough for the strip (menu.h). */
     CHECK(s_row.hint && strlen(s_row.hint) <= MENU_HINT_LONGEST && s_row.hint[strlen(s_row.hint) - 1] == '.');
     CHECK(s_row.state() == audio_effects());
-    /* File > Presets: on in each, and kept for the restart the preset gives,
-     * not restarted for by the row. JSRF-PC default's is what a start with
-     * no audioeffects= gives. */
-    CHECK(s_row.presets == XBOX_PRESETS_SET && s_row.keep);
-    CHECK(s_row.preset[XBOX_PRESET_XBOX] == 1 && s_row.preset[XBOX_PRESET_JSRF_PC] == 1 &&
-          s_row.preset[XBOX_PRESET_MAX] == 1);
-    CHECK(strcmp(c, "default") || s_row.preset[XBOX_PRESET_JSRF_PC] == audio_effects());
+    /* File > Presets leave it, as the player's own, so that no preset
+     * restarts the game (spriteice's card, 02:00 UTC on 2026-11-21). */
+    CHECK(s_row.presets == XBOX_PRESETS_LEFT && !s_row.keep);
     /* The setting, passed to the effects once, which leave the environment
      * to win over it. */
     CHECK(s_choices == 1 && s_chosen == audio_effects());
     on = !strcmp(c, "default") || !strcmp(c, "on") || !strcmp(c, "env_off")
-         || !strcmp(c, "flip_off") || !strcmp(c, "keep_off") || !strncmp(c, "mute_", 5);
+         || !strcmp(c, "flip_off") || !strncmp(c, "mute_", 5);
     CHECK(audio_effects() == on);
     if (!strncmp(c, "flip_", 5)) {
         /* The row: the other way, kept (which run.py checks), and the game
@@ -97,11 +92,6 @@ int main(int argc, char **argv)
         s_row.run();
         CHECK(audio_effects() == !on && s_row.state() == !on);
         CHECK(s_restarts == 1 && s_choices == 1);
-    }
-    if (!strcmp(c, "keep_off")) {
-        /* A preset: kept, which run.py checks, with no restart of its own. */
-        s_row.keep(0);
-        CHECK(audio_effects() == 0 && s_row.state() == 0 && s_choices == 1);
     }
     if (!strncmp(c, "mute_flip_", 10)) {
         /* Mute's row: the other way at once, passed to the sound output and

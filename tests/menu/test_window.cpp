@@ -21,7 +21,12 @@
  * game; the pad's Back and F1 handing it none, not shutting the menu; what
  * it doesn't take left to the menu as before; and a row that takes two
  * keys, its second a key or a mouse button, and F1 or the pad's Back none
- * at either press.
+ * at either press. Then F9's box (xbox_MenuBox): up only while the menu is
+ * shut, drawn whole from its first frame built, the pad on the choice in
+ * use; A hands that choice to the box's pick and shuts it, Esc shuts it
+ * with nothing chosen, and so do F9, F1 and the pad's Back, which open no
+ * menu; while it is up a key and a click are its own, and a pad's button
+ * goes on to the window, which keeps it from the game.
  */
 #include "menu.h"
 #include "imgui.h"
@@ -50,7 +55,7 @@ enum { SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_B, SDL_CONTROLLER_BUTTON_B
        SDL_CONTROLLER_BUTTON_GUIDE, SDL_CONTROLLER_BUTTON_MAX = 21 };
 enum { SDL_CONTROLLER_AXIS_LEFTX, SDL_CONTROLLER_AXIS_TRIGGERLEFT = 4, SDL_CONTROLLER_AXIS_TRIGGERRIGHT };
 enum { SDL_SCANCODE_J = 13, SDL_SCANCODE_W = 26, SDL_SCANCODE_ESCAPE = 41, SDL_SCANCODE_SPACE = 44,
-       SDL_SCANCODE_F1 = 58, SDL_NUM_SCANCODES = 512 };
+       SDL_SCANCODE_F1 = 58, SDL_SCANCODE_F9 = 66, SDL_NUM_SCANCODES = 512 };
 enum { SDL_BUTTON_LEFT = 1, SDL_BUTTON_RIGHT = 3 };
 typedef struct { unsigned type; unsigned char repeat; struct { int scancode; } keysym; } SDL_KeyboardEvent;
 typedef struct { unsigned type; int which; unsigned char button; } SDL_ControllerButtonEvent;
@@ -73,16 +78,17 @@ static int s_to_imgui;
 static bool ImGui_ImplSDL2_ProcessEvent(const SDL_Event *) { s_to_imgui++; return true; }
 
 /* Its OpenGL backend: each draw counted, with what it drew. */
-static int s_draws, s_drew_busy, s_drew_bar;
+static int s_draws, s_drew_busy, s_drew_bar, s_drew_box;
 static void ImGui_ImplOpenGL3_NewFrame(void) { }
 static void ImGui_ImplOpenGL3_RenderDrawData(ImDrawData *dd)
 {
     s_draws++;
-    s_drew_busy = s_drew_bar = 0;
+    s_drew_busy = s_drew_bar = s_drew_box = 0;
     for (int i = 0; i < dd->CmdLists.Size; i++) {
         const char *owner = dd->CmdLists[i]->_OwnerName;
         if (owner && !strcmp(owner, "##busy")) s_drew_busy = 1;
         if (owner && !strcmp(owner, "##MainMenuBar")) s_drew_bar = 1;
+        if (owner && !strcmp(owner, "Resolution###box")) s_drew_box = 1;
     }
 }
 
@@ -127,6 +133,14 @@ static XBOX_MENU_ITEM bind_row(const char *label, XBOX_BIND_TAKES takes, int (*b
     it.bind = bind;
     return it;
 }
+
+/* F9's box: three choices, the second in use, and what it was handed. */
+static const char *const k_box_choices[] = { "Default", "720p", "Match screen" };
+static int s_box_now = 1, s_box_picked = -1, s_box_picks;
+static const char *box_text(void) { return "The game is drawn at this height.\nNow: 720p (960x720)."; }
+static int box_state(void) { return s_box_now; }
+static void box_pick(int i) { s_box_picked = i; s_box_picks++; }
+static const XBOX_MENU_BOX k_box = { "Resolution", box_text, k_box_choices, 3, box_state, box_pick };
 
 /* A frame with a pad's button held, as the backend reads the pad, then one
  * with it let go. */
@@ -366,6 +380,78 @@ int main(void)
     CHECK(s_handed == 14 && s_second_input == XBOX_BIND_NO_INPUT && menu_bind_waiting() == 0 && g_open);
     for (int i = 0; i < 3; i++) show();
     /* No box: F1 shuts the menu, as ever. */
+    CHECK(event(SDL_KEYDOWN, SDL_SCANCODE_F1) && !g_open);
+    for (int i = 0; i < 30; i++) show();
+
+    /* F9's box. F9 with nothing up is the window's (sdl_pump), which puts
+     * the box up: drawn whole from its first frame built, every frame, with
+     * no menu; the pad on 720p, the choice in use. A: 720p handed to pick,
+     * the box shut, and nothing drawn after. */
+    CHECK(!event(SDL_KEYDOWN, SDL_SCANCODE_F9));
+    xbox_MenuBox(&k_box);
+    CHECK(g_box_up && !g_open);
+    {
+        int drawn = 0, boxed = 0, bar = 0;
+        show();
+        for (int i = 0; i < 10; i++) {
+            drawn += show();
+            boxed += s_drew_box;
+            bar += s_drew_bar;
+        }
+        fprintf(stderr, "F9's box: drawn %d of 10 frames, the box in %d, the bar in %d, alpha %.2f\n",
+                drawn, boxed, bar, ImGui::GetStyle().Alpha);
+        CHECK(drawn == 10 && boxed >= 9 && bar == 0 && ImGui::GetStyle().Alpha == 1.0f);
+    }
+    /* While it's up: a key and a click are its own; a pad's button goes on
+     * to the window, which keeps it from the game (xbox_MenuIsOpen). */
+    s_to_imgui = 0;
+    CHECK(event(SDL_KEYDOWN, SDL_SCANCODE_W) && s_to_imgui == 1);
+    CHECK(event(SDL_MOUSEBUTTONDOWN, SDL_BUTTON_LEFT) && s_to_imgui == 2);
+    CHECK(!event(SDL_CONTROLLERBUTTONDOWN, SDL_CONTROLLER_BUTTON_A) && s_to_imgui == 3);
+    /* Another can't come up over it, nor can the menu's F1 open it. */
+    xbox_MenuBox(&k_box);
+    CHECK(g_box_up);
+    pad_frame(ImGuiKey_GamepadFaceDown);
+    show();
+    fprintf(stderr, "F9's box: A, picked %d (%d times), up %d\n", s_box_picked, s_box_picks, g_box_up);
+    CHECK(s_box_picks == 1 && s_box_picked == 1 && !g_box_up && !g_open);
+    {
+        int drawn = 0;
+        for (int i = 0; i < 30; i++) drawn += show();
+        CHECK(drawn == 0);
+    }
+    /* Up again, on Match screen now: right, then A, picks... nothing past
+     * it but Cancel, which shuts it with nothing chosen. */
+    s_box_now = 2;
+    xbox_MenuBox(&k_box);
+    for (int i = 0; i < 3; i++) show();
+    pad_frame(ImGuiKey_GamepadDpadRight);
+    pad_frame(ImGuiKey_GamepadFaceDown);
+    show();
+    CHECK(s_box_picks == 1 && !g_box_up);
+    /* Up again: Esc, nothing chosen. */
+    xbox_MenuBox(&k_box);
+    for (int i = 0; i < 3; i++) show();
+    ImGui::GetIO().AddKeyEvent(ImGuiKey_Escape, true);
+    show();
+    ImGui::GetIO().AddKeyEvent(ImGuiKey_Escape, false);
+    show();
+    CHECK(s_box_picks == 1 && !g_box_up);
+    /* Up again: F9, F1 and the pad's Back each shut it, with nothing
+     * chosen, and open no menu. */
+    for (int key = 0; key < 3; key++) {
+        xbox_MenuBox(&k_box);
+        for (int i = 0; i < 3; i++) show();
+        CHECK(g_box_up);
+        CHECK(key == 2 ? event(SDL_CONTROLLERBUTTONDOWN, SDL_CONTROLLER_BUTTON_BACK)
+                       : event(SDL_KEYDOWN, key ? SDL_SCANCODE_F1 : SDL_SCANCODE_F9));
+        CHECK(!g_box_up && !g_open && s_box_picks == 1);
+        for (int i = 0; i < 3; i++) CHECK(!show());
+    }
+    /* With the menu open, no box comes up. */
+    CHECK(event(SDL_KEYDOWN, SDL_SCANCODE_F1) && g_open);
+    xbox_MenuBox(&k_box);
+    CHECK(!g_box_up);
     CHECK(event(SDL_KEYDOWN, SDL_SCANCODE_F1) && !g_open);
     for (int i = 0; i < 30; i++) show();
 

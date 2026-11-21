@@ -13,8 +13,9 @@ none, the others kept; and the settings file left as it was.
 Takes the settings file code from src/nv2a_gl/nv2a_gl.c verbatim
 (sdl_cfg_path through nv_window_pref_shape, which nv2a_widescreen() and its
 shape ask at start), as tests/intro takes it up to nv_window_pref_widescreen,
-linked with src/nv2a_gl/nv2a_wide.c for the shapes' keys. Each case gets its
-own settings file, passed as JSRF_SETTINGS_FILE, or none.
+linked with src/nv2a_gl/nv2a_wide.c for the shapes' keys, and with
+src/nv2a_gl/nv2a_scale.c, which nv2a_wide.c sizes its rasters by. Each case
+gets its own settings file, passed as JSRF_SETTINGS_FILE, or none.
 Requires GCC on PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
 """
@@ -61,7 +62,8 @@ with tempfile.TemporaryDirectory(prefix="widescreen-settings-") as directory:
     work = pathlib.Path(directory)
     exe = str(work / "test.exe")
     command = cc + ["-std=c11", "-DNV2A_GL_USE_SDL=1", "-Isrc/nv2a_gl", "-x", "c", "-",
-                    "-x", "none", "src/nv2a_gl/nv2a_wide.c", "-lm", "-o", exe]
+                    "-x", "none", "src/nv2a_gl/nv2a_wide.c", "src/nv2a_gl/nv2a_scale.c",
+                    "-lm", "-o", exe]
     subprocess.run(command, cwd=root, input=source, text=True, check=True)
     for name, text in cases.items():
         path = work / (name + ".cfg")

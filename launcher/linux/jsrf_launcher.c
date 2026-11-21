@@ -9,7 +9,11 @@
  *   ./jsrf-pc                  play (asks where the game is, the first time)
  *   ./jsrf-pc /path/to/game    use that folder (or a disc image -- see below), and remember it
  *   ./jsrf-pc --choose         ask where the game is again
- *   ./jsrf-pc --scale N        internal resolution, 1 to 6 times 640x480 (default 3); remembered
+ *   ./jsrf-pc --resolution R   the height the game is drawn at: default (the Xbox's 640x480),
+ *                              720, 900, 1080, 1440, 1600, 2160, or match (the screen's, which
+ *                              it is unless you choose); remembered
+ *   ./jsrf-pc --scale N        as before, 1 to 6 times 640x480: the resolution at least that
+ *                              high, up to 2160; remembered
  *   ./jsrf-pc --fullscreen     start full screen
  *   ./jsrf-pc --minimized      start minimized, in a window, on a desktop
  *   ./jsrf-pc --play FOLDER    play a recording (Developer > Playback), and close at its end
@@ -49,10 +53,8 @@
 #include <unistd.h>
 
 #include "../setup/setup.h"
+#include "../../src/nv2a_gl/nv2a_scale.h"
 
-/* The scales the engine draws at, 1x to this: its NV2A_SCALE_MAX
- * (src/nv2a_gl/nv2a_scale.h), one digit. */
-#define SCALE_MAX 6
 #define FOLD 72
 
 static const char HELP[] =
@@ -64,7 +66,11 @@ static const char HELP[] =
     "  ./jsrf-pc                  play (asks where the game is, the first time)\n"
     "  ./jsrf-pc /path/to/game    use that folder (or a disc image -- see below), and remember it\n"
     "  ./jsrf-pc --choose         ask where the game is again\n"
-    "  ./jsrf-pc --scale N        internal resolution, 1 to 6 times 640x480 (default 3); remembered\n"
+    "  ./jsrf-pc --resolution R   the height the game is drawn at: default (the Xbox's 640x480),\n"
+    "                             720, 900, 1080, 1440, 1600, 2160, or match (the screen's, which\n"
+    "                             it is unless you choose); remembered\n"
+    "  ./jsrf-pc --scale N        as before, 1 to 6 times 640x480: the resolution at least that\n"
+    "                             high, up to 2160; remembered\n"
     "  ./jsrf-pc --fullscreen     start full screen\n"
     "  ./jsrf-pc --minimized      start minimized, in a window, on a desktop\n"
     "  ./jsrf-pc --play FOLDER    play a recording (Developer > Playback), and close at its end\n"
@@ -689,15 +695,21 @@ static int copy_tree(const char *from, const char *to)
 
 /* ---- the start ---------------------------------------------------------------- */
 
-static int scale_ok(const char *s)
+/* --resolution's names, as the settings file keeps them (nv2a_scale_key):
+ * "default, 720, ... or match". */
+static void res_names(char *out, size_t n)
 {
-    return s && s[0] >= '1' && s[0] <= '0' + SCALE_MAX && !s[1];
+    int c;
+    out[0] = 0;
+    for (c = 0; c < NV2A_SCALE_CHOICES; c++)
+        fmt(out + strlen(out), n - strlen(out), "%s%s",
+            !c ? "" : c + 1 < NV2A_SCALE_CHOICES ? ", " : " or ", nv2a_scale_key(c));
 }
 
 int main(int argc, char **argv)
 {
     char exe[PATH_MAX], p[PATH_MAX + 64], game[PATH_MAX * 2], last[PATH_MAX * 2], why[4096];
-    char log[PATH_MAX + 64], scale[16], play[PATH_MAX] = "";
+    char log[PATH_MAX + 64], play[PATH_MAX] = "";
     const char *arg = NULL, *ld;
     int i, choose = 0, fullscreen = 0, minimized = 0, status;
     ssize_t l = readlink("/proc/self/exe", exe, sizeof exe - 1);
@@ -758,10 +770,23 @@ int main(int argc, char **argv)
     for (i = 1; i < argc; i++) {
         const char *a = argv[i];
         if (!strcmp(a, "--choose")) choose = 1;
-        else if (!strcmp(a, "--scale")) {
+        /* The resolution, by its name or as the scale before it
+         * (nv2a_scale.h), kept as the engine keeps it, resolution=, which it
+         * reads as it starts. */
+        else if (!strcmp(a, "--resolution")) {
             const char *v = i + 1 < argc ? argv[++i] : "";
-            if (scale_ok(v)) cfg_set("scale", v);
-            else failf("--scale takes 1 to %d.", SCALE_MAX);
+            int r = nv2a_scale_parse(v);
+            if (r < 0) {
+                char names[160];
+                res_names(names, sizeof names);
+                failf("--resolution takes %s.", names);
+            }
+            cfg_set("resolution", nv2a_scale_key(r));
+        } else if (!strcmp(a, "--scale")) {
+            const char *v = i + 1 < argc ? argv[++i] : "";
+            int r = nv2a_scale_of_old(v);
+            if (r < 0) failf("--scale takes 1 to %d.", NV2A_SCALE_OLD_MAX);
+            cfg_set("resolution", nv2a_scale_key(r));
         } else if (!strcmp(a, "--fullscreen")) fullscreen = 1;
         else if (!strcmp(a, "--minimized")) minimized = 1;
         else if (!strcmp(a, "--play")) {
@@ -870,17 +895,13 @@ int main(int argc, char **argv)
         }
     }
 
-    /* The scale the player chose, if any: without one the engine takes its
-     * own default (NV2A_SCALE_DEFAULT, src/nv2a_gl/nv2a_scale.h). */
-    if (!cfg_get("scale", scale, sizeof scale) || !scale_ok(scale)) scale[0] = 0;
-
     fmt(log, sizeof log, "%s/last-run.log", g_state);
     keep_logs(log);
 
     /* The paths and the player's settings, and no switch: what the game
-     * needs is the engine's own default (tests/launcher_env checks). */
-    if (scale[0]) setenv("RECOMP_GL_SCALE", scale, 1);
-    else unsetenv("RECOMP_GL_SCALE");
+     * needs is the engine's own default (tests/launcher_env checks). The
+     * resolution isn't among them: the engine reads it from the settings
+     * file. */
     if (fullscreen) setenv("RECOMP_FULLSCREEN", "1", 1);
     if (minimized) setenv("RECOMP_MINIMIZED", "1", 1);
     /* A recording to play, by its whole path, as the engine runs elsewhere. */

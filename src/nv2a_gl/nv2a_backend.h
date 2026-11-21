@@ -61,10 +61,12 @@
  * and everything it can observe stays 640x480 -- the surface, the clip
  * rectangles, its screen-space passes. The raster does not have to: the
  * transform ends in normalised coordinates. So targets are created at the
- * raster's size and only rectangles (scissor, clear) are multiplied by the
- * scale, in the front half, before they cross this line -- each axis by its
- * own, since a widened frame's raster is wider than the scale's multiple of
- * 640x480 (nv2a_wide.h).
+ * raster's size, and resized when the resolution changes (target_resize),
+ * and only rectangles (scissor, clear) are taken from the title's pixels to
+ * the raster's, in the front half, before they cross this line -- each axis
+ * by its own, since neither is a whole multiple of 640x480 in general: the
+ * height is the resolution's lines over 480 (nv2a_scale.h), and a widened
+ * frame is wider again (nv2a_wide.h).
  *
  * A PROGRAM CACHE SIZED FOR A MENU IS NOT SIZED FOR A LEVEL. 128 entries had
  * the driver's shader compiler taking a fifth of every frame, forever, because

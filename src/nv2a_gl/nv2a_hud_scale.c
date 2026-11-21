@@ -47,7 +47,7 @@ void nv2a_hud_anchor(int side, int low, float s, float *ax, float *ay)
 }
 
 /* How far past a whole pixel a clip's edge must land to be taken past it:
- * more than a float's error in the anchor's pixels at any render scale
+ * more than a float's error in the anchor's pixels at any resolution
  * (440 comes out as 439.99997), far less than a pixel. */
 #define HUD_CLIP_SLACK (1.0f / 256.0f)
 

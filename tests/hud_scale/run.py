@@ -29,15 +29,18 @@ if steps != 2:
 if vsh.count("uniform vec3 hudSize;") != 1:
     sys.exit("hud_scale: nv2a_vsh.c doesn't declare hudSize once")
 
-# Display's rows (nv2a_gl.c, sdl_menu_display), by text: Fullscreen, Render
-# scale, Aspect ratio, then the HUD submenu, added in that order
+# Display's rows (nv2a_gl.c, sdl_menu_display), by text: Fullscreen,
+# Resolution, Aspect ratio, then the HUD submenu, added in that order
 # (spriteice: "Render scale up", HUD scaling "as it's own submenu under
-# aspect ratio", and its name, "HUD"), with HUD scale and Disable HUD in it; Draw distance's rows
+# aspect ratio", and its name, "HUD"; Render scale became Resolution,
+# applied at once, on 2026-11-21), with HUD scale and Disable HUD in it; Draw distance's rows
 # go under the submenu (port/draw_distance.c). Each row as the menu's rules
 # have a row (menu.h, docs/menu-format.md): a hint of one sentence of at
 # most MENU_HINT_LONGEST characters; HUD scale a number from 0.5x to 1.5x a
 # tenth a step, and both rows at the HUD's own (1x, shown) in each of File >
-# Presets' three.
+# Presets' three. Resolution applies at once, so it asks nothing and keeps
+# nothing for a restart, and it is Default in Xbox mode and Match screen in
+# JSRF-PC default and Max quality (spriteice, 01:29 UTC on 2026-11-21).
 gl = (root / "src/nv2a_gl/nv2a_gl.c").read_text(encoding="utf-8")
 start = gl.find("static void sdl_menu_display(void)\n{")
 if start < 0:
@@ -50,15 +53,26 @@ draw = (root / "port/draw_distance.c").read_text(encoding="utf-8")
 if f'#define DRAW_UNDER     "{group.group(1)}"' not in draw:
     sys.exit("hud_scale: Draw distance's rows don't go under HUD")
 labels = re.findall(r'\.label = ("[^"]+"|\w+)', display)
-if labels != ['"Fullscreen"', '"Render scale (Restart)"', '"Aspect ratio"', "SDL_HUD_GROUP",
+if labels != ['"Fullscreen"', '"Resolution"', '"Aspect ratio"', "SDL_HUD_GROUP",
               '"HUD scale"', '"Disable HUD"', "XBOX_GROUP_ENHANCEMENTS", "XBOX_GROUP_SKIPS",
               "XBOX_GROUP_SOULS"]:
     sys.exit(f"hud_scale: Display's rows are {labels}")
 adds = re.findall(r"xbox_MenuAdd\((&?\w+)", display)
-if adds != ["&fullscreen", "&scale", "rows", "groups"]:
+if adds != ["&fullscreen", "&res", "rows", "groups"]:
     sys.exit(f"hud_scale: Display's rows are added as {adds}")
 longest = int(re.search(r"#define MENU_HINT_LONGEST (\d+)",
                         (root / "src/menu/menu.h").read_text(encoding="utf-8")).group(1))
+res = display[display.index("const XBOX_MENU_ITEM res = {"):display.index("};", display.index("const XBOX_MENU_ITEM res = {"))]
+if ".confirm" in res or ".keep" in res or "(Restart)" in res:
+    sys.exit("hud_scale: Resolution asks first or keeps for a restart")
+if ".preset = { NV2A_SCALE_XBOX, NV2A_SCALE_DEFAULT, NV2A_SCALE_DEFAULT }" not in res:
+    sys.exit("hud_scale: Resolution's presets aren't Default, then the default twice")
+if not re.search(r"#define NV2A_SCALE_DEFAULT NV2A_SCALE_MATCH\b",
+                 (root / "src/nv2a_gl/nv2a_scale.h").read_text(encoding="utf-8")):
+    sys.exit("hud_scale: the resolution's default isn't Match screen")
+hint = re.search(r'\.hint = "([^"]+)"', res)
+if not hint or len(hint.group(1)) > longest or not hint.group(1).endswith("."):
+    sys.exit(f"hud_scale: Resolution's hint is {hint and hint.group(1)!r}")
 rows = {}
 for label, end in (("SDL_HUD_GROUP", '"HUD scale"'), ('"HUD scale"', '"Disable HUD"'),
                    ('"Disable HUD"', "XBOX_GROUP_ENHANCEMENTS")):

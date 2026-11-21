@@ -38,10 +38,11 @@ static int nv_window_pref_num(const char *key, double *v)
 #endif
 
 /* The rows go right under the window's HUD submenu (nv2a_gl.c), its last
- * row: Display's order is Fullscreen, Render scale, Aspect ratio, HUD, then
+ * row: Display's order is Fullscreen, Resolution, Aspect ratio, HUD, then
  * Draw distance and Building distance (spriteice, 12 November 2026: "Render
  * scale up", on the card at 06:19 UTC, and HUD scaling "as it's own submenu
- * under aspect ratio", at 09:37 UTC, named HUD on the card at 09:43 UTC).
+ * under aspect ratio", at 09:37 UTC, named HUD on the card at 09:43 UTC;
+ * Render scale became Resolution on 21 November 2026).
  * Building distance is a submenu of Far buildings, then Far shadows, on by
  * default, its hint giving the glitches it can cause (spriteice, 13 November
  * 2026, 10:17 UTC, and 11:59 UTC: "the pop in reduction is worth the

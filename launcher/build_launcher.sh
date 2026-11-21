@@ -22,8 +22,10 @@ obj="${3:?a folder for the objects}"
 shift 3
 rm -rf "$obj"; mkdir -p "$obj"
 
+# With the renderer's resolution choices (src/nv2a_gl/nv2a_scale.c), so
+# --resolution and --scale take and keep what the engine does.
 srcs=("$repo/launcher/$system/jsrf_launcher.c" "$repo/launcher/setup/setup_core.c"
-      "$repo/port/xiso.c" "$repo/port/xbe_check.c")
+      "$repo/port/xiso.c" "$repo/port/xbe_check.c" "$repo/src/nv2a_gl/nv2a_scale.c")
 imgui=("$repo/third_party/imgui/imgui.cpp" "$repo/third_party/imgui/imgui_draw.cpp"
        "$repo/third_party/imgui/imgui_tables.cpp" "$repo/third_party/imgui/imgui_widgets.cpp"
        "$repo/third_party/imgui/backends/imgui_impl_sdl2.cpp" "$repo/third_party/imgui/backends/imgui_impl_opengl3.cpp")

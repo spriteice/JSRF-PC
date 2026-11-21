@@ -797,9 +797,9 @@ static uint32_t g_slot_prev[SLOTCENSUS_MAX];
  * the hunt itself, or by the end-of-frame brightness watcher below. */
 int g_darkhunt_at = -1;
 /* The current surface's raster, its real size (g_surf[].pw, ph). Equal to
- * the logical size unless RECOMP_GL_SCALE asks for more -- see gl_scale().
- * Everything the title can observe uses the logical size; only the pixels
- * use this one. */
+ * the logical size at Display > Resolution's Default, and larger at the
+ * others -- see gl_lines(). Everything the title can observe uses the
+ * logical size; only the pixels use this one. */
 static uint32_t g_fbo_pw, g_fbo_ph;
 static uint8_t *g_readback;
 static uint32_t g_readback_bytes;
@@ -899,43 +899,50 @@ static struct { unsigned n; double decode_s, upload_s, worst;
  * 640x480 -- the surface it thinks it is drawing into, the clip rectangles it
  * sets, the coordinates its screen-space passes use. What does not have to be
  * 640x480 is the raster: the transform ends in normalised coordinates, so the
- * number of samples taken along the way is free. RECOMP_GL_SCALE=2 renders
- * four times the pixels into the same logical surface and hands the window a
- * frame at that size. Unset, it is the engine's default, NV2A_SCALE_DEFAULT
- * (3x): the launchers pass only a scale the player chose.
+ * number of samples taken along the way is free. The frame is drawn at as
+ * many lines as Display > Resolution or F9's box chose (nv2a_scale.h): the
+ * Xbox's own 480 (Default), 720 to 2160, or the height of the display the
+ * window is on (Match screen); every surface at that many lines over 480
+ * times its size, and a widened frame as wide as its shape at that height
+ * (nv2a_wide_raster). A choice is asked for at any time, on the window's
+ * thread, and taken at the next flip (res_take), every target resized with
+ * what it holds; the settings file keeps it as resolution= (res_start).
  *
  * This is where an idle GPU goes. At 640x480 an M2 Pro is bounded entirely by
  * the CPU side of the emulation and the GPU has nothing to do.
  */
-static uint32_t gl_scale(void)
+static volatile int g_res_want = -1;   /* the choice asked for; -1 none read yet */
+static int          g_res_now = -1;    /* and in use */
+static uint32_t     g_res_lines;       /* the lines it gives now; 0 none read yet */
+static void     res_start(void);
+static uint32_t res_lines(int choice);
+
+/* The lines the frame is drawn at now: its raster's height, the Xbox's 480
+ * lines at Default. The choice is read at the first ask (res_start). */
+static uint32_t gl_lines(void)
 {
-    static uint32_t sc;
-    if (!sc) {
-        const char *v = getenv("RECOMP_GL_SCALE");
-        sc = nv2a_scale_parse(v);
-        fprintf(stderr, "  [GL] internal resolution x%u%s\n", sc,
-                v ? "" : " (the default)");
-    }
-    return sc;
+    if (!g_res_lines) res_start();
+    return g_res_lines;
 }
 
 /* A column or row v of the current surface, which is `logical` of the
  * title's pixels across, in its raster's (`raster` across), to the nearest:
- * the render scale's multiple of it. */
+ * the resolution's lines over 480 times it. */
 static uint32_t raster_px(uint32_t v, uint32_t logical, uint32_t raster)
 {
-    if (!logical || !raster) return v * gl_scale();
+    if (!logical || !raster) return nv2a_scale_px(v, gl_lines());
     return (uint32_t)(((uint64_t)v * raster + logical / 2) / logical);
 }
 static uint32_t raster_x(uint32_t x) { return raster_px(x, g_fbo_w, g_fbo_pw); }
 static uint32_t raster_y(uint32_t y) { return raster_px(y, g_fbo_h, g_fbo_ph); }
 
 /* How many of the raster's pixels one of the current surface's is across,
- * on the axis that has more of them: the render scale. */
+ * on the axis that has more of them: the resolution's lines over 480. */
 static float raster_scale(void)
 {
     float sx, sy;
-    if (!g_fbo_w || !g_fbo_h || !g_fbo_pw || !g_fbo_ph) return (float)gl_scale();
+    if (!g_fbo_w || !g_fbo_h || !g_fbo_pw || !g_fbo_ph)
+        return (float)gl_lines() / (float)NV2A_SCALE_FRAME_H;
     sx = (float)g_fbo_pw / (float)g_fbo_w;
     sy = (float)g_fbo_ph / (float)g_fbo_h;
     return sx > sy ? sx : sy;
@@ -1166,18 +1173,22 @@ static int          g_aniso_now = ANISO_NONE;   /* and in use */
  * 2D upscaling (nv2a_upscale.h): the factor its copies are made at, 0 for
  * none, from the window's upscale_2d= setting, 4x unless set otherwise
  * (NV2A_UP_DEFAULT). It can change while the game runs: asked for at any
- * time (the in-game menu) and taken at the next flip (up_take). At render
- * scale 1x nothing is made (up_factor), as the game's own art is drawn at
- * its own size there.
+ * time (the in-game menu) and taken at the next flip (up_take). At
+ * Display > Resolution's Default, the Xbox's own 480 lines, nothing is made
+ * (up_factor), as the game's own art is drawn at its own size there; the
+ * copies go as the resolution comes down to it, and are made again as it
+ * goes above (up_take).
  */
 static volatile int g_up_want;  /* the factor asked for: 0, 2, 4 or 8 */
 static int          g_up_now;   /* and in use */
+static int          g_up_above; /* the resolution above Default, as up_take last saw it */
 static Nv2aUpSecond g_up_sec;   /* this second's work, for RECOMP_GL_UPSCALE_LOG */
 
 /*
  * 3D upscaling (nv2a_upscale.h): the same, from the window's upscale_3d=
- * setting, 4x unless set otherwise (NV2A_UP3_DEFAULT), and at every render
- * scale: a surface close to the camera magnifies its texture at 1x too.
+ * setting, 4x unless set otherwise (NV2A_UP3_DEFAULT), and at every
+ * resolution: a surface close to the camera magnifies its texture at
+ * Default too.
  */
 static volatile int g_up3_want; /* the factor asked for: 0, 2, 4 or 8 */
 static int          g_up3_now;  /* and in use */
@@ -1471,7 +1482,7 @@ static int gl_init(uint32_t w, uint32_t h)
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
     /* The window is not the game's resolution: the game draws 640x480, the
-     * renderer works at a multiple of that (RECOMP_GL_SCALE), and the window
+     * renderer works at Display > Resolution's lines (gl_lines), and the window
      * is whatever size the player makes it -- each frame is fitted into it
      * (sdl_present). It opens at 1280x960, or the wide shape at that height
      * when widescreen is on, shrunk to fit the screen. Match screen's shape
@@ -1498,8 +1509,7 @@ static int gl_init(uint32_t w, uint32_t h)
          * full screen as kept is left for the next. Otherwise full screen as
          * the player last left it (sdl_choose_fullscreen), and full screen
          * until they choose, unless RECOMP_FULLSCREEN says otherwise: the
-         * launchers' --fullscreen, or a new scale's restart
-         * (sdl_restart_at). */
+         * launchers' --fullscreen, or a restart's (sdl_restart). */
         minimized = (e = getenv("RECOMP_MINIMIZED")) && atoi(e);
         if (minimized)
             flags |= SDL_WINDOW_HIDDEN;
@@ -2049,8 +2059,7 @@ static void sdl_toggle_fullscreen(void)
 }
 
 /* F11 and the in-game menu's Fullscreen: the player's choice, kept as
- * "fullscreen" for the next start (gl_init). Not the resolution box's step
- * out of full screen and back (sdl_choose_scale), which is no choice. */
+ * "fullscreen" for the next start (gl_init). */
 static void sdl_choose_fullscreen(void)
 {
     sdl_toggle_fullscreen();
@@ -2081,17 +2090,11 @@ static void sdl_wide_window(void)
             on ? nv2a_wide_shape_names[nv2a_wide_shape()] : "4:3", (double)a);
 }
 
-/* F9: the internal resolution, 1x to 6x the Xbox's 640x480 (NV2A_SCALE_MAX),
- * every one of them on every system. The renderer sizes its targets once, at
- * start-up, so a new one means starting again: after asking, the choice is
- * stored under the launchers' own "scale" key (they pass it on as
- * RECOMP_GL_SCALE), put in the environment and the engine relaunches itself
- * (port/main.c) -- in full screen again if that is where it was. */
+/* The engine started again (port/main.c's recomp_restart_self), in full
+ * screen again if that is where it was, and minimized again if the window is
+ * now (RECOMP_MINIMIZED, gl_init): for Graphics > Shader cache, Audio
+ * effects and File > Restart. */
 extern void recomp_restart_self(void) __attribute__((weak));
-
-/* The engine started again, in full screen again if that is where it was,
- * and minimized again if the window is now (RECOMP_MINIMIZED, gl_init): for
- * a new scale, and for Graphics > Shader cache. */
 static void sdl_restart(int fs)
 {
     int minimized = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_MINIMIZED) != 0;
@@ -2105,115 +2108,96 @@ static void sdl_restart(int fs)
     recomp_restart_self();      /* does not return when it works */
 }
 
-/* A scale kept for the next start: as the launchers' "scale" key, which
- * they pass on as RECOMP_GL_SCALE, and in this run's RECOMP_GL_SCALE, which
- * the engine starts again with (port/main.c). */
-static void sdl_scale_keep(int pick)
-{
-    char val[12];                   /* room for any int */
-    sdl_cfg_set("scale", pick);
-    snprintf(val, sizeof val, "%d", pick);
-#if defined(_WIN32)
-    _putenv_s("RECOMP_GL_SCALE", val);
-#else
-    setenv("RECOMP_GL_SCALE", val, 1);
-#endif
-}
-
-static void sdl_restart_at(int pick, int fs)
-{
-    if (!recomp_restart_self) return;
-    sdl_scale_keep(pick);
-    fprintf(stderr, "[WIN] resolution %dx chosen; restarting\n", pick);
-    sdl_restart(fs);
-}
-
-/* Keys held when a box took the keyboard, or the window lost focus, never
- * see their release; nor do mouse buttons. */
+/* Keys held when the window lost focus never see their release; nor do
+ * mouse buttons. */
 static void sdl_keys_release(void)
 {
     int i;
     for (i = 0; i < NV_KEY_WORDS; i++) __atomic_store_n(&g_sdl_held[i], 0, __ATOMIC_RELAXED);
 }
 
-/* Render scale's names as F9's box and the menu's row show them: each
- * scale's raster of the frame at the shape it is drawn at now, widescreen's
- * while it is on (nv2a_wide_scale_name): "3x  2560x1440" at 16:9. Made
- * again when the shape changes, on this thread, which builds the menu. */
-static char        g_scale_name_buf[NV2A_SCALE_MAX][32];
-static const char *g_scale_names[NV2A_SCALE_MAX];
-static float sdl_scale_shape(void) { return nv2a_widescreen() ? nv2a_wide_aspect() : NV2A_WIDE_4_3; }
-static void sdl_scale_names(void)
-{
-    static float made = -1.0f;
-    float a = sdl_scale_shape();
-    int i;
-    if (a == made) return;
-    made = a;
-    for (i = 0; i < NV2A_SCALE_MAX; i++) {
-        nv2a_wide_scale_name(g_scale_name_buf[i], sizeof g_scale_name_buf[i], (uint32_t)(i + 1), a);
-        g_scale_names[i] = g_scale_name_buf[i];
-    }
-}
+/* Display > Resolution and F9's box (nv2a_scale.h): the lines the game is
+ * drawn at, asked for on this thread and taken at the next flip (res_take),
+ * kept as resolution= ("default", "720", ... "match": nv2a_scale_key). */
+#define SDL_CFG_RES "resolution"
+/* Its key from before resolution=: 1x to 6x the Xbox's 640x480, as the
+ * launchers, F9 and the menu kept it. */
+#define SDL_CFG_OLD_SCALE "scale"
 
-static void sdl_choose_scale(void)
+/* resolution='s last line as a choice; with none that is one, scale='s from
+ * before it (nv2a_scale_of_old), so a player keeps the picture they had, or
+ * a sharper one; and with neither, the engine's default. *from says which,
+ * for the log. Read once, as the renderer starts (res_start). */
+static int sdl_res_pref(const char **from)
 {
-    SDL_MessageBoxButtonData b[NV2A_SCALE_MAX + 1];
-    SDL_MessageBoxData box;
-    char msg[512];
-    int cur = (int)gl_scale(), pick = -1, i, was_fs;
-    uint32_t cw, ch;
-    float cshape;
-    if (!recomp_restart_self) return;
-    sdl_scale_names();
-    nv2a_wide_raster(NV2A_SCALE_FRAME_W, NV2A_SCALE_FRAME_H, (uint32_t)cur, sdl_scale_shape(),
-                     &cw, &ch, &cshape);
-    /* The box is modal: the game waits for an answer. Over a full-screen
-     * window it was hidden behind the game on Windows, so the game simply
-     * looked hung until Alt+F4 closed the box it could not see. So full
-     * screen is left while it is up, and put back if nothing is chosen. */
-    was_fs = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
-    if (was_fs) sdl_toggle_fullscreen();
-    for (i = 0; i < NV2A_SCALE_MAX; i++) {
-        b[i].flags    = i + 1 == cur ? SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT : 0;
-        b[i].buttonid = i + 1;
-        b[i].text     = g_scale_names[i];
+    char path[1024], line[1200];
+    size_t rl = strlen(SDL_CFG_RES), ol = strlen(SDL_CFG_OLD_SCALE);
+    int res = -1, old = -1;
+    FILE *f;
+    sdl_cfg_path(path, sizeof path);
+    if (path[0] && (f = fopen(path, "r"))) {
+        while (fgets(line, sizeof line, f)) {
+            if (!strncmp(line, SDL_CFG_RES, rl) && line[rl] == '=')
+                res = nv2a_scale_parse(line + rl + 1);
+            else if (!strncmp(line, SDL_CFG_OLD_SCALE, ol) && line[ol] == '=')
+                old = nv2a_scale_of_old(line + ol + 1);
+        }
+        fclose(f);
     }
-    b[NV2A_SCALE_MAX].flags    = SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
-    b[NV2A_SCALE_MAX].buttonid = 0;
-    b[NV2A_SCALE_MAX].text     = "Cancel";
-    /* Short lines: SDL's own X11 message box does not wrap, and cut the
-     * first line off at its width. */
-    snprintf(msg, sizeof msg,
-             "The game is drawn at a multiple of the Xbox's 640x480,\n"
-             "then fitted to the window. Higher is sharper and asks\n"
-             "more of the graphics card; 6x suits a 4K screen.\n"
-             "Now: %dx (%dx%d).\n\n"
-             "Changing it restarts the game: anything since\n"
-             "your last save is lost.",
-             cur, (int)cw, (int)ch);
-    memset(&box, 0, sizeof box);
-    box.flags      = SDL_MESSAGEBOX_INFORMATION | SDL_MESSAGEBOX_BUTTONS_LEFT_TO_RIGHT;
-    box.window     = g_window;
-    box.title      = "Resolution";
-    box.message    = msg;
-    box.numbuttons = NV2A_SCALE_MAX + 1;
-    box.buttons    = b;
-    if (SDL_ShowMessageBox(&box, &pick) != 0 || pick < 1 || pick > NV2A_SCALE_MAX || pick == cur) {
-        if (was_fs) sdl_toggle_fullscreen();
-        sdl_keys_release();
-        return;
-    }
-    sdl_restart_at(pick, was_fs);
+    if (res >= 0) { *from = "the settings"; return res; }
+    if (old >= 0) { *from = "the settings' scale=, from before resolution="; return old; }
+    *from = "the engine's default";
+    return NV2A_SCALE_DEFAULT;
 }
 
 #if defined(XBOXRECOMP_MENU)
 /* The in-game menu's Display rows (menu.h): the switches F11, F10 and F9
  * are, so each setting still lives here, once, and is saved as before. */
 static int  sdl_is_fullscreen(void) { return (SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0; }
-static int  sdl_scale_now(void)     { return (int)gl_scale() - 1; }
-static void sdl_scale_pick(int i)   { sdl_restart_at(i + 1, sdl_is_fullscreen()); }
-static void sdl_scale_keep_choice(int i) { sdl_scale_keep(i + 1); }   /* File > Presets */
+
+/* Display > Resolution and F9's box: the choice asked for, which the next
+ * flip takes (res_take), and a choice asked for and kept. Match screen
+ * looks at the display the window is on first, as Aspect ratio's does. */
+static int sdl_res_now(void)
+{
+    gl_lines();                 /* the settings read, if nothing has yet */
+    return g_res_want;
+}
+static void sdl_res_pick(int i)
+{
+    if (i < 0 || i >= NV2A_SCALE_CHOICES) return;
+    if (i == NV2A_SCALE_MATCH) sdl_wide_display();
+    g_res_want = i;
+    sdl_cfg_put(SDL_CFG_RES, nv2a_scale_key(i));
+}
+
+/* F9's box (menu_sdl.h, xbox_MenuBox): laid out as the SDL message box
+ * before it was -- the title, a few short lines with the choice asked for
+ * and the frame it makes at the shape drawn now, then a button a choice and
+ * Cancel -- in the in-game menu's style, and F9's alone (spriteice, 01:25
+ * UTC on 2026-11-21). A choice is taken as the menu's row takes it. */
+static const char *sdl_res_text(void)
+{
+    static char buf[256];
+    int c = sdl_res_now();
+    uint32_t pw, ph;
+    float shape;
+    nv2a_wide_raster(NV2A_SCALE_FRAME_W, NV2A_SCALE_FRAME_H, res_lines(c),
+                     nv2a_widescreen() ? nv2a_wide_aspect() : NV2A_WIDE_4_3, &pw, &ph, &shape);
+    snprintf(buf, sizeof buf,
+             "The game is drawn at this height, then fitted to the window.\n"
+             "Higher is sharper and asks more of the graphics card.\n"
+             "Now: %s (%ux%u).", nv2a_scale_names[c], (unsigned)pw, (unsigned)ph);
+    return buf;
+}
+static void sdl_res_box(void)
+{
+    static const XBOX_MENU_BOX box = {
+        .title = "Resolution", .text = sdl_res_text,
+        .choices = nv2a_scale_names, .nchoices = NV2A_SCALE_CHOICES,
+        .state = sdl_res_now, .pick = sdl_res_pick };
+    xbox_MenuBox(&box);
+}
 
 /* Display > Aspect ratio: 4:3 is widescreen off, as F10 turns it off; any
  * other is widescreen on at that shape, kept as aspect= (with widescreen=,
@@ -2283,26 +2267,28 @@ static void sdl_hud_off_flip(void)
 
 static void sdl_menu_display(void)
 {
-    /* Fullscreen, Render scale, Aspect ratio, then the HUD submenu
+    /* Fullscreen, Resolution, Aspect ratio, then the HUD submenu
      * (spriteice, 12 November 2026: "Render scale up", on the card at 06:19
-     * UTC, and the submenu under Aspect ratio, at 09:37 UTC). The presets
+     * UTC, and the submenu under Aspect ratio, at 09:37 UTC; Render scale
+     * became Resolution, applied at once, on 21 November 2026). The presets
      * (File > Presets) set every row: full screen in each, as the console
      * filled the TV and a new install starts; Xbox mode is the console's 4:3
-     * at its 640x480. */
+     * at its 640x480 (spriteice, 01:29 UTC on 2026-11-21: "For Xbox mode,
+     * "Default" is the default, For JSRF-PC defaults and Max quality, "Match
+     * Screen" is default."). */
     const XBOX_MENU_ITEM fullscreen = {
         .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Fullscreen",
         .state = sdl_is_fullscreen, .run = sdl_choose_fullscreen,
         .presets = XBOX_PRESETS_SET,
         .preset = { 1, SDL_CFG_FULLSCREEN_DEFAULT, SDL_CFG_FULLSCREEN_DEFAULT },
         .hint = "The window becomes fullscreen." };
-    const XBOX_MENU_ITEM scale = {
-        .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Render scale (Restart)",
-        .state = sdl_scale_now, .pick = sdl_scale_pick,
-        .choices = g_scale_names, .nchoices = NV2A_SCALE_MAX,
-        .confirm = "Apply selection and restart, losing unsaved progress?",
-        .presets = XBOX_PRESETS_SET, .keep = sdl_scale_keep_choice,
-        .preset = { 0, NV2A_SCALE_DEFAULT - 1, NV2A_SCALE_MAX - 1 },  /* 1x, 3x, 6x */
-        .hint = "The game's drawn resolution, shown for your aspect ratio. GPU heavy." };
+    const XBOX_MENU_ITEM res = {
+        .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Resolution",
+        .state = sdl_res_now, .pick = sdl_res_pick,
+        .choices = nv2a_scale_names, .nchoices = NV2A_SCALE_CHOICES,
+        .presets = XBOX_PRESETS_SET,
+        .preset = { NV2A_SCALE_XBOX, NV2A_SCALE_DEFAULT, NV2A_SCALE_DEFAULT },
+        .hint = "Sets the height the game is drawn at. GPU heavy." };
     const XBOX_MENU_ITEM rows[] = {
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Aspect ratio",
           .state = sdl_aspect_now, .pick = sdl_aspect_pick,
@@ -2338,10 +2324,8 @@ static void sdl_menu_display(void)
         { .menu = XBOX_MENU_GAMEPLAY, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_SOULS,
           .hint = "Helps with the graffiti soul challenges." },
     };
-    sdl_scale_names();                      /* Render scale's names, for the shape now */
     xbox_MenuAdd(&fullscreen, 1);
-    /* A new scale is a restart, which not every port can do (F9 asks the same). */
-    if (recomp_restart_self) xbox_MenuAdd(&scale, 1);
+    xbox_MenuAdd(&res, 1);
     xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
     xbox_MenuAdd(groups, (int)(sizeof groups / sizeof groups[0]));
 }
@@ -2479,7 +2463,7 @@ static void sdl_menu_up(void)
           .presets = XBOX_PRESETS_SET,
           .preset = { nv2a_up_choice(0), nv2a_up_choice(NV2A_UP_DEFAULT), nv2a_up_choice(8) },
           .group = XBOX_GROUP_UPSCALING,
-          .hint = "Sharpens menus, text and the HUD at higher render scales." },
+          .hint = "Sharpens menus, text and the HUD at higher resolutions." },
     };
     if (G->tex_upscale) xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
 }
@@ -2504,7 +2488,7 @@ static void sdl_menu_up3(void)
         .presets = XBOX_PRESETS_SET,
         .preset = { nv2a_up_choice(0), nv2a_up_choice(NV2A_UP3_DEFAULT), nv2a_up_choice(8) },
         .group = XBOX_GROUP_UPSCALING,
-        .hint = "Sharpens textures in the 3D world at higher render scales." };
+        .hint = "Sharpens textures in the 3D world at higher resolutions." };
     if (G->tex_upscale) xbox_MenuAdd(&row, 1);
 }
 
@@ -2528,7 +2512,7 @@ static void sdl_menu_upg(void)
         .presets = XBOX_PRESETS_SET,
         .preset = { nv2a_up_choice(0), nv2a_up_choice(NV2A_UPG_DEFAULT), nv2a_up_choice(8) },
         .group = XBOX_GROUP_UPSCALING,
-        .hint = "Sharpens the graffiti tags at higher render scales." };
+        .hint = "Sharpens the graffiti tags at higher resolutions." };
     if (G->tex_upscale) xbox_MenuAdd(&row, 1);
 }
 
@@ -3238,7 +3222,9 @@ static void sdl_pump(void)
                     break;
                 }
                 if (k == SDL_SCANCODE_F10) { sdl_toggle_widescreen(); break; }
-                if (k == SDL_SCANCODE_F9)  { sdl_choose_scale(); break; }
+#if defined(XBOXRECOMP_MENU)
+                if (k == SDL_SCANCODE_F9)  { sdl_res_box(); break; }
+#endif
                 if (sdl_hotkey(k)) break;
             }
             sdl_key(ev.key.keysym.scancode, 1);
@@ -3280,7 +3266,6 @@ static void sdl_pump(void)
     }
     sdl_mouse_hold();
 #if defined(XBOXRECOMP_MENU)
-    sdl_scale_names();                          /* the shape may have changed */
     xbox_MenuFrame();                           /* nothing once it has shut */
 #endif
 }
@@ -3394,9 +3379,10 @@ static void surface_bind(uint32_t offset, uint32_t w, uint32_t h)
     float shape;
 
     if (!w || !h || w > 4096 || h > 4096) return;
-    /* The raster: the render scale's multiple of the surface, and the
-     * frame of a widened scene as wide as its shape (nv2a_wide_raster). */
-    nv2a_wide_raster(w, h, gl_scale(), nv2a_wide_scene() ? nv2a_wide_aspect() : 0.0f,
+    /* The raster: the surface at the resolution's lines over 480 times its
+     * size, and the frame of a widened scene as wide as its shape at that
+     * height (nv2a_wide_raster). */
+    nv2a_wide_raster(w, h, gl_lines(), nv2a_wide_scene() ? nv2a_wide_aspect() : 0.0f,
                      &pw, &ph, &shape);
 
     for (i = 0; i < SURF_CACHE; i++) {
@@ -3420,7 +3406,9 @@ static void surface_bind(uint32_t offset, uint32_t w, uint32_t h)
 
     /* Made again when the raster it wants has changed too: the frame, when
      * widescreen or its shape changes, or the scene goes from 4:3 to
-     * widened. What it held is lost; the title draws it again. */
+     * widened. What it held is lost; the title draws it again. (A new
+     * resolution resizes every target at the flip instead, with what it
+     * holds: res_take.) */
     if (!g_surf[slot].used || g_surf[slot].offset != offset
      || g_surf[slot].w != w || g_surf[slot].h != h
      || g_surf[slot].pw != pw || g_surf[slot].ph != ph) {
@@ -4430,10 +4418,16 @@ static uint32_t upload_texture(const TexStage *t)
     return r;
 }
 
-/* 2D upscaling's factor now: the row's, but none at render scale 1x. */
+/* Whether the resolution in use is above Default's 480 lines. */
+static int up_res_above(void)
+{
+    return gl_lines() > NV2A_SCALE_FRAME_H;
+}
+
+/* 2D upscaling's factor now: the row's, but none at Default. */
 static int up_factor(void)
 {
-    return gl_scale() > 1 ? g_up_now : 0;
+    return up_res_above() ? g_up_now : 0;
 }
 
 /*
@@ -5372,16 +5366,24 @@ static void up_take(void)
     uint32_t k;
     int f;
     up_seen_frame();
-    if (g_up_want != g_up_now) {
+    /* The row changed, or the resolution went to Default or above it: the
+     * copies made go, to be made again at the factor up_factor gives. */
+    if (g_up_want != g_up_now || up_res_above() != g_up_above) {
         uint32_t n = 0;
         int was = g_up_now;
         g_up_now = g_up_want;
+        g_up_above = up_res_above();
         for (k = 0; k < TEX_CACHE; k++) {
             if (g_tcache[k].tex && g_tcache[k].up == UP_MADE) { tcache_drop(k); n++; }
             else if (g_tcache[k].up == UP_FAILED) g_tcache[k].up = UP_WANTED;
         }
-        fprintf(stderr, "  [GL] 2D upscaling: %dx from present %u (was %dx; 0 is off), "
-                "%u textures made again\n", g_up_now, S.flips, was, n);
+        if (was != g_up_now)
+            fprintf(stderr, "  [GL] 2D upscaling: %dx from present %u (was %dx; 0 is off), "
+                    "%u textures made again\n", g_up_now, S.flips, was, n);
+        else if (g_up_now)
+            fprintf(stderr, "  [GL] 2D upscaling: %s from present %u, for the resolution; "
+                    "%u textures made again\n", g_up_above ? "made again" : "none made at Default",
+                    S.flips, n);
     }
     if (g_up3_want != g_up3_now) {
         uint32_t n = 0;
@@ -6268,6 +6270,98 @@ void nv2a_set_wide_display(int w, int h)
     g_wide_disp_w = w; g_wide_disp_h = h;
     if (g_wide_shape == NV2A_WIDE_SHAPE_MATCH)
         nv2a_set_wide_aspect(nv2a_wide_shape_aspect(g_wide_shape, w, h));
+}
+
+/* ---- internal resolution (gl_lines) -------------------------------------- */
+
+/* The lines a choice gives on the display the window is on now: Match
+ * screen's is its height, which the window says (nv2a_set_wide_display). */
+static uint32_t res_lines(int choice)
+{
+    return nv2a_scale_lines(choice, g_wide_disp_h);
+}
+
+/* The resolution from the start: the window's resolution= or scale= from
+ * before it (sdl_res_pref), else the engine's default, Match screen
+ * (NV2A_SCALE_DEFAULT). */
+static void res_start(void)
+{
+    const char *from = "the engine's default";
+    int c = NV2A_SCALE_DEFAULT;
+#if defined(NV2A_GL_USE_SDL)
+    c = sdl_res_pref(&from);
+#endif
+    g_res_want = g_res_now = c;
+    g_res_lines = res_lines(c);
+    fprintf(stderr, "  [GL] resolution: %s (%u lines) from %s\n", nv2a_scale_names[c],
+            (unsigned)g_res_lines, from);
+}
+
+/* A choice asked for (Display > Resolution, F9's box, File > Presets), or
+ * Match screen's display a new height: taken at the flip, between frames and
+ * before this one is shown, as a new count of samples is (msaa_take). Every
+ * target the title has drawn into is resized to its raster at the new lines,
+ * with what it holds (the backend's target_resize), so nothing is lost: the
+ * frame shown now is the last one, rescaled, and the next is drawn at the
+ * new size. Where the device won't have a target's new size, the choice in
+ * use stays: the targets already resized go back, and the choice asked for
+ * is put back, so the menu and F9 show the one in use. A backend with no
+ * target_resize has each target made again at its next bind instead
+ * (surface_bind), empty until the title draws it. */
+static void res_take(void)
+{
+    /* Match screen's new height, refused: not asked again each flip. */
+    static int refused = -1;
+    static uint32_t refused_lines;
+    int want = g_res_want, was = g_res_now, i, bad = -1;
+    uint32_t lines, was_lines = gl_lines(), fw, fh;
+    uint32_t pw[SURF_CACHE], ph[SURF_CACHE];
+    float shape;
+    if (want < 0 || want >= NV2A_SCALE_CHOICES) return;
+    lines = res_lines(want);
+    if (want == was && (lines == was_lines || (want == refused && lines == refused_lines))) return;
+    for (i = 0; i < SURF_CACHE; i++) {
+        pw[i] = g_surf[i].pw; ph[i] = g_surf[i].ph;
+        if (!g_surf[i].used || !g_surf[i].rt) continue;
+        nv2a_wide_raster(g_surf[i].w, g_surf[i].h, lines, g_surf[i].shape, &pw[i], &ph[i], &shape);
+        if (!G->target_resize || (pw[i] == g_surf[i].pw && ph[i] == g_surf[i].ph)) continue;
+        if (!G->target_resize(g_surf[i].rt, pw[i], ph[i])) { bad = i; break; }
+    }
+    if (bad >= 0) {
+        fprintf(stderr, "  [GL] resolution: the device refused %s (%u lines) for surface %08X "
+                "at %ux%u; %s stays\n", nv2a_scale_names[want], (unsigned)lines,
+                g_surf[bad].offset, (unsigned)pw[bad], (unsigned)ph[bad], nv2a_scale_names[was]);
+        for (i = 0; i < bad; i++) {
+            if (!g_surf[i].used || !g_surf[i].rt || (pw[i] == g_surf[i].pw && ph[i] == g_surf[i].ph))
+                continue;
+            /* One that won't go back keeps its new size, which its next
+             * bind finds isn't the raster it wants, and makes again. */
+            if (!G->target_resize(g_surf[i].rt, g_surf[i].pw, g_surf[i].ph)) {
+                g_surf[i].pw = pw[i]; g_surf[i].ph = ph[i];
+            }
+        }
+        refused = want; refused_lines = lines;
+        if (want != was && g_res_want == want) {
+            g_res_want = was;
+#if defined(NV2A_GL_USE_SDL)
+            sdl_cfg_put(SDL_CFG_RES, nv2a_scale_key(was));     /* and kept so */
+#endif
+        }
+        return;
+    }
+    for (i = 0; i < SURF_CACHE; i++)
+        if (g_surf[i].used && g_surf[i].rt && G->target_resize) { g_surf[i].pw = pw[i]; g_surf[i].ph = ph[i]; }
+    if (g_cur_surf >= 0 && g_surf[g_cur_surf].used) {
+        g_fbo_pw = g_surf[g_cur_surf].pw; g_fbo_ph = g_surf[g_cur_surf].ph;
+    }
+    g_res_now = want;
+    g_res_lines = lines;
+    refused = -1;
+    nv2a_wide_raster(NV2A_SCALE_FRAME_W, NV2A_SCALE_FRAME_H, lines,
+                     nv2a_wide_scene() ? nv2a_wide_aspect() : 0.0f, &fw, &fh, &shape);
+    fprintf(stderr, "  [GL] resolution: %s (%ux%u) from present %u (was %s, %u lines)%s\n",
+            nv2a_scale_names[want], (unsigned)fw, (unsigned)fh, S.flips, nv2a_scale_names[was],
+            (unsigned)was_lines, G->target_resize ? "" : "; targets made again as bound");
 }
 /* Whether the scene on screen is one the game side widened. A title can
  * keep a screen 4:3 -- JSRF keeps its title and the boot logos that way,
@@ -12703,9 +12797,9 @@ static void present(int is_frame)
 
     if (is_frame) { PROF_T0(); cache_idle_frame(); frame_pace(); PROF_ADD(pace); }
 
-    /* Anti-aliasing turned on, off or changed since the last flip: between
-     * frames, before this one is shown. */
-    if (is_frame) { smaa_take(); msaa_take(); }
+    /* Anti-aliasing turned on, off or changed since the last flip, and a
+     * new resolution: between frames, before this one is shown. */
+    if (is_frame) { smaa_take(); msaa_take(); res_take(); }
 
     /* Put the finished frame on screen: the surface the title has set up
      * when it flips, which is what the window showed while surfaces were
@@ -14530,7 +14624,7 @@ static void shader_cache_keep(int on)
 }
 
 /* Graphics > Shader cache, once its box has had OK: kept, and the game
- * started again for it, as for a new render scale. Where it cannot start
+ * started again for it, as File > Restart starts it. Where it cannot start
  * again, from the next start. */
 static void shader_cache_toggle(void)
 {
@@ -14563,13 +14657,13 @@ static void shader_cache_purge_ask(void)
 static void sdl_menu_shaders(void)
 {
     const XBOX_MENU_ITEM rows[] = {
-        /* On in every preset: it changes nothing on screen, and off only
-         * stutters, as the Xbox never did. */
+        /* File > Presets leave it, so that none restarts the game
+         * (menu_sdl.cpp, preset_pick): it changes nothing on screen, and
+         * off only stutters, as the Xbox never did. */
         { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE, .label = "Shader cache (Restart)",
           .state = shader_cache_on, .run = shader_cache_toggle,
           .confirm = "Apply selection and restart, losing unsaved progress?",
-          .presets = XBOX_PRESETS_SET, .keep = shader_cache_keep,
-          .preset = { 1, SHADER_CACHE_DEFAULT, SHADER_CACHE_DEFAULT },
+          .presets = XBOX_PRESETS_LEFT,
           .hint = "Builds a locally stored shader cache, reducing stutter on later plays." },
         { .menu = XBOX_MENU_DEVELOPER, .kind = XBOX_ITEM_ACTION, .label = "Purge shaders (Restart)",
           .run = shader_cache_purge_ask,
@@ -14803,11 +14897,12 @@ static void up_start(void)
     n = sdl_cfg_get("upscale_2d", NV2A_UP_DEFAULT);
 #endif
     g_up_now = g_up_want = nv2a_up_factor(n);
+    g_up_above = up_res_above();
     if (g_up_now && !G->tex_upscale)
         fprintf(stderr, "  [GL] 2D upscaling: not on the %s backend\n", G->name);
     else
         fprintf(stderr, "  [GL] 2D upscaling: %dx from the settings (0 is off)%s\n", g_up_now,
-                g_up_now && gl_scale() < 2 ? ", nothing made at render scale 1x" : "");
+                g_up_now && !g_up_above ? ", nothing made at Default's resolution" : "");
 }
 
 /* 3D upscaling from the start: the window's setting, else 4x

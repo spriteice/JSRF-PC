@@ -10,6 +10,8 @@
  * context of its own (nv2a_gl.c). One mutex keeps the two out of ImGui at
  * the same time. The menu fades in as it opens and out as it shuts
  * (menu_fade); nothing runs, and nothing is drawn, once it has faded out.
+ * The window's own box, F9's (xbox_MenuBox), is drawn the same way, with
+ * no menu round it.
  *
  * Built with -fno-exceptions -fno-rtti -fno-threadsafe-statics, as ImGui is:
  * nothing here may need the C++ runtime library (no new, no STL).
@@ -50,6 +52,11 @@ static const char  *g_about_gpu, *g_about_gl;
 static const char  *g_busy_what;
 static int          g_busy_done;
 static volatile int g_busy_total;
+/* xbox_MenuBox's box: put up, built and shut on the GL thread; whether it is
+ * up is read by any thread, as g_open is. */
+static XBOX_MENU_BOX g_box;
+static volatile int  g_box_up;
+static int           g_box_just;    /* its first frame is the next */
 
 /* ---- File: About, Presets, Restart, Exit -------------------------------- */
 
@@ -101,9 +108,9 @@ static const char *about_text(void)
     return buf;
 }
 
-/* The game started again, as a new render scale starts it (nv2a_gl.c): what
- * waits for the next start applies, Developer's switches among them. Not
- * offered where the game cannot start itself again (port/main.c's). */
+/* The game started again (nv2a_gl.c's sdl_restart): what waits for the next
+ * start applies, Developer's switches among them. Not offered where the game
+ * cannot start itself again (port/main.c's). */
 extern "C" void nv_window_restart(void);
 extern "C" void recomp_restart_self(void) __attribute__((weak));
 
@@ -118,9 +125,12 @@ static void exit_game(void)
 
 /* File > Presets: every row the presets set (menu.h) put at the Xbox's own
  * settings, the engine's defaults, or their most, each by its owner's own
- * function (menu_preset_apply); ticked where the settings are now. A
- * (Restart) row among them keeps its value, and the game starts again once,
- * after them all, where it can. */
+ * function (menu_preset_apply); ticked where the settings are now. Each
+ * applies at once, with no box, as Display > Resolution does: the
+ * (Restart) rows, Shader cache and Audio effects, are left to the player
+ * (spriteice's card, 02:00 UTC on 2026-11-21). A (Restart) row a preset
+ * set would keep its value, and the game would start again once, after
+ * them all. */
 static const char *const k_preset_names[] = { "Xbox mode", "JSRF-PC default", "Max quality" };
 static_assert(sizeof k_preset_names / sizeof k_preset_names[0] == XBOX_PRESETS, "a name for each preset in menu.h");
 
@@ -138,9 +148,9 @@ static const XBOX_MENU_ITEM k_file[] = {
       "Shows the engine version and relevant system details.", FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },
     { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL,    NULL, NULL,      NULL, NULL, 0, NULL,       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
       NULL, FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },
-    { XBOX_MENU_FILE, XBOX_ITEM_CHOICE,    "Presets (Restart)", menu_preset_now, NULL, preset_pick,
+    { XBOX_MENU_FILE, XBOX_ITEM_CHOICE,    "Presets", menu_preset_now, NULL, preset_pick,
       k_preset_names, XBOX_PRESETS, NULL,
-      "Apply selection and restart, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL,
+      NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
       "Sets many settings at once: the Xbox's own, ours, or the highest.", FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },
     { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL,    NULL, NULL,      NULL, NULL, 0, NULL,       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
       NULL, FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },
@@ -172,6 +182,33 @@ static void set_open(int on)
     fprintf(stderr, "[MENU] %s\n", on ? "open" : "closed");
 }
 
+/* With g_mu held: F9's box shut, what was held let go of, as the menu's is
+ * as it shuts; and gone from the next swap, which would draw the last frame
+ * built, with the box in it (xbox_MenuDraw). */
+static void box_shut(const char *how)
+{
+    ImGuiIO &io = ImGui::GetIO();
+    io.ClearInputKeys();
+    io.ClearInputMouse();
+    g_box_up = 0;
+    g_shown = 0;
+    fprintf(stderr, "[MENU] %s box closed%s\n", g_box.title, how);
+}
+
+/* With g_mu held, between ImGui::NewFrame() and ImGui::Render(): a frame of
+ * F9's box, and a choice handed to its pick as it shuts. */
+static void box_frame(void)
+{
+    int r = menu_build_box(&g_box, g_box_just);
+    g_box_just = 0;
+    if (r == MENU_BOX_UP) return;
+    if (r >= 0) {
+        fprintf(stderr, "[MENU] %s: %s chosen\n", g_box.title, g_box.choices[r]);
+        g_box.pick(r);
+    }
+    box_shut(r >= 0 ? "" : ", nothing chosen");
+}
+
 /* ---- the calls from the window (nv2a_gl.c) ------------------------------ */
 
 extern "C" int xbox_MenuInit(SDL_Window *window, void *gl_context, const char *about_gpu,
@@ -196,7 +233,7 @@ extern "C" int xbox_MenuInit(SDL_Window *window, void *gl_context, const char *a
     if (!g_mu) return 0;
     g_about_gpu = about_gpu;
     g_about_gl = about_gl;
-    /* Restart only where the game can start itself again, as Render scale. */
+    /* Restart only where the game can start itself again (port/main.c). */
     {
         XBOX_MENU_ITEM rows[sizeof k_file / sizeof k_file[0]];
         int n = 0;
@@ -285,6 +322,18 @@ extern "C" int xbox_MenuEvent(const SDL_Event *ev)
         SDL_UnlockMutex(g_mu);
         if (bound) return 1;
     }
+    /* F9's box: F9, F1 and the pad's Back shut it, with nothing chosen, and
+     * don't open the menu. */
+    if (g_box_up && ((ev->type == SDL_KEYDOWN && !ev->key.repeat
+                      && (ev->key.keysym.scancode == SDL_SCANCODE_F9
+                       || ev->key.keysym.scancode == SDL_SCANCODE_F1))
+                  || (ev->type == SDL_CONTROLLERBUTTONDOWN
+                      && ev->cbutton.button == SDL_CONTROLLER_BUTTON_BACK))) {
+        SDL_LockMutex(g_mu);
+        box_shut(", by its key");
+        SDL_UnlockMutex(g_mu);
+        return 1;
+    }
     if ((ev->type == SDL_KEYDOWN && ev->key.keysym.scancode == SDL_SCANCODE_F1 && !ev->key.repeat)
      || (ev->type == SDL_CONTROLLERBUTTONDOWN && ev->cbutton.button == SDL_CONTROLLER_BUTTON_BACK)) {
         SDL_LockMutex(g_mu);
@@ -292,7 +341,7 @@ extern "C" int xbox_MenuEvent(const SDL_Event *ev)
         SDL_UnlockMutex(g_mu);
         return 1;
     }
-    if (!g_open) return 0;              /* shut: ImGui sees nothing, queues nothing */
+    if (!g_open && !g_box_up) return 0; /* shut: ImGui sees nothing, queues nothing */
     SDL_LockMutex(g_mu);
     ImGui_ImplSDL2_ProcessEvent(ev);
     SDL_UnlockMutex(g_mu);
@@ -320,7 +369,7 @@ static void scale_to_window(void)
 extern "C" void xbox_MenuFrame(void)
 {
     if (!g_ready) return;
-    if (!g_open && g_fade <= 0.0f && !g_busy_total) {
+    if (!g_open && g_fade <= 0.0f && !g_busy_total && !g_box_up) {
         g_shown = 0;                    /* nothing built: nothing drawn again */
         return;
     }
@@ -328,15 +377,19 @@ extern "C" void xbox_MenuFrame(void)
     ImGuiIO &io = ImGui::GetIO();
     /* Full screen hides the pointer (nv2a_gl.c), and the menu can switch it:
      * ImGui draws its own then, which shows only once a mouse moves. */
-    io.MouseDrawCursor = g_open && SDL_ShowCursor(SDL_QUERY) == SDL_DISABLE;
+    io.MouseDrawCursor = (g_open || g_box_up) && SDL_ShowCursor(SDL_QUERY) == SDL_DISABLE;
     ImGui_ImplSDL2_NewFrame();
     scale_to_window();
     /* Just opened, the time since the last frame is how long it was shut,
-     * with no frames: the fade starts from where it was. */
-    g_fade = menu_fade(g_fade, g_open, g_just_opened ? 0.0f : io.DeltaTime);
-    ImGui::GetStyle().Alpha = g_fade;   /* the menu, its boxes and the dim behind */
+     * with no frames: the fade starts from where it was. F9's box, up only
+     * while the menu is shut, puts out at once what is left of its fade,
+     * and is drawn whole: the box has the controls from its first frame. */
+    if (g_box_up) g_fade = 0.0f;
+    else g_fade = menu_fade(g_fade, g_open, g_just_opened ? 0.0f : io.DeltaTime);
+    ImGui::GetStyle().Alpha = g_box_up ? 1.0f : g_fade;  /* the menu, its boxes and the dim behind */
     ImGui::NewFrame();
-    if (g_open || g_fade > 0.0f) menu_build(g_just_opened, g_pad);
+    if (g_box_up) box_frame();
+    else if (g_open || g_fade > 0.0f) menu_build(g_just_opened, g_pad);
     g_just_opened = 0;
     if (g_busy_total) {
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 1.0f);    /* not the menu's to fade */
@@ -344,7 +397,7 @@ extern "C" void xbox_MenuFrame(void)
         ImGui::PopStyleVar();
     }
     ImGui::Render();
-    g_shown = g_open || g_fade > 0.0f;
+    g_shown = g_open || g_fade > 0.0f || g_box_up;
     SDL_UnlockMutex(g_mu);
 }
 
@@ -373,7 +426,21 @@ extern "C" void xbox_MenuBusy(const char *what, int done, int total)
     g_busy_total = total;
 }
 
+extern "C" void xbox_MenuBox(const XBOX_MENU_BOX *box)
+{
+    if (!g_ready || g_open || g_box_up) return;
+    SDL_LockMutex(g_mu);
+    g_box = *box;
+    g_box_just = 1;
+    /* Pads plugged in while it was down were not seen: look again, as the
+     * menu does as it opens (set_open). */
+    ImGui_ImplSDL2_SetGamepadMode(ImGui_ImplSDL2_GamepadMode_AutoAll);
+    g_box_up = 1;
+    SDL_UnlockMutex(g_mu);
+    fprintf(stderr, "[MENU] %s box open\n", box->title);
+}
+
 extern "C" int xbox_MenuIsOpen(void)
 {
-    return g_ready ? g_open : -1;
+    return g_ready ? (g_open || g_box_up) : -1;
 }

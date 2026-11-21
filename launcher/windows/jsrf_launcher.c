@@ -11,8 +11,13 @@
  *   JSRF-PC.exe <folder or .iso>   use that, and remember it (dropping a
  *                                  folder or an image on the .exe does this)
  *   JSRF-PC.exe --choose           ask where the game is again
- *   JSRF-PC.exe --scale N          internal resolution, 1 to 6 times 640x480
- *                                  (default 3); remembered
+ *   JSRF-PC.exe --resolution R     the height the game is drawn at: default
+ *                                  (the Xbox's 640x480), 720, 900, 1080, 1440,
+ *                                  1600, 2160, or match (the screen's, which it
+ *                                  is unless you choose); remembered
+ *   JSRF-PC.exe --scale N          as before, 1 to 6 times 640x480: the
+ *                                  resolution at least that high, up to 2160;
+ *                                  remembered
  *   JSRF-PC.exe --fullscreen       start full screen
  *   JSRF-PC.exe --minimized        start minimized, in a window, leaving the
  *                                  keyboard where it is
@@ -47,11 +52,9 @@
 #include "xiso.h"
 #include "xbe_check.h"
 #include "../setup/setup.h"
+#include "../../src/nv2a_gl/nv2a_scale.h"
 
 #define APP L"JSRF-PC"
-/* The scales the engine draws at, 1x to this: its NV2A_SCALE_MAX
- * (src/nv2a_gl/nv2a_scale.h). */
-#define SCALE_MAX 6
 
 static wchar_t g_here[MAX_PATH];       /* the launcher's folder */
 static wchar_t g_portable[MAX_PATH];   /* its "portable" folder, or "" when there is none */
@@ -509,9 +512,9 @@ static int copy_saves(const wchar_t *game)
 
 /* ---- the run ---------------------------------------------------------------- */
 
-static int run(const wchar_t *game, int scale, int fullscreen, int minimized)
+static int run(const wchar_t *game, int fullscreen, int minimized)
 {
-    wchar_t engine[MAX_PATH * 2], cmd[MAX_PATH * 6], sc[8], msg[2048];
+    wchar_t engine[MAX_PATH * 2], cmd[MAX_PATH * 6], msg[2048];
     SECURITY_ATTRIBUTES sa;
     STARTUPINFOW si;
     PROCESS_INFORMATION pi;
@@ -526,15 +529,8 @@ static int run(const wchar_t *game, int scale, int fullscreen, int minimized)
     rotate_logs(g_log, g_logs);
 
     /* The paths and the player's settings, and no switch: what the game
-     * needs is the engine's own default. A scale only when the player chose
-     * one (0: none), else the engine's default (NV2A_SCALE_DEFAULT,
-     * src/nv2a_gl/nv2a_scale.h). */
-    if (scale > 0) {
-        _snwprintf(sc, 8, L"%d", scale);
-        SetEnvironmentVariableW(L"RECOMP_GL_SCALE", sc);
-    } else {
-        SetEnvironmentVariableW(L"RECOMP_GL_SCALE", NULL);
-    }
+     * needs is the engine's own default. The resolution isn't among them:
+     * the engine reads it from the settings file. */
     if (fullscreen) SetEnvironmentVariableW(L"RECOMP_FULLSCREEN", L"1");
     if (minimized) SetEnvironmentVariableW(L"RECOMP_MINIMIZED", L"1");
     /* A recording to play, by its whole path, as the engine runs elsewhere. */
@@ -640,9 +636,20 @@ static int setup_find_game(void *vctx, char *path, size_t n)
 
 /* ---- main ------------------------------------------------------------------- */
 
+/* --resolution's names, as the settings file keeps them (nv2a_scale_key):
+ * "default, 720, ... or match". */
+static void res_names(char *out, size_t n)
+{
+    int c;
+    out[0] = 0;
+    for (c = 0; c < NV2A_SCALE_CHOICES; c++)
+        snprintf(out + strlen(out), n - strlen(out), "%s%s",
+                 !c ? "" : c + 1 < NV2A_SCALE_CHOICES ? ", " : " or ", nv2a_scale_key(c));
+}
+
 int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
 {
-    int argc = 0, i, choose = 0, fullscreen = 0, minimized = 0, scale = 0;
+    int argc = 0, i, choose = 0, fullscreen = 0, minimized = 0;
     wchar_t **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     wchar_t game[MAX_PATH * 2] = L"", arg[MAX_PATH * 2] = L"", *slash;
     char u8[MAX_PATH * 4], val[64];
@@ -704,15 +711,28 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
         else if (!wcscmp(argv[i], L"--play")) {
             DWORD n = i + 1 < argc ? GetFullPathNameW(argv[++i], MAX_PATH * 2, g_play, NULL) : 0;
             if (!n || n >= MAX_PATH * 2 || !is_dir(g_play)) return fail(L"--play takes a recording's folder.");
-        } else if (!wcscmp(argv[i], L"--scale") && i + 1 < argc) {
-            int s = _wtoi(argv[++i]);
-            if (s < 1 || s > SCALE_MAX) {
-                wchar_t msg[64];
-                _snwprintf(msg, 64, L"--scale takes 1 to %d.", SCALE_MAX);
+        } else if (!wcscmp(argv[i], L"--resolution") || !wcscmp(argv[i], L"--scale")) {
+            /* The resolution, by its name or as the scale before it
+             * (nv2a_scale.h), kept as the engine keeps it, resolution=,
+             * which it reads as it starts. */
+            int old = !wcscmp(argv[i], L"--scale"), r = -1;
+            if (i + 1 < argc) {
+                to_utf8(argv[++i], val, sizeof val);
+                r = old ? nv2a_scale_of_old(val) : nv2a_scale_parse(val);
+            }
+            if (r < 0) {
+                char names[160], why[200];
+                wchar_t msg[200];
+                if (old) {
+                    snprintf(why, sizeof why, "--scale takes 1 to %d.", NV2A_SCALE_OLD_MAX);
+                } else {
+                    res_names(names, sizeof names);
+                    snprintf(why, sizeof why, "--resolution takes %s.", names);
+                }
+                from_utf8(why, msg, 200);
                 return fail(msg);
             }
-            snprintf(val, sizeof val, "%d", s);
-            cfg_set("scale", val);
+            cfg_set("resolution", nv2a_scale_key(r));
         } else if (!wcscmp(argv[i], L"--version")) {
             wchar_t vf[MAX_PATH * 2], msg[256];
             FILE *f;
@@ -812,9 +832,5 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
     }
     cfg_set("game_dir", u8);
     if (g_portable[0] && copy_saves(game)) return 1;
-    if (cfg_get("scale", val, sizeof val)) {
-        int s = atoi(val);
-        if (s >= 1 && s <= SCALE_MAX) scale = s;
-    }
-    return run(game, scale, fullscreen, minimized);
+    return run(game, fullscreen, minimized);
 }

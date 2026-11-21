@@ -117,6 +117,7 @@ ERRORS = (
      r"^\[GL\] (?:SDL_Init failed|SDL_CreateWindow failed|cannot create |.* failed to compile|.*: link failed"
      r"|glGetError )"),
     ("Multisampling refused", r"^\[GL\] \d+ samples refused "),
+    ("A resolution the device refused", r"^\[GL\] resolution: the device refused "),
     ("No sound device", r"^\[APU\] (?:.* failed|Failed )"),
     ("The shader cache", r"^\[SHADERS\] (?:cannot write|could not remove) "),
     ("A restart that couldn't relaunch", r"^\[WIN\] could not relaunch"),

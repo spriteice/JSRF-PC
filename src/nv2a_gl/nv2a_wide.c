@@ -8,7 +8,6 @@
 #include "nv2a_scale.h"
 
 #include <math.h>
-#include <stdio.h>
 #include <string.h>
 
 /* A viewport scale smaller than this is taken as none. */
@@ -368,11 +367,11 @@ int nv2a_wide_fill_copy(uint32_t pw, float s, int side, uint32_t *x0, uint32_t *
     return 1;
 }
 
-void nv2a_wide_raster(uint32_t w, uint32_t h, uint32_t sc, float a,
+void nv2a_wide_raster(uint32_t w, uint32_t h, uint32_t lines, float a,
                       uint32_t *pw, uint32_t *ph, float *shape)
 {
-    if (sc < 1) sc = 1;
-    *pw = w * sc; *ph = h * sc; *shape = 0.0f;
+    if (lines < 1) lines = NV2A_SCALE_FRAME_H;
+    *pw = nv2a_scale_px(w, lines); *ph = nv2a_scale_px(h, lines); *shape = 0.0f;
     if (!nv2a_wide_frame_sized(w, h) || !(a > NV2A_WIDE_4_3)) return;
     *pw = (uint32_t)floor((double)*ph * (double)a + 0.5);
     *shape = a;
@@ -390,12 +389,4 @@ void nv2a_wide_fit(float a, int ww, int wh, int *dw, int *dh)
         d = floor((double)ww / (double)a + 0.5);
         if (d < (double)wh) *dh = d < 1.0 ? 1 : (int)d;
     }
-}
-
-void nv2a_wide_scale_name(char *buf, size_t n, uint32_t sc, float a)
-{
-    uint32_t pw, ph;
-    float shape;
-    nv2a_wide_raster(NV2A_SCALE_FRAME_W, NV2A_SCALE_FRAME_H, sc, a, &pw, &ph, &shape);
-    snprintf(buf, n, "%ux  %ux%u", (unsigned)(sc < 1 ? 1 : sc), (unsigned)pw, (unsigned)ph);
 }

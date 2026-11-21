@@ -20,49 +20,49 @@
  *   7. A 3D view in a frame narrower than 600 pixels moves toward the centre
  *      with its frame, and an empty clip or one as wide as the scene doesn't.
  *   8. The frame of a widened scene is drawn as wide as its shape at the
- *      scale's height, to the nearest pixel, at every scale and shape, and
- *      shown at that shape; at 4:3 and on any other surface, the scale's
- *      multiple of it and its own shape.
+ *      resolution's lines, to the nearest pixel, at every resolution and
+ *      shape, and shown at that shape; at 4:3 and on any other surface,
+ *      lines / 480 times it, each side to the nearest pixel, and its own
+ *      shape.
  *   9. A frame of the window's own shape fills it, whatever its raster was
  *      rounded to; others sit between bars, never past the window.
- *  10. Render scale's names follow the shape, and are nv2a_scale_names' at 4:3.
- *  11. F10 goes to 4:3 from every wide shape, and to Match screen from 4:3,
+ *  10. F10 goes to 4:3 from every wide shape, and to Match screen from 4:3,
  *      so two presses come back to Match screen.
- *  12. A HUD mark reads back as its piece, side and flags, a menu part's
+ *  11. A HUD mark reads back as its piece, side and flags, a menu part's
  *      across the width among them, and a value that isn't one (D3D's own
  *      no-operation values among them) doesn't. So does a mark of a piece
  *      HUD scale sizes, at the left, the right or the middle, at the top or
  *      the bottom, in its own tag ("HS"), with a menu's flags left out; one
  *      in that tag with an anchor's bits doesn't.
- *  13. Between a HUD piece's marks, a draw moves to its side's edge: a piece
+ *  12. Between a HUD piece's marks, a draw moves to its side's edge: a piece
  *      at the 4:3 edge lands on the screen's edge at every wide shape,
  *      squeezed 2D and widened 3D alike, and keeps its distance from it
  *      squeezed; nothing moves at 4:3 or outside the marks. A piece in a
  *      viewport of its own, squeezed about that viewport's centre, lands
  *      the same: the rolling number's 51 to 210 at 38.25 to 157.5 at 16:9,
  *      as its clip moved with it.
- *  14. Its clip is the middle 4:3 moved with it, so the screen's edge takes
+ *  13. Its clip is the middle 4:3 moved with it, so the screen's edge takes
  *      the 4:3 edge's place, and a clip of its own moves the same way.
- *  15. Only a view as wide as the frame (or with no scale) is one player's:
+ *  14. Only a view as wide as the frame (or with no scale) is one player's:
  *      a split screen's half isn't.
- *  16. A squeezed overlay in a viewport narrower than the frame, a split
+ *  15. A squeezed overlay in a viewport narrower than the frame, a split
  *      screen's HUD, is squeezed about the frame's centre and lands inside
  *      its view's squeezed clip, at every wide shape: the left half's 0 to
  *      320 at 80 to 320 at 16:9, the right half's at 320 to 560. A viewport
  *      centred on the frame moves nothing, and nor does 4:3, a viewport
  *      outside the frame, a mirrored one or NaN.
- *  17. A menu part drawn across the width is stretched by 1/s about the
+ *  16. A menu part drawn across the width is stretched by 1/s about the
  *      centre, so the 4:3 screen the widened projection leaves it in fills
  *      the screen at every wide shape: its 0 to 640 at 0 to 640. It isn't
  *      moved, and its clip isn't moved; nothing is stretched at 4:3 or for
  *      an s that isn't between 0 and 1. Text across the whole width (a
  *      ticker) isn't moved either.
- *  18. A copy of a menu's backdrop shown on one half of the screen is
+ *  17. A copy of a menu's backdrop shown on one half of the screen is
  *      clipped at the surface's middle, the left half up to it and the
  *      right half from it, so the two meet with no gap and no overlap at
  *      any width; a clip of its own is cut the same way, one wholly on the
  *      other half comes out empty, and neither half's clip is moved.
- *  19. The copies move out by whole steps of the grid, the nearest to the
+ *  18. The copies move out by whole steps of the grid, the nearest to the
  *      parts' move: 120 title pixels at 16:9, 80 at 16:10, 240 at 21:9, at
  *      every wide shape a whole number of steps within half a step of the
  *      parts' move, so the left copy's 4:3 edge lands within half a step
@@ -70,7 +70,7 @@
  *      it, or for an s that isn't between 0 and 1. A 3D copy moves s times
  *      that in the frame's pixels (90 at 16:9), a squeezed one that itself,
  *      the left copy left and the right right, and no other side moves.
- *  20. The side fill: on a filled frame a screen-space draw is squeezed when
+ *  19. The side fill: on a filled frame a screen-space draw is squeezed when
  *      it is an overlay, or full-screen art (textured, sampling no surface);
  *      an untextured layer and a copy of the frame stay full width. Its
  *      columns: the 4:3 screen's whole columns are kept, 214 to 1493 of
@@ -244,15 +244,15 @@ static void shift(void)
     CHECK(nv2a_wide_shift(40, 299, 100, 379, 1.0f) == 0.0f);  /* no squeeze, no move */
 }
 
-static void raster_is(uint32_t w, uint32_t h, uint32_t sc, float a,
+static void raster_is(uint32_t w, uint32_t h, uint32_t lines, float a,
                       uint32_t ww, uint32_t wh, float wshape)
 {
     uint32_t pw = 0, ph = 0;
     float shape = -1.0f;
-    nv2a_wide_raster(w, h, sc, a, &pw, &ph, &shape);
+    nv2a_wide_raster(w, h, lines, a, &pw, &ph, &shape);
     if (pw != ww || ph != wh || shape != wshape) {
-        printf("widescreen: FAIL raster %ux%u at %ux and %.4f: %ux%u at %.4f, not %ux%u at %.4f\n",
-               w, h, sc, (double)a, pw, ph, (double)shape, ww, wh, (double)wshape);
+        printf("widescreen: FAIL raster %ux%u at %u lines and %.4f: %ux%u at %.4f, not %ux%u at %.4f\n",
+               w, h, lines, (double)a, pw, ph, (double)shape, ww, wh, (double)wshape);
         s_failures++;
     }
 }
@@ -260,34 +260,49 @@ static void raster_is(uint32_t w, uint32_t h, uint32_t sc, float a,
 static void raster(void)
 {
     const float r16_10 = 1.6f, r21_9 = 64.0f / 27.0f, r32_9 = 32.0f / 9.0f;
-    uint32_t sc;
-    raster_is(640, 480, 2, NV2A_WIDE_16_9, 1707, 960, NV2A_WIDE_16_9);   /* 1706.67 */
-    raster_is(640, 480, 1, NV2A_WIDE_16_9, 853, 480, NV2A_WIDE_16_9);
-    raster_is(640, 480, 3, NV2A_WIDE_16_9, 2560, 1440, NV2A_WIDE_16_9);  /* exact */
-    raster_is(640, 480, 6, NV2A_WIDE_16_9, 5120, 2880, NV2A_WIDE_16_9);
-    raster_is(640, 480, 2, r16_10, 1536, 960, r16_10);
-    raster_is(640, 480, 2, r21_9, 2276, 960, r21_9);                     /* 2275.56 */
-    raster_is(640, 480, 6, r21_9, 6827, 2880, r21_9);
-    raster_is(640, 480, 6, r32_9, 10240, 2880, r32_9);                   /* no cap */
-    raster_is(640, 480, 2, NV2A_WIDE_4_3, 1280, 960, 0.0f);              /* 4:3: as before */
-    raster_is(640, 480, 2, 0.0f, 1280, 960, 0.0f);                       /* not widened */
-    raster_is(640, 480, 2, 1.25f, 1280, 960, 0.0f);
-    raster_is(512, 512, 2, NV2A_WIDE_16_9, 1024, 1024, 0.0f);            /* the boost's copy */
-    raster_is(128, 128, 3, NV2A_WIDE_16_9, 384, 384, 0.0f);
-    raster_is(1024, 1024, 1, r21_9, 1024, 1024, 0.0f);                   /* graffiti */
-    raster_is(640, 448, 2, NV2A_WIDE_16_9, 1280, 896, 0.0f);
-    raster_is(640, 480, 0, NV2A_WIDE_16_9, 853, 480, NV2A_WIDE_16_9);    /* no scale is 1x */
-    /* Every scale and shape: the height is the scale's, and the width the
-     * shape's of it to the nearest pixel. */
-    for (sc = 1; sc <= NV2A_SCALE_MAX; sc++) {
+    static const uint32_t lines[] = { 480, 720, 800, 900, 960, 1080, 1200, 1440, 1600, 2160, 2880 };
+    unsigned l;
+    raster_is(640, 480, 960, NV2A_WIDE_16_9, 1707, 960, NV2A_WIDE_16_9);   /* 1706.67 */
+    raster_is(640, 480, 480, NV2A_WIDE_16_9, 853, 480, NV2A_WIDE_16_9);
+    raster_is(640, 480, 1440, NV2A_WIDE_16_9, 2560, 1440, NV2A_WIDE_16_9);  /* exact */
+    raster_is(640, 480, 2880, NV2A_WIDE_16_9, 5120, 2880, NV2A_WIDE_16_9);
+    raster_is(640, 480, 720, NV2A_WIDE_16_9, 1280, 720, NV2A_WIDE_16_9);    /* 720p */
+    raster_is(640, 480, 900, NV2A_WIDE_16_9, 1600, 900, NV2A_WIDE_16_9);    /* 900p */
+    raster_is(640, 480, 1080, NV2A_WIDE_16_9, 1920, 1080, NV2A_WIDE_16_9);  /* 1080p */
+    raster_is(640, 480, 2160, NV2A_WIDE_16_9, 3840, 2160, NV2A_WIDE_16_9);  /* 2160p */
+    raster_is(640, 480, 960, r16_10, 1536, 960, r16_10);
+    raster_is(640, 480, 800, r16_10, 1280, 800, r16_10);                    /* a 1280x800 screen */
+    raster_is(640, 480, 960, r21_9, 2276, 960, r21_9);                      /* 2275.56 */
+    raster_is(640, 480, 1080, r21_9, 2560, 1080, r21_9);
+    raster_is(640, 480, 2880, r21_9, 6827, 2880, r21_9);
+    raster_is(640, 480, 2880, r32_9, 10240, 2880, r32_9);                   /* no cap */
+    raster_is(640, 480, 960, NV2A_WIDE_4_3, 1280, 960, 0.0f);               /* 4:3: as before */
+    raster_is(640, 480, 900, NV2A_WIDE_4_3, 1200, 900, 0.0f);
+    raster_is(640, 480, 1080, NV2A_WIDE_4_3, 1440, 1080, 0.0f);
+    raster_is(640, 480, 960, 0.0f, 1280, 960, 0.0f);                        /* not widened */
+    raster_is(640, 480, 960, 1.25f, 1280, 960, 0.0f);
+    raster_is(512, 512, 960, NV2A_WIDE_16_9, 1024, 1024, 0.0f);             /* the boost's copy */
+    raster_is(512, 512, 900, NV2A_WIDE_16_9, 960, 960, 0.0f);
+    raster_is(512, 512, 720, NV2A_WIDE_16_9, 768, 768, 0.0f);
+    raster_is(512, 512, 1080, NV2A_WIDE_16_9, 1152, 1152, 0.0f);
+    raster_is(128, 128, 1440, NV2A_WIDE_16_9, 384, 384, 0.0f);
+    raster_is(128, 128, 2160, NV2A_WIDE_16_9, 576, 576, 0.0f);
+    raster_is(300, 300, 900, NV2A_WIDE_16_9, 563, 563, 0.0f);               /* 562.5, up */
+    raster_is(1024, 1024, 480, r21_9, 1024, 1024, 0.0f);                    /* graffiti */
+    raster_is(640, 448, 960, NV2A_WIDE_16_9, 1280, 896, 0.0f);
+    raster_is(640, 448, 1080, NV2A_WIDE_16_9, 1440, 1008, 0.0f);
+    raster_is(640, 480, 0, NV2A_WIDE_16_9, 853, 480, NV2A_WIDE_16_9);       /* no lines is 480 */
+    /* Every resolution and shape: the height is the lines, and the width
+     * the shape's of them to the nearest pixel. */
+    for (l = 0; l < sizeof lines / sizeof lines[0]; l++) {
         const float shapes[] = { r16_10, NV2A_WIDE_16_9, r21_9, r32_9, 2.0f };
         unsigned k;
         for (k = 0; k < sizeof shapes / sizeof shapes[0]; k++) {
             uint32_t pw, ph;
             float shape;
-            double want = 480.0 * sc * shapes[k];
-            nv2a_wide_raster(640, 480, sc, shapes[k], &pw, &ph, &shape);
-            CHECK(ph == 480 * sc);
+            double want = (double)lines[l] * shapes[k];
+            nv2a_wide_raster(640, 480, lines[l], shapes[k], &pw, &ph, &shape);
+            CHECK(ph == lines[l]);
             CHECK(fabs((double)pw - want) <= 0.5);
             CHECK(shape == shapes[k]);
         }
@@ -324,24 +339,6 @@ static void fit(void)
     fit_is(NV2A_WIDE_16_9, 1, 1, 1, 1);                 /* never 0, never past */
     fit_is(NV2A_WIDE_16_9, 1000, 1, 2, 1);               /* 1.78 to the nearest */
     fit_is(0.0f, 640, 480, 640, 480);                   /* no shape: the window */
-}
-
-static void scale_names(void)
-{
-    char b[32];
-    int i;
-    for (i = 0; i < NV2A_SCALE_MAX; i++) {
-        nv2a_wide_scale_name(b, sizeof b, (uint32_t)(i + 1), NV2A_WIDE_4_3);
-        CHECK(!strcmp(b, nv2a_scale_names[i]));
-    }
-    nv2a_wide_scale_name(b, sizeof b, 3, NV2A_WIDE_16_9);
-    CHECK(!strcmp(b, "3x  2560x1440"));
-    nv2a_wide_scale_name(b, sizeof b, 2, NV2A_WIDE_16_9);
-    CHECK(!strcmp(b, "2x  1707x960"));
-    nv2a_wide_scale_name(b, sizeof b, 2, 64.0f / 27.0f);
-    CHECK(!strcmp(b, "2x  2276x960"));
-    nv2a_wide_scale_name(b, sizeof b, 6, 1.6f);
-    CHECK(!strcmp(b, "6x  4608x2880"));
 }
 
 static void f10(void)
@@ -907,7 +904,7 @@ static void fill(void)
             uint32_t pw, ph, x0, x1, l, r;
             float shape;
             double e0, e1, in;
-            nv2a_wide_raster(640, 480, sc, shapes[i], &pw, &ph, &shape);
+            nv2a_wide_raster(640, 480, 480u * sc, shapes[i], &pw, &ph, &shape);
             CHECK(nv2a_wide_fill_cols(pw, s, &x0, &x1, &l, &r));
             e0 = 0.5 * pw * (1.0 - s); e1 = 0.5 * pw * (1.0 + s);   /* the 4:3 edges */
             CHECK(x0 >= e0 - 1e-3 && x0 < e0 + 1.0);   /* the first whole column */
@@ -953,7 +950,7 @@ static void fill_strips(void)
         for (sc = 1; sc <= 8; sc++) {
             float s = nv2a_wide_squeeze_of(shapes[i]), shape;
             uint32_t pw, ph, a, b, l, r;
-            nv2a_wide_raster(640, 480, sc, shapes[i], &pw, &ph, &shape);
+            nv2a_wide_raster(640, 480, 480u * sc, shapes[i], &pw, &ph, &shape);
             CHECK(nv2a_wide_fill_cols(pw, s, &a, &b, &l, &r));
             CHECK(nv2a_wide_fill_strip(pw, ph, s, 8, &x1, &r0, &r1));
             CHECK(x1 == a + 8u * sc && r0 == 0 && r1 == 6u * sc && r1 < ph);
@@ -1016,7 +1013,7 @@ static void fill_copies(void)
             float s = nv2a_wide_squeeze_of(shapes[i]), shape;
             uint32_t pw, ph, a, b, l, r;
             int side;
-            nv2a_wide_raster(640, 480, sc, shapes[i], &pw, &ph, &shape);
+            nv2a_wide_raster(640, 480, 480u * sc, shapes[i], &pw, &ph, &shape);
             CHECK(nv2a_wide_fill_cols(pw, s, &a, &b, &l, &r));
             CHECK(nv2a_wide_fill_copy(pw, s, NV2A_WIDE_HUD_NONE, &x0, &x1, &src, &k, &off));
             CHECK(x0 == l && x1 == r + 1u);             /* source to source */
@@ -1056,7 +1053,6 @@ int main(void)
     shift();
     raster();
     fit();
-    scale_names();
     f10();
     hud_marks();
     hud_move();

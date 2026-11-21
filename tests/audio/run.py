@@ -14,8 +14,7 @@ with mute=1, which it does; the row changes it at once, without asking or
 a restart, and keeps it in the settings file. Audio effects: on with no
 audioeffects= or with 1, off with 0, and RECOMP_APU_GPFX in the environment
 winning over it. The row keeps its change in the settings file and asks for
-a restart; a preset (File > Presets) keeps it through the row's keep, which
-doesn't. Requires GCC on PATH, including MinGW on Windows.
+a restart; no preset (File > Presets) sets it. Requires GCC on PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
 """
 import os
@@ -65,9 +64,6 @@ cases = {
     "flip_on": ("game_dir=/games/jsrf\naudioeffects=0\n", None,
                 ["[AUDIO] effects off (settings)", "[AUDIO] effects on from the next start (the menu)"],
                 "game_dir=/games/jsrf\naudioeffects=1\n"),
-    "keep_off": ("game_dir=/games/jsrf\n", None,
-                 ["[AUDIO] effects on (settings)", "[AUDIO] effects off from the next start (the menu)"],
-                 "game_dir=/games/jsrf\naudioeffects=0\n"),
 }
 
 with tempfile.TemporaryDirectory(prefix="audio-") as directory:

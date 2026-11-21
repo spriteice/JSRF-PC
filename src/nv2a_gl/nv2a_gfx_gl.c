@@ -220,7 +220,7 @@ static GLuint rb_make(GLuint fbo, uint32_t pw, uint32_t ph)
 /*
  * Target slot i's single-sampled depth/stencil, made and attached if it has
  * none. A multisampled target draws into a depth buffer of its own (msds)
- * and never into this one, which at 3x scale is tens of megabytes a target
+ * and never into this one, which at 1440p is tens of megabytes a target
  * held for nothing. So it is made for a target drawn single-sampled, and
  * for the moment it takes to carry a multisampled one's depth and stencil
  * across a change of count (glx_samples) or of size (glx_target_resize), or
