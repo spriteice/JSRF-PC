@@ -92,6 +92,10 @@ in a submenu of its own.
   restart."). It must be as short as possible, and is at most 70 characters
   (`MENU_HINT_LONGEST`), so it fits in two lines at 640 × 480.
 - A hint names no key, as a label doesn't.
+- A row of choices or ticks may give each its own hint (`choice_hints` in
+  `menu.h`), shown in the row's place while the pad or the pointer is on
+  that choice, and following the rules above; a choice with none shows the
+  row's. The strip is as tall as the longest of them needs too.
 - The tests of the modules that add rows (tests/audio, camera_walls,
   draw_distance, freecam, intro, keyboard_move, stick_shape, music_info,
   soul_indicator, developer) check that each has one.
@@ -276,6 +280,10 @@ in a submenu of its own.
   is told once in the log and left alone, as a row with no hint is told.
   File's and Developer's rows are never set, and a submenu
   (`XBOX_ITEM_GROUP`) is no setting, so says nothing.
+- **A row the presets set may name presets that leave it** (`leave` in
+  `menu.h`, a bit for each): those don't change it, and their tick goes by
+  the other rows. A row every preset leaves is told once in the log and
+  left alone.
 - The tests of the modules that add rows check their values, and that
   JSRF-PC default's is what a start with no settings gives.
 

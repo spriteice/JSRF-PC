@@ -78,6 +78,9 @@ typedef enum {
     XBOX_PRESETS
 } XBOX_PRESET;
 
+/* A preset's bit, for a row's leave (XBOX_MENU_ITEM, below). */
+#define XBOX_PRESET_BIT(p) (1u << (p))
+
 /* What the presets do with a row (XBOX_MENU_ITEM's presets). A preset sets
  * every setting but Developer's, and those its row says it leaves alone:
  * each other row of Display, Graphics, Audio, Input and Gameplay gives its
@@ -194,6 +197,16 @@ typedef struct XBOX_MENU_ITEM {
      * box waits for a second, handed here as bind() is: the input pressed,
      * or XBOX_BIND_NO_INPUT for none. */
     int           (*bind_second)(int input);
+    /* XBOX_ITEM_CHOICE and XBOX_ITEM_TOGGLES, set: a hint for each of
+     * choices[], in its order, each a sentence as hint is, shown in place of
+     * the row's while the pad or the pointer is on that choice; NULL for
+     * one, the row's. */
+    const char *const *choice_hints;
+    /* XBOX_PRESETS_SET: the presets that leave the row as the player has
+     * it, a bit each (XBOX_PRESET_BIT), whose preset[] is not read. A row
+     * every preset leaves is XBOX_PRESETS_LEFT instead (docs/
+     * menu-format.md, File > Presets). */
+    unsigned        leave;
 } XBOX_MENU_ITEM;
 
 /* Display's submenu, at its foot (nv2a_gl.c adds it): Enhancements, for
@@ -261,9 +274,10 @@ void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count);
 void menu_build(int just_opened, int pad);
 
 /* File > Presets (menu_sdl.cpp, and tests/menu), on the window's thread:
- * the preset whose value every row the presets set has now, or -1 for none;
- * and preset p, each row put at its value through its own pick, run or set,
- * or keep for a (Restart) row, saying so in the log. menu_preset_apply is
+ * the preset whose value every row it sets has now, or -1 for none; and
+ * preset p, each row it sets (not one that leaves it) put at its value
+ * through its own pick, run or set, or keep for a (Restart) row, saying so
+ * in the log. menu_preset_apply is
  * nonzero when a (Restart) row was kept: the game starts again for it. */
 int menu_preset_now(void);
 int menu_preset_apply(int p);

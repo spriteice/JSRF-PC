@@ -86,11 +86,19 @@ static void take_queued(void)
      * ticks (TOGGLES) with no more than a bit of an int each, and one that
      * asks first (for a restart) is a TOGGLE or a CHOICE that keeps its
      * value instead (keep), so a preset restarts the game once, at the end.
-     * Any other is told once, and no preset sets it. */
+     * Any other is told once, and no preset sets it; as is one every preset
+     * leaves (menu.h, leave), which is XBOX_PRESETS_LEFT. A choice's own
+     * hint (menu.h, choice_hints) is as short as a row's. */
     for (int i = from; i < g_items.Size; i++) {
         const XBOX_MENU_ITEM &it = g_items[i];
         const char *name = it.label ? it.label : "a row";
         int hinted = it.kind == XBOX_ITEM_SEPARATOR || (it.hint && strlen(it.hint) <= MENU_HINT_LONGEST);
+        int choices_hinted = 1;
+        if (it.choice_hints && (it.kind == XBOX_ITEM_CHOICE || it.kind == XBOX_ITEM_TOGGLES))
+            for (int c = 0; c < it.nchoices; c++)
+                choices_hinted &= !it.choice_hints[c] || strlen(it.choice_hints[c]) <= MENU_HINT_LONGEST;
+        int all = (int)XBOX_PRESET_BIT(XBOX_PRESETS) - 1;
+        int someone = it.presets != XBOX_PRESETS_SET || ((int)it.leave & all) != all;
         /* A submenu row (menu.h, group) holds rows and is no setting itself. */
         int said = it.presets != XBOX_PRESETS_UNSAID || it.kind == XBOX_ITEM_SEPARATOR
                 || it.kind == XBOX_ITEM_GROUP || it.menu == XBOX_MENU_FILE || it.menu == XBOX_MENU_DEVELOPER;
@@ -100,9 +108,12 @@ static void take_queued(void)
                          || (it.kind == XBOX_ITEM_TOGGLES && it.nchoices > 0 && it.nchoices <= MENU_PRESET_TICKS))
                         && (!it.confirm || (it.keep && (it.kind == XBOX_ITEM_TOGGLE || it.kind == XBOX_ITEM_CHOICE))));
         RECOMP_CHECK(hinted, "%s: %s", name, it.hint ? "its hint is too long" : "no hint");
+        RECOMP_CHECK(choices_hinted, "%s: a choice's hint is too long", name);
         RECOMP_CHECK(said, "%s: nothing said about presets", name);
         if (!RECOMP_CHECK(settable, "%s: %s", name,
                           it.confirm ? "asks first, and keeps nothing for a preset" : "not a setting a preset can set"))
+            g_items[i].presets = XBOX_PRESETS_UNSAID;
+        else if (!RECOMP_CHECK(someone, "%s: every preset leaves it, so no preset sets it", name))
             g_items[i].presets = XBOX_PRESETS_UNSAID;
         /* A submenu goes in its menu, not in another (menu.h, group). */
         RECOMP_CHECK(it.kind != XBOX_ITEM_GROUP || !it.group, "%s: a submenu in a submenu", name);
@@ -139,12 +150,20 @@ static int drawn_in_is(const XBOX_MENU_ITEM &it, const char *group)
  * taken as the rows are drawn, and shown below them in the same frame. */
 static const char *g_hint_pad, *g_hint_pointer, *g_hint_shown;
 
-/* After each of a row's items: a row's choices, and a number's - and +,
- * are the row's. */
+/* After each of a row's items: a number's - and + are the row's. */
 static void take_hint(const XBOX_MENU_ITEM *it)
 {
     if (ImGui::IsItemFocused())      g_hint_pad = it->hint;
     else if (ImGui::IsItemHovered()) g_hint_pointer = it->hint;
+}
+
+/* After choice i of a CHOICE or a row of ticks: its own hint, or the row's
+ * (menu.h, choice_hints). */
+static void take_choice_hint(const XBOX_MENU_ITEM *it, int i)
+{
+    const char *hint = it->choice_hints && it->choice_hints[i] ? it->choice_hints[i] : it->hint;
+    if (ImGui::IsItemFocused())      g_hint_pad = hint;
+    else if (ImGui::IsItemHovered()) g_hint_pointer = hint;
 }
 
 /* A choice or a tick, through the row's own function: pick_with, told its
@@ -231,7 +250,7 @@ extern "C" int menu_preset_now(void)
     for (int p = 0; p < XBOX_PRESETS; p++) {
         int rows = 0, at = 0;
         for (const XBOX_MENU_ITEM &it : g_items)
-            if (it.presets == XBOX_PRESETS_SET) {
+            if (it.presets == XBOX_PRESETS_SET && !(it.leave & XBOX_PRESET_BIT(p))) {
                 rows++;
                 if (!row_at(it, p)) break;
                 at++;
@@ -250,7 +269,7 @@ extern "C" int menu_preset_apply(int p)
     for (int i = 0; i < g_items.Size; i++) {
         const XBOX_MENU_ITEM it = g_items[i];
         double v;
-        if (it.presets != XBOX_PRESETS_SET || row_at(it, p)) continue;
+        if (it.presets != XBOX_PRESETS_SET || (it.leave & XBOX_PRESET_BIT(p)) || row_at(it, p)) continue;
         v = row_preset(it, p);
         if (it.kind == XBOX_ITEM_CHOICE) snprintf(shown, sizeof shown, "%s", it.choices[(int)v]);
         else if (it.kind == XBOX_ITEM_TOGGLE) snprintf(shown, sizeof shown, "%s", v != 0 ? "on" : "off");
@@ -502,7 +521,7 @@ static void draw_item(const XBOX_MENU_ITEM *it, const number_cols *cols)
             for (i = 0; i < it->nchoices; i++) {
                 if (ImGui::MenuItem(it->choices[i], NULL, i == cur) && i != cur)
                     chosen(it, i);
-                take_hint(it);
+                take_choice_hint(it, i);
             }
             ImGui::EndMenu();
         }
@@ -515,7 +534,7 @@ static void draw_item(const XBOX_MENU_ITEM *it, const number_cols *cols)
             int on = it->state(), i;
             for (i = 0; i < it->nchoices; i++) {
                 if (ImGui::MenuItem(it->choices[i], NULL, (on >> i) & 1)) chosen(it, i);
-                take_hint(it);
+                take_choice_hint(it, i);
             }
             ImGui::EndMenu();
         }
@@ -696,7 +715,7 @@ static float draw_prompts(ImDrawList *dl, const prompt *ps, int n, ImVec2 at)
 
 /* Along the bottom, as the bar is along the top: the hint on the left,
  * wrapped short of the prompts on the right. As tall as the longest hint
- * of any row needs, so it stays still as the pad moves. */
+ * of any row or choice needs, so it stays still as the pad moves. */
 static void draw_strip(int pad)
 {
     const ImGuiIO &io = ImGui::GetIO();
@@ -711,8 +730,13 @@ static void draw_strip(int pad)
     float wrap = io.DisplaySize.x - st.WindowPadding.x * 2 - st.ItemSpacing.x * 2 - prompts;
     float tall = ImGui::GetFontSize() * MENU_CAP_SIZE;
     g_hint_shown = g_hint_pad ? g_hint_pad : g_hint_pointer;
-    for (const XBOX_MENU_ITEM &it : g_items)
+    for (const XBOX_MENU_ITEM &it : g_items) {
         if (it.hint) tall = ImMax(tall, ImGui::CalcTextSize(it.hint, NULL, false, wrap).y);
+        if (it.choice_hints)
+            for (int i = 0; i < it.nchoices; i++)
+                if (it.choice_hints[i])
+                    tall = ImMax(tall, ImGui::CalcTextSize(it.choice_hints[i], NULL, false, wrap).y);
+    }
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImGui::GetStyleColorVec4(ImGuiCol_MenuBarBg));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     /* In whole pixels, as the window's place is, so it meets the window's

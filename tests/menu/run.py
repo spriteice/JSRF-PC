@@ -105,6 +105,7 @@ with tempfile.TemporaryDirectory(prefix="menu-") as tmp:
     # names, or none. And a bind row with no bind, told as it arrives.
     for line in ["Last row: nothing said about presets",
                  "Asks, keeps nothing: asks first, and keeps nothing for a preset",
+                 "Left by all: every preset leaves it, so no preset sets it",
                  "[MENU] preset: Scale (Restart) to 1x, from the next start",
                  "[MENU] preset: Filtering to 4x\n",
                  "[MENU] preset: Cleanup to none\n",

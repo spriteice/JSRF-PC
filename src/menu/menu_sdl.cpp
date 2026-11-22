@@ -142,7 +142,7 @@ static void preset_pick(int i)
 
 /* Every field, in order: C++11 has no designated initializers. */
 #define FILE_NO_PRESETS XBOX_PRESETS_UNSAID, { 0, 0, 0 }, NULL
-#define FILE_NO_BIND    XBOX_BIND_NONE, NULL, NULL
+#define FILE_NO_BIND    XBOX_BIND_NONE, NULL, NULL, NULL, 0
 static const XBOX_MENU_ITEM k_file[] = {
     { XBOX_MENU_FILE, XBOX_ITEM_INFO,      "About", NULL, NULL,      NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
       "Shows the engine version and relevant system details.", FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },

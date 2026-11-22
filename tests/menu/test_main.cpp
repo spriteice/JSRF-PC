@@ -78,6 +78,9 @@ static int g_fail;
 #define NO_BIND    XBOX_BIND_NONE, NULL
 
 static int s_full, s_wide, s_scale = 1, s_exit, s_full_runs, s_wide_runs, s_picks = -1;
+/* Render scale's choices' hints (menu.h, choice_hints): 3x's own, and the
+ * row's for the others. */
+static const char *const k_scale_choice_hints[] = { NULL, NULL, "Draws at three times the Xbox's.", NULL };
 /* Each row drawn that counts takes the next number, so the order they are
  * drawn in can be told; Widescreen counts, to place the rows under it. */
 static int s_drawn_seq, s_wide_at;
@@ -319,6 +322,7 @@ static const char *const k_switches[] = { "First (Restart)", "Second (Restart)",
  * JSRF-PC default and both in Max quality. */
 static int    p_smaa = 1, p_effects = 1, p_glass = 1;
 static int    p_ticks = 1, p_tick_picks;
+static int    p_feel = 1, p_feel_runs;   /* a row Xbox mode alone sets */
 static int    p_aniso = 2;              /* 4x: JSRF-PC default's 8x is past this device's most */
 static int    p_scale = 2;              /* 3x */
 static double p_dz = 0.15;
@@ -340,6 +344,8 @@ static int    p_glass_state(void)      { return p_glass; }
 static void   p_glass_run(void)        { p_glass = !p_glass; p_glass_runs++; }
 static int    p_ticks_state(void)      { return p_ticks; }
 static void   p_ticks_pick(int i)      { p_ticks ^= 1 << i; p_tick_picks++; }
+static int    p_feel_state(void)       { return p_feel; }
+static void   p_feel_run(void)         { p_feel = !p_feel; p_feel_runs++; }
 static int    p_bad_state(void)        { return 0; }
 static void   p_bad_run(void)          { p_bad_runs++; }
 static void   p_bad_pick(int i)        { (void)i; p_bad_runs++; }
@@ -368,6 +374,12 @@ static const XBOX_MENU_ITEM k_presets[] = {
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLES, "Cleanup", p_ticks_state, NULL, p_ticks_pick, k_p_ticks, 2, NULL,
       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Cleans the copies.", XBOX_PRESETS_SET,
       { 0, 1, XBOX_PRESET_MOST }, NULL, NULL, NULL, NULL, NO_BIND },
+    /* A toggle Xbox mode sets, off, and JSRF-PC default and Max quality
+     * leave, as Input > Behaviour > Camera (menu.h, leave): their values,
+     * which would differ from the row's, are never read. */
+    { XBOX_MENU_INPUT, XBOX_ITEM_TOGGLE, "Feel", p_feel_state, p_feel_run, NULL, NULL, 0, NULL, NULL,
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sets the feel.", XBOX_PRESETS_SET, { 0, 0, 0 }, NULL, NULL, NULL,
+      NULL, NO_BIND, NULL, NULL, XBOX_PRESET_BIT(XBOX_PRESET_JSRF_PC) | XBOX_PRESET_BIT(XBOX_PRESET_MAX) },
     /* Three that say the wrong thing, which no preset can set, and are left
      * alone: one that asks first but keeps nothing, told once in the log,
      * then a button and a row of more ticks than an int has bits for, which
@@ -380,6 +392,10 @@ static const XBOX_MENU_ITEM k_presets[] = {
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLES, "Too many ticks", p_bad_state, NULL, p_bad_pick,
       k_p_many, MENU_PRESET_TICKS + 1, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Has too many.",
       XBOX_PRESETS_SET, { 1, 1, 1 }, NULL, NULL, NULL, NULL, NO_BIND },
+    /* And one every preset leaves, which is told once and set by none. */
+    { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLE, "Left by all", p_bad_state, p_bad_run, NULL, NULL, 0, NULL, NULL,
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Is left.", XBOX_PRESETS_SET, { 1, 1, 1 }, NULL, NULL, NULL,
+      NULL, NO_BIND, NULL, NULL, XBOX_PRESET_BIT(XBOX_PRESETS) - 1 },
 };
 
 /* Widescreen's owner adds a row as it runs, on the window's thread. */
@@ -603,7 +619,7 @@ int main(void)
           k_wide_hint, NO_PRESETS, NULL, NULL, NULL, NO_BIND },
         { XBOX_MENU_DISPLAY, XBOX_ITEM_CHOICE, "Render scale", scale_state, NULL, scale_pick, k_scales, 4, NULL,
           "Apply selection and restart, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-          k_scale_hint, NO_PRESETS, NULL, NULL, NULL, NO_BIND },
+          k_scale_hint, NO_PRESETS, NULL, NULL, NULL, NO_BIND, NULL, k_scale_choice_hints },
     };
     const XBOX_MENU_ITEM file[] = {
         { XBOX_MENU_FILE, XBOX_ITEM_INFO, "About", NULL, NULL, NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
@@ -694,8 +710,9 @@ int main(void)
     CHECK(hint_is(k_scale_hint));
     frame(ImGuiKey_GamepadDpadRight); frames(2);
     fprintf(stderr, "in render scale: [%s]\n", open_menu());
+    CHECK(hint_is(k_scale_hint));       /* 1x: a choice with none of its own, the row's */
     frame(ImGuiKey_GamepadDpadDown); frame(ImGuiKey_GamepadDpadDown); frames(1);
-    CHECK(hint_is(k_scale_hint));       /* its choices: still the row's */
+    CHECK(hint_is("Draws at three times the Xbox's."));     /* 3x: its own */
     frame(ImGuiKey_GamepadFaceDown); frames(3);
     fprintf(stderr, "after choosing: [%s], picks %d\n", open_menu(), s_picks);
     CHECK(strstr(open_menu(), "Are you sure?") != NULL);
@@ -1203,7 +1220,8 @@ int main(void)
 
     /* File > Presets (menu.h). No row sets anything: no preset is ticked.
      * Then the presets' rows, at JSRF-PC default's values, which is ticked:
-     * the choice's 8x is the most this device has, 4x. */
+     * the choice's 8x is the most this device has, 4x; and Feel, on, which
+     * JSRF-PC default leaves, not read for it. */
     CHECK(menu_preset_now() == -1);
     for (int i = 0; i < MENU_PRESET_TICKS + 1; i++) k_p_many[i] = "A tick";
     xbox_MenuAdd(k_presets, (int)(sizeof k_presets / sizeof k_presets[0]));
@@ -1230,15 +1248,21 @@ int main(void)
     CHECK(p_effects == 1 && p_effects_keeps == 0 && p_effects_runs == 0);
     CHECK(p_glass == 0 && p_glass_runs == 1);
     CHECK(p_ticks == 0 && p_tick_picks == 1);
+    CHECK(p_feel == 0 && p_feel_runs == 1);
     CHECK(menu_preset_now() == -1);
     p_scale = p_scale_kept;
     CHECK(menu_preset_now() == XBOX_PRESET_XBOX);
+    /* Feel on by hand: no longer Xbox mode's; the presets that leave it
+     * leave it on, and are ticked with it on (below). */
+    p_feel_run();
+    CHECK(p_feel == 1 && menu_preset_now() == -1);
     /* Max quality: the choice and the scale at their last, and every tick,
      * past what the presets name: both ticks, each picked. */
     CHECK(menu_preset_apply(XBOX_PRESET_MAX) == 1);
     p_scale = p_scale_kept;
     CHECK(p_smaa == 1 && p_aniso == 2 && fabs(p_dz - 0.15) < 1e-9 && p_scale == 5 && p_glass == 1);
     CHECK(p_ticks == 3 && p_tick_picks == 3);
+    CHECK(p_feel == 1 && p_feel_runs == 2);
     CHECK(menu_preset_now() == XBOX_PRESET_MAX);
     /* Max quality again: every row is there already, so nothing is set and
      * no restart. */
@@ -1280,6 +1304,8 @@ int main(void)
     CHECK(p_ticks == 3 && menu_preset_now() == -1);
     CHECK(menu_preset_apply(XBOX_PRESET_JSRF_PC) == 0);
     CHECK(p_ticks == 1 && p_tick_picks == 6 && menu_preset_now() == XBOX_PRESET_JSRF_PC);
+    /* Feel was never set again: JSRF-PC default and Max quality left it. */
+    CHECK(p_feel == 1 && p_feel_runs == 2);
     /* The three that said the wrong thing were never set (run.py finds
      * their lines in the log). */
     CHECK(p_bad_runs == 0);
