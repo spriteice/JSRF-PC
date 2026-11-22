@@ -471,6 +471,37 @@ units is accounted for, 1 when some are listed to explain, and 2 when it
 can't run. It needs only Python's standard library and git, and its test,
 `tools/test_move_check.py`, runs on trees it makes up.
 
+## The game's button icons: prompt_census
+
+`tools/prompt_census.py` finds the textures the game draws its button
+icons from, for the button prompts' table (`src/nv2a_gl/nv2a_prompts.c`),
+on the machine that has the game's files.
+
+```bash
+python3 tools/prompt_census.py list MEDIA [FILE ...]
+python3 tools/prompt_census.py find MEDIA [FILE ...]
+python3 tools/prompt_census.py show MEDIA FILE OFFSET X Y W H [--step N]
+python3 tools/prompt_census.py sprites MEDIA FILE OFFSET [X Y W H] [--least N]
+```
+
+MEDIA is the game's Media folder, and a FILE a path under it
+(`Disp/SprNorm.dat`); without one, every `.dat` under it. `list` gives each
+texture in the files' containers (MULT and NORM, the game's own): its
+offset, size and format, and the table's head and key for it (the CRC-32 of
+its first level's first 1024 bytes, and of all of them). `find` gives the
+textures with tiles in the pad's four face colours, with each tile's
+rectangle. `show` prints a rectangle of a texture as text, a character a
+square of `--step` pixels (the face colours as G, R, B and Y, the rest by
+brightness), so an icon is named by reading it. `sprites` gives the
+separate pictures in a texture, or in a rectangle of it: each area of texels
+that aren't clear, joined where they touch, as its rectangle, so the icons
+with no face colour (the triggers, Start, Back) are found too, then read
+with `show`. Only DXT3 is decoded. It
+writes nothing and prints no picture, so nothing of the game's leaves the
+machine but numbers. It needs only Python's standard library, and its test,
+`tools/test_prompt_census.py`, builds files in the game's container format
+with made-up textures.
+
 ## Whether two engines differ only as a move makes them: compare_engines
 
 `tools/compare_engines.py` compares two builds of the engine, from a
