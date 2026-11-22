@@ -65,33 +65,47 @@ struct camwall {
 /* CAMWALL_START: as a camera that starts again. */
 void camwall_reset(struct camwall *w);
 
-/* Off with no noskaterfade= in the settings, and in each of File >
- * Presets' three: an eye held where the game draws the player whole only
- * when it's turned on (spriteice, 19 November 2026, testing freecam4's
- * hold: "it definitely needs to be a toggle"; testing freecam5, for the
- * game's camera too while Default cam fix is on, under it in Input >
- * Behaviour, named No skater fade; testing freecam6: "No skater fade should
- * be off by default", "In all presets"). */
+/* Off with no noskaterfade= in the settings, and in File > Presets' Xbox
+ * mode: an eye held where the game draws the player whole only when it's
+ * turned on (spriteice, 19 November 2026, testing freecam4's hold: "it
+ * definitely needs to be a toggle"; testing freecam5, for the game's camera
+ * too while Default cam fix is on, under it, named No skater fade; testing
+ * freecam6: "No skater fade should be off by default"). JSRF-PC default
+ * and Max quality leave it, as the rest of Input > Behaviour > Camera
+ * (spriteice, 22 November 2026). */
 #define CAMWALL_WHOLE_DEFAULT 0
 
-/* The two settings, read once, at start, before the game runs, which also
- * adds their rows: each changes its setting at once and keeps it in the
- * settings file, on the window's thread.
+/* The two settings, read once, at start, before the game runs. Their
+ * ticks, the first two of Input > Behaviour > Camera, are in
+ * port/camera_scenes.c's row: each changes its setting at once and keeps
+ * it in the settings file, on the window's thread (camwall_flip and
+ * camwall_whole_flip).
  * Default cam fix: dcamfix= in the settings file (1, the default, or 0), or
- * Input > Behaviour > Default cam fix. Off, the game's own eye stands where
- * the game's wall test put it, as on the Xbox; the free camera's is kept out
- * of walls either way.
+ * Input > Behaviour > Camera > Default cam fix. Off, the game's own eye
+ * stands where the game's wall test put it, as on the Xbox; the free
+ * camera's is kept out of walls either way.
  * No skater fade: noskaterfade= (1, or 0, the default), or Input >
- * Behaviour > No skater fade. On, the free camera's eye, and the game's own
- * while Default cam fix is on, is not brought nearer the player than the
- * game draws them whole. Off, neither eye has a floor of its own (least 0 in
- * camwall_clear), as before known bug 61's fix: it comes in to a wall near
- * the player, as near as where the view starts, and the game fades your
- * skater out, or hides it, there. */
+ * Behaviour > Camera > No skater fade. On, the free camera's eye, and the
+ * game's own while Default cam fix is on, is not brought nearer the player
+ * than the game draws them whole. Off, neither eye has a floor of its own
+ * (least 0 in camwall_clear), as before known bug 61's fix: it comes in to
+ * a wall near the player, as near as where the view starts, and the game
+ * fades your skater out, or hides it, there. */
 void camwall_start(void);
 
 /* Whether the game's own eye is kept out of walls (Default cam fix). */
 int camwall_on(void);
+
+/* Whether an eye is held where the game draws the player whole (No skater
+ * fade). */
+int camwall_whole(void);
+
+#if defined(XBOXRECOMP_MENU)
+/* Default cam fix, and No skater fade, turned over from their ticks: at
+ * once, said in the log and kept in the settings file. */
+void camwall_flip(void);
+void camwall_whole_flip(void);
+#endif
 
 /* camwall_clear's least for an eye: whole, where the game draws the player
  * whole, with No skater fade on, for the free camera's eye (freecam 1) and

@@ -752,11 +752,15 @@ static int host_main(void)
     /* The free camera's settings, its rows in Input > Free camera, below the
      * layouts, and F8 (port/freecam.c). */
     { extern void freecam_start(void); freecam_start(); }
-    /* Whether the game's own camera is kept out of walls, and its row, the
-     * first in Input > Behaviour (port/camera_walls.c). */
+    /* Whether the game's own camera is kept out of walls, and how near the
+     * player it comes (port/camera_walls.c). */
     { extern void camwall_start(void); camwall_start(); }
+    /* Which of the game's own camera shots play, and Input > Behaviour's
+     * first row, Camera, with camera_walls.c's two ticks first
+     * (port/camera_scenes.c). */
+    { extern void camscene_start(void); camscene_start(); }
     /* Whether the keyboard steers the skater from the way it faces, and its
-     * row in Input > Behaviour, after Default cam fix (port/keyboard_move.c). */
+     * row in Input > Behaviour, after Camera (port/keyboard_move.c). */
     { extern void kbmove_start(void); kbmove_start(); }
     /* Whether the pad's sticks are stretched to the square's corners, and
      * its row, the last in Input > Behaviour, after Keyboard moves

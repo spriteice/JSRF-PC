@@ -50,6 +50,7 @@ typedef struct { uint32_t frame; PLAYBACK_ANCHOR kind; uint32_t value, random; }
 typedef struct { uint32_t frame, turn, camera; float pos[3]; } PbSpot;     /* a check or an idle moment */
 typedef struct { uint32_t frame; FREECAM_SETTINGS fc; } PbFreecam;
 typedef struct { uint32_t frame; int dx, dy; } PbMouse;
+typedef struct { uint32_t frame; unsigned ticks; } PbCamera;   /* Camera's ticks, a bit each */
 typedef struct { void *at; int n, cap; } PbList;
 
 static const char *const k_kind[PLAYBACK_ANCHOR_KINDS] = {
@@ -88,14 +89,17 @@ static void run_start(void)
 static FILE *s_out;
 static struct { int seen, none; XBOX_GAMEPAD pad; } s_last[PLAYBACK_PORTS];
 static struct { int seen; FREECAM_SETTINGS fc; } s_fc_last;
+static struct { int seen; unsigned ticks; } s_cam_last;
 static uint32_t s_next_check;
 
 /* Playing. */
-static PbList s_pads[PLAYBACK_PORTS], s_freecams, s_mice, s_anchors, s_checks, s_idles;
+static PbList s_pads[PLAYBACK_PORTS], s_freecams, s_mice, s_cameras, s_anchors, s_checks, s_idles;
 static int s_cur[PLAYBACK_PORTS] = { -1, -1, -1, -1 };
 static int s_fc_cur = -1, s_fc_player_seen;
 static int s_mouse_next, s_mouse_armed;     /* the next mouse line to take; the player's mouse still once */
 static FREECAM_SETTINGS s_fc_player;        /* the player's, as the last frame had them */
+static int s_cam_cur = -1, s_cam_player_seen, s_cam_before_said;
+static unsigned s_cam_player;               /* the player's ticks, as the last camera update had them */
 static int s_anchor_next, s_check_next, s_idle_next;
 static int64_t s_offset;                    /* the frame played less the frame recorded */
 static uint32_t s_end, s_wait_from;
@@ -106,6 +110,7 @@ static uint32_t s_packet[PLAYBACK_PORTS];
 #define PB_PADS(p)  ((PbPad *)s_pads[p].at)
 #define PB_FREECAM  ((PbFreecam *)s_freecams.at)
 #define PB_MOUSE    ((PbMouse *)s_mice.at)
+#define PB_CAMERA   ((PbCamera *)s_cameras.at)
 #define PB_ANCHOR   ((PbAnchor *)s_anchors.at)
 #define PB_CHECK    ((PbSpot *)s_checks.at)
 #define PB_IDLE     ((PbSpot *)s_idles.at)
@@ -283,6 +288,7 @@ int playback_record(const char *folder)
     s_next_check = 0;
     memset(s_last, 0, sizeof s_last);
     s_fc_last.seen = 0;
+    s_cam_last.seen = 0;
     hook_exit();
     fprintf(stderr, "[PLAYBACK] recording from the first frame into %s (JSRF-PC %s, " PB_PLATFORM ")\n",
             path, JSRF_VERSION);
@@ -340,6 +346,16 @@ static void record_freecam(const FREECAM_SETTINGS *fc)
     fprintf(s_out, " %d %d", fc->centre, fc->mouse);
     put_number(fc->mouse_sens);
     fputc('\n', s_out);
+}
+
+/* Input > Behaviour > Camera's ticks, three of them (camera_scenes.h). */
+#define PB_CAMERA_TICKS 3
+static void record_camscenes(unsigned ticks)
+{
+    if (s_cam_last.seen && s_cam_last.ticks == ticks) return;
+    s_cam_last.seen = 1;
+    s_cam_last.ticks = ticks;
+    fprintf(s_out, "camera %u %u %u %u\n", s_frame, ticks & 1u, (ticks >> 1) & 1u, (ticks >> 2) & 1u);
 }
 
 /* ---- reading a recording ------------------------------------------------ */
@@ -400,9 +416,11 @@ static void forget(void)
 {
     int p;
     for (p = 0; p < PLAYBACK_PORTS; p++) { free(s_pads[p].at); memset(&s_pads[p], 0, sizeof s_pads[p]); }
-    free(s_freecams.at); free(s_mice.at); free(s_anchors.at); free(s_checks.at); free(s_idles.at);
+    free(s_freecams.at); free(s_mice.at); free(s_cameras.at); free(s_anchors.at); free(s_checks.at);
+    free(s_idles.at);
     memset(&s_freecams, 0, sizeof s_freecams);
     memset(&s_mice, 0, sizeof s_mice);
+    memset(&s_cameras, 0, sizeof s_cameras);
     memset(&s_anchors, 0, sizeof s_anchors);
     memset(&s_checks, 0, sizeof s_checks);
     memset(&s_idles, 0, sizeof s_idles);
@@ -461,6 +479,18 @@ static int load(const char *path)
                  && (!s_mice.n || m.frame >= PB_MOUSE[s_mice.n - 1].frame);
             if (ok && (ok = (to = add(&s_mice, sizeof *to)) != NULL)) *to = m;
             frame = m.frame;
+        } else if (!strcmp(word, "camera")) {
+            PbCamera e, *to;
+            unsigned t[PB_CAMERA_TICKS];
+            int k;
+            ok = sscanf(s, "%u %u %u %u", &e.frame, &t[0], &t[1], &t[2]) == 1 + PB_CAMERA_TICKS
+                 && (!s_cameras.n || e.frame >= PB_CAMERA[s_cameras.n - 1].frame);
+            for (k = 0, e.ticks = 0; ok && k < PB_CAMERA_TICKS; k++) {
+                ok = t[k] <= 1;
+                e.ticks |= t[k] << k;
+            }
+            if (ok && (ok = (to = add(&s_cameras, sizeof *to)) != NULL)) *to = e;
+            frame = e.frame;
         } else if (!strcmp(word, "anchor")) {
             PbAnchor a, *to;
             char kind[16];
@@ -529,6 +559,8 @@ int playback_play(const char *folder, int exit_at_end)
     s_fc_cur = -1;
     s_fc_player_seen = 0;
     s_mouse_next = s_mouse_armed = 0;
+    s_cam_cur = -1;
+    s_cam_player_seen = s_cam_before_said = 0;
     s_anchor_next = s_check_next = s_idle_next = 0;
     s_offset = 0;
     s_exit_at_end = exit_at_end;
@@ -537,9 +569,9 @@ int playback_play(const char *folder, int exit_at_end)
     s_res.state = PLAYBACK_PLAYING;
     s_res.anchors = s_anchors.n;
     hook_exit();
-    fprintf(stderr, "[PLAYBACK] playing %s: %d pad changes, %d free camera changes, %d mouse moves, %d anchors,"
-            " %d checks, %d idle moments, %u frames%s\n", path, pads, s_freecams.n, s_mice.n, s_anchors.n, s_checks.n,
-            s_idles.n, s_end,
+    fprintf(stderr, "[PLAYBACK] playing %s: %d pad changes, %d free camera changes, %d mouse moves,"
+            " %d camera tick changes, %d anchors, %d checks, %d idle moments, %u frames%s\n", path, pads,
+            s_freecams.n, s_mice.n, s_cameras.n, s_anchors.n, s_checks.n, s_idles.n, s_end,
             exit_at_end ? "; the game closes at its end" : "; the game is yours at its end");
     pb_unlock();
     return 1;
@@ -696,6 +728,42 @@ static int play_mouse(int *dx, int *dy)
     return 1;
 }
 
+/* The recording's Camera ticks for this frame, in place of the player's:
+ * from its first camera line (before it, the player's), or, with none,
+ * PLAYBACK_CAMSCENES_BEFORE. */
+static int play_camscenes(unsigned *ticks)
+{
+    uint32_t f = recorded_frame();
+    int c = s_cam_cur;
+    /* The player's own change, in the menu: the game is theirs. */
+    if (s_cam_player_seen && *ticks != s_cam_player) {
+        fprintf(stderr, "[PLAYBACK] frame %u: the camera ticks were changed (the menu): the game is yours\n",
+                s_frame);
+        play_over(PLAYBACK_HANDED_BACK);
+        return 0;
+    }
+    s_cam_player = *ticks;
+    s_cam_player_seen = 1;
+    if (!s_cameras.n) {
+        if (!s_cam_before_said++)
+            fprintf(stderr, "[PLAYBACK] frame %u: no camera line: the game's own shots as before the Camera"
+                    " ticks (the graffiti shot only while the free camera is off)\n", s_frame);
+        *ticks = PLAYBACK_CAMSCENES_BEFORE;
+        return 1;
+    }
+    while (c + 1 < s_cameras.n && PB_CAMERA[c + 1].frame <= f) c++;
+    if (c < 0) return 0;
+    if (c != s_cam_cur) {
+        unsigned r = PB_CAMERA[c].ticks;
+        fprintf(stderr, "[PLAYBACK] frame %u: the camera ticks as recorded at frame %u: Graffiti cam %s,"
+                " Half pipe cam %s, Loop cam %s\n", s_frame, PB_CAMERA[c].frame, r & 1u ? "on" : "off",
+                r & 2u ? "on" : "off", r & 4u ? "on" : "off");
+    }
+    s_cam_cur = c;
+    *ticks = PB_CAMERA[c].ticks;
+    return 1;
+}
+
 static void play_view(float position[3], uint32_t *turn, uint32_t camera, int still)
 {
     uint32_t f = recorded_frame();
@@ -784,6 +852,16 @@ int playback_mouse(int *dx, int *dy)
     pb_lock();
     if (playing()) played = play_mouse(dx, dy);
     else if (s_out && (*dx || *dy)) fprintf(s_out, "mouse %u %d %d\n", s_frame, *dx, *dy);
+    pb_unlock();
+    return played;
+}
+
+int playback_camscenes(unsigned *ticks)
+{
+    int played = 0;
+    pb_lock();
+    if (playing()) played = play_camscenes(ticks);
+    else if (s_out) record_camscenes(*ticks);
     pb_unlock();
     return played;
 }

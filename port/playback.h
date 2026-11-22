@@ -42,7 +42,13 @@
  * the right stick too, ends playback and gives the game back, once they have
  * been let go of since it started; so does turning the free camera on or off,
  * or changing it in the menu, and a move of the mouse that would turn it,
- * once the mouse has been still since playback started.
+ * once the mouse has been still since playback started. Input > Behaviour >
+ * Camera's ticks for the game's shots (port/camera_scenes.c) are recorded
+ * too, as the camera update reads them: at the first, and whenever the menu
+ * changes them. On
+ * playback the recording's are in place of the player's from its first, and
+ * changing them in the menu ends playback; a recording with none, made
+ * before the ticks, plays the shots as the builds before them did.
  *
  * The recording is a folder, `recordings/<date>-<time>/` beside the settings
  * file (`portable/recordings/` in portable mode), holding recording.txt: one
@@ -54,6 +60,7 @@
  *   pad <frame>[.<read>] <port> none        no pad on that port
  *   freecam <frame> <on> <invert_x> <invert_y> <sensitivity_x> <sensitivity_y> <deadzone> <autocentre> <mouse> <mouse_sensitivity>
  *   mouse <frame> <x> <y>
+ *   camera <frame> <graffiti> <half_pipe> <loop>
  *   anchor <frame> <kind> <value> <random>
  *   check <frame> <x> <y> <z> <turn> <camera>
  *   idle <frame> <x> <y> <z> <turn> <camera>
@@ -71,7 +78,12 @@
  * camera turned by at that frame, in the mouse's counts, right and up
  * positive; on playback, the moves up to the recording's frame not yet taken
  * are taken at once, so a frame skipped to turns the view as far, and one
- * waited at turns it once. A kind is mission.bin,
+ * waited at turns it once. A camera line is Input > Behaviour > Camera's
+ * shots' ticks from that frame on, each 0 or 1: Graffiti cam, Half pipe cam
+ * and Loop cam; before the first, the ticks are as the player has them. A
+ * recording with no camera line has the half pipe's and the stage's fixed
+ * shots, and the graffiti shot only while the free camera is off
+ * (camscene_ticks_before). A kind is mission.bin,
  * mission.dat, stage, scene or scene-end, its value and the random generator
  * in eight hex digits. turn is the skater's turn, 0x10000 a whole turn, in
  * eight hex digits; camera the camera's mode. Lines starting with # are
@@ -165,6 +177,19 @@ int playback_freecam(FREECAM_SETTINGS *fc);
  * player's mouse moving while it plays hands the game back. Returns whether
  * the recording's is in place. */
 int playback_mouse(int *dx, int *dy);
+
+/* For a recording with no camera line: playback_camscenes puts this in place
+ * of the ticks, for camscene_ticks_before. */
+#define PLAYBACK_CAMSCENES_BEFORE 0x80000000u
+
+/* Each camera update (sub_000A5070) on a camera the pad steers, with
+ * Input > Behaviour > Camera's ticks as the player has them, a bit each
+ * (camera_scenes.h): recorded when they change, or, while a recording plays,
+ * the recording's put in their place from its first camera line, or
+ * PLAYBACK_CAMSCENES_BEFORE for a recording with none. The player changing
+ * them while it plays hands the game back. Returns whether the recording's
+ * are in place. */
+int playback_camscenes(unsigned *ticks);
 
 /* An anchor, as the game reaches it, with its random generator: kept, or
  * put back. */

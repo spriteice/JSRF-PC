@@ -178,9 +178,10 @@ int main(int argc, char **argv)
          * it, in their order. */
         static const char *const labels[] = { "Enable free camera", "Auto centre", "Invert X",
                                               "Invert Y", "Sensitivity X", "Sensitivity Y", "Deadzone",
-                                              "Mouse look", "Mouse sensitivity" };
-        int i, p;
-        assert(s_nrows == 10);
+                                              "Mouse look", "Mouse sensitivity", "Reset to default" };
+        const XBOX_MENU_ITEM *reset = &s_rows[10];
+        int i;
+        assert(s_nrows == 11);
         assert(s_rows[0].menu == XBOX_MENU_INPUT && s_rows[0].kind == XBOX_ITEM_GROUP);
         assert(!strcmp(s_rows[0].label, XBOX_GROUP_FREECAM) && !strcmp(s_rows[0].label, "Free camera"));
         assert(s_rows[0].hint && !strcmp(s_rows[0].hint, "Free camera toggle and settings."));
@@ -189,20 +190,18 @@ int main(int argc, char **argv)
             assert(s_rows[i].group && !strcmp(s_rows[i].group, XBOX_GROUP_FREECAM) && !s_rows[i].under);
             assert(s_rows[i].hint && strlen(s_rows[i].hint) <= MENU_HINT_LONGEST);
         }
-        /* File > Presets: Enable free camera off in Xbox mode, and JSRF-PC
-         * default's and Max quality's what a start with no key gives; the
-         * rest of the page, how the free camera handles, what a start with
-         * no key gives in every preset. */
+        /* File > Presets: Enable free camera off in Xbox mode, and left as
+         * the player has it by JSRF-PC default and Max quality; the rest of
+         * the page, how the free camera handles, set by no preset, with
+         * Reset to default at its foot, which asks first (spriteice, 22
+         * November 2026, the cards "Free camera too" and "Add a Reset
+         * row"). */
         assert(s_rows[1].presets == XBOX_PRESETS_SET && !s_rows[1].keep);
         assert(s_rows[1].preset[XBOX_PRESET_XBOX] == 0);
-        assert(s_rows[1].preset[XBOX_PRESET_JSRF_PC] == freecam_on());
-        assert(s_rows[1].preset[XBOX_PRESET_MAX] == freecam_on());
-        for (i = 2; i < s_nrows; i++) {
-            const XBOX_MENU_ITEM *r = &s_rows[i];
-            double now = r->kind == XBOX_ITEM_NUMBER ? r->value() : r->state();
-            assert(r->presets == XBOX_PRESETS_SET && !r->keep);
-            for (p = 0; p < XBOX_PRESETS; p++) assert(fabs(r->preset[p] - now) < 1e-9);
-        }
+        assert(s_rows[1].leave == (XBOX_PRESET_BIT(XBOX_PRESET_JSRF_PC) | XBOX_PRESET_BIT(XBOX_PRESET_MAX)));
+        for (i = 2; i < s_nrows; i++) assert(s_rows[i].presets == XBOX_PRESETS_LEFT && !s_rows[i].leave);
+        assert(reset->kind == XBOX_ITEM_ACTION && reset->run && reset->confirm);
+        assert(reset->hint[strlen(reset->hint) - 1] == '.');
         /* No key: off, and the game's eye stands, its reset too. The window
          * is asked for the mouse, and told it isn't wanted while freecam is
          * off. */
@@ -227,13 +226,13 @@ int main(int argc, char **argv)
         near(p, 3, "inverted y");
     } else if (!strcmp(c, "sensitivity")) {
         /* sensitivity_x=10, sensitivity_y=2.5; half tilt is half the speed
-         * past the default deadzone, 0.15. */
+         * past the default deadzone, 0.10. */
         turn(32767, 0, &h, &p);
         near(h, 6, "full right at 10");
         turn(0, -32767, &h, &p);
         near(p, 1.5, "full down at 2.5");
         turn(16384, 0, &h, &p);
-        near(h, 6.0 * (16384.0 / 32767 - 0.15) / 0.85, "half right at 10");
+        near(h, 6.0 * (16384.0 / 32767 - 0.10) / 0.90, "half right at 10");
     } else if (!strcmp(c, "deadzone")) {
         /* deadzone=0.5, radial and rescaled. */
         turn(13107, 0, &h, &p);                 /* 0.4: inside */
@@ -251,13 +250,13 @@ int main(int argc, char **argv)
         turn(32767, 32767, &h, &p);
         near(h, 0, "deadzone 1, x"); near(p, 0, "deadzone 1, y");
     } else if (!strcmp(c, "fallback")) {
-        /* Every key bad: the defaults, 5 and 0.15 and no invert. */
+        /* Every key bad: the defaults, 5 and 0.10 and no invert. */
         turn(32767, 0, &h, &p);
         near(h, 3, "default sensitivity, not inverted");
-        turn(4500, 0, &h, &p);                  /* 0.137: inside 0.15 */
+        turn(2900, 0, &h, &p);                  /* 0.089: inside 0.10 */
         near(h, 0, "default deadzone");
         turn(6554, 0, &h, &p);                  /* 0.2: past it */
-        near(h, 3 * (6554.0 / 32767 - 0.15) / 0.85, "past the default deadzone");
+        near(h, 3 * (6554.0 / 32767 - 0.10) / 0.90, "past the default deadzone");
     } else if (!strcmp(c, "pitch")) {
         int i;
         for (i = 0; i < 100; i++) assert(frame(0, 32767, eye));
@@ -493,6 +492,27 @@ int main(int argc, char **argv)
         freecam_frame();
         assert(!freecam_on());
         assert(nv_window_pref_num("freecam", &v) == 1 && v == 0);
+    } else if (!strcmp(c, "menu_reset")) {
+        /* Reset to default: every row but the switch back at its default,
+         * kept in the settings file; the free camera stays on. */
+        const XBOX_MENU_ITEM *reset = &s_rows[10];
+        FREECAM_SETTINGS now;
+        double v = -1;
+        freecam_settings(&now);
+        assert(now.on && now.invert_x && now.sens_x == 8 && now.deadzone == 0.5 && now.centre == 2);
+        assert(!now.mouse && now.mouse_sens == 9);
+        assert(!strcmp(reset->label, "Reset to default"));
+        reset->run();
+        freecam_settings(&now);
+        assert(now.on && !now.invert_x && !now.invert_y && now.sens_x == 5 && now.sens_y == 5);
+        assert(fabs(now.deadzone - 0.10) < 1e-9 && now.centre == 0 && now.mouse && now.mouse_sens == 5);
+        assert(nv_window_pref_num("deadzone", &v) == 1 && fabs(v - 0.10) < 1e-9);
+        assert(nv_window_pref_num("sensitivity_x", &v) == 1 && v == 5);
+        assert(nv_window_pref_num("invert_x", &v) == 1 && v == 0);
+        assert(nv_window_pref_num("autocentre", &v) == 1 && v == 0);
+        assert(nv_window_pref_num("mouse", &v) == 1 && v == 1);
+        assert(nv_window_pref_num("mouse_sensitivity", &v) == 1 && v == 5);
+        assert(nv_window_pref_num("freecam", &v) == 1 && v == 1);
     } else if (!strcmp(c, "menu")) {
         /* A row changes the tuning from the next frame, as F8 does the
          * switch: Sensitivity X at 10 turns full right by 6 degrees, once a

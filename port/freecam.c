@@ -63,7 +63,7 @@
  *   invert_y       0 / 1    0: up tilts the view up
  *   sensitivity_x  1 - 10   36 degrees a second at full tilt per step
  *   sensitivity_y  1 - 10
- *   deadzone       0 - 1    0.15 = 15%, the default, measured on the stick's
+ *   deadzone       0 - 1    0.10 = 10%, the default, measured on the stick's
  *                           distance from centre, and the speed rescaled from 0
  *                           at its edge
  *   mouse          0 / 1    1, the default: the mouse turns it too
@@ -136,13 +136,13 @@ static int nv_window_mouse_take(int asker, int *dx, int *dy)
 #endif
 
 /* With no keys in the settings: off (the game's own camera), neither way
- * inverted, auto centre off, 5 either way, a 15% deadzone, and the mouse on
- * at 5. */
+ * inverted, auto centre off, 5 either way, a 10% deadzone (spriteice, 22
+ * November 2026, from 15%), and the mouse on at 5. */
 #define FREECAM_ON_DEFAULT         0
 #define FREECAM_INVERT_DEFAULT     0
 #define FREECAM_CENTRE_DEFAULT     0
 #define FREECAM_SENS_DEFAULT       5.0
-#define FREECAM_DEADZONE_DEFAULT   0.15
+#define FREECAM_DEADZONE_DEFAULT   0.10
 #define FREECAM_MOUSE_DEFAULT      1
 #define FREECAM_MOUSE_SENS_DEFAULT 5.0
 /* The player's: the settings file's, then as F8, the pad's button and the
@@ -400,72 +400,92 @@ static void   menu_mouse_run(void)     { s_asked.mouse = !s_asked.mouse; nv_wind
 static double menu_mouse_sens(void)    { return s_asked.mouse_sens; }
 static void   menu_mouse_sens_set(double v) { s_asked.mouse_sens = v; nv_window_pref_set_num("mouse_sensitivity", v); }
 
+/* Reset to default: every row of Free camera but its switch, at its
+ * default, kept in the settings file as each row keeps its own. */
+static void menu_reset(void)
+{
+    s_asked.centre = FREECAM_CENTRE_DEFAULT;
+    s_asked.invert_x = s_asked.invert_y = FREECAM_INVERT_DEFAULT;
+    s_asked.sens_x = s_asked.sens_y = FREECAM_SENS_DEFAULT;
+    s_asked.deadzone = FREECAM_DEADZONE_DEFAULT;
+    s_asked.mouse = FREECAM_MOUSE_DEFAULT;
+    s_asked.mouse_sens = FREECAM_MOUSE_SENS_DEFAULT;
+    nv_window_pref_set_num("autocentre", s_asked.centre);
+    nv_window_pref_set_num("invert_x", s_asked.invert_x);
+    nv_window_pref_set_num("invert_y", s_asked.invert_y);
+    nv_window_pref_set_num("sensitivity_x", s_asked.sens_x);
+    nv_window_pref_set_num("sensitivity_y", s_asked.sens_y);
+    nv_window_pref_set_num("deadzone", s_asked.deadzone);
+    nv_window_pref_set_num("mouse", s_asked.mouse);
+    nv_window_pref_set_num("mouse_sensitivity", s_asked.mouse_sens);
+    {
+        FREECAM_SETTINGS now = s_asked;
+        say("reset to default (the menu)", &now);
+    }
+}
+
 static void freecam_menu(void)
 {
     const XBOX_MENU_ITEM rows[] = {
         { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_FREECAM,
           .hint = "Free camera toggle and settings." },
-        /* File > Presets: the game's own camera in Xbox mode, and how the
-         * free camera handles at its defaults in each preset. */
+        /* File > Presets: the game's own camera in Xbox mode, which JSRF-PC
+         * default and Max quality leave as the player has it; and how it
+         * handles, which no preset sets, with Reset to default at the foot
+         * (spriteice, 22 November 2026, the card "Free camera too"). */
         { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_TOGGLE, .label = "Enable free camera",
           .group = XBOX_GROUP_FREECAM, .state = menu_on, .run = freecam_flip,
-          .presets = XBOX_PRESETS_SET,
-          .preset = { 0, FREECAM_ON_DEFAULT, FREECAM_ON_DEFAULT },
+          .presets = XBOX_PRESETS_SET, .preset = { 0, 0, 0 },
+          .leave = XBOX_PRESET_BIT(XBOX_PRESET_JSRF_PC) | XBOX_PRESET_BIT(XBOX_PRESET_MAX),
           .hint = "Lets the right stick, or the mouse, control the camera." },
         { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_CHOICE, .label = "Auto centre",
           .group = XBOX_GROUP_FREECAM,
           .state = menu_centre, .pick = menu_centre_pick,
           .choices = k_centre_names, .nchoices = FREECAM_CENTRE_LEVELS,
-          .presets = XBOX_PRESETS_SET,
-          .preset = { FREECAM_CENTRE_DEFAULT, FREECAM_CENTRE_DEFAULT, FREECAM_CENTRE_DEFAULT },
+          .presets = XBOX_PRESETS_LEFT,
           .hint = "Resets the camera shortly after the right stick rests." },
         { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_TOGGLE, .label = "Invert X",
           .group = XBOX_GROUP_FREECAM,
           .state = menu_inv_x, .run = menu_inv_x_run,
-          .presets = XBOX_PRESETS_SET,
-          .preset = { FREECAM_INVERT_DEFAULT, FREECAM_INVERT_DEFAULT, FREECAM_INVERT_DEFAULT },
+          .presets = XBOX_PRESETS_LEFT,
           .hint = "Swaps the camera's left and right." },
         { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_TOGGLE, .label = "Invert Y",
           .group = XBOX_GROUP_FREECAM,
           .state = menu_inv_y, .run = menu_inv_y_run,
-          .presets = XBOX_PRESETS_SET,
-          .preset = { FREECAM_INVERT_DEFAULT, FREECAM_INVERT_DEFAULT, FREECAM_INVERT_DEFAULT },
+          .presets = XBOX_PRESETS_LEFT,
           .hint = "Swaps the camera's up and down." },
         { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_NUMBER, .label = "Sensitivity X",
           .group = XBOX_GROUP_FREECAM,
           .value = menu_sens_x, .set = menu_sens_x_set,
           .min = FREECAM_SENS_MIN, .max = FREECAM_SENS_MAX, .step = 1, .format = "%g",
-          .presets = XBOX_PRESETS_SET,
-          .preset = { FREECAM_SENS_DEFAULT, FREECAM_SENS_DEFAULT, FREECAM_SENS_DEFAULT },
+          .presets = XBOX_PRESETS_LEFT,
           .hint = "Sets how fast the right stick turns the camera left and right." },
         { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_NUMBER, .label = "Sensitivity Y",
           .group = XBOX_GROUP_FREECAM,
           .value = menu_sens_y, .set = menu_sens_y_set,
           .min = FREECAM_SENS_MIN, .max = FREECAM_SENS_MAX, .step = 1, .format = "%g",
-          .presets = XBOX_PRESETS_SET,
-          .preset = { FREECAM_SENS_DEFAULT, FREECAM_SENS_DEFAULT, FREECAM_SENS_DEFAULT },
+          .presets = XBOX_PRESETS_LEFT,
           .hint = "Sets how fast the right stick turns the camera up and down." },
         { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_NUMBER, .label = "Deadzone",
           .group = XBOX_GROUP_FREECAM,
           .value = menu_dz, .set = menu_dz_set, .min = 0, .max = 100, .step = 5, .format = "%g%%",
-          .presets = XBOX_PRESETS_SET,
-          .preset = { FREECAM_DEADZONE_DEFAULT * 100, FREECAM_DEADZONE_DEFAULT * 100,
-                      FREECAM_DEADZONE_DEFAULT * 100 },
+          .presets = XBOX_PRESETS_LEFT,
           .hint = "Sets how far the right stick moves before the camera turns." },
         { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_TOGGLE, .label = "Mouse look",
           .group = XBOX_GROUP_FREECAM,
           .state = menu_mouse, .run = menu_mouse_run,
-          .presets = XBOX_PRESETS_SET,
-          .preset = { FREECAM_MOUSE_DEFAULT, FREECAM_MOUSE_DEFAULT, FREECAM_MOUSE_DEFAULT },
+          .presets = XBOX_PRESETS_LEFT,
           .hint = "Lets the mouse turn the free camera." },
         { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_NUMBER, .label = "Mouse sensitivity",
           .group = XBOX_GROUP_FREECAM,
           .value = menu_mouse_sens, .set = menu_mouse_sens_set,
           .min = FREECAM_SENS_MIN, .max = FREECAM_SENS_MAX, .step = 1, .format = "%g",
-          .presets = XBOX_PRESETS_SET,
-          .preset = { FREECAM_MOUSE_SENS_DEFAULT, FREECAM_MOUSE_SENS_DEFAULT,
-                      FREECAM_MOUSE_SENS_DEFAULT },
+          .presets = XBOX_PRESETS_LEFT,
           .hint = "Sets how fast the mouse turns the camera." },
+        { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_ACTION, .label = "Reset to default",
+          .group = XBOX_GROUP_FREECAM, .run = menu_reset, .presets = XBOX_PRESETS_LEFT,
+          .confirm = "Put the free camera's settings back to their defaults?",
+          .hint = "Puts every setting above but Enable free camera back to its default." },
     };
     xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
 }

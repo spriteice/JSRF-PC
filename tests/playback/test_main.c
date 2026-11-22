@@ -133,6 +133,7 @@ typedef struct {
     XBOX_GAMEPAD seen[FRAMES + 4000][READS];    /* what it read, each pass */
     float at[FRAMES + 4000][3];                 /* where the skater was after it */
     float eye[FRAMES + 4000][3];                /* where the free camera put the eye: 0s for none */
+    unsigned ticks[FRAMES + 4000];              /* Camera's ticks as the camera update had them */
     uint32_t random_after[8];                   /* the generator after each anchor */
     int anchors;
 } Game;
@@ -206,6 +207,8 @@ typedef struct {
     int mouse_at;               /* the player's mouse moved from this frame (0: never) */
     int f8_at;                  /* F8 pressed at this frame (0: never) */
     int recording;              /* the host is the player: recording; 2, with the free camera */
+    unsigned ticks, ticks2;     /* the player's Camera ticks, and from ticks_at (0: never) */
+    int ticks_at;
 } How;
 
 static int anchor_frame(const How *h, int i)
@@ -251,9 +254,13 @@ static void run(Game *g, const How *h)
         freecam_frame();
         if (!in_scene) {
             float seye[3] = { g->pos[0], g->pos[1] + CAM_UP, g->pos[2] - CAM_BACK };
+            unsigned ticks = h->ticks_at && f >= h->ticks_at ? h->ticks2 : h->ticks;
             if (freecam_orbit(CAM, CAMERA, g->pos, seye, 0, g->eye[f]) != FREECAM_OFF)
                 heading = atan2f(g->pos[0] - g->eye[f][0], g->pos[2] - g->eye[f][2]);
             freecam_ran(CAM);
+            /* And the camera update's Camera ticks, as it reads them. */
+            playback_camscenes(&ticks);
+            g->ticks[f] = ticks;
         }
         /* The skater moves by the last read, forward the way the view
          * faces; the generator is drawn a number of times that follows the
@@ -313,7 +320,7 @@ static void record(void)
         checks += !strncmp(line, "check ", 6);
         idles += !strncmp(line, "idle ", 5);
         ends += !strcmp(line, "end 1000\n");
-        cams += !strcmp(line, "freecam 1 0 0 0 5 5 0.15 0 1 5\n");
+        cams += !strcmp(line, "freecam 1 0 0 0 5 5 0.1 0 1 5\n");
     }
     fclose(f);
     /* A check a second of frames from the first: 7 before the scene (400 to
@@ -646,6 +653,77 @@ static void by_hand(void)
     CHECK(!playback_play(folder, 0), "no recording, played");
 }
 
+/* Input > Behaviour > Camera's ticks: recorded at the first camera update
+ * and when they change, then played with the player's left as they were;
+ * by hand, the player's before the first camera line and the recording's
+ * from there; with none, the shots as before the ticks; the player's change
+ * hands the game back; a line out of its range, short of a tick or back in
+ * time, refused. */
+static void camera_ticks(void)
+{
+    char folder[700], path[760], line[256];
+    unsigned at[2] = { 0, 0 }, t[2][3];
+    int lines = 0, f;
+    FILE *fp;
+    How rec = { .frames = 30, .skip_anchor = -1, .wrong_anchor = -1, .recording = 1,
+                .ticks = 7, .ticks_at = 12, .ticks2 = 5 };
+    How h = { .frames = 30, .skip_anchor = -1, .wrong_anchor = -1, .ticks = 7 };
+    snprintf(folder, sizeof folder, "%s/ticks", g_dir);
+    CHECK(playback_record(folder), "a recording of the Camera ticks couldn't start");
+    run(&g_play, &rec);
+    playback_stop();
+    snprintf(path, sizeof path, "%s/" PLAYBACK_FILE, folder);
+    fp = fopen(path, "r");
+    CHECK(fp != NULL, "no %s", path);
+    if (!fp) return;
+    while (fgets(line, sizeof line, fp))
+        if (!strncmp(line, "camera ", 7)) {
+            if (lines < 2)
+                CHECK(sscanf(line, "camera %u %u %u %u", &at[lines], &t[lines][0], &t[lines][1], &t[lines][2]) == 4,
+                      "a camera line: %s", line);
+            lines++;
+        }
+    fclose(fp);
+    CHECK(lines == 2 && at[1] == at[0] + 12 && t[0][0] && t[0][1] && t[0][2] && t[1][0] && !t[1][1] && t[1][2],
+          "the Camera ticks' recording: %d camera lines, at %u and %u", lines, at[0], at[1]);
+    /* Played with the player's ticks all on: the recording's in their place. */
+    CHECK(playback_play(folder, 0), "the Camera ticks' recording refused");
+    h.frames = 34;                  /* past its end */
+    run(&g_play, &h);
+    h.frames = 30;
+    for (f = 0; f < 29; f++)
+        CHECK(g_play.ticks[f] == (f < 12 ? 7u : 5u), "the Camera ticks played: %u at pass %d", g_play.ticks[f], f);
+    CHECK(playback_state() == PLAYBACK_FINISHED, "the Camera ticks played: state %d", playback_state());
+    /* By hand: Half pipe cam alone from frame 3, the player's before. */
+    write_file(folder, "jsrf-pc-recording 1\ncamera 3 0 1 0\nend 20\n");
+    CHECK(playback_play(folder, 0), "Camera ticks written by hand refused");
+    run(&g_play, &h);
+    CHECK(g_play.ticks[0] == 7 && g_play.ticks[1] == 7 && g_play.ticks[2] == 2 && g_play.ticks[18] == 2
+          && playback_state() == PLAYBACK_FINISHED, "by hand, the Camera ticks: %u %u %u, state %d",
+          g_play.ticks[1], g_play.ticks[2], g_play.ticks[18], playback_state());
+    /* None: the shots as before the ticks, from the first. */
+    write_file(folder, "jsrf-pc-recording 1\nend 10\n");
+    CHECK(playback_play(folder, 0), "a recording with no camera line refused");
+    run(&g_play, &h);
+    CHECK(g_play.ticks[0] == PLAYBACK_CAMSCENES_BEFORE && g_play.ticks[8] == PLAYBACK_CAMSCENES_BEFORE
+          && playback_state() == PLAYBACK_FINISHED, "with no camera line: %08X, state %d", g_play.ticks[0],
+          playback_state());
+    /* The player's change while it plays: the game is theirs. */
+    write_file(folder, "jsrf-pc-recording 1\ncamera 3 0 1 0\nend 20\n");
+    CHECK(playback_play(folder, 0), "Camera ticks written by hand refused");
+    h.ticks_at = 6;
+    h.ticks2 = 3;
+    run(&g_play, &h);
+    CHECK(playback_state() == PLAYBACK_HANDED_BACK && g_play.ticks[6] == 3,
+          "the player's Camera ticks changed: state %d, ticks %u", playback_state(), g_play.ticks[6]);
+    write_file(folder, "jsrf-pc-recording 1\ncamera 3 0 2 0\n");
+    CHECK(!playback_play(folder, 0), "a Camera tick of 2, played");
+    write_file(folder, "jsrf-pc-recording 1\ncamera 3 0 1\n");
+    CHECK(!playback_play(folder, 0), "a camera line short of a tick, played");
+    write_file(folder, "jsrf-pc-recording 1\ncamera 5 1 1 1\ncamera 4 1 1 1\n");
+    CHECK(!playback_play(folder, 0), "a camera line back in time, played");
+}
+
 /* As the engine starts: the environment read and taken out; JSRF_RECORD
  * makes a recording beside the settings file; Developer > Playback's rows,
  * Play's choices the recordings there, newest first. */
@@ -703,7 +781,7 @@ int main(int argc, char **argv)
         mkdir(folder, 0755);
     }
     freecam_start();                    /* no keys in the settings: off, at its defaults */
-    CHECK(g_f8 && g_r3 && g_mouse_want && !g_mouse_want() && g_ncam_rows == 10 && !freecam_on(),
+    CHECK(g_f8 && g_r3 && g_mouse_want && !g_mouse_want() && g_ncam_rows == 11 && !freecam_on(),
           "the free camera didn't start as it does");
     record();
     play_same();
@@ -716,6 +794,7 @@ int main(int argc, char **argv)
     play_cam();
     play_cam_take_over();
     by_hand();
+    camera_ticks();
     start();
     if (g_bad) return 1;
     printf("playback: all cases pass\n");

@@ -91,10 +91,15 @@ These work in a window or full screen, and each one is remembered.
 
 F8, or R3 (a click of the right stick), gives the right stick to the camera,
 which turns around the player, and forward is wherever it looks. The L
-trigger puts it back behind the player, as it does the game's camera. It
-also turns the graffiti camera off, like the option in the Jet Set Radio
-re-release: spraying no longer turns the camera to the wall. Talking to
-someone doesn't turn it to them either.
+trigger puts it back behind the player, as it does the game's camera.
+Talking to someone doesn't turn it to them. The game's own shots, such as
+the camera turning to the wall you spray, are Input > Behaviour > Camera's,
+with the free camera on or off ([In-game menu](#in-game-menu), below):
+ticked, the game takes the camera for them as on the Xbox, and gives it
+back to the free camera after; unticked, like the graffiti camera option in
+the Jet Set Radio re-release, they don't play, and the free camera stays.
+With Half pipe cam unticked, it rises and falls with your skater through a
+half pipe's jump, as the game's camera does then.
 
 Inversion, sensitivity, and the deadzone are in the in-game menu under
 Input > Free camera, and in the settings file (see the `README.txt` in the
@@ -193,15 +198,16 @@ move it. The view never comes closer to the player than just in front of them:
 right up against a wall with the camera turned into it, you see through that
 wall rather than the view turning over. That close, your skater fades out,
 as the game fades them when its camera comes near and hides them when it's
-right on them, as on the Xbox. Input > Behaviour > No skater fade, right
-under Default cam fix (off by default), keeps the camera further out
+right on them, as on the Xbox. No skater fade, the tick under Default cam
+fix in Input > Behaviour > Camera (off by default), keeps the camera further out
 instead, where the game shows the player whole: with a wall nearer than that
 on the camera's side, as when you fall down a tower with the free camera
 turned to it, you see through the wall and still see the player. Where the
 game itself puts its own camera that close, it stays there, as on the Xbox.
-While you spray graffiti, the game frames the shot itself, as on the Xbox,
-and the camera leaves it as it is. Input > Behaviour >
-Default cam fix turns this off for the game's own camera, which then stops at
+The game's own shots (Input > Behaviour > Camera), such as the camera
+turning to the graffiti you spray, are left as the game frames them, as on
+the Xbox. Camera's first tick,
+Default cam fix, turns this off for the game's own camera, which then stops at
 walls as on the Xbox, with No skater fade or without it; the free camera keeps
 walls out of its view either way.
 
@@ -225,12 +231,14 @@ input goes to the menu.
   Menus and HUD, Textures and Graffiti, and both anti-aliasings at their most,
   as far as the graphics card goes, and Far buildings and Far shadows at 3x.
   A preset sets every setting but Developer's, Input's two layouts, Mute,
-  Shader cache and Audio effects: each
-  one also puts the game
-  full screen, Upscaling's Cleanup as a new install has it, the free
-  camera's own settings back to their defaults, Keyboard moves at
-  Camera, and Stick shape at Square. The one ticked is the one your settings
-  match, if any.
+  Shader cache and Audio effects: each one also puts the game full screen,
+  Upscaling's Cleanup as a new install has it, Keyboard moves at Camera,
+  and Stick shape at Square. Input > Behaviour > Camera and Input > Free
+  camera are yours: JSRF-PC default and Max quality leave them as they are,
+  and Xbox mode turns the free camera, Default cam fix and No skater fade
+  off and ticks the game's three shots, leaving the free camera's own
+  settings as they are. The one ticked is the one your settings match, if
+  any.
 - **Display:** Full screen, the resolution (its choices as F9 gives them),
   the aspect ratio, the HUD submenu, the draw distance, the Building distance submenu (Far
   buildings and Far shadows), and a submenu at the end, Enhancements, with
@@ -325,19 +333,36 @@ input goes to the menu.
   differs from its default; Reset to default puts its page back. No preset
   changes them. Free camera has [the free
   camera](#free-camera)'s own settings: Enable free camera, Auto centre,
-  Invert X, Invert Y, Sensitivity X, Sensitivity Y, Deadzone (15% by
+  Invert X, Invert Y, Sensitivity X, Sensitivity Y, Deadzone (10% by
   default), Mouse look (on by default), and Mouse sensitivity (5 by
-  default). Behaviour has Default cam fix, No skater fade, Keyboard moves,
-  then Stick shape. Default cam fix keeps the game's own camera out of
+  default), then Reset to default, which asks first, and puts all of them
+  but Enable free camera back to their defaults. Behaviour has Camera,
+  Keyboard moves, then Stick shape. Camera is five ticks, each with its own
+  line along the bottom: Default cam fix and No skater fade, for walls, then
+  the game's own shots, Graffiti cam, Half pipe cam and Loop cam. Default
+  cam fix keeps the game's own camera out of
   walls (Near walls, above). On by default; off, the game's camera is as on the Xbox. It
   changes at once, and is kept as `dcamfix=` (1 or 0) in the settings file.
   No skater fade keeps the camera as far from your skater as the game shows
   them whole, seeing through a wall nearer than that ([Near
   walls](#near-walls), above): the free camera always, and the game's own
-  while Default cam fix is on. Off by default, and in each preset: the
+  while Default cam fix is on. Off by default, and in Xbox mode: the
   camera comes in to the wall and your skater fades out as it nears them. It
   changes at once, and is kept as `noskaterfade=` (1 or 0) in the settings
-  file. Keyboard moves
+  file. The last three ticks are the game's own camera shots: Graffiti cam,
+  the camera turning to the graffiti you spray; Half pipe cam, the shot of
+  a jump in a half pipe; and Loop cam, the fixed shots a stage places, as
+  when you grind a loop or jump past one. Ticked, the game takes the camera
+  for that shot as on the Xbox, whatever the free camera, Default cam fix
+  and No skater fade; unticked, the shot doesn't play, and the camera keeps
+  following you, the free camera too if it's on. Through a half pipe's jump
+  with Half pipe cam unticked, the camera rises and falls with you, at its
+  own angle and distance, and settles back as you land; on the Xbox's own
+  follow camera you would fly up out of view. The camera that holds
+  still as you skate out of a level's exit is no tick's: it is always as on
+  the Xbox. All three are ticked by default, and in Xbox mode. Each
+  changes at once, and is kept as `graffiti_cam=`, `half_pipe_cam=` and
+  `loop_cam=` (1 or 0) in the settings file. Keyboard moves
   sets how W A S D move the skater ([Keyboard](#keyboard), above): from the
   way the camera faces (Camera, the default), or from the way the skater
   faces (Skater), which the camera turning, the free camera or the game's
@@ -455,14 +480,18 @@ input goes to the menu.
     The [free camera](#free-camera) is recorded too: its stick, the
     mouse's turns of it, turning it on and off, and its settings under
     Input > Free camera, which a recording plays back in place of yours
-    while it plays, leaving yours as they were. Each recording is a folder
+    while it plays, leaving yours as they were. So are Input > Behaviour >
+    Camera's ticks for the game's three shots; a recording made before them
+    plays the game's shots as those builds did, the graffiti shot only while
+    the free camera is off. Each recording is a folder
     in `recordings` beside the settings file (`portable/recordings` in
     portable mode), named by when it started, in UTC, as
     `2026-11-19-091500`. Play (Restart) lists the recordings there were
     when the game started, newest first; picking one asks first, then
     restarts the game and plays it. Press anything on a controller or the
     keyboard, move the mouse while the free camera steers with it, or turn
-    the free camera on or off or change its settings, and it stops, and
+    the free camera on or off or change its settings or the shots' ticks,
+    and it stops, and
     the game is yours from there; it stops itself at the recording's end,
     or if the game has gone another way (below). The launcher plays one
     with `--play <folder>`, and closes the game at its end. A recording is

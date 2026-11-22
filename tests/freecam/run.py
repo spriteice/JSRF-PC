@@ -51,10 +51,10 @@ cases = {
                  "deadzone=-0.1\ninvert_x=yes\ninvert_y=nan\n",
                  ["sensitivity_x=11 is outside 1 to 10; using 5",
                   "sensitivity_y is not a number; using 5",
-                  "deadzone=-0.1 is outside 0 to 1; using 0.15",
+                  "deadzone=-0.1 is outside 0 to 1; using 0.1",
                   "invert_x is not a number; using 0",
                   "invert_y=nan is outside",
-                  "invert x 0 y 0, sensitivity x 5 y 5, deadzone 0.15"]),
+                  "invert x 0 y 0, sensitivity x 5 y 5, deadzone 0.1"]),
     "pitch": ("freecam=1\n", []),
     "steer": ("freecam=1\n", ["steering the camera", "idle: the follow camera is not running"]),
     "reset": ("freecam=1\n", ["from heading -90, pitch 0, as the game put it back behind the player"]),
@@ -64,6 +64,10 @@ cases = {
     "r3": ("freecam=0\n", ["[FREECAM] on (F8, the pad or the menu)",
                            "[FREECAM] off (F8, the pad or the menu)"]),
     "menu": ("freecam=1\n", ["sensitivity x 5 y 5"]),
+    "menu_reset": ("freecam=1\ninvert_x=1\nsensitivity_x=8\ndeadzone=0.5\nautocentre=2\nmouse=0\n"
+                   "mouse_sensitivity=9\n",
+                   ["[FREECAM] on (reset to default (the menu)); invert x 0 y 0, sensitivity x 5 y 5,"
+                    " deadzone 0.1, auto centre Off, mouse look on at 5"]),
     "played": ("freecam=0\n", ["[FREECAM] off (yours again, as playback ended); invert x 0 y 0, sensitivity x 5 y 5"]),
     "held": ("freecam=1\n", ["held: its camera did not run; keeping the view", "steering the camera"]),
     # auto centre: centre_<wait>_<ease>, the level's frames and share (port/freecam.c, k_centre)
@@ -85,7 +89,7 @@ cases = {
     "mouse_centre": ("freecam=1\nautocentre=3\n", ["auto centre High"]),
     "mouse_pitch": ("freecam=1\n", []),
     "mouse_played": ("freecam=1\nmouse=0\n", ["[FREECAM] on (yours again, as playback ended); invert x 0 y 0,"
-                                             " sensitivity x 5 y 5, deadzone 0.15, auto centre Off,"
+                                             " sensitivity x 5 y 5, deadzone 0.1, auto centre Off,"
                                              " mouse look off at 5"]),
 }
 

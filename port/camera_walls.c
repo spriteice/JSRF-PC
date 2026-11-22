@@ -3,17 +3,14 @@
  * What a camera keeps from one frame to the next, the share and the move
  * across, is each camera's own (camwall_for), or the caller's. Default cam
  * fix, whether the game's own eye is kept out of walls, is dcamfix= in the
- * settings file, or its row in Input > Behaviour; No skater fade, whether a
- * camera's eye is held where the game draws the player whole, is
- * noskaterfade=, or its row right under it (both camwall_start). Their rows
- * run on the window's thread, and the follow camera's hook reads them on the
- * game's. */
+ * settings file, or the first tick of Input > Behaviour > Camera; No skater
+ * fade, whether a camera's eye is held where the game draws the player
+ * whole, is noskaterfade=, or the tick under it (camwall_start, and
+ * port/camera_scenes.c's row). The row runs on the window's thread, and the
+ * follow camera's hook reads them on the game's. */
 #include <math.h>
 #include <stdio.h>
 #include "camera_walls.h"
-#if defined(XBOXRECOMP_MENU)
-#  include "menu.h"
-#endif
 
 #if defined(NV2A_GL_USE_SDL)
 /* nv2a_gl.c: a number from the settings file the engine already keeps, and a
@@ -37,15 +34,13 @@ static volatile int s_on = CAMWALL_DEFAULT;
 static volatile int s_whole = CAMWALL_WHOLE_DEFAULT;
 
 #if defined(XBOXRECOMP_MENU)
-static int  menu_on(void) { return s_on; }
-static void menu_flip(void)
+void camwall_flip(void)
 {
     s_on = !s_on;
     fprintf(stderr, "[CAMWALL] default cam fix %s (the menu)\n", s_on ? "on" : "off");
     nv_window_pref_set_num("dcamfix", s_on);
 }
-static int  menu_whole(void) { return s_whole; }
-static void menu_whole_flip(void)
+void camwall_whole_flip(void)
 {
     s_whole = !s_whole;
     fprintf(stderr, "[CAMWALL] no skater fade %s (the menu)\n", s_whole ? "on" : "off");
@@ -60,35 +55,16 @@ void camwall_start(void)
     s_whole = nv_window_pref_num("noskaterfade", &v) > 0 ? v != 0 : CAMWALL_WHOLE_DEFAULT;
     fprintf(stderr, "[CAMWALL] default cam fix %s (settings)\n", s_on ? "on" : "off");
     fprintf(stderr, "[CAMWALL] no skater fade %s (settings)\n", s_whole ? "on" : "off");
-#if defined(XBOXRECOMP_MENU)
-    {
-        /* The first two rows of Input > Behaviour, which it adds too
-         * (menu.h): No skater fade right under Default cam fix, as it holds
-         * the game's own eye only while that is on. */
-        const XBOX_MENU_ITEM rows[] = {
-            { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_BEHAVIOUR,
-              .hint = XBOX_GROUP_BEHAVIOUR_HINT },
-            { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_TOGGLE, .label = "Default cam fix",
-              .group = XBOX_GROUP_BEHAVIOUR, .state = menu_on, .run = menu_flip,
-              /* File > Presets: the Xbox's own camera in Xbox mode. */
-              .presets = XBOX_PRESETS_SET, .preset = { 0, CAMWALL_DEFAULT, CAMWALL_DEFAULT },
-              .hint = "Fixes the default camera clipping through walls, mostly in widescreen." },
-            { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_TOGGLE, .label = "No skater fade",
-              .group = XBOX_GROUP_BEHAVIOUR, .state = menu_whole, .run = menu_whole_flip,
-              /* File > Presets: off in each, as a new install starts
-               * (CAMWALL_WHOLE_DEFAULT): Xbox mode has no free camera and no
-               * Default cam fix, and the other two take the default. */
-              .presets = XBOX_PRESETS_SET, .preset = { 0, CAMWALL_WHOLE_DEFAULT, CAMWALL_WHOLE_DEFAULT },
-              .hint = "Keeps the camera back at a wall instead of fading your skater." },
-        };
-        xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
-    }
-#endif
 }
 
 int camwall_on(void)
 {
     return s_on;
+}
+
+int camwall_whole(void)
+{
+    return s_whole;
 }
 
 double camwall_least(int freecam, double whole)

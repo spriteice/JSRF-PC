@@ -6014,7 +6014,11 @@ void sub_0007D8B0(void)
 #define CAM_MODE           0x208u      /* the mode it is in */
 #define CAM_EYE            0x20Cu      /* the working eye: the smoothed one, lifted */
 #define CAM_TARGET         0x218u      /* the working target */
+#define CHR_GRAFFITI_ON    0xE38u      /* the graffiti camera's other half: both make mode 13 (0xA50DF) */
 #define CHR_GRAFFITI_CAM   0xE3Cu      /* the graffiti camera, asked for (sub_0008D280) */
+#define CHR_FIXED_SHOT     0xEC8u      /* a fixed shot asked for: mode 10 (0xA50D0) */
+#define CHR_FIXED_KIND     0xECCu      /* its kind: 0 an eye at a point, 1 one along a path, ... (sub_000A4640) */
+#define CHR_EXIT_SHOT      0xF04u      /* the level exit's camera point set (sub_000A76E0, 0xA78F7) */
 #define CHR_CAM_MODE       0xE58u      /* the mode it asks the camera for */
 #define CHR_CAM_BEHIND     0xE5Cu      /* the camera back behind it, asked for */
 #define CAM_MODE_FOLLOW    3u          /* follow: what a look goes back to (0x8B2CF) */
@@ -6098,10 +6102,53 @@ static int cam_pad_steered(const uint8_t *m, uint32_t cam, int say)
     return ok;
 }
 
+/* Half pipe cam unticked (camscene_rise): the camera whose update last
+ * read the half pipe's jump as not asked for this frame, for its
+ * post-update (sub_000A6100), which the task manager's second walk runs
+ * after; 0: none. */
+static uint32_t s_rise_cam;
+
 /* For each pad port, the player manager its keys steer for, its skater's
  * camera and the skater, as the camera update last saw them (sub_000A5070),
  * and when: for the manager's update (sub_000A76E0). */
 static struct { uint32_t drv, cam, who; double at; } s_keys_cam[4];
+
+/* Input > Behaviour > Camera's log (port/camera_scenes.c): on a camera the
+ * pad steers, each of the game's shots the ticks read as it starts, and
+ * whether it plays, and the level exit's shot, which no tick touches; once
+ * each time one starts, for each camera. kind: the fixed shot's (+0xECC). */
+static void camscene_log(uint32_t cam, unsigned shots, unsigned hidden, int exit_shot,
+                         uint32_t kind)
+{
+    static struct { uint32_t cam; unsigned shots; int exit_shot; } said[4];
+    static int next_slot;
+    static const char *const what[CAMSCENES] = {     /* CAMSCENE_ */
+        "the graffiti shot (Graffiti cam)", "the half pipe's shot (Half pipe cam)",
+        "a fixed shot of the stage's (Loop cam)" };
+    unsigned started;
+    int i;
+    for (i = 0; i < 4 && said[i].cam != cam; i++) {}
+    if (i == 4) {
+        i = next_slot++ % 4;
+        said[i].cam = cam;
+        said[i].shots = 0;
+        said[i].exit_shot = 0;
+    }
+    started = shots & ~said[i].shots;
+    if (exit_shot && !said[i].exit_shot)
+        fprintf(stderr, "[CAMSCENE] t=%.2f camera %08X: the level exit's shot, as the game has it (no tick's)\n",
+                pad_now(), cam);
+    for (int k = 0; k < CAMSCENES; k++)
+        if (started & CAMSCENE_BIT(k)) {
+            char how[24] = "";
+            if (k == CAMSCENE_FIXED) snprintf(how, sizeof how, ", kind %u", kind);
+            fprintf(stderr, "[CAMSCENE] t=%.2f camera %08X: %s%s, %s\n", pad_now(), cam, what[k], how,
+                    hidden & CAMSCENE_BIT(k) ? "not played: its tick is off, so the camera follows"
+                                             : "played as the game frames it");
+        }
+    said[i].shots = shots;
+    said[i].exit_shot = exit_shot;
+}
 
 extern void sub_000A5070_gen(void);
 void sub_000A5070(void)
@@ -6111,50 +6158,92 @@ void sub_000A5070(void)
     static double next;
     const uint8_t *m = (const uint8_t *)g_xbox_mem_offset;
     const uint32_t lim = 64u << 20;
-    uint32_t cam = g_ecx, sprayed = 0;
-    uint32_t *gcam = NULL, *look = NULL;
+    uint32_t cam = g_ecx, sprayed = 0, fixed = 0;
+    uint32_t *gcam = NULL, *look = NULL, *hpipe = NULL, *fshot = NULL;
     if (on < 0) on = getenv("JSRF_CAM_LOG") != NULL;
-    /* While the free camera (port/freecam.c) is on, the camera never turns to
-     * the graffiti being sprayed, or to whoever the player talks to. Both are
-     * modes chosen here (0xA50C3) from what the player asks for:
+    if (s_rise_cam == cam) s_rise_cam = 0;
+    /* The camera's mode is chosen here (0xA50BB) from what the skater asks
+     * for: the mode it asks for (+0xE58), unless a fixed shot is asked for
+     * (+0xEC8: mode 10) or the graffiti camera (+0xE38 and +0xE3C: mode 13).
      *
-     * - Graffiti is mode 13, which frames the spot and snaps back behind the
-     *   player after. The spray code (sub_0008D280) asks for it with +0xE3C,
-     *   and this update reads 0 in its place.
-     * - Talking is mode 9, the look: the talk button, or someone nearby who
-     *   asks for it, sets the mode the player asks for (+0xE58) to 9
-     *   (0x8B32A, 0x8B2A5), and switching to it (sub_000A5A00) puts the
-     *   target 33 units ahead, toward them, and the eye 66 away. This update
-     *   reads 3 in its place: the follow mode a look goes back to when it
-     *   ends (0x8B2CF). Coming to it from 9, when freecam is turned on
-     *   during a look, moves neither eye nor target (sub_000A4BD0), as the
-     *   end of a look doesn't.
+     * Input > Behaviour > Camera (port/camera_scenes.c) ticks three of the
+     * game's own shots; one whose tick is off is read as not asked for, and
+     * the camera follows the skater as anywhere else:
      *
-     * Nothing this update calls in those modes reads or writes either (the
-     * player's own code does, outside it, and ends a look once +0xE58 is no
-     * longer 9), so both are put back after. Only on the camera freecam
-     * steers: a scene's look at someone stays the game's. */
-    if (freecam_on() && cam >= 0x10000u && cam + 0x240u < lim && cam_pad_steered(m, cam, 0)) {
+     * - Graffiti cam: mode 13, which frames the spot and snaps back behind
+     *   the player after. The spray code (sub_0008D280) asks for it with
+     *   +0xE3C, and this update reads 0 in its place.
+     * - Half pipe cam: mode 6, which the half pipe's jump asks for
+     *   (sub_000996A0) as the mode it asks for. This update reads 3, follow,
+     *   in its place.
+     * - Loop cam: mode 10 for a fixed shot of the stage's, which the
+     *   skater's update asks for in the stage's camera areas, a loop's or
+     *   any other, while the level exit's camera point (+0xF04) is not set
+     *   (0x80F72). This update reads 0 in place of +0xEC8. The level exit's
+     *   own shot is mode 10 too, which the skater's update asks for once
+     *   the player manager has set that point (0x8085B, sub_000A76E0): no
+     *   tick touches it (camscene_asked).
+     *
+     * And while the free camera (port/freecam.c) is on, the camera never
+     * turns to whoever the player talks to. Talking is mode 9, the look: the
+     * talk button, or someone nearby who asks for it, sets the mode the
+     * player asks for (+0xE58) to 9 (0x8B32A, 0x8B2A5), and switching to it
+     * (sub_000A5A00) puts the target 33 units ahead, toward them, and the
+     * eye 66 away. This update reads 3 in its place: the follow mode a look
+     * goes back to when it ends (0x8B2CF). Coming to it from 9, when freecam
+     * is turned on during a look, moves neither eye nor target
+     * (sub_000A4BD0), as the end of a look doesn't.
+     *
+     * Nothing this update calls reads or writes any of these again (the
+     * skater's own code does, outside it, and ends a look once +0xE58 is no
+     * longer 9, a half pipe's jump once it lands, and a fixed shot once it
+     * leaves its area), so each is put back after. Only on the camera of a
+     * skater the pad moves (cam_pad_steered): a scene's shot, or its look at
+     * someone, stays the game's. */
+    if (cam >= 0x10000u && cam + 0x240u < lim && cam_pad_steered(m, cam, 0)) {
         uint32_t who = ((const uint32_t *)(m + cam))[CAM_FOLLOWS / 4];
         if (who >= 0x10000u && who + 0x1000u < lim) {
-            gcam = (uint32_t *)(uintptr_t)(m + who + CHR_GRAFFITI_CAM);
-            sprayed = *gcam;
-            *gcam = 0;
-            look = (uint32_t *)(uintptr_t)(m + who + CHR_CAM_MODE);
-            if (*look == CAM_MODE_LOOK) *look = CAM_MODE_FOLLOW;
-            else look = NULL;
+            uint32_t *chr = (uint32_t *)(uintptr_t)(m + who);
+            unsigned shots = camscene_asked(chr[CHR_CAM_MODE / 4], chr[CHR_FIXED_SHOT / 4],
+                                            chr[CHR_EXIT_SHOT / 4],
+                                            chr[CHR_GRAFFITI_ON / 4] && chr[CHR_GRAFFITI_CAM / 4]);
+            unsigned ticks = camscene_ticks(), hidden;
+            /* A recording's ticks in place of the player's while it plays
+             * (port/playback.c), or one's made before the ticks. */
+            playback_camscenes(&ticks);
+            if (ticks == PLAYBACK_CAMSCENES_BEFORE) ticks = camscene_ticks_before(freecam_on());
+            hidden = camscene_hidden(shots, ticks);
+            camscene_log(cam, shots, hidden, chr[CHR_FIXED_SHOT / 4] && chr[CHR_EXIT_SHOT / 4],
+                         chr[CHR_FIXED_KIND / 4]);
+            if (hidden & CAMSCENE_BIT(CAMSCENE_GRAFFITI)) {
+                gcam = &chr[CHR_GRAFFITI_CAM / 4];
+                sprayed = *gcam;
+                *gcam = 0;
+            }
+            if (hidden & CAMSCENE_BIT(CAMSCENE_HALF_PIPE)) {
+                hpipe = &chr[CHR_CAM_MODE / 4];
+                *hpipe = CAMSCENE_MODE_FOLLOW;
+            }
+            if (hpipe) s_rise_cam = cam;
+            if (hidden & CAMSCENE_BIT(CAMSCENE_FIXED)) {
+                fshot = &chr[CHR_FIXED_SHOT / 4];
+                fixed = *fshot;
+                *fshot = 0;
+            }
+            if (freecam_on() && chr[CHR_CAM_MODE / 4] == CAM_MODE_LOOK) {
+                look = &chr[CHR_CAM_MODE / 4];
+                *look = CAM_MODE_FOLLOW;
+            }
         }
     }
-    { static uint32_t was;
-      static int looked;
-      if (sprayed && !was)
-          fprintf(stderr, "[FREECAM] t=%.2f graffiti: no graffiti camera while freecam is on\n", pad_now());
+    { static int looked;
       if (look && !looked)
           fprintf(stderr, "[FREECAM] t=%.2f talking: no look-at camera while freecam is on\n", pad_now());
-      was = sprayed;
       looked = look != NULL; }
     sub_000A5070_gen();
     if (gcam) *gcam = sprayed;
+    if (hpipe) *hpipe = CAMSCENE_MODE_HALF_PIPE;
+    if (fshot) *fshot = fixed;
     if (look) *look = CAM_MODE_LOOK;
     /* Keyboard moves (port/keyboard_move.c): the camera's look on the ground
      * and the skater's turn, for the pad's port, which the keys steer by. The
@@ -6377,8 +6466,8 @@ void sub_000A76E0(void)
  * and under CAM_SKATER_HIDDEN doesn't draw it. The free camera, turned toward
  * a wall by the player, would come that near; the game's own camera trails
  * the player and lifts when they drop, and comes that near where a wall
- * brings its view in. That hold is Input > Behaviour > No skater fade
- * (camwall_least), off by default, right under Default cam fix, as the
+ * brings its view in. That hold is Input > Behaviour > Camera's No skater
+ * fade (camwall_least), off by default, under Default cam fix, as the
  * game's own eye has it only while that is on; an eye the game itself put
  * nearer stays there. Off, either eye comes as near as its view allows. For
  * the free camera's eye it tests the eye's line first. The game's own eye, every
@@ -6585,7 +6674,7 @@ void sub_000A6100(void)
     uint8_t *m = (uint8_t *)g_xbox_mem_offset;
     const uint32_t lim = 64u << 20;
     uint32_t cam = g_ecx, who = 0, asked = 0, mode;
-    float *cf, eye[3], game_eye[3];
+    float *cf, eye[3], game_eye[3], seye[3];
     int placed = FREECAM_OFF, behind;
     struct camwall *w;
     if (cam >= 0x10000u && cam + 0x240u < lim) {
@@ -6599,8 +6688,38 @@ void sub_000A6100(void)
     behind = asked && !*(uint32_t *)(m + who + CHR_CAM_BEHIND);
     if (mode != CAMSCENE_MODE_GRAFFITI && cam_pad_steered(m, cam, 0))
         photo_mode_followed(cam);                   /* the player has control */
-    if (cam_pad_steered(m, cam, 1))
-        placed = freecam_orbit(cam, mode, cf + CAM_TARGET / 4, cf + CAM_SMOOTH_EYE / 4, behind, eye);
+    /* Half pipe cam unticked: through the half pipe's jump, the target and
+     * the eye as much higher as the skater is, and the free camera's orbit
+     * with them (port/camera_scenes.h). The heading the controls follow,
+     * which sub_000A28B0 takes from them after, is the same. */
+    memcpy(seye, cf + CAM_SMOOTH_EYE / 4, sizeof seye);
+    if (who >= 0x10000u && who + 0x1000u < lim && !camscene_shot(mode) && cam_pad_steered(m, cam, 0)) {
+        static CAMSCENE_RISE rise;
+        static uint32_t rise_cam;
+        static int said;
+        int jump = cam == s_rise_cam;
+        double lift;
+        if (cam != rise_cam) { memset(&rise, 0, sizeof rise); rise_cam = cam; }
+        lift = camscene_rise(&rise, jump, *(const float *)(m + who + CHR_POSITION + 4),
+                             cf[CAM_TARGET / 4 + 1]);
+        if (jump != said) {
+            said = jump;
+            fprintf(stderr, "[CAMSCENE] t=%.2f camera %08X: %s\n", pad_now(), cam,
+                    jump ? "the half pipe's jump, Half pipe cam off: the camera rises and falls with the skater"
+                         : "the half pipe's jump over: letting go of the rise");
+        }
+        if (lift != 0) {
+            cf[CAM_TARGET / 4 + 1] += (float)lift;
+            cf[CAM_EYE / 4 + 1] += (float)lift;
+            seye[1] += (float)lift;
+        }
+    }
+    /* The graffiti shot is the game's to frame, whatever the free camera
+     * (Graffiti cam, port/camera_scenes.c; unticked, the camera update never
+     * switches to it on this camera): the free camera starts again from the
+     * game's view after it, as after a mode of the game's own. */
+    if (cam_pad_steered(m, cam, 1) && !camscene_shot(mode))
+        placed = freecam_orbit(cam, mode, cf + CAM_TARGET / 4, seye, behind, eye);
     if (placed != FREECAM_OFF) {
         w = camwall_for(cam, CAM_WALLS_FREECAM);
         if (placed == FREECAM_STARTED) camwall_reset(w);

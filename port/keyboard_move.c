@@ -237,8 +237,8 @@ void kbmove_start(void)
     fprintf(stderr, "[KEYS] keyboard moves: %s\n", k_names[s_mode]);
 #if defined(XBOXRECOMP_MENU)
     {
-        /* The second row of Input > Behaviour, after Default cam fix
-         * (port/camera_walls.c): it adds the submenu too, which adds nothing
+        /* A row of Input > Behaviour, after the Camera ticks
+         * (port/camera_scenes.c): it adds the submenu too, which adds nothing
          * once that has (menu.h). File > Presets: Camera in Xbox mode, the
          * way the console's stick steers, and the default in the others. */
         const XBOX_MENU_ITEM rows[] = {

@@ -37,17 +37,17 @@ Default cam fix (dcamfix=) and No skater fade (noskaterfade=):
 the same port/camera_walls.c, with the settings file code from
 src/nv2a_gl/nv2a_gl.c verbatim (sdl_cfg_path through sdl_cfg_set, with
 nv_window_pref_num between them), as tests/intro does; test_setting.c
-stands in for the menu. Default cam fix: on with no dcamfix= and with
-dcamfix=1, off with dcamfix=0, and its row, after Input's Behaviour
-submenu (with its hint) and in it, turning it off at once and keeping
-dcamfix=0, and off in File > Presets' Xbox mode, on in the other two.
-No skater fade: off with no noskaterfade= and with noskaterfade=0, on
-with noskaterfade=1, and its row right under Default cam fix's in Input >
-Behaviour (with its hint), turning it on at once, off again and on,
-keeping noskaterfade=1 with dcamfix= as it was, and off in each of File >
-Presets' three. The hold the two give (camwall_least): the free camera's
-eye and the game's with both on, the free camera's alone with Default cam
-fix off, neither with No skater fade off, each as its row turns it. Each case
+stands in for the menu, to see that the file adds no row: the two are
+the first ticks of Input > Behaviour > Camera, port/camera_scenes.c's row
+(tests/camera_scenes). Default cam fix: on with no dcamfix= and with
+dcamfix=1, off with dcamfix=0, and its tick (camwall_flip) turning it off
+at once and keeping dcamfix=0. No skater fade: off with no noskaterfade=
+and with noskaterfade=0, on with noskaterfade=1, and its tick
+(camwall_whole_flip) turning it on at once, off again and on, keeping
+noskaterfade=1 with dcamfix= as it was. The hold the two give
+(camwall_least): the free camera's eye and the game's with both on, the
+free camera's alone with Default cam fix off, neither with No skater fade
+off, each as its tick turns it. Each case
 gets its own settings file, passed as JSRF_SETTINGS_FILE, and its own run,
 since the settings are read once.
 Requires GCC on PATH, including MinGW on Windows.

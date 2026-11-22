@@ -37,7 +37,13 @@ first freecam line and the recording's from there, a freecam line without
 the mouse's two among them, and its mouse's moves past an early anchor
 taken at once; one that isn't a recording, goes back in time, has a line
 after its end, a word it doesn't know, or a freecam or mouse line out of
-its range or short of a value is refused, saying where.
+its range or short of a value is refused, saying where. Input > Behaviour >
+Camera's ticks, as the camera update reads them: recorded at the first and
+when the player changes one, and played with the player's in place
+otherwise; by hand, the player's before the first camera line and the
+recording's from there, and with none the shots as before the ticks; the
+player's change while it plays hands the game back; a camera line out of
+its range, short of a tick or back in time is refused.
 As the engine starts: JSRF_RECORD, JSRF_PLAY and JSRF_PLAY_MENU taken out
 of the environment, a recording made beside the settings file, and
 Developer > Playback's rows, each with its hint, Play's choices newest
@@ -83,7 +89,10 @@ with tempfile.TemporaryDirectory(prefix="playback-") as directory:
             "the free camera was changed (F8, the pad or the menu): the game is yours",
             "the mouse was moved: the game is yours",
             "(yours again, as playback ended)",
-            "JSRF_RECORD left out: a recording is played, not made"]
+            "JSRF_RECORD left out: a recording is played, not made",
+            "the camera ticks as recorded at frame",
+            "no camera line: the game's own shots as before the Camera ticks",
+            "the camera ticks were changed (the menu): the game is yours"]
     missing = [s for s in said if s not in log]
     if run.returncode != 0 or "playback: all cases pass" not in run.stdout or missing:
         print(log[-6000:])

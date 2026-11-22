@@ -84,8 +84,9 @@ enum {
 int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float seye[3],
                   int reset, float eye[3]);
 
-/* Whether freecam is on: the camera update leaves out the graffiti camera
- * and the look at whoever the player talks to while it is. */
+/* Whether freecam is on: the camera update leaves out the look at whoever
+ * the player talks to while it is. (The graffiti camera is Input >
+ * Behaviour > Camera's, camera_scenes.h, with freecam or without it.) */
 int freecam_on(void);
 
 /* The player's switch and tuning, as the settings file, F8, the pad's button

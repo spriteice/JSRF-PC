@@ -9,8 +9,9 @@ each menu's rows live with the setting they change (File in
 Far buildings and Far shadows, in `port/draw_distance.c` and Music info in
 pause in `port/music_info.c`, Audio in `port/audio.c`, Input's Controller
 layout and Keyboard layout in `src/input/input_remap.c`, its Free
-camera in `port/freecam.c`, and its Default cam fix and No skater fade in
-`port/camera_walls.c`, Keyboard moves in `port/keyboard_move.c` and Stick
+camera in `port/freecam.c`, and its Camera in `port/camera_scenes.c` (whose
+first two ticks, Default cam fix and No skater fade, `port/camera_walls.c`
+keeps), Keyboard moves in `port/keyboard_move.c` and Stick
 shape in `src/input/stick_shape.c`, Gameplay's Skip intro in
 `port/intro.c`, Skip cutscenes in `port/cutscene_skip.c` and Visual indicator
 in `port/soul_indicator.c`, Developer in `port/developer.c`, with Missions'
@@ -43,10 +44,11 @@ Input is four submenus, and nothing else: Controller layout, then Keyboard
 layout, added with their rows by `src/input/input_remap.c` (Layouts, below);
 Free camera, added with its rows by
 `port/freecam.c` (Enable free camera, Auto centre, Invert X, Invert Y,
-Sensitivity X, Sensitivity Y, Deadzone, Mouse look, then Mouse
-sensitivity); then Behaviour, for how the
-game's camera, the keys and the sticks act: Default cam fix, No skater fade,
-Keyboard moves, then Stick shape. Each of those three modules adds Behaviour
+Sensitivity X, Sensitivity Y, Deadzone, Mouse look, Mouse sensitivity,
+then Reset to default); then Behaviour, for how the
+game's camera, the keys and the sticks act: Camera, a row of five ticks
+(Default cam fix, No skater fade, Graffiti cam, Half pipe cam, then Loop
+cam), Keyboard moves, then Stick shape. Each of those three modules adds Behaviour
 with its rows, and those after the first add nothing, as a submenu named as
 one before it in its menu adds nothing (`group` in
 `menu.h`). A new input setting goes in one of them, or in a submenu of its
@@ -95,8 +97,10 @@ in a submenu of its own.
 - A row of choices or ticks may give each its own hint (`choice_hints` in
   `menu.h`), shown in the row's place while the pad or the pointer is on
   that choice, and following the rules above; a choice with none shows the
-  row's. The strip is as tall as the longest of them needs too.
-- The tests of the modules that add rows (tests/audio, camera_walls,
+  row's. Input > Behaviour > Camera gives one for each tick (spriteice's
+  card, 22 November 2026). The strip is as tall as the longest of them
+  needs too.
+- The tests of the modules that add rows (tests/audio, camera_scenes,
   draw_distance, freecam, intro, keyboard_move, stick_shape, music_info,
   soul_indicator, developer) check that each has one.
 
@@ -265,13 +269,15 @@ in a submenu of its own.
 - **A preset sets every setting but Developer's, and the rows that say a
   preset leaves them alone** (`XBOX_PRESETS_LEFT` in `menu.h`): a player's
   own choices, not a quality setting, each with its own way back to its
-  default, as the layouts' rows are (Layouts, above). Every other row of Display,
+  default, as the layouts' rows are (Layouts, above), and the free camera's
+  tuning, with its Reset to default (spriteice's card, 22 November 2026).
+  Every other row of Display,
   Graphics, Audio, Input and Gameplay, in a submenu or not, gives its value in
   each preset where it's added (`presets` and `preset` in `menu.h`), with
   JSRF-PC default's from the constant its own default comes from, so the
   preset moves with the default. That takes in Fullscreen, full screen in
-  each, the free camera's tuning, at its defaults in each, Keyboard
-  moves, at Camera in each, and Stick shape, at Square in each. A row of
+  each, Keyboard moves, at Camera in each, and Stick shape, at Square in
+  each. A row of
   ticks (`XBOX_ITEM_TOGGLES`), as
   Upscaling's Cleanup, gives the ticks it has in each, and a preset changes
   each tick that differs, as choosing it would. A (Restart) row the presets
@@ -282,8 +288,12 @@ in a submenu of its own.
   (`XBOX_ITEM_GROUP`) is no setting, so says nothing.
 - **A row the presets set may name presets that leave it** (`leave` in
   `menu.h`, a bit for each): those don't change it, and their tick goes by
-  the other rows. A row every preset leaves is told once in the log and
-  left alone.
+  the other rows. Xbox mode sets Input > Behaviour > Camera, Default cam
+  fix and No skater fade off and the game's three shots ticked, and Input >
+  Free camera's Enable free camera, off; JSRF-PC default and Max quality
+  leave both as the player has them (spriteice, 22 November 2026), each
+  tick and the switch its own way back. A row every preset leaves is told
+  once in the log and left alone.
 - The tests of the modules that add rows check their values, and that
   JSRF-PC default's is what a start with no settings gives.
 

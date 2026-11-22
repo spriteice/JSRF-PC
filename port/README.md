@@ -28,8 +28,9 @@ its top saying what it does and where it reaches the game. `pad.c` is the
 game's pad API answered from the host's pads: `recomp_manual.c` keeps the
 eight entry points the game calls, as the pipeline reads that file for what
 is written by hand, and each calls `pad.c`. `playback.c` is input
-playback (Developer > Playback): the pad as the game read it, and the free
-camera's switch and tuning, recorded by the game's own frame and played
+playback (Developer > Playback): the pad as the game read it, the free
+camera's switch and tuning, and the Camera ticks for the game's shots
+(`camera_scenes.c`), recorded by the game's own frame and played
 back, from `pad.c`, from `freecam.c` and from hooks in `recomp_manual.c` on
 the game's main loop, its loads, its cutscenes and its camera. Developer >
 Missions, for one, is `missions.c`, which starts the game at a story mission

@@ -203,8 +203,9 @@ typedef struct XBOX_MENU_ITEM {
      * one, the row's. */
     const char *const *choice_hints;
     /* XBOX_PRESETS_SET: the presets that leave the row as the player has
-     * it, a bit each (XBOX_PRESET_BIT), whose preset[] is not read. A row
-     * every preset leaves is XBOX_PRESETS_LEFT instead (docs/
+     * it, a bit each (XBOX_PRESET_BIT), whose preset[] is not read, as
+     * JSRF-PC default and Max quality leave Input > Behaviour > Camera. A
+     * row every preset leaves is XBOX_PRESETS_LEFT instead (docs/
      * menu-format.md, File > Presets). */
     unsigned        leave;
 } XBOX_MENU_ITEM;
@@ -230,10 +231,10 @@ typedef struct XBOX_MENU_ITEM {
  * which press each of the game's controls (src/input/input_remap.c adds
  * them, with their rows); Free camera (port/freecam.c adds it, with its
  * rows); then Behaviour, for how the game's camera, the keys and the
- * sticks act (Default cam fix and No skater fade, port/camera_walls.c, then
- * Keyboard moves, port/keyboard_move.c, then Stick shape,
- * src/input/stick_shape.c: each adds it with its rows, and those after the
- * first add nothing). */
+ * sticks act (Camera, port/camera_scenes.c, whose first two ticks are
+ * port/camera_walls.c's Default cam fix and No skater fade, then Keyboard
+ * moves, port/keyboard_move.c, then Stick shape, src/input/stick_shape.c:
+ * each adds it with its rows, and those after the first add nothing). */
 #define XBOX_GROUP_PAD_LAYOUT   "Controller layout"
 #define XBOX_GROUP_KEY_LAYOUT   "Keyboard layout"
 #define XBOX_GROUP_FREECAM      "Free camera"
