@@ -25,6 +25,23 @@
 #define FREECAM_SENS_MIN      1.0
 #define FREECAM_SENS_MAX      10.0
 #define FREECAM_CENTRE_LEVELS 5
+/* After one of the game's own shots (camera_scenes.h), the frames the view
+ * takes from the game's to where the player had it, 0.4 of a second at the
+ * game's 60 frames a second (spriteice, 22 November 2026: "smoothly reset
+ * to the last freecam position", then "slightly faster"). */
+#define FREECAM_BACK_FRAMES 24
+/* Into the graffiti shot, the frames the view took from the free camera's
+ * to the game's, 0.2 of a second (spriteice, 22 November 2026, the card
+ * "Graffiti in and out", then "slightly faster"), as recordings made then
+ * play it (PLAYBACK_BACK_STEADY). Since, the free camera cuts into it, as
+ * the game's camera does ("the transition in for the graffiti cam in free
+ * cam mode has to go ... the transition out stays"). */
+#define FREECAM_INTO_FRAMES 12
+/* Both as recordings made before they were quickened play them
+ * (port/playback.h, PLAYBACK_BACK_EASE and PLAYBACK_BACK_GLIDE): half a
+ * second out, and a quarter in. */
+#define FREECAM_BACK_FRAMES_BEFORE 30
+#define FREECAM_INTO_FRAMES_BEFORE 15
 
 /* Freecam's switch and tuning, as the settings file names them (freecam.c):
  * the player's, or a recording's while one plays (port/playback.c). */
@@ -55,12 +72,67 @@ void freecam_start(void);
  * doesn't steer is dropped, so the view doesn't jump when it steers again. */
 void freecam_frame(void);
 
-/* Each camera post-update (sub_000A28B0), whatever its mode: that camera was
- * post-updated this frame. One freecam steers that is post-updated without
- * the follow camera is the game's, and freecam starts again from the game's
- * view when it follows the player once more; one that is not post-updated
- * (the game is paused) keeps the view. */
+/* Each camera post-update (sub_000A28B0), whatever its mode, as it ends:
+ * that camera was post-updated this frame, the follow camera's
+ * (freecam_orbit) with it or not. One freecam steers that is post-updated
+ * without the follow camera is the game's, and freecam starts again from the
+ * game's view when it follows the player once more; one that is not
+ * post-updated (the game is paused) keeps the view. Here too, with the word
+ * from the camera's update this frame (freecam_shot), a shot starting keeps
+ * the view to ease back to, and a post-update without the follow camera or
+ * a shot after one lets it go: the camera's update runs in the task
+ * manager's first walk, freecam_frame later in it (the sound manager's
+ * update), and the post-update in its second walk, so only here are the
+ * update's word and what the post-update ran from the same frame. */
 void freecam_ran(uint32_t cam);
+
+/* Each camera update of a camera a skater the pad moves (sub_000A5070), on
+ * the game's thread: whether one of the game's own shots (camera_scenes.h)
+ * plays on it, the level exit's not one, for its post-update this frame
+ * (freecam_ran). The free camera, steering cam as a shot starts, keeps how
+ * far its view is from the game's own, and once the follow camera runs cam
+ * again, in whatever mode (on foot, on a rail), eases back there over
+ * FREECAM_BACK_FRAMES, gliding there from the shot's view (freecam_view),
+ * the stick or the mouse taking over its angle at once; another mode of the
+ * game's in between, a scene, or the game putting the camera back behind
+ * the player, starts it from the game's view, as before. A recording made
+ * before plays as before (playback_freecam_back). */
+void freecam_shot(uint32_t cam, int playing);
+
+/* Each camera post-update (sub_000A28B0), as it ends, after freecam_ran:
+ * the view the frame is built from, eye and what it looks at, for a glide
+ * to start from (freecam_view). A glide its follow camera's hook did not
+ * step this frame ends. */
+void freecam_shown(uint32_t cam, const float eye[3], const float tgt[3]);
+
+/* The follow camera's hook (sub_000A6100), its eye and what it looks at in
+ * place, after walls: shot 0 as the free camera has placed them
+ * (freecam_orbit), and shot 1 as the game has framed the graffiti shot
+ * (camscene_shot). The view glides, each in its position, angle and
+ * distance, smoothly, out of one of the game's shots to the free camera's
+ * from the shot's last view, over FREECAM_BACK_FRAMES (freecam_shot), the
+ * stick or the mouse steering where it glides to; into the graffiti shot it
+ * cuts, as the game's camera does, but as recordings that glided in play
+ * (from the free camera's last view, over FREECAM_INTO_FRAMES or
+ * FREECAM_INTO_FRAMES_BEFORE). Returns whether it moved them. Only while
+ * the free camera is on, and as a recording made since plays
+ * (playback_freecam_back). */
+int freecam_view(uint32_t cam, int shot, float eye[3], float tgt[3]);
+
+/* Each camera post-update (sub_000A28B0), as it ends, before
+ * freecam_shown: 1, with the view cam's glide was headed to this frame (the
+ * eye and what it looks at as freecam_view was given them: the graffiti
+ * shot as the game frames it, as recordings that glided in play, or the
+ * free camera's own view), while it glides; else 0. The heading the controls follow is taken from that view,
+ * not the one the glide shows, so that to the game the glide is a cut, as
+ * its own camera's is: as its camera cuts to a shot and back, the game
+ * keeps the skater going the way it went while the stick stays where it
+ * was (CAM_HOLDS in recomp_manual.c), and lets that go once the camera
+ * faces within 20 degrees of where it did, which a glide from where the view
+ * was did on its first frame (spriteice, 22 November 2026: "can the skater
+ * continue in the same direction the stick is pushing?"). Not as a
+ * recording made before plays (playback_freecam_back). */
+int freecam_ahead(uint32_t cam, float eye[3], float tgt[3]);
 
 /* Each pad read, after input playback has recorded the pad or put the
  * recording's in its place (port/pad.c): notes where the right stick is and,

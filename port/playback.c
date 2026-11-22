@@ -99,6 +99,12 @@ static int s_fc_cur = -1, s_fc_player_seen;
 static int s_mouse_next, s_mouse_armed;     /* the next mouse line to take; the player's mouse still once */
 static FREECAM_SETTINGS s_fc_player;        /* the player's, as the last frame had them */
 static int s_cam_cur = -1, s_cam_player_seen, s_cam_before_said;
+/* What the recording's camera lines say the free camera did after the
+ * game's shots (their fifth number, PLAYBACK_BACK_): eased back (1),
+ * glided (2), glided quicker, the controls following where it glided to
+ * (3), or that and cut into the graffiti shot (4), as builds since have
+ * it. */
+static int s_cam_back;
 static unsigned s_cam_player;               /* the player's ticks, as the last camera update had them */
 static int s_anchor_next, s_check_next, s_idle_next;
 static int64_t s_offset;                    /* the frame played less the frame recorded */
@@ -355,7 +361,8 @@ static void record_camscenes(unsigned ticks)
     if (s_cam_last.seen && s_cam_last.ticks == ticks) return;
     s_cam_last.seen = 1;
     s_cam_last.ticks = ticks;
-    fprintf(s_out, "camera %u %u %u %u\n", s_frame, ticks & 1u, (ticks >> 1) & 1u, (ticks >> 2) & 1u);
+    fprintf(s_out, "camera %u %u %u %u %d\n", s_frame, ticks & 1u, (ticks >> 1) & 1u, (ticks >> 2) & 1u,
+            PLAYBACK_BACK_OUT);
 }
 
 /* ---- reading a recording ------------------------------------------------ */
@@ -421,6 +428,7 @@ static void forget(void)
     memset(&s_freecams, 0, sizeof s_freecams);
     memset(&s_mice, 0, sizeof s_mice);
     memset(&s_cameras, 0, sizeof s_cameras);
+    s_cam_back = 0;
     memset(&s_anchors, 0, sizeof s_anchors);
     memset(&s_checks, 0, sizeof s_checks);
     memset(&s_idles, 0, sizeof s_idles);
@@ -481,10 +489,13 @@ static int load(const char *path)
             frame = m.frame;
         } else if (!strcmp(word, "camera")) {
             PbCamera e, *to;
-            unsigned t[PB_CAMERA_TICKS];
-            int k;
-            ok = sscanf(s, "%u %u %u %u", &e.frame, &t[0], &t[1], &t[2]) == 1 + PB_CAMERA_TICKS
+            unsigned t[PB_CAMERA_TICKS], back = 0;
+            int k, n = sscanf(s, "%u %u %u %u %u", &e.frame, &t[0], &t[1], &t[2], &back);
+            /* Its fifth, what the free camera did after a shot, left out
+             * by those made before it eased back. */
+            ok = (n == 1 + PB_CAMERA_TICKS || (n == 2 + PB_CAMERA_TICKS && back <= PLAYBACK_BACK_OUT))
                  && (!s_cameras.n || e.frame >= PB_CAMERA[s_cameras.n - 1].frame);
+            if (ok && n == 2 + PB_CAMERA_TICKS) s_cam_back = (int)back;
             for (k = 0, e.ticks = 0; ok && k < PB_CAMERA_TICKS; k++) {
                 ok = t[k] <= 1;
                 e.ticks |= t[k] << k;
@@ -864,6 +875,15 @@ int playback_camscenes(unsigned *ticks)
     else if (s_out) record_camscenes(*ticks);
     pb_unlock();
     return played;
+}
+
+int playback_freecam_back(void)
+{
+    int back;
+    pb_lock();
+    back = !playing() ? PLAYBACK_BACK_OUT : s_cam_back;
+    pb_unlock();
+    return back;
 }
 
 void playback_anchor(PLAYBACK_ANCHOR kind, uint32_t value, uint32_t *random)

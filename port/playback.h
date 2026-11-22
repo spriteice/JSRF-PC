@@ -45,7 +45,7 @@
  * once the mouse has been still since playback started. Input > Behaviour >
  * Camera's ticks for the game's shots (port/camera_scenes.c) are recorded
  * too, as the camera update reads them: at the first, and whenever the menu
- * changes them. On
+ * changes them, with whether the free camera eases back after a shot. On
  * playback the recording's are in place of the player's from its first, and
  * changing them in the menu ends playback; a recording with none, made
  * before the ticks, plays the shots as the builds before them did.
@@ -60,7 +60,7 @@
  *   pad <frame>[.<read>] <port> none        no pad on that port
  *   freecam <frame> <on> <invert_x> <invert_y> <sensitivity_x> <sensitivity_y> <deadzone> <autocentre> <mouse> <mouse_sensitivity>
  *   mouse <frame> <x> <y>
- *   camera <frame> <graffiti> <half_pipe> <loop>
+ *   camera <frame> <graffiti> <half_pipe> <loop> <back>
  *   anchor <frame> <kind> <value> <random>
  *   check <frame> <x> <y> <z> <turn> <camera>
  *   idle <frame> <x> <y> <z> <turn> <camera>
@@ -80,10 +80,18 @@
  * are taken at once, so a frame skipped to turns the view as far, and one
  * waited at turns it once. A camera line is Input > Behaviour > Camera's
  * shots' ticks from that frame on, each 0 or 1: Graffiti cam, Half pipe cam
- * and Loop cam; before the first, the ticks are as the player has them. A
- * recording with no camera line has the half pipe's and the stage's fixed
- * shots, and the graffiti shot only while the free camera is off
- * (camscene_ticks_before). A kind is mission.bin,
+ * and Loop cam; before the first, the ticks are as the player has them.
+ * back says what the free camera did after a game's shot (port/freecam.c):
+ * 4, it glided from the shot's view to its own in 24 frames, the controls
+ * following the view it glided to, and cut into the graffiti shot as the
+ * game's camera does; 3, as 4, but it glided into the graffiti shot from
+ * its own view in 12 frames (made before that); 2, it glided in 30 and 15,
+ * the controls following the view it showed (made before that); 1, it
+ * eased back to its view's angle from the game's view (made before it
+ * glided); one without it (made before it eased) has the free camera start
+ * from the game's view then, as does a recording with no camera line,
+ * which has the half pipe's and the stage's fixed shots, and the graffiti
+ * shot only while the free camera is off (camscene_ticks_before). A kind is mission.bin,
  * mission.dat, stage, scene or scene-end, its value and the random generator
  * in eight hex digits. turn is the skater's turn, 0x10000 a whole turn, in
  * eight hex digits; camera the camera's mode. Lines starting with # are
@@ -190,6 +198,20 @@ int playback_mouse(int *dx, int *dy);
  * them while it plays hands the game back. Returns whether the recording's
  * are in place. */
 int playback_camscenes(unsigned *ticks);
+
+/* What the free camera does after a game's shot (port/freecam.c), as the
+ * camera line's back number has it (the format, above). */
+enum {
+    PLAYBACK_BACK_NONE,     /* starts from the game's view */
+    PLAYBACK_BACK_EASE,     /* eases its angle back from the game's view */
+    PLAYBACK_BACK_GLIDE,    /* glides from the shot's view, and into the graffiti shot */
+    PLAYBACK_BACK_STEADY,   /* glides quicker, the controls following the view it glides to */
+    PLAYBACK_BACK_OUT       /* as STEADY, but cuts into the graffiti shot, as the game's camera does */
+};
+/* PLAYBACK_BACK_OUT, unless a recording plays: then its camera lines'
+ * back, or PLAYBACK_BACK_NONE for one whose camera lines say nothing of it,
+ * or that has none. */
+int playback_freecam_back(void);
 
 /* An anchor, as the game reaches it, with its random generator: kept, or
  * put back. */

@@ -6059,6 +6059,7 @@ void sub_0007D8B0(void)
 #define CAM_HEADING        0x228u      /* the heading the controls follow, 0x10000 a turn (sub_000A28B0 sets it) */
 #define CAM_HELD_HEADING   0x234u      /* the heading kept when a mode is switched to (sub_000A58E0) */
 #define CAM_HOLDS          0x238u      /* set while the controls follow that kept heading */
+#define CAM_HEADING_RET    0x000A2937u /* where sub_000A28B0's call of the game's heading (sub_0004A7A0) returns */
 
 /* Whether the camera follows a skater the pad moves, which the free camera
  * steers. Every skater with a pad builds a camera that follows it
@@ -6215,6 +6216,9 @@ void sub_000A5070(void)
             hidden = camscene_hidden(shots, ticks);
             camscene_log(cam, shots, hidden, chr[CHR_FIXED_SHOT / 4] && chr[CHR_EXIT_SHOT / 4],
                          chr[CHR_FIXED_KIND / 4]);
+            /* The free camera keeps its view as a shot that plays starts,
+             * and eases back to it after (port/freecam.h). */
+            freecam_shot(cam, (shots & ~hidden) != 0);
             if (hidden & CAMSCENE_BIT(CAMSCENE_GRAFFITI)) {
                 gcam = &chr[CHR_GRAFFITI_CAM / 4];
                 sprayed = *gcam;
@@ -6426,9 +6430,21 @@ void sub_000A76E0(void)
  *
  * sub_000A28B0 is the camera's post-update, which the task manager's second
  * walk runs (sub_00011D00) and its pause walks do not, though the update
- * walk may still run the camera's update. freecam_ran hears of each, so a
- * camera that was not post-updated keeps the free camera's view, and one
- * post-updated in a mode of the game's own starts it again.
+ * walk may still run the camera's update. freecam_ran hears of each as it
+ * ends, so a camera that was not post-updated keeps the free camera's view,
+ * and one post-updated in a mode of the game's own starts it again. The
+ * sound manager's update, which runs freecam_frame (sub_00116E30), comes
+ * between the camera's update and its post-update: in a log of 22 November
+ * 2026, with freecam_frame taking up the update's word on a shot
+ * (freecam_shot), all 25 shots started the free camera again from the
+ * game's view, the word "no shot" taken before the follow camera ran. So
+ * the post-update takes it up, from the same frame. It also notes the view
+ * it built (+0x44 and +0x5C, freecam_shown), for the free camera's glide
+ * into the graffiti shot and out of the game's shots to start from: the
+ * follow camera's hook moves the working eye and target for it, which
+ * sub_000A5B60 works out again each frame, in every mode it runs, the
+ * graffiti shot's too, from the smoothed ones (+0x1E4 and +0x1F0), so
+ * nothing the game keeps from frame to frame changes.
  *
  * The L trigger (sub_00080340), and the player's set-up (sub_000836F0), ask
  * for the camera back behind the player: +0xE5C on the one it follows
@@ -6675,7 +6691,7 @@ void sub_000A6100(void)
     const uint32_t lim = 64u << 20;
     uint32_t cam = g_ecx, who = 0, asked = 0, mode;
     float *cf, eye[3], game_eye[3], seye[3];
-    int placed = FREECAM_OFF, behind;
+    int placed = FREECAM_OFF, behind, glided = 0;
     struct camwall *w;
     if (cam >= 0x10000u && cam + 0x240u < lim) {
         who = *(uint32_t *)(m + cam + CAM_FOLLOWS);
@@ -6716,8 +6732,8 @@ void sub_000A6100(void)
     }
     /* The graffiti shot is the game's to frame, whatever the free camera
      * (Graffiti cam, port/camera_scenes.c; unticked, the camera update never
-     * switches to it on this camera): the free camera starts again from the
-     * game's view after it, as after a mode of the game's own. */
+     * switches to it on this camera): the free camera glides into it, and
+     * out of it back to where the player had it (port/freecam.h). */
     if (cam_pad_steered(m, cam, 1) && !camscene_shot(mode))
         placed = freecam_orbit(cam, mode, cf + CAM_TARGET / 4, seye, behind, eye);
     if (placed != FREECAM_OFF) {
@@ -6726,6 +6742,10 @@ void sub_000A6100(void)
         memcpy(game_eye, cf + CAM_EYE / 4, sizeof game_eye);  /* the game's, for the areas' draw */
         memcpy(cf + CAM_EYE / 4, eye, sizeof eye);
         camera_walls(cam, w, 1);
+        /* Out of one of the game's shots, from its view to this one, after
+         * walls: the shot's view is the game's, and what it looks at, the
+         * graffiti shot's spot by a wall, would bring the eye in. */
+        freecam_view(cam, 0, cf + CAM_EYE / 4, cf + CAM_TARGET / 4);
         cam_eye_note(cam, EYE_FREECAM, game_eye);
         return;
     }
@@ -6735,9 +6755,14 @@ void sub_000A6100(void)
      * the Xbox, and its state starts again, so turning it back on starts
      * from the game's eye. The graffiti shot is left as the game frames it
      * (camscene_shot); its state is still taken, so the follow mode after
-     * it starts again, as before. */
+     * it starts again, as before. Into it, the free camera glides from its
+     * own view to the game's (port/freecam.h, freecam_view). */
     w = camwall_for(cam, mode);
-    cam_eye_note(cam, EYE_GAME, NULL);
+    if (camscene_shot(mode) && cam_pad_steered(m, cam, 0)) {
+        memcpy(game_eye, cf + CAM_EYE / 4, sizeof game_eye);
+        if (freecam_view(cam, 1, cf + CAM_EYE / 4, cf + CAM_TARGET / 4)) glided = 1;
+    }
+    cam_eye_note(cam, glided ? EYE_FREECAM : EYE_GAME, glided ? game_eye : NULL);
     if (!camwall_on()) {
         camwall_reset(w);
         return;
@@ -6760,13 +6785,70 @@ void sub_000A6100(void)
  * handlers actually run, printed every two seconds from the poser. */
 static unsigned long jsrf_camcnt[18];
 static const uint32_t jsrf_camva[18] = { 0x000A28B0u, 0x000A2960u, 0x000A3A70u, 0x000A3BD0u, 0x000A3D10u, 0x000A59B0u, 0x000A58B0u, 0x000A58C0u, 0x000A58E0u, 0x000A3E50u, 0x000A4100u, 0x000A5A00u, 0x000A5A70u, 0x000A5AC0u, 0x000A5AF0u, 0x000A4890u, 0x000A4D80u, 0x000A4C30u };
+/* The heading the controls follow while the free camera glides
+ * (port/freecam.h, freecam_ahead): sub_000A28B0 takes it from the view the
+ * frame shows, its working eye (+0x20C) and target (+0x218), as the game's
+ * sub_0004A7A0 of the look's x and z; here the same, of the view the glide
+ * is headed to. As the camera cuts to a shot and back (sub_000A5AF0,
+ * sub_000A58E0), the game keeps the heading it had (CAM_HELD_HEADING) and,
+ * while CAM_HOLDS is set, the player manager's pad case (sub_000A76E0,
+ * 0x000A799E to 0x000A7A80) sends the skater the way it went; it lets go
+ * when the stick is let go, 6 frames after it turns over 20 degrees from
+ * where it pointed, or once the heading comes within 20 degrees of the kept
+ * one (0x000A7A4D). A glide starts from the view the heading was kept from,
+ * so that last let go on its first frame, and the stick then went by the
+ * gliding view: the game's code is right for its own cuts, and the glide is
+ * the free camera's, so the heading is put where the cut would put it. */
+extern void sub_0004A7A0(void);
+static void cam_heading_ahead(uint32_t cam, const float eye[3], const float tgt[3])
+{
+    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
+    float look[2];
+    uint32_t args[2];
+    look[0] = tgt[0] - eye[0];
+    look[1] = tgt[2] - eye[2];
+    memcpy(args, look, sizeof args);
+    *(uint32_t *)(m + cam + CAM_HEADING) = guest_call_cdecl(sub_0004A7A0, CAM_HEADING_RET, 2, args);
+}
+
+/* The game's hold of the skater's way (CAM_HOLDS), on a camera the free
+ * camera steers, for the log: as it starts, and as it ends, in degrees. */
+static void cam_hold_log(const uint8_t *m, uint32_t cam)
+{
+    static uint32_t said_cam;
+    static int said;
+    int holds;
+    if (!freecam_on() || !cam_pad_steered(m, cam, 0)) return;
+    holds = *(const uint32_t *)(m + cam + CAM_HOLDS) != 0;
+    if (cam == said_cam && holds == said) return;
+    if (holds)
+        fprintf(stderr, "[FREECAM] t=%.2f camera %08X: the skater keeps its way (the game's hold, heading %.0f;"
+                " the controls' heading %.0f)\n", pad_now(), cam,
+                (int16_t)*(const uint32_t *)(m + cam + CAM_HELD_HEADING) * (360.0 / 65536.0),
+                (int16_t)*(const uint32_t *)(m + cam + CAM_HEADING) * (360.0 / 65536.0));
+    else if (cam == said_cam)
+        fprintf(stderr, "[FREECAM] t=%.2f camera %08X: the game's hold let go; the controls follow heading %.0f\n",
+                pad_now(), cam, (int16_t)*(const uint32_t *)(m + cam + CAM_HEADING) * (360.0 / 65536.0));
+    said_cam = cam;
+    said = holds;
+}
+
 extern void sub_000A28B0_gen(void);
 void sub_000A28B0(void)
 {
+    uint32_t cam = g_ecx;
     jsrf_camcnt[0]++;
-    freecam_ran(g_ecx);
-    cam_eye_note(g_ecx, EYE_SCENE, NULL);   /* the follow camera's hook, which this runs, says more */
+    cam_eye_note(cam, EYE_SCENE, NULL);     /* the follow camera's hook, which this runs, says more */
     sub_000A28B0_gen();
+    freecam_ran(cam);                       /* as it ends: what ran in it is known (port/freecam.h) */
+    if (cam >= 0x10000u && cam + 0x240u < (64u << 20)) {
+        const uint8_t *m = (const uint8_t *)g_xbox_mem_offset;
+        const float *cf = (const float *)(m + cam);
+        float eye[3], tgt[3];
+        if (freecam_ahead(cam, eye, tgt)) cam_heading_ahead(cam, eye, tgt);
+        cam_hold_log(m, cam);
+        freecam_shown(cam, cf + CAM_VIEW_EYE / 4, cf + CAM_VIEW_TARGET / 4);   /* for a glide from it */
+    }
 }
 /* The follow camera's draw: the camera it is, while it runs, for the set
  * of areas it makes from its eye (sub_0006A970), and whether photo mode

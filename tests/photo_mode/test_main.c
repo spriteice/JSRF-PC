@@ -67,6 +67,7 @@ void nv_window_hotkey(const char *name, void (*run)(void)) { (void)name; (void)r
 void input_remap_pad_hotkey(int control, void (*run)(void)) { (void)control; (void)run; }
 int playback_freecam(FREECAM_SETTINGS *fc) { (void)fc; return 0; }
 int playback_mouse(int *dx, int *dy) { (void)dx; (void)dy; return 0; }
+int playback_freecam_back(void) { return 1; }
 
 /* The window's mouse look: who asked (the free camera first, then photo
  * mode, as the engine starts them), and the moves, counted for each asker

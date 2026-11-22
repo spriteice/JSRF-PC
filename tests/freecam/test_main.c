@@ -16,6 +16,7 @@
 #include <string.h>
 #include "freecam.h"
 #include "input_remap.h"
+#include "playback.h"
 /* On Windows input_remap.h brings windows.h, whose near is a macro. */
 #undef near
 #include "menu.h"
@@ -88,6 +89,11 @@ int playback_mouse(int *dx, int *dy)
     *dy = s_played_mouse[1];
     return 1;
 }
+/* And what the camera does after the game's shots (port/playback.h's
+ * PLAYBACK_BACK_): here eases back, as camera3's recordings play, unless a
+ * case says otherwise; the glide is the glide case's. */
+static int s_back_mode = PLAYBACK_BACK_EASE;
+int playback_freecam_back(void) { return s_back_mode; }
 
 /* The menu's xbox_MenuAdd: the Input page's rows, caught. */
 #define ROWS_MOST 16
@@ -98,13 +104,36 @@ void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count)
     while (count-- > 0 && s_nrows < ROWS_MOST) s_rows[s_nrows++] = *items++;
 }
 
-/* One frame: a pad read, then the camera's update and its follow camera.
- * Returns 1 if freecam placed the eye. */
+/* One frame: a pad read, then the camera's post-update, its follow
+ * camera in it. Returns 1 if freecam placed the eye. */
 static int frame(short rx, short ry, float eye[3])
 {
+    int placed;
     freecam_pad(0, &rx, &ry);
+    placed = freecam_orbit(CAM, 3, tgt, seye, 0, eye);
     freecam_ran(CAM);
-    return freecam_orbit(CAM, 3, tgt, seye, 0, eye);
+    return placed;
+}
+
+/* One frame in the game's order: the camera's update, no shot playing
+ * (freecam_shot), freecam_frame, then frame's. */
+static int step(short rx, short ry, float eye[3])
+{
+    freecam_shot(CAM, 0);
+    freecam_frame();
+    return frame(rx, ry, eye);
+}
+
+/* n frames of one of the game's shots on cam, in the game's order: the
+ * camera's update says so, freecam_frame, then CAM's post-update, in the
+ * game's mode, without the follow camera. */
+static void shot(uint32_t cam, int n)
+{
+    while (n-- > 0) {
+        freecam_shot(cam, 1);
+        freecam_frame();
+        freecam_ran(CAM);
+    }
 }
 
 static void near(double got, double want, const char *what)
@@ -165,6 +194,89 @@ static void mturn(short rx, short ry, int dx, int dy, double *dh, double *dp)
     near(eye[0], 0, "first frame: the game's eye x");
     assert(mframe(rx, ry, dx, dy, eye));
     angles(eye, dh, dp);
+}
+
+/* What the post-update's freecam_ahead gave, the last frame gframe or gshot
+ * ran: 1, with the view the glide was headed to, or 0. */
+static int s_ahead;
+static float s_ahead_eye[3], s_ahead_at[3];
+
+/* The glide (freecam_view): one frame in the game's order, the follow
+ * camera's hook as recomp_manual.c has it, the game's view from game_eye,
+ * what it looks at tgt, then the post-update's end (freecam_ran,
+ * freecam_ahead, freecam_shown). eye and at: the view the frame shows.
+ * Returns what freecam_orbit did. */
+static int gframe(short rx, short ry, const float game_eye[3], float eye[3], float at[3])
+{
+    int placed;
+    freecam_shot(CAM, 0);
+    freecam_frame();
+    freecam_pad(0, &rx, &ry);
+    memcpy(at, tgt, sizeof tgt);
+    placed = freecam_orbit(CAM, 3, tgt, game_eye, 0, eye);
+    if (placed == FREECAM_OFF) memcpy(eye, game_eye, sizeof tgt);
+    else freecam_view(CAM, 0, eye, at);
+    freecam_ran(CAM);
+    s_ahead = freecam_ahead(CAM, s_ahead_eye, s_ahead_at);
+    freecam_shown(CAM, eye, at);
+    return placed;
+}
+
+/* And a frame of the graffiti shot, as the game frames it, shot_eye looking
+ * at shot_at; eye and at, the view shown. Returns whether freecam glided. */
+static int gshot(const float shot_eye[3], const float shot_at[3], float eye[3], float at[3])
+{
+    int glided;
+    freecam_shot(CAM, 1);
+    freecam_frame();
+    memcpy(eye, shot_eye, sizeof tgt);
+    memcpy(at, shot_at, sizeof tgt);
+    glided = freecam_view(CAM, 1, eye, at);
+    freecam_ran(CAM);
+    s_ahead = freecam_ahead(CAM, s_ahead_eye, s_ahead_at);
+    freecam_shown(CAM, eye, at);
+    return glided;
+}
+
+/* Where the glide puts the eye k of the way from the view (fe, ft) to
+ * (te, tt): what it looks at straight there, and the eye's heading by the
+ * shorter way round, its pitch and its distance. */
+static void glide_want(const float fe[3], const float ft[3], const float te[3], const float tt[3],
+                       double k, double eye[3], double at[3])
+{
+    double fo[3], to[3], fd, td, fy, ty, fp, tp, y, p, d;
+    int i;
+    for (i = 0; i < 3; i++) {
+        fo[i] = fe[i] - ft[i];
+        to[i] = te[i] - tt[i];
+        at[i] = ft[i] + (tt[i] - ft[i]) * k;
+    }
+    fd = sqrt(fo[0] * fo[0] + fo[1] * fo[1] + fo[2] * fo[2]);
+    td = sqrt(to[0] * to[0] + to[1] * to[1] + to[2] * to[2]);
+    fy = atan2(fo[0], fo[2]); ty = atan2(to[0], to[2]);
+    fp = asin(fo[1] / fd); tp = asin(to[1] / td);
+    y = fy + remainder(ty - fy, 2 * 180.0 * deg) * k;
+    p = fp + (tp - fp) * k;
+    d = fd + (td - fd) * k;
+    eye[0] = at[0] + d * cos(p) * sin(y);
+    eye[1] = at[1] + d * sin(p);
+    eye[2] = at[2] + d * cos(p) * cos(y);
+}
+
+static void near3(const float got[3], const double want[3], const char *what)
+{
+    char line[200];
+    int i;
+    for (i = 0; i < 3; i++) {
+        snprintf(line, sizeof line, "%s, [%d]", what, i);
+        near(got[i], want[i], line);
+    }
+}
+
+static double gap(const float a[3], const float b[3])
+{
+    double x = a[0] - b[0], y = a[1] - b[1], z = a[2] - b[2];
+    return sqrt(x * x + y * y + z * z);
 }
 
 int main(int argc, char **argv)
@@ -570,6 +682,358 @@ int main(int argc, char **argv)
         freecam_frame();
         assert(frame(0, 0, eye));
         near(eye[0], 0, "after a scene, the game's view again");
+    } else if (!strcmp(c, "shot_back")) {
+        /* One of the game's shots (port/camera_scenes.h), the view turned
+         * before it: kept as it starts, as far from the game's view as it
+         * was, and eased back to once the follow camera runs again,
+         * smoothly over FREECAM_BACK_FRAMES_BEFORE (as camera3's recordings
+         * play), from wherever the game's view is then (spriteice, 22
+         * November 2026), in whatever mode: here the
+         * grind's (5), as a shot on a rail ends, then on foot (3). Each
+         * frame in the game's order: the camera's update, with its word on
+         * a shot (freecam_shot), then freecam_frame (the sound manager's
+         * update), then the post-update, the follow camera's in it or not
+         * (freecam_orbit, then freecam_ran). The update's word that the
+         * shot is over comes before the follow camera runs again. */
+        static const float side[3] = { 10, 0, 0 };     /* the game's view, heading -90 */
+        short rx = 0, ry = 0;
+        int i;
+        for (i = 0; i < 10; i++) assert(step(32767, 0, eye));
+        for (i = 0; i < 5; i++) assert(step(0, 32767, eye));
+        angles(eye, &h, &p);
+        near(h, 30, "turned before the shot");
+        near(p, -15, "tilted before the shot");
+        /* The shot: the camera runs in the game's mode, which says so, for
+         * 40 frames; the stick is the game's meanwhile. */
+        shot(CAM, 40);
+        freecam_shot(CAM, 0);
+        freecam_frame();
+        rx = 32767; freecam_pad(0, &rx, &ry);
+        assert(rx == 32767);
+        rx = 0; freecam_pad(0, &rx, &ry);
+        /* The follow camera again, on the rail, the game's view now on +x. */
+        assert(freecam_orbit(CAM, 5, tgt, side, 0, eye) == FREECAM_STARTED);
+        freecam_ran(CAM);
+        for (i = 1; i <= FREECAM_BACK_FRAMES_BEFORE; i++) {
+            double t = (double)i / FREECAM_BACK_FRAMES_BEFORE, k = t * t * (3 - 2 * t);
+            if (i > 1) {
+                freecam_shot(CAM, 0);
+                freecam_frame();
+                freecam_pad(0, &rx, &ry);
+                assert(freecam_orbit(CAM, 5, tgt, side, 0, eye) == FREECAM_PLACED);
+                freecam_ran(CAM);
+            }
+            angles(eye, &h, &p);
+            near(h, -90 + 30 * k, "easing back: heading");
+            near(p, -15 * k, "easing back: pitch");
+            if (i == FREECAM_BACK_FRAMES_BEFORE / 2) near(h, -75, "half way, half the turn");
+        }
+        freecam_shot(CAM, 0);
+        freecam_frame();
+        assert(freecam_orbit(CAM, 5, tgt, side, 0, eye) == FREECAM_PLACED);
+        freecam_ran(CAM);
+        angles(eye, &h, &p);
+        near(h, -60, "eased back: as far from the game's view as before");
+        near(p, -15, "eased back: tilted as before");
+        /* Another shot, on foot, the game's view back on -z: the stick
+         * pushed on the fifth frame of the ease takes over from where it
+         * is. */
+        shot(CAM, 10);
+        for (i = 1; i <= 6; i++) {
+            rx = i == 5 ? 32767 : 0;
+            assert(step(rx, 0, eye) == (i == 1 ? FREECAM_STARTED : FREECAM_PLACED));
+        }
+        {
+            double t = 4.0 / FREECAM_BACK_FRAMES_BEFORE, k = t * t * (3 - 2 * t);
+            angles(eye, &h, &p);
+            near(h, 30 * k + 3, "the stick took over: heading");
+            near(p, -15 * k, "the stick took over: pitch");
+        }
+        /* The game paused in a shot: the camera's update runs without its
+         * post-update. The view kept stays, and is eased back to after. */
+        {
+            double h0, p0;
+            for (i = 0; i < 10; i++) assert(step(32767, 0, eye));
+            angles(eye, &h0, &p0);
+            shot(CAM, 10);
+            for (i = 0; i < 20; i++) { freecam_shot(CAM, 1); freecam_frame(); }
+            shot(CAM, 5);
+            assert(step(0, 0, eye) == FREECAM_STARTED);
+            for (i = 1; i < FREECAM_BACK_FRAMES_BEFORE; i++) assert(step(0, 0, eye) == FREECAM_PLACED);
+            angles(eye, &h, &p);
+            near(h, h0, "paused in a shot, then eased back: heading");
+            near(p, p0, "paused in a shot, then eased back: pitch");
+        }
+        /* A mode of the game's that is no shot after one (the level's exit):
+         * the view kept is dropped, and the follow camera starts from the
+         * game's view. */
+        shot(CAM, 10);
+        freecam_shot(CAM, 0); freecam_frame(); freecam_ran(CAM);
+        assert(step(0, 0, eye) == FREECAM_STARTED);
+        near(eye[0], 0, "after another mode, the game's view");
+        near(eye[2], -10, "after another mode, the game's view, z");
+        /* A scene after a shot: the camera post-updated, and no word from
+         * its update, as the pad no longer moves its skater. */
+        for (i = 0; i < 10; i++) assert(step(32767, 0, eye));
+        shot(CAM, 10);
+        freecam_frame(); freecam_ran(CAM);
+        assert(step(0, 0, eye) == FREECAM_STARTED);
+        near(eye[0], 0, "a scene after a shot: the game's view");
+        /* Free camera turned off during a shot and on again: the game's view. */
+        for (i = 0; i < 10; i++) assert(step(32767, 0, eye));
+        shot(CAM, 10);
+        s_key_run();
+        shot(CAM, 1);
+        s_key_run();
+        freecam_shot(CAM, 0);
+        freecam_frame();
+        assert(frame(0, 0, eye) == FREECAM_STARTED);
+        near(eye[0], 0, "off and on in a shot: the game's view");
+        /* A recording made before the ease back: the game's view after a
+         * shot, as then. */
+        s_back_mode = PLAYBACK_BACK_NONE;
+        for (i = 0; i < 10; i++) assert(step(32767, 0, eye));
+        shot(CAM, 10);
+        assert(step(0, 0, eye) == FREECAM_STARTED);
+        near(eye[0], 0, "a recording made before: the game's view");
+        near(eye[2], -10, "a recording made before: the game's view, z");
+        /* The game's reset (the L trigger) as the shot ends: its view. */
+        s_back_mode = PLAYBACK_BACK_EASE;
+        for (i = 0; i < 10; i++) assert(step(32767, 0, eye));
+        shot(CAM, 10);
+        freecam_shot(CAM, 0);
+        freecam_frame();
+        freecam_pad(0, &rx, &ry);
+        rx = 0; freecam_pad(0, &rx, &ry);
+        assert(freecam_orbit(CAM, 3, tgt, seye, 1, eye) == FREECAM_STARTED);
+        freecam_ran(CAM);
+        near(eye[0], 0, "reset as a shot ends: the game's view");
+        /* A shot on a camera freecam does not follow, this camera
+         * post-updated in a mode of its own meanwhile: nothing kept. */
+        for (i = 0; i < 10; i++) assert(step(32767, 0, eye));
+        for (i = 0; i < 10; i++) {
+            freecam_shot(CAM + 0x400, 1);
+            freecam_shot(CAM, 0);
+            freecam_frame();
+            freecam_ran(CAM + 0x400);
+            freecam_ran(CAM);
+        }
+        assert(step(0, 0, eye) == FREECAM_STARTED);
+        near(eye[0], 0, "another camera's shot: the game's view");
+    } else if (!strcmp(c, "shot_glide")) {
+        /* The glide (spriteice, 22 November 2026, the card "Graffiti in and
+         * out"): the view turned 30 degrees, then the graffiti shot as the
+         * game frames it, a spot 8 along z looked at from 6 to its side and
+         * 3 up. Into it a cut, as the game's camera does (spriteice, 22
+         * November 2026: "the transition in for the graffiti cam in free cam
+         * mode has to go ... the transition out stays"), and out of it to
+         * the free camera's view, 30 degrees from the game's view as before,
+         * over FREECAM_BACK_FRAMES: what it looks at straight there, the eye
+         * around it by the shorter way round, its pitch and distance, each
+         * smoothly. Through the glide, the controls follow the view it is
+         * headed to (freecam_ahead), and the view shown at any other time
+         * ("can the skater continue in the same direction the stick is
+         * pushing? ... make the ramp in/out slightly faster"). Each frame in
+         * the game's order, the follow camera's hook as recomp_manual.c has
+         * it (gframe, gshot). */
+        static const float spot[3] = { 0, 0, 8 }, shot_eye[3] = { 6, 3, 8 };
+        float at[3], free_eye[3], last[3], turned[3];
+        double want[3], want_at[3];
+        int i;
+        s_back_mode = PLAYBACK_BACK_OUT;
+        for (i = 0; i < 10; i++) {
+            assert(gframe(32767, 0, seye, eye, at));
+            assert(!s_ahead);
+        }
+        angles(eye, &h, &p);
+        near(h, 30, "the player's: turned before the shot");
+        memcpy(free_eye, eye, sizeof eye);
+        for (i = 0; i < 20; i++) {
+            assert(!gshot(shot_eye, spot, eye, at));
+            near(gap(eye, shot_eye) + gap(at, spot), 0, "the player's: the shot cuts in");
+            assert(!s_ahead);
+        }
+        assert(FREECAM_BACK_FRAMES == 24);
+        for (i = 1; i <= FREECAM_BACK_FRAMES; i++) {
+            double t = (double)i / FREECAM_BACK_FRAMES, k = t * t * (3 - 2 * t);
+            assert(gframe(0, 0, seye, eye, at) == (i == 1 ? FREECAM_STARTED : FREECAM_PLACED));
+            glide_want(shot_eye, spot, free_eye, tgt, k, want, want_at);
+            near3(eye, want, "the player's, gliding out of the shot: the eye");
+            near3(at, want_at, "the player's, gliding out of the shot: what it looks at");
+            assert(s_ahead);
+            near(gap(s_ahead_eye, free_eye) + gap(s_ahead_at, tgt), 0,
+                 "the player's, gliding out of the shot: the controls follow the free camera's view");
+        }
+        assert(gframe(0, 0, seye, eye, at) == FREECAM_PLACED);
+        assert(!s_ahead);
+        angles(eye, &h, &p);
+        near(h, 30, "the player's, glided out: as far from the game's view as before");
+        for (i = 0; i < 10; i++) assert(gframe(-32767, 0, seye, eye, at));
+        angles(eye, &h, &p);
+        near(h, 0, "the player's: turned back behind the player");
+        /* As camera5's recordings play (PLAYBACK_BACK_STEADY): into the shot
+         * from the free camera's last view too, over FREECAM_INTO_FRAMES,
+         * the controls following the shot's view; and the rest of the glide
+         * out's cases, which are the player's too. */
+        s_back_mode = PLAYBACK_BACK_STEADY;
+        for (i = 0; i < 10; i++) {
+            assert(gframe(32767, 0, seye, eye, at));
+            assert(!s_ahead);
+        }
+        angles(eye, &h, &p);
+        near(h, 30, "turned before the shot");
+        memcpy(free_eye, eye, sizeof eye);
+        assert(FREECAM_INTO_FRAMES == 12 && FREECAM_BACK_FRAMES == 24);
+        for (i = 1; i <= FREECAM_INTO_FRAMES; i++) {
+            double t = (double)i / FREECAM_INTO_FRAMES, k = t * t * (3 - 2 * t);
+            assert(gshot(shot_eye, spot, eye, at));
+            glide_want(free_eye, tgt, shot_eye, spot, k, want, want_at);
+            near3(eye, want, "gliding into the shot: the eye");
+            near3(at, want_at, "gliding into the shot: what it looks at");
+            if (i == 1) assert(gap(eye, free_eye) < 0.5);
+            assert(s_ahead);
+            near(gap(s_ahead_eye, shot_eye) + gap(s_ahead_at, spot), 0,
+                 "gliding into the shot: the controls follow the shot's view");
+        }
+        near(gap(eye, shot_eye) + gap(at, spot), 0, "glided into the shot: the game's view");
+        for (i = 0; i < 20; i++) {
+            assert(!gshot(shot_eye, spot, eye, at));
+            near(gap(eye, shot_eye) + gap(at, spot), 0, "in the shot: the game's view");
+            assert(!s_ahead);
+        }
+        /* Out of it, on foot, the game's view behind the player again. */
+        for (i = 1; i <= FREECAM_BACK_FRAMES; i++) {
+            double t = (double)i / FREECAM_BACK_FRAMES, k = t * t * (3 - 2 * t);
+            assert(gframe(0, 0, seye, eye, at) == (i == 1 ? FREECAM_STARTED : FREECAM_PLACED));
+            glide_want(shot_eye, spot, free_eye, tgt, k, want, want_at);
+            near3(eye, want, "gliding out of the shot: the eye");
+            near3(at, want_at, "gliding out of the shot: what it looks at");
+            if (i == 1) assert(gap(eye, shot_eye) < 0.25);
+            assert(s_ahead);
+            near(gap(s_ahead_eye, free_eye) + gap(s_ahead_at, tgt), 0,
+                 "gliding out of the shot: the controls follow the free camera's view");
+        }
+        assert(gframe(0, 0, seye, eye, at) == FREECAM_PLACED);
+        assert(!s_ahead);
+        angles(eye, &h, &p);
+        near(h, 30, "glided out: as far from the game's view as before");
+        near(p, 0, "glided out: as tilted as before");
+        near(gap(at, tgt), 0, "glided out: looking at the player");
+        /* Again, the stick pushed on the tenth frame out: where it glides to
+         * turns with it, 3 degrees, and the glide goes on there. */
+        for (i = 0; i < 20; i++) gshot(shot_eye, spot, eye, at);
+        turned[0] = (float)(-10 * sin(33 * deg));
+        turned[1] = 0;
+        turned[2] = (float)(-10 * cos(33 * deg));
+        for (i = 1; i <= FREECAM_BACK_FRAMES; i++) {
+            assert(gframe(i == 10 ? 32767 : 0, 0, seye, eye, at));
+            if (i == 10) {
+                double t = 10.0 / FREECAM_BACK_FRAMES, k = t * t * (3 - 2 * t);
+                glide_want(shot_eye, spot, turned, tgt, k, want, want_at);
+                near3(eye, want, "the stick in the glide out: the eye");
+                near(gap(s_ahead_eye, turned), 0, "the stick in the glide out: the controls follow it turned");
+            }
+        }
+        angles(eye, &h, &p);
+        near(h, 33, "the stick in the glide out: turned where it glided to");
+        /* A shot shorter than the glide in: out from where the glide in got
+         * to, with no jump. */
+        for (i = 0; i < 5; i++) assert(gshot(shot_eye, spot, eye, at));
+        memcpy(last, eye, sizeof eye);
+        assert(gframe(0, 0, seye, eye, at) == FREECAM_STARTED);
+        assert(gap(eye, last) < 0.25);
+        for (i = 1; i < FREECAM_BACK_FRAMES; i++) assert(gframe(0, 0, seye, eye, at));
+        angles(eye, &h, &p);
+        near(h, 33, "out of a short shot: where it was before it");
+        /* A scene in the glide in, then the shot again: the glide was let
+         * go, and the shot is the game's, as no free camera view was shown
+         * the frame before it. */
+        for (i = 0; i < 5; i++) assert(gframe(0, 0, seye, eye, at));
+        for (i = 0; i < 5; i++) assert(gshot(shot_eye, spot, eye, at));
+        freecam_frame();
+        freecam_ran(CAM);
+        freecam_shown(CAM, seye, tgt);
+        assert(!gshot(shot_eye, spot, eye, at));
+        near(gap(eye, shot_eye) + gap(at, spot), 0, "a scene in the glide in: the game's shot after it");
+        for (i = 0; i < 5; i++) gframe(0, 0, seye, eye, at);
+        /* A scene in the glide out (the camera post-updated without its
+         * follow camera): the glide is let go, and the follow camera starts
+         * from the game's view after it. */
+        for (i = 0; i < 20; i++) gshot(shot_eye, spot, eye, at);
+        for (i = 0; i < 5; i++) assert(gframe(0, 0, seye, eye, at));
+        freecam_frame();
+        freecam_ran(CAM);
+        freecam_shown(CAM, shot_eye, spot);
+        assert(gframe(0, 0, seye, eye, at) == FREECAM_STARTED);
+        near(gap(eye, seye) + gap(at, tgt), 0, "a scene in the glide: the game's view after it");
+        /* The game's reset (the L trigger) in the glide out: its view. */
+        for (i = 0; i < 10; i++) assert(gframe(32767, 0, seye, eye, at));
+        for (i = 0; i < 20; i++) gshot(shot_eye, spot, eye, at);
+        for (i = 0; i < 5; i++) assert(gframe(0, 0, seye, eye, at));
+        freecam_shot(CAM, 0);
+        freecam_frame();
+        memcpy(at, tgt, sizeof tgt);
+        assert(freecam_orbit(CAM, 3, tgt, seye, 1, eye) == FREECAM_STARTED);
+        assert(!freecam_view(CAM, 0, eye, at));
+        freecam_ran(CAM);
+        freecam_shown(CAM, eye, at);
+        near(gap(eye, seye) + gap(at, tgt), 0, "reset in the glide: the game's view");
+        /* As camera4's recordings play (PLAYBACK_BACK_GLIDE): the glides as
+         * long as they were, 15 frames in and 30 out, and the controls
+         * following the view the glide shows. */
+        s_back_mode = PLAYBACK_BACK_GLIDE;
+        for (i = 0; i < 40; i++) assert(gframe(0, 0, seye, eye, at));
+        for (i = 0; i < 10; i++) assert(gframe(32767, 0, seye, eye, at));
+        memcpy(free_eye, eye, sizeof eye);
+        assert(FREECAM_INTO_FRAMES_BEFORE == 15 && FREECAM_BACK_FRAMES_BEFORE == 30);
+        for (i = 1; i <= FREECAM_INTO_FRAMES_BEFORE; i++) {
+            double t = (double)i / FREECAM_INTO_FRAMES_BEFORE, k = t * t * (3 - 2 * t);
+            assert(gshot(shot_eye, spot, eye, at));
+            glide_want(free_eye, tgt, shot_eye, spot, k, want, want_at);
+            near3(eye, want, "a camera4 recording, gliding into the shot: the eye");
+            assert(!s_ahead);
+        }
+        assert(!gshot(shot_eye, spot, eye, at));
+        for (i = 1; i <= FREECAM_BACK_FRAMES_BEFORE; i++) {
+            double t = (double)i / FREECAM_BACK_FRAMES_BEFORE, k = t * t * (3 - 2 * t);
+            assert(gframe(0, 0, seye, eye, at));
+            glide_want(shot_eye, spot, free_eye, tgt, k, want, want_at);
+            near3(eye, want, "a camera4 recording, gliding out of the shot: the eye");
+            assert(!s_ahead);
+        }
+        for (i = 0; i < 10; i++) assert(gframe(-32767, 0, seye, eye, at));
+        angles(eye, &h, &p);
+        near(h, 0, "a camera4 recording: turned back behind the player");
+        /* As camera3's recordings play (the angle eased back, no glide):
+         * the shot cuts in, and out its angle eases from the game's view. */
+        s_back_mode = PLAYBACK_BACK_EASE;
+        for (i = 0; i < 10; i++) assert(gframe(32767, 0, seye, eye, at));
+        for (i = 0; i < 20; i++) {
+            assert(!gshot(shot_eye, spot, eye, at));
+            near(gap(eye, shot_eye) + gap(at, spot), 0, "a camera3 recording: the shot cuts in");
+        }
+        assert(gframe(0, 0, seye, eye, at) == FREECAM_STARTED);
+        {
+            double t = 1.0 / FREECAM_BACK_FRAMES_BEFORE, k = t * t * (3 - 2 * t);
+            angles(eye, &h, &p);
+            near(h, 30 * k, "a camera3 recording: easing back from the game's view");
+            near(gap(at, tgt), 0, "a camera3 recording: looking at the player");
+        }
+        /* As older ones play: the game's view after the shot. */
+        s_back_mode = PLAYBACK_BACK_NONE;
+        for (i = 0; i < 40; i++) assert(gframe(32767, 0, seye, eye, at));
+        for (i = 0; i < 20; i++) assert(!gshot(shot_eye, spot, eye, at));
+        assert(gframe(0, 0, seye, eye, at) == FREECAM_STARTED);
+        near(gap(eye, seye), 0, "an older recording: the game's view");
+        /* The free camera off: the game's shot and view, as the game has
+         * them (the default camera untouched). */
+        s_back_mode = PLAYBACK_BACK_GLIDE;
+        for (i = 0; i < 10; i++) assert(gframe(32767, 0, seye, eye, at));
+        s_key_run();
+        for (i = 0; i < 20; i++) assert(!gshot(shot_eye, spot, eye, at));
+        assert(gframe(0, 0, seye, eye, at) == FREECAM_OFF);
+        assert(!freecam_view(CAM, 0, eye, at));
+        near(gap(eye, seye) + gap(at, tgt), 0, "off: the game's view");
     } else if (!strncmp(c, "centre_", 7)) {
         /* centre_<wait>_<ease> (0 0: off). Turned 30 degrees, then the stick
          * let go. Off, the view stays; on, it stays for <wait> frames (the

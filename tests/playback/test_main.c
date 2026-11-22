@@ -658,11 +658,14 @@ static void by_hand(void)
  * by hand, the player's before the first camera line and the recording's
  * from there; with none, the shots as before the ticks; the player's change
  * hands the game back; a line out of its range, short of a tick or back in
- * time, refused. */
+ * time, refused. And the free camera after the game's shots
+ * (port/freecam.h): the recording's fifth field says how it glided, eased
+ * back or neither, and one without it, made before, plays as before; the
+ * player's own glides quicker, the controls following where it glides to. */
 static void camera_ticks(void)
 {
     char folder[700], path[760], line[256];
-    unsigned at[2] = { 0, 0 }, t[2][3];
+    unsigned at[2] = { 0, 0 }, t[2][3], back[2] = { 0, 0 };
     int lines = 0, f;
     FILE *fp;
     How rec = { .frames = 30, .skip_anchor = -1, .wrong_anchor = -1, .recording = 1,
@@ -679,7 +682,8 @@ static void camera_ticks(void)
     while (fgets(line, sizeof line, fp))
         if (!strncmp(line, "camera ", 7)) {
             if (lines < 2)
-                CHECK(sscanf(line, "camera %u %u %u %u", &at[lines], &t[lines][0], &t[lines][1], &t[lines][2]) == 4,
+                CHECK(sscanf(line, "camera %u %u %u %u %u", &at[lines], &t[lines][0], &t[lines][1], &t[lines][2],
+                             &back[lines]) == 5 && back[lines] == PLAYBACK_BACK_OUT,
                       "a camera line: %s", line);
             lines++;
         }
@@ -687,23 +691,49 @@ static void camera_ticks(void)
     CHECK(lines == 2 && at[1] == at[0] + 12 && t[0][0] && t[0][1] && t[0][2] && t[1][0] && !t[1][1] && t[1][2],
           "the Camera ticks' recording: %d camera lines, at %u and %u", lines, at[0], at[1]);
     /* Played with the player's ticks all on: the recording's in their place. */
+    CHECK(playback_freecam_back() == PLAYBACK_BACK_OUT, "the player's free camera doesn't glide after a shot");
     CHECK(playback_play(folder, 0), "the Camera ticks' recording refused");
+    CHECK(playback_freecam_back() == PLAYBACK_BACK_OUT, "the recording's free camera doesn't glide after a shot");
     h.frames = 34;                  /* past its end */
     run(&g_play, &h);
     h.frames = 30;
     for (f = 0; f < 29; f++)
         CHECK(g_play.ticks[f] == (f < 12 ? 7u : 5u), "the Camera ticks played: %u at pass %d", g_play.ticks[f], f);
     CHECK(playback_state() == PLAYBACK_FINISHED, "the Camera ticks played: state %d", playback_state());
-    /* By hand: Half pipe cam alone from frame 3, the player's before. */
+    /* By hand: Half pipe cam alone from frame 3, the player's before. Made
+     * before the ease back, so none while it plays, and the player's own
+     * once it ends. */
     write_file(folder, "jsrf-pc-recording 1\ncamera 3 0 1 0\nend 20\n");
     CHECK(playback_play(folder, 0), "Camera ticks written by hand refused");
+    CHECK(playback_freecam_back() == PLAYBACK_BACK_NONE, "a recording made before the ease back, eased back");
     run(&g_play, &h);
     CHECK(g_play.ticks[0] == 7 && g_play.ticks[1] == 7 && g_play.ticks[2] == 2 && g_play.ticks[18] == 2
           && playback_state() == PLAYBACK_FINISHED, "by hand, the Camera ticks: %u %u %u, state %d",
           g_play.ticks[1], g_play.ticks[2], g_play.ticks[18], playback_state());
-    /* None: the shots as before the ticks, from the first. */
+    CHECK(playback_freecam_back() == PLAYBACK_BACK_OUT, "the player's free camera after playback doesn't glide");
+    /* By hand with the fifth field: 4 (cutting into the graffiti shot,
+     * gliding out), 3 (gliding in too, quicker, the controls following
+     * where it glides to, as camera5 wrote it), 2 (gliding, as camera4
+     * wrote it), 1 (the angle eased back, as camera3 wrote it), and 0. */
+    write_file(folder, "jsrf-pc-recording 1\ncamera 3 0 1 0 4\nend 20\n");
+    CHECK(playback_play(folder, 0) && playback_freecam_back() == PLAYBACK_BACK_OUT,
+          "a camera line cutting in, refused or not");
+    write_file(folder, "jsrf-pc-recording 1\ncamera 3 0 1 0 3\nend 20\n");
+    CHECK(playback_play(folder, 0) && playback_freecam_back() == PLAYBACK_BACK_STEADY,
+          "a camera line gliding quicker, refused or not");
+    write_file(folder, "jsrf-pc-recording 1\ncamera 3 0 1 0 2\nend 20\n");
+    CHECK(playback_play(folder, 0) && playback_freecam_back() == PLAYBACK_BACK_GLIDE,
+          "a camera line gliding, refused or not gliding");
+    write_file(folder, "jsrf-pc-recording 1\ncamera 3 0 1 0 1\nend 20\n");
+    CHECK(playback_play(folder, 0) && playback_freecam_back() == PLAYBACK_BACK_EASE,
+          "a camera line easing back, refused or not easing");
+    write_file(folder, "jsrf-pc-recording 1\ncamera 3 0 1 0 0\nend 20\n");
+    CHECK(playback_play(folder, 0) && playback_freecam_back() == PLAYBACK_BACK_NONE,
+          "a camera line not easing back, refused or easing");
+    /* None: the shots as before the ticks, from the first, and no ease back. */
     write_file(folder, "jsrf-pc-recording 1\nend 10\n");
     CHECK(playback_play(folder, 0), "a recording with no camera line refused");
+    CHECK(playback_freecam_back() == PLAYBACK_BACK_NONE, "a recording with no camera line, eased back");
     run(&g_play, &h);
     CHECK(g_play.ticks[0] == PLAYBACK_CAMSCENES_BEFORE && g_play.ticks[8] == PLAYBACK_CAMSCENES_BEFORE
           && playback_state() == PLAYBACK_FINISHED, "with no camera line: %08X, state %d", g_play.ticks[0],
@@ -720,6 +750,8 @@ static void camera_ticks(void)
     CHECK(!playback_play(folder, 0), "a Camera tick of 2, played");
     write_file(folder, "jsrf-pc-recording 1\ncamera 3 0 1\n");
     CHECK(!playback_play(folder, 0), "a camera line short of a tick, played");
+    write_file(folder, "jsrf-pc-recording 1\ncamera 3 0 1 0 5\n");
+    CHECK(!playback_play(folder, 0), "a camera line with a fifth number of 5, played");
     write_file(folder, "jsrf-pc-recording 1\ncamera 5 1 1 1\ncamera 4 1 1 1\n");
     CHECK(!playback_play(folder, 0), "a camera line back in time, played");
 }

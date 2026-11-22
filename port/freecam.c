@@ -25,8 +25,24 @@
  * view freecam steers faces elsewhere, so the lift would come and go with
  * ground the view isn't looking at, and the eye stays on its orbit instead.
  * Taking over while the game's camera is lifted lowers the view by the lift,
- * once. While freecam is on, spraying graffiti does not turn the camera to
- * the spot, and talking to someone does not turn it to them.
+ * once. While freecam is on, talking to someone does not turn the camera to
+ * them.
+ *
+ * The game's own shots -- the graffiti shot, the loop's and the half pipe's
+ * (camera_scenes.h) -- are the game's to frame. Out of one, the view glides
+ * from the shot's last view to the free camera's, as far from the game's
+ * own as the player had it as the shot started, over FREECAM_BACK_FRAMES:
+ * what it looks at, the way it faces, how far and how high, each smoothly,
+ * none of the way at the start and all of it at the end. Into every shot
+ * it cuts, as the game's camera does (spriteice, 22 November 2026: "the
+ * transition in for the graffiti cam in free cam mode has to go ... the
+ * transition out stays"); only as recordings made before play does it
+ * glide into the graffiti shot, from the free camera's last view to the
+ * shot as the game frames it, over FREECAM_INTO_FRAMES (the card "Graffiti
+ * in and out") or FREECAM_INTO_FRAMES_BEFORE. The stick and the mouse steer
+ * where it glides to. The glide is the picture's alone: the controls follow the view it is headed to
+ * (freecam_ahead), so the skater keeps going the way the stick sends it, as
+ * through the game's own cut to a shot and back.
  *
  * The stick is used as it comes: past the deadzone the turn per frame is in
  * proportion to how far it is pushed, with nothing carried from one frame to
@@ -166,6 +182,37 @@ static int s_idle;              /* frames the stick has been let go, up to the l
 static short s_stick[4][2];     /* each port's right stick, as last read */
 static uint32_t s_cam;          /* the camera yaw and pitch are for; 0: start them again */
 static double s_yaw, s_pitch;   /* radians */
+static double s_gyaw, s_gpitch; /* the game's own view, as freecam_orbit last saw it */
+/* A game's own shot (freecam_shot): the camera that was steered as it
+ * started, and how far the view was from the game's own then (radians), to
+ * ease back to once the follow camera runs it again. */
+static uint32_t s_kept_cam;
+static double s_kept_yaw, s_kept_pitch;
+/* The camera update's word on a camera, this frame's: s_said_cam, and a
+ * shot playing on it (1) or none (-1); its post-update takes it up
+ * (freecam_ran). */
+static uint32_t s_said_cam;
+static int s_said;
+/* The ease back, as camera3's recordings play: frames into it, of
+ * FREECAM_BACK_FRAMES_BEFORE; 0: none. */
+static int s_back;
+/* A glide (freecam_view): the camera, into the graffiti shot (1) or out of
+ * one of the game's shots (0), frames into it of s_glide_len (0: none), its
+ * follow camera's hook stepped it this frame, whether the controls follow
+ * where it is headed (freecam_ahead), and the view it started from. */
+static uint32_t s_glide_cam;
+static int s_glide, s_glide_len, s_glide_in, s_glide_stepped, s_glide_ahead;
+static double s_from_eye[3], s_from_tgt[3];
+/* The view this frame's glide step was headed to, of s_ahead_cam (0:
+ * none this frame), for freecam_ahead. */
+static uint32_t s_ahead_cam;
+static float s_ahead_eye[3], s_ahead_tgt[3];
+/* The view each post-update showed (freecam_shown), of a camera freecam
+ * placed, glides or keeps the view of: the camera, whether freecam placed it
+ * (freecam_orbit, s_placed_cam until then), and the view. */
+static uint32_t s_shown_cam, s_placed_cam;
+static int s_shown_free;
+static double s_shown_eye[3], s_shown_tgt[3];
 
 /* A key in [lo, hi], or def. */
 static double cfg_num(const char *key, double def, double lo, double hi)
@@ -245,7 +292,10 @@ void freecam_frame(void)
     FREECAM_SETTINGS c = s_asked;
     int played = playback_freecam(&c), steer, held, mouse, dx, dy;
     if (!played && s_played) say("yours again, as playback ended", &c);
-    if (c.on != s_cfg.on) s_cam = 0;                /* on or off: from the game's view next time */
+    if (c.on != s_cfg.on) {                         /* on or off: from the game's view next time */
+        s_cam = s_kept_cam = 0;
+        s_glide = 0;
+    }
     s_cfg = c;
     s_played = played;
     s_mouse_on = s_cfg.on && s_cfg.mouse;
@@ -274,7 +324,161 @@ void freecam_frame(void)
 
 void freecam_ran(uint32_t cam)
 {
+    int said = cam && cam == s_said_cam ? s_said : 0;
+    if (cam == s_said_cam) s_said_cam = 0;
+    if (!cam) return;
     if (cam == s_cam) s_cam_ran = 1;
+    /* As one of the game's shots starts (the update that says so put the
+     * camera in the shot's mode, so freecam_orbit did not run), the view
+     * is kept, to ease back to. Kept, a post-update with no shot playing
+     * lets it go: another mode of the game's, or a scene, whose update
+     * says nothing. Had the follow camera run in it instead, freecam_orbit
+     * would have taken the view up, and let it go, already. */
+    if (cam == s_cam && said > 0 && s_cfg.on) {
+        s_kept_cam = s_cam;
+        s_kept_yaw = remainder(s_yaw - s_gyaw, 2 * 180.0 * k_rad);
+        s_kept_pitch = s_pitch - s_gpitch;
+        fprintf(stderr, "[FREECAM] the game's shot on camera %08X: heading %.0f, pitch %.0f"
+                " from the game's view kept, to ease back to\n",
+                s_cam, s_kept_yaw / k_rad, s_kept_pitch / k_rad);
+    } else if (cam == s_kept_cam && said <= 0)
+        s_kept_cam = 0;
+}
+
+void freecam_shot(uint32_t cam, int playing)
+{
+    if (!cam) return;
+    s_said_cam = cam;
+    s_said = playing ? 1 : -1;
+}
+
+void freecam_shown(uint32_t cam, const float eye[3], const float tgt[3])
+{
+    int k;
+    if (!cam) return;
+    if (cam == s_glide_cam) {
+        if (s_glide && !s_glide_stepped) {
+            fprintf(stderr, "[FREECAM] the glide %s the game's shot on camera %08X let go: its follow camera"
+                    " did not run\n", s_glide_in ? "into" : "out of", cam);
+            s_glide = 0;
+        }
+        s_glide_stepped = 0;
+    }
+    if (cam == s_ahead_cam) s_ahead_cam = 0;
+    if (cam != s_placed_cam && cam != s_glide_cam && cam != s_kept_cam) return;
+    s_shown_cam = cam;
+    s_shown_free = cam == s_placed_cam;
+    if (cam == s_placed_cam) s_placed_cam = 0;
+    for (k = 0; k < 3; k++) {
+        s_shown_eye[k] = eye[k];
+        s_shown_tgt[k] = tgt[k];
+    }
+}
+
+/* A glide from the view shown last (s_shown_), into the graffiti shot (in)
+ * or out of one of the game's shots, as back has it (playback_freecam_back):
+ * quicker, the controls following where it is headed, or as recordings made
+ * before had it. */
+static void glide_start(uint32_t cam, int in, int back)
+{
+    int k, now = back >= PLAYBACK_BACK_STEADY;
+    s_glide_cam = cam;
+    s_glide_in = in;
+    s_glide = 1;
+    s_glide_len = in ? (now ? FREECAM_INTO_FRAMES : FREECAM_INTO_FRAMES_BEFORE)
+                     : (now ? FREECAM_BACK_FRAMES : FREECAM_BACK_FRAMES_BEFORE);
+    s_glide_ahead = now;
+    s_glide_stepped = 0;
+    for (k = 0; k < 3; k++) {
+        s_from_eye[k] = s_shown_eye[k];
+        s_from_tgt[k] = s_shown_tgt[k];
+    }
+}
+
+/* An eye's way from what it looks at, o = eye - tgt: its heading y, pitch
+ * p and distance d, o = d (cos p sin y, sin p, cos p cos y). Returns d, 0
+ * for an eye on what it looks at. */
+static double glide_way(const double o[3], double *yaw, double *pitch)
+{
+    double d = sqrt(o[0] * o[0] + o[1] * o[1] + o[2] * o[2]), s;
+    if (!(d > 0)) return 0;
+    s = o[1] / d;
+    *yaw = atan2(o[0], o[2]);
+    *pitch = asin(s > 1 ? 1 : s < -1 ? -1 : s);
+    return d;
+}
+
+/* This frame of the glide: from the view it started from to eye and tgt,
+ * in place, smoothly (none of the way at the start, all of it at the end,
+ * fastest half way): what it looks at straight there, and the eye around
+ * it, by the shorter way round, its pitch and its distance. */
+static void glide_step(float eye[3], float tgt[3])
+{
+    double t = (double)s_glide / s_glide_len, k = t * t * (3 - 2 * t);
+    double fo[3], to[3], ft[3], fy = 0, fp = 0, ty = 0, tp = 0, fd, td, y, p, d, cp;
+    int i;
+    if (s_glide_ahead) {
+        s_ahead_cam = s_glide_cam;
+        for (i = 0; i < 3; i++) {
+            s_ahead_eye[i] = eye[i];
+            s_ahead_tgt[i] = tgt[i];
+        }
+    }
+    for (i = 0; i < 3; i++) {
+        fo[i] = s_from_eye[i] - s_from_tgt[i];
+        to[i] = eye[i] - tgt[i];
+        ft[i] = s_from_tgt[i] + (tgt[i] - s_from_tgt[i]) * k;
+    }
+    fd = glide_way(fo, &fy, &fp);
+    td = glide_way(to, &ty, &tp);
+    if (fd > 0 && td > 0) {
+        y = fy + remainder(ty - fy, 2 * 180.0 * k_rad) * k;
+        p = fp + (tp - fp) * k;
+        d = fd + (td - fd) * k;
+        cp = cos(p);
+        eye[0] = (float)(ft[0] + d * cp * sin(y));
+        eye[1] = (float)(ft[1] + d * sin(p));
+        eye[2] = (float)(ft[2] + d * cp * cos(y));
+    } else
+        for (i = 0; i < 3; i++) eye[i] = (float)(s_from_eye[i] + (eye[i] - s_from_eye[i]) * k);
+    for (i = 0; i < 3; i++) tgt[i] = (float)ft[i];
+    s_glide_stepped = 1;
+    s_glide = s_glide < s_glide_len ? s_glide + 1 : 0;
+    if (!s_glide)
+        fprintf(stderr, "[FREECAM] glided %s the game's shot\n", s_glide_in ? "into" : "out of");
+}
+
+int freecam_view(uint32_t cam, int shot, float eye[3], float tgt[3])
+{
+    shot = shot != 0;
+    if (!cam || !s_cfg.on) return 0;
+    if (shot && !(s_glide && s_glide_in && cam == s_glide_cam)) {
+        /* The graffiti shot, as it starts: a cut, but as recordings that
+         * glided into it play, from the free camera's view, the last
+         * frame's. */
+        int back = playback_freecam_back();
+        if (cam == s_glide_cam) s_glide = 0;
+        if (cam != s_shown_cam || !s_shown_free || back < PLAYBACK_BACK_GLIDE || back > PLAYBACK_BACK_STEADY)
+            return 0;
+        glide_start(cam, 1, back);
+        fprintf(stderr, "[FREECAM] gliding into the game's graffiti shot on camera %08X, over %d frames%s\n",
+                cam, s_glide_len, s_glide_ahead ? ", the controls following the shot's view" : "");
+    }
+    if (!s_glide || cam != s_glide_cam || s_glide_in != shot) return 0;
+    glide_step(eye, tgt);
+    return 1;
+}
+
+int freecam_ahead(uint32_t cam, float eye[3], float tgt[3])
+{
+    int k;
+    if (!cam || cam != s_ahead_cam) return 0;
+    s_ahead_cam = 0;
+    for (k = 0; k < 3; k++) {
+        eye[k] = s_ahead_eye[k];
+        tgt[k] = s_ahead_tgt[k];
+    }
+    return 1;
 }
 
 void freecam_pad(unsigned port, short *rx, short *ry)
@@ -332,21 +536,47 @@ int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float s
     gyaw = atan2(-v[0], -v[2]);
     gpitch = asin(v[1] / d);
     if (cam != s_cam || reset) {
-        s_yaw = gyaw;
-        s_pitch = gpitch;
+        /* From the game's view; after one of its shots, back to where the
+         * player had it, gliding there from the shot's view (freecam_view),
+         * or as a recording made before plays, easing the angle back from
+         * the game's view, or not. */
+        int back = !reset && cam == s_kept_cam ? playback_freecam_back() : PLAYBACK_BACK_NONE;
+        int glide = back >= PLAYBACK_BACK_GLIDE && cam == s_shown_cam;
+        s_yaw = glide ? remainder(gyaw + s_kept_yaw, 2 * 180.0 * k_rad) : gyaw;
+        s_pitch = glide ? gpitch + s_kept_pitch : gpitch;
         s_idle = 0;
+        s_back = back && !glide ? 1 : 0;
+        s_glide = 0;
+        if (glide) glide_start(cam, 0, back);
         again = 1;
-        fprintf(stderr, "[FREECAM] following camera %08X (mode %u) from heading %.0f, pitch %.0f%s\n",
+        fprintf(stderr, "[FREECAM] following camera %08X (mode %u) from heading %.0f, pitch %.0f%s%s\n",
                 cam, mode, s_yaw / k_rad, s_pitch / k_rad,
-                cam == s_cam ? ", as the game put it back behind the player" : "");
+                glide ? ", where it was before the game's shot, gliding there from the shot's view"
+                : back ? ", easing back to where it was before the game's shot"
+                : cam == s_cam ? ", as the game put it back behind the player" : "",
+                glide && s_glide_ahead ? ", the controls following where it glides to" : "");
         s_cam = cam;
+        s_kept_cam = 0;
     }
     freecam_stick(&x, &y);
     mx = s_mouse[0];                        /* this frame's, once */
     my = s_mouse[1];
     s_mouse[0] = s_mouse[1] = 0;
-    if (x != 0 || y != 0 || mx != 0 || my != 0) s_idle = 0;
-    else if (s_idle < k_centre[s_cfg.centre].wait) s_idle++;
+    if (x != 0 || y != 0 || mx != 0 || my != 0) {
+        s_idle = 0;
+        if (s_back) fprintf(stderr, "[FREECAM] easing back: the stick or the mouse took over\n");
+        s_back = 0;                         /* the player's again, from where it is */
+    } else if (s_idle < k_centre[s_cfg.centre].wait) s_idle++;
+    if (s_back) {
+        /* From the game's view to the kept one, as far from it as the view
+         * was, smoothly: none of the way at the start, all of it at the
+         * end, fastest half way. Only as camera3's recordings play, at
+         * their length. */
+        double t = (double)s_back / FREECAM_BACK_FRAMES_BEFORE, k = t * t * (3 - 2 * t);
+        s_yaw = remainder(gyaw + s_kept_yaw * k, 2 * 180.0 * k_rad);
+        s_pitch = gpitch + s_kept_pitch * k;
+        s_back = s_back < FREECAM_BACK_FRAMES_BEFORE ? s_back + 1 : 0;
+    }
     freecam_turn(&s_cfg, x, y, mx, my, &x, &y);
     s_yaw = remainder(s_yaw + x, 2 * 180.0 * k_rad);
     s_pitch -= y;                           /* up tilts the view up: the eye goes down */
@@ -357,10 +587,13 @@ int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float s
     }
     if (s_pitch > pmax) s_pitch = pmax;
     if (s_pitch < -pmax) s_pitch = -pmax;
+    s_gyaw = gyaw;
+    s_gpitch = gpitch;
     cp = cos(s_pitch);
     eye[0] = (float)(tgt[0] - d * cp * sin(s_yaw));
     eye[1] = (float)(tgt[1] + d * sin(s_pitch));
     eye[2] = (float)(tgt[2] - d * cp * cos(s_yaw));
+    s_placed_cam = cam;
     return again ? FREECAM_STARTED : FREECAM_PLACED;
 }
 

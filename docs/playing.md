@@ -95,11 +95,19 @@ trigger puts it back behind the player, as it does the game's camera.
 Talking to someone doesn't turn it to them. The game's own shots, such as
 the camera turning to the wall you spray, are Input > Behaviour > Camera's,
 with the free camera on or off ([In-game menu](#in-game-menu), below):
-ticked, the game takes the camera for them as on the Xbox, and gives it
-back to the free camera after; unticked, like the graffiti camera option in
-the Jet Set Radio re-release, they don't play, and the free camera stays.
-With Half pipe cam unticked, it rises and falls with your skater through a
-half pipe's jump, as the game's camera does then.
+ticked, the game takes the camera for them as on the Xbox, and once a shot
+is over the free camera glides from the shot's view back to where you had
+it as the shot began, over 0.4 of a second, on foot or on a rail: turned as
+far from the game's own camera as it was then, so it is the same way round
+your skater, whichever way they now face. Into each shot it cuts, as the
+game's camera does. The right stick or the mouse steers where the glide
+goes, at once. Your skater keeps going the way the left stick sends them
+through the shot and the glide out, as through the game's own cut to the
+shot: let go of the stick, or turn it, and it goes by the view the camera
+is gliding to. Unticked, like the graffiti camera option in the Jet Set Radio re-release,
+they don't play, and the free camera stays. With Half pipe cam unticked, it
+rises and falls with your skater through a half pipe's jump, as the game's
+camera does then.
 
 Inversion, sensitivity, and the deadzone are in the in-game menu under
 Input > Free camera, and in the settings file (see the `README.txt` in the
@@ -358,7 +366,9 @@ input goes to the menu.
   following you, the free camera too if it's on. Through a half pipe's jump
   with Half pipe cam unticked, the camera rises and falls with you, at its
   own angle and distance, and settles back as you land; on the Xbox's own
-  follow camera you would fly up out of view. The camera that holds
+  follow camera you would fly up out of view. After a shot the free
+  camera glides back to where you had it ([Free camera](#free-camera),
+  above). The camera that holds
   still as you skate out of a level's exit is no tick's: it is always as on
   the Xbox. All three are ticked by default, and in Xbox mode. Each
   changes at once, and is kept as `graffiti_cam=`, `half_pipe_cam=` and
@@ -483,7 +493,11 @@ input goes to the menu.
     while it plays, leaving yours as they were. So are Input > Behaviour >
     Camera's ticks for the game's three shots; a recording made before them
     plays the game's shots as those builds did, the graffiti shot only while
-    the free camera is off. Each recording is a folder
+    the free camera is off, one made before the free camera eased back
+    after a shot plays without the ease, one made before it glided
+    eases its angle back from the game's view, with no glide in or out,
+    and one made while it glided into the graffiti shot glides in as it
+    did. Each recording is a folder
     in `recordings` beside the settings file (`portable/recordings` in
     portable mode), named by when it started, in UTC, as
     `2026-11-19-091500`. Play (Restart) lists the recordings there were

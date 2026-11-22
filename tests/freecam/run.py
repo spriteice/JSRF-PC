@@ -9,8 +9,8 @@ settings file code from src/nv2a_gl/nv2a_gl.c verbatim (sdl_cfg_path through
 sdl_cfg_set, with nv_window_pref_num between them); test_main.c stands in
 for the window's key hook and its mouse look, the controller layout's hook
 for the pad's Toggle free camera (src/input/input_remap.c), the menu's
-xbox_MenuAdd and input playback's playback_freecam and playback_mouse
-(tests/playback drives freecam.c with the real ones). Each
+xbox_MenuAdd and input playback's playback_freecam, playback_mouse and
+playback_freecam_back (tests/playback drives freecam.c with the real ones). Each
 case gets its own settings file, passed as JSRF_SETTINGS_FILE, and its own
 run, since the settings are read once.
 Requires GCC on PATH, including MinGW on Windows.
@@ -70,6 +70,30 @@ cases = {
                     " deadzone 0.1, auto centre Off, mouse look on at 5"]),
     "played": ("freecam=0\n", ["[FREECAM] off (yours again, as playback ended); invert x 0 y 0, sensitivity x 5 y 5"]),
     "held": ("freecam=1\n", ["held: its camera did not run; keeping the view", "steering the camera"]),
+    "shot_back": ("freecam=1\n", ["[FREECAM] the game's shot on camera 00401000: heading 30, pitch -15"
+                                  " from the game's view kept, to ease back to",
+                                  "(mode 5) from heading -90, pitch 0, easing back to where it was before the game's shot",
+                                  "[FREECAM] easing back: the stick or the mouse took over"]),
+    # the player's: the shot cut into (no glide into it between), then the glide out
+    "shot_glide": ("freecam=1\n", ["from the game's view kept, to ease back to\n"
+                                   "[FREECAM] idle: the follow camera is not running\n"
+                                   "[FREECAM] following camera 00401000 (mode 3) from heading 30, pitch 0, where it"
+                                   " was before the game's shot, gliding there from the shot's view, the controls"
+                                   " following where it glides to",
+                                   "[FREECAM] gliding into the game's graffiti shot on camera 00401000,"
+                                   " over 12 frames, the controls following the shot's view",
+                                   "[FREECAM] glided into the game's shot",
+                                   "(mode 3) from heading 30, pitch 0, where it was before the game's shot,"
+                                   " gliding there from the shot's view, the controls following where it"
+                                   " glides to",
+                                   "[FREECAM] gliding into the game's graffiti shot on camera 00401000,"
+                                   " over 15 frames\n",
+                                   "[FREECAM] glided out of the game's shot",
+                                   "[FREECAM] the glide into the game's shot on camera 00401000 let go:"
+                                   " its follow camera did not run",
+                                   "[FREECAM] the glide out of the game's shot on camera 00401000 let go:"
+                                   " its follow camera did not run",
+                                   "[FREECAM] off (F8, the pad or the menu)"]),
     # auto centre: centre_<wait>_<ease>, the level's frames and share (port/freecam.c, k_centre)
     "centre_0_0": ("freecam=1\n", ["auto centre Off"]),
     "centre_120_90": ("freecam=1\nautocentre=1\n", ["auto centre Mild"]),
