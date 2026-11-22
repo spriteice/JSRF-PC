@@ -45,8 +45,11 @@ boxes' A and B, drawn flat in the button prompts' styles, are
 `prompt_buttons.c`, from the models' draw's and the node functions'
 overrides in `recomp_manual.c`: it marks where each button is, and the
 renderer draws the style's picture there (`src/nv2a_gl/nv2a_prompts.h`).
-It also marks the size the renderer draws the VS menu's upright buttons
-at, around that screen's draw.
+It also has the mark for a size of the VS menu's own for its upright
+buttons, which `recomp_manual.c` writes round the draws of that screen's
+three objects. The mark doesn't reach the VS menu's Back yet, which is
+drawn at every menu's size: what draws it is still to be found (b3.1 row
+9).
 The game's lines that name the A or B button by its letter are
 `prompt_text.c`, from the font calls' overrides there: it knows each line
 by its bytes and draws it in pieces, each letter's place marked for the

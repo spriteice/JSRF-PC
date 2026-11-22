@@ -52,8 +52,7 @@ line to press A to start, the save, load and memory messages, and the
 graffiti save screen's. START, and the graffiti editor's help lines, stay as
 words. Where a menu leans its buttons, as the VS menu and the graffiti
 menus slant theirs, the style's pictures are drawn upright, in the same
-place: on the VS menu's screen about the size of the game's slanted button
-there. Everywhere else the style's pictures are drawn a little larger
+place. Everywhere the style's pictures are drawn a little larger
 than the game's own icons: in the menus, on the HUD, beside the message
 boxes, in the lines of text and along the F1 menu's foot. The style is kept as
 `button_prompts=` in the settings file (0 Auto, 1 Default, the default, 2
