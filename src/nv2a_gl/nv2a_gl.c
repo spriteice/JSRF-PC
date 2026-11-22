@@ -406,6 +406,10 @@ static struct {
 
     /* stats */
     uint32_t draws, tris, clears, flips, prog_switches, since_present;
+    /* Frames put in the window (sdl_show), the game's and the start-up
+     * shader build's box alike: with flips, what the freeze watch reads
+     * (nv2a_gl_progress). */
+    uint32_t shows;
     /* Displayed frames, as distinct from finished passes: see M_FLIP_STALL. */
     uint32_t frames;
     uint32_t tris_ff, tris_pm;   /* triangles by transform pipeline */
@@ -3285,7 +3289,8 @@ static double sdl_next_refresh(double t)
 /* A finished frame to the window, the way frames go -- handed to the
  * presenter, or presented here -- and then the window's events. The input
  * latency log is told when each frame is handed over and, for one presented
- * here, when its swap ended (the presenter tells it of its own). */
+ * here, when its swap ended (the presenter tells it of its own). Each frame
+ * is counted, as the picture moving (nv2a_gl_progress). */
 static void sdl_show(GLuint fbo, int w, int h, float shape)
 {
     int lat = nv2a_lat_on();
@@ -3304,6 +3309,7 @@ static void sdl_show(GLuint fbo, int w, int h, float shape)
             nv2a_lat_swapped(&g_lat, swaps, end, sdl_next_refresh(end));
         }
     }
+    S.shows++;
     sdl_pump();
 }
 
@@ -14496,13 +14502,18 @@ static const char *surf_desc(int i)
     return buf[i];
 }
 
-/* One number that must keep changing while the game is alive.
+/* One number that must keep changing while the picture is alive.
  *
  * Presents, not draws: a title that has stopped can still be issuing draws
  * into a buffer nobody shows, and a title that is merely slow still presents.
- * The freeze watchdog in the kernel bridge reads this and nothing else. */
+ * And every frame put in the window, whoever drew it: the start-up shader
+ * build shows its box there for seconds before the title's first present
+ * (known bug 45 was a freeze reported in the middle of one). Both, as a
+ * present that is told not to reach the window is still the title alive.
+ * The freeze watchdog in the kernel bridge reads this and nothing else; the
+ * frame its report names is the title's own (nv2a_gl_flips). */
 unsigned long nv2a_gl_progress(void);
-unsigned long nv2a_gl_progress(void) { return (unsigned long)S.flips; }
+unsigned long nv2a_gl_progress(void) { return (unsigned long)S.flips + S.shows; }
 
 void nv2a_gl_report(void)
 {

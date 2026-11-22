@@ -1,7 +1,8 @@
 /* What the parts of src/kernel/kernel_bridge.c that run.py cuts out need
  * around them: the guest lock's reports and the counts the freeze report
- * prints, as stubs. The picture's frame counter (nv2a_gl_progress) is in
- * test_main.c, after the freeze watch's weak declaration of it. */
+ * prints, as stubs. The picture's count and the game's frame
+ * (nv2a_gl_progress, nv2a_gl_flips) are in test_main.c, after the freeze
+ * watch's weak declarations of them. */
 #define _GNU_SOURCE
 #include <pthread.h>
 #include <stdint.h>

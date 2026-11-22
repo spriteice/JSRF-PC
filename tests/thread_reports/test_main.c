@@ -16,16 +16,27 @@
  *     with [THREADS] after it, while the lock is held: the freeze watch rode
  *     the timer thread, and in known bug 49 that thread was waiting for the
  *     guest lock, so nothing was said;
+ *   - that [FROZEN] names the game's own frame, not the count the watch
+ *     reads, which also has the frames a start-up shader build showed
+ *     before the game's first (known bug 45);
  *   - that [THREADS] lists the thread still starting, and the other's call.
  *
  * stderr, where the reports go, is read through a pipe. A thread writes its
  * row only before the report thread reads it, ordered by the frame counter,
  * as the thread sanitizer would otherwise report the test's own writes. */
 
+/* The game's frames, and the picture's count as the renderer gives it: those
+ * and the frames a start-up shader build's box showed before them (BOX). */
+#define BOX 37
 static volatile unsigned long g_frames;
 unsigned long nv2a_gl_progress(void)
 {
-    return __atomic_load_n(&g_frames, __ATOMIC_ACQUIRE);
+    return BOX + __atomic_load_n(&g_frames, __ATOMIC_ACQUIRE);
+}
+uint32_t nv2a_gl_flips(void);
+uint32_t nv2a_gl_flips(void)
+{
+    return (uint32_t)__atomic_load_n(&g_frames, __ATOMIC_ACQUIRE);
 }
 static void frame(void)
 {
@@ -241,6 +252,10 @@ int main(void)
             fail("[FROZEN] under four seconds after the last frame");
         if (said_at - last > 8000)
             fail("[FROZEN] over eight seconds after the last frame");
+        snprintf(rest, sizeof rest, "(still at frame %lu)",
+                 __atomic_load_n(&g_frames, __ATOMIC_ACQUIRE));
+        if (!strstr(line, rest))
+            fail("[FROZEN] doesn't name the game's own frame");
     }
     threads_at = at < 0 ? -1 : find_out((size_t)at, "[THREADS]", 2000);
     if (at >= 0 && threads_at < 0)

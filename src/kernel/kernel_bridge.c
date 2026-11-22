@@ -6252,6 +6252,7 @@ void xbox_kernel_thread_report(void) { kthread_report(); }
 static void kernel_freeze_watch(void)
 {
     extern unsigned long nv2a_gl_progress(void) __attribute__((weak));
+    extern uint32_t nv2a_gl_flips(void) __attribute__((weak));
     static unsigned long last_frames;
     static long long since, said;
     long long now = (long long)GetTickCount64();
@@ -6267,9 +6268,11 @@ static void kernel_freeze_watch(void)
     if (said && now - said < 10000) return;
     said = now;
 
+    /* The frame named is the title's own. The count watched has more in it:
+     * the frames the start-up shader build showed before the title's first. */
     fprintf(stderr, "\n  [FROZEN] nothing has been presented for %lld ms "
                     "(still at frame %lu). Every guest thread:\n",
-            now - since, frames);
+            now - since, nv2a_gl_flips ? (unsigned long)nv2a_gl_flips() : frames);
     {   extern void mcpx_apu_debug_print(FILE *, const char *) __attribute__((weak));
         if (mcpx_apu_debug_print)
             mcpx_apu_debug_print(stderr, "  [FROZEN] APU: ");
