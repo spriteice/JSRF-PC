@@ -42,10 +42,9 @@ In order, with where each step is said in full:
    the docs it changes (Where code goes, How it's written).
 4. **Test build and my testing,** for a change to what the game runs
    (below; docs/build-and-test-reference.md).
-5. **The six checks,** in one review pack (Before every commit). For an
-   item that took more than one test build, a fresh thread does them, the
-   commit and the push: hand off first (the project instructions, section
-   1; not in a pre-approved thread).
+5. **The six checks,** in one review pack (Before every commit). The
+   thread that tested the item does them, the commit and the push itself,
+   unless it shows wear (the project instructions, section 1).
 6. **My approval,** or a pre-approval's tests all passing (Pre-approved
    threads).
 7. **Push** `main` only when I say so, or under a pre-approval, on its
@@ -412,7 +411,7 @@ or pushes: commits are made in the cloud, after my approval or under a
 pre-approval (Pre-approved threads). And when a session starts to wear (its
 context nearly full, a rule slipped, or details lost; a summary of its
 context isn't wear by itself), or
-reaches one of the planned points for a handoff (the project instructions,
+reaches the planned point for a handoff (the project instructions,
 section 1), say so, write a handoff in the shared folder, and move the work
 to a new session. The handoff also says which checks passed, and on which
 tree.
