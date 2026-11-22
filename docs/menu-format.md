@@ -8,7 +8,8 @@ each menu's rows live with the setting they change (File in
 `src/nv2a_gl/nv2a_gl.c`, Display's Draw distance and Building distance, with
 Far buildings and Far shadows, in `port/draw_distance.c` and Music info in
 pause in `port/music_info.c`, Audio in `port/audio.c`, Input's Controller
-layout and Keyboard layout in `src/input/input_remap.c`, its Free
+layout and Keyboard layout in `src/input/input_remap.c`, its Button prompts
+in `src/input/input_prompts.c`, its Free
 camera in `port/freecam.c`, and its Camera in `port/camera_scenes.c` (whose
 first two ticks, Default cam fix and No skater fade, `port/camera_walls.c`
 keeps), Keyboard moves in `port/keyboard_move.c` and Stick
@@ -38,11 +39,13 @@ added by the window (`nv2a_gl.c`), for what goes beyond the console (Music
 info in pause, then See through fix, added by the window). A new
 enhancement goes in it, not in Display itself. Graphics
 ends with one, Upscaling, marked last and added by the window too, for the
-rows that draw the game from sharper copies: Menus and HUD, Textures,
-Graffiti, Sharpness, Edge strength, then Cleanup, a row of two ticks.
-Input is four submenus, and nothing else: Controller layout, then Keyboard
+rows that draw the game from sharper copies: Menus and HUD, Buttons (the
+button prompts' pictures), Textures, Graffiti, Sharpness, Edge strength,
+then Cleanup, a row of two ticks.
+Input is five submenus, and nothing else: Controller layout, then Keyboard
 layout, added with their rows by `src/input/input_remap.c` (Layouts, below);
-Free camera, added with its rows by
+Button prompts, added with its row, Style, by `src/input/input_prompts.c`
+right after them; Free camera, added with its rows by
 `port/freecam.c` (Enable free camera, Auto centre, Invert X, Invert Y,
 Sensitivity X, Sensitivity Y, Deadzone, Mouse look, Mouse sensitivity,
 then Reset to default); then Behaviour, for how the
@@ -222,11 +225,20 @@ in a submenu of its own.
 - The strip along the bottom, in the bar's colour, shows the row's hint on
   the left and on the right the buttons to press: A Select, B Back, and Back
   Close on a pad, or Enter Select, Esc Back, and F1 Close on the keyboard,
-  whichever was pressed last. In a bind row's box, only the one that
-  leaves its control none: Back None, or F1 None. Each button or key is on a cap: A in the dark
-  green and B in a red as dark, as the pad colours them, and the rest grey
-  (`menu_style_cap`). The strip is as tall as the longest hint needs at the
-  window's width, so it stays still as the pad moves.
+  whichever was pressed last in Input > Button prompts' Auto and Default
+  looks; always the keyboard's in its Keyboard look, and always the pad's in
+  Xbox, PlayStation and Nintendo, as the game's icons are then. In a bind
+  row's box, only the one that leaves its control none: Back None, or F1
+  None. Each is the button prompts' picture of it (Cross Select, Circle Back
+  and Create Close on a PlayStation pad, the keys' pictures on the
+  keyboard), in Default the one Auto would show, which the window makes and
+  hands to the menu through one function (`nv_window_prompt_picture`), never
+  the layouts': the menu's own buttons can't be moved. Where the window has
+  no picture, it is on a cap: A in the dark green and B in a red as dark, as
+  the pad colours them, and the rest grey (`menu_style_cap`). Whether the
+  strip shows the keys or the pad whatever was pressed, the window says
+  through another (`nv_window_prompt_keys`). The strip is as tall as the longest hint
+  needs at the window's width, so it stays still as the pad moves.
 - Every menu, submenu and list of choices stays between the bar and the
   strip, over neither: one opened low down goes up to fit, and one taller
   than the room between them scrolls, with a scroll bar.
@@ -276,8 +288,9 @@ in a submenu of its own.
   each preset where it's added (`presets` and `preset` in `menu.h`), with
   JSRF-PC default's from the constant its own default comes from, so the
   preset moves with the default. That takes in Fullscreen, full screen in
-  each, Keyboard moves, at Camera in each, and Stick shape, at Square in
-  each. A row of
+  each, Keyboard moves, at Camera in each, Stick shape, at Square in
+  each, and Button prompts' Style, at Default in each (spriteice, 23:57 UTC
+  on 2026-11-21). A row of
   ticks (`XBOX_ITEM_TOGGLES`), as
   Upscaling's Cleanup, gives the ticks it has in each, and a preset changes
   each tick that differs, as choosing it would. A (Restart) row the presets

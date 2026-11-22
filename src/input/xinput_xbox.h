@@ -109,6 +109,12 @@ DWORD xbox_InputSetState(DWORD dwPort, const XBOX_VIBRATION *pVibration);
 int xbox_InputKeyboardMove(DWORD dwPort, int *x, int *y);
 
 /**
+ * The kind of the pad SDL numbers instance, for the button prompts
+ * (input_prompts.h, PROMPT_PAD_...): Xbox for one SDL no longer has.
+ */
+int xbox_InputPadKind(int instance);
+
+/**
  * Check if a controller is connected.
  */
 BOOL xbox_InputIsConnected(DWORD dwPort);

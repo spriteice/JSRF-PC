@@ -40,7 +40,17 @@ engine starts. Missions' Photo mode row is `photo_mode.c`: the world held
 with the game's own hold, the HUD hidden and a camera that flies, through
 the map's portals as a skater goes, from hooks in `recomp_manual.c` on the
 game's main loop (which reads the portals from the game's own list), its
-frame's draw, its camera's draw and the set of areas it draws.
+frame's draw, its camera's draw and the set of areas it draws. The message
+boxes' A and B, drawn flat in the button prompts' styles, are
+`prompt_buttons.c`, from the models' draw's and the node functions'
+overrides in `recomp_manual.c`: it marks where each button is, and the
+renderer draws the style's picture there (`src/nv2a_gl/nv2a_prompts.h`).
+It also marks the size the renderer draws the VS menu's upright buttons
+at, around that screen's draw.
+The game's lines that name the A or B button by its letter are
+`prompt_text.c`, from the font calls' overrides there: it knows each line
+by its bytes and draws it in pieces, each letter's place marked for the
+style's picture the same way.
 
 The bulk of the port — the hundreds of thousands of lines of C the pipeline
 generates from the XBE — is **not** here and will not be: it is derived from a

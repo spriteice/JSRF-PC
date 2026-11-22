@@ -42,6 +42,7 @@
 #include "nv2a_hash.h"
 #include "nv2a_psh_consts.h"
 #include "nv2a_latency.h"
+#include "nv2a_prompts.h"
 
 /*
  * Two ways to get a 3.3 core context.
@@ -57,6 +58,8 @@
 #if defined(NV2A_GL_USE_SDL)
 #  include <SDL2/SDL.h>
 #  include <sys/stat.h>
+#  include "input_prompts.h"     /* the button prompts' style and icons, src/input */
+#  include "input_remap.h"
 #  if defined(XBOXRECOMP_MENU)
 #    include "menu_sdl.h"        /* the in-game menu (F1), src/menu */
 #    include "menu.h"
@@ -1144,6 +1147,8 @@ static struct {
                              * for it, plus one; 0 not yet (upg_capture) */
     uint8_t  above;         /* `tex` a copy: its levels above the game's size (1 at
                              * 2x, 2 at 4x, 3 at 8x), as Nv2aSampler's; 0 the game's */
+    uint8_t  prompt;        /* one of the button prompts' textures: its entry in
+                             * their table, plus one (nv2a_prompts.h); 0 none */
 } g_tcache[TEX_CACHE];
 /* A texture's part in 2D, 3D or graffiti upscaling: not taken yet
  * (UP_NONE); taken by the rule and waiting for its copy (UP_WANTED); never
@@ -1206,6 +1211,14 @@ static Nv2aUpSecond g_up3_sec;  /* this second's work, for RECOMP_GL_UPSCALE_LOG
 static volatile int g_upg_want; /* the factor asked for: 0, 2, 4 or 8 */
 static int          g_upg_now;  /* and in use */
 static Nv2aUpSecond g_upg_sec;  /* this second's work, for RECOMP_GL_UPSCALE_LOG */
+
+/*
+ * Buttons upscaling (nv2a_upscale.h): the button prompts' pictures from
+ * Super-xBR copies of them, from the window's upscale_buttons= setting,
+ * Off unless set otherwise (NV2A_UPB_DEFAULT), taken at the next flip
+ * (prompts_copies_take, whose g_prompt_copies_f is the factor in use).
+ */
+static volatile int g_upb_want; /* the factor asked for: 0, 2, 4 or 8 */
 
 /*
  * Sharpness (nv2a_upscale.h): Super-xBR's filter weight for all
@@ -2472,9 +2485,33 @@ static void sdl_menu_up(void)
     if (G->tex_upscale) xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
 }
 
+/* Graphics > Upscaling > Buttons (buttons upscaling): Off, 2x, 4x or 8x,
+ * taken at the next flip and kept as upscale_buttons= (0, 2, 4 or 8). Added
+ * after Menus and HUD (gfx_init), so it is the submenu's row below it. */
+static int  sdl_upb_now(void)   { return nv2a_up_choice(g_upb_want); }
+static void sdl_upb_pick(int i)
+{
+    g_upb_want = nv2a_up_choice_factor(i);
+    sdl_cfg_set("upscale_buttons", g_upb_want);
+}
+static void sdl_menu_upb(void)
+{
+    /* The presets (File > Presets): off in Xbox mode, JSRF-PC default's
+     * (Off), and 8x in Max quality. */
+    const XBOX_MENU_ITEM row = {
+        .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Buttons",
+        .state = sdl_upb_now, .pick = sdl_upb_pick, .choices = sdl_up_names,
+        .nchoices = NV2A_UP_CHOICES,
+        .presets = XBOX_PRESETS_SET,
+        .preset = { nv2a_up_choice(0), nv2a_up_choice(NV2A_UPB_DEFAULT), nv2a_up_choice(8) },
+        .group = XBOX_GROUP_UPSCALING,
+        .hint = "Smooths the button prompts' pictures with Super-xBR." };
+    if (G->tex_upscale) xbox_MenuAdd(&row, 1);
+}
+
 /* Graphics > Upscaling > Textures (3D upscaling): Off, 2x, 4x or 8x, taken
- * at the next flip and kept as upscale_3d= (0, 2, 4 or 8). Added after Menus
- * and HUD (gfx_init), so it is the submenu's row below it. */
+ * at the next flip and kept as upscale_3d= (0, 2, 4 or 8). Added after
+ * Buttons (gfx_init), so it is the submenu's row below it. */
 static int  sdl_up3_now(void)   { return nv2a_up_choice(g_up3_want); }
 static void sdl_up3_pick(int i)
 {
@@ -3191,12 +3228,16 @@ void nv_window_close(void)
  * window's thread, as a pad's Back opens the menu; and not while the menu
  * is open, when the pad is the menu's. The game sees whatever else the
  * layout has the input press. Its value is 0 to 255, as the input layer
- * reads a pad (xinput_device.c). */
+ * reads a pad (xinput_device.c). A press, from half way, is the pad in
+ * hand for the button prompts (src/input/input_prompts.h), as a key or a
+ * mouse button down is the keyboard (sdl_pump). */
 #define NV_PAD_FULL      255    /* a button held */
 #define NV_TRIGGER_SHIFT 7      /* a trigger's 0 to 32767, to 0 to 255 */
+#define NV_PAD_PRESSED   128    /* from half way, as the layouts press (INPUT_LAYOUT_DOWN) */
 void input_remap_pad_event(int pad, int input, int value, int shut);
 static void sdl_pad(SDL_JoystickID pad, int input, int value)
 {
+    if (value >= NV_PAD_PRESSED) input_prompts_used(0, xbox_InputPadKind((int)pad));
     input_remap_pad_event((int)pad, input, value, nv_window_menu_open() <= 0);
 }
 
@@ -3220,6 +3261,7 @@ static void sdl_pump(void)
         case SDL_KEYDOWN:
             if (!ev.key.repeat) {
                 SDL_Scancode k = ev.key.keysym.scancode;
+                input_prompts_used(1, 0);
                 if (k == SDL_SCANCODE_F11
                  || (k == SDL_SCANCODE_RETURN && (ev.key.keysym.mod & KMOD_ALT))) {
                     sdl_choose_fullscreen();
@@ -3238,6 +3280,7 @@ static void sdl_pump(void)
             break;
         case SDL_MOUSEBUTTONDOWN:
         case SDL_MOUSEBUTTONUP:
+            if (ev.type == SDL_MOUSEBUTTONDOWN) input_prompts_used(1, 0);
             sdl_mouse_button(ev.button.button, ev.type == SDL_MOUSEBUTTONDOWN);
             break;
         case SDL_CONTROLLERBUTTONDOWN:
@@ -5034,6 +5077,389 @@ static void aniso_take(void)
             want, S.flips, was);
 }
 
+#if defined(NV2A_GL_USE_SDL)
+/*
+ * Buttons upscaling (nv2a_upscale.h): the button prompts' pictures drawn
+ * from Super-xBR copies of them. Each picture's copy is made at the flip
+ * (prompts_take), the first time a draw has asked for it: the whole
+ * picture made a texture, copied by the passes the other rows use
+ * (tex_upscale) at the factor, Sharpness and Edge strength taken at that
+ * flip, with Super-xBR's own alpha (2D art's), read back
+ * (nv2a_prompts_copy), and kept, one a picture, until the row, Sharpness
+ * or Edge strength changes: drawn in the picture's place, the same shape,
+ * so fitted as it is. Never during a draw: the passes would leave the
+ * device as the next draw expects it, not as this one has it. A picture
+ * without its copy yet is drawn as it is, as at Off; the prompts'
+ * textures are made again once copies are made (prompts_take), so that
+ * lasts a frame. The device's thread makes and frees them; the in-game
+ * menu's strip, which the presenter's thread can draw, reads them and
+ * asks, under g_prompt_copies_mu.
+ */
+typedef struct {
+    uint8_t *rgba;  /* w x h RGBA8; NULL: none made (yet) */
+    int w, h;       /* the picture's f times; w -1 where it couldn't be made */
+    int asked;      /* a draw asked for it: made at the next flip */
+} PromptCopy;
+static PromptCopy *g_prompt_copies;       /* prompt_art_nfiles, by prompt_art_files' order */
+static SDL_mutex  *g_prompt_copies_mu;
+static int        g_prompt_copies_f;      /* the factor they are made at: 0 none (Off) */
+static float      g_prompt_copies_w, g_prompt_copies_e;   /* ... and the weight and strength */
+static unsigned   g_prompt_copies_gen;    /* +1 whenever what a picture is drawn from changes */
+static int        g_prompt_copies_asked;  /* a draw asked for one since the last flip */
+
+/* The picture name's place in prompt_art_files, or -1. */
+static int prompts_picture_at(const char *name)
+{
+    int lo = 0, hi = prompt_art_nfiles - 1;
+    while (name && lo <= hi) {
+        int mid = (lo + hi) / 2, c = strcmp(name, prompt_art_files[mid].name);
+        if (!c) return mid;
+        if (c < 0) hi = mid - 1; else lo = mid + 1;
+    }
+    return -1;
+}
+
+/* Picture i's copy, if made, into *out, under g_prompt_copies_mu; else
+ * asked for. 1 with it, 0 without. */
+static int prompts_copy_of(int i, PromptImage *out)
+{
+    PromptCopy *c;
+    if (!g_prompt_copies || !g_prompt_copies_f || i < 0) return 0;
+    c = &g_prompt_copies[i];
+    if (c->rgba) {
+        out->w = c->w;
+        out->h = c->h;
+        out->rgba = c->rgba;
+        return 1;
+    }
+    if (!c->w && !c->asked) {
+        c->asked = 1;
+        g_prompt_copies_asked = 1;
+    }
+    return 0;
+}
+
+/* The pictures the prompts draw (Nv2aPromptShows' picture), on the
+ * device's thread: picture name's copy at Upscaling's Buttons row, else
+ * the picture itself (prompt_art_image). The copy stays until the next flip
+ * at least, which alone frees one. */
+static int prompts_picture(const char *name, PromptImage *out)
+{
+    int got = 0;
+    if (g_prompt_copies_f && g_prompt_copies_mu) {
+        SDL_LockMutex(g_prompt_copies_mu);
+        got = prompts_copy_of(prompts_picture_at(name), out);
+        SDL_UnlockMutex(g_prompt_copies_mu);
+    }
+    return got || prompt_art_image(name, out);
+}
+
+/* Picture i's copy at factor f, weight w and strength e, made on the
+ * device: 1 with it in *c, 0 where it couldn't be (no backend's passes, a
+ * picture larger than a built-in one, or the device's refusal). */
+static int prompts_copy_make(int i, int f, float w, float e, PromptCopy *c)
+{
+    uint8_t *read, *rgba;
+    PromptImage im;
+    Nv2aSampler smp;
+    uint32_t tex, copy;
+    size_t bytes;
+    int ok;
+    if (!G->tex_new || !G->tex_upscale || !G->tex_read) return 0;
+    if (!prompt_art_image(prompt_art_files[i].name, &im) || im.w > NV2A_PROMPT_SIDE || im.h > NV2A_PROMPT_SIDE)
+        return 0;
+    /* Clamped, nearest, no chain. */
+    memset(&smp, 0, sizeof smp);
+    tex = G->tex_new((uint32_t)im.w, (uint32_t)im.h, im.rgba, &smp);
+    if (!tex) return 0;
+    copy = G->tex_upscale(tex, (uint32_t)im.w, (uint32_t)im.h, f, 0, w, e, NULL, &smp);
+    G->tex_free(tex);
+    if (!copy) return 0;
+    bytes = (size_t)im.w * (size_t)f * (size_t)im.h * (size_t)f * 4;
+    read = (uint8_t *)malloc(bytes);
+    rgba = (uint8_t *)malloc(bytes);
+    ok = read && rgba && G->tex_read(copy, (uint32_t)(im.w * f), (uint32_t)(im.h * f), read)
+      && nv2a_prompts_copy(read, im.w, im.h, f, rgba);
+    G->tex_free(copy);
+    free(read);
+    if (!ok) {
+        free(rgba);
+        return 0;
+    }
+    c->rgba = rgba;
+    c->w = im.w * f;
+    c->h = im.h * f;
+    return 1;
+}
+
+/* At the flip, on the device's thread, before the prompts' textures are
+ * looked at (prompts_take): the row, Sharpness or Edge strength asked for
+ * since the last, which frees every copy, to be made again as asked; then
+ * the copies asked for, made. 1 where what a picture is drawn from
+ * changed, so the prompts' textures are made again. */
+static int prompts_copies_take(void)
+{
+    static unsigned said;
+    const int f = G->tex_upscale ? nv2a_up_factor(g_upb_want) : 0;
+    const float w = nv2a_up_sharp_weight(nv2a_up_sharp(g_up_sharp_want));
+    const float e = nv2a_up_edge_strength(nv2a_up_edge(g_up_edge_want));
+    int i, made = 0, failed = 0, changed = 0;
+    if (!g_prompt_copies_mu) return 0;
+    if (!g_prompt_copies) {
+        g_prompt_copies = (PromptCopy *)calloc((size_t)prompt_art_nfiles, sizeof *g_prompt_copies);
+        if (!g_prompt_copies) return 0;
+    }
+    if (f != g_prompt_copies_f || (f && (w != g_prompt_copies_w || e != g_prompt_copies_e))) {
+        const int was = g_prompt_copies_f;
+        SDL_LockMutex(g_prompt_copies_mu);
+        for (i = 0; i < prompt_art_nfiles; i++) {
+            free(g_prompt_copies[i].rgba);
+            memset(&g_prompt_copies[i], 0, sizeof g_prompt_copies[i]);
+        }
+        g_prompt_copies_f = f;
+        g_prompt_copies_w = w;
+        g_prompt_copies_e = e;
+        g_prompt_copies_asked = 0;
+        g_prompt_copies_gen++;
+        SDL_UnlockMutex(g_prompt_copies_mu);
+        if (was != f)
+            fprintf(stderr, "  [GL] button prompts: pictures at %dx from present %u (was %dx; 0 is off), "
+                    "made again\n", f, S.flips, was);
+        else
+            fprintf(stderr, "  [GL] button prompts: pictures' copies made again from present %u, for "
+                    "Sharpness or Edge strength\n", S.flips);
+        changed = 1;
+    }
+    if (!f || !g_prompt_copies_asked) return changed;
+    /* The copies asked for: each made outside the lock (the device's work),
+     * then put in place under it. */
+    g_prompt_copies_asked = 0;
+    for (i = 0; i < prompt_art_nfiles; i++) {
+        PromptCopy c = { NULL, 0, 0, 0 };
+        int asked;
+        SDL_LockMutex(g_prompt_copies_mu);
+        asked = g_prompt_copies[i].asked;
+        g_prompt_copies[i].asked = 0;
+        SDL_UnlockMutex(g_prompt_copies_mu);
+        if (!asked) continue;
+        if (!prompts_copy_make(i, f, w, e, &c)) {
+            c.w = -1;       /* drawn as it is, not asked for again */
+            failed++;
+        } else {
+            made++;
+        }
+        SDL_LockMutex(g_prompt_copies_mu);
+        g_prompt_copies[i] = c;
+        SDL_UnlockMutex(g_prompt_copies_mu);
+    }
+    if (made) {
+        SDL_LockMutex(g_prompt_copies_mu);
+        g_prompt_copies_gen++;
+        SDL_UnlockMutex(g_prompt_copies_mu);
+    }
+    if ((made || failed) && said++ < 64)
+        fprintf(stderr, "  [GL] button prompts: %d pictures' copies made at %dx from present %u%s\n",
+                made, f, S.flips, failed ? ", and some couldn't be: drawn as they are" : "");
+    return made > 0 || changed;
+}
+#endif
+
+/*
+ * The button prompts (nv2a_prompts.h): what each of the game's icons shows
+ * now, in art, from the input layer (src/input/input_prompts.h): the
+ * layouts' inputs on each control. Asked for as one of their textures, or
+ * a flat button's picture (prompts_flat), is made, so never for any other.
+ * Their pictures are Upscaling's Buttons row's (prompts_picture).
+ */
+static void prompts_shows_in(int art, Nv2aPromptShows *s)
+{
+    int c;
+    memset(s, 0, sizeof *s);
+    s->text = nv2a_prompts_text;
+#if defined(NV2A_GL_USE_SDL)
+    s->picture = prompts_picture;
+    {
+        InputLayout pad, keys;
+        input_remap_layouts(&pad, &keys);
+        for (c = 0; c < INPUT_CTLS; c++) {
+            PromptIcon i = input_prompts_icon(art, &pad, &keys, c);
+            s->icon[c] = i;
+            /* A key the packs have no picture of: its name, as the window
+             * names it, on the blank key. */
+            if (i.art == PROMPT_ART_KEYS && i.input >= 0 && i.input < INPUT_KEY_SCANCODES
+             && !prompt_art_name(i.art, i.input))
+                s->name[c] = SDL_GetScancodeName((SDL_Scancode)i.input);
+        }
+        return;
+    }
+#endif
+    /* Without the window there is no input layer: each the game's own. */
+    (void)art;
+    for (c = 0; c < INPUT_CTLS; c++) {
+        s->icon[c].art = PROMPT_ART_GAME;
+        s->icon[c].input = c < INPUT_CTL_OWN ? c : INPUT_NONE;
+    }
+}
+
+/* ... in the art in use now. */
+static void prompts_shows(Nv2aPromptShows *s)
+{
+#if defined(NV2A_GL_USE_SDL)
+    prompts_shows_in(input_prompts_art_now(), s);
+#else
+    prompts_shows_in(PROMPT_ART_GAME, s);
+#endif
+}
+
+/* The input layer's count when the prompts' textures in the cache were
+ * made (input_prompts_generation). */
+static unsigned g_prompt_gen;
+
+/* At the flip, before the upscaling rows' copies: when what an icon shows
+ * may have changed (the style, the last thing pressed, a layout), or what
+ * its picture is drawn from (Upscaling's Buttons row, prompts_copies_take),
+ * every one of the prompts' textures is dropped, to be made again at its
+ * next draw, as aniso_take and up_take make theirs. A few textures, never
+ * any other. The flat buttons' and the strip's own follow
+ * g_prompt_copies_gen. */
+static void prompts_take(void)
+{
+#if defined(NV2A_GL_USE_SDL)
+    unsigned gen = input_prompts_generation();
+    int pictures = prompts_copies_take(), restyled = gen != g_prompt_gen;
+    uint32_t k, n = 0;
+    if (!restyled && !pictures) return;
+    g_prompt_gen = gen;
+    for (k = 0; k < TEX_CACHE; k++)
+        if (g_tcache[k].tex && g_tcache[k].prompt) { tcache_drop(k); n++; }
+    if (n && restyled) {
+        static const char *const arts[PROMPT_ARTS] = {
+            "the game's own", "Xbox", "PlayStation", "Nintendo", "keys"
+        };
+        static unsigned said;
+        int art = input_prompts_art_now();
+        if (said++ < 64)
+            fprintf(stderr, "  [GL] button prompts: %s art from present %u, %u textures made again\n",
+                    art >= 0 && art < PROMPT_ARTS ? arts[art] : "?", S.flips, n);
+    }
+#endif
+}
+
+#if defined(NV2A_GL_USE_SDL)
+/*
+ * The in-game menu's strip (src/menu/menu.cpp, draw_prompts): its buttons'
+ * pictures in the button prompts' style, made here as the device's
+ * textures, the one way they reach Dear ImGui. The style alone, with the
+ * menu's own last press (keys), never the layouts. Each made px pixels a
+ * side, fitted by nv2a_prompts_fit, so it is drawn one texel a pixel, from
+ * Upscaling's Buttons row's copy where one is made (prompts_copy_of, which
+ * asks for the rest, made at the flip; `gen`, g_prompt_copies_gen, then
+ * makes it again); a few are kept, and the oldest is freed for a new one.
+ * The window's thread, or the presenter's, which can't make a copy.
+ */
+#define PROMPT_PICTURES 16
+static struct { const char *name; int px; uint32_t tex; unsigned used, gen; } g_prompt_pictures[PROMPT_PICTURES];
+
+/* What the strip's list follows, in its style (input_prompts_strip_style):
+ * 1 where the prompts are the keys' whatever was pressed last (Keyboard),
+ * -1 where they are the pad's whatever was pressed (Xbox, PlayStation,
+ * Nintendo), 0 where they follow the last press (Auto, and Default's
+ * strip). The strip then shows the list the game's icons would. */
+int nv_window_prompt_keys(void)
+{
+    const int style = input_prompts_strip_style(input_prompts_style()), pad = input_prompts_pad_now();
+    const int after_pad = input_prompts_art(style, pad, 0);
+    if (after_pad == PROMPT_ART_KEYS) return 1;
+    return input_prompts_art(style, pad, 1) == after_pad ? -1 : 0;
+}
+
+int nv_window_prompt_picture(int keys, int input, int px, uint64_t *tex)
+{
+    static unsigned uses;
+    int art = input_prompts_art(input_prompts_strip_style(input_prompts_style()), input_prompts_pad_now(), keys),
+        i, old = 0;
+    /* None for a pad's button in the keys' art, or a key in a pad's: its
+     * number is no input of that art's (the strip asks for the list the art
+     * has, nv_window_prompt_keys), and it draws its own cap. */
+    const char *name = (art == PROMPT_ART_KEYS) != (keys != 0) ? NULL : prompt_art_name(art, input);
+    PromptImage im;
+    Nv2aSampler smp;
+    uint8_t *rgba;
+    unsigned gen;
+    int copied = 0;
+    if (!name || px < 1 || px > NV2A_PROMPT_PICTURE_MAX || !G || !G->tex_new) return 0;
+    if (g_prompt_copies_mu) SDL_LockMutex(g_prompt_copies_mu);
+    gen = g_prompt_copies_gen;
+    if (g_prompt_copies_mu) SDL_UnlockMutex(g_prompt_copies_mu);
+    for (i = 0; i < PROMPT_PICTURES; i++) {
+        if (g_prompt_pictures[i].tex && g_prompt_pictures[i].name == name && g_prompt_pictures[i].px == px
+         && g_prompt_pictures[i].gen == gen) {
+            g_prompt_pictures[i].used = ++uses;
+            *tex = g_prompt_pictures[i].tex;
+            return 1;
+        }
+        if (g_prompt_pictures[i].used < g_prompt_pictures[old].used) old = i;
+    }
+    rgba = (uint8_t *)malloc((size_t)px * px * 4);
+    if (!rgba) return 0;
+    /* Its copy, fitted under the lock, as the device's thread frees one
+     * only under it; else the picture itself. */
+    if (g_prompt_copies_mu) {
+        SDL_LockMutex(g_prompt_copies_mu);
+        gen = g_prompt_copies_gen;
+        copied = prompts_copy_of(prompts_picture_at(name), &im);
+        if (copied) nv2a_prompts_fit(im.rgba, im.w, im.h, rgba, px, px, (size_t)px * 4);
+        SDL_UnlockMutex(g_prompt_copies_mu);
+    }
+    if (!copied) {
+        if (!prompt_art_image(name, &im)) {
+            free(rgba);
+            return 0;
+        }
+        nv2a_prompts_fit(im.rgba, im.w, im.h, rgba, px, px, (size_t)px * 4);
+    }
+    memset(&smp, 0, sizeof smp);
+    if (g_prompt_pictures[old].tex) G->tex_free(g_prompt_pictures[old].tex);
+    g_prompt_pictures[old].tex = G->tex_new((uint32_t)px, (uint32_t)px, rgba, &smp);
+    free(rgba);
+    g_prompt_pictures[old].name = name;
+    g_prompt_pictures[old].px = px;
+    g_prompt_pictures[old].gen = gen;
+    g_prompt_pictures[old].used = ++uses;
+    *tex = g_prompt_pictures[old].tex;
+    return *tex != 0;
+}
+#endif
+
+/* An upscaled copy of one of the prompts' textures (entry k, at factor f,
+ * its level 0 f times the game's): the packs' pictures drawn again into
+ * each of its levels above the game's size, at that level's own size, so
+ * they are as sharp as the copy, where Super-xBR would have blurred them
+ * up from the game's size. The game's own art is the copy's as made. */
+static void prompts_copy(uint32_t k, int f)
+{
+    const Nv2aPromptTexture *pt;
+    Nv2aPromptShows s;
+    uint8_t *px = NULL;
+    int i, l;
+    if (!g_tcache[k].prompt || !G->tex_put || f < 2) return;
+    pt = &nv2a_prompt_textures[g_tcache[k].prompt - 1];
+    prompts_shows(&s);
+    for (l = 0; (f >> l) >= 2; l++) {
+        int fl = f >> l;
+        for (i = 0; i < pt->nicons; i++) {
+            const Nv2aPromptIcon *c = &pt->icons[i];
+            uint8_t *more = (uint8_t *)realloc(px, (size_t)c->w * fl * c->h * fl * 4);
+            if (!more) break;
+            px = more;
+            if (nv2a_prompts_icon_at(pt, i, fl, &s, px))
+                G->tex_put(g_tcache[k].tex, (uint32_t)l, (uint32_t)c->x * fl, (uint32_t)c->y * fl,
+                           (uint32_t)c->w * fl, (uint32_t)c->h * fl, px);
+        }
+    }
+    free(px);
+}
+
 /* An entry's part in the 3D row or, with `graffiti`, the graffiti row. */
 static uint8_t *world_of(uint32_t k, int graffiti)
 {
@@ -5133,6 +5559,7 @@ static uint64_t world_make(uint32_t k, int graffiti, int *ft, const Nv2aSampler 
     g_tcache[k].tex = copy;
     g_tcache[k].held = (size_t)bytes;
     g_tcache[k].above = copy_above(*ft);
+    prompts_copy(k, *ft);
     *world_of(k, graffiti) = UP_MADE;
     g_up3_held[*n].bytes = bytes;
     g_up3_held[*n].idle = 0;
@@ -5465,6 +5892,7 @@ static void up_take(void)
         g_tcache[k].tex = copy;
         g_tcache[k].held = (size_t)bytes;
         g_tcache[k].above = copy_above(f);
+        prompts_copy(k, f);
         g_tcache[k].up = UP_MADE;
         spent += texels;
         g_up_sec.made++;
@@ -5554,7 +5982,7 @@ static uint32_t upload_texture_inner(const TexStage *t)
     uint8_t *rgba = NULL;
     size_t rgba_bytes = 0;      /* handed over: RGBA8, or DXT as it is */
     Nv2aSampler smp, chain;     /* how this draw samples it; the chain it holds */
-    int slot = -1, stale = -1, tomb = -1, dxt = 0;
+    int slot = -1, stale = -1, tomb = -1, dxt = 0, prompt = -1;
     double start, dec;
 
     if (!w || !h || w > 4096 || h > 4096) return 0;
@@ -5649,8 +6077,12 @@ static uint32_t upload_texture_inner(const TexStage *t)
     tcache_drop((uint32_t)slot);
     start = mono_now();
 
+    /* One of the button prompts' textures (nv2a_prompts.h): decoded below,
+     * whatever its format, with its icons drawn over. */
+    prompt = nv2a_prompts_find(nv2a_prompt_textures, nv2a_prompt_ntextures, t->color, w, h, src, bytes);
+
     /* DXT as it is, where the device takes it (tex_dxt_direct). */
-    if (fmt_is_dxt(t->color) && tex_dxt_direct(&chain)) {
+    if (fmt_is_dxt(t->color) && prompt < 0 && tex_dxt_direct(&chain)) {
         tex = G->tex_new_dxt(w, h, t->color == 0x0C ? 1 : t->color == 0x0E ? 3 : 5, src, &chain);
         if (tex) {
             uint32_t l, wl = w, hl = h;
@@ -5707,6 +6139,11 @@ static uint32_t upload_texture_inner(const TexStage *t)
         }
         dec = mono_now() - start;
         tex_alpha_census(rgba, w, h, t->color, fmt_is_dxt(t->color));
+        if (prompt >= 0) {
+            Nv2aPromptShows shows;
+            prompts_shows(&shows);
+            nv2a_prompts_draw(&nv2a_prompt_textures[prompt], rgba, w, h, nlev, &shows);
+        }
     }
     /* RECOMP_GL_DUMP_TEX=<prefix>: every texture as uploaded. A frame that
      * shades to black is either sampling the wrong place or sampling a black
@@ -5831,6 +6268,7 @@ made:
     g_tcache[slot].born = g_tcache[slot].seen = S.frames;
     g_tcache[slot].asked = 0;
     g_tcache[slot].above = 0;
+    g_tcache[slot].prompt = (uint8_t)(prompt + 1);
     g_tex_slot = slot;
     return tex;
 }
@@ -6468,6 +6906,168 @@ static void wide_hud_frame_end(void)
                 "ended there\n", g_hud_piece);
     g_hud_side = NV2A_WIDE_HUD_NONE;
     g_hud_flags = 0;
+}
+
+/*
+ * The message boxes' A and B, flat (port/prompt_buttons.h), and the letter
+ * A or B in the game's text (port/prompt_text.h): the game side's mark
+ * (nv2a_prompts.h, NV2A_PROMPT_MARK_METHOD), its words kept as they come,
+ * and on its last the picture of the control on that button, in the mark's
+ * art, drawn over the frame where the game's 3D button would have been, or
+ * in the letter's place, at the mark's alpha (a letter's fades with its
+ * text). It is placed as a 3D draw there is (do_draw): squeezed in a widened
+ * scene, moved with the HUD piece whose marks it is between (Skip
+ * cutscenes' prompt), and sized with it by HUD scale, or not drawn while
+ * HUD scale hides the HUD. Made at its size on the screen, so it is drawn a
+ * texel a pixel, and kept, a few at once, until the input layer's count
+ * moves (input_prompts_generation: the style, the last thing pressed, a
+ * layout), what its picture is drawn from does (g_prompt_copies_gen:
+ * Upscaling's Buttons row), or it is wanted at another size; the oldest is
+ * freed for a new one. It is the same picture in the message box as out of it: no pad's
+ * picture is white (src/input/prompts/README.md). The first of each
+ * control's pictures, in each art, says so in the log, and whether it was
+ * the message box's.
+ */
+#define PROMPT_FLATS 8
+static struct { int art, c, px; unsigned gen, pics, used; uint32_t tex; } g_prompt_flats[PROMPT_FLATS];
+static uint32_t g_prompt_mark[NV2A_PROMPT_MARK_WORDS];
+/* The menus' upright faces' size (prompts_upright_draw, below), as the game
+ * side's last size mark set it (nv2a_prompts.h, NV2A_PROMPT_UPRIGHT_TAG),
+ * NV2A_PROMPT_UPRIGHT_GROW again at each frame's end. */
+static float g_upright_grow = NV2A_PROMPT_UPRIGHT_GROW;
+
+static uint32_t prompts_flat_picture(int art, int c, int px, int box)
+{
+    static unsigned uses, said;
+    static uint32_t told[PROMPT_ARTS];
+    unsigned gen = 0, pics = 0;
+    Nv2aPromptShows shows;
+    Nv2aSampler smp;
+    uint8_t *rgba;
+    int i, old = 0;
+#if defined(NV2A_GL_USE_SDL)
+    gen = input_prompts_generation();
+    pics = g_prompt_copies_gen;     /* written on this thread only */
+#endif
+    for (i = 0; i < PROMPT_FLATS; i++) {
+        if (g_prompt_flats[i].tex && g_prompt_flats[i].art == art && g_prompt_flats[i].c == c
+         && g_prompt_flats[i].px == px && g_prompt_flats[i].gen == gen && g_prompt_flats[i].pics == pics) {
+            g_prompt_flats[i].used = ++uses;
+            return g_prompt_flats[i].tex;
+        }
+        if (g_prompt_flats[i].used < g_prompt_flats[old].used) old = i;
+    }
+    if (!G->tex_new || art < 0 || art >= PROMPT_ARTS) return 0;
+    rgba = (uint8_t *)malloc((size_t)px * px * 4);
+    if (!rgba) return 0;
+    prompts_shows_in(art, &shows);
+    if (!nv2a_prompts_control_at(c, px, &shows, rgba)) {
+        free(rgba);
+        return 0;
+    }
+    memset(&smp, 0, sizeof smp);
+    if (g_prompt_flats[old].tex) G->tex_free(g_prompt_flats[old].tex);
+    g_prompt_flats[old].tex = G->tex_new((uint32_t)px, (uint32_t)px, rgba, &smp);
+    free(rgba);
+    g_prompt_flats[old].art = art;
+    g_prompt_flats[old].c = c;
+    g_prompt_flats[old].px = px;
+    g_prompt_flats[old].gen = gen;
+    g_prompt_flats[old].pics = pics;
+    g_prompt_flats[old].used = ++uses;
+    if (!(told[art] & (1u << (c & 31))) && said++ < 64) {
+        told[art] |= 1u << (c & 31);
+        fprintf(stderr, "  [GL] button prompts: the flat picture of control %d in art %d, %d pixels "
+                "across%s, from present %u\n", c, art, px, box ? ", in the message box" : "", S.flips);
+    }
+    return g_prompt_flats[old].tex;
+}
+
+static void prompts_flat(void)
+{
+    int button, box, art, moved = 0, px;
+    float x, y, half, sq = 1.0f, shift = 0.0f, k = 1.0f, ax = 0.0f, ay = 0.0f, rect[4], opacity;
+    uint32_t tex;
+    if (!nv2a_prompts_mark_read(g_prompt_mark[0], &button, &box, &art)) {
+        static int told;
+        if (!told++)
+            fprintf(stderr, "  [GL] method 0x%04X came with 0x%08X, not a flat button's mark: left "
+                    "alone\n", NV2A_PROMPT_MARK_METHOD, g_prompt_mark[0]);
+        return;
+    }
+    opacity = nv2a_prompts_mark_opacity(g_prompt_mark[0]);
+    g_prompt_mark[0] = 0;
+    memcpy(&x, &g_prompt_mark[1], sizeof x);
+    memcpy(&y, &g_prompt_mark[2], sizeof y);
+    memcpy(&half, &g_prompt_mark[3], sizeof half);
+    if (!g_ready || !G->picture || !(half > 0.0f) || x != x || y != y || !(opacity > 0.0f)) return;
+    if (S.surf_dirty) {
+        S.surf_dirty = 0;
+        surface_bind(S.color_offset, S.clip_w, S.clip_h);
+    }
+    if (g_surf_lost || g_cur_surf < 0 || !g_cur_rt) return;
+    if ((g_hud_flags & NV2A_WIDE_HUD_SIZED) && (g_hud_off || g_hud_held)) return;
+    if (nv2a_wide_scene() && nv2a_wide_frame_sized(S.clip_w, S.clip_h)) {
+        sq = g_wide_s;
+        if (g_hud_side == NV2A_WIDE_HUD_LEFT || g_hud_side == NV2A_WIDE_HUD_RIGHT) {
+            const float centre = 0.5f * (float)NV2A_SCALE_FRAME_W;
+            shift = (g_hud_flags & NV2A_WIDE_HUD_ON_GRID)
+                ? nv2a_wide_hud_grid_shift(g_hud_side, sq, 0, centre)
+                : nv2a_wide_hud_shift(g_hud_side, sq, 0, centre);
+            moved = 1;
+        }
+    }
+    if ((g_hud_flags & NV2A_WIDE_HUD_SIZED) && g_hud_whole && nv2a_wide_frame_sized(S.clip_w, S.clip_h)) {
+        k = nv2a_hud_size(g_hud_tenths);
+        if (k != 1.0f)
+            nv2a_hud_anchor(g_hud_side, (g_hud_flags & NV2A_WIDE_HUD_LOW) != 0, moved ? sq : 1.0f, &ax, &ay);
+    }
+    nv2a_prompts_place(x, y, half, sq, shift, k, ax, ay, rect);
+    px = (int)((rect[3] - rect[1]) * 0.5f * (float)g_fbo_ph + 0.5f);
+    if (px < 1) return;
+    if (px > NV2A_PROMPT_PICTURE_MAX) px = NV2A_PROMPT_PICTURE_MAX;
+    tex = prompts_flat_picture(art, button ? INPUT_CTL_B : INPUT_CTL_A, px, box);
+    if (tex) G->picture(tex, rect, opacity);
+}
+
+/* The mark's last word: an upright size's (nv2a_prompts.h,
+ * NV2A_PROMPT_UPRIGHT_TAG), kept for the draws after it, the first of
+ * each size said once in the log; or a flat button's, drawn. */
+static void prompts_mark(void)
+{
+    static float said[8];
+    static int nsaid;
+    float grow;
+    int i;
+    if (!nv2a_prompts_upright_read(g_prompt_mark, &grow)) {
+        prompts_flat();
+        return;
+    }
+    g_prompt_mark[0] = 0;
+    g_upright_grow = grow;
+    for (i = 0; i < nsaid; i++) if (said[i] == grow) return;
+    if (nsaid >= (int)(sizeof said / sizeof said[0])) return;
+    said[nsaid++] = grow;
+    fprintf(stderr, "  [GL] button prompts: the menus' upright buttons at %.2f of their faces' size from "
+            "present %u, as the game side marks\n", (double)grow, S.flips);
+}
+
+/* The faces laid upright in this frame, for a second copy of one at the same
+ * place (nv2a_prompts_twin). */
+static Nv2aPromptLaid g_upright_laid[NV2A_PROMPT_LAID_MOST];
+static int g_upright_laid_n;
+/* The end of a displayed frame: no face laid yet, and the upright size back
+ * to NV2A_PROMPT_UPRIGHT_GROW. One still set (the game side lost its mark
+ * after the screen) says so once. */
+static void prompts_upright_frame_end(void)
+{
+    static int told;
+    g_upright_laid_n = 0;
+    if (g_upright_grow == NV2A_PROMPT_UPRIGHT_GROW) return;
+    if (!told++)
+        fprintf(stderr, "  [GL] button prompts: the upright size %.2f still set at the frame's end: "
+                "back to %.2f\n", (double)g_upright_grow, (double)NV2A_PROMPT_UPRIGHT_GROW);
+    g_upright_grow = NV2A_PROMPT_UPRIGHT_GROW;
 }
 static Nv2aRenderState g_draw_rs;   /* the state this draw was given */
 static float g_wide_ext[4];  /* its x and y extent, for the draw log */
@@ -7420,6 +8020,596 @@ static int draw_screen_space(int slot)
         && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS;
 }
 
+/*
+ * The menus' buttons drawn upright (nv2a_prompts.h, "the menus' buttons,
+ * upright").
+ *
+ * Some of the game's menus -- the VS menu's, the graffiti picker's and
+ * editor's -- draw their buttons as small 3D models with an icon of the
+ * icon sheets on their faces, turned as the menu moves. With the game's own
+ * art that is the game's picture. With a pack's (nv2a_prompts_draw), our
+ * letters and button faces come out turned, so each such face is drawn
+ * flat instead: every vertex where its texel puts it on the icon, about
+ * the face's middle, at the face's size on the screen times
+ * NV2A_PROMPT_UPRIGHT_GROW (NV2A_PROMPT_LARGER, 1.125) times its larger
+ * stretch, or a screen's own the game side marks (g_upright_grow), facing
+ * the screen. A face upright already, such as the HUD's icons, is drawn
+ * that size larger about its middle; one already where upright puts it
+ * (within NV2A_PROMPT_UPRIGHT_TOL) is left as it is. A smaller copy of a
+ * face laid at the same place in the frame is laid as that one
+ * (nv2a_prompts_twin). The rest of a button laid upright, its side and
+ * back, is made empty, in a draw of separate triangles: the pack's picture
+ * is the whole button (nv2a_prompts_in_reach). Only the draw's positions change, in the old path's
+ * vertex buffer, so
+ * it keeps its program, its depth, its colours, the widescreen and HUD
+ * scale transforms after it.
+ *
+ * A face is the triangles on one icon's texels that join up, sharing a
+ * corner's place on the screen with their maps from texels to the screen
+ * alike (nv2a_prompts_faces), however many there are, among however many
+ * other triangles, drawn as a list, a strip or a fan: a button's back and
+ * side are apart from its front. The texel and screen of
+ * each vertex come from the draw's own transform: the fixed-function
+ * composite matrix, or the program run on the CPU (nv2a_vsh_interp), its
+ * texel read straight from the input it copies where it does. The new
+ * positions are solved for in the draw's own position space
+ * (nv2a_prompts_solve), each at the face's middle's w, so the picture is
+ * not drawn in perspective. Such draws take the old path, never the vertex
+ * cache, and each kind is logged once (upright_draw_say), with what came
+ * of its faces, and each face once (upright_say); a kind with no face in
+ * it is logged with its texels and a few of its triangles
+ * (upright_draw_detail), so a log says what it holds.
+ */
+/* The most vertices a draw may have to be looked at, and the most when its
+ * program has to be run for each one's texel. */
+#define UPRIGHT_MAX_N     8192
+#define UPRIGHT_MAX_RUN   384
+
+typedef struct {
+    const float *vbuf;
+    uint32_t stride;
+    const int *attr_at;
+    const Nv2aVshProgram *vp;   /* NULL: fixed function */
+    float ts, tt;               /* coordinates to texels */
+} UprightDraw;
+
+/* The cache entry of stage st's texture, if it is one of the prompts': its
+ * index in nv2a_prompt_textures, or -1. Looked up, never made: the bind
+ * loop makes it, after this, so a texture's first draw is left as it is. */
+static int prompts_stage(int st)
+{
+    const TexStage *t = &S.tex[st];
+    uint32_t w = t->width, h = t->height, key, i;
+    int p, any = 0;
+    if (!S.psh.tex_bound[st] || !w || !h || w > 4096 || h > 4096) return -1;
+    for (p = 0; p < nv2a_prompt_ntextures && !any; p++)
+        any = nv2a_prompt_textures[p].format == t->color
+           && nv2a_prompt_textures[p].w == w && nv2a_prompt_textures[p].h == h;
+    if (!any) return -1;
+    key = (t->offset ^ (w << 16) ^ (h << 4) ^ t->color) * 2246822519u;
+    for (i = 0; i < TEX_CACHE; i++) {
+        uint32_t k = (key + i) % TEX_CACHE;
+        if (!g_tcache[k].used) break;
+        if (g_tcache[k].tex && g_tcache[k].prompt && g_tcache[k].offset == t->offset
+         && g_tcache[k].format == t->color && g_tcache[k].w == w && g_tcache[k].h == h)
+            return g_tcache[k].prompt - 1;
+    }
+    return -1;
+}
+
+static int prompts_stage0(void) { return prompts_stage(0); }
+
+/* The first of stages 1 to 3 whose texture is one of the prompts', or -1:
+ * a draw that shows a sheet on a stage it doesn't look at, logged. */
+static int prompts_stage_other(int *prompt)
+{
+    int st;
+    for (st = 1; st < 4; st++) {
+        int p = prompts_stage(st);
+        if (p >= 0) { *prompt = p; return st; }
+    }
+    return -1;
+}
+
+/* Vertex vi of the draw with its position's x, y and z at pos (or its own,
+ * for NULL): where it lands, in the surface's pixels (x, y), its w, and
+ * stage 0's texel (u, v, unless NULL). 0 where the transform gives none. */
+static int upright_eval(const UprightDraw *d, uint32_t vi, const float *pos,
+                        float s[3], float *u, float *v)
+{
+    const float *vv = &d->vbuf[(size_t)vi * d->stride];
+    float p[4];
+    int a;
+    if (d->attr_at[0] < 0) return 0;
+    memcpy(p, vv + d->attr_at[0], sizeof p);
+    if (pos) { p[0] = pos[0]; p[1] = pos[1]; p[2] = pos[2]; }
+    if (!d->vp) {
+        float o[4];
+        for (a = 0; a < 4; a++)
+            o[a] = p[0] * S.u.ff_mat[a][0] + p[1] * S.u.ff_mat[a][1]
+                 + p[2] * S.u.ff_mat[a][2] + p[3] * S.u.ff_mat[a][3];
+        if (!(o[3] > 1e-6f)) return 0;
+        s[0] = o[0] / o[3]; s[1] = o[1] / o[3]; s[2] = o[3];
+        if (u) {
+            const float *t = d->attr_at[9] >= 0 ? vv + d->attr_at[9] : S.const_attr[9];
+            *u = t[0] * d->ts; *v = t[1] * d->tt;
+        }
+    } else {
+        float in[16][4], op[4];
+        for (a = 0; a < 16; a++) {
+            if (a < NUM_ATTRS && d->attr_at[a] >= 0) memcpy(in[a], vv + d->attr_at[a], sizeof in[a]);
+            else if (a < NUM_ATTRS) memcpy(in[a], S.const_attr[a], sizeof in[a]);
+            else memset(in[a], 0, sizeof in[a]);
+        }
+        memcpy(in[0], p, sizeof p);
+        if (!nv2a_vsh_interp(d->vp, in, S.u.c, op)) return 0;
+        s[0] = op[0]; s[1] = op[1]; s[2] = op[3];
+        if (u) {
+            if (!(g_interp_written & (1u << NV2A_OREG_TEX0))) return 0;
+            *u = g_interp_out[NV2A_OREG_TEX0][0] * d->ts;
+            *v = g_interp_out[NV2A_OREG_TEX0][1] * d->tt;
+        }
+    }
+    return s[0] == s[0] && s[1] == s[1] && s[2] == s[2];
+}
+
+/* upright_eval for nv2a_prompts_solve: one vertex of a draw. */
+typedef struct { const UprightDraw *d; uint32_t vi; } UprightVertex;
+
+static int upright_land(void *ctx, const float pos[3], float s[3])
+{
+    const UprightVertex *v = (const UprightVertex *)ctx;
+    return upright_eval(v->d, v->vi, pos, s, NULL, NULL);
+}
+
+/* What a face came to: drawn upright, upright already, or left. */
+enum { UPRIGHT_MOVED, UPRIGHT_ALREADY, UPRIGHT_UNPLACED, UPRIGHT_UNSOLVED, UPRIGHT_HOWS };
+
+/* Each face once, by its sheet, icon, kind and outcome: where its texels
+ * land (the plane: its middle, how its texels' across and down lie on the
+ * screen, and how long each is a texel), so a log says how it was turned. */
+static void upright_say(int prompt, int kind, int how, const Nv2aPromptFace *f, float cx, float cy,
+                        float scale)
+{
+    static uint32_t seen[64];
+    static int nseen;
+    static const char *const kinds[3] = { "in 2D", "by a vertex program", "by fixed function" };
+    static const char *const hows[UPRIGHT_HOWS] = {
+        "drawn upright", "upright already, left as it is",
+        "left as it is: no upright place for it", "left as it is: its vertices couldn't be moved there"
+    };
+    const Nv2aPromptTexture *pt = &nv2a_prompt_textures[prompt];
+    uint32_t key = ((uint32_t)prompt << 16) | ((uint32_t)f->icon << 4) | ((uint32_t)kind << 2) | (uint32_t)how;
+    float across = sqrtf(f->m[0][0] * f->m[0][0] + f->m[1][0] * f->m[1][0]);
+    float down = sqrtf(f->m[0][1] * f->m[0][1] + f->m[1][1] * f->m[1][1]);
+    int i;
+    for (i = 0; i < nseen; i++) if (seen[i] == key) return;
+    if (nseen >= 64) return;
+    seen[nseen++] = key;
+    fprintf(stderr, "  [GL] button prompts: %s's icon %d (control %d) on a face of %d triangles drawn %s, "
+            "texels %.1f..%.1f by %.1f..%.1f, its middle at %.1f, %.1f, its across at %.1f degrees and "
+            "%.2f pixels a texel, its down at %.1f degrees and %.2f, upright %.2f a texel, from present %u: "
+            "%s\n",
+            pt->name, f->icon, pt->icons[f->icon].control, f->ntri, kinds[kind], f->u0, f->u1, f->v0,
+            f->v1, cx, cy, atan2f(f->m[1][0], f->m[0][0]) * 57.29578f, across,
+            atan2f(f->m[1][1], f->m[0][1]) * 57.29578f, down, scale, S.flips, hows[how]);
+}
+
+/* The input a program's oT0 is a copy of (mov oT0, vN), or -1: then the
+ * texels are the program's to work out, and it is run for them. */
+static int upright_tex0_input(const Nv2aVshProgram *p)
+{
+    int i, in = -1, n = 0;
+    for (i = 0; i < p->length; i++) {
+        const Nv2aVshInsn *x = &p->insns[i];
+        if (!x->out_is_oreg || x->out_reg != NV2A_OREG_TEX0) continue;
+        n++;
+        if (x->out_from_ilu || x->mac != NV2A_MAC_MOV || x->src[0].type != NV2A_PARAM_V
+         || x->src[0].negate || x->src[0].swz[0] != 0 || x->src[0].swz[1] != 1
+         || (x->out_mask & 0xC) != 0xC)
+            return -1;
+        in = x->input_index & 15;
+    }
+    return n == 1 ? in : -1;
+}
+
+/* Each kind of draw from the prompts' textures, once: its size, how it is
+ * drawn, and what came of its faces, so a log says what the menus draw. */
+static int upright_draw_say(int prompt, int mode, int kind, uint32_t n, const char *what)
+{
+    static uint32_t seen[48][2];
+    static int nseen;
+    static const char *const kinds[3] = { "in 2D", "by a vertex program", "by fixed function" };
+    static const char *const modes[3] = { "triangles", "a strip", "a fan" };
+    uint32_t key = ((uint32_t)prompt << 8) | ((uint32_t)mode << 4) | (uint32_t)kind;
+    int i;
+    for (i = 0; i < nseen; i++) if (seen[i][0] == key && seen[i][1] == n) return 0;
+    if (nseen >= 48) return 0;
+    seen[nseen][0] = key; seen[nseen][1] = n; nseen++;
+    fprintf(stderr, "  [GL] button prompts: a draw of %u vertices (%s, %s) from %s, into %ux%u at 0x%x, "
+            "from present %u: %s\n", n, mode >= 0 && mode < 3 ? modes[mode] : "?", kinds[kind],
+            nv2a_prompt_textures[prompt].name, (unsigned)S.clip_w, (unsigned)S.clip_h,
+            (unsigned)S.color_offset, S.flips, what);
+    return 1;
+}
+
+/* After a kind of draw's line, where no face was found in it: where its
+ * texels come from and their extent, and a few of its triangles, those
+ * nearest an icon first, with their texels and where they land, so a log
+ * says what the draw holds. */
+#define UPRIGHT_DETAIL 8
+static void upright_draw_detail(const UprightDraw *d, const Nv2aPromptTexture *pt, int uv_in,
+                                const float *texmat, const float *U, const float *V, float *X,
+                                float *Y, const int *tri, int ntri, uint32_t out_n)
+{
+    float u0 = 1e30f, u1 = -1e30f, v0 = 1e30f, v1 = -1e30f;
+    int pick[UPRIGHT_DETAIL], npick = 0, pass, t, i, j;
+    uint32_t k;
+    char src[200];
+    for (k = 0; k < out_n; k++) {
+        if (!(U[k] == U[k]) || !(V[k] == V[k])) continue;
+        u0 = fminf(u0, U[k]); u1 = fmaxf(u1, U[k]);
+        v0 = fminf(v0, V[k]); v1 = fmaxf(v1, V[k]);
+    }
+    if (uv_in < 0)
+        snprintf(src, sizeof src, "by running its program");
+    else if (texmat)
+        snprintf(src, sizeof src, "from input %d through stage 0's matrix [%g %g %g %g | %g %g %g %g]",
+                 uv_in, texmat[0], texmat[1], texmat[2], texmat[3], texmat[4], texmat[5], texmat[6],
+                 texmat[7]);
+    else
+        snprintf(src, sizeof src, "from input %d as it is", uv_in);
+    fprintf(stderr, "  [GL] button prompts:   its texels %s, times %gx%g: %.1f..%.1f by %.1f..%.1f\n",
+            src, d->ts, d->tt, u0, u1, v0, v1);
+    /* Those that touch an icon's rectangle, then any. */
+    for (pass = 0; pass < 2 && npick < UPRIGHT_DETAIL; pass++)
+        for (t = 0; t < ntri && npick < UPRIGHT_DETAIL; t++) {
+            float lu = 1e30f, hu = -1e30f, lv = 1e30f, hv = -1e30f;
+            int on = 0, have = 0;
+            for (j = 0; j < npick; j++) if (pick[j] == t) have = 1;
+            if (have) continue;
+            for (j = 0; j < 3; j++) {
+                int vi = tri[3 * t + j];
+                lu = fminf(lu, U[vi]); hu = fmaxf(hu, U[vi]);
+                lv = fminf(lv, V[vi]); hv = fmaxf(hv, V[vi]);
+            }
+            if (!(lu == lu) || !(lv == lv) || !(hu == hu) || !(hv == hv)) continue;
+            for (i = 0; i < pt->nicons && !on; i++) {
+                const Nv2aPromptIcon *c = &pt->icons[i];
+                on = hu >= (float)c->x - 8.0f && lu <= (float)(c->x + c->w) + 8.0f
+                  && hv >= (float)c->y - 8.0f && lv <= (float)(c->y + c->h) + 8.0f;
+            }
+            if (pass == 0 && !on) continue;
+            pick[npick++] = t;
+        }
+    for (i = 0; i < npick; i++) {
+        float q[3][4];
+        t = pick[i];
+        for (j = 0; j < 3; j++) {
+            uint32_t vi = (uint32_t)tri[3 * t + j];
+            if (!(X[vi] == X[vi])) {
+                float sc[3];
+                if (upright_eval(d, vi, NULL, sc, NULL, NULL)) { X[vi] = sc[0]; Y[vi] = sc[1]; }
+            }
+            q[j][0] = U[vi]; q[j][1] = V[vi]; q[j][2] = X[vi]; q[j][3] = Y[vi];
+        }
+        fprintf(stderr, "  [GL] button prompts:   triangle %d: texels (%.2f, %.2f) (%.2f, %.2f) (%.2f, %.2f), "
+                "on the screen (%.1f, %.1f) (%.1f, %.1f) (%.1f, %.1f)\n", t, q[0][0], q[0][1], q[1][0],
+                q[1][1], q[2][0], q[2][1], q[0][2], q[0][3], q[1][2], q[1][3], q[2][2], q[2][3]);
+    }
+}
+
+/* The draw's button faces, each drawn upright where it shows a pack's
+ * picture and isn't. vbuf: the converted draw, out_n vertices of stride
+ * floats, drawn as mode: a list, a strip (with repeated vertices between
+ * its parts) or a fan, the faces among any other triangles. */
+static void prompts_upright_draw(float *vbuf, uint32_t out_n, uint32_t stride, const int *attr_at,
+                                 int mode, int slot)
+{
+#if defined(NV2A_GL_USE_SDL)
+    static Nv2aVshProgram vp;
+    static Nv2aPromptShows shows;
+    static unsigned shows_gen = ~0u;
+    static float *U, *V, *X, *Y, *P;
+    static int *tri, *face_of, *work, *seen;
+    static unsigned char *mark;
+    static uint32_t cap;
+    static Nv2aPromptFace faces[NV2A_PROMPT_FACES_MOST];
+    static Nv2aPromptReach reach[NV2A_PROMPT_FACES_MOST];
+    const Nv2aPromptTexture *pt;
+    const float *texmat = NULL;   /* fixed function's stage 0 matrix, rows */
+    UprightDraw d;
+    uint32_t k;
+    int prompt, kind, strip, ntri, nfaces, uv_in, t, i, j;
+    int icon_tris = 0, part_tris = 0, moved = 0, already = 0, left = 0, game = 0, emptied = 0;
+    float pu0 = 1e30f, pu1 = -1e30f, pv0 = 1e30f, pv1 = -1e30f;
+    char what[240];
+
+    if (out_n < 3 || attr_at[0] < 0) return;
+    strip = mode == NV2A_PRIM_TRIANGLES ? NV2A_PROMPT_LIST
+          : mode == NV2A_PRIM_TRIANGLE_STRIP ? NV2A_PROMPT_STRIP
+          : mode == NV2A_PRIM_TRIANGLE_FAN ? NV2A_PROMPT_FAN : -1;
+    if (strip < 0) return;
+    if (input_prompts_art_now() == PROMPT_ART_GAME) return;
+    kind = S.xf_mode == NV2A_XF_MODE_FIXED ? 2 : draw_screen_space(slot) ? 0 : 1;
+    prompt = prompts_stage0();
+    if (prompt < 0) {
+        int st = prompts_stage_other(&prompt);
+        if (st > 0) {
+            snprintf(what, sizeof what, "left: the sheet is on stage %d, not 0", st);
+            upright_draw_say(prompt, strip, kind, out_n, what);
+        }
+        return;
+    }
+    pt = &nv2a_prompt_textures[prompt];
+
+    memset(&d, 0, sizeof d);
+    d.vbuf = vbuf; d.stride = stride; d.attr_at = attr_at;
+    if (S.xf_mode == NV2A_XF_MODE_FIXED) {
+        /* The vertex's own coordinates, through stage 0's matrix where it
+         * has one; not made up (texgen), and the positions unskinned. */
+        if (S.ff_skin_mode || S.texgen[0][0] || S.texgen[0][1]) {
+            upright_draw_say(prompt, strip, kind, out_n,
+                             S.ff_skin_mode ? "left: it is skinned" : "left: its texels are made up (texgen)");
+            return;
+        }
+        uv_in = 9;
+        texmat = (S.ff_texmat_enable & 1u) ? &S.u.ff_texmat[0][0] : NULL;
+    } else {
+        uint32_t pstart = S.prog_start < NV2A_VSH_MAX_INSNS ? S.prog_start : 0;
+        if (nv2a_vsh_decode(S.prog + pstart * 4, (int)(NV2A_VSH_MAX_INSNS - pstart), &vp) <= 0) return;
+        d.vp = &vp;
+        uv_in = upright_tex0_input(&vp);
+    }
+    if (out_n > UPRIGHT_MAX_N || (uv_in < 0 && out_n > UPRIGHT_MAX_RUN)) {
+        upright_draw_say(prompt, strip, kind, out_n, uv_in < 0
+                         ? "left: too many vertices to run its program for their texels"
+                         : "left: too many vertices");
+        return;
+    }
+    d.ts = d.tt = 1.0f;
+    if (fmt_is_swz(S.tex[0].color) || fmt_is_dxt(S.tex[0].color)) {
+        d.ts = (float)S.tex[0].width;
+        d.tt = (float)S.tex[0].height;
+    }
+    if (cap < out_n) {
+        /* Each grown on its own; cap only once all of them are. A draw has
+         * at most out_n triangles. */
+        uint32_t c = out_n + 256;
+        int grown = 0;
+        float *nf;
+        int *ni;
+        unsigned char *nm;
+        if ((nf = (float *)realloc(U, c * sizeof *U)) != NULL) { U = nf; grown++; }
+        if ((nf = (float *)realloc(V, c * sizeof *V)) != NULL) { V = nf; grown++; }
+        if ((nf = (float *)realloc(X, c * sizeof *X)) != NULL) { X = nf; grown++; }
+        if ((nf = (float *)realloc(Y, c * sizeof *Y)) != NULL) { Y = nf; grown++; }
+        if ((nf = (float *)realloc(P, c * 3 * sizeof *P)) != NULL) { P = nf; grown++; }
+        if ((ni = (int *)realloc(tri, c * 3 * sizeof *tri)) != NULL) { tri = ni; grown++; }
+        if ((ni = (int *)realloc(face_of, c * sizeof *face_of)) != NULL) { face_of = ni; grown++; }
+        if ((ni = (int *)realloc(work, c * 10 * sizeof *work)) != NULL) { work = ni; grown++; }
+        if ((ni = (int *)realloc(seen, c * sizeof *seen)) != NULL) { seen = ni; grown++; }
+        if ((nm = (unsigned char *)realloc(mark, c)) != NULL) { mark = nm; grown++; }
+        if (grown < 10) return;
+        cap = c;
+    }
+
+    /* Each vertex's texel: the input a program copies to oT0 (fixed
+     * function's v9, through stage 0's matrix), or the program run. */
+    for (k = 0; k < out_n; k++) {
+        X[k] = Y[k] = NAN;
+        if (uv_in >= 0) {
+            const float *tc = attr_at[uv_in] >= 0 ? &vbuf[(size_t)k * stride + attr_at[uv_in]]
+                                                  : S.const_attr[uv_in];
+            float tu = tc[0], tv = tc[1];
+            if (texmat) {
+                tu = tc[0] * texmat[0] + tc[1] * texmat[1] + tc[2] * texmat[2] + tc[3] * texmat[3];
+                tv = tc[0] * texmat[4] + tc[1] * texmat[5] + tc[2] * texmat[6] + tc[3] * texmat[7];
+            }
+            U[k] = tu * d.ts;
+            V[k] = tv * d.tt;
+        } else {
+            float sc[3];
+            if (!upright_eval(&d, k, NULL, sc, &U[k], &V[k])) { U[k] = V[k] = NAN; continue; }
+            X[k] = sc[0];
+            Y[k] = sc[1];
+        }
+    }
+    ntri = nv2a_prompts_triangles(strip, (int)out_n, tri, (int)out_n);
+    /* The triangles on an icon's texels, whose vertices are worked out on
+     * the screen; and, for the log, those partly on one. */
+    memset(mark, 0, out_n);
+    for (t = 0; t < ntri; t++) {
+        float tu[3], tv[3], lo_u, hi_u, lo_v, hi_v;
+        for (i = 0; i < 3; i++) { tu[i] = U[tri[3 * t + i]]; tv[i] = V[tri[3 * t + i]]; }
+        if (nv2a_prompts_tri_icon(pt, tu, tv) >= 0) {
+            icon_tris++;
+            for (i = 0; i < 3; i++) mark[tri[3 * t + i]] = 1;
+            continue;
+        }
+        lo_u = fminf(tu[0], fminf(tu[1], tu[2])); hi_u = fmaxf(tu[0], fmaxf(tu[1], tu[2]));
+        lo_v = fminf(tv[0], fminf(tv[1], tv[2])); hi_v = fmaxf(tv[0], fmaxf(tv[1], tv[2]));
+        for (i = 0; i < pt->nicons; i++) {
+            const Nv2aPromptIcon *c = &pt->icons[i];
+            if (hi_u > (float)c->x && lo_u < (float)(c->x + c->w)
+             && hi_v > (float)c->y && lo_v < (float)(c->y + c->h)) {
+                part_tris++;
+                pu0 = fminf(pu0, lo_u); pu1 = fmaxf(pu1, hi_u);
+                pv0 = fminf(pv0, lo_v); pv1 = fmaxf(pv1, hi_v);
+                break;
+            }
+        }
+    }
+    if (!icon_tris) {
+        if (part_tris)
+            snprintf(what, sizeof what, "%d triangles, none on one icon's texels, %d partly on one's "
+                     "(texels %.1f..%.1f by %.1f..%.1f)", ntri, part_tris, pu0, pu1, pv0, pv1);
+        else
+            snprintf(what, sizeof what, "%d triangles, none on an icon's texels", ntri);
+        if (upright_draw_say(prompt, strip, kind, out_n, what))
+            upright_draw_detail(&d, pt, uv_in, texmat, U, V, X, Y, tri, ntri, out_n);
+        return;
+    }
+    for (k = 0; k < out_n; k++) {
+        float sc[3];
+        if (!mark[k] || X[k] == X[k]) continue;
+        if (upright_eval(&d, k, NULL, sc, NULL, NULL)) { X[k] = sc[0]; Y[k] = sc[1]; }
+    }
+    { unsigned gen = input_prompts_generation();
+      if (gen != shows_gen) { prompts_shows(&shows); shows_gen = gen; } }
+
+    nfaces = nv2a_prompts_faces(pt, U, V, X, Y, tri, ntri, face_of, work, faces, NV2A_PROMPT_FACES_MOST);
+    for (k = 0; k < out_n && k < cap; k++) seen[k] = -1;
+    for (i = 0; i < nfaces; i++) {
+        const Nv2aPromptFace *f = &faces[i];
+        PromptIcon pi = shows.icon[pt->icons[f->icon].control];
+        float cx, cy, sc, mu, mv, cpos[3] = { 0, 0, 0 }, cs[3], size = 0.0f, fd, most;
+        int nv = 0, ok = 1, up = 1, first = -1;
+
+        if (pi.art == PROMPT_ART_GAME || pi.input == INPUT_NONE) { game++; continue; }
+        most = (float)(S.clip_w > S.clip_h ? S.clip_w : S.clip_h);
+        if (most < 640.0f) most = 640.0f;
+        if (!nv2a_prompts_face_place(f, g_upright_grow, most, &cx, &cy, &sc)) {
+            upright_say(prompt, kind, UPRIGHT_UNPLACED, f, NAN, NAN, NAN);
+            left++;
+            continue;
+        }
+        mu = 0.5f * (f->u0 + f->u1);
+        mv = 0.5f * (f->v0 + f->v1);
+        /* Its vertices, each once (seen: the face it was taken for), and
+         * whether each is where upright puts it already. */
+        for (t = 0; t < ntri; t++) {
+            if (face_of[t] != i) continue;
+            for (j = 0; j < 3; j++) {
+                int vi = tri[3 * t + j];
+                const float *p = &vbuf[(size_t)vi * stride + attr_at[0]];
+                if (seen[vi] == i) continue;
+                seen[vi] = i;
+                if (first < 0) first = vi;
+                nv++;
+                cpos[0] += p[0]; cpos[1] += p[1]; cpos[2] += p[2];
+                if (fabsf(X[vi] - (cx + sc * (U[vi] - mu))) > NV2A_PROMPT_UPRIGHT_TOL
+                 || fabsf(Y[vi] - (cy + sc * (V[vi] - mv))) > NV2A_PROMPT_UPRIGHT_TOL)
+                    up = 0;
+            }
+        }
+        if (up) {
+            upright_say(prompt, kind, UPRIGHT_ALREADY, f, cx, cy, sc);
+            already++;
+            continue;
+        }
+        /* A smaller copy of a face laid at the same place in this frame is
+         * drawn as that one, so the two are one picture. */
+        if (nv2a_prompts_twin(g_upright_laid, g_upright_laid_n, pt, f->icon, &cx, &cy, &sc)) {
+            static int said;
+            if (said++ < 8)
+                fprintf(stderr, "  [GL] button prompts: %s's icon %d drawn again at the same place, as the larger "
+                        "copy before it, %.2f a texel, from present %u\n", pt->name, f->icon, (double)sc,
+                        S.flips);
+        }
+        /* Solved from the face's middle, in the draw's own positions, at its
+         * middle's w, into P; then written, all or none. */
+        cpos[0] /= (float)nv; cpos[1] /= (float)nv; cpos[2] /= (float)nv;
+        for (k = 0; k < out_n; k++) {
+            const float *p = &vbuf[(size_t)k * stride + attr_at[0]];
+            float dx, dy, dz;
+            if (seen[k] != i) continue;
+            dx = p[0] - cpos[0]; dy = p[1] - cpos[1]; dz = p[2] - cpos[2];
+            size = fmaxf(size, sqrtf(dx * dx + dy * dy + dz * dz));
+        }
+        fd = 0.01f * size;
+        if (!(fd > 1e-6f)) fd = 1e-6f;
+        if (!upright_eval(&d, (uint32_t)first, cpos, cs, NULL, NULL)) ok = 0;
+        for (k = 0; k < out_n && ok; k++) {
+            UprightVertex uv;
+            if (seen[k] != i) continue;
+            uv.d = &d;
+            uv.vi = k;
+            ok = nv2a_prompts_solve(upright_land, &uv, cpos, fd, cx + sc * (U[k] - mu),
+                                    cy + sc * (V[k] - mv), cs[2], &P[(size_t)k * 3]);
+        }
+        if (!ok) {
+            upright_say(prompt, kind, UPRIGHT_UNSOLVED, f, cx, cy, sc);
+            left++;
+            continue;
+        }
+        /* A strip's repeated vertices (its joins' empty triangles share them)
+         * just like one of the face's move with it. */
+        if (strip == NV2A_PROMPT_STRIP)
+            for (k = 0; k < out_n; k++) {
+                uint32_t m;
+                if (seen[k] == i) continue;
+                /* A join repeats the vertex beside it. */
+                for (m = k > 2 ? k - 2 : 0; m < out_n && m <= k + 2; m++)
+                    if (seen[m] == i && !memcmp(&vbuf[(size_t)k * stride], &vbuf[(size_t)m * stride],
+                                                stride * sizeof(float))) {
+                        memcpy(&vbuf[(size_t)k * stride + attr_at[0]], &P[(size_t)m * 3], 3 * sizeof(float));
+                        break;
+                    }
+            }
+        for (k = 0; k < out_n; k++)
+            if (seen[k] == i) memcpy(&vbuf[(size_t)k * stride + attr_at[0]], &P[(size_t)k * 3], 3 * sizeof(float));
+        upright_say(prompt, kind, UPRIGHT_MOVED, f, cx, cy, sc);
+        if (g_upright_laid_n < NV2A_PROMPT_LAID_MOST) {
+            Nv2aPromptLaid *l = &g_upright_laid[g_upright_laid_n++];
+            l->sheet = pt;
+            l->icon = f->icon;
+            l->cx = cx;
+            l->cy = cy;
+            l->s = sc;
+        }
+        nv2a_prompts_reach(f, cx, cy, sc, &reach[moved]);
+        moved++;
+    }
+    /* The rest of each button laid upright, its side and back, made empty:
+     * each triangle on no icon within a face's reach has its corners put on
+     * its first (nv2a_prompts_in_reach). Only in a draw of separate
+     * triangles, where no corner is another triangle's; every such button
+     * in the logs is one. */
+    if (moved && strip == NV2A_PROMPT_LIST)
+        for (t = 0; t < ntri; t++) {
+            const int *c = &tri[3 * t];
+            float tx[3], ty[3];
+            if (mark[c[0]] || mark[c[1]] || mark[c[2]]) continue;
+            for (j = 0; j < 3; j++) {
+                float sc3[3];
+                tx[j] = X[c[j]];
+                ty[j] = Y[c[j]];
+                if (tx[j] != tx[j] && upright_eval(&d, (uint32_t)c[j], NULL, sc3, NULL, NULL)) {
+                    tx[j] = sc3[0];
+                    ty[j] = sc3[1];
+                }
+            }
+            if (!nv2a_prompts_in_reach(reach, moved, tx, ty)) continue;
+            for (j = 1; j < 3; j++)
+                memcpy(&vbuf[(size_t)c[j] * stride + attr_at[0]], &vbuf[(size_t)c[0] * stride + attr_at[0]],
+                       3 * sizeof(float));
+            emptied++;
+        }
+    snprintf(what, sizeof what, "%d triangles, %d on an icon's texels, %d faces: %d drawn upright, "
+             "%d upright already, %d left, %d the game's own picture; %d of the rest made empty", ntri,
+             icon_tris, nfaces, moved, already, left, game, emptied);
+    if (upright_draw_say(prompt, strip, kind, out_n, what) && !nfaces)
+        upright_draw_detail(&d, pt, uv_in, texmat, U, V, X, Y, tri, ntri, out_n);
+#else
+    (void)vbuf; (void)out_n; (void)stride; (void)attr_at; (void)mode; (void)slot;
+#endif
+}
+
+/* A draw prompts_upright_draw looks at: one from the prompts' textures, on
+ * any stage, in a pack's art. It takes the old path, whose vertex buffer it
+ * changes (stage 0's) or logs (another stage's). */
+static int prompts_upright_wanted(void)
+{
+#if defined(NV2A_GL_USE_SDL)
+    int other;
+    return input_prompts_art_now() != PROMPT_ART_GAME
+        && (prompts_stage0() >= 0 || prompts_stage_other(&other) > 0);
+#else
+    return 0;
+#endif
+}
+
 static void do_draw_body(void)
 {
     static float *vbuf;
@@ -7785,7 +8975,9 @@ static void do_draw_body(void)
       PROF_T0();
     /* The pause map's (NV2A_WIDE_HUD_LINES) too, whose lines' positions are
      * made longer in place (below). */
-    if (!inl && out_n >= VC_MIN_N && !wide2d && g_hud_side != NV2A_WIDE_HUD_LINES && vc_on())
+    /* And the prompts' textures' (prompts_upright_draw), whose button faces it moves. */
+    if (!inl && out_n >= VC_MIN_N && !wide2d && g_hud_side != NV2A_WIDE_HUD_LINES && vc_on()
+     && !prompts_upright_wanted())
         vc_vb = vc_prepare(live, nlive, stride_floats, n, fan_expand, out_n,
                            &vc_i32, &vc_seq);
     if (!vc_vb) {
@@ -7809,6 +9001,8 @@ static void do_draw_body(void)
             }
             vtx_convert(live, nlive, src_i, &vbuf[k * stride_floats]);
         }
+        /* A pack's button pictures on the menus' turned buttons, upright. */
+        prompts_upright_draw(vbuf, out_n, stride_floats, attr_at, mode, slot);
     }
     if (PROF_ON()) g_prof.verts += prof_now() - _t0 - (g_prof.vbo - vbo0); }
 
@@ -12742,6 +13936,7 @@ static void present(int is_frame)
             fprintf(stderr, "[WIDE] piece %u: the side fill left out, on a frame with parts at "
                     "the screen's edges\n", g_wide_fill_piece);
         wide_hud_frame_end();
+        prompts_upright_frame_end();
         g_wide_fill_last = g_wide_fill && !g_wide_moved;
         g_wide_fill = g_wide_moved = g_wide_over = 0;
         g_wide_anchor_ok = 0;
@@ -12749,7 +13944,7 @@ static void present(int is_frame)
     }
     if (!g_ready || !g_fbo_w || !g_fbo_h || !S.color_offset) return;
     g_probe_now = mono_now();
-    if (is_frame) { S.frames++; prof_report(); tcache_sweep(); tcache_verify(); aniso_take(); up_take();
+    if (is_frame) { S.frames++; prof_report(); tcache_sweep(); tcache_verify(); aniso_take(); prompts_take(); up_take();
                     /* the census counts one frame, not everything since the
                      * last dump -- otherwise it measures the gap, not the
                      * picture next to it */
@@ -14337,6 +15532,16 @@ static void gl_method(uint32_t method, uint32_t param)
     case M_SET_CULL_FACE:         S.cull_face = (int)param; break;
     case M_SET_FRONT_FACE:        S.front_face = (int)param; break;
 
+    case NV2A_PROMPT_MARK_METHOD:
+    case NV2A_PROMPT_MARK_METHOD + 4u:
+    case NV2A_PROMPT_MARK_METHOD + 8u:
+    case NV2A_PROMPT_MARK_METHOD + 4u * (NV2A_PROMPT_MARK_WORDS - 1u):
+        /* A flat button's mark, or an upright size's (nv2a_prompts.h):
+         * taken on its last word. */
+        g_prompt_mark[(method - NV2A_PROMPT_MARK_METHOD) / 4u] = param;
+        if (method == NV2A_PROMPT_MARK_METHOD + 4u * (NV2A_PROMPT_MARK_WORDS - 1u)) prompts_mark();
+        break;
+
     case NV2A_WIDE_HUD_METHOD:
         /* A HUD piece's mark (nv2a_wide.h): the draws up to the next are
          * its, on its side, or none. Any other value is left alone. */
@@ -14917,7 +16122,7 @@ static void up_start(void)
 }
 
 /* 3D upscaling from the start: the window's setting, else 4x
- * (NV2A_UP3_DEFAULT). Its menu row, Textures, comes after Menus and HUD's
+ * (NV2A_UP3_DEFAULT). Its menu row, Textures, comes after Buttons'
  * (gfx_init). */
 static void up3_start(void)
 {
@@ -14946,6 +16151,32 @@ static void upg_start(void)
         fprintf(stderr, "  [GL] graffiti upscaling: not on the %s backend\n", G->name);
     else
         fprintf(stderr, "  [GL] graffiti upscaling: %dx from the settings (0 is off)\n", g_upg_now);
+}
+
+/* Buttons upscaling from the start: the window's setting, else Off
+ * (NV2A_UPB_DEFAULT), with Sharpness and Edge strength as they start
+ * (after up_sharp_start and up_edge_start), so the first flip has nothing
+ * to change. Its menu row, Buttons, comes after Menus and HUD's (gfx_init).
+ * Only with the window, whose input layer the pictures are for. */
+static void upb_start(void)
+{
+#if defined(NV2A_GL_USE_SDL)
+    int n = sdl_cfg_get("upscale_buttons", NV2A_UPB_DEFAULT);
+    g_upb_want = nv2a_up_factor(n);
+    g_prompt_copies_mu = SDL_CreateMutex();
+    if (g_upb_want && !G->tex_upscale) {
+        fprintf(stderr, "  [GL] button prompts: no upscaled pictures on the %s backend\n", G->name);
+        return;
+    }
+    if (!g_prompt_copies_mu) {
+        fprintf(stderr, "  [GL] button prompts: no upscaled pictures (%s)\n", SDL_GetError());
+        return;
+    }
+    g_prompt_copies_f = g_upb_want;
+    g_prompt_copies_w = up_weight();
+    g_prompt_copies_e = up_edge();
+    fprintf(stderr, "  [GL] button prompts: pictures at %dx from the settings (0 is off)\n", g_prompt_copies_f);
+#endif
 }
 
 /* Sharpness from the start: the window's setting, else Normal
@@ -15002,11 +16233,13 @@ static int gfx_init(uint32_t w, uint32_t h)
     up_sharp_start();
     up_edge_start();
     up_clean_start();
+    upb_start();
     hud_start();
 #if defined(XBOXRECOMP_MENU)
     sdl_menu_smaa();
     sdl_menu_msaa();
     sdl_menu_up();
+    sdl_menu_upb();
     sdl_menu_up3();
     sdl_menu_upg();
     sdl_menu_up_sharp();

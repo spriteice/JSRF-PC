@@ -46,6 +46,7 @@ LINUX = ("JSRF-PC-linux-x86_64", {
     "licences/MIT-upstream.txt": "text",
     "licences/LGPL-2.1.txt": "text",
     "licences/imgui-MIT.txt": "text",
+    "licences/CC0-1.0.txt": "text",
     "licences/miniz-MIT.txt": "text",
     "licences/SDL2-LICENSE.txt": "text",
 })
@@ -62,6 +63,7 @@ WINDOWS = ("JSRF-PC-windows-x86_64", {
     "licences/MIT-upstream.txt": "text",
     "licences/LGPL-2.1.txt": "text",
     "licences/imgui-MIT.txt": "text",
+    "licences/CC0-1.0.txt": "text",
     "licences/miniz-MIT.txt": "text",
     "licences/SDL2-COPYING.txt": "text",
     "licences/libepoxy-COPYING.txt": "text",

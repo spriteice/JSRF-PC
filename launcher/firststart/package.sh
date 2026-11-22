@@ -31,6 +31,7 @@ licences() {   # dir
     install -m 644 "$repo/LICENSES/MIT-upstream.txt" "$1/MIT-upstream.txt"
     install -m 644 "$repo/LICENSES/LGPL-2.1.txt" "$1/LGPL-2.1.txt"
     install -m 644 "$repo/LICENSES/imgui-MIT.txt" "$1/imgui-MIT.txt"
+    install -m 644 "$repo/LICENSES/CC0-1.0.txt" "$1/CC0-1.0.txt"
     # miniz ships its licence with CR LF: LF here, as the other texts (the
     # Windows package turns them all to CR LF).
     tr -d '\r' < "$repo/third_party/miniz/LICENSE" > "$1/miniz-MIT.txt"

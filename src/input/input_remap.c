@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "input_remap.h"
+#include "input_prompts.h"
 #if defined(XBOXRECOMP_MENU)
 #  include "menu.h"
 #endif
@@ -93,7 +94,14 @@ void input_remap_layouts(InputLayout *pad, InputLayout *keys)
     unlock();
 }
 
-static void put(Page *p, const InputLayout *l) { lock(); p->now = *l; unlock(); }
+/* A layout changed: the button prompts show it (input_prompts.h). */
+static void put(Page *p, const InputLayout *l)
+{
+    lock();
+    p->now = *l;
+    unlock();
+    input_prompts_changed();
+}
 
 /* An input a layout can have: one of its own, with a name the settings
  * keep and read back as the same input, and not one the menu or the window

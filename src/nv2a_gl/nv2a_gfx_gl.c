@@ -575,6 +575,16 @@ static int glx_tex_read(uint32_t t, uint32_t w, uint32_t h, void *bgra)
     return 1;
 }
 
+static void glx_tex_put(uint32_t t, uint32_t level, uint32_t x, uint32_t y, uint32_t w,
+                        uint32_t h, const void *rgba)
+{
+    if (!t || !rgba) return;
+    scratch_bind(t);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexSubImage2D(GL_TEXTURE_2D, (GLint)level, (GLint)x, (GLint)y, (GLsizei)w, (GLsizei)h,
+                    GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+}
+
 /* ---- programs and uniforms ----------------------------------------------- */
 
 #define MAX_PROGS 4096
@@ -2126,6 +2136,86 @@ static uint32_t glx_tex_upscale(uint32_t tex, uint32_t w, uint32_t h, int factor
     return out;
 }
 
+/* ---- the button prompts' flat pictures ------------------------------------
+ *
+ * picture (nv2a_backend.h): one quad over the target being drawn into, its
+ * corners from gl_VertexID, sampling the picture on the scratch unit,
+ * which nothing the title draws samples. Built the first time; if it won't
+ * build, the pictures aren't drawn and the log says so once. */
+static const char pic_vs[] =
+    NV2A_GLSL_VERSION
+    "uniform vec4 picRect;\n"
+    "out vec2 picUv;\n"
+    "void main()\n{\n"
+    "    vec2 p = vec2(float(gl_VertexID & 1), float((gl_VertexID >> 1) & 1));\n"
+    "    picUv = vec2(p.x, 1.0 - p.y);\n"
+    "    gl_Position = vec4(mix(picRect.xy, picRect.zw, p), 0.0, 1.0);\n"
+    "}\n";
+static const char pic_fs[] =
+    NV2A_GLSL_VERSION
+    "uniform sampler2D picTex;\n"
+    "uniform float picAlpha;\n"
+    "in vec2 picUv;\n"
+    "out vec4 picOut;\n"
+    "void main()\n{\n"
+    "    picOut = texture(picTex, picUv) * vec4(1.0, 1.0, 1.0, picAlpha);\n"
+    "}\n";
+static struct {
+    GLuint prog, vao;
+    GLint  rect_loc, alpha_loc;
+    int    bad;
+} g_pic;
+
+static void glx_picture(uint32_t tex, const float rect[4], float alpha)
+{
+    GLint vao = 0;
+    GLboolean sc;
+    if (!tex || !rect || !rt_ok(g_cur_rt) || g_pic.bad) return;
+    if (!g_pic.prog) {
+        g_pic.prog = glx_build(pic_vs, pic_fs, "button prompts' picture");
+        if (!g_pic.prog) {
+            g_pic.bad = 1;
+            fprintf(stderr, "  [GL] button prompts: no program for the flat pictures; they aren't drawn\n");
+            glUseProgram(prog_ok(g_cur_prog) ? g_prog[g_cur_prog - 1].prog : 0);
+            return;
+        }
+        glUseProgram(g_pic.prog);
+        g_pic.rect_loc = glGetUniformLocation(g_pic.prog, "picRect");
+        g_pic.alpha_loc = glGetUniformLocation(g_pic.prog, "picAlpha");
+        glUniform1i(glGetUniformLocation(g_pic.prog, "picTex"), SCRATCH_UNIT);
+        glGenVertexArrays(1, &g_pic.vao);
+    }
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vao);
+    sc = glIsEnabled(GL_SCISSOR_TEST);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glDisable(GL_STENCIL_TEST);
+    glDisable(GL_CULL_FACE);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glUseProgram(g_pic.prog);
+    glUniform4fv(g_pic.rect_loc, 1, rect);
+    glUniform1f(g_pic.alpha_loc, alpha);
+    scratch_bind((GLuint)tex);
+    glBindSampler(SCRATCH_UNIT, 0);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindVertexArray(g_pic.vao);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    g_rt[g_cur_rt - 1].drawn = 1;
+    /* Back as the title's next draw expects it: its program and vertex
+     * array, and the state it gives every draw set again in full (the
+     * scissor among it, as the clear's is). */
+    glBindVertexArray((GLuint)vao);
+    glUseProgram(prog_ok(g_cur_prog) ? g_prog[g_cur_prog - 1].prog : 0);
+    if (sc) glEnable(GL_SCISSOR_TEST);
+    glx_state_invalidate();
+}
+
 static const Nv2aGfx g_gl = {
     "opengl", NV2A_LANG_GLSL, 1,
     glx_init,
@@ -2150,6 +2240,8 @@ static const Nv2aGfx g_gl = {
     glx_fill_strip,
     glx_tex_upscale,
     glx_target_resize,
+    glx_tex_put,
+    glx_picture,
 };
 
 const Nv2aGfx *nv2a_gfx_gl(void) { return &g_gl; }

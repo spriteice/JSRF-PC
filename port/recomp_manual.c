@@ -4918,7 +4918,7 @@ static void wide_menu_extend(unsigned piece)
     sub_00047690_gen();
     wide_menu_unmark(piece, marked);
 }
-void sub_00047690(void)
+static void wide_menu_model_draw(void)
 {
     static int open;
     unsigned piece;
@@ -4944,6 +4944,204 @@ void sub_00047690(void)
     }
     open = 0;
 }
+/* The message boxes' A and B, drawn flat in the button prompts' styles
+ * (prompt_buttons.h). In any art but the game's own, the display set's A or
+ * B (disp_models, with the skip prompt's A, below) is posed by the game's
+ * own draw, but its nodes are handed to prompt_buttons_node by the node
+ * functions (model_node, below) and not drawn; its mark goes into the push
+ * buffer after, placed through the game's device's projection then
+ * (prompt_view, below). Any other model is drawn as the widescreen menus
+ * have it. Nothing in the game's code is wrong: a feature's hook. */
+#include "prompt_buttons.h"
+#include "input_prompts.h"
+static uint32_t disp_models(void);
+static void prompt_view(float *focal, float *tall, uint32_t view[4]);
+static PromptButtonsWalk s_flat = { .button = -1 };
+static int s_in_box;                  /* the message box's draw is running */
+/* The menus' 3D A and B (spriteice, 12:19 to 12:36 UTC on 21 November 2026:
+ * the graffiti picker's and the VS menu's B, the graffiti editor's A and B;
+ * 23:44 UTC: still tilted in prompts6, and a quarter larger wanted, as the
+ * message box's were made). They aren't group 0x12's models: prompts6's
+ * log (button-prompts/p12-rework/logs/ in the shared folder) has none of
+ * those at their places. A menu may take the A and B from the display set
+ * (group 10) for a set of its own, through the holder's getter,
+ * sub_00025700(10, set, 1, id). So the getter's override notes every model
+ * it hands out of group 10 as the A (0x69) or the B (0x6A), with the first
+ * words of the model's object, and the models' draw (below) draws a model
+ * so noted flat, as the message box's (prompt_buttons_open), the words
+ * checked first so a model the game has since freed, and another put at
+ * its address, isn't taken for the button. The message box's own come
+ * through disp_models, as before. Model 0x6B, which the pause menus and
+ * the graffiti picker fetch and pose by animation 0x12 (at 0x111025,
+ * 0x112779, 0x113156, 0x11569E and 0x115896), is no button: it is the
+ * bands, their lines and marks behind the menus (widescreen_menus.c's
+ * table), 12 nodes, and prompts7, which took it for a B, drew a B picture
+ * 1,072 of the title's pixels across over the whole menu
+ * (prompts7's log, button-prompts/p12-rework/logs/prompts7-allyx-last-run-1.log
+ * in the shared folder, and spriteice's screenshots, 00:29 UTC on 22
+ * November). The picker's and the VS menu's B were already flat.
+ *
+ * The graffiti editor's A and B, still tilted in prompts6, are some other
+ * model. So the next build can name them, the getter also notes everything else it
+ * hands out, of any group, with its group, set, type and id; the first
+ * draw of each is walked as the flat buttons are, but drawn as it is, its
+ * nodes' spheres only watched (model_node, s_watch), and when it is small
+ * on the title's screen, under MENU_SMALL pixels across as a button is, the
+ * log says where and how big, up to MENU_TELLS lines for group 10, group
+ * 0x12 and the rest each. */
+#define MENU_GROUP    0x12u
+#define BUTTON_GROUP  10u             /* the display set's (DISP_GROUP, below) */
+#define BUTTON_TYPE   1u              /* its models */
+#define BUTTON_NOTED  16              /* the buttons' notes: a few sets' A and B */
+#define BUTTON_WORDS  8u              /* the model object's first words, checked before each draw */
+#define MENU_NOTED    4096            /* a power of two: the notes' slots, by model */
+#define MENU_PROBES   32              /* the slots looked at for one (every draw looks) */
+#define MENU_TELLS    128
+#define MENU_SMALL    80.0f           /* told only under this many of the title's pixels across */
+static struct { uint32_t model, group, set, type, id; uint8_t told; } s_menu_note[MENU_NOTED];
+static int s_menu_tells[3];           /* told: group 0x12's, group 10's, the rest's */
+static int menu_bucket(uint32_t group) { return group == MENU_GROUP ? 0 : group == BUTTON_GROUP ? 1 : 2; }
+static PromptButtonsWalk s_watch = { .button = -1 };
+static struct { uint32_t model, id, words[BUTTON_WORDS]; } s_button_note[BUTTON_NOTED];
+static unsigned s_button_next;
+static uint32_t menu_slot(uint32_t model)
+{
+    uint32_t i = (model >> 4) & (MENU_NOTED - 1u), n;
+    for (n = 0; n < MENU_PROBES; n++, i = (i + 1u) & (MENU_NOTED - 1u))
+        if (!s_menu_note[i].model || s_menu_note[i].model == model) return i;
+    return MENU_NOTED;
+}
+static int button_words(uint32_t model, uint32_t words[BUTTON_WORDS])
+{
+    if (model < 0x10000u || model > ADX_GUEST_RAM - BUTTON_WORDS * 4u) return 0;
+    memcpy(words, (const uint8_t *)g_xbox_mem_offset + model, BUTTON_WORDS * 4u);
+    return 1;
+}
+static void button_note(uint32_t model, uint32_t id)
+{
+    uint32_t words[BUTTON_WORDS];
+    unsigned i;
+    if (!button_words(model, words)) return;
+    for (i = 0; i < BUTTON_NOTED; i++)
+        if (s_button_note[i].model == model) break;
+    if (i == BUTTON_NOTED) i = s_button_next++ % BUTTON_NOTED;
+    s_button_note[i].model = model;
+    s_button_note[i].id = id;
+    memcpy(s_button_note[i].words, words, sizeof words);
+}
+/* The display set's id of a noted button at model, still the same object,
+ * or 0. */
+static uint32_t button_noted(uint32_t model)
+{
+    uint32_t words[BUTTON_WORDS];
+    unsigned i;
+    if (!model) return 0;
+    for (i = 0; i < BUTTON_NOTED; i++)
+        if (s_button_note[i].model == model)
+            return button_words(model, words) && !memcmp(words, s_button_note[i].words, sizeof words)
+                 ? s_button_note[i].id : 0;
+    return 0;
+}
+extern void sub_00025700_gen(void);
+void sub_00025700(void)
+{
+    const uint32_t group = MEM32(g_esp + 4u), set = MEM32(g_esp + 8u), type = MEM32(g_esp + 12u),
+                   id = MEM32(g_esp + 16u);
+    uint32_t i;
+    sub_00025700_gen();
+    if (!g_eax) return;
+    if (group == BUTTON_GROUP && type == BUTTON_TYPE && prompt_buttons_id(id) >= 0) {
+        button_note(g_eax, id);
+        return;
+    }
+    i = menu_slot(g_eax);
+    if (i >= MENU_NOTED || s_menu_note[i].model) return;
+    s_menu_note[i].model = g_eax;
+    s_menu_note[i].group = group;
+    s_menu_note[i].set = set;
+    s_menu_note[i].type = type;
+    s_menu_note[i].id = id;
+}
+/* Whether model is one noted and not yet told of: its walk watched. */
+static uint32_t menu_watch(uint32_t model)
+{
+    uint32_t i;
+    if (s_watch.button >= 0 || !model) return MENU_NOTED;
+    i = menu_slot(model);
+    if (i >= MENU_NOTED || s_menu_note[i].model != model || s_menu_note[i].told
+        || s_menu_tells[menu_bucket(s_menu_note[i].group)] >= MENU_TELLS)
+        return MENU_NOTED;
+    memset(&s_watch, 0, sizeof s_watch);
+    s_watch.model = model;
+    return i;
+}
+static void menu_told(uint32_t i)
+{
+    float focal, tall, x = 0.0f, y = 0.0f, half = 0.0f;
+    uint32_t view[4];
+    int placed, *tells = &s_menu_tells[menu_bucket(s_menu_note[i].group)];
+    prompt_view(&focal, &tall, view);
+    placed = prompt_buttons_place(&s_watch, focal, tall, view, &x, &y, &half);
+    s_menu_note[i].told = 1;
+    s_watch.button = -1;
+    if (placed && !(2.0f * half < MENU_SMALL)) return;
+    ++*tells;
+    if (placed)
+        fprintf(stderr, "[INPUT] button prompts: a model of group 0x%X's set %u, type %u, id 0x%X (at %08X): "
+                "node %u of %u, sphere %.2f, scale %.3f, on screen at %.1f, %.1f, %.1f pixels across, in art "
+                "%d\n", (unsigned)s_menu_note[i].group, (unsigned)s_menu_note[i].set,
+                (unsigned)s_menu_note[i].type, (unsigned)s_menu_note[i].id, (unsigned)s_watch.model,
+                s_watch.node, s_watch.nodes, (double)s_watch.r, (double)s_watch.scale, (double)x, (double)y,
+                (double)(2.0f * half), input_prompts_art_now());
+    else
+        fprintf(stderr, "[INPUT] button prompts: a model of group 0x%X's set %u, type %u, id 0x%X (at %08X): "
+                "%u nodes, none in front\n", (unsigned)s_menu_note[i].group, (unsigned)s_menu_note[i].set,
+                (unsigned)s_menu_note[i].type, (unsigned)s_menu_note[i].id, (unsigned)s_watch.model,
+                s_watch.nodes);
+    if (*tells == MENU_TELLS)
+        fprintf(stderr, "[INPUT] button prompts: %d small models told of (group 0x%X's bucket); no more\n",
+                MENU_TELLS, (unsigned)s_menu_note[i].group);
+}
+/* A model the getter noted as a button (above), opened as one. */
+static int button_begin(uint32_t model)
+{
+    const uint32_t id = button_noted(model);
+    return id && prompt_buttons_open(&s_flat, model, id, input_prompts_art_now(), s_in_box > 0);
+}
+void sub_00047690(void)
+{
+    uint8_t *mem = (uint8_t *)g_xbox_mem_offset;
+    const uint32_t esp = g_esp;
+    float focal, tall;
+    uint32_t view[4];
+    if (s_flat.button >= 0
+        || !(prompt_buttons_begin(&s_flat, mem, ADX_GUEST_RAM, disp_models(), g_ecx,
+                                  input_prompts_art_now(), s_in_box > 0)
+             || button_begin(g_ecx))) {
+        const uint32_t watch = s_flat.button < 0 ? menu_watch(g_ecx) : MENU_NOTED;
+        if (watch < MENU_NOTED) s_watch.button = 0;
+        wide_menu_model_draw();
+        if (watch < MENU_NOTED) menu_told(watch);
+        return;
+    }
+    sub_00047690_gen();
+    /* Its `ret 8`: the walk, with every node skipped, leaves the stack as
+     * the draw found it. */
+    RECOMP_CHECK(g_esp == esp + 12u, "the flat button's walk left esp at %08X, not %08X", g_esp, esp + 12u);
+    prompt_view(&focal, &tall, view);
+    prompt_buttons_end(&s_flat, mem, MEM32(D3D_DEVICE), focal, tall, view, d3d_make_space);
+}
+/* sub_0006EC80: the message box's draw (class 0x1CC660, slot +0xC, this in
+ * ecx), which draws its frame and its A and B through the models' draw:
+ * while it runs, a button drawn flat is the box's (prompt_buttons.h).
+ * Nothing in it is wrong: a feature's hook. */
+extern void sub_0006EC80_gen(void);
+void sub_0006EC80(void)
+{
+    s_in_box++;
+    sub_0006EC80_gen();
+    s_in_box--;
+}
 /* The node functions, one for each way the models' draw can draw a node
  * (the table at 0x1FA1B0, by the model's mode: sub_0005BE50 for 0,
  * sub_0005BD80 for 1, the fixed-function pass, sub_0005BF00 for 3,
@@ -4966,18 +5164,34 @@ static void wide_menu_node(void (*body)(void), uint32_t via)
     body();
     wide_menu_unmark(WIDE_MENU_PIECE_SLIDERS, marked);
 }
+/* While a button is drawn flat (sub_00047690, above), its node is handed
+ * in with its matrix on top, and not drawn. The pose's walks never read
+ * what a node function returns (sub_000479D0, sub_00047BE0, sub_0005E9B0's
+ * loop). With the body skipped, its `ret` is done here: the esp it would
+ * leave comes back from prompt_buttons_node_ret. */
+static void model_node(void (*body)(void), uint32_t via)
+{
+    if (s_flat.button >= 0) {
+        g_esp = prompt_buttons_node_ret(&s_flat, (const uint8_t *)g_xbox_mem_offset, ADX_GUEST_RAM, g_esp);
+        return;
+    }
+    /* A menu's model watched (menu_watch, above): its node taken, and drawn. */
+    if (s_watch.button >= 0)
+        prompt_buttons_node(&s_watch, (const uint8_t *)g_xbox_mem_offset, ADX_GUEST_RAM, MEM32(g_esp + 8u));
+    wide_menu_node(body, via);
+}
 extern void sub_0005BE50_gen(void);
-void sub_0005BE50(void) { wide_menu_node(sub_0005BE50_gen, 0x0005BE50u); }
+void sub_0005BE50(void) { model_node(sub_0005BE50_gen, 0x0005BE50u); }
 extern void sub_0005BD80_gen(void);
-void sub_0005BD80(void) { wide_menu_node(sub_0005BD80_gen, 0x0005BD80u); }
+void sub_0005BD80(void) { model_node(sub_0005BD80_gen, 0x0005BD80u); }
 extern void sub_0005BF00_gen(void);
-void sub_0005BF00(void) { wide_menu_node(sub_0005BF00_gen, 0x0005BF00u); }
+void sub_0005BF00(void) { model_node(sub_0005BF00_gen, 0x0005BF00u); }
 extern void sub_0005C840_gen(void);
-void sub_0005C840(void) { wide_menu_node(sub_0005C840_gen, 0x0005C840u); }
+void sub_0005C840(void) { model_node(sub_0005C840_gen, 0x0005C840u); }
 extern void sub_0005C990_gen(void);
-void sub_0005C990(void) { wide_menu_node(sub_0005C990_gen, 0x0005C990u); }
+void sub_0005C990(void) { model_node(sub_0005C990_gen, 0x0005C990u); }
 extern void sub_0005CB90_gen(void);
-void sub_0005CB90(void) { wide_menu_node(sub_0005CB90_gen, 0x0005CB90u); }
+void sub_0005CB90(void) { model_node(sub_0005CB90_gen, 0x0005CB90u); }
 /* sub_000FC370: the HUD signs' draw (class 0x1D1B68, this in ecx). The map
  * makes one too, an area's name: the strip at the top left of the street
  * pause menu, which goes to the left edge with that menu's left-hand parts.
@@ -5057,9 +5271,13 @@ void sub_00115F40(void)
  * of its own for the side its x is on (widescreen_menus_text_side): the
  * float at +4. While the ticker draws, its text is drawn at once across the
  * whole width, its x spread out from the middle (widescreen_menus_ticker_x)
- * and put back after. */
+ * and put back after. Any other text that is one of the game's lines
+ * naming the A or B button by its letter, in a style that draws those
+ * (prompt_text.h, below), is drawn at once too, through sub_0003D610's
+ * override, so its pictures are drawn with it. */
 extern void sub_0003D5D0_gen(void);
 extern void sub_0003D610(void);
+static int text_line_now(void);
 void sub_0003D5D0(void)
 {
     uint8_t *arg_x = (uint8_t *)g_xbox_mem_offset + g_esp + 4;
@@ -5094,6 +5312,12 @@ void sub_0003D5D0(void)
         int marked = wide_menu_mark(piece, side);
         sub_0003D610();
         wide_menu_unmark(piece, marked);
+        return;
+    }
+    /* A line naming the A or B by its letter, in a style that draws it: at
+     * once, with its pictures (prompt_text.h, below). */
+    if (text_line_now()) {
+        sub_0003D610();
         return;
     }
     sub_0003D5D0_gen();
@@ -5447,7 +5671,9 @@ static int s_prompt_logged, s_prompt_no_font;
  * fades with no opacity of its own: it shows while the prompt is half in
  * or more. JSRF_SKIP_A_MODEL (a number) draws another of the set's models
  * instead, and JSRF_SKIP_A_SIZE (a factor) another size, for trying them
- * on the PC without a new build.
+ * on the PC without a new build. In a button prompts' style other than the
+ * game's own art, the models' draw draws it as a flat picture, as the boxes' A
+ * (prompt_buttons.h).
  *
  * The set (D:\Media\Disp\SprNorm.bin, or SprNorm1 to 4 by sub_00043700's
  * answer, loaded by sub_000348A0 a step a frame) isn't always there: the
@@ -5554,6 +5780,26 @@ static uint32_t disp_holder(void)
 {
     const uint32_t gm = MEM32(GAME_MANAGER);
     return gm ? MEM32(gm + GM_ACTORS + DISP_ACTOR * 4u) : 0;
+}
+static uint32_t disp_models(void)
+{
+    const uint32_t holder = disp_holder();
+    const uint32_t set = holder ? MEM32(holder + DISP_SET) : 0;
+    return set ? MEM32(set + DISP_MODELS) : 0;
+}
+/* The game's device's projection now, as prompt_a_draw reads it, for a
+ * button drawn flat (sub_00047690, prompt_buttons_place): its focal length,
+ * the height's share of it, and the viewport. */
+static void prompt_view(float *focal, float *tall, uint32_t view[4])
+{
+    const uint32_t dev = MEM32(GAME_DEVICE);
+    *focal = dev ? bits_f32(MEM32(dev + DEV_FOCAL)) : 0.0f;
+    *tall = dev ? bits_f32(MEM32(dev + DEV_TALL)) : 1.0f;
+    if (!(*tall > 0.5f && *tall < 2.0f)) *tall = 1.0f;
+    view[0] = MEM32(VIEW_NOW);
+    view[1] = MEM32(VIEW_NOW + 4u);
+    view[2] = MEM32(VIEW_NOW + 8u);
+    view[3] = MEM32(VIEW_NOW + 12u);
 }
 static int disp_loading(uint32_t holder)
 {
@@ -5795,6 +6041,143 @@ static void prompt_draw(void)
     wide_hud_end(WIDE_HUD_SKIP, marked);
     g_esp = esp;
 }
+/* ---- The game's lines naming the A or B button (prompt_text.h) --------------
+ * sub_0003D610, the font's call that draws at once (x, y, depth, colour,
+ * x scale, y scale, text; cdecl), wrapped: a text that is one of the
+ * game's lines naming the A or B button by its letter (prompt_text_match),
+ * in any style but Default (the game's own art), is drawn in pieces
+ * through the call's own body, each letter's place left for its picture, a
+ * mark in the push buffer (prompt_text_draw); any other text, and every
+ * text in Default, is the call's own. The font call that queues,
+ * sub_0003D5D0, hands such a line here (its override, above), as do the
+ * widescreen menus'. The pieces go below the stack the caller left, with
+ * room under it for each piece's text; the pen the font leaves gives where
+ * each piece ended, and the game's measure (sub_0003D750, its float read
+ * off the x87 stack) a letter's width. Then the call returns to its caller
+ * as its own `ret` would. The first time each line is drawn so, the log
+ * says where its first picture went. tests/prompt_text checks the table,
+ * the matching and the pieces; how the lines look needs the game, the test
+ * build's steps. */
+#include "prompt_text.h"
+#include "nv2a_prompts.h"          /* the mark */
+extern void sub_0003D610_gen(void);
+extern void sub_0003D750(void);
+#define TEXT_FONT_ARGS 7u
+/* guest_call_cdecl, for a function returning a float on the x87 stack: the
+ * float, the stack as it was. */
+static float guest_call_float(void (*fn)(void), uint32_t ra, int nargs, const uint32_t *args)
+{
+    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
+    uint32_t sv[8];
+    int top = g_fp_top, i;
+    float f;
+    sv[0] = g_eax; sv[1] = g_ecx; sv[2] = g_edx; sv[3] = g_ebx;
+    sv[4] = g_esp; sv[5] = g_ebp; sv[6] = g_esi; sv[7] = g_edi;
+    for (i = nargs - 1; i >= 0; i--) { g_esp -= 4; *(uint32_t *)(m + g_esp) = args[i]; }
+    g_esp -= 4; *(uint32_t *)(m + g_esp) = ra;
+    fn();
+    f = (float)g_fp_stack[g_fp_top & 7];
+    g_eax = sv[0]; g_ecx = sv[1]; g_edx = sv[2]; g_ebx = sv[3];
+    g_esp = sv[4]; g_ebp = sv[5]; g_esi = sv[6]; g_edi = sv[7];
+    g_fp_top = top;
+    return f;
+}
+/* A call's arguments and what its pieces need. */
+typedef struct {
+    uint32_t a[TEXT_FONT_ARGS], ra, font;
+    int art, marks;
+    float first[3];
+} TextCall;
+static int text_draw(void *ctx, uint32_t va, float x, float y, float *pen_x, float *pen_y)
+{
+    TextCall *t = (TextCall *)ctx;
+    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
+    uint32_t a[TEXT_FONT_ARGS];
+    memcpy(a, t->a, sizeof a);
+    memcpy(&a[0], &x, sizeof x);
+    memcpy(&a[1], &y, sizeof y);
+    a[6] = va;
+    guest_call_cdecl(sub_0003D610_gen, t->ra, (int)TEXT_FONT_ARGS, a);
+    memcpy(pen_x, m + t->font + PROMPT_TEXT_PEN_X, sizeof *pen_x);
+    memcpy(pen_y, m + t->font + PROMPT_TEXT_PEN_Y, sizeof *pen_y);
+    return 1;
+}
+static float text_measure(void *ctx, uint32_t va, float scale)
+{
+    const TextCall *t = (const TextCall *)ctx;
+    uint32_t a[2];
+    memcpy(&a[0], &scale, sizeof scale);
+    a[1] = va;
+    return guest_call_float(sub_0003D750, t->ra, 2, a);
+}
+static void text_mark(void *ctx, int button, float x, float y, float half)
+{
+    TextCall *t = (TextCall *)ctx;
+    uint32_t words[NV2A_PROMPT_MARK_WORDS];
+    const uint32_t device = MEM32(D3D_DEVICE);
+    words[0] = nv2a_prompts_mark_alpha(nv2a_prompts_mark(button, 0, t->art), t->a[3] >> 24);
+    memcpy(&words[1], &x, sizeof x);
+    memcpy(&words[2], &y, sizeof y);
+    memcpy(&words[3], &half, sizeof half);
+    if (!t->marks++) {
+        t->first[0] = x;
+        t->first[1] = y;
+        t->first[2] = half;
+    }
+    if (device) prompt_buttons_push((uint8_t *)g_xbox_mem_offset, device, words, d3d_make_space);
+}
+static PromptTextMatch s_text;        /* the line text_line_now found */
+/* Whether the font call's text (its seventh argument) is a line, in a style
+ * that draws it: s_text then holds it. */
+static int text_line_now(void)
+{
+    const int art = input_prompts_art_now();
+    if (art == PROMPT_ART_GAME) return 0;
+    return prompt_text_match(prompt_text_lines, prompt_text_nlines, (const uint8_t *)g_xbox_mem_offset,
+                             ADX_GUEST_RAM, MEM32(g_esp + 4u * TEXT_FONT_ARGS), &s_text);
+}
+void sub_0003D610(void)
+{
+    static unsigned char told[256];
+    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
+    const uint32_t esp = g_esp, gm = MEM32(GAME_MANAGER);
+    PromptTextCalls c = { text_draw, text_measure, text_mark, NULL };
+    TextCall t;
+    float f[4];
+    uint32_t i, text;
+    int line;
+    if (!text_line_now()) {
+        sub_0003D610_gen();
+        return;
+    }
+    memset(&t, 0, sizeof t);
+    t.font = gm ? MEM32(gm + GM_ACTORS + FONT_ACTOR * 4u) : 0;
+    if (!t.font) {
+        sub_0003D610_gen();
+        return;
+    }
+    t.art = input_prompts_art_now();
+    t.ra = MEM32(esp);
+    for (i = 0; i < TEXT_FONT_ARGS; i++) t.a[i] = MEM32(esp + 4u + 4u * i);
+    memcpy(&f[0], &t.a[0], sizeof f[0]);
+    memcpy(&f[1], &t.a[1], sizeof f[1]);
+    memcpy(&f[2], &t.a[4], sizeof f[2]);
+    memcpy(&f[3], &t.a[5], sizeof f[3]);
+    text = t.a[6];
+    line = s_text.line;
+    c.ctx = &t;
+    g_esp = (esp - (s_text.len + 16u)) & ~15u;
+    prompt_text_draw(&s_text, m, text, g_esp, f[0], f[1], f[2], f[3], &c);
+    if (line < (int)sizeof told && !told[line] && t.marks) {
+        told[line] = 1;
+        fprintf(stderr, "[INPUT] button prompts: the game's line at %08X drawn with %d picture%s in art %d, "
+                "from %.1f, %.1f at scale %.2f: the first at %.1f, %.1f, %.1f pixels across\n",
+                (unsigned)prompt_text_lines[line].va, t.marks, t.marks == 1 ? "" : "s", t.art, (double)f[0],
+                (double)f[1], (double)f[3], (double)t.first[0], (double)t.first[1],
+                (double)(2.0f * t.first[2]));
+    }
+    g_esp = esp + 4u;   /* its `ret`: the caller takes its arguments off */
+}
 static void photo_draw(void);
 void sub_000131F0(void)
 {
@@ -5912,7 +6295,9 @@ void sub_00066550(void)
 /* sub_00071100: VS mode's setup screen's draw, its object's (class
  * 0x1CCA80, slot +0xC; one argument, the pass, ret 4). The screen's layout,
  * one full-screen picture, is fitted into the 4:3 screen with its panels'
- * shades, and its teal carried out to the screen's edges. */
+ * shades, and its teal carried out to the screen's edges. Its draw (through
+ * sub_0006FE40 or sub_00070060, which it jumps to) is flat quads and text
+ * only: its 3D models, the Back among them, are its objects' (below). */
 extern void sub_00071100_gen(void);
 void sub_00071100(void)
 {
@@ -5920,6 +6305,33 @@ void sub_00071100(void)
     sub_00071100_gen();
     widescreen_menus_fill_end(began);
 }
+/* The VS setup screen's 3D models, its Back among them, which the renderer
+ * draws upright in any style but Default (nv2a_prompts.h), at the screen's
+ * own size (prompt_buttons.h, PROMPT_BUTTONS_VS_UPRIGHT). The screen makes
+ * three kinds of object for them as it opens (sub_00071850), each drawn on
+ * its own from the game's list of objects, never inside the screen's draw:
+ * class 0x1CCA38's (sub_00070C90), 0x1D7B60's (sub_001199C0) and
+ * 0x1D7BA0's (sub_0011A070), each its class's slot +0xC (this in ecx; one
+ * argument, the pass, ret 4), and each class made only there. So each
+ * draw is marked with the screen's size before it and the size back after
+ * it. Until prompts18 the mark was put round the screen's own draw, where
+ * no model is, and the Back kept every menu's size (spriteice, 6:26pm and
+ * 7:07pm UTC+8 on 22 November 2026: still too large).
+ * Nothing in these functions is wrong: a feature's hook. */
+static void vs_models_draw(void (*draw)(void))
+{
+    uint8_t *mem = (uint8_t *)g_xbox_mem_offset;
+    const uint32_t device = MEM32(D3D_DEVICE);
+    int sized = prompt_buttons_upright(mem, device, PROMPT_BUTTONS_VS_UPRIGHT, d3d_make_space) != 0;
+    draw();
+    if (sized) prompt_buttons_upright(mem, device, NV2A_PROMPT_UPRIGHT_GROW, d3d_make_space);
+}
+extern void sub_00070C90_gen(void);
+void sub_00070C90(void) { vs_models_draw(sub_00070C90_gen); }
+extern void sub_001199C0_gen(void);
+void sub_001199C0(void) { vs_models_draw(sub_001199C0_gen); }
+extern void sub_0011A070_gen(void);
+void sub_0011A070(void) { vs_models_draw(sub_0011A070_gen); }
 /* The result screens (widescreen_menus.h): the choice's draw, its class's
  * slot +0xC (this in ecx; one argument, the pass, ret 4), marked whole for
  * the right edge on the passes it draws on. The race time's is marked the

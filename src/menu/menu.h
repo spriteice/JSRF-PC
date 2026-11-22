@@ -222,21 +222,24 @@ typedef struct XBOX_MENU_ITEM {
 #define XBOX_GROUP_SOULS        "Graffiti souls"
 
 /* Graphics' submenu, at its foot (nv2a_gl.c adds it): Upscaling, for the
- * rows that draw the game from sharper copies -- Menus and HUD, Textures
- * and Graffiti (2D, 3D and graffiti upscaling), then Sharpness, Edge
- * strength and Cleanup. */
+ * rows that draw the game from sharper copies -- Menus and HUD, Buttons,
+ * Textures and Graffiti (2D, the button prompts' pictures', 3D and graffiti
+ * upscaling), then Sharpness, Edge strength and Cleanup. */
 #define XBOX_GROUP_UPSCALING    "Upscaling"
 
 /* Input's submenus, in its order: Controller layout, then Keyboard layout,
  * which press each of the game's controls (src/input/input_remap.c adds
- * them, with their rows); Free camera (port/freecam.c adds it, with its
- * rows); then Behaviour, for how the game's camera, the keys and the
- * sticks act (Camera, port/camera_scenes.c, whose first two ticks are
- * port/camera_walls.c's Default cam fix and No skater fade, then Keyboard
- * moves, port/keyboard_move.c, then Stick shape, src/input/stick_shape.c:
- * each adds it with its rows, and those after the first add nothing). */
+ * them, with their rows); Button prompts, the game's button icons
+ * (src/input/input_prompts.c adds it, with its row, right after them); Free
+ * camera (port/freecam.c adds it, with its rows); then Behaviour, for how
+ * the game's camera, the keys and the sticks act (Camera,
+ * port/camera_scenes.c, whose first two ticks are port/camera_walls.c's
+ * Default cam fix and No skater fade, then Keyboard moves,
+ * port/keyboard_move.c, then Stick shape, src/input/stick_shape.c: each
+ * adds it with its rows, and those after the first add nothing). */
 #define XBOX_GROUP_PAD_LAYOUT   "Controller layout"
 #define XBOX_GROUP_KEY_LAYOUT   "Keyboard layout"
+#define XBOX_GROUP_PROMPTS      "Button prompts"
 #define XBOX_GROUP_FREECAM      "Free camera"
 #define XBOX_GROUP_BEHAVIOUR    "Behaviour"
 #define XBOX_GROUP_BEHAVIOUR_HINT "Sets how the camera, the keys and the sticks act."

@@ -3,7 +3,9 @@
  * Super-xBR on the device (the passes below). Three rows ask for it, each
  * with its own rule, which says which textures are its own from how a draw
  * binds them, never from a list of them; nv2a_gl.c keeps the texture cache,
- * notes each binding on its entry and asks each.
+ * notes each binding on its entry and asks each. A fourth, Buttons, needs
+ * no rule: it copies the button prompts' own pictures, not the game's
+ * (below).
  *
  * 2D upscaling: the game's 2D art -- its menus, fonts, HUD and icons.
  *
@@ -487,6 +489,22 @@ int nv2a_upg_factor(uint32_t w, uint32_t h, int factor);
 /* The summary line for a second of graffiti work, "[UPSCALE] graffiti 2x:
  * ...", as nv2a_up3_second_line's under NV2A_UPG_HELD_MAX. */
 int nv2a_upg_second_line(char *buf, size_t n, const Nv2aUpSecond *s);
+
+/* ---- Buttons upscaling: the button prompts' pictures ----------------------
+ *
+ * Graphics > Upscaling > Buttons: the button prompts' pictures
+ * (nv2a_prompts.h), which JSRF-PC adds over the game's art, each drawn from
+ * a Super-xBR copy of the whole picture, at Off, 2x, 4x or 8x
+ * (nv2a_up_factor), at Sharpness and Edge strength. Nothing of the game's
+ * own: its art is Menus and HUD's, its world Textures', its tags
+ * Graffiti's. A picture is at most 128 pixels a side, so its copy at 8x is
+ * at most 1024 (4 MB); only those of the pictures shown are made
+ * (nv2a_gl.c, prompts_picture). */
+
+/* The setting a new install starts with: Off (spriteice, 22 November 2026,
+ * with the new pictures, which are smooth 100- and 128-pixel art, not
+ * pixel tiles). */
+#define NV2A_UPB_DEFAULT 0
 
 /* ---- The copy's passes (nv2a_upscale_glsl.c) ------------------------------
  *

@@ -27,3 +27,11 @@ a courtesy.
 `third_party/imgui/LICENSE.txt`, for the copy of it under `third_party/imgui`
 (see NOTICE). The MIT licence asks that it go with every copy, the packaged
 builds included.
+
+`CC0-1.0.txt` is the Creative Commons CC0 1.0 Universal dedication,
+verbatim (the text GitHub's licence templates and Debian carry), under
+which Juliocacko's Free Input Prompts and Xelu's Free Controller & Key
+Prompts are published: the button prompts' pictures in `src/input/prompts`
+are made from them (see NOTICE). CC0 asks for nothing, not even the text
+going with them; it is here, and in the packages, so a player can see what
+the pictures are under.

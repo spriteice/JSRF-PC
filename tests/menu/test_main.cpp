@@ -415,6 +415,42 @@ static void *add_late_rows(void *arg)
 static int g_just = 1;
 static int g_pad = 1;           /* the strip shows the pad's buttons, not the keys */
 
+/* The window's pictures for the strip (menu.cpp, nv_window_prompt_picture):
+ * none, as in the Xbox style, until g_pictures; then a texture of its own
+ * for each, the input plus PICTURE_TEX, and the inputs asked for, with the
+ * keys' or the pad's (g_asked_pads counts the pad's), at what size. With
+ * g_keys_style 1, the Keyboard style, the window's prompts are the keys'
+ * whatever was pressed (nv_window_prompt_keys), and it has no picture for
+ * a pad's button, as nv2a_gl.c has none; with -1, a pad's style, the pad's
+ * whatever was pressed. */
+#define PICTURE_TEX 1000
+static int g_pictures, g_keys_style, g_asked[8], g_nasked, g_asked_keys, g_asked_pads, g_asked_px;
+extern "C" int nv_window_prompt_picture(int keys, int input, int px, ImU64 *tex)
+{
+    if (!g_pictures) return 0;
+    if (g_nasked < 8) g_asked[g_nasked++] = input;
+    g_asked_keys = keys;
+    g_asked_pads += !keys;
+    g_asked_px = px;
+    if (g_keys_style > 0 && !keys) return 0;
+    *tex = (ImU64)(PICTURE_TEX + input);
+    return 1;
+}
+extern "C" int nv_window_prompt_keys(void) { return g_keys_style; }
+
+/* The strip's pictures drawn this frame: a bit for each input's texture. */
+static unsigned strip_pictures(void)
+{
+    ImGuiWindow *w = ImGui::FindWindowByName("##hints");
+    unsigned bits = 0;
+    if (w)
+        for (const ImDrawCmd &c : w->DrawList->CmdBuffer) {
+            ImU64 t = c.TexRef._TexData ? 0 : (ImU64)c.TexRef._TexID;   /* the font's has no id here */
+            if (t >= PICTURE_TEX && t < PICTURE_TEX + 512 && c.ElemCount) bits |= 1u << ((t - PICTURE_TEX) % 32);
+        }
+    return bits;
+}
+
 /* Frames drawn with no menu, or box, in them, and the bar not the player's
  * either. */
 static int s_bare;
@@ -506,6 +542,12 @@ static int strip_fits(int lines)
             w->Size.x, w->Size.y, io.DisplaySize.x, io.DisplaySize.y, inside / line, in);
     return in && w->Pos.x == 0.0f && w->Size.x == io.DisplaySize.x && w->Pos.y + w->Size.y == io.DisplaySize.y &&
            (lines ? fabsf(inside - lines * line) < 1.0f : inside < 2 * line);
+}
+/* The strip's height, and the room inside it. */
+static float strip_tall(int inside)
+{
+    ImGuiWindow *w = ImGui::FindWindowByName("##hints");
+    return !w ? 0.0f : inside ? w->Size.y - ImGui::GetStyle().WindowPadding.y * 2 : w->Size.y;
 }
 static int strip_has_a(void)
 {
@@ -666,6 +708,52 @@ int main(void)
      * buttons. */
     CHECK(hint_is(NULL));
     CHECK(strip_fits(0) && strip_has_a());
+    const float caps_tall = strip_tall(0);
+    /* In another style, the strip's buttons are the window's pictures, the
+     * pad's A, B and Back (input_layout.h's numbers), each a square of the
+     * picture's size, and its own caps aren't drawn; then the keys' Enter,
+     * Esc and F1; and back in the Xbox style, its own caps again. */
+    g_pictures = 1;
+    g_nasked = 0;
+    frame();
+    CHECK(strip_fits(0) && !strip_has_a());
+    CHECK(strip_pictures() == (1u << 0 | 1u << 1 | 1u << 4) && !g_asked_keys);
+    CHECK(g_nasked >= 3 && g_asked[0] == 0 && g_asked[1] == 1 && g_asked[2] == 4);
+    CHECK(g_asked_px == (int)ImCeil(ImGui::GetFontSize() * 1.8f));
+    /* As tall as a picture inside, 12.5% larger than they were (spriteice,
+     * 2026-11-22); in the Xbox style as tall as it was. */
+    CHECK(strip_tall(1) >= g_asked_px && strip_tall(0) > caps_tall);
+    g_pad = 0;
+    frame();
+    CHECK(strip_fits(0) && g_asked_keys);
+    CHECK(strip_pictures() == (1u << (40 % 32) | 1u << (41 % 32) | 1u << (58 % 32)));
+    /* In the Keyboard style, the keys' Enter, Esc and F1 with the pad
+     * pressed last too, as the game's icons are the keys' then: none of
+     * the pad's asked for, which the window has no picture of in the keys'
+     * art (spriteice's bug in prompts1, 2026-11-21). */
+    g_pad = 1;
+    g_keys_style = 1;
+    g_nasked = g_asked_pads = 0;
+    frame();
+    CHECK(strip_fits(0) && !strip_has_a() && g_asked_keys && !g_asked_pads);
+    CHECK(strip_pictures() == (1u << (40 % 32) | 1u << (41 % 32) | 1u << (58 % 32)));
+    CHECK(g_nasked >= 3 && g_asked[0] == 40 && g_asked[1] == 41 && g_asked[2] == 58);
+    /* In a pad's style, the pad's A, B and Start with the keys pressed
+     * last, as the game's icons are the pad's then: only Auto follows the
+     * keys (spriteice, 2026-11-21). */
+    g_pad = 0;
+    g_keys_style = -1;
+    g_nasked = g_asked_pads = 0;
+    frame();
+    CHECK(strip_fits(0) && !strip_has_a() && !g_asked_keys && g_asked_pads);
+    CHECK(strip_pictures() == (1u << 0 | 1u << 1 | 1u << 4));
+    CHECK(g_nasked >= 3 && g_asked[0] == 0 && g_asked[1] == 1 && g_asked[2] == 4);
+    g_pad = 1;
+    g_keys_style = 0;
+    g_pictures = 0;
+    frame();
+    CHECK(strip_fits(0) && strip_has_a() && !strip_pictures());
+    CHECK(strip_tall(0) == caps_tall);
     /* The game dimmed behind it: the first thing drawn, across the window,
      * in the style's colour for what is behind a box. */
     {
@@ -1443,6 +1531,16 @@ int main(void)
     CHECK(strstr(open_menu(), "###bind") && centred("Controller layout###bind"));
     CHECK(hint_is(NULL) && strip_fits(0) && !strip_has_a());
     CHECK(!pad_navigates());
+    /* In the Keyboard style, the box's F1 None, though the pad was pressed
+     * last, and not the pad's Back. */
+    g_pictures = g_keys_style = 1;
+    g_nasked = g_asked_pads = 0;
+    frames(1);
+    CHECK(strip_fits(0) && strip_pictures() == 1u << (58 % 32) && g_nasked >= 1 && g_asked[0] == 58 &&
+          !g_asked_pads);
+    g_pictures = g_keys_style = 0;
+    frames(1);
+    CHECK(menu_bind_waiting() == XBOX_BIND_PAD && !strip_pictures());
     /* B in the box is no Back: the window hands it to the row (below). */
     frame(ImGuiKey_GamepadFaceRight); frames(2);
     CHECK(menu_bind_waiting() == XBOX_BIND_PAD);

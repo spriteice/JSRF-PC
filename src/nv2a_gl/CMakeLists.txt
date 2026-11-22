@@ -20,6 +20,7 @@ set(NV2A_GL_SOURCES
     nv2a_upscale.c              # 2D, 3D and graffiti upscaling: which textures each takes, and the caps
     nv2a_upscale_glsl.c         # upscaling: Super-xBR's passes, for the device
     nv2a_latency.c              # the input latency log: presses to the frames that show them
+    nv2a_prompts.c              # the button prompts: the game's icon textures, found and drawn over
 )
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     # The display's refreshes as the kernel counts them, for frame pacing
@@ -63,12 +64,14 @@ if(NV2A_GL_CONTEXT STREQUAL "sdl")
     endif()
     # The window hands each pad's buttons and triggers to the input layer
     # (src/input/input_remap.h, input_remap_pad_event), for the port's own
-    # controls, as the free camera's switch. src/input is added after this
-    # directory: the target is found when the build is generated.
-    target_link_libraries(xbox_nv2a_gl PRIVATE xbox_input)
+    # controls, as the free camera's switch.
 else()
     target_link_libraries(xbox_nv2a_gl PUBLIC OpenGL::GL EGL m)
 endif()
+# The button prompts (nv2a_prompts.c) draw the input layer's pictures
+# (src/input/prompt_art.h), with whichever context. src/input is added after
+# this directory: the target is found when the build is generated.
+target_link_libraries(xbox_nv2a_gl PRIVATE xbox_input)
 if(WIN32)
     # opengl32.dll exports OpenGL 1.1 and nothing after it; the 3.3 core entry
     # points come through libepoxy, which asks the driver for them.

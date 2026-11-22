@@ -21,6 +21,52 @@ camera, is the [free camera](#free-camera)'s switch, R3 by default, so the
 game's own Right stick click starts with none. Reset to default puts every
 button back.
 
+The game's button icons show the controller in your hands. The game draws
+four buttons as pictures, A, B, X and Y, and names the rest in words.
+Input > Button prompts > Style is Auto, Default, Xbox, PlayStation, Nintendo
+or Keyboard. Default, the style a new install starts with and the one each
+of File > Presets sets, is the game as the Xbox shows it: its own icons, its 3D
+A and B and its words, whatever the controller or the layouts. Auto follows
+the pad you last pressed, as SDL reports it: a PlayStation pad shows Cross,
+Circle, Square and Triangle in their colours, a Switch Pro pad or Joy-Cons
+the Switch's letters where the pad has them, and any other pad, the Steam
+Deck's own controls among them, the Xbox's; and keys while the keyboard or
+the mouse was the last thing you used, the pad's again at its next press.
+The other styles fix the look: Xbox, PlayStation and Nintendo the pad's
+whatever you press, and Keyboard keys, in the icons and along the F1 menu's
+foot alike; with Default, the foot follows the last thing pressed, as in
+Auto. In every style but Default, the icons follow both layouts: move A to Y
+on Controller layout and the A icon shows Y (or Triangle); on the keyboard,
+each shows the first key the control has on Keyboard layout. A control with
+nothing on it keeps the game's icon, and a button the
+pad set has no picture of shows the nearest: the back paddles the Xbox
+Elite's, and the touchpad PlayStation's. The PlayStation's Mute button, and
+a key with no picture of its own, is a blank key with its name on it. In
+every style but Default, the A and B beside a message box's text, and Skip
+cutscenes' A, are the style's pictures, flat and still pulsing, where the
+game turns its own in 3D; and where the game's text names the A or B button
+by its letter, the letter is the style's picture of it, a little taller
+than the text, in every language the game has: the line to press B to go
+back in the pause menu's notebook and graffiti picker, Roboy's test run's
+line to press A to start, the save, load and memory messages, and the
+graffiti save screen's. START, and the graffiti editor's help lines, stay as
+words. Where a menu leans its buttons, as the VS menu and the graffiti
+menus slant theirs, the style's pictures are drawn upright, in the same
+place: on the VS menu's screen about the size of the game's slanted button
+there. Everywhere else the style's pictures are drawn a little larger
+than the game's own icons: in the menus, on the HUD, beside the message
+boxes, in the lines of text and along the F1 menu's foot. The style is kept as
+`button_prompts=` in the settings file (0 Auto, 1 Default, the default, 2
+Xbox, 3 PlayStation, 4 Nintendo, 5 Keyboard). The pads' pictures are
+Juliocacko's Free Input Prompts, and the keys and the mouse Xelu's Free
+Controller & Key Prompts, both free to use (CC0): the Xbox face buttons in
+their colours, the PlayStation's symbols in colour on grey buttons,
+Nintendo's in red, yellow, blue and green, and every other button and key
+dark grey with its letters white, so they show on light and dark alike. A
+key or button they have no picture of, such as Scroll Lock, the
+PlayStation's Mute or an Xbox Elite pad's paddles (P1 to P4), is drawn as a
+blank key with its name.
+
 ## Keyboard
 
 Keys go by position, so W A S D on a QWERTY keyboard is Z Q S D on an AZERTY
@@ -227,8 +273,8 @@ behind it. F1, or Back on a controller, opens and closes it, and it opens on
 the bar alone. It works with a controller, the keyboard, or the mouse.
 B or Esc goes back a step, and a click outside the menus shuts them, back to
 the bar. Along the bottom, a line says what the row you're on does, beside
-the buttons to press. The game keeps running while it is open, but your
-input goes to the menu.
+the buttons to press, in Input > Button prompts' style. The game keeps
+running while it is open, but your input goes to the menu.
 
 - **File:** About (the version and system details), Presets, Restart, and Exit.
   Presets sets many settings at once, straight away, with no restart. Xbox
@@ -236,17 +282,17 @@ input goes to the menu.
   with everything JSRF-PC adds to how it looks and plays turned off. JSRF-PC
   default is the settings a new install starts with. Max quality is JSRF-PC
   default with the draw distance, anisotropic filtering, Upscaling's
-  Menus and HUD, Textures and Graffiti, and both anti-aliasings at their most,
+  Menus and HUD, Buttons, Textures and Graffiti, and both anti-aliasings at their most,
   as far as the graphics card goes, and Far buildings and Far shadows at 3x.
   A preset sets every setting but Developer's, Input's two layouts, Mute,
   Shader cache and Audio effects: each one also puts the game full screen,
   Upscaling's Cleanup as a new install has it, Keyboard moves at Camera,
-  and Stick shape at Square. Input > Behaviour > Camera and Input > Free
-  camera are yours: JSRF-PC default and Max quality leave them as they are,
-  and Xbox mode turns the free camera, Default cam fix and No skater fade
-  off and ticks the game's three shots, leaving the free camera's own
-  settings as they are. The one ticked is the one your settings match, if
-  any.
+  Stick shape at Square, and Button prompts' Style at Default. Input >
+  Behaviour > Camera and Input > Free camera are yours: JSRF-PC default and
+  Max quality leave them as they are, and Xbox mode turns the free camera,
+  Default cam fix and No skater fade off and ticks the game's three shots,
+  leaving the free camera's own settings as they are. The one ticked is the
+  one your settings match, if any.
 - **Display:** Full screen, the resolution (its choices as F9 gives them),
   the aspect ratio, the HUD submenu, the draw distance, the Building distance submenu (Far
   buildings and Far shadows), and a submenu at the end, Enhancements, with
@@ -332,14 +378,16 @@ input goes to the menu.
   settings file, and changing it restarts the game. No preset changes it.
   [The audio
   effects](technical/audio-effects.md) says how they work.
-- **Input:** Four submenus. Controller layout and Keyboard layout set
+- **Input:** Five submenus. Controller layout and Keyboard layout set
   which button, or key or mouse button, presses each of the game's
   controls ([Controller](#controller) and [Keyboard](#keyboard), above),
   and Controller layout the free camera's switch too. Each change is kept at
   once in `remap.cfg`, beside the settings file, a `pad_<control>=` or
   `key_<control>=` line with SDL's name for it, and only for a control that
   differs from its default; Reset to default puts its page back. No preset
-  changes them. Free camera has [the free
+  changes them. Button prompts has Style, the look of the game's button
+  icons and of the buttons along the menu's foot ([Controller](#controller),
+  above), Default in each preset. Free camera has [the free
   camera](#free-camera)'s own settings: Enable free camera, Auto centre,
   Invert X, Invert Y, Sensitivity X, Sensitivity Y, Deadzone (10% by
   default), Mouse look (on by default), and Mouse sensitivity (5 by
@@ -397,8 +445,9 @@ input goes to the menu.
   It is kept as `skipintro=` in the settings file. Skip cutscenes lets you
   leave a story scene, or a preview where the camera follows a rival to
   their place: while one plays, press A (the jump button), and "Press A
-  again to skip" fades in at the bottom right for 3 seconds, with the game's
-  own green A button, as its message boxes show it; press A again while it
+  again to skip" fades in at the bottom right for 3 seconds, with the A
+  button as the game's message boxes show it (its own green A, or the
+  button prompts' style's, [Controller](#controller)); press A again while it
   shows, and the scene ends as it does at its own end (a preview as if it
   had played out), the story going on from there. With it ticked, that is
   the one way for every scene and preview, those you've seen before too: the
@@ -558,13 +607,24 @@ These are in the in-game menu, under Graphics.
   finished picture, the HUD included. MSAA (2×, 4×, or 8×) gives the cleanest
   edges but asks the most of the graphics card. Use either, or both. SMAA is
   on by default, MSAA off.
-- **Upscaling:** A submenu at the foot of Graphics, with six rows:
+- **Upscaling:** A submenu at the foot of Graphics, with seven rows:
   - **Menus and HUD:** Off, 2×, 4×, or 8×. The menus, text, HUD and icons are
     drawn from sharper copies of the game's art, which the graphics card makes
     the first time each piece is shown. It helps above Default resolution; at
     Default they look as they always have. Each size suits a resolution: 2× for
     720p and 900p, 4× for 1080p to 1600p, and 8× for 2160p, whose copies take
     the most memory. 4× by default.
+  - **Buttons:** Off, 2×, 4×, or 8×. The button prompts' pictures JSRF-PC
+    adds, in every Button prompts style but Default, are drawn from copies of
+    them enlarged by Super-xBR as the game's art is, which the graphics card
+    makes the first time each picture is shown: on the HUD, in the menus and
+    message boxes, and along the foot of the F1 menu. It changes nothing
+    else; the game's own icons are Menus and HUD's. The pictures are smooth
+    and at most 128 pixels a side, larger than the game draws them up to
+    about 1440p, so Off draws them as they are, smoothly enlarged where the
+    screen is larger; 2× is enough at 2160p. A copy takes up to 1 MB of
+    memory at 4× and 4 MB at 8×, and only the pictures shown are copied.
+    Off by default.
   - **Textures:** Off, 2×, 4×, or 8×. The textures of the 3D world (walls, the
     ground, signs and the characters) are drawn from sharper copies, which the
     graphics card makes in a level's first moments, a few a frame. They show
@@ -582,12 +642,12 @@ These are in the in-game menu, under Graphics.
     the menu for a moment. The copies take up to 1 GB of the graphics card's
     memory, apart from Textures': about 85 MB a sheet at 4× and 340 MB at 8×.
     4× by default.
-  - **Sharpness:** Soft, Normal, or Sharp. How crisp the edges in the 2D, 3D and
-    graffiti copies are. Normal is Super-xBR as its author set it; Sharp draws
+  - **Sharpness:** Soft, Normal, or Sharp. How crisp the edges in the 2D, 3D,
+    buttons' and graffiti copies are. Normal is Super-xBR as its author set it; Sharp draws
     edges crisper and Soft softer, neither with halos. Changing it makes every
     copy again, which can pause the game for a moment. Normal by default.
   - **Edge strength:** Soft, Normal, or Strong. How faint a diagonal edge the
-    2D, 3D and graffiti copies follow. Normal is Super-xBR as its author set it;
+    2D, 3D, buttons' and graffiti copies follow. Normal is Super-xBR as its author set it;
     Strong follows fainter diagonals too, for smoother lines in fine detail, and
     Soft only clear ones, blending the rest. Changing it makes every copy again,
     which can pause the game for a moment. Normal by default.

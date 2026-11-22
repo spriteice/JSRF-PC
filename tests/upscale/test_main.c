@@ -867,6 +867,19 @@ static void factor_g(void)
                        "1 waiting, 0 dropped for the cap; 1 copies held, 341.0 MB of 1024 MB\n"));
 }
 
+/* ---- Buttons upscaling ------------------------------------------------------ */
+
+/* The setting: Off as a new install starts (spriteice, 22 November 2026,
+ * with the new pictures), the row's first choice; each choice its factor. */
+static void buttons(void)
+{
+    int i;
+    static const int f[NV2A_UP_CHOICES] = { 0, 2, 4, 8 };
+    CHECK(NV2A_UPB_DEFAULT == 0 && nv2a_up_choice(NV2A_UPB_DEFAULT) == 0);
+    for (i = 0; i < NV2A_UP_CHOICES; i++)
+        CHECK(nv2a_up_choice_factor(i) == f[i] && nv2a_up_choice(f[i]) == i);
+}
+
 static void second(void)
 {
     char buf[192];
@@ -1086,6 +1099,7 @@ int main(void)
     census_g();
     factor_g();
     tex_made();
+    buttons();
     if (s_failures) {
         printf("upscale: %d failed\n", s_failures);
         return 1;

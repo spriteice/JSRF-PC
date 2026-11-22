@@ -16,7 +16,8 @@ and stay under it.
 
 The code listed below keeps its own licence, with its copyright intact: the
 code JSRF-PC is built on, under MIT, and third-party code, under MIT and
-LGPL-2.1-or-later. It is other people's work and is credited as such.
+LGPL-2.1-or-later; and so do the button prompts' pictures, under CC0,
+their packs' dedication. It is other people's work and is credited as such.
 
 
 Additional permission for the generated code
@@ -117,7 +118,8 @@ MIT — miniz
                           Software
 
   The launchers' setup (launcher/setup) unpacks the tools' Python, a
-  .tar.gz, with it. Licensed under the MIT licence; the full text is in
+  .tar.gz, with it, and the engine decodes the button prompts' pictures
+  with it (src/input/prompt_art.c). Licensed under the MIT licence; the full text is in
   third_party/miniz/LICENSE, and the packages carry it as
   licences/miniz-MIT.txt.
 
@@ -140,6 +142,34 @@ The tools the player's PC builds the engine with
                           the MIT licence (ziglang/LICENSE), with those of
                           LLVM, the C libraries and the rest it carries,
                           beside each in ziglang/lib
+
+
+CC0 1.0 — Juliocacko's Free Input Prompts and Xelu's Free Controller & Key Prompts
+-----------------------------------------------------------------------------------
+
+  https://juliocacko.itch.io/free-input-prompts (Juliocacko)
+  https://thoseawesomeguys.com/prompts/ (Nicolae "Xelu" Berbece, Those
+  Awesome Guys)
+
+    src/input/prompts/    the button prompts' pictures, chosen by spriteice
+                          from both packs and made by src/input/prompts/
+                          make.py, only those used: the pads' from
+                          Juliocacko's, the Xbox and PlayStation ones
+                          shaded the Nintendo ones' grey (but the Xbox face
+                          buttons) and the PlayStation D-pad's lit arm
+                          outlined in black; the keys, the mouse and the
+                          PlayStation's Create and Options (the PS Vita's
+                          Select and Start) from Xelu's, the Enter key a
+                          single bar, its L's step cut off by spriteice;
+                          every one's colours more saturated
+                          (its README.md lists the changes)
+
+  Both packs are dedicated to the public domain under Creative Commons CC0
+  1.0 Universal, which asks for nothing; both authors welcome a credit, and
+  have it here and in src/input/prompts/README.md, with thanks. The text is
+  in LICENSES/CC0-1.0.txt, and the packages carry it as
+  licences/CC0-1.0.txt. The pictures of the consoles' buttons name and show
+  their owners' trademarks only to say which pad a picture is for.
 
 
 MIT — SMAA, the reference implementation

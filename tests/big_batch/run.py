@@ -30,7 +30,7 @@ here = root / "tests/big_batch"
 
 with tempfile.TemporaryDirectory(prefix="big-batch-") as directory:
     exe = str(pathlib.Path(directory) / "test")
-    subprocess.run(cc + ["-O2", "-std=gnu11", "-w", "-no-pie", "-I", str(root / "src/nv2a_gl"),
+    subprocess.run(cc + ["-O2", "-std=gnu11", "-w", "-no-pie", "-I", str(root / "src"), "-I", str(root / "src/input"), "-I", str(root / "src/nv2a_gl"),
                     "-I", str(root / "src/d3d"), str(here / "test_main.c"), "-o", exe,
                     "-Wl,--unresolved-symbols=ignore-all", "-lm"], check=True)
     run = subprocess.run([exe], capture_output=True, text=True, timeout=120)

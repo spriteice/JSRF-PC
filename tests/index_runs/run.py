@@ -74,7 +74,8 @@ with tempfile.TemporaryDirectory(prefix="index-runs-") as directory:
         raise SystemExit("index_runs: nv2a_gl.c no longer defines MAX_INDICES and MAX_INLINE")
     (tmp / "nv2a_gl.c").write_text(source, encoding="utf-8")
     gl = str(tmp / "gl")
-    subprocess.run(cc + ["-O2", "-std=gnu11", "-w", "-no-pie", "-I", str(tmp), "-I", str(root / "src/nv2a_gl"),
+    subprocess.run(cc + ["-O2", "-std=gnu11", "-w", "-no-pie", "-I", str(tmp), "-I", str(root / "src"), "-I", str(root / "src/input"),
+                    "-I", str(root / "src/nv2a_gl"),
                     "-I", str(root / "src/d3d"), str(here / "test_gl.c"), "-o", gl,
                     "-Wl,--unresolved-symbols=ignore-all", "-lm"], check=True)
     run = subprocess.run([gl], capture_output=True, text=True, timeout=120)

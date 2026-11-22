@@ -135,6 +135,8 @@ set(JSRF_SOURCES
     voice_follow.c
     widescreen_hud.c
     widescreen_menus.c
+    prompt_buttons.c
+    prompt_text.c
     resource_load.c
     cpuprof.c
     pcores.c

@@ -11,6 +11,7 @@
 #include "input_press.h"
 #include "input_layout.h"
 #include "input_remap.h"
+#include "input_prompts.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -183,6 +184,32 @@ static void list_devices(void)
     }
 }
 
+/* A pad's kind, for the button prompts (input_prompts.h), from what SDL
+ * reports of it. */
+_Static_assert((int)PROMPT_SDL_PS3 == (int)SDL_CONTROLLER_TYPE_PS3
+            && (int)PROMPT_SDL_PS4 == (int)SDL_CONTROLLER_TYPE_PS4
+            && (int)PROMPT_SDL_PS5 == (int)SDL_CONTROLLER_TYPE_PS5
+            && (int)PROMPT_SDL_SWITCH_PRO == (int)SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO
+            && (int)PROMPT_SDL_JOYCON_LEFT == (int)SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_LEFT
+            && (int)PROMPT_SDL_JOYCON_RIGHT == (int)SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT
+            && (int)PROMPT_SDL_JOYCON_PAIR == (int)SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR,
+               "the prompts' kinds of pad are SDL's");
+static const char *const k_kind_names[PROMPT_PADS] = {
+    [PROMPT_PAD_XBOX] = "Xbox", [PROMPT_PAD_PLAYSTATION] = "PlayStation",
+    [PROMPT_PAD_NINTENDO] = "Nintendo",
+};
+
+static int pad_kind(SDL_GameController *c)
+{
+    return input_prompts_kind((int)SDL_GameControllerGetType(c));
+}
+
+int xbox_InputPadKind(int instance)
+{
+    SDL_GameController *c = SDL_GameControllerFromInstanceID((SDL_JoystickID)instance);
+    return c ? pad_kind(c) : PROMPT_PAD_XBOX;
+}
+
 static void open_controllers(void)
 {
     int slot, i;
@@ -206,9 +233,11 @@ static void open_controllers(void)
             if (!g_pads[slot]) {
                 g_pads[slot] = SDL_GameControllerOpen(i);
                 if (g_pads[slot])
-                    fprintf(stderr, "[PAD] %s in slot %d\n",
+                    fprintf(stderr, "[PAD] %s in slot %d: SDL's type %d, prompts' kind %s\n",
                             SDL_GameControllerName(g_pads[slot])
-                                ? SDL_GameControllerName(g_pads[slot]) : "controller", slot);
+                                ? SDL_GameControllerName(g_pads[slot]) : "controller", slot,
+                            (int)SDL_GameControllerGetType(g_pads[slot]),
+                            k_kind_names[pad_kind(g_pads[slot])]);
                 break;
             }
     }

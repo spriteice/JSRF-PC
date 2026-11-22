@@ -468,6 +468,22 @@ typedef struct Nv2aGfx {
      * and the target as it was, where the device won't have the new size.
      * NULL where the backend has none. */
     int      (*target_resize)(uint32_t rt, uint32_t pw, uint32_t ph);
+
+    /* A w x h rectangle of `level` of `tex`, at (x, y) from its top-left
+     * texel, replaced by rgba's RGBA8 texels, rows from the top: the button
+     * prompts' pictures in an upscaled copy (nv2a_prompts.h). The backend as
+     * the next draw expects it. NULL where the backend has none. */
+    void     (*tex_put)(uint32_t tex, uint32_t level, uint32_t x, uint32_t y, uint32_t w,
+                        uint32_t h, const void *rgba);
+
+    /* `tex`, which tex_new made, drawn over the target being drawn into as
+     * the rectangle `rect`: its left, bottom, right and top in NDC (-1 to 1,
+     * y up), its first row at the top. Blended by its alpha (straight, not
+     * premultiplied) times `alpha` (0 to 1), with no depth test or write,
+     * no stencil, no window clip and no culling: the button prompts' flat
+     * pictures (nv2a_prompts.h, NV2A_PROMPT_MARK_METHOD). The backend as
+     * the next draw expects it. NULL where the backend has none. */
+    void     (*picture)(uint32_t tex, const float rect[4], float alpha);
 } Nv2aGfx;
 
 /* The implementation: OpenGL's. */

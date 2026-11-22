@@ -51,6 +51,7 @@ for f in LICENSE NOTICE; do crlf "$repo/$f" "$dir/licences/$f.txt"; done
 crlf "$repo/LICENSES/MIT-upstream.txt" "$dir/licences/MIT-upstream.txt"
 crlf "$repo/LICENSES/LGPL-2.1.txt" "$dir/licences/LGPL-2.1.txt"
 crlf "$repo/LICENSES/imgui-MIT.txt" "$dir/licences/imgui-MIT.txt"
+crlf "$repo/LICENSES/CC0-1.0.txt" "$dir/licences/CC0-1.0.txt"
 crlf "$repo/third_party/miniz/LICENSE" "$dir/licences/miniz-MIT.txt"
 if [ -n "${LICENCES_DIR:-}" ]; then
     for f in SDL2-COPYING.txt libepoxy-COPYING.txt winpthreads-COPYING.txt; do

@@ -46,6 +46,7 @@ install -m 644 "$repo/NOTICE" "$dir/licences/NOTICE.txt"
 install -m 644 "$repo/LICENSES/MIT-upstream.txt" "$dir/licences/MIT-upstream.txt"
 install -m 644 "$repo/LICENSES/LGPL-2.1.txt" "$dir/licences/LGPL-2.1.txt"
 install -m 644 "$repo/LICENSES/imgui-MIT.txt" "$dir/licences/imgui-MIT.txt"
+install -m 644 "$repo/LICENSES/CC0-1.0.txt" "$dir/licences/CC0-1.0.txt"
 # miniz (the launcher's) ships its licence with CR LF: LF here, as the rest.
 tr -d '\r' < "$repo/third_party/miniz/LICENSE" > "$dir/licences/miniz-MIT.txt"
 chmod 644 "$dir/licences/miniz-MIT.txt"

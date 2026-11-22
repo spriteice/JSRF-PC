@@ -10,6 +10,7 @@
 #include "imgui.h"
 #include "imgui_internal.h"   /* the bar's nav state, and the strip: menu_build */
 #include "platform/recomp_check.h"
+#include "input/input_layout.h"   /* the strip's buttons and keys, by the input layer's numbers */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -673,62 +674,103 @@ static void room_end(const menu_room &whole)
 /* ---- the strip along the bottom: the row's hint, and the buttons --------- */
 
 /* The pad's buttons, or the keys, and what each does in the menu; in a
- * bind row's box, the one that cancels it, as every other is the row's. */
-struct prompt { const char *name; menu_cap cap; const char *does; };
+ * bind row's box, the one that cancels it, as every other is the row's.
+ * Each by the input layer's number for it (input_layout.h), for its
+ * picture in the button prompts' style. */
+struct prompt { const char *name; menu_cap cap; const char *does; int input; };
 #define MENU_PROMPTS 3
+#define MENU_KEY_F1  58         /* SDL's number for F1 (SDL_Scancode) */
 static const prompt k_pad_prompts[MENU_PROMPTS] = {
-    { "A", MENU_CAP_A, "Select" }, { "B", MENU_CAP_B, "Back" }, { "Back", MENU_CAP_KEY, "Close" } };
+    { "A", MENU_CAP_A, "Select", INPUT_PAD_A }, { "B", MENU_CAP_B, "Back", INPUT_PAD_B },
+    { "Back", MENU_CAP_KEY, "Close", INPUT_PAD_BACK } };
 static const prompt k_key_prompts[MENU_PROMPTS] = {
-    { "Enter", MENU_CAP_KEY, "Select" }, { "Esc", MENU_CAP_KEY, "Back" }, { "F1", MENU_CAP_KEY, "Close" } };
-static const prompt k_pad_bind_prompt = { "Back", MENU_CAP_KEY, "None" };
-static const prompt k_key_bind_prompt = { "F1", MENU_CAP_KEY, "None" };
+    { "Enter", MENU_CAP_KEY, "Select", INPUT_KEY_RETURN }, { "Esc", MENU_CAP_KEY, "Back", INPUT_KEY_ESCAPE },
+    { "F1", MENU_CAP_KEY, "Close", MENU_KEY_F1 } };
+static const prompt k_pad_bind_prompt = { "Back", MENU_CAP_KEY, "None", INPUT_PAD_BACK };
+static const prompt k_key_bind_prompt = { "F1", MENU_CAP_KEY, "None", MENU_KEY_F1 };
 
 /* A cap is this many times the text's height across, so its name has room
  * round it: a round one for a letter, and for a word, one this much of its
  * height wider than the word. */
 #define MENU_CAP_SIZE 1.25f
 #define MENU_CAP_WORD 0.6f
+/* A picture of the button prompts' is this many times the text's height
+ * across and down: the packs' pictures have a margin round them. 1.6, then
+ * 12.5% larger, as the game's are (spriteice, 2026-11-22: "10-15% larger
+ * everywhere, except the VS menu"; src/nv2a_gl/nv2a_prompts.h,
+ * NV2A_PROMPT_LARGER). The strip is at least as tall where it has them. */
+#define MENU_PICTURE_SIZE 1.8f
+
+/* The strip's pictures, in the button prompts' style (src/input/input_prompts.h):
+ * the window's, the picture of input (a pad's button, or with keys a key)
+ * made px pixels a side, as the texture Dear ImGui draws. Through this one
+ * function, so the menu names no device's texture (the Vulkan plan's ask).
+ * 0 where the strip draws its own cap: in the game's own art, the Xbox
+ * style's, or with no window to ask. Only the style, never the layouts:
+ * the menu's buttons can't be moved (spriteice, 2026-11-21). */
+extern "C" int nv_window_prompt_picture(int keys, int input, int px, ImU64 *tex) __attribute__((weak));
+/* What the window's prompts follow (nv2a_gl.c): 1 the keys whatever was
+ * pressed last, as in the Keyboard style, -1 the pad's whatever was pressed,
+ * as in the pads' styles, 0 the last press, as in Auto. The strip shows
+ * the same list the game's icons do. 0 with no window to ask. */
+extern "C" int nv_window_prompt_keys(void) __attribute__((weak));
 
 /* The n prompts from at.x rightwards, centred on at.y; their width. With dl
- * NULL, only the width. */
-static float draw_prompts(ImDrawList *dl, const prompt *ps, int n, ImVec2 at)
+ * NULL, only the width. keys: the keys' prompts, not the pad's. tall, where
+ * given, is raised to the tallest of them: a cap, or a picture. */
+static float draw_prompts(ImDrawList *dl, const prompt *ps, int n, ImVec2 at, int keys, float *tall = NULL)
 {
     const ImGuiStyle &st = ImGui::GetStyle();
     float h = ImGui::GetFontSize() * MENU_CAP_SIZE, x = at.x;
+    float side = ImGui::GetFontSize() * MENU_PICTURE_SIZE;
     for (int i = 0; i < n; i++) {
         const prompt &p = ps[i];
         ImVec2 name = ImGui::CalcTextSize(p.name), does = ImGui::CalcTextSize(p.does);
-        float w = p.name[1] ? name.x + h * MENU_CAP_WORD : h;
+        ImU64 tex = 0;
+        int picture = nv_window_prompt_picture &&
+                      nv_window_prompt_picture(keys, p.input, (int)ImCeil(side), &tex) && tex;
+        float w = picture ? side : p.name[1] ? name.x + h * MENU_CAP_WORD : h;
+        if (tall) *tall = ImMax(*tall, picture ? ImCeil(side) : h);
         if (i) x += st.ItemSpacing.x * 2;
-        if (dl) {
+        if (dl && picture) {
+            dl->AddImage((ImTextureID)tex, ImVec2(ImFloor(x), ImFloor(at.y - side * 0.5f)),
+                         ImVec2(ImFloor(x) + ImCeil(side), ImFloor(at.y - side * 0.5f) + ImCeil(side)));
+        } else if (dl) {
             dl->AddRectFilled(ImVec2(x, at.y - h * 0.5f), ImVec2(x + w, at.y + h * 0.5f),
                               ImGui::GetColorU32(menu_style_cap(p.cap)), h * 0.5f);
             dl->AddText(ImVec2(x + (w - name.x) * 0.5f, at.y - name.y * 0.5f),
                         ImGui::GetColorU32(ImGuiCol_Text), p.name);
+        }
+        if (dl)
             dl->AddText(ImVec2(x + w + st.ItemInnerSpacing.x, at.y - does.y * 0.5f),
                         ImGui::GetColorU32(ImGuiCol_Text), p.does);
-        }
         x += w + st.ItemInnerSpacing.x + does.x;
     }
     return x - at.x;
 }
 
 /* Along the bottom, as the bar is along the top: the hint on the left,
- * wrapped short of the prompts on the right. As tall as the longest hint
- * of any row or choice needs, so it stays still as the pad moves. */
+ * wrapped short of the prompts on the right, the pad's when it was pressed
+ * last (pad) and the keys' otherwise, or always the one list where the
+ * window's prompts are fixed to it (nv_window_prompt_keys). As tall as the
+ * longest hint of any row or choice needs, so it stays still as the pad
+ * moves. */
 static void draw_strip(int pad)
 {
     const ImGuiIO &io = ImGui::GetIO();
     const ImGuiStyle &st = ImGui::GetStyle();
-    const prompt *ps = pad ? k_pad_prompts : k_key_prompts;
+    const int fixed = nv_window_prompt_keys ? nv_window_prompt_keys() : 0;
+    int keys = fixed > 0 || (!fixed && !pad);
+    const prompt *ps = keys ? k_key_prompts : k_pad_prompts;
     int n = MENU_PROMPTS;
     if (g_bind >= 0) {
-        ps = pad ? &k_pad_bind_prompt : &k_key_bind_prompt;
+        ps = keys ? &k_key_bind_prompt : &k_pad_bind_prompt;
         n = 1;
     }
-    float prompts = draw_prompts(NULL, ps, n, ImVec2(0.0f, 0.0f));
-    float wrap = io.DisplaySize.x - st.WindowPadding.x * 2 - st.ItemSpacing.x * 2 - prompts;
+    /* At least a cap's height, or a picture's where the window draws them. */
     float tall = ImGui::GetFontSize() * MENU_CAP_SIZE;
+    float prompts = draw_prompts(NULL, ps, n, ImVec2(0.0f, 0.0f), keys, &tall);
+    float wrap = io.DisplaySize.x - st.WindowPadding.x * 2 - st.ItemSpacing.x * 2 - prompts;
     g_hint_shown = g_hint_pad ? g_hint_pad : g_hint_pointer;
     for (const XBOX_MENU_ITEM &it : g_items) {
         if (it.hint) tall = ImMax(tall, ImGui::CalcTextSize(it.hint, NULL, false, wrap).y);
@@ -755,7 +797,7 @@ static void draw_strip(int pad)
             ImGui::PopTextWrapPos();
         }
         draw_prompts(ImGui::GetWindowDrawList(), ps, n,
-                     ImVec2(io.DisplaySize.x - st.WindowPadding.x - prompts, at.y + tall * 0.5f));
+                     ImVec2(io.DisplaySize.x - st.WindowPadding.x - prompts, at.y + tall * 0.5f), keys);
     }
     ImGui::End();
     ImGui::PopStyleVar();

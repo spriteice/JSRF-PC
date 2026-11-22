@@ -749,6 +749,9 @@ static int host_main(void)
      * their pages, Input's first submenus: Controller layout, then Keyboard
      * layout (src/input/input_remap.c). */
     { extern void input_remap_start(void); input_remap_start(); }
+    /* The button prompts' style from the settings, and its submenu right
+     * below the layouts', Input > Button prompts (src/input/input_prompts.c). */
+    { extern void input_prompts_start(void); input_prompts_start(); }
     /* The free camera's settings, its rows in Input > Free camera, below the
      * layouts, and F8 (port/freecam.c). */
     { extern void freecam_start(void); freecam_start(); }

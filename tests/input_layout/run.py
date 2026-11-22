@@ -69,7 +69,7 @@ with tempfile.TemporaryDirectory(prefix="input_layout-") as directory:
     exe = str(pathlib.Path(directory) / "input_layout")
     subprocess.run(cc + ["-O2", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-DXBOXRECOMP_MENU",
                     "-I", "src", "-I", "src/input", "-I", "src/menu",
-                    "src/input/input_layout.c", "src/input/input_remap.c",
+                    "src/input/input_layout.c", "src/input/input_remap.c", "src/input/input_prompts.c",
                     "tests/input_layout/test_main.c", "-o", exe], cwd=root, check=True)
     # Each case, and the lines it must say in the log, in their order.
     said = {
