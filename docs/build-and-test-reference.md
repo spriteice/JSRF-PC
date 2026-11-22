@@ -27,6 +27,11 @@ In order, with where each step is said in full:
 6. **Read back:** my results and every log in full, and every step still
    untested, per device (Test list; project rules, Workflow 5).
 
+Each build delivered to me counts towards the thread's four, a light build
+too: after its fourth, a thread hands off before another is made (the
+project instructions, section 1; not in a pre-approved thread). TESTING.md,
+or a light build's NOTE.md, says which of the thread's it is.
+
 ## Test devices
 
 - **Primary:** ROG Xbox Ally X: x86_64, SteamOS 3.9.5, glibc 2.43, Z2
@@ -73,13 +78,23 @@ files move between them, and what the PC has installed.
   playback runs on the Ally X, with its key and its list of known hosts
   in `Building\ssh\` (Playback runs). Anything else, or another version,
   is asked for first.
-- **The standing rules and scripts:** a session is started in `Building\`,
-  where it is given `Building\CLAUDE.md` by itself: the part of the rules
+- **One folder for everything:** my Claude folder,
+  `E:\Games\Ports\jsrf\Claude`, is the only folder a thread names on the
+  PC, exactly as `list_devices` lists it: for folder access, for the
+  Filesystem tool and for its Remote Control session. It is approved for
+  the project, so nothing is asked of me, and it reaches every folder
+  under it: `Building\`, `building-on-pc\` and `Testing\` among them. A
+  thread never names `Building\`, or any other folder under it, by itself.
+- **The standing rules and scripts:** a session is started in my Claude
+  folder and works in `Building\`. It is given the Claude folder's own
+  `CLAUDE.md` by itself, a few lines that send a JSRF-PC session to
+  `Building\CLAUDE.md` before anything else: the part of the rules
   a session there needs, so a run's instructions carry only the run. The
   Windows tests' steps are kept once, in `Building\scripts\`, and a run of
   them is its run file, `RUN.txt` in the run's folder: the base, each diff
   with its SHA-256, and each tree's hash and test count
-  (building-on-pc/README.md has its lines). Neither is edited for a run:
+  (building-on-pc/README.md has its lines). Neither is edited for a run,
+  nor is the Claude folder's `CLAUDE.md`:
   each changes only on a card, tried on Linux first where it can be, and
   every run records the SHA-256 of the scripts it ran.
 - **The checkout:** `Building\src`, a clone of this repository that is only
@@ -711,8 +726,9 @@ test-lists/README.md has its path.
 
 ## Test checklist (TESTING.md)
 
-- **What it is:** the change in one or two lines, the version string, and
-  the packages with their SHA-256.
+- **What it is:** the change in one or two lines, the version string, which
+  of this thread's test builds it is (At a glance), and the packages with
+  their SHA-256.
 - **Built from:** the commit, whether the tree had uncommitted changes and
   its tree's hash, the machine it was built on, the generated code
   (functions translated, 0 failed, whether it was the kept copy, and
@@ -812,8 +828,9 @@ is offered on a card, and I choose.
   test on, with its SHA-256 and the package check (Compatibility checks);
   the engine and tool tests (Building, 4); for the Windows package, the
   start check, one idle run and the copy of my portable folder (Delivery
-  package); and a NOTE.md of a few lines: the version, what changed since
-  the last build, and what to look at.
+  package); and a NOTE.md of a few lines: the version, which of this
+  thread's test builds it is (At a glance), what changed since the last
+  build, and what to look at.
 - **It leaves out:** the other system's package, the comparison with the
   last tested package, TESTING.md and its test list, REPORT.md, and any
   further idle run.

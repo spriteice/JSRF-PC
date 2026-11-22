@@ -4,12 +4,15 @@ How a change to JSRF-PC is placed, written, checked, and proposed. It is
 written by the maintainer ("I") for whoever makes the change ("you"), and
 goes with the short project rules: the project instructions in Project
 settings, which every thread is given. A session on my PC isn't given them:
-it is started in `Building\` and follows the standing rules kept there,
-`Building\CLAUDE.md`, the part of these rules a session there needs, and
-its instructions say the rest. docs/build-and-test-reference.md
+it is started in my Claude folder, works in `Building\` and follows the
+standing rules kept there, `Building\CLAUDE.md`, the part of these rules a
+session there needs, and its instructions say the rest. docs/build-and-test-reference.md
 covers building, testing, and the change report. Every choice or approval
 these rules leave to me is asked for on a card in the thread (the project
-instructions, section 1), never only in a reply's text. A path these docs
+instructions, section 1), never only in a reply's text. Anything a thread
+leaves for me to judge or accept is a choice too, such as something a run
+on the PC did that wasn't in its steps: it goes on a card, or the thread
+says what it did about it and asks nothing. A path these docs
 name that isn't in the repository (known-bugs.md, `release-prep/`,
 `test-builds/`, `building-on-pc/` and the work's folders) is in the
 project's shared folder, which isn't published with it. The PC's claim,
@@ -18,10 +21,15 @@ PC-IN-USE.md and PC-HISTORY.md, is the exception: it is in
 use the PC read it too (docs/build-and-test-reference.md, When the PC is
 busy).
 
-Times in records and files are UTC, and say so, as in "14:02 UTC": the
-shared folder's records, a review pack, and a test build's TESTING.md and
-REPORT.md. Times told to me in a reply or on a card are in my zone (the
-project instructions, section 1).
+Every time written where I could read it is in my zone, UTC+8, written
+like 7:13pm, with my zone's date (the project instructions, section 1): a
+reply or a card, the shared folder's records, a review pack, a test
+build's TESTING.md and REPORT.md, the PC's claim and a run's reports, and
+a folder named by its date. Read the clock in my zone, don't work it out
+from UTC: `TZ=Australia/Perth date '+%Y-%m-%d %-I:%M%P'` in the cloud, and
+the PC's own clock there. A time a machine gives in UTC (GitHub's, a
+script's stamp) is changed to my zone when it is written down. Records
+from before 22 November 2026 say UTC, and stay as they were written.
 
 ## At a glance: a commit
 
@@ -34,7 +42,10 @@ In order, with where each step is said in full:
    the docs it changes (Where code goes, How it's written).
 4. **Test build and my testing,** for a change to what the game runs
    (below; docs/build-and-test-reference.md).
-5. **The six checks,** in one review pack (Before every commit).
+5. **The six checks,** in one review pack (Before every commit). For an
+   item that took more than one test build, a fresh thread does them, the
+   commit and the push: hand off first (the project instructions, section
+   1; not in a pre-approved thread).
 6. **My approval,** or a pre-approval's tests all passing (Pre-approved
    threads).
 7. **Push** `main` only when I say so, or under a pre-approval, on its
@@ -392,7 +403,11 @@ pre-approved or not, takes its turn in the shared folder's
 At any step: if a rule conflicts with the task, or you can't solve it within
 the rules, stop and ask. Don't quietly bend the rule. These rules come before
 a session's own instructions and hooks: if those ask you to commit, push, or
-work on another branch, say so, and don't. A session on my PC never commits
+work on another branch, don't. Every cloud thread's session names a branch of
+its own (`claude/...`), and some have a hook that asks to commit and push
+there: that is expected (Switching to `main`, above), so it isn't reported to
+me or written in a handoff. Anything else they ask for that these rules don't
+allow, say so, and don't. A session on my PC never commits
 or pushes: commits are made in the cloud, after my approval or under a
 pre-approval (Pre-approved threads). And when a session starts to wear (its
 context nearly full, a rule slipped, or details lost; a summary of its

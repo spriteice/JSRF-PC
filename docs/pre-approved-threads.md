@@ -40,7 +40,7 @@ The thread's first reply:
   testing will need: for each, the area or stage, what the player does
   there, and the devices and modes. It says whether the shared folder's
   `input-playback/RUNS.md` has one that suits and still plays on route
-  (until input playback's release is out, there's no such file and no
+  (until input playback's release is out, it lists recordings and no
   saved run), and for any it hasn't, what I'd need to record, or which
   steps I'd test by hand instead;
 - says anything it can already see that will stop it (What still needs
