@@ -119,6 +119,7 @@ set(JSRF_SOURCES
     playback.c
     freecam.c
     camera_walls.c
+    camera_scenes.c
     keyboard_move.c
     intro.c
     cutscene_skip.c

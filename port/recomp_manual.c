@@ -1298,6 +1298,7 @@ void sub_0017CAB0(void)
 #include "xinput_xbox.h"
 #include "freecam.h"
 #include "camera_walls.h"
+#include "camera_scenes.h"
 #include "intro.h"
 #include "keyboard_move.h"
 #include "missions.h"
@@ -6389,9 +6390,10 @@ void sub_000A76E0(void)
  * pass between the player and the eye still passes, and the camera moves only
  * then or while a surface cuts across its view. It changes only the working
  * eye, so the game's smoothing and following go on as before. The graffiti
- * camera (mode 13) is the one mode it leaves be (camwall_mode_on): the game
- * aims that shot at the spot being sprayed, so the surface is right by the
- * target, and the test would bring the eye in to a first-person view.
+ * camera (mode 13) is the one mode it leaves be (camscene_shot,
+ * port/camera_scenes.c): the game aims that shot at the spot being sprayed,
+ * so the surface is right by the target, and the test would bring the eye
+ * in to a first-person view.
  * And Default cam fix (camwall_on, its row in Input > Behaviour) turns it
  * off for the game's own eye altogether; the free camera's is kept out of
  * walls either way.
@@ -6595,7 +6597,7 @@ void sub_000A6100(void)
     cf = (float *)(m + cam);
     mode = ((const uint32_t *)cf)[CAM_MODE / 4];
     behind = asked && !*(uint32_t *)(m + who + CHR_CAM_BEHIND);
-    if (mode != CAMWALL_MODE_GRAFFITI && cam_pad_steered(m, cam, 0))
+    if (mode != CAMSCENE_MODE_GRAFFITI && cam_pad_steered(m, cam, 0))
         photo_mode_followed(cam);                   /* the player has control */
     if (cam_pad_steered(m, cam, 1))
         placed = freecam_orbit(cam, mode, cf + CAM_TARGET / 4, cf + CAM_SMOOTH_EYE / 4, behind, eye);
@@ -6613,7 +6615,7 @@ void sub_000A6100(void)
      * cam fix off (camwall_on), the eye stands where the game put it, as on
      * the Xbox, and its state starts again, so turning it back on starts
      * from the game's eye. The graffiti shot is left as the game frames it
-     * (camwall_mode_on); its state is still taken, so the follow mode after
+     * (camscene_shot); its state is still taken, so the follow mode after
      * it starts again, as before. */
     w = camwall_for(cam, mode);
     cam_eye_note(cam, EYE_GAME, NULL);
@@ -6622,7 +6624,7 @@ void sub_000A6100(void)
         return;
     }
     if (behind) camwall_reset(w);
-    if (!camwall_mode_on(mode)) {
+    if (camscene_shot(mode)) {
         static double next;
         if (pad_now() >= next) {
             next = pad_now() + 1.0;

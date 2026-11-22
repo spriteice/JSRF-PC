@@ -32,8 +32,7 @@ wall right by the player, to where the view starts, 2.52 out, as before the
 hold. camwall_share and camwall_across: in, or across, at once; held for 20 frames; back by a tenth of the gap a frame; and all the
 way out once the camera starts again (camwall_reset). camwall_for: each
 camera's own, started again when its key changes, the one seen longest ago
-given up for a new one. camwall_mode_on: every mode the follow camera's
-post-update serves kept out of walls, but graffiti's (13).
+given up for a new one.
 Default cam fix (dcamfix=) and No skater fade (noskaterfade=):
 the same port/camera_walls.c, with the settings file code from
 src/nv2a_gl/nv2a_gl.c verbatim (sdl_cfg_path through sdl_cfg_set, with
@@ -122,7 +121,6 @@ cases = {
                    "least_game free: share 0.3927, 0.00 across, by 5"],
     "least_game_short": ["least_game_short: share 1.0000, 0.00 across, by 5"],
     "cameras": [],
-    "modes": [],
 }
 
 # Default cam fix and No skater fade: case: (settings file or None for

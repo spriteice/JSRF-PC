@@ -7,7 +7,7 @@
  * line test and moves the eye across, or in, until nothing cuts across it,
  * and holds and eases what it moved so a wall going by does not shake the
  * view. It does so for the game's own eye, where the game's wall test put
- * it, in every mode but graffiti's (camwall_mode_on), and for the eye the
+ * it, in every mode but the game's own shots (camera_scenes.h), and for the eye the
  * free camera (freecam.h) places, whose own line it tests as well; for the
  * game's, the eye's line counts only when what it meets is wider than the
  * view, as a wall or a half pipe's curve the eye has gone behind is, where
@@ -99,22 +99,6 @@ int camwall_on(void);
  * through; else 0, the view's floor alone, and the game fades the player
  * where the eye comes nearer, as on the Xbox. */
 double camwall_least(int freecam, double whole);
-
-/* The graffiti camera's mode (the camera's +0x208): the spray code
- * (sub_0008D280) asks for it, and it frames the spot being sprayed, then
- * goes back behind the player. */
-#define CAMWALL_MODE_GRAFFITI 13u
-
-/* Whether the game's own eye is kept out of walls in camera mode mode:
- * every mode the follow camera's post-update serves (3, 4, 5, 9 and 13)
- * but graffiti's. The others follow the player, or look from them at
- * whoever they talk to, from where the player stands in the open, as
- * camwall_clear takes it. The graffiti shot is the game's own, aimed at the
- * spot on a wall, a bus or a column, so that surface is right by what it
- * looks at: camwall_clear finds it in the way, and brings the eye in to a
- * first-person view the console never shows. It is left as the game frames
- * it. */
-int camwall_mode_on(uint32_t mode);
 
 /* Each camera's: CAMWALL_CAMERAS at once, as many as split screen's
  * players' and a scene's besides. */
