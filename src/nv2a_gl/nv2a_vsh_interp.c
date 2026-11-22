@@ -18,6 +18,14 @@
  * Deliberately written from the decoded instruction stream rather than from
  * the generated GLSL, so that a mistake shared by both would have to be made
  * twice, independently.
+ *
+ * It is no longer only a diagnostic: the button prompts' upright buttons
+ * (nv2a_gl.c, prompts_upright_draw) run it for each vertex of a face a
+ * vertex program draws, several times each, every frame. So its own
+ * diagnostics cost nothing while they are off: its trace switch is looked
+ * up once, not on every instruction, which in Windows' C runtime, whose
+ * getenv takes a lock and measures the whole environment, held the
+ * graffiti menus at 25 fps.
  */
 
 #include "nv2a_vsh.h"
@@ -121,9 +129,13 @@ int nv2a_vsh_interp(const Nv2aVshProgram *p,
                     const float c[][4],
                     float out_pos[4])
 {
+    /* RECOMP_GL_INTERP_TRACE: the first two runs traced, instruction by
+     * instruction (below); -1 not looked up yet. */
+    static int trace = -1, traced;
     VshMachine m;
     int i, k;
 
+    if (trace < 0) trace = getenv("RECOMP_GL_INTERP_TRACE") ? 1 : 0;
     memset(&m, 0, sizeof m);
     for (i = 0; i < 16; i++) { m.out[i][3] = 1.0f; }
 
@@ -228,9 +240,7 @@ int nv2a_vsh_interp(const Nv2aVshProgram *p,
          * precisely the region in question, since every program measured
          * lands oPos.x on the viewport centre with no positional term at
          * all. Trace one program end to end instead. */
-        { static int traced = -1, run;
-          if (traced < 0) traced = getenv("RECOMP_GL_INTERP_TRACE") ? 0 : -2;
-          if (traced >= 0 && run < 2) {
+        { if (trace && traced < 2) {
               static const char *ty[4] = { "-", "R", "v", "c" };
               fprintf(stderr, "  [I] %2d mac=%d ilu=%d  out=%s%u mask=%X "
                       "macmask=%X->R%u ilumask=%X->R%u"
@@ -261,7 +271,7 @@ int nv2a_vsh_interp(const Nv2aVshProgram *p,
                       ins->out_from_ilu ? ilur[1] : macr[1],
                       ins->out_from_ilu ? ilur[2] : macr[2],
                       ins->out_from_ilu ? ilur[3] : macr[3]);
-              if (ins->final) { run++; fprintf(stderr, "  [I] --- end of "
+              if (ins->final) { traced++; fprintf(stderr, "  [I] --- end of "
                       "program, oPos = (%.3f %.3f %.3f %.3f) ---\n",
                       m.out[NV2A_OREG_POS][0], m.out[NV2A_OREG_POS][1],
                       m.out[NV2A_OREG_POS][2], m.out[NV2A_OREG_POS][3]); }
