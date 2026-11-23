@@ -17,8 +17,9 @@ as that file needs SDL, a window and OpenGL.
    from that file verbatim, with test_gate.c.
 5. File's rows (src/menu/menu_sdl.cpp's File section, unchanged), with the
    same and test_file.cpp, which stands in for SDL and the window's
-   restarts: the rows in order, Presets' four, its line and Reset, the
-   presets chosen by their paths, and Xbox (Restart) by its OK.
+   restarts: the rows in order, Presets' five with a line after Modern, its
+   line and Reset, the presets chosen by their paths, and Xbox (Restart) and
+   Modern (Restart) by their OK.
 4. The window's submenus (src/nv2a_gl/nv2a_gl.c, sdl_menu_display), by
    text: Display's Enhancements, at its foot, then Gameplay's, in their
    order, Skips first, then Graffiti souls. That the menu then draws them
@@ -113,15 +114,15 @@ with tempfile.TemporaryDirectory(prefix="menu-") as tmp:
                  "Left by all: every preset leaves it, so no preset sets it",
                  "[MENU] preset: Scale (Restart) to 1x, from the next start",
                  "[MENU] preset: Cleanup to none\n",
-                 "[MENU] preset: Cleanup to Deblock, Dedither\n",
                  "Broken: a bind row without what it takes, its bind or its text"]:
         if run.stderr.count(line) != 1:
             sys.exit(f"menu: {line!r} is in the log {run.stderr.count(line)} times, not once")
-    # The filtering at this device's most, 4x, twice: Quality's, and Balanced's
-    # back from Performance's Off.
-    line = "[MENU] preset: Filtering to 4x\n"
-    if run.stderr.count(line) != 2:
-        sys.exit(f"menu: {line!r} is in the log {run.stderr.count(line)} times, not twice")
+    # Twice each: the filtering at this device's most, 4x, Quality's, and
+    # Balanced's back from Performance's Off; and both ticks, Quality's and
+    # Modern's.
+    for line in ["[MENU] preset: Filtering to 4x\n", "[MENU] preset: Cleanup to Deblock, Dedither\n"]:
+        if run.stderr.count(line) != 2:
+            sys.exit(f"menu: {line!r} is in the log {run.stderr.count(line)} times, not twice")
     # Submenus are no setting, so say nothing about presets, and aren't told;
     # nor are rows the presets leave alone, as the layouts' bind rows.
     for line in ["Skips: nothing said about presets", "Enhancements: nothing said about presets",
@@ -145,10 +146,10 @@ with tempfile.TemporaryDirectory(prefix="menu-") as tmp:
     if run.returncode:
         sys.exit(run.returncode)
     # Each preset said as it is chosen: Performance, Balanced and Quality
-    # twice (chosen again, ticked), Xbox once (its OK); and nothing the
+    # twice (chosen again, ticked), Xbox and Modern once (each its OK); and nothing the
     # menu's own checks find in File's rows (menu.cpp's RECOMP_CHECK lines:
     # a hint too long, or none).
-    for name, times in (("Xbox", 1), ("Performance", 2), ("Balanced", 2), ("Quality", 2)):
+    for name, times in (("Xbox", 1), ("Modern", 1), ("Performance", 2), ("Balanced", 2), ("Quality", 2)):
         line = f"[MENU] preset {name} chosen\n"
         if run.stderr.count(line) != times:
             sys.exit(f"menu: {line!r} is in File's log {run.stderr.count(line)} times, not {times}")

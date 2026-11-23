@@ -51,9 +51,10 @@ void intro_start(void)
         const XBOX_MENU_ITEM row = {
             .menu = XBOX_MENU_GAMEPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Skip intro",
             .state = menu_skip, .run = menu_skip_flip, .group = XBOX_GROUP_SKIPS,
-            /* File > Presets: the intro plays in Xbox, as on the Xbox. */
-            .presets = XBOX_PRESETS_SET,
-            .preset = { 0, INTRO_SKIP_DEFAULT, INTRO_SKIP_DEFAULT, INTRO_SKIP_DEFAULT },
+            /* File > Presets: the intro plays in Xbox, as on the Xbox, and
+             * is skipped in Modern; the others change only the visuals, so
+             * leave it (spriteice, 23 November 2026). */
+            .presets = XBOX_PRESETS_SET, .preset = { 0, 1, 0, 0, 0 }, .leave = XBOX_PRESETS_LEVELS,
             .hint = "Skips the intro logos and graffiti disclaimer." };
         xbox_MenuAdd(&row, 1);
     }

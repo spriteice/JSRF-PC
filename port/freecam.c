@@ -662,15 +662,15 @@ static void freecam_menu(void)
     const XBOX_MENU_ITEM rows[] = {
         { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_FREECAM,
           .hint = "Free camera toggle and settings." },
-        /* File > Presets: the game's own camera in Xbox, which the others
-         * leave as the player has it; and how it handles, which no preset
+        /* File > Presets: the game's own camera in Xbox and the free one in
+         * Modern, which the others leave as the player has it; and how it handles, which no preset
          * sets, with Reset to default at the foot (spriteice, 22 November
          * 2026, the card "Free camera too"; and 23 November 2026, the card
          * "Leave them all"). */
         { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_TOGGLE, .label = "Enable free camera",
           .group = XBOX_GROUP_FREECAM, .state = menu_on, .run = freecam_flip,
-          .presets = XBOX_PRESETS_SET, .preset = { 0, 0, 0, 0 },
-          .leave = XBOX_PRESETS_BUT_XBOX,
+          .presets = XBOX_PRESETS_SET, .preset = { 0, 1, 0, 0, 0 },
+          .leave = XBOX_PRESETS_LEVELS,
           .hint = "Lets the right stick, or the mouse, control the camera." },
         { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_CHOICE, .label = "Auto centre",
           .group = XBOX_GROUP_FREECAM,

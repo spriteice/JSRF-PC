@@ -6,16 +6,17 @@
  * File > Restart and File > Presets > Reset (nv2a_gl.c), counted.
  *
  * Checks the rows in order: About, a line, Presets, a submenu, then
- * Restart and Exit after a line; in Presets, a row for each preset (Xbox
- * (Restart), Performance, Balanced, Quality), a line, and Reset (Restart)
- * (spriteice, 23 November 2026). Where the game can't start itself again,
- * no Restart, no Reset and no line above it. Then, added to the menu beside
- * a row each preset sets to its own value: each preset but Xbox by its
- * path, as input playback chooses it, sets that row to its value, and is
- * the one row ticked, with no restart; with the row at none of theirs, none
- * is ticked. Xbox (Restart) asks first, as Reset does, so a path runs
- * neither; its OK sets the row, ticks it, and restarts the game once.
- * Presets alone runs nothing.
+ * Restart and Exit after a line; in Presets, a row for each preset: Xbox
+ * (Restart) and Modern (Restart), a line, Performance, Balanced and
+ * Quality, a line, and Reset (Restart) (spriteice, 23 November 2026). Where
+ * the game can't start itself again, no Restart, no Reset and no line above
+ * it, but the line after Modern. Then, added to the menu beside a row each
+ * preset sets to its own value: Performance, Balanced and Quality by their
+ * paths, as input playback chooses them, each set that row to its value,
+ * and is the one row ticked, with no restart; with the row at none of
+ * theirs, none is ticked. Xbox (Restart) and Modern (Restart) ask first, as
+ * Reset does, so a path runs none of them; each one's OK sets the row,
+ * ticks it, and restarts the game once. Presets alone runs nothing.
  */
 #include "menu.h"
 #include "imgui.h"
@@ -49,12 +50,17 @@ static int s_restarts, s_resets;
 extern "C" void nv_window_restart(void) { s_restarts++; }
 extern "C" void nv_window_reset(void) { s_resets++; }
 
-/* A row each preset sets to its own value, 0 to 3, out of five: the fifth
+/* A row each preset sets to its own value, 0 to 4, out of six: the sixth
  * is none of theirs. */
 static int s_level;
-static const char *const k_levels[] = { "Least", "Less", "Between", "Most", "Other" };
+static const char *const k_levels[] = { "Xbox's", "Modern's", "Least", "Between", "Most", "Other" };
+#define LEVEL_NONE 5
 static int  level_state(void) { return s_level; }
 static void level_pick(int i) { s_level = i; }
+
+/* Preset p's row in File's rows: Xbox's and Modern's, then the line, then
+ * the others'. */
+static int preset_row(int p) { return p <= XBOX_PRESET_MODERN ? 3 + p : 4 + p; }
 
 static int row_is(const XBOX_MENU_ITEM &it, int kind, const char *label, const char *group)
 {
@@ -64,40 +70,47 @@ static int row_is(const XBOX_MENU_ITEM &it, int kind, const char *label, const c
 
 int main(void)
 {
-    static const char *const presets[XBOX_PRESETS] = { "Xbox (Restart)", "Performance", "Balanced", "Quality" };
+    static const char *const presets[XBOX_PRESETS] = {
+        "Xbox (Restart)", "Modern (Restart)", "Performance", "Balanced", "Quality" };
     XBOX_MENU_ITEM rows[FILE_ROWS];
 
     /* Where the game can't start itself again: no Restart, no Reset, and
-     * no line above Reset. */
+     * no line above Reset; the line after Modern stays. */
     int n = file_rows(rows, 0);
-    CHECK(n == 9);
-    if (n == 9) {
+    CHECK(n == 11);
+    if (n == 11) {
         CHECK(row_is(rows[2], XBOX_ITEM_GROUP, "Presets", NULL));
-        CHECK(row_is(rows[7], XBOX_ITEM_SEPARATOR, NULL, NULL));
-        CHECK(row_is(rows[8], XBOX_ITEM_ACTION, "Exit", NULL));
+        CHECK(row_is(rows[4], XBOX_ITEM_TOGGLE, "Modern (Restart)", "Presets"));
+        CHECK(row_is(rows[5], XBOX_ITEM_SEPARATOR, NULL, "Presets"));
+        CHECK(row_is(rows[8], XBOX_ITEM_TOGGLE, "Quality", "Presets"));
+        CHECK(row_is(rows[9], XBOX_ITEM_SEPARATOR, NULL, NULL));
+        CHECK(row_is(rows[10], XBOX_ITEM_ACTION, "Exit", NULL));
     }
 
     n = file_rows(rows, 1);
-    CHECK(n == 12 && n == FILE_ROWS);
-    if (n != 12) return 1;
+    CHECK(n == 14 && n == FILE_ROWS);
+    if (n != 14) return 1;
     CHECK(row_is(rows[0], XBOX_ITEM_INFO, "About", NULL));
     CHECK(row_is(rows[1], XBOX_ITEM_SEPARATOR, NULL, NULL));
     CHECK(row_is(rows[2], XBOX_ITEM_GROUP, "Presets", NULL));
     for (int p = 0; p < XBOX_PRESETS; p++)
-        CHECK(row_is(rows[3 + p], XBOX_ITEM_TOGGLE, presets[p], "Presets") && rows[3 + p].hint);
-    /* Xbox sets Audio effects (Restart), so asks first; the others don't. */
+        CHECK(row_is(rows[preset_row(p)], XBOX_ITEM_TOGGLE, presets[p], "Presets") && rows[preset_row(p)].hint);
+    CHECK(row_is(rows[5], XBOX_ITEM_SEPARATOR, NULL, "Presets"));
+    /* Xbox and Modern set Audio effects (Restart), so ask first; the others
+     * don't. */
     CHECK(rows[3].confirm && !strcmp(rows[3].confirm, "Apply Xbox and restart, losing unsaved progress?"));
-    for (int p = 1; p < XBOX_PRESETS; p++) CHECK(!rows[3 + p].confirm);
-    CHECK(row_is(rows[7], XBOX_ITEM_SEPARATOR, NULL, "Presets"));
-    CHECK(row_is(rows[8], XBOX_ITEM_ACTION, "Reset (Restart)", "Presets") && rows[8].confirm);
-    CHECK(row_is(rows[9], XBOX_ITEM_SEPARATOR, NULL, NULL));
-    CHECK(row_is(rows[10], XBOX_ITEM_ACTION, "Restart", NULL));
-    CHECK(row_is(rows[11], XBOX_ITEM_ACTION, "Exit", NULL));
-    CHECK(rows[8].run == nv_window_reset && rows[10].run == nv_window_restart);
+    CHECK(rows[4].confirm && !strcmp(rows[4].confirm, "Apply Modern and restart, losing unsaved progress?"));
+    for (int p = XBOX_PRESET_PERFORMANCE; p < XBOX_PRESETS; p++) CHECK(!rows[preset_row(p)].confirm);
+    CHECK(row_is(rows[9], XBOX_ITEM_SEPARATOR, NULL, "Presets"));
+    CHECK(row_is(rows[10], XBOX_ITEM_ACTION, "Reset (Restart)", "Presets") && rows[10].confirm);
+    CHECK(row_is(rows[11], XBOX_ITEM_SEPARATOR, NULL, NULL));
+    CHECK(row_is(rows[12], XBOX_ITEM_ACTION, "Restart", NULL));
+    CHECK(row_is(rows[13], XBOX_ITEM_ACTION, "Exit", NULL));
+    CHECK(rows[10].run == nv_window_reset && rows[12].run == nv_window_restart);
 
     XBOX_MENU_ITEM level = { XBOX_MENU_DISPLAY, XBOX_ITEM_CHOICE, "Level", level_state, NULL, level_pick,
-                             k_levels, 5, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-                             "Sets the level.", XBOX_PRESETS_SET, { 0, 1, 2, 3 }, NULL, NULL, NULL, NULL,
+                             k_levels, 6, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
+                             "Sets the level.", XBOX_PRESETS_SET, { 0, 1, 2, 3, 4 }, NULL, NULL, NULL, NULL,
                              XBOX_BIND_NONE, NULL, NULL, NULL, 0 };
     xbox_MenuAdd(&level, 1);
     xbox_MenuAdd(rows, n);
@@ -106,30 +119,35 @@ int main(void)
     ImGui::GetIO().IniFilename = NULL;
     ImGui_ImplNull_Init();
 
-    /* Each preset but Xbox by its path: the row at its value, and its row
-     * alone ticked, with no restart; chosen again, ticked already, nothing
-     * changes. */
-    for (int p = XBOX_PRESETS - 1; p >= 1; p--) {
+    /* Performance, Balanced and Quality by their paths: the row at its
+     * value, and its row alone ticked, with no restart; chosen again,
+     * ticked already, nothing changes. */
+    for (int p = XBOX_PRESETS - 1; p >= XBOX_PRESET_PERFORMANCE; p--) {
         char path[64];
         snprintf(path, sizeof path, "File > Presets > %s", presets[p]);
         CHECK(menu_path_run(path) == MENU_PATH_OK && s_level == p && menu_preset_now() == p);
-        for (int q = 0; q < XBOX_PRESETS; q++) CHECK(rows[3 + q].state() == (q == p));
-        CHECK(menu_path_run(path) == MENU_PATH_OK && s_level == p && rows[3 + p].state());
+        for (int q = 0; q < XBOX_PRESETS; q++) CHECK(rows[preset_row(q)].state() == (q == p));
+        CHECK(menu_path_run(path) == MENU_PATH_OK && s_level == p && rows[preset_row(p)].state());
     }
     CHECK(s_restarts == 0);
-    /* Xbox (Restart) asks first, so its path changes nothing; its OK (the
-     * row's run) sets the row, ticks Xbox alone, and restarts once. */
-    CHECK(menu_path_run("File > Presets > Xbox (Restart)") == MENU_PATH_ASKS && s_level == 1);
+    /* Modern (Restart) and Xbox (Restart) ask first, so their paths change
+     * nothing; each one's OK (the row's run) sets the row, ticks it alone,
+     * and restarts once. */
+    CHECK(menu_path_run("File > Presets > Modern (Restart)") == MENU_PATH_ASKS && s_level == 2);
+    CHECK(menu_path_run("File > Presets > Xbox (Restart)") == MENU_PATH_ASKS && s_level == 2);
+    rows[4].run();
+    CHECK(s_level == 1 && menu_preset_now() == XBOX_PRESET_MODERN && s_restarts == 1);
+    for (int q = 0; q < XBOX_PRESETS; q++) CHECK(rows[preset_row(q)].state() == (q == XBOX_PRESET_MODERN));
     rows[3].run();
-    CHECK(s_level == 0 && menu_preset_now() == 0 && s_restarts == 1);
-    for (int q = 0; q < XBOX_PRESETS; q++) CHECK(rows[3 + q].state() == (q == 0));
+    CHECK(s_level == 0 && menu_preset_now() == XBOX_PRESET_XBOX && s_restarts == 2);
+    for (int q = 0; q < XBOX_PRESETS; q++) CHECK(rows[preset_row(q)].state() == (q == XBOX_PRESET_XBOX));
     /* None of theirs: none ticked. */
-    s_level = 4;
-    for (int q = 0; q < XBOX_PRESETS; q++) CHECK(!rows[3 + q].state());
+    s_level = LEVEL_NONE;
+    for (int q = 0; q < XBOX_PRESETS; q++) CHECK(!rows[preset_row(q)].state());
     /* Reset asks first; Presets alone runs nothing. */
     CHECK(menu_path_run("File > Presets > Reset (Restart)") == MENU_PATH_ASKS);
     CHECK(menu_path_check("File > Presets") == MENU_PATH_NOT_RUN);
-    CHECK(s_resets == 0 && s_restarts == 1 && s_quits == 0 && s_level == 4);
+    CHECK(s_resets == 0 && s_restarts == 2 && s_quits == 0 && s_level == LEVEL_NONE);
 
     ImGui_ImplNull_Shutdown();
     ImGui::DestroyContext();

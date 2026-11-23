@@ -259,14 +259,24 @@ in a submenu of its own.
 
 - Presets is File's second row, under About, with a separator
   above and below it, as between About and Restart before it. It is a
-  submenu (`XBOX_ITEM_GROUP`): a row for each preset, Xbox (Restart),
-  Performance, Balanced and Quality, in that order (`XBOX_PRESET` in
-  `menu.h`), then a separator and Reset (Restart) (spriteice, 23 November
-  2026; Reset, below).
+  submenu (`XBOX_ITEM_GROUP`): a row for each preset, in this order
+  (`XBOX_PRESET` in `menu.h`): Xbox (Restart) and Modern (Restart), which
+  change gameplay as well as visuals; a separator; Performance, Balanced
+  and Quality, which change only visuals; then a separator and Reset
+  (Restart) (spriteice, 23 November 2026; Reset, below). Each preset's
+  hint says which it changes, gameplay and visuals or only visuals.
 - **Xbox** is the game as the Xbox runs it: 4:3 at Default, the
   Xbox's 640x480, with everything JSRF-PC adds to how it looks and plays
   turned off, and Audio effects on, as the Xbox's own sound has them
   (spriteice, 23 November 2026).
+  **Modern** is the author's preferred way to play (spriteice, 23 November
+  2026): the HUD at 0.8x; Draw distance, Far buildings and Far shadows at
+  3x; MSAA at 4x and no SMAA; anisotropic filtering at 16x; Upscaling's
+  Menus and HUD and Textures at 8x, Graffiti at 4x and Buttons off, Sharp,
+  Strong, and both Cleanup ticks; Audio effects on; Keyboard moves on
+  Camera, Stick shape Square, Button prompts' Style Auto, Camera's Default
+  cam fix alone ticked, and the free camera on; and Gameplay's Skip intro,
+  Skip cutscenes and Visual indicator on.
   **Performance** has the heavy settings at their least: Draw distance,
   Far buildings and Far shadows at 1x, no anti-aliasing and no anisotropic
   filtering, and Upscaling's Textures and Graffiti off.
@@ -288,13 +298,14 @@ in a submenu of its own.
   would, and saves it as the row does. They set no (Restart) row, so none
   restarts the game: Shader cache and Audio effects are left to the
   player, as Mute is (spriteice's card, 02:00 UTC on 2026-11-21).
-- **Xbox sets one (Restart) row, Audio effects, on**, so its row is a
-  (Restart) row, "Xbox (Restart)" ((Restart), above): it asks first ("Apply
-  Xbox and restart, losing unsaved progress?"), and OK sets every row as
+- **Xbox and Modern each set one (Restart) row, Audio effects, on**, so
+  each row is a (Restart) row, "Xbox (Restart)" and "Modern (Restart)"
+  ((Restart), above): each asks first ("Apply Xbox and restart, losing
+  unsaved progress?", and the same with Modern), and OK sets every row as
   the others do, keeps Audio effects for the next start (the row's `keep`)
   and restarts the game once, as any (Restart) row's OK does, even with
-  Audio effects already on (spriteice, 23 November 2026). Asking first, it
-  can't be chosen by its path (input playback's), as Reset can't.
+  Audio effects already on (spriteice, 23 November 2026). Asking first,
+  neither can be chosen by its path (input playback's), as Reset can't.
 - **A preset sets every setting but Developer's, and the rows that say a
   preset leaves them alone** (`XBOX_PRESETS_LEFT` in `menu.h`): a player's
   own choices, not a quality setting, each with its own way back to its
@@ -306,11 +317,8 @@ in a submenu of its own.
   each preset where it's added (`presets` and `preset` in `menu.h`): a
   value a preset shares with a new install from the constant the row's own
   default comes from, so the preset moves with the default. That takes in
-  Fullscreen, full screen in each, HUD scale and Disable HUD, the HUD at its
-  own size and shown in each, Upscaling's Sharpness, Edge strength and
-  Cleanup, as a new install has them in each, and Gameplay's Skip
-  intro, Skip cutscenes and Visual indicator, off in each (spriteice's card,
-  23 November 2026). A row of
+  Fullscreen, full screen in each, Disable HUD, the HUD shown in each, and
+  HUD scale, the HUD at its own size in each but Modern. A row of
   ticks (`XBOX_ITEM_TOGGLES`), as
   Upscaling's Cleanup, gives the ticks it has in each, and a preset changes
   each tick that differs, as choosing it would. A (Restart) row the presets
@@ -321,14 +329,18 @@ in a submenu of its own.
   (`XBOX_ITEM_GROUP`) is no setting, so says nothing.
 - **A row the presets set may name presets that leave it** (`leave` in
   `menu.h`, a bit for each): those don't change it, and their tick goes by
-  the other rows. Every preset but Xbox leaves Input's rows
-  (`XBOX_PRESETS_BUT_XBOX`; spriteice, 23 November 2026): Xbox sets
+  the other rows. Performance, Balanced and Quality, which change only
+  visuals, leave each row of Audio, Input and Gameplay that a preset sets,
+  and Upscaling's Sharpness, Edge strength and Cleanup
+  (`XBOX_PRESETS_LEVELS`; spriteice, 23 November 2026): Xbox sets
   Keyboard moves to Camera, Stick shape to Square, Button prompts' Style to
   Default, Input > Behaviour > Camera's Default cam fix and No skater fade
-  off and the game's three shots ticked, and Input > Free camera's Enable
-  free camera off; the others leave each as the player has it, each with
-  its own way back. A row every preset leaves is told once in the log and
-  left alone.
+  off and the game's three shots ticked, Input > Free camera's Enable free
+  camera off, Sharpness and Edge strength to Normal with no Cleanup ticks,
+  and Gameplay's Skip intro, Skip cutscenes and Visual indicator off;
+  Modern sets each as above; the others leave each as the player has it,
+  each with its own way back. A row every preset leaves is told once in
+  the log and left alone.
 - The tests of the modules that add rows check their values, and that a
   value a preset takes from a default is what a start with no settings
   gives.

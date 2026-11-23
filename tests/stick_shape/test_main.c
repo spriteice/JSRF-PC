@@ -148,7 +148,8 @@ int main(int argc, char **argv)
     CHECK(s_row.presets == XBOX_PRESETS_SET && !s_row.keep);
     /* File > Presets: Square in Xbox, and left by the others, as all of
      * Input is. */
-    CHECK(s_row.preset[XBOX_PRESET_XBOX] == STICK_SHAPE_SQUARE && s_row.leave == XBOX_PRESETS_BUT_XBOX);
+    CHECK(s_row.preset[XBOX_PRESET_XBOX] == STICK_SHAPE_SQUARE && s_row.preset[XBOX_PRESET_MODERN] == STICK_SHAPE_SQUARE
+          && s_row.leave == XBOX_PRESETS_LEVELS);
     CHECK(s_row.state() == stick_shape_get());
     /* Square, the default, with no stick_shape=, with 0, or with a value it
      * doesn't know, as a start with no settings gives. */

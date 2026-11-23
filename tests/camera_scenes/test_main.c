@@ -117,14 +117,17 @@ static void check_row(void)
     CHECK(!strcmp(row->choice_hints[CAMROW_FADE],
                   "Keeps the camera back at a wall instead of fading your skater."));
     /* File > Presets: Xbox sets it, Default cam fix and No skater
-     * fade off and every shot on; every other preset leaves it as it is
+     * fade off and every shot on; Modern too, Default cam fix alone on;
+     * Performance, Balanced and Quality leave it as it is
      * ("our Default and Max presets to not touch any of the users changes
      * in the camera menu at all", and all of Input, 23 November 2026). A start with no keys
      * has every shot on (spriteice, 22 November 2026: "all on by
      * default"). */
     CHECK(row->presets == XBOX_PRESETS_SET);
     CHECK(row->preset[XBOX_PRESET_XBOX] == CAMROW_XBOX && CAMROW_XBOX == 28);
-    CHECK(row->leave == XBOX_PRESETS_BUT_XBOX && !(row->leave & XBOX_PRESET_BIT(XBOX_PRESET_XBOX)));
+    CHECK(row->preset[XBOX_PRESET_MODERN] == CAMROW_MODERN && CAMROW_MODERN == 1);   /* Default cam fix */
+    CHECK(row->leave == XBOX_PRESETS_LEVELS && !(row->leave & XBOX_PRESET_BIT(XBOX_PRESET_XBOX))
+          && !(row->leave & XBOX_PRESET_BIT(XBOX_PRESET_MODERN)));
     CHECK(CAMSCENE_DEFAULT == 7);
     CHECK(MENU_PRESET_TICKS >= CAMROW_TICKS);
 }

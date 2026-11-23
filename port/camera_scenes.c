@@ -99,15 +99,16 @@ void camscene_start(void)
         /* Input > Behaviour's first row, before Keyboard moves: it adds the
          * submenu too, which adds nothing once that has (menu.h). Each tick
          * has its own line at the bottom. File > Presets: Xbox's
-         * (CAMROW_XBOX), and left by the others. */
+         * (CAMROW_XBOX); Modern's, the walls' fix alone (CAMROW_MODERN); and
+         * left by the others. */
         const XBOX_MENU_ITEM rows[] = {
             { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_BEHAVIOUR,
               .hint = XBOX_GROUP_BEHAVIOUR_HINT },
             { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_TOGGLES, .label = "Camera",
               .group = XBOX_GROUP_BEHAVIOUR, .state = menu_ticks, .pick = menu_pick,
               .choices = k_row_names, .nchoices = CAMROW_TICKS, .choice_hints = k_row_hints,
-              .presets = XBOX_PRESETS_SET, .preset = { CAMROW_XBOX, 0, 0, 0 },
-              .leave = XBOX_PRESETS_BUT_XBOX,
+              .presets = XBOX_PRESETS_SET, .preset = { CAMROW_XBOX, CAMROW_MODERN, 0, 0, 0 },
+              .leave = XBOX_PRESETS_LEVELS,
               .hint = "Sets how the camera handles walls and the game's own shots." },
         };
         xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));

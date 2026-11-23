@@ -77,11 +77,11 @@ int main(int argc, char **argv)
     /* A hint, a sentence short enough for the strip (menu.h). */
     CHECK(s_row.hint && strlen(s_row.hint) <= MENU_HINT_LONGEST && s_row.hint[strlen(s_row.hint) - 1] == '.');
     CHECK(s_row.state() == audio_effects());
-    /* File > Presets > Xbox (Restart) turns it on, as the Xbox's own sound
-     * has it, through keep; the other presets leave it, the player's own
-     * (spriteice, 23 November 2026). */
-    CHECK(s_row.presets == XBOX_PRESETS_SET && s_row.keep && s_row.leave == XBOX_PRESETS_BUT_XBOX);
-    CHECK(s_row.preset[XBOX_PRESET_XBOX] == 1);
+    /* File > Presets > Xbox (Restart) and Modern (Restart) turn it on, as
+     * the Xbox's own sound has it, through keep; the other presets leave
+     * it, the player's own (spriteice, 23 November 2026). */
+    CHECK(s_row.presets == XBOX_PRESETS_SET && s_row.keep && s_row.leave == XBOX_PRESETS_LEVELS);
+    CHECK(s_row.preset[XBOX_PRESET_XBOX] == 1 && s_row.preset[XBOX_PRESET_MODERN] == 1);
     /* The setting, passed to the effects once, which leave the environment
      * to win over it. */
     CHECK(s_choices == 1 && s_chosen == audio_effects());

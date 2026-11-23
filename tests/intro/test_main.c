@@ -35,12 +35,10 @@ int main(int argc, char **argv)
     /* A hint, a sentence short enough for the strip (menu.h). */
     CHECK(s_row.hint && strlen(s_row.hint) <= MENU_HINT_LONGEST && s_row.hint[strlen(s_row.hint) - 1] == '.');
     CHECK(s_row.state() == intro_skip());
-    /* File > Presets: the intro plays in Xbox, and the others' are what a
-     * start with no skipintro= gives. */
-    CHECK(s_row.presets == XBOX_PRESETS_SET && !s_row.keep && !s_row.leave && s_row.preset[XBOX_PRESET_XBOX] == 0);
-    CHECK(s_row.preset[XBOX_PRESET_PERFORMANCE] == s_row.preset[XBOX_PRESET_BALANCED]
-          && s_row.preset[XBOX_PRESET_QUALITY] == s_row.preset[XBOX_PRESET_BALANCED]);
-    if (!strcmp(c, "off")) CHECK(s_row.preset[XBOX_PRESET_PERFORMANCE] == intro_skip());
+    /* File > Presets: the intro plays in Xbox and is skipped in Modern; the
+     * others change only visuals, so leave it. */
+    CHECK(s_row.presets == XBOX_PRESETS_SET && !s_row.keep && s_row.leave == XBOX_PRESETS_LEVELS);
+    CHECK(s_row.preset[XBOX_PRESET_XBOX] == 0 && s_row.preset[XBOX_PRESET_MODERN] == 1);
     if (!strcmp(c, "off")) CHECK(!intro_skip());
     if (!strcmp(c, "on")) CHECK(intro_skip());
     if (!strcmp(c, "flip")) {

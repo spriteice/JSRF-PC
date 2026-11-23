@@ -19,7 +19,7 @@
  *     static const XBOX_MENU_ITEM rows[] = {
  *         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE,
  *           .label = "Fullscreen", .state = is_fullscreen, .run = toggle_fullscreen,
- *           .presets = XBOX_PRESETS_SET, .preset = { 1, 1, 1, 1 },
+ *           .presets = XBOX_PRESETS_SET, .preset = { 1, 1, 1, 1, 1 },
  *           .hint = "The window becomes fullscreen." },
  *     };
  *     xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
@@ -72,6 +72,8 @@ typedef enum {
 /* File > Presets' presets, in its order (docs/menu-format.md). */
 typedef enum {
     XBOX_PRESET_XBOX,           /* Xbox: the game as the console runs it   */
+    XBOX_PRESET_MODERN,         /* Modern: gameplay and visuals as a player
+                                 * today might set them                   */
     XBOX_PRESET_PERFORMANCE,    /* Performance: the heavy settings at their
                                  * least                                  */
     XBOX_PRESET_BALANCED,       /* Balanced: between Performance and Quality */
@@ -83,12 +85,14 @@ typedef enum {
 /* A preset's bit, for a row's leave (XBOX_MENU_ITEM, below). */
 #define XBOX_PRESET_BIT(p) (1u << (p))
 
-/* Every preset but Xbox, for a row's leave: a player's own choice, which
- * only Xbox, the game as the console has it, sets (docs/menu-format.md,
+/* Performance, Balanced and Quality, the levels, which change only visuals:
+ * for the leave of a row that is a player's own choice, which only Xbox and
+ * Modern set: Audio's, Input's and Gameplay's rows that a preset sets, and
+ * Upscaling's Sharpness, Edge strength and Cleanup (docs/menu-format.md,
  * File > Presets). */
-#define XBOX_PRESETS_BUT_XBOX (XBOX_PRESET_BIT(XBOX_PRESET_PERFORMANCE) \
-                               | XBOX_PRESET_BIT(XBOX_PRESET_BALANCED)  \
-                               | XBOX_PRESET_BIT(XBOX_PRESET_QUALITY))
+#define XBOX_PRESETS_LEVELS (XBOX_PRESET_BIT(XBOX_PRESET_PERFORMANCE) \
+                             | XBOX_PRESET_BIT(XBOX_PRESET_BALANCED)  \
+                             | XBOX_PRESET_BIT(XBOX_PRESET_QUALITY))
 
 /* What the presets do with a row (XBOX_MENU_ITEM's presets). A preset sets
  * every setting but Developer's, and those its row says it leaves alone:
@@ -214,9 +218,9 @@ typedef struct XBOX_MENU_ITEM {
     const char *const *choice_hints;
     /* XBOX_PRESETS_SET: the presets that leave the row as the player has
      * it, a bit each (XBOX_PRESET_BIT), whose preset[] is not read, as
-     * every preset but Xbox leaves Input's rows (XBOX_PRESETS_BUT_XBOX). A
-     * row every preset leaves is XBOX_PRESETS_LEFT instead (docs/
-     * menu-format.md, File > Presets). */
+     * Performance, Balanced and Quality leave Input's rows
+     * (XBOX_PRESETS_LEVELS). A row every preset leaves is
+     * XBOX_PRESETS_LEFT instead (docs/menu-format.md, File > Presets). */
     unsigned        leave;
 } XBOX_MENU_ITEM;
 

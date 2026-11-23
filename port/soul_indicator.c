@@ -54,9 +54,10 @@ void soul_indicator_start(void)
         const XBOX_MENU_ITEM row = {
             .menu = XBOX_MENU_GAMEPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Visual indicator",
             .state = menu_on, .run = menu_flip, .group = XBOX_GROUP_SOULS,
-            /* File > Presets: off in Xbox, as on the Xbox. */
-            .presets = XBOX_PRESETS_SET,
-            .preset = { 0, SOUL_INDICATOR_DEFAULT, SOUL_INDICATOR_DEFAULT, SOUL_INDICATOR_DEFAULT },
+            /* File > Presets: off in Xbox, as on the Xbox, and on in Modern;
+             * the others change only the visuals, so leave it (spriteice, 23
+             * November 2026). */
+            .presets = XBOX_PRESETS_SET, .preset = { 0, 1, 0, 0, 0 }, .leave = XBOX_PRESETS_LEVELS,
             .hint = "Shows the graffiti soul icon while a soul challenge is on track." };
         xbox_MenuAdd(&row, 1);
     }

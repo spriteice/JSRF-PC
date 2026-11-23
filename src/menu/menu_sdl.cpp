@@ -127,24 +127,29 @@ static void exit_game(void)
 }
 
 /* File > Presets, a submenu (docs/menu-format.md): a row for each preset,
- * every row the presets set (menu.h) put at the Xbox's own settings, the
- * heavy ones at their least, between, or at their most, each by its owner's
- * own function (menu_preset_apply), and ticked while the settings are its;
- * then a line, and Reset (Restart) (spriteice, 23 November 2026).
- * Performance, Balanced and Quality apply at once, with no box, as Display
- * > Resolution does, and set no (Restart) row: Shader cache and Audio
- * effects are left to the player (spriteice's card, 02:00 UTC on
- * 2026-11-21). Xbox also turns Audio effects (Restart) on, as the Xbox's
- * own sound has them (spriteice, 23 November 2026), so its row is a
- * (Restart) row: "Xbox (Restart)", which asks first, and OK applies it,
- * keeping Audio effects for the next start, and restarts the game once, as
- * any (Restart) row's OK does (docs/menu-format.md, (Restart)). */
+ * every row the preset sets (menu.h) put at its value, each by its owner's
+ * own function (menu_preset_apply), and ticked while the settings are its.
+ * Xbox and Modern, gameplay as well as visuals, then a line; Performance,
+ * Balanced and Quality, the visuals alone, the heavy ones at their least,
+ * between, or at their most; then a line, and Reset (Restart) (spriteice,
+ * 23 November 2026). Performance, Balanced and Quality apply at once, with
+ * no box, as Display > Resolution does, and set no (Restart) row: Shader
+ * cache and Audio effects are left to the player (spriteice's card, 02:00
+ * UTC on 2026-11-21). Xbox and Modern also turn Audio effects (Restart) on,
+ * as the Xbox's own sound has them (spriteice, 23 November 2026), so each
+ * row is a (Restart) row, "Xbox (Restart)" and "Modern (Restart)", which
+ * asks first, and OK applies it, keeping Audio effects for the next start,
+ * and restarts the game once, as any (Restart) row's OK does
+ * (docs/menu-format.md, (Restart)). */
 #define FILE_PRESETS "Presets"
-static const char *const k_preset_names[] = { "Xbox", "Performance", "Balanced", "Quality" };
+static const char *const k_preset_names[] = { "Xbox", "Modern", "Performance", "Balanced", "Quality" };
 static_assert(sizeof k_preset_names / sizeof k_preset_names[0] == XBOX_PRESETS, "a name for each preset in menu.h");
 /* Each preset's row: its label, and the question a (Restart) row asks. */
-static const char *const k_preset_rows[] = { "Xbox (Restart)", "Performance", "Balanced", "Quality" };
-static const char *const k_preset_asks[] = { "Apply Xbox and restart, losing unsaved progress?", NULL, NULL, NULL };
+static const char *const k_preset_rows[] = {
+    "Xbox (Restart)", "Modern (Restart)", "Performance", "Balanced", "Quality" };
+static const char *const k_preset_asks[] = {
+    "Apply Xbox and restart, losing unsaved progress?", "Apply Modern and restart, losing unsaved progress?",
+    NULL, NULL, NULL };
 static_assert(sizeof k_preset_rows / sizeof k_preset_rows[0] == XBOX_PRESETS
               && sizeof k_preset_asks / sizeof k_preset_asks[0] == XBOX_PRESETS, "a row for each preset in menu.h");
 
@@ -161,7 +166,7 @@ template <int P> static int  preset_ticked(void) { return menu_preset_now() == P
 template <int P> static void preset_chosen(void) { preset_pick(P); }
 
 /* Every field, in order: C++11 has no designated initializers. */
-#define FILE_NO_PRESETS XBOX_PRESETS_UNSAID, { 0, 0, 0, 0 }, NULL
+#define FILE_NO_PRESETS XBOX_PRESETS_UNSAID, { 0, 0, 0, 0, 0 }, NULL
 #define FILE_NO_BIND    XBOX_BIND_NONE, NULL, NULL, NULL, 0
 /* A preset's row in File > Presets, by its label and question in
  * k_preset_rows and k_preset_asks. */
@@ -177,10 +182,15 @@ static const XBOX_MENU_ITEM k_file[] = {
     { XBOX_MENU_FILE, XBOX_ITEM_GROUP,     FILE_PRESETS, NULL, NULL, NULL, NULL, 0, NULL,
       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
       "Sets many settings at once, or resets them all.", FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },
-    FILE_PRESET(XBOX_PRESET_XBOX,        "The game as the Xbox runs it: 640x480, 4:3, nothing added."),
-    FILE_PRESET(XBOX_PRESET_PERFORMANCE, "Lowers the heavy settings, for weaker PCs and handhelds."),
-    FILE_PRESET(XBOX_PRESET_BALANCED,    "Draws further and sharper than Performance, with MSAA at 4x."),
-    FILE_PRESET(XBOX_PRESET_QUALITY,     "Sets every graphics and display setting to its most."),
+    /* The hints: what each changes, gameplay and visuals or the visuals
+     * alone (spriteice, 23 November 2026). */
+    FILE_PRESET(XBOX_PRESET_XBOX,        "Changes gameplay and visuals to the Xbox's: 640x480, 4:3, no extras."),
+    FILE_PRESET(XBOX_PRESET_MODERN,      "Changes gameplay and visuals to the author's preferred way to play."),
+    { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL,    NULL, NULL,      NULL, NULL, 0, NULL,       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
+      NULL, FILE_NO_PRESETS, FILE_PRESETS, NULL, NULL, FILE_NO_BIND },
+    FILE_PRESET(XBOX_PRESET_PERFORMANCE, "Changes only visuals, lowering the heavy ones for weaker PCs."),
+    FILE_PRESET(XBOX_PRESET_BALANCED,    "Changes only visuals: further and sharper than Performance."),
+    FILE_PRESET(XBOX_PRESET_QUALITY,     "Changes only visuals, putting each at its most."),
     { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL,    NULL, NULL,      NULL, NULL, 0, NULL,       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
       NULL, FILE_NO_PRESETS, FILE_PRESETS, NULL, NULL, FILE_NO_BIND },
     { XBOX_MENU_FILE, XBOX_ITEM_ACTION,    "Reset (Restart)", NULL, nv_window_reset, NULL, NULL, 0, NULL,
@@ -204,9 +214,11 @@ static const XBOX_MENU_ITEM k_file[] = {
 static int file_rows(XBOX_MENU_ITEM *rows, int restarts)
 {
     int n = 0;
-    for (const XBOX_MENU_ITEM &it : k_file) {
-        int restarting = it.run == nv_window_restart || it.run == nv_window_reset
-                      || (it.kind == XBOX_ITEM_SEPARATOR && it.group);  /* Reset's line */
+    for (int i = 0; i < FILE_ROWS; i++) {
+        const XBOX_MENU_ITEM &it = k_file[i];
+        int resets_next = it.kind == XBOX_ITEM_SEPARATOR && it.group && i + 1 < FILE_ROWS
+                       && k_file[i + 1].run == nv_window_reset;     /* Reset's line */
+        int restarting = it.run == nv_window_restart || it.run == nv_window_reset || resets_next;
         if (!restarting || restarts) rows[n++] = it;
     }
     return n;

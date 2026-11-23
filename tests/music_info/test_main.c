@@ -325,9 +325,10 @@ int main(int argc, char **argv)
     /* A hint, a sentence short enough for the strip (menu.h). */
     CHECK(s_row.hint && strlen(s_row.hint) <= MENU_HINT_LONGEST && s_row.hint[strlen(s_row.hint) - 1] == '.');
     CHECK(s_row.state() == music_info_on());
-    /* File > Presets: off in Xbox, and the others' are what a start with
-     * no musicinpause= gives. */
+    /* File > Presets: off in Xbox, on in Modern, and the others' are what a
+     * start with no musicinpause= gives. */
     CHECK(s_row.presets == XBOX_PRESETS_SET && !s_row.keep && !s_row.leave && s_row.preset[XBOX_PRESET_XBOX] == 0);
+    CHECK(s_row.preset[XBOX_PRESET_MODERN] == 1);
     CHECK(s_row.preset[XBOX_PRESET_PERFORMANCE] == s_row.preset[XBOX_PRESET_BALANCED]
           && s_row.preset[XBOX_PRESET_QUALITY] == s_row.preset[XBOX_PRESET_BALANCED]);
     if (!strcmp(c, "default")) CHECK(s_row.preset[XBOX_PRESET_PERFORMANCE] == music_info_on());

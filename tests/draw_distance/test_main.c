@@ -1178,11 +1178,13 @@ int main(int argc, char **argv)
     CHECK(!strcmp(s_row.choices[0], "1x") && !strcmp(s_row.choices[3], "4x"));
     CHECK(!strcmp(s_row.choices[DRAW_DISTANCE_UNLIMITED], "Unlimited"));
     CHECK(s_row.state() == draw_distance_step());
-    /* File > Presets: the game's own 1x and areas in Xbox (Off), 1x in
-     * Performance, the most in Quality (Unlimited, and All for Far
-     * buildings and Far shadows, the sky buildings of known bug 57 with
-     * it), and Balanced's what a start with none of the keys gives. */
+    /* File > Presets: the game's own 1x and areas in Xbox (Off), 3x of each
+     * in Modern, 1x in Performance, the most in Quality (Unlimited, and All
+     * for Far buildings and Far shadows, the sky buildings of known bug 57
+     * with it), and Balanced's what a start with none of the keys gives. */
     CHECK(s_row.presets == XBOX_PRESETS_SET && !s_row.keep && s_far_row.presets == XBOX_PRESETS_SET && !s_far_row.keep);
+    CHECK(s_row.preset[XBOX_PRESET_MODERN] == 2 && s_far_row.preset[XBOX_PRESET_MODERN] == 3
+          && s_shadow_row.preset[XBOX_PRESET_MODERN] == 3);         /* 3x of each */
     CHECK(s_row.preset[XBOX_PRESET_XBOX] == 0 && s_row.preset[XBOX_PRESET_PERFORMANCE] == 0
           && s_row.preset[XBOX_PRESET_QUALITY] == DRAW_DISTANCE_UNLIMITED);
     CHECK(s_far_row.preset[XBOX_PRESET_XBOX] == 0 && s_far_row.preset[XBOX_PRESET_PERFORMANCE] == 1

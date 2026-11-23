@@ -309,8 +309,8 @@ int main(int argc, char **argv)
          * "Free camera too" and "Add a Reset row"; and 23 November 2026,
          * the card "Leave them all"). */
         assert(s_rows[1].presets == XBOX_PRESETS_SET && !s_rows[1].keep);
-        assert(s_rows[1].preset[XBOX_PRESET_XBOX] == 0);
-        assert(s_rows[1].leave == XBOX_PRESETS_BUT_XBOX);
+        assert(s_rows[1].preset[XBOX_PRESET_XBOX] == 0 && s_rows[1].preset[XBOX_PRESET_MODERN] == 1);
+        assert(s_rows[1].leave == XBOX_PRESETS_LEVELS);
         for (i = 2; i < s_nrows; i++) assert(s_rows[i].presets == XBOX_PRESETS_LEFT && !s_rows[i].leave);
         assert(reset->kind == XBOX_ITEM_ACTION && reset->run && reset->confirm);
         assert(reset->hint[strlen(reset->hint) - 1] == '.');

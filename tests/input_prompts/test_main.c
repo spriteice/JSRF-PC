@@ -200,7 +200,9 @@ static void case_start(const char *setting)
         CHECK(!strcmp(row->choices[i], names[i]), "choice %d is %s", i, row->choices[i]);
     CHECK(row->presets == XBOX_PRESETS_SET, "set by the presets");
     CHECK(row->preset[XBOX_PRESET_XBOX] == PROMPT_STYLE_GAME, "Xbox's: %g, not Default", row->preset[XBOX_PRESET_XBOX]);
-    CHECK(row->leave == XBOX_PRESETS_BUT_XBOX, "left by every preset but Xbox, as all of Input is");
+    CHECK(row->preset[XBOX_PRESET_MODERN] == PROMPT_STYLE_AUTO, "Modern's: %g, not Auto",
+          row->preset[XBOX_PRESET_MODERN]);
+    CHECK(row->leave == XBOX_PRESETS_LEVELS, "left by Performance, Balanced and Quality, as all of Input is");
     for (i = 0; i < s_nrows; i++) {
         size_t h = s_rows[i].hint ? strlen(s_rows[i].hint) : 0;
         CHECK(s_rows[i].menu == XBOX_MENU_INPUT, "%s: Input's", s_rows[i].label);

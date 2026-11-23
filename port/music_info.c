@@ -56,7 +56,7 @@ void music_info_start(void)
             .state = menu_on, .run = menu_flip, .group = XBOX_GROUP_ENHANCEMENTS,
             /* File > Presets: off in Xbox, as on the Xbox. */
             .presets = XBOX_PRESETS_SET,
-            .preset = { 0, MUSIC_INFO_DEFAULT, MUSIC_INFO_DEFAULT, MUSIC_INFO_DEFAULT },
+            .preset = { 0, 1, MUSIC_INFO_DEFAULT, MUSIC_INFO_DEFAULT, MUSIC_INFO_DEFAULT },
             .hint = "Shows the song title, artist, and track number in the pause menu." };
         xbox_MenuAdd(&row, 1);
     }

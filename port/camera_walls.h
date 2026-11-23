@@ -65,8 +65,8 @@ struct camwall {
 /* CAMWALL_START: as a camera that starts again. */
 void camwall_reset(struct camwall *w);
 
-/* Off with no noskaterfade= in the settings, and in File > Presets' Xbox:
- * an eye held where the game draws the player whole only when it's
+/* Off with no noskaterfade= in the settings, and in File > Presets' Xbox and
+ * Modern: an eye held where the game draws the player whole only when it's
  * turned on (spriteice, 19 November 2026, testing freecam4's hold: "it
  * definitely needs to be a toggle"; testing freecam5, for the game's camera
  * too while Default cam fix is on, under it, named No skater fade; testing

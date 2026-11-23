@@ -284,33 +284,42 @@ the buttons to press, in Input > Button prompts' style. The game keeps
 running while it is open, but your input goes to the menu.
 
 - **File:** About (the version and system details), Presets, Restart, and Exit.
-  Presets, a submenu, sets many settings at once: Xbox (Restart),
-  Performance, Balanced or Quality. Xbox is the game as the Xbox runs it:
-  4:3 at Default resolution (640×480), with everything JSRF-PC adds to how it
-  looks and plays turned off, and Audio effects on, as the Xbox's own sound
-  has them; it asks first, and restarts the game. The other three apply
-  straight away, with no restart. Performance has the draw distance, Far
-  buildings and Far shadows at 1x, no anti-aliasing or anisotropic
-  filtering, and Upscaling's Textures and Graffiti off. Balanced has the
-  draw distance at 2x, Far buildings and Far shadows at 3x, MSAA at 4x in
-  place of SMAA, anisotropic filtering at 8x, and Upscaling at 4x but for
-  Buttons. Quality has the draw distance, Far buildings and Far shadows,
-  anisotropic filtering, Upscaling's Menus and HUD, Buttons, Textures and
-  Graffiti, and both anti-aliasings at their most, as far as the graphics
-  card goes; Far buildings and Far shadows at All draw parts of a map you
-  never see from where you are, such as the top of Dogenzaka Hill in its
-  sky. All but Xbox have the resolution and aspect ratio at Match screen,
-  Music info in pause and See through fix on, and Upscaling's Menus and HUD
-  at 4x or more. A preset sets every setting but Developer's, Input's two
-  layouts, the free camera's own settings, Mute, Shader cache and, but for
-  Xbox, Audio effects: each one also puts the game full screen, the HUD at
-  its own size and shown, Upscaling's Sharpness, Edge strength and Cleanup
-  as a new install has them, and Skip intro, Skip cutscenes and Visual
-  indicator off.
-  Input is yours: only Xbox changes it, setting Keyboard moves to Camera,
-  Stick shape to Square and Button prompts' Style to Default, turning the
-  free camera, Default cam fix and No skater fade off, and ticking the
-  game's three shots; the others leave Input as it is. The one ticked is the
+  Presets, a submenu, sets many settings at once. Xbox (Restart) and Modern
+  (Restart) change gameplay as well as visuals; after a line, Performance,
+  Balanced and Quality change only visuals. Xbox is the game as the Xbox
+  runs it: 4:3 at Default resolution (640×480), with everything JSRF-PC adds
+  to how it looks and plays turned off, and Audio effects on, as the Xbox's
+  own sound has them. Modern is the author's preferred way to play: the HUD
+  at 0.8x, the draw distance, Far buildings and Far shadows at 3x, MSAA at
+  4x, anisotropic filtering at 16x, Upscaling's Menus and HUD and Textures
+  at 8x, Graffiti at 4x and Buttons off, Sharp, Strong and both Cleanup
+  ticks, Audio effects on, Keyboard moves on Camera, Stick shape Square,
+  Button prompts' Style Auto, Default cam fix on and the game's three shots
+  off, the free camera on, and Skip intro, Skip cutscenes and Visual
+  indicator on. Xbox and Modern each ask first, and restart the game. The
+  other three apply straight away, with no restart. Performance has the
+  draw distance, Far buildings and Far shadows at 1x, no anti-aliasing or
+  anisotropic filtering, and Upscaling's Textures and Graffiti off. Balanced
+  has the draw distance at 2x, Far buildings and Far shadows at 3x, MSAA at
+  4x in place of SMAA, anisotropic filtering at 8x, and Upscaling at 4x but
+  for Buttons. Quality has the draw distance, Far buildings and Far
+  shadows, anisotropic filtering, Upscaling's Menus and HUD, Buttons,
+  Textures and Graffiti, and both anti-aliasings at their most, as far as
+  the graphics card goes; Far buildings and Far shadows at All draw parts of
+  a map you never see from where you are, such as the top of Dogenzaka Hill
+  in its sky. All but Xbox have the resolution and aspect ratio at Match
+  screen, Music info in pause and See through fix on, and Upscaling's Menus
+  and HUD at 4x or more. A preset sets every setting but Developer's,
+  Input's two layouts, the free camera's own settings, Mute, Shader cache
+  and, but for Xbox and Modern, Audio effects: each one also puts the game
+  full screen and the HUD shown, at its own size but in Modern.
+  Input, Gameplay, and Upscaling's Sharpness, Edge strength and Cleanup are
+  yours: only Xbox and Modern change them. Xbox sets Keyboard moves to
+  Camera, Stick shape to Square and Button prompts' Style to Default, turns
+  the free camera, Default cam fix and No skater fade off, ticks the game's
+  three shots, puts Sharpness and Edge strength at Normal with no Cleanup,
+  and turns Skip intro, Skip cutscenes and Visual indicator off. The other
+  three leave all of them as they are. The one ticked is the
   one your settings match, if any. Below them, after a line, Reset (Restart)
   puts every setting back to how a new install has it, once you say yes,
   and restarts the game: Developer's switches and both layouts too. It
@@ -400,7 +409,7 @@ running while it is open, but your input goes to the menu.
   the music and voices down. On by default; off, the sound is as before
   them. It is kept as `audioeffects=` in the
   settings file, and changing it restarts the game. Only File > Presets >
-  Xbox (Restart) changes it, turning it on.
+  Xbox (Restart) and Modern (Restart) change it, turning it on.
   [The audio
   effects](technical/audio-effects.md) says how they work.
 - **Input:** Five submenus. Controller layout and Keyboard layout set
@@ -412,9 +421,9 @@ running while it is open, but your input goes to the menu.
   differs from its default; Reset to default puts its page back. No preset
   changes them. Button prompts has Style, the look of the game's button
   icons and of the buttons along the menu's foot ([Controller](#controller),
-  above), Default in File > Presets > Xbox. Free camera has [the free
-  camera](#free-camera)'s own settings: Enable free camera, Auto centre,
-  Invert X, Invert Y, Sensitivity X, Sensitivity Y, Deadzone (10% by
+  above), Default in File > Presets > Xbox and Auto in Modern. Free camera has
+  [the free camera](#free-camera)'s own settings: Enable free camera, Auto
+  centre, Invert X, Invert Y, Sensitivity X, Sensitivity Y, Deadzone (10% by
   default), Mouse look (on by default), and Mouse sensitivity (5 by
   default), then Reset to default, which asks first, and puts all of them
   but Enable free camera back to their defaults. Behaviour has Camera,
@@ -427,8 +436,9 @@ running while it is open, but your input goes to the menu.
   No skater fade keeps the camera as far from your skater as the game shows
   them whole, seeing through a wall nearer than that ([Near
   walls](#near-walls), above): the free camera always, and the game's own
-  while Default cam fix is on. Off by default, and in the Xbox preset: the
-  camera comes in to the wall and your skater fades out as it nears them. It
+  while Default cam fix is on. Off by default, and in the Xbox and Modern
+  presets: the camera comes in to the wall and your skater fades out as it
+  nears them. It
   changes at once, and is kept as `noskaterfade=` (1 or 0) in the settings
   file. The last three ticks are the game's own camera shots: Graffiti cam,
   the camera turning to the graffiti you spray; Half pipe cam, the shot of
@@ -443,7 +453,8 @@ running while it is open, but your input goes to the menu.
   camera glides back to where you had it ([Free camera](#free-camera),
   above). The camera that holds
   still as you skate out of a level's exit is no tick's: it is always as on
-  the Xbox. All three are ticked by default, and in the Xbox preset. Each
+  the Xbox. All three are ticked by default, and in the Xbox preset, and
+  none in Modern. Each
   changes at once, and is kept as `graffiti_cam=`, `half_pipe_cam=` and
   `loop_cam=` (1 or 0) in the settings file. Keyboard moves
   sets how W A S D move the skater ([Keyboard](#keyboard), above): from the
@@ -459,7 +470,7 @@ running while it is open, but your input goes to the menu.
   diagonal; with Square, a part push on a diagonal counts up to 41% more
   than the same push straight, as on the Xbox, and turns the free camera
   that much faster. The keys stay as they are. It changes at once, is
-  Square in the Xbox preset,
+  Square in the Xbox and Modern presets,
   and is kept as `stick_shape=` (0 Square, 1 Round) in the settings file. A
   recording holds the sticks as the game got them, so it plays back the
   same whichever shape is set.
@@ -613,11 +624,11 @@ running while it is open, but your input goes to the menu.
   apply from the next start.
 
 Everything is remembered but Far buildings test. Restart, Exit, File >
-Presets' Xbox and Reset, the shader cache, Audio effects, and Purge shaders
-ask first, as anything since your last save is lost: all but Exit restart
-the game. The resolution and the other presets change at once, with no
-restart. The other rows marked (Restart) apply from the next start, which
-File > Restart gives.
+Presets' Xbox, Modern and Reset, the shader cache, Audio effects, and Purge
+shaders ask first, as anything since your last save is lost: all but Exit
+restart the game. The resolution and the other presets change at once, with no
+restart. The other rows marked (Restart) apply from the next start, which File
+> Restart gives.
 
 ## Graphics options
 
@@ -671,12 +682,14 @@ These are in the in-game menu, under Graphics.
   - **Sharpness:** Soft, Normal, or Sharp. How crisp the edges in the 2D, 3D,
     buttons' and graffiti copies are. Normal is Super-xBR as its author set it; Sharp draws
     edges crisper and Soft softer, neither with halos. Changing it makes every
-    copy again, which can pause the game for a moment. Normal by default.
+    copy again, which can pause the game for a moment. Normal by default, and
+    in File > Presets > Xbox; Sharp in Modern.
   - **Edge strength:** Soft, Normal, or Strong. How faint a diagonal edge the
     2D, 3D, buttons' and graffiti copies follow. Normal is Super-xBR as its author set it;
     Strong follows fainter diagonals too, for smoother lines in fine detail, and
     Soft only clear ones, blending the rest. Changing it makes every copy again,
-    which can pause the game for a moment. Normal by default.
+    which can pause the game for a moment. Normal by default, and in File >
+    Presets > Xbox; Strong in Modern.
   - **Cleanup:** DXT deblock and De-dither, each ticked on or off. They clean
     the game's textures up before the copies are made, so the upscaling
     doesn't sharpen what the textures' formats left in them. DXT deblock
@@ -684,5 +697,5 @@ These are in the in-game menu, under Graphics.
     smooths the dot patterns of 16-bit and DXT textures. Each leaves larger
     differences, edges in the picture, as they are, and neither changes a
     texture's see-through parts. Changing either makes every copy again,
-    which can pause the game for a moment. Both off by default, and in each of
-    File > Presets' presets.
+    which can pause the game for a moment. Both off by default, and in File >
+    Presets > Xbox; both on in Modern.

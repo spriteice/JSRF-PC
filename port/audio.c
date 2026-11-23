@@ -101,12 +101,13 @@ void audio_start(void)
             { .menu = XBOX_MENU_AUDIO, .kind = XBOX_ITEM_TOGGLE, .label = "Audio effects (Restart)",
               .state = menu_effects, .run = menu_effects_flip,
               .confirm = "Apply selection and restart, losing unsaved progress?",
-              /* File > Presets > Xbox (Restart) turns them on, as the
-               * Xbox's own sound has them, kept for the next start (keep)
-               * and the game restarted once (menu_sdl.cpp, preset_pick);
-               * the other presets leave it, the player's own, as Mute is
-               * (spriteice, 23 November 2026). */
-              .presets = XBOX_PRESETS_SET, .preset = { 1, 0, 0, 0 }, .leave = XBOX_PRESETS_BUT_XBOX,
+              /* File > Presets > Xbox (Restart) and Modern (Restart) turn
+               * them on, as the Xbox's own sound has them, kept for the
+               * next start (keep) and the game restarted once
+               * (menu_sdl.cpp, preset_pick); the other presets leave it,
+               * the player's own, as Mute is (spriteice, 23 November
+               * 2026). */
+              .presets = XBOX_PRESETS_SET, .preset = { 1, 1, 0, 0, 0 }, .leave = XBOX_PRESETS_LEVELS,
               .keep = menu_effects_keep,
               .hint = "Replicates the console's 3D sound, voices, and reverb." },
         };

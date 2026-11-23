@@ -74,7 +74,7 @@ static int g_fail;
  * File > Presets, which never sets them. The rows standing in for the other
  * menus' say nothing either, but for the presets' own, at the end: the log
  * says so once, for the first (run.py), and no preset sets them. */
-#define NO_PRESETS XBOX_PRESETS_UNSAID, { 0, 0, 0, 0 }, NULL
+#define NO_PRESETS XBOX_PRESETS_UNSAID, { 0, 0, 0, 0, 0 }, NULL
 #define NO_BIND    XBOX_BIND_NONE, NULL
 
 static int s_full, s_wide, s_scale = 1, s_exit, s_full_runs, s_wide_runs, s_picks = -1;
@@ -265,7 +265,7 @@ static int bind_two_second(int input)
     return 1;
 }
 static const char *bind_two_now(void)   { return "Space, J"; }
-#define BIND_LEFT XBOX_PRESETS_LEFT, { 0, 0, 0, 0 }, NULL
+#define BIND_LEFT XBOX_PRESETS_LEFT, { 0, 0, 0, 0, 0 }, NULL
 static const XBOX_MENU_ITEM k_binds[] = {
     { XBOX_MENU_GAMEPLAY, XBOX_ITEM_GROUP, "Controller layout", NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL,
       0, 0, 0, NULL, 0, NULL, "Sets which button presses each control.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
@@ -323,7 +323,7 @@ static const char *const k_switches[] = { "First (Restart)", "Second (Restart)",
  * in Performance, as the only rows it differs from Balanced in. */
 static int    p_smaa = 1, p_effects = 1, p_glass = 1;
 static int    p_ticks = 1, p_tick_picks;
-static int    p_feel = 1, p_feel_runs;   /* a row Xbox alone sets */
+static int    p_feel = 1, p_feel_runs;   /* a row Xbox and Modern alone set */
 static int    p_aniso = 2;              /* 4x: Balanced's 8x is past this device's most */
 static int    p_scale = 2;              /* 3x */
 static double p_dz = 0.15;
@@ -359,43 +359,44 @@ static const char *k_p_many[MENU_PRESET_TICKS + 1];
 #define P_ASK "Apply selection and restart, losing unsaved progress?"
 static const XBOX_MENU_ITEM k_presets[] = {
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLE, "SMAA", p_smaa_state, p_smaa_run, NULL, NULL, 0, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Smooths edges.", XBOX_PRESETS_SET, { 0, 0, 1, 1 }, NULL, NULL, NULL, NULL, NO_BIND },
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Smooths edges.", XBOX_PRESETS_SET, { 0, 1, 0, 1, 1 }, NULL, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_CHOICE, "Filtering", p_aniso_state, NULL, p_aniso_pick, k_p_aniso, 3, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sharpens textures.", XBOX_PRESETS_SET, { 0, 0, 3, XBOX_PRESET_MOST }, NULL, NULL, NULL, NULL, NO_BIND },
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sharpens textures.", XBOX_PRESETS_SET,
+      { 0, XBOX_PRESET_MOST, 0, 3, XBOX_PRESET_MOST }, NULL, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_INPUT, XBOX_ITEM_NUMBER, "Deadzone %", NULL, NULL, NULL, NULL, 0, NULL, NULL,
-      p_dz_value, p_dz_set, 0, 100, 5, "%g%%", 0, NULL, "Sets the stick's slack.", XBOX_PRESETS_SET, { 0, 15, 15, 15 }, NULL, NULL, NULL, NULL, NO_BIND },
+      p_dz_value, p_dz_set, 0, 100, 5, "%g%%", 0, NULL, "Sets the stick's slack.", XBOX_PRESETS_SET, { 0, 15, 15, 15, 15 }, NULL, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_DISPLAY, XBOX_ITEM_CHOICE, "Scale (Restart)", p_scale_state, NULL, p_scale_pick, k_p_scales, 6, NULL,
-      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sets the scale.", XBOX_PRESETS_SET, { 0, 2, 2, XBOX_PRESET_MOST },
+      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sets the scale.", XBOX_PRESETS_SET, { 0, 3, 2, 2, XBOX_PRESET_MOST },
       p_scale_keep, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_AUDIO, XBOX_ITEM_TOGGLE, "Effects (Restart)", p_effects_state, p_effects_run, NULL, NULL, 0, NULL,
-      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Adds the effects.", XBOX_PRESETS_SET, { 1, 1, 1, 1 }, p_effects_keep, NULL, NULL, NULL, NO_BIND },
+      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Adds the effects.", XBOX_PRESETS_SET, { 1, 1, 1, 1, 1 }, p_effects_keep, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_AUDIO, XBOX_ITEM_TOGGLE, "Glass", p_glass_state, p_glass_run, NULL, NULL, 0, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Tints what is behind.", XBOX_PRESETS_SET, { 0, 1, 1, 1 }, NULL,
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Tints what is behind.", XBOX_PRESETS_SET, { 0, 1, 1, 1, 1 }, NULL,
       "Enhancements", NULL, NULL, NO_BIND },
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLES, "Cleanup", p_ticks_state, NULL, p_ticks_pick, k_p_ticks, 2, NULL,
       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Cleans the copies.", XBOX_PRESETS_SET,
-      { 0, 1, 1, XBOX_PRESET_MOST }, NULL, NULL, NULL, NULL, NO_BIND },
-    /* A toggle Xbox sets, off, and the others leave, as Input's rows
-     * (menu.h, leave): their values, which would differ from the row's, are
-     * never read. */
+      { 0, 3, 1, 1, XBOX_PRESET_MOST }, NULL, NULL, NULL, NULL, NO_BIND },
+    /* A toggle Xbox sets, off, and Modern, on, and the others leave, as
+     * Input's rows (menu.h, leave): their values, which would differ from
+     * the row's, are never read. */
     { XBOX_MENU_INPUT, XBOX_ITEM_TOGGLE, "Feel", p_feel_state, p_feel_run, NULL, NULL, 0, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sets the feel.", XBOX_PRESETS_SET, { 0, 0, 0, 0 }, NULL, NULL, NULL,
-      NULL, NO_BIND, NULL, NULL, XBOX_PRESETS_BUT_XBOX },
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sets the feel.", XBOX_PRESETS_SET, { 0, 1, 0, 0, 0 }, NULL, NULL, NULL,
+      NULL, NO_BIND, NULL, NULL, XBOX_PRESETS_LEVELS },
     /* Three that say the wrong thing, which no preset can set, and are left
      * alone: one that asks first but keeps nothing, told once in the log,
      * then a button and a row of more ticks than an int has bits for, which
      * the same check has told of already (the rows standing in for the
      * other menus', which say nothing, are told too, run.py). */
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLE, "Asks, keeps nothing", p_bad_state, p_bad_run, NULL, NULL, 0, NULL,
-      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Asks first.", XBOX_PRESETS_SET, { 1, 1, 1, 1 }, NULL, NULL, NULL, NULL, NO_BIND },
+      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Asks first.", XBOX_PRESETS_SET, { 1, 1, 1, 1, 1 }, NULL, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_ACTION, "A button", NULL, p_bad_run, NULL, NULL, 0, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Does a thing.", XBOX_PRESETS_SET, { 1, 1, 1, 1 }, NULL, NULL, NULL, NULL, NO_BIND },
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Does a thing.", XBOX_PRESETS_SET, { 1, 1, 1, 1, 1 }, NULL, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLES, "Too many ticks", p_bad_state, NULL, p_bad_pick,
       k_p_many, MENU_PRESET_TICKS + 1, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Has too many.",
-      XBOX_PRESETS_SET, { 1, 1, 1, 1 }, NULL, NULL, NULL, NULL, NO_BIND },
+      XBOX_PRESETS_SET, { 1, 1, 1, 1, 1 }, NULL, NULL, NULL, NULL, NO_BIND },
     /* And one every preset leaves, which is told once and set by none. */
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLE, "Left by all", p_bad_state, p_bad_run, NULL, NULL, 0, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Is left.", XBOX_PRESETS_SET, { 1, 1, 1, 1 }, NULL, NULL, NULL,
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Is left.", XBOX_PRESETS_SET, { 1, 1, 1, 1, 1 }, NULL, NULL, NULL,
       NULL, NO_BIND, NULL, NULL, XBOX_PRESET_BIT(XBOX_PRESETS) - 1 },
 };
 
@@ -1405,8 +1406,25 @@ int main(void)
         CHECK(menu_preset_apply(XBOX_PRESET_BALANCED) == 0);
         CHECK(p_smaa == 1 && p_aniso == 2 && menu_preset_now() == XBOX_PRESET_BALANCED);
     }
-    /* Feel was never set again: the presets but Xbox left it. */
+    /* Feel was never set again: Performance, Balanced and Quality left it. */
     CHECK(p_feel == 1 && p_feel_runs == 2);
+    /* Modern: Feel, which Xbox sets too, put on from off by hand; both
+     * ticks; the scale's 3x kept and a restart asked for; the rest as
+     * Balanced's, so not set. Then Balanced again, which leaves Feel on. */
+    p_feel_run();
+    CHECK(p_feel == 0 && p_feel_runs == 3);
+    {
+        int runs = p_smaa_runs, picks = p_aniso_picks, sets = p_dz_sets, glass = p_glass_runs;
+        CHECK(menu_preset_apply(XBOX_PRESET_MODERN) == 1);
+        p_scale = p_scale_kept;
+        CHECK(p_feel == 1 && p_feel_runs == 4 && p_scale == 3 && p_ticks == 3 && p_tick_picks == 7);
+        CHECK(p_smaa_runs == runs && p_aniso_picks == picks && p_dz_sets == sets && p_glass_runs == glass);
+        CHECK(menu_preset_now() == XBOX_PRESET_MODERN);
+        CHECK(menu_preset_apply(XBOX_PRESET_BALANCED) == 1);
+        p_scale = p_scale_kept;
+        CHECK(p_feel == 1 && p_feel_runs == 4 && p_scale == 2 && p_ticks == 1 && p_tick_picks == 8);
+        CHECK(menu_preset_now() == XBOX_PRESET_BALANCED);
+    }
     /* The three that said the wrong thing were never set (run.py finds
      * their lines in the log). */
     CHECK(p_bad_runs == 0);

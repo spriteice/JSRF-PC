@@ -80,8 +80,8 @@ void stick_shape_start(void)
         /* The last row of Input > Behaviour, after Keyboard moves
          * (port/keyboard_move.c): it adds the submenu too, which adds
          * nothing once that has (menu.h). File > Presets: Square in Xbox,
-         * as the console's own pads reach the square, and left by the
-         * others, as all of Input is. */
+         * as the console's own pads reach the square, and in Modern; left
+         * by the others, as all of Input is. */
         const XBOX_MENU_ITEM rows[] = {
             { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_BEHAVIOUR,
               .hint = XBOX_GROUP_BEHAVIOUR_HINT },
@@ -89,7 +89,7 @@ void stick_shape_start(void)
               .group = XBOX_GROUP_BEHAVIOUR, .state = menu_shape, .pick = menu_shape_pick,
               .choices = k_names, .nchoices = STICK_SHAPE_CHOICES,
               .presets = XBOX_PRESETS_SET,
-              .preset = { STICK_SHAPE_SQUARE, 0, 0, 0 }, .leave = XBOX_PRESETS_BUT_XBOX,
+              .preset = { STICK_SHAPE_SQUARE, STICK_SHAPE_SQUARE, 0, 0, 0 }, .leave = XBOX_PRESETS_LEVELS,
               .hint = "Square stretches each stick to the Xbox pad's square reach." },
         };
         xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));

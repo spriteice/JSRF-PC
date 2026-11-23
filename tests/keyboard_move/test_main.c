@@ -326,7 +326,8 @@ int main(int argc, char **argv)
     /* File > Presets: Camera in Xbox, and left by the others, as all of
      * Input is. */
     CHECK(s_row.presets == XBOX_PRESETS_SET && !s_row.keep);
-    CHECK(s_row.preset[XBOX_PRESET_XBOX] == 0 && s_row.leave == XBOX_PRESETS_BUT_XBOX);
+    CHECK(s_row.preset[XBOX_PRESET_XBOX] == 0 && s_row.preset[XBOX_PRESET_MODERN] == 0
+          && s_row.leave == XBOX_PRESETS_LEVELS);
     /* Camera, the default, with no keyboard_moves= or one it doesn't know,
      * as a start with no settings gives. */
     if (!strcmp(c, "default") || !strcmp(c, "unknown")) {

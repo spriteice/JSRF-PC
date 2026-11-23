@@ -80,9 +80,9 @@ void cutscene_skip_start(void)
             .menu = XBOX_MENU_GAMEPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Skip cutscenes",
             .state = menu_on, .run = menu_flip, .group = XBOX_GROUP_SKIPS,
             /* File > Presets: scenes play to their end in Xbox, as on the
-             * Xbox. */
-            .presets = XBOX_PRESETS_SET,
-            .preset = { 0, CUTSCENE_SKIP_DEFAULT, CUTSCENE_SKIP_DEFAULT, CUTSCENE_SKIP_DEFAULT },
+             * Xbox, and can be skipped in Modern; the others change only the
+             * visuals, so leave it (spriteice, 23 November 2026). */
+            .presets = XBOX_PRESETS_SET, .preset = { 0, 1, 0, 0, 0 }, .leave = XBOX_PRESETS_LEVELS,
             .hint = "Skips a cutscene when the jump button is pressed twice." };
         xbox_MenuAdd(&row, 1);
     }
