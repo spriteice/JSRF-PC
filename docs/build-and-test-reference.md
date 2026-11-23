@@ -57,14 +57,15 @@ or a light build's NOTE.md, says which of the thread's it is.
 Two machines share the work, at the same time:
 
 - **The cloud,** a thread's sandbox: the code, the diagnosis, the CI jobs
-  in the build image (CI, below), test builds while another thread has the
-  PC (When the PC is busy, below), the delivery folder in the shared
-  folder, and every commit and push.
+  in the build image (CI, below), a test's repeated runs on Linux
+  (Repeated runs), test builds while another thread has the PC (When the
+  PC is busy, below), the delivery folder in the shared folder, and every
+  commit and push.
 - **My Windows PC,** through a Remote Control session, in `Building\` in my
   Claude folder: the generated code, both packages and their checks, the
-  comparison with the last tested package, the Windows tests, repeated
-  runs of a test, and the rest of CI when a server it downloads from is
-  down (CI, Repeated runs).
+  comparison with the last tested package, the Windows tests, a test's
+  repeated runs on Windows, and the rest of CI when a server it downloads
+  from is down (CI, Repeated runs).
 
 So the PC builds while the cloud runs CI, and neither waits for the other.
 The shared folder's building-on-pc/README.md says how the tree and the
@@ -177,8 +178,7 @@ against the kept copy (What is kept between builds).
   Windows: the idle run) and its setup for testing (Delivery package),
   and the Windows tests before a commit where Windows could differ (CI,
   Before a commit).
-  Repeated runs wait for it too, as their counts are compared on one
-  machine (Repeated runs).
+  A test's repeated runs on Windows wait for it too (Repeated runs).
 - **Delivery:** the Linux package is delivered as soon as its checks pass,
   and the Windows package once the PC is free. Work for Windows starts its
   testing only then (Test checklist, Order).
@@ -542,15 +542,23 @@ A known failure that comes and goes, as known bugs 19 and 22 were, or a
 race the sanitizer finds only sometimes (bug 20), is measured by running
 its test many times: at least 20 runs, reporting how many failed and how.
 A fix for one is shown by the same count with and without it, on the same
-machine. Repeated runs go on the PC, in the build image, one test at a
-time, and alone on the machine (Where the work runs, On my PC).
+machine. Where they go:
+
+- **On Linux:** in the thread's sandbox, in the `linux tests` build image,
+  where CI's GCC job runs the engine tests, once for each run:
+  `.github/ci/docker.sh "linux tests" python3 tests/run_all.py <test>`.
+- **On Windows:** on my PC, by the standing scripts, as a `repeat` line in
+  the run file asks (On my PC, The standing rules and scripts;
+  building-on-pc/README.md has the run file's lines).
+
+Either way it is one test at a time, alone on its machine (On my PC, One
+run at a time on each machine).
 
 A new or changed test that starts threads or measures time is run the
 same way before its commit (project rules, How it's written): 20 runs in a
-row on Linux, in the build image, and 20 on Windows if it runs there, and it
-passes every one. A test whose commit is checked while another thread has
-the PC runs its Linux runs in the sandbox's build image, alone there, and
-its Windows runs once the PC is free. The review pack gives both counts.
+row on Linux, and 20 on Windows if it runs there, and it passes every one.
+While another thread has the PC, its Windows runs wait until the PC is
+free (When the PC is busy). The review pack gives both counts.
 
 ### The same engine
 
@@ -575,6 +583,34 @@ to what makes it (the parts of `tools/` the pipeline runs,
 against) can't be shown this way. The shared folder's
 rules-review/code-quality-2026-11-05/ci/masks/evidence/engine-objects-before-and-after.txt
 is an example.
+
+### A pure move
+
+A change that only moves code into other files, such as a big file split
+into units (project rules, How it's written 2), can't pass The same
+engine: a static the files now share goes extern, and the compilers
+inline differently across the new file boundary, so its objects differ
+though no line of its logic changed. Its review pack shows that it is a
+move instead:
+
+- **CI** on its exact tree, every job (project rules, Before every
+  commit, 6).
+- **The move check:** `tools/move_check.py` on what is staged against its
+  base, with every file it takes code from and every unit it puts code
+  into, in one run (tools/README.md, move_check). Its report goes in the
+  pack whole, with a word for each line it lists.
+- **The engine comparison:** `tools/compare_engines.py` on the engine
+  built from the base tree and from the change's tree, in each way The
+  same engine builds it, with the statics the move check names as gone
+  extern given to `--extern` (tools/README.md, compare_engines). Its
+  reports go in the pack whole, with a word for each function it sorts as
+  anything else.
+
+Neither tool shows what the game does, so a move still rides a test
+build: its commit, however much it moves, is carried by one test build,
+alone or with other items (Batches), and that build's testing is its
+testing. A change that moves code and changes it too isn't a pure move:
+the move is its own commit first (project rules, How it's written 2).
 
 ## Compatibility checks
 

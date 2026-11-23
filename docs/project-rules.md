@@ -188,7 +188,9 @@ In priority order:
    splitting a file, renaming what it touches) is welcome, in a commit of
    its own before the change. A commit either restructures, with no change
    in behaviour and the tests still passing, or changes behaviour,
-   never both. No drive-by renaming or reformatting elsewhere.
+   never both. A move of code into other files shows that it changes
+   nothing as docs/build-and-test-reference.md (A pure move) says. No
+   drive-by renaming or reformatting elsewhere.
 3. **Clean:** match the surrounding style, naming, and comments.
 
 Reuse existing functions and helpers. Search the codebase before adding any
