@@ -3,13 +3,18 @@
  * The message boxes' A and B drawn flat (port/prompt_buttons.c), without the
  * game: a made-up display set's table of models, the matrix stack's top,
  * nodes and D3D's push buffer in a buffer that stands in for guest memory.
- * A walk opens only for the A or the B, in an art other than the game's;
- * its nodes' spheres are taken through the matrix as the game's own test
- * takes them, the largest kept, the same turned or not, and the pulse's
- * size in it; it is placed on the title's screen through the projection;
- * and its mark goes into the push buffer, after making space where it
- * wouldn't fit. An upright size's mark (the VS screen's) goes the same
- * way, and reads back as its size. run.py checks the log's lines.
+ * A walk opens only for the A, the B or the Start, in an art other than
+ * the game's; its nodes' spheres are taken through the matrix as the
+ * game's own test takes them, the largest kept, the same turned or not,
+ * and the pulse's size in it; it is placed on the title's screen through
+ * the projection; and its mark goes into the push buffer, after making
+ * space where it wouldn't fit. The Start's model is the save point's
+ * bubble, its word and the ball: its first walk takes no node and finds
+ * the ball, the smallest sphere, and the walks after take the ball alone,
+ * the other nodes left to the game and noted for the log; its picture is
+ * fitted to its ball, not grown; and the talking head's bubble is no
+ * button. An upright size's mark (the VS screen's) goes the same way, and
+ * reads back as its size. run.py checks the log's lines.
  */
 #include <math.h>
 #include <stdio.h>
@@ -27,6 +32,12 @@
 #define MODEL_B 0x31000u
 #define OTHER   0x32000u     /* a model of the set that is neither */
 #define MODEL_BANDS 0x33000u   /* the set's 0x6B: the menus' bands, no button */
+#define MODEL_START 0x34000u   /* the set's 0xFE: the save point's bubble with the Start's ball */
+#define MODEL_TALK  0x35000u   /* the set's 0x7B: the talking head's bubble, no button */
+#define NODE_BUBBLE 3u         /* the Start's nodes: the bubble, */
+#define NODE_WORD   4u         /* its word, */
+#define NODE_BALL   5u         /* and the ball */
+#define START_NODES 3u
 #define ESP     0x40000u     /* the guest's stack, as a node function finds it */
 #define STACK   0x50000u     /* the stack's top entry */
 #define MATRIX  0x51000u
@@ -84,6 +95,8 @@ static void make(void)
     put32(MODELS + PROMPT_BUTTONS_B * 4u, MODEL_B);
     put32(MODELS + 0x68u * 4u, OTHER);
     put32(MODELS + 0x6Bu * 4u, MODEL_BANDS);
+    put32(MODELS + PROMPT_BUTTONS_START * 4u, MODEL_START);
+    put32(MODELS + 0x7Bu * 4u, MODEL_TALK);
     put32(PROMPT_BUTTONS_MATRIX_TOP, STACK);
     put32(STACK, MATRIX);
     /* A rim, the coin (the largest, its middle off the node's origin and
@@ -91,6 +104,10 @@ static void make(void)
     node(0, 0, 0, 0, 0, 0, 0, 3.0f);
     node(1, 1.0f, 2.0f, 0, 0, 0, 0.5f, 10.0f);
     node(2, 0, 0, 0, 0, 0, 0, 6.0f);
+    /* The save point's bubble, its word, and the Start's ball under it. */
+    node(NODE_BUBBLE, 0, 0, 0, 0, 0, 0, 30.0f);
+    node(NODE_WORD, 0, 5.0f, 0, 0, 0, 0, 14.0f);
+    node(NODE_BALL, 0, -6.0f, 0, 0, 0, 0, 8.0f);
     put32(DEVICE + WIDE_HUD_D3D_PUT, PUSH);
     put32(DEVICE + WIDE_HUD_D3D_LIMIT, PUSH + 0x100u);
 }
@@ -100,6 +117,142 @@ static void walk(PromptButtonsWalk *w)
 {
     uint32_t i;
     for (i = 0; i < 3; i++) prompt_buttons_node(w, mem, TOP, NODES + i * NODE_SIZE);
+}
+
+/* The models' draw of n nodes from the first-th on, as recomp_manual.c's
+ * model_node hands them to an open walk: a node that is the button's taken
+ * and its `ret` done, any other counted and left to the game. Returns the
+ * nodes the game drew, a bit each. */
+static unsigned draw_nodes(PromptButtonsWalk *w, uint32_t first, uint32_t n)
+{
+    unsigned drawn = 0;
+    uint32_t i;
+    for (i = 0; i < n; i++) {
+        const uint32_t at = NODES + (first + i) * NODE_SIZE;
+        put32(ESP, 0x000476B5u);
+        put32(ESP + 4u, MODEL_START);
+        put32(ESP + 8u, at);
+        if (prompt_buttons_takes(w)) {
+            CHECK(prompt_buttons_node_ret(w, mem, TOP, ESP) == ESP + 4u);
+        } else {
+            prompt_buttons_pass(w, mem, TOP, at);
+            drawn |= 1u << i;
+        }
+    }
+    return drawn;
+}
+
+/* The save point's Start: its bubble's model, of which only the ball is
+ * the button. */
+static void case_start(void)
+{
+    static const uint32_t view[4] = { 0, 0, 640, 480 };
+    PromptButtonsWalk w;
+    float x, y, half;
+    int what, box, art, t;
+    uint32_t put;
+    make();
+    prompt_buttons_forget();
+    CHECK(PROMPT_BUTTONS_START == 0xFEu);
+    CHECK(prompt_buttons_id(PROMPT_BUTTONS_START) == 2 && prompt_buttons_start_node() == PROMPT_BUTTONS_LEARN);
+    /* The talking head's bubble (test build editor1 took it for the
+     * Start's) is no button: never begun, nor opened by its id. */
+    CHECK(prompt_buttons_id(0x7Bu) == -1);
+    CHECK(!prompt_buttons_begin(&w, mem, TOP, MODELS, MODEL_TALK, PROMPT_ART_XBOX, 0) && w.button == -1);
+    CHECK(!prompt_buttons_open(&w, MODEL_TALK, 0x7Bu, PROMPT_ART_XBOX, 0) && w.button == -1);
+    CHECK(prompt_buttons_control(0) == INPUT_CTL_A && prompt_buttons_control(1) == INPUT_CTL_B
+          && prompt_buttons_control(2) == INPUT_CTL_START);
+    CHECK(prompt_buttons_control(-1) == INPUT_CTL_A && prompt_buttons_control(PROMPT_BUTTONS_KINDS) == INPUT_CTL_A);
+    /* The game's own art: never opened, and nothing found. */
+    CHECK(!prompt_buttons_begin(&w, mem, TOP, MODELS, MODEL_START, PROMPT_ART_GAME, 0) && w.button == -1);
+    CHECK(!prompt_buttons_takes(&w));
+
+    /* The first walk: no node taken, all three drawn by the game, even at
+     * no size as the bubble opens; no mark; the ball found, the smallest. */
+    matrix(0.0f, 0.0f, 40.0f, 60.0f, 800.0f);
+    CHECK(prompt_buttons_begin(&w, mem, TOP, MODELS, MODEL_START, PROMPT_ART_PLAYSTATION, 0));
+    CHECK(w.button == 2 && w.only == PROMPT_BUTTONS_LEARN && w.id == PROMPT_BUTTONS_START);
+    CHECK(draw_nodes(&w, NODE_BUBBLE, START_NODES) == 7u && w.nodes == START_NODES);
+    CHECK(CLOSE(w.own[0], 30.0f) && CLOSE(w.own[1], 14.0f) && CLOSE(w.own[2], 8.0f));
+    put32(DEVICE + WIDE_HUD_D3D_PUT, PUSH);
+    CHECK(prompt_buttons_end(&w, mem, DEVICE, 800.0f, 1.0f, view, make_space) == 0 && w.button == -1);
+    CHECK(get32(DEVICE + WIDE_HUD_D3D_PUT) == PUSH && prompt_buttons_start_node() == 2);
+
+    /* From then on: the bubble's and the word's nodes the game's, each
+     * noted with its sphere through the matrix for the log; the ball's
+     * taken, and the mark the Start's, where the ball is, with the
+     * animation's pulse in its size: PROMPT_BUTTONS_START_SIDE of the
+     * ball's sphere, not a button's quarter more. */
+    matrix(0.4f, 1.5f, 40.0f, 60.0f, 800.0f);
+    CHECK(prompt_buttons_begin(&w, mem, TOP, MODELS, MODEL_START, PROMPT_ART_PLAYSTATION, 0));
+    CHECK(w.only == 2);
+    CHECK(draw_nodes(&w, NODE_BUBBLE, START_NODES) == 3u && w.nodes == START_NODES && w.node == 2);
+    CHECK(CLOSE(w.r, 12.0f) && CLOSE(w.scale, 1.5f) && CLOSE(w.mid[2], 800.0f));
+    CHECK(CLOSE(w.mid[0], 40.0f + 9.0f * sinf(0.4f)) && CLOSE(w.mid[1], 60.0f - 9.0f * cosf(0.4f)));
+    CHECK(CLOSE(w.told[0][0], 40.0f) && CLOSE(w.told[0][1], 60.0f) && CLOSE(w.told[0][2], 800.0f)
+          && CLOSE(w.told[0][3], 45.0f));
+    CHECK(CLOSE(w.told[1][0], 40.0f - 7.5f * sinf(0.4f)) && CLOSE(w.told[1][1], 60.0f + 7.5f * cosf(0.4f))
+          && CLOSE(w.told[1][3], 21.0f));
+    CHECK(CLOSE(w.told[2][0], w.mid[0]) && CLOSE(w.told[2][1], w.mid[1]) && CLOSE(w.told[2][3], 12.0f));
+    CHECK(prompt_buttons_place(&w, 800.0f, 1.0f, view, &x, &y, &half));
+    CHECK(PROMPT_BUTTONS_START_SIDE > 0.0f && PROMPT_BUTTONS_START_SIDE < 1.0f);
+    CHECK(CLOSE(half, 12.0f * PROMPT_BUTTONS_START_SIDE));
+    put = prompt_buttons_end(&w, mem, DEVICE, 800.0f, 1.0f, view, make_space);
+    CHECK(put == PUSH && w.button == -1);
+    CHECK(nv2a_prompts_mark_read(get32(PUSH + 4u), &what, &box, &art));
+    CHECK(what == INPUT_CTL_START && !box && art == PROMPT_ART_PLAYSTATION);
+    CHECK(CLOSE(bitsf(get32(PUSH + 8u)), x) && CLOSE(bitsf(get32(PUSH + 12u)), y)
+          && CLOSE(bitsf(get32(PUSH + 16u)), half));
+    /* The ball at no size (the bubble opening or closing): taken, and no
+     * mark; the bubble and the word still the game's. */
+    put32(DEVICE + WIDE_HUD_D3D_PUT, PUSH);
+    matrix(0.0f, 0.0f, 40.0f, 60.0f, 800.0f);
+    CHECK(prompt_buttons_begin(&w, mem, TOP, MODELS, MODEL_START, PROMPT_ART_KEYS, 0));
+    CHECK(draw_nodes(&w, NODE_BUBBLE, START_NODES) == 3u);
+    CHECK(prompt_buttons_end(&w, mem, DEVICE, 800.0f, 1.0f, view, make_space) == 0);
+    CHECK(get32(DEVICE + WIDE_HUD_D3D_PUT) == PUSH);
+    /* Its flat draws go on, pulsing between 1.4 and 1.6 of its size: the
+     * log gives the PROMPT_BUTTONS_START_AGAIN-th again, with its sphere's
+     * least and most over the later half of them (run.py), and no draw
+     * after it. */
+    for (t = 2; t <= (int)PROMPT_BUTTONS_START_AGAIN + 4; t++) {
+        put32(DEVICE + WIDE_HUD_D3D_PUT, PUSH);
+        matrix(0.0f, t <= (int)PROMPT_BUTTONS_START_AGAIN / 2 ? 0.5f : t % 2 ? 1.4f : 1.6f, 40.0f, 60.0f, 800.0f);
+        CHECK(prompt_buttons_begin(&w, mem, TOP, MODELS, MODEL_START, PROMPT_ART_PLAYSTATION, 0));
+        CHECK(draw_nodes(&w, NODE_BUBBLE, START_NODES) == 3u);
+        CHECK(prompt_buttons_end(&w, mem, DEVICE, 800.0f, 1.0f, view, make_space) == PUSH);
+    }
+    put32(DEVICE + WIDE_HUD_D3D_PUT, PUSH);
+    /* The A's and the B's are all button: every node taken. */
+    CHECK(prompt_buttons_begin(&w, mem, TOP, MODELS, MODEL_A, PROMPT_ART_XBOX, 0) && w.only == PROMPT_BUTTONS_ALL);
+    CHECK(draw_nodes(&w, 0, 3) == 0u && w.nodes == 3);
+    w.button = -1;
+
+    /* A model of one node is all ball. */
+    prompt_buttons_forget();
+    CHECK(prompt_buttons_start_node() == PROMPT_BUTTONS_LEARN);
+    CHECK(prompt_buttons_open(&w, MODEL_START, PROMPT_BUTTONS_START, PROMPT_ART_XBOX, 0));
+    CHECK(draw_nodes(&w, NODE_BALL, 1) == 1u);
+    CHECK(prompt_buttons_end(&w, mem, DEVICE, 800.0f, 1.0f, view, make_space) == 0);
+    CHECK(prompt_buttons_start_node() == PROMPT_BUTTONS_ALL);
+    CHECK(prompt_buttons_open(&w, MODEL_START, PROMPT_BUTTONS_START, PROMPT_ART_XBOX, 0)
+          && w.only == PROMPT_BUTTONS_ALL);
+    w.button = -1;
+
+    /* A model with no node to find it in: walked PROMPT_BUTTONS_TRIES
+     * times, then left as the game draws it, said once. */
+    prompt_buttons_forget();
+    for (t = 0; t < PROMPT_BUTTONS_TRIES; t++) {
+        CHECK(prompt_buttons_begin(&w, mem, TOP, MODELS, MODEL_START, PROMPT_ART_XBOX, 0));
+        CHECK(prompt_buttons_end(&w, mem, DEVICE, 800.0f, 1.0f, view, make_space) == 0);
+    }
+    CHECK(!prompt_buttons_begin(&w, mem, TOP, MODELS, MODEL_START, PROMPT_ART_XBOX, 0) && w.button == -1);
+    CHECK(prompt_buttons_start_node() == PROMPT_BUTTONS_LEARN);
+    /* The A is opened as ever. */
+    CHECK(prompt_buttons_begin(&w, mem, TOP, MODELS, MODEL_A, PROMPT_ART_XBOX, 0));
+    w.button = -1;
+    prompt_buttons_forget();
+    printf("prompt_buttons start: pass\n");
 }
 
 int main(void)
@@ -321,6 +474,7 @@ int main(void)
     CHECK(prompt_buttons_end(&w, mem, DEVICE, 500.0f, 1.0f, view, make_space) == 0);
     CHECK(get32(DEVICE + WIDE_HUD_D3D_PUT) == PUSH && w.button == -1);
 
+    case_start();
     printf("prompt_buttons: all cases pass\n");
     free(mem);
     return 0;

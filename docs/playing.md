@@ -42,14 +42,14 @@ nothing on it keeps the game's icon, and a button the
 pad set has no picture of shows the nearest: the back paddles the Xbox
 Elite's, and the touchpad PlayStation's. The PlayStation's Mute button, and
 a key with no picture of its own, is a blank key with its name on it. In
-every style but Default, the A and B beside a message box's text, and Skip
-cutscenes' A, are the style's pictures, flat and still pulsing, where the
-game turns its own in 3D; and where the game's text names the A or B button
-by its letter, the letter is the style's picture of it, a little taller
-than the text, in every language the game has: the line to press B to go
-back in the pause menu's notebook and graffiti picker, Roboy's test run's
-line to press A to start, the save, load and memory messages, and the
-graffiti save screen's.
+every style but Default, the A and B beside a message box's text, Skip
+cutscenes' A, and the Start in the speech bubble at a graffiti save point,
+are the style's pictures, flat and still pulsing, where the game turns its
+own in 3D; and where the game's text names the A or B button by its letter,
+the letter is the style's picture of it, a little taller than the text, in
+every language the game has: the line to press B to go back in the pause
+menu's notebook and graffiti picker, Roboy's test run's line to press A to
+start, the save, load and memory messages, and the graffiti save screen's.
 The help line that scrolls along the top of the graffiti editor names the
 D-pad, the left stick and the triggers too, in words, and each name there
 is the style's picture, scrolling with the line: a pad's D-pad or left

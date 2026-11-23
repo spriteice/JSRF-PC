@@ -5143,8 +5143,8 @@ void sub_00047690(void)
         return;
     }
     sub_00047690_gen();
-    /* Its `ret 8`: the walk, with every node skipped, leaves the stack as
-     * the draw found it. */
+    /* Its `ret 8`: the walk, with a node skipped or drawn, leaves the stack
+     * as the draw found it. */
     RECOMP_CHECK(g_esp == esp + 12u, "the flat button's walk left esp at %08X, not %08X", g_esp, esp + 12u);
     prompt_view(&focal, &tall, view);
     prompt_buttons_end(&s_flat, mem, MEM32(D3D_DEVICE), focal, tall, view, d3d_make_space);
@@ -5186,11 +5186,19 @@ static void wide_menu_node(void (*body)(void), uint32_t via)
  * in with its matrix on top, and not drawn. The pose's walks never read
  * what a node function returns (sub_000479D0, sub_00047BE0, sub_0005E9B0's
  * loop). With the body skipped, its `ret` is done here: the esp it would
- * leave comes back from prompt_buttons_node_ret. */
+ * leave comes back from prompt_buttons_node_ret. A node of the button's
+ * model that isn't the button's (the save point's bubble round the Start's ball,
+ * prompt_buttons_takes) is counted and drawn as the game draws it. */
 static void model_node(void (*body)(void), uint32_t via)
 {
     if (s_flat.button >= 0) {
-        g_esp = prompt_buttons_node_ret(&s_flat, (const uint8_t *)g_xbox_mem_offset, ADX_GUEST_RAM, g_esp);
+        const uint8_t *mem = (const uint8_t *)g_xbox_mem_offset;
+        if (prompt_buttons_takes(&s_flat)) {
+            g_esp = prompt_buttons_node_ret(&s_flat, mem, ADX_GUEST_RAM, g_esp);
+            return;
+        }
+        prompt_buttons_pass(&s_flat, mem, ADX_GUEST_RAM, MEM32(g_esp + 8u));
+        wide_menu_node(body, via);
         return;
     }
     /* A menu's model watched (menu_watch, above): its node taken, and drawn. */

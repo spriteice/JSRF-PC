@@ -6910,13 +6910,14 @@ static void wide_hud_frame_end(void)
 }
 
 /*
- * The message boxes' A and B, flat (port/prompt_buttons.h), and a control's
- * name in the game's text (port/prompt_text.h): the game side's mark
- * (nv2a_prompts.h, NV2A_PROMPT_MARK_METHOD), its words kept as they come,
- * and on its last the picture of what the mark shows (the control on that
- * button, or a pad's whole D-pad or left stick), in the mark's art, drawn
- * over the frame where the game's 3D button would have been, or in the
- * name's place, at the mark's alpha (a name's fades with its text), and cut
+ * The message boxes' A and B and the save point's Start, flat
+ * (port/prompt_buttons.h), and a control's name in the game's text
+ * (port/prompt_text.h): the game side's mark (nv2a_prompts.h,
+ * NV2A_PROMPT_MARK_METHOD), its words kept as they come, and on its last
+ * the picture of what the mark shows (the control on that button, or a
+ * pad's whole D-pad or left stick), in the mark's art, drawn over the
+ * frame where the game's 3D button would have been, or in the name's
+ * place, at the mark's alpha (a name's fades with its text), and cut
  * across to the window the game side marked, if it marked one (the
  * graffiti editor's ticker, whose text the game's own viewport cuts). It
  * is placed as a 3D draw there is (do_draw): squeezed in a widened

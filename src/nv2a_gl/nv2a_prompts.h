@@ -134,11 +134,11 @@ void nv2a_prompts_fit(const uint8_t *src, int sw, int sh, uint8_t *dst, int w, i
 /* ---- the message boxes' A and B, flat (port/prompt_buttons.h) ------------ */
 
 /* The mark the game side writes into D3D's push buffer where a box's A or
- * B (or Skip cutscenes' A) would have been drawn, or a control's name in
- * the game's text (port/prompt_text.h): one header of
- * NV2A_PROMPT_MARK_WORDS values, on NV2A_PROMPT_MARK_METHOD and the three
- * after it, past the highest method the title's D3D writes (0x1EA4) and
- * below the HUD's mark (nv2a_wide.h, NV2A_WIDE_HUD_METHOD).
+ * B (or Skip cutscenes' A, or the save point's Start) would have been
+ * drawn, or a control's name in the game's text (port/prompt_text.h): one
+ * header of NV2A_PROMPT_MARK_WORDS values, on NV2A_PROMPT_MARK_METHOD and
+ * the three after it, past the highest method the title's D3D writes
+ * (0x1EA4) and below the HUD's mark (nv2a_wide.h, NV2A_WIDE_HUD_METHOD).
  * Word 0 is NV2A_PROMPT_MARK_TAG, with NV2A_PROMPT_MARK_BOX for the message
  * box's, and under it what the picture shows (NV2A_PROMPT_MARK_WHAT: a
  * control, INPUT_CTL_..., drawn as the icons show it, the first input on

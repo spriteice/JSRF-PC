@@ -41,10 +41,14 @@ with the game's own hold, the HUD hidden and a camera that flies, through
 the map's portals as a skater goes, from hooks in `recomp_manual.c` on the
 game's main loop (which reads the portals from the game's own list), its
 frame's draw, its camera's draw and the set of areas it draws. The message
-boxes' A and B, drawn flat in the button prompts' styles, are
-`prompt_buttons.c`, from the models' draw's and the node functions'
-overrides in `recomp_manual.c`: it marks where each button is, and the
-renderer draws the style's picture there (`src/nv2a_gl/nv2a_prompts.h`).
+boxes' A and B and the graffiti save point's Start, drawn flat in the
+button prompts' styles, are `prompt_buttons.c`, from the models' draw's and
+the node functions' overrides in `recomp_manual.c`: it marks where each
+button is, and the renderer draws the style's picture there
+(`src/nv2a_gl/nv2a_prompts.h`). The Start's model is the whole speech
+bubble, so only its ball's node is taken, and the rest drawn as the game
+draws it; its picture is fitted under the bubble's word, where the others
+are a quarter larger than the game's.
 It also has the mark for a size of the VS menu's own for its upright
 buttons, which `recomp_manual.c` writes round the draws of that screen's
 three objects. The mark doesn't reach the VS menu's Back yet, which is
