@@ -107,7 +107,7 @@ void camscene_start(void)
               .group = XBOX_GROUP_BEHAVIOUR, .state = menu_ticks, .pick = menu_pick,
               .choices = k_row_names, .nchoices = CAMROW_TICKS, .choice_hints = k_row_hints,
               .presets = XBOX_PRESETS_SET, .preset = { CAMROW_XBOX, 0, 0 },
-              .leave = XBOX_PRESET_BIT(XBOX_PRESET_JSRF_PC) | XBOX_PRESET_BIT(XBOX_PRESET_MAX),
+              .leave = XBOX_PRESET_BIT(XBOX_PRESET_BALANCED) | XBOX_PRESET_BIT(XBOX_PRESET_QUALITY),
               .hint = "Sets how the camera handles walls and the game's own shots." },
         };
         xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));

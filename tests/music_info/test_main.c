@@ -328,8 +328,8 @@ int main(int argc, char **argv)
     /* File > Presets: off in Xbox mode, and JSRF-PC default's and Max
      * quality's are what a start with no musicinpause= gives. */
     CHECK(s_row.presets == XBOX_PRESETS_SET && !s_row.keep && s_row.preset[XBOX_PRESET_XBOX] == 0);
-    CHECK(s_row.preset[XBOX_PRESET_MAX] == s_row.preset[XBOX_PRESET_JSRF_PC]);
-    if (!strcmp(c, "default")) CHECK(s_row.preset[XBOX_PRESET_JSRF_PC] == music_info_on());
+    CHECK(s_row.preset[XBOX_PRESET_QUALITY] == s_row.preset[XBOX_PRESET_BALANCED]);
+    if (!strcmp(c, "default")) CHECK(s_row.preset[XBOX_PRESET_BALANCED] == music_info_on());
     if (!strcmp(c, "off")) CHECK(!music_info_on());
     if (!strcmp(c, "on") || !strcmp(c, "default")) CHECK(music_info_on());   /* on by default */
     if (!strcmp(c, "flip")) {

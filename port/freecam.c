@@ -669,7 +669,7 @@ static void freecam_menu(void)
         { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_TOGGLE, .label = "Enable free camera",
           .group = XBOX_GROUP_FREECAM, .state = menu_on, .run = freecam_flip,
           .presets = XBOX_PRESETS_SET, .preset = { 0, 0, 0 },
-          .leave = XBOX_PRESET_BIT(XBOX_PRESET_JSRF_PC) | XBOX_PRESET_BIT(XBOX_PRESET_MAX),
+          .leave = XBOX_PRESET_BIT(XBOX_PRESET_BALANCED) | XBOX_PRESET_BIT(XBOX_PRESET_QUALITY),
           .hint = "Lets the right stick, or the mouse, control the camera." },
         { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_CHOICE, .label = "Auto centre",
           .group = XBOX_GROUP_FREECAM,

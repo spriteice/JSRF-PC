@@ -1183,14 +1183,14 @@ int main(int argc, char **argv)
      * shadows, as All draws the sky buildings of known bug 57), and JSRF-PC
      * default's what a start with none of the keys gives. */
     CHECK(s_row.presets == XBOX_PRESETS_SET && !s_row.keep && s_far_row.presets == XBOX_PRESETS_SET && !s_far_row.keep);
-    CHECK(s_row.preset[XBOX_PRESET_XBOX] == 0 && s_row.preset[XBOX_PRESET_MAX] == DRAW_DISTANCE_UNLIMITED);
-    CHECK(s_far_row.preset[XBOX_PRESET_XBOX] == 0 && s_far_row.preset[XBOX_PRESET_MAX] == 3);
+    CHECK(s_row.preset[XBOX_PRESET_XBOX] == 0 && s_row.preset[XBOX_PRESET_QUALITY] == DRAW_DISTANCE_UNLIMITED);
+    CHECK(s_far_row.preset[XBOX_PRESET_XBOX] == 0 && s_far_row.preset[XBOX_PRESET_QUALITY] == 3);
     CHECK(s_shadow_row.presets == XBOX_PRESETS_SET && !s_shadow_row.keep);
-    CHECK(s_shadow_row.preset[XBOX_PRESET_XBOX] == 0 && s_shadow_row.preset[XBOX_PRESET_MAX] == 3);
+    CHECK(s_shadow_row.preset[XBOX_PRESET_XBOX] == 0 && s_shadow_row.preset[XBOX_PRESET_QUALITY] == 3);
     if (!strcmp(c, "default"))
-        CHECK(s_row.preset[XBOX_PRESET_JSRF_PC] == draw_distance_step() &&
-              s_far_row.preset[XBOX_PRESET_JSRF_PC] == draw_far_buildings() &&
-              s_shadow_row.preset[XBOX_PRESET_JSRF_PC] == draw_far_shadows());
+        CHECK(s_row.preset[XBOX_PRESET_BALANCED] == draw_distance_step() &&
+              s_far_row.preset[XBOX_PRESET_BALANCED] == draw_far_buildings() &&
+              s_shadow_row.preset[XBOX_PRESET_BALANCED] == draw_far_shadows());
     if (!strcmp(c, "off")) check_step(0);
     /* None, or one the row doesn't have: 2x, the default. */
     if (!strcmp(c, "default") || !strncmp(c, "bad", 3)) check_step(1);

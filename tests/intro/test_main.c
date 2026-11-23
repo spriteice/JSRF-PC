@@ -38,8 +38,8 @@ int main(int argc, char **argv)
     /* File > Presets: the intro plays in Xbox mode, and JSRF-PC default's
      * and Max quality's are what a start with no skipintro= gives. */
     CHECK(s_row.presets == XBOX_PRESETS_SET && !s_row.keep && s_row.preset[XBOX_PRESET_XBOX] == 0);
-    CHECK(s_row.preset[XBOX_PRESET_MAX] == s_row.preset[XBOX_PRESET_JSRF_PC]);
-    if (!strcmp(c, "off")) CHECK(s_row.preset[XBOX_PRESET_JSRF_PC] == intro_skip());
+    CHECK(s_row.preset[XBOX_PRESET_QUALITY] == s_row.preset[XBOX_PRESET_BALANCED]);
+    if (!strcmp(c, "off")) CHECK(s_row.preset[XBOX_PRESET_BALANCED] == intro_skip());
     if (!strcmp(c, "off")) CHECK(!intro_skip());
     if (!strcmp(c, "on")) CHECK(intro_skip());
     if (!strcmp(c, "flip")) {

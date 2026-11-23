@@ -53,7 +53,7 @@ static void row(void)
     /* File > Presets: off in Xbox mode, and JSRF-PC default's and Max
      * quality's are what a start with no skipcutscenes= gives. */
     CHECK(s_row.presets == XBOX_PRESETS_SET && !s_row.keep && s_row.preset[XBOX_PRESET_XBOX] == 0);
-    CHECK(s_row.preset[XBOX_PRESET_MAX] == s_row.preset[XBOX_PRESET_JSRF_PC]);
+    CHECK(s_row.preset[XBOX_PRESET_QUALITY] == s_row.preset[XBOX_PRESET_BALANCED]);
 }
 
 /* Off: presses show nothing and end nothing. */
@@ -321,7 +321,7 @@ int main(int argc, char **argv)
     preview_ends();
     preview_lists();
     if (!strcmp(c, "off")) {
-        CHECK(s_row.preset[XBOX_PRESET_JSRF_PC] == cutscene_skip_on());
+        CHECK(s_row.preset[XBOX_PRESET_BALANCED] == cutscene_skip_on());
         off();
         try_prompt();
     }

@@ -310,7 +310,7 @@ int main(int argc, char **argv)
          * row"). */
         assert(s_rows[1].presets == XBOX_PRESETS_SET && !s_rows[1].keep);
         assert(s_rows[1].preset[XBOX_PRESET_XBOX] == 0);
-        assert(s_rows[1].leave == (XBOX_PRESET_BIT(XBOX_PRESET_JSRF_PC) | XBOX_PRESET_BIT(XBOX_PRESET_MAX)));
+        assert(s_rows[1].leave == (XBOX_PRESET_BIT(XBOX_PRESET_BALANCED) | XBOX_PRESET_BIT(XBOX_PRESET_QUALITY)));
         for (i = 2; i < s_nrows; i++) assert(s_rows[i].presets == XBOX_PRESETS_LEFT && !s_rows[i].leave);
         assert(reset->kind == XBOX_ITEM_ACTION && reset->run && reset->confirm);
         assert(reset->hint[strlen(reset->hint) - 1] == '.');

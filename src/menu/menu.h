@@ -72,8 +72,8 @@ typedef enum {
 /* File > Presets' presets, in its order (docs/menu-format.md). */
 typedef enum {
     XBOX_PRESET_XBOX,       /* Xbox mode: the game as the console runs it      */
-    XBOX_PRESET_JSRF_PC,    /* JSRF-PC default: the engine's own defaults       */
-    XBOX_PRESET_MAX,        /* Max quality: JSRF-PC default, with the graphics
+    XBOX_PRESET_BALANCED,   /* JSRF-PC default: the engine's own defaults       */
+    XBOX_PRESET_QUALITY,    /* Max quality: JSRF-PC default, with the graphics
                              * and display settings at their most             */
     XBOX_PRESETS
 } XBOX_PRESET;

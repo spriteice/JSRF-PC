@@ -206,7 +206,7 @@ static void case_start(const char *setting)
         CHECK(s_rows[i].menu == XBOX_MENU_INPUT, "%s: Input's", s_rows[i].label);
         CHECK(h > 0 && h <= MENU_HINT_LONGEST && s_rows[i].hint[h - 1] == '.', "%s: its hint", s_rows[i].label);
     }
-    if (!setting) CHECK(row->state() == row->preset[XBOX_PRESET_JSRF_PC], "JSRF-PC default's, with no line");
+    if (!setting) CHECK(row->state() == row->preset[XBOX_PRESET_BALANCED], "JSRF-PC default's, with no line");
     if (!setting || !strcmp(setting, "6")) CHECK(row->state() == PROMPT_STYLE_GAME, "Default");
     else CHECK(row->state() == atoi(setting), "the line's style");
     row->pick(PROMPT_STYLE_NINTENDO);
