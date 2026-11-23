@@ -20,51 +20,91 @@ contains no game files.
 ## Features
 
 - **In-game menu:** F1, or Back on a controller, for the display, graphics,
-  audio, controller, and developer settings, with a hint for every row.
-- **Presets:** Xbox mode, the game as the Xbox runs it; JSRF-PC default; or
-  Max quality, with the graphics at their most. Each sets every setting but
-  Developer's. File > Presets.
-- **Resolution scaling:** 1× to 6×. 3× by default.
+  audio, input, gameplay, and developer settings, with a hint for every row.
+- **Presets:** Xbox, the game as the Xbox runs it; Modern, the author's
+  preferred way to play; and Performance, Balanced, and Quality, which change
+  only visuals. A new install starts at Performance, and Reset puts every
+  setting back to that. File > Presets.
+- **Resolution:** Adjustable resolution scaling, from the Xbox's original
+  resolution, up to 4K.
 - **True widescreen:** 16:10, 16:9, 21:9, or Match screen. The picture is
   drawn as wide as the shape, so neither axis is stretched, and the HUD and
   menus are laid out across the screen.
-- **HUD scale:** The HUD at 0.5× to 1.5× its size, each piece keeping its
-  place at the screen's edge, or turned off.
+- **Anti-aliasing:** MSAA and SMAA _(JuMatt)_, alone or together.
+- **Anisotropic filtering:** Sharper textures at an angle.
+- **Upscaling:** Sharper menus, HUD, textures, and graffiti, drawn from copies
+  of the game's art made with Super-xBR on the fly, with settings for their
+  sharpness, edge strength, and cleanup.
 - **Draw distance:** Crowds, spray cans, props, traffic, and the police and
   their vehicles drawn up to four times further, or an unlimited distance. Far
   buildings keeps the city's buildings from popping in, as far ahead as you
   choose, and Far shadows draws their shadows.
-- **Upscaling:** Sharper menus, HUD, textures, and graffiti, drawn from copies
-  of the game's art made with Super-xBR on the fly, with settings for their
-  sharpness, edge strength, and cleanup.
-- **Music info in pause:** The song playing, its title and artist, drawn in
-  the pause menus using the game's font and styling. Can be toggled at any
-  time.
-- **See through fix:** Characters and moving objects seen through glass and
-  water, tinted by them, where the original hides them. Can be toggled at any
-  time.
-- **Free camera:** Modern right-stick camera controls, with various settings,
-  and smooth geometry tracking to keep the camera out of walls. The graffiti cam
-  is turned off when the free camera is enabled.
+- **HUD scale:** The HUD at 0.5× to 1.5× its size, each piece keeping its
+  place at the screen's edge, or turned off.
+- **Free camera:** Modern right-stick and mouse camera controls, with various
+  settings, and smooth geometry tracking to keep the camera out of walls. The
+  game's own camera shots, the graffiti cam among them, each have a tick in
+  Input > Behaviour > Camera, with the free camera on or off, and after one
+  the free camera glides back to where you had it.
+- **Remapping:** Any button, key, or mouse button on any of the game's
+  controls, with two keys for each on the keyboard. Input > Controller layout
+  and Input > Keyboard layout.
+- **Button prompts:** The game's button icons as your controller's, in Xbox,
+  PlayStation, or Nintendo style, or as keys, following your layouts. Auto
+  follows the controller or keyboard you last used. Input > Button prompts.
 - **Audio effects:** A targeted, discrete sound engine that mimics the original
   hardware's audio effects with minimal performance overhead: 3D audio and
   reverb.
-- **Anti-aliasing:** MSAA and SMAA _(JuMatt)_, alone or together.
-- **Anisotropic filtering:** Sharper textures at an angle.
 - **Performance:** Smooth frame pacing and optimised engine/renderer on both
-  Linux and Windows.
+  Linux and Windows. On SteamOS, a ROG Xbox Ally X can run the Performance
+  preset at a stable 60 fps at just 7 W, and the Modern preset runs at a stable
+  60 fps while using 13 W.
+- **Music info in pause:** The song playing, its title and artist, drawn in
+  the pause menus using the game's font and styling. Can be toggled at any
+  time.
+- **Skips:** Skip intro leaves out the opening logos, and Skip cutscenes ends
+  a story scene at a second press of A. Gameplay > Skips.
+- **Graffiti soul indicator:** The soul shown on the HUD while one of an
+  area's soul challenges is under way and on track. Gameplay > Graffiti
+  souls.
+- **See through fix:** Characters and moving objects seen through glass and
+  water, tinted by them, where the original hides them. Can be toggled at any
+  time.
 - **Portable mode:** Everything in one folder that can be moved.
+
+### Developer features
+
+For testing and bug reports, under Developer in the in-game menu. Expect bugs
+in these features.
+
+- **Missions:** Restarts the game at any story mission, as any of its
+  characters, with save files kept separate from your own. It is not intended
+  for playthroughs, as some missions can start bugged.
+- **Photo mode:** Holds the world still, hides the HUD, and gives you a camera
+  that flies anywhere. Developer > Missions > Photo mode.
+- **Input playback:** Records what you press and plays it back, from the game's
+  first frame or from a mission picked in Missions. The launcher's `--play`
+  plays a recording and closes the game at its end.
+- **Logging:** The engine's diagnostic logs, for bug reports, and Log to file,
+  which stops or starts writing `last-run.log` at once. Switching too many on
+  at once can cause poor performance.
+- **Engine switches and Performance:** Parts of the engine turned off, or made
+  to work another way, to compare.
+- **Far buildings test:** Finds which part of a map Far buildings draws out of
+  place.
+- **Purge shaders:** Restarts the game and deletes the shader cache as it
+  starts.
 
 ## Download
 
-The latest release is **b2.1-hotfix**.
+The latest release is **b2.2**.
 
 | Platform | File |
 |---|---|
-| Linux x86_64: SteamOS, Ubuntu 22.04+, and most modern distros. | [JSRF-PC-b2.1-hotfix-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b2.1-hotfix/JSRF-PC-b2.1-hotfix-linux-x86_64.tar.gz) |
-| Windows 10 or 11, x86_64. | [JSRF-PC-b2.1-hotfix-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b2.1-hotfix/JSRF-PC-b2.1-hotfix-windows-x86_64.zip) |
-| Linux tools, to build the engine without downloading (optional). | [JSRF-PC-tools-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b2.1-hotfix/JSRF-PC-tools-linux-x86_64.tar.gz) |
-| Windows tools, to build the engine without downloading (optional). | [JSRF-PC-tools-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b2.1-hotfix/JSRF-PC-tools-windows-x86_64.zip) |
+| Linux x86_64: SteamOS, Ubuntu 22.04+, and most modern distros. | [JSRF-PC-b2.2-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b2.2/JSRF-PC-b2.2-linux-x86_64.tar.gz) |
+| Windows 10 or 11, x86_64. | [JSRF-PC-b2.2-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b2.2/JSRF-PC-b2.2-windows-x86_64.zip) |
+| Linux tools, to build the engine without downloading (optional). | [JSRF-PC-tools-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b2.2/JSRF-PC-tools-linux-x86_64.tar.gz) |
+| Windows tools, to build the engine without downloading (optional). | [JSRF-PC-tools-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b2.2/JSRF-PC-tools-windows-x86_64.zip) |
 
 See the [changelog](CHANGELOG-JSRF-PC.md) for what changed in each version,
 and the [releases](https://github.com/spriteice/JSRF-PC/releases) page for
@@ -123,9 +163,11 @@ game files must be legally acquired.
 ## Playing
 
 Any controller SDL knows works, over USB or Bluetooth: Xbox, PlayStation,
-Switch Pro, Steam Deck, and many more. The keyboard works too: W A S D to move,
-the arrow keys for the camera, and Space to jump.
-[Playing](docs/playing.md) has every key, the in-game menu, and the
+Switch Pro, Steam Deck, and many more. The keyboard and mouse work too: W A S D
+to move, the arrow keys for the camera, Space or the left mouse button to jump,
+Left Shift or the middle mouse button to boost, and E or the right mouse button
+to spray. Input > Keyboard layout changes any of them, with two keys for each
+control. [Playing](docs/playing.md) has every key, the in-game menu, and the
 graphics options. A controller is the recommended way to play.
 
 ## Status
@@ -140,9 +182,12 @@ still in beta.
   - VS mode can't be started: the game doesn't see a second controller.
   - Occasional crashes from bugs not yet found.
   - Some elements half a pixel out of place.
+  - Sounds cutting out when many play at once.
+  - Chuo Street's tentacle boss disappearing while it hangs overhead.
+  - People floating over Kibogaoka Hill with Draw distance above 1×.
+  - Short stutters with Upscaling's Textures at 4× or more on older graphics
+    cards.
   - Black screenshots on Windows.
-  - Graffiti menu icons on some AMD graphics on Windows.
-  - Pale patches along Chuo Street's halfpipe with Far shadows at All.
 
 **Found a bug?** [Open an issue](https://github.com/spriteice/JSRF-PC/issues)
 and attach the `last-run.log` from that run.
@@ -199,4 +244,10 @@ under LGPL-2.1-or-later. The releases up to b1.4 were MIT, and stay so. See
   is built with.
 - [Super-xBR](https://github.com/libretro/glsl-shaders) by Hyllian: the
   upscaling the sharper menus, textures, and graffiti are drawn with.
+- [Free Input Prompts](https://juliocacko.itch.io/free-input-prompts) by
+  Juliocacko and
+  [Free Controller & Key Prompts](https://thoseawesomeguys.com/prompts/) by
+  Xelu: the button prompts' pictures.
+- Miggas (JSRF-Recomp) and mstan (JSRFRecomp): the idea behind Skip cutscenes,
+  ending a scene through the game's own end. None of their code is used.
 - Smilebit and SEGA, who made the game.

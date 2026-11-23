@@ -4,6 +4,115 @@ What changed in each JSRF-PC version, newest first. Upstream JSRF Unleashed's
 own changes are in
 [its changelog](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/blob/main/CHANGELOG.md).
 
+## b2.2 (beta) — 23 November 2026
+
+### Added
+
+- **Controller and keyboard layouts:** Input > Controller layout and Input >
+  Keyboard layout change which button, key, or mouse button presses each of
+  the game's controls, with two keys for each control on the keyboard.
+- **Button prompts:** Input > Button prompts > Style draws the game's button
+  icons as your controller's, in Xbox, PlayStation, or Nintendo style, or as
+  keys, following your layouts. Auto follows the controller or keyboard you
+  last used; Default, which a new install starts with, keeps the game's own.
+- **Mouse camera:** The mouse turns the free camera, as the right stick does,
+  with its own sensitivity in Input > Free camera.
+- **Camera shots:** Input > Behaviour > Camera has a tick for each of the
+  game's own camera shots, Graffiti cam, Half pipe cam, and Loop cam, with the
+  free camera on or off. After a shot, the free camera glides back to where
+  you had it.
+- **No skater fade:** Input > Behaviour > Camera > No skater fade keeps the
+  camera far enough from your skater to show them whole, seeing through a
+  wall that is nearer, where they would otherwise fade out. Off by default.
+- **Keyboard moves:** Input > Behaviour > Keyboard moves sets whether W A S D
+  move from the way the camera faces, the default, or from the way the skater
+  faces.
+- **Stick shape:** Input > Behaviour > Stick shape sets how far the sticks
+  reach on a diagonal: Square, the default, as the Xbox controller's do, or
+  Round, as your controller gives them.
+- **Skip cutscenes:** Gameplay > Skips > Skip cutscenes ends a story scene, or
+  a rival's preview, at a second press of A while "Press A again to skip"
+  shows. Off by default. Thanks to Miggas and mstan for the idea.
+- **Graffiti soul indicator:** Gameplay > Graffiti souls > Visual indicator
+  shows the soul on the HUD while one of an area's soul challenges is under
+  way and on track, and turns it red when the challenge fails. Off by
+  default.
+- **Mute:** Audio > Mute silences the game's sound at once.
+- **Start minimized:** `--minimized` starts the game minimized, in a window.
+- **Photo mode:** Developer > Missions > Photo mode holds the world still,
+  hides the HUD, and gives you a camera that flies anywhere.
+- **Missions:** Developer > Missions restarts the game at any story mission,
+  as any of its characters, with save files kept separate from your own. It
+  is not intended for playthroughs, as some missions can start bugged.
+- **Input playback:** Developer > Playback records what you press and plays
+  it back, for testing. `--play` plays a recording and closes the game at its
+  end.
+- **More logs for bug reports:** Developer > Logging gains JSRF_EVT_LOG,
+  JSRF_FLOW_LOG, JSRF_TALK_LOG, and RECOMP_INPUT_LATENCY, and Developer > Far
+  buildings test finds which part of a map Far buildings draws out of place.
+
+### Fixed
+
+- **Controller vibration:** Vibration played on the wrong motor and stopped
+  after a second. It now plays on the correct motors, for as long as the game
+  asks.
+- **The ending's skater:** On AMD processors, the skater in the ending went
+  off course near its end. The game takes approximate reciprocals and
+  reciprocal square roots with two processor instructions, rcpss and rsqrtss,
+  which AMD's processors answer slightly differently from the Xbox's Intel
+  one, so the ending's recorded run drifted from the Xbox's. JSRF-PC now works
+  out the Xbox's answers itself, so they skate it as on the Xbox, on every
+  processor.
+- **Garage Graffiti menu icons:** On AMD processors, the left and right icons
+  in the garage's Graffiti menu stopped working when selected again. The same
+  two instructions were the cause: AMD's answers put the icons at the same
+  depth as the squares behind them. They now work, by the same fix as above.
+- **Music info in the final level:** The pause menu showed no song in the
+  final level. It now names it.
+- **Flag chases in widescreen:** The word FLAG in a flag chase stayed where
+  4:3 puts it, away from the edge. It now sits at the screen's left edge.
+- **Graffiti editor in widescreen:** The bar of static across the graffiti
+  editor was shorter than the help line scrolling along it. It now crosses
+  the whole screen.
+- **Free camera off the map:** With the free camera on, your skater or the
+  whole level could vanish, as when falling from a tower. Both now stay
+  drawn.
+- **Floating buildings with Far buildings:** Buildings, cars, and scenery
+  could hang in the sky or stand out of place on Dogenzaka Hill, Hikage
+  Street, Kibogaoka Hill, and Chuo Street. Far buildings now leaves them out
+  where they don't belong.
+- **Patches of light with Far shadows:** With Far shadows at All, pale
+  patches showed along Chuo Street's long halfpipe and on a walkway on
+  Kibogaoka Hill. They are gone.
+
+### Changed
+
+- **New default settings:** A new install now starts at File > Presets >
+  Performance: Draw distance, Far buildings, and Far shadows at 1×, no
+  anti-aliasing or anisotropic filtering, Upscaling's Textures and Graffiti
+  off, and Default cam fix off. Settings you chose stay as they are, and any
+  you never changed take the new defaults.
+- **Presets:** File > Presets is now Xbox, Modern, Performance, Balanced, and
+  Quality, with Reset below them, which puts every setting back to how a new
+  install has it. Performance, Balanced, and Quality change only visuals, and
+  apply with no restart.
+- **Resolution:** Display > Resolution replaces Render scale: Default (the
+  Xbox's 640×480), 720p, 900p, 1080p, 1440p, 1600p, 2160p, or Match screen,
+  your screen's own and the default. It changes at once, with no restart,
+  from the menu or F9, and your old render scale carries over.
+- **Keyboard defaults:** The keys have new defaults: Left Shift for B, C for
+  X, V for Y, T for White, Left and Right Ctrl for the stick clicks, and U, H,
+  J, and K for the d-pad. The mouse's left, middle, and right buttons are A,
+  B, and the R trigger.
+- **Menus:** Controller is now Input, with Controller layout, Keyboard
+  layout, Button prompts, Free camera, and Behaviour, where Default cam fix
+  now is. Skips moved from Display to a new Gameplay menu. Your settings for
+  them stay as they were.
+- **See through fix:** Faded characters, such as your skater close to the
+  camera, now let what is behind them show through too, tinted by them.
+- **Free camera deadzone:** 10% by default, from 15%. A deadzone you set
+  stays as it is.
+
 ## b2.1-hotfix (beta) — 14 November 2026
 
 A hotfix to b2.1.
