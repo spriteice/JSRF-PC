@@ -1178,15 +1178,18 @@ int main(int argc, char **argv)
     CHECK(!strcmp(s_row.choices[0], "1x") && !strcmp(s_row.choices[3], "4x"));
     CHECK(!strcmp(s_row.choices[DRAW_DISTANCE_UNLIMITED], "Unlimited"));
     CHECK(s_row.state() == draw_distance_step());
-    /* File > Presets: the game's own 1x and areas in Xbox mode (Off), the
-     * most in Max quality (Unlimited, but 3x for Far buildings and Far
-     * shadows, as All draws the sky buildings of known bug 57), and JSRF-PC
-     * default's what a start with none of the keys gives. */
+    /* File > Presets: the game's own 1x and areas in Xbox (Off), 1x in
+     * Performance, the most in Quality (Unlimited, and All for Far
+     * buildings and Far shadows, the sky buildings of known bug 57 with
+     * it), and Balanced's what a start with none of the keys gives. */
     CHECK(s_row.presets == XBOX_PRESETS_SET && !s_row.keep && s_far_row.presets == XBOX_PRESETS_SET && !s_far_row.keep);
-    CHECK(s_row.preset[XBOX_PRESET_XBOX] == 0 && s_row.preset[XBOX_PRESET_QUALITY] == DRAW_DISTANCE_UNLIMITED);
-    CHECK(s_far_row.preset[XBOX_PRESET_XBOX] == 0 && s_far_row.preset[XBOX_PRESET_QUALITY] == 3);
+    CHECK(s_row.preset[XBOX_PRESET_XBOX] == 0 && s_row.preset[XBOX_PRESET_PERFORMANCE] == 0
+          && s_row.preset[XBOX_PRESET_QUALITY] == DRAW_DISTANCE_UNLIMITED);
+    CHECK(s_far_row.preset[XBOX_PRESET_XBOX] == 0 && s_far_row.preset[XBOX_PRESET_PERFORMANCE] == 1
+          && s_far_row.preset[XBOX_PRESET_QUALITY] == DRAW_FAR_WHOLE && DRAW_FAR_WHOLE == DRAW_FAR_STEPS - 1);
     CHECK(s_shadow_row.presets == XBOX_PRESETS_SET && !s_shadow_row.keep);
-    CHECK(s_shadow_row.preset[XBOX_PRESET_XBOX] == 0 && s_shadow_row.preset[XBOX_PRESET_QUALITY] == 3);
+    CHECK(s_shadow_row.preset[XBOX_PRESET_XBOX] == 0 && s_shadow_row.preset[XBOX_PRESET_PERFORMANCE] == 1
+          && s_shadow_row.preset[XBOX_PRESET_QUALITY] == DRAW_FAR_WHOLE);
     if (!strcmp(c, "default"))
         CHECK(s_row.preset[XBOX_PRESET_BALANCED] == draw_distance_step() &&
               s_far_row.preset[XBOX_PRESET_BALANCED] == draw_far_buildings() &&

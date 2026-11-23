@@ -181,7 +181,7 @@ static void case_state(void)
 /* At start: the submenu, Button prompts, then its Style row, in one add,
  * Input's, the row a choice of the six that each preset sets to Default,
  * each with a hint the strip can hold. Without a line, Default, saying
- * nothing, as JSRF-PC default's preset has it; with one, its style; a line
+ * nothing, as a new install has it; with one, its style; a line
  * that is no style, Default, said. Choosing a style keeps it. */
 static void case_start(const char *setting)
 {
@@ -199,14 +199,14 @@ static void case_start(const char *setting)
     for (i = 0; i < PROMPT_STYLES; i++)
         CHECK(!strcmp(row->choices[i], names[i]), "choice %d is %s", i, row->choices[i]);
     CHECK(row->presets == XBOX_PRESETS_SET, "set by the presets");
-    for (i = 0; i < XBOX_PRESETS; i++)
-        CHECK(row->preset[i] == PROMPT_STYLE_GAME, "preset %d: %g, not Default", i, row->preset[i]);
+    CHECK(row->preset[XBOX_PRESET_XBOX] == PROMPT_STYLE_GAME, "Xbox's: %g, not Default", row->preset[XBOX_PRESET_XBOX]);
+    CHECK(row->leave == XBOX_PRESETS_BUT_XBOX, "left by every preset but Xbox, as all of Input is");
     for (i = 0; i < s_nrows; i++) {
         size_t h = s_rows[i].hint ? strlen(s_rows[i].hint) : 0;
         CHECK(s_rows[i].menu == XBOX_MENU_INPUT, "%s: Input's", s_rows[i].label);
         CHECK(h > 0 && h <= MENU_HINT_LONGEST && s_rows[i].hint[h - 1] == '.', "%s: its hint", s_rows[i].label);
     }
-    if (!setting) CHECK(row->state() == row->preset[XBOX_PRESET_BALANCED], "JSRF-PC default's, with no line");
+    if (!setting) CHECK(row->state() == PROMPT_STYLE_START, "a new install's, with no line");
     if (!setting || !strcmp(setting, "6")) CHECK(row->state() == PROMPT_STYLE_GAME, "Default");
     else CHECK(row->state() == atoi(setting), "the line's style");
     row->pick(PROMPT_STYLE_NINTENDO);

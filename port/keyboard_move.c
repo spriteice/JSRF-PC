@@ -239,15 +239,17 @@ void kbmove_start(void)
     {
         /* A row of Input > Behaviour, after the Camera ticks
          * (port/camera_scenes.c): it adds the submenu too, which adds nothing
-         * once that has (menu.h). File > Presets: Camera in Xbox mode, the
-         * way the console's stick steers, and the default in the others. */
+         * once that has (menu.h). File > Presets: Camera in Xbox, the way
+         * the console's stick steers, and left by the others, as all of
+         * Input is (spriteice, 2026-11-23). */
         const XBOX_MENU_ITEM rows[] = {
             { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_BEHAVIOUR,
               .hint = XBOX_GROUP_BEHAVIOUR_HINT },
             { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_CHOICE, .label = "Keyboard moves",
               .group = XBOX_GROUP_BEHAVIOUR, .state = menu_mode, .pick = menu_mode_pick,
               .choices = k_names, .nchoices = KBMOVE_CHOICES,
-              .presets = XBOX_PRESETS_SET, .preset = { KBMOVE_CAMERA, KBMOVE_DEFAULT, KBMOVE_DEFAULT },
+              .presets = XBOX_PRESETS_SET, .preset = { KBMOVE_CAMERA, 0, 0, 0 },
+              .leave = XBOX_PRESETS_BUT_XBOX,
               .hint = "Sets whether the keyboard steers from the camera or the skater." },
         };
         xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));

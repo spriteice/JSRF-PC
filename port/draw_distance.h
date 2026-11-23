@@ -83,10 +83,6 @@
 #define DRAW_DISTANCE_DEFAULT   1
 #define DRAW_FAR_DEFAULT        3
 #define DRAW_SHADOWS_DEFAULT    3
-/* File > Presets > Max quality's step for both: 3x, not All, which draws
- * what the game never shows from where the eye is (known bug 57; spriteice,
- * 14 November 2026, 15:42 UTC, on the card: "3x, like JSRF-PC default"). */
-#define DRAW_FAR_MAX_QUALITY    3
 
 /* At start, before the game runs: reads the settings and adds the in-game
  * menu's Display rows: Draw distance, then the Building distance submenu with

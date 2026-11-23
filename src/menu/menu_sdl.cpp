@@ -124,14 +124,14 @@ static void exit_game(void)
 }
 
 /* File > Presets: every row the presets set (menu.h) put at the Xbox's own
- * settings, the engine's defaults, or their most, each by its owner's own
- * function (menu_preset_apply); ticked where the settings are now. Each
- * applies at once, with no box, as Display > Resolution does: the
- * (Restart) rows, Shader cache and Audio effects, are left to the player
- * (spriteice's card, 02:00 UTC on 2026-11-21). A (Restart) row a preset
- * set would keep its value, and the game would start again once, after
- * them all. */
-static const char *const k_preset_names[] = { "Xbox mode", "JSRF-PC default", "Max quality" };
+ * settings, the heavy ones at their least, between, or at their most, each
+ * by its owner's own function (menu_preset_apply); ticked where the
+ * settings are now. Each applies at once, with no box, as Display >
+ * Resolution does: the (Restart) rows, Shader cache and Audio effects, are
+ * left to the player (spriteice's card, 02:00 UTC on 2026-11-21). A
+ * (Restart) row a preset set would keep its value, and the game would
+ * start again once, after them all. */
+static const char *const k_preset_names[] = { "Xbox", "Performance", "Balanced", "Quality" };
 static_assert(sizeof k_preset_names / sizeof k_preset_names[0] == XBOX_PRESETS, "a name for each preset in menu.h");
 
 static void preset_pick(int i)
@@ -141,7 +141,7 @@ static void preset_pick(int i)
 }
 
 /* Every field, in order: C++11 has no designated initializers. */
-#define FILE_NO_PRESETS XBOX_PRESETS_UNSAID, { 0, 0, 0 }, NULL
+#define FILE_NO_PRESETS XBOX_PRESETS_UNSAID, { 0, 0, 0, 0 }, NULL
 #define FILE_NO_BIND    XBOX_BIND_NONE, NULL, NULL, NULL, 0
 static const XBOX_MENU_ITEM k_file[] = {
     { XBOX_MENU_FILE, XBOX_ITEM_INFO,      "About", NULL, NULL,      NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
@@ -151,7 +151,7 @@ static const XBOX_MENU_ITEM k_file[] = {
     { XBOX_MENU_FILE, XBOX_ITEM_CHOICE,    "Presets", menu_preset_now, NULL, preset_pick,
       k_preset_names, XBOX_PRESETS, NULL,
       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-      "Sets many settings at once: the Xbox's own, ours, or the highest.", FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },
+      "Sets many settings at once: the Xbox's own, the lightest, or the best.", FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },
     { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL,    NULL, NULL,      NULL, NULL, 0, NULL,       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
       NULL, FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },
     { XBOX_MENU_FILE, XBOX_ITEM_ACTION,    "Restart", NULL, nv_window_restart, NULL, NULL, 0, NULL,

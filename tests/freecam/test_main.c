@@ -302,15 +302,15 @@ int main(int argc, char **argv)
             assert(s_rows[i].group && !strcmp(s_rows[i].group, XBOX_GROUP_FREECAM) && !s_rows[i].under);
             assert(s_rows[i].hint && strlen(s_rows[i].hint) <= MENU_HINT_LONGEST);
         }
-        /* File > Presets: Enable free camera off in Xbox mode, and left as
-         * the player has it by JSRF-PC default and Max quality; the rest of
-         * the page, how the free camera handles, set by no preset, with
-         * Reset to default at its foot, which asks first (spriteice, 22
-         * November 2026, the cards "Free camera too" and "Add a Reset
-         * row"). */
+        /* File > Presets: Enable free camera off in Xbox, and left as the
+         * player has it by the others; the rest of the page, how the free
+         * camera handles, set by no preset, with Reset to default at its
+         * foot, which asks first (spriteice, 22 November 2026, the cards
+         * "Free camera too" and "Add a Reset row"; and 23 November 2026,
+         * the card "Leave them all"). */
         assert(s_rows[1].presets == XBOX_PRESETS_SET && !s_rows[1].keep);
         assert(s_rows[1].preset[XBOX_PRESET_XBOX] == 0);
-        assert(s_rows[1].leave == (XBOX_PRESET_BIT(XBOX_PRESET_BALANCED) | XBOX_PRESET_BIT(XBOX_PRESET_QUALITY)));
+        assert(s_rows[1].leave == XBOX_PRESETS_BUT_XBOX);
         for (i = 2; i < s_nrows; i++) assert(s_rows[i].presets == XBOX_PRESETS_LEFT && !s_rows[i].leave);
         assert(reset->kind == XBOX_ITEM_ACTION && reset->run && reset->confirm);
         assert(reset->hint[strlen(reset->hint) - 1] == '.');

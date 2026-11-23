@@ -60,11 +60,11 @@ enum {
  * CAMSCENE_'s order, from CAMROW_SHOTS. */
 enum { CAMROW_FIX, CAMROW_FADE, CAMROW_SHOTS, CAMROW_TICKS = CAMROW_SHOTS + CAMSCENES };
 
-/* File > Presets: Xbox mode sets the row, the console's own camera, no fix
- * and no floor at a wall, and every shot the game's; JSRF-PC default and
- * Max quality leave it as the player has it (spriteice, 22 November 2026:
- * "our Default and Max presets to not touch any of the users changes in
- * the camera menu at all"). */
+/* File > Presets: Xbox sets the row, the console's own camera, no fix and
+ * no floor at a wall, and every shot the game's; the others leave it as the
+ * player has it (spriteice, 22 November 2026: "our Default and Max presets
+ * to not touch any of the users changes in the camera menu at all"; and all
+ * of Input, 23 November 2026). */
 #define CAMROW_XBOX (CAMSCENE_ALL << CAMROW_SHOTS)
 
 /* The ticks, read once, at start, before the game runs, which also adds

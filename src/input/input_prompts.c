@@ -142,16 +142,16 @@ void input_prompts_start(void)
     retake();
 #if defined(XBOXRECOMP_MENU)
     {
-        /* File > Presets: Default in each, the game's own, which a new
-         * install starts with too (PROMPT_STYLE_START; docs/menu-format.md,
-         * File > Presets). */
+        /* File > Presets: Default in Xbox, the game's own, which a new
+         * install starts with too (PROMPT_STYLE_START), and left by the
+         * others, as all of Input is (docs/menu-format.md, File > Presets). */
         static const XBOX_MENU_ITEM rows[] = {
             { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_PROMPTS,
               .hint = "Sets the button icons the game shows." },
             { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_CHOICE, .label = "Style",
               .group = XBOX_GROUP_PROMPTS, .state = menu_style, .pick = menu_style_pick,
               .choices = k_style_names, .nchoices = PROMPT_STYLES, .presets = XBOX_PRESETS_SET,
-              .preset = { PROMPT_STYLE_GAME, PROMPT_STYLE_START, PROMPT_STYLE_START },
+              .preset = { PROMPT_STYLE_GAME, 0, 0, 0 }, .leave = XBOX_PRESETS_BUT_XBOX,
               .hint = "Auto follows the controller or keyboard in use. Default is the game's." },
         };
         xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));

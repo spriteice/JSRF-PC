@@ -65,14 +65,13 @@ struct camwall {
 /* CAMWALL_START: as a camera that starts again. */
 void camwall_reset(struct camwall *w);
 
-/* Off with no noskaterfade= in the settings, and in File > Presets' Xbox
- * mode: an eye held where the game draws the player whole only when it's
+/* Off with no noskaterfade= in the settings, and in File > Presets' Xbox:
+ * an eye held where the game draws the player whole only when it's
  * turned on (spriteice, 19 November 2026, testing freecam4's hold: "it
  * definitely needs to be a toggle"; testing freecam5, for the game's camera
  * too while Default cam fix is on, under it, named No skater fade; testing
- * freecam6: "No skater fade should be off by default"). JSRF-PC default
- * and Max quality leave it, as the rest of Input > Behaviour > Camera
- * (spriteice, 22 November 2026). */
+ * freecam6: "No skater fade should be off by default"). The other presets
+ * leave it, as the rest of Input (spriteice, 22 and 23 November 2026). */
 #define CAMWALL_WHOLE_DEFAULT 0
 
 /* The two settings, read once, at start, before the game runs. Their

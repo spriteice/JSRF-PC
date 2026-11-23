@@ -11,8 +11,8 @@ follow camera's post-update serves (3, 4, 5, 9 and 13), only graffiti's
 log; and their row, after Input's Behaviour submenu (with its hint) and in
 it: Default cam fix and No skater fade, camera_walls.h's, then Graffiti
 cam, Half pipe cam and Loop cam, a hint the strip can hold for the row and
-for each tick, set by File > Presets' Xbox mode (the first two off, every
-shot on) and left by JSRF-PC default and Max quality, the first two ticks
+for each tick, set by File > Presets' Xbox (the first two off, every
+shot on) and left by Performance, Balanced and Quality, the first two ticks
 flipping camera_walls.h's settings, each shot's flipping at once and
 alone, kept as its own key, said in the log, a choice out of range
 changing nothing. camscene_asked: the graffiti camera, the half pipe's mode

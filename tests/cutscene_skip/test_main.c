@@ -50,10 +50,11 @@ static void row(void)
     CHECK(s_row.hint && strlen(s_row.hint) <= MENU_HINT_LONGEST && s_row.hint[strlen(s_row.hint) - 1] == '.');
     CHECK(!strcmp(s_row.hint, "Skips a cutscene when the jump button is pressed twice."));
     CHECK(s_row.state() == cutscene_skip_on());
-    /* File > Presets: off in Xbox mode, and JSRF-PC default's and Max
-     * quality's are what a start with no skipcutscenes= gives. */
+    /* File > Presets: off in Xbox, and the others' are what a start with
+     * no skipcutscenes= gives. */
     CHECK(s_row.presets == XBOX_PRESETS_SET && !s_row.keep && s_row.preset[XBOX_PRESET_XBOX] == 0);
-    CHECK(s_row.preset[XBOX_PRESET_QUALITY] == s_row.preset[XBOX_PRESET_BALANCED]);
+    CHECK(s_row.preset[XBOX_PRESET_PERFORMANCE] == s_row.preset[XBOX_PRESET_BALANCED]
+          && s_row.preset[XBOX_PRESET_QUALITY] == s_row.preset[XBOX_PRESET_BALANCED]);
 }
 
 /* Off: presses show nothing and end nothing. */

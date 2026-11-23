@@ -549,11 +549,12 @@ int main(int argc, char **argv)
     /* A hint, a sentence short enough for the strip (menu.h). */
     CHECK(s_row.hint && strlen(s_row.hint) <= MENU_HINT_LONGEST && s_row.hint[strlen(s_row.hint) - 1] == '.');
     CHECK(s_row.state() == soul_indicator_on());
-    /* File > Presets: off in each, and JSRF-PC default's and Max quality's
-     * are what a start with no soulindicator= gives. */
-    CHECK(s_row.presets == XBOX_PRESETS_SET && !s_row.keep && s_row.preset[XBOX_PRESET_XBOX] == 0);
-    CHECK(s_row.preset[XBOX_PRESET_BALANCED] == 0 && s_row.preset[XBOX_PRESET_QUALITY] == 0);
-    if (!strcmp(c, "default")) CHECK(!soul_indicator_on() && s_row.preset[XBOX_PRESET_BALANCED] == soul_indicator_on());
+    /* File > Presets: off in each, which is what a start with no
+     * soulindicator= gives. */
+    CHECK(s_row.presets == XBOX_PRESETS_SET && !s_row.keep && !s_row.leave && s_row.preset[XBOX_PRESET_XBOX] == 0);
+    CHECK(s_row.preset[XBOX_PRESET_PERFORMANCE] == 0 && s_row.preset[XBOX_PRESET_BALANCED] == 0
+          && s_row.preset[XBOX_PRESET_QUALITY] == 0);
+    if (!strcmp(c, "default")) CHECK(!soul_indicator_on() && s_row.preset[XBOX_PRESET_PERFORMANCE] == soul_indicator_on());
     if (!strcmp(c, "off")) CHECK(!soul_indicator_on());
     if (!strcmp(c, "on")) CHECK(soul_indicator_on());
     if (!strcmp(c, "flip")) {

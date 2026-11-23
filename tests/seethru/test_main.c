@@ -1039,8 +1039,8 @@ int main(int argc, char **argv)
                 NV2A_PSH_OPAQUE_GLSL, NV2A_PSH_OPAQUE);
         return 1;
     }
-    /* Unset, the setting is its default, File > Presets' JSRF-PC default and
-     * Max quality (nv2a_gl.c's row). */
+    /* Unset, the setting is its default, File > Presets' in all but Xbox
+     * (nv2a_gl.c's row). */
     if (nv2a_seethru_on() != NV2A_SEE_DEFAULT || NV2A_SEE_DEFAULT != 1) {
         fprintf(stderr, "FAIL the setting starts %d, not on (NV2A_SEE_DEFAULT %d)\n",
                 nv2a_seethru_on(), NV2A_SEE_DEFAULT);

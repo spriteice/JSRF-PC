@@ -146,15 +146,15 @@ int main(int argc, char **argv)
     CHECK(s_row.hint && !strcmp(s_row.hint, "Square stretches each stick to the Xbox pad's square reach."));
     CHECK(strlen(s_row.hint) <= MENU_HINT_LONGEST && s_row.hint[strlen(s_row.hint) - 1] == '.');
     CHECK(s_row.presets == XBOX_PRESETS_SET && !s_row.keep);
-    CHECK(s_row.preset[XBOX_PRESET_XBOX] == STICK_SHAPE_SQUARE
-          && s_row.preset[XBOX_PRESET_BALANCED] == STICK_SHAPE_SQUARE
-          && s_row.preset[XBOX_PRESET_QUALITY] == STICK_SHAPE_SQUARE);
+    /* File > Presets: Square in Xbox, and left by the others, as all of
+     * Input is. */
+    CHECK(s_row.preset[XBOX_PRESET_XBOX] == STICK_SHAPE_SQUARE && s_row.leave == XBOX_PRESETS_BUT_XBOX);
     CHECK(s_row.state() == stick_shape_get());
     /* Square, the default, with no stick_shape=, with 0, or with a value it
-     * doesn't know: JSRF-PC default's, as a start with no settings gives. */
+     * doesn't know, as a start with no settings gives. */
     if (!strcmp(c, "default") || !strcmp(c, "squared") || !strcmp(c, "unknown")) {
         CHECK(stick_shape_get() == STICK_SHAPE_SQUARE && s_row.state() == STICK_SHAPE_SQUARE);
-        CHECK(s_row.preset[XBOX_PRESET_BALANCED] == s_row.state());
+        CHECK(STICK_SHAPE_DEFAULT == s_row.state());
         check_pad(STICK_SHAPE_SQUARE);
         CHECK(s_kept == -1);            /* reading it keeps nothing */
     }

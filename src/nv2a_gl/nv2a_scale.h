@@ -36,9 +36,9 @@ enum {
     NV2A_SCALE_CHOICES
 };
 
-/* The choice a player gets who hasn't chosen one, which File > Presets'
- * JSRF-PC default and Max quality set too (spriteice, 01:29 UTC on
- * 2026-11-21): Match screen. Here and nowhere else. */
+/* The choice a player gets who hasn't chosen one, which every File >
+ * Presets preset but Xbox sets too (spriteice, 01:29 UTC on 2026-11-21, and
+ * 23 November 2026): Match screen. Here and nowhere else. */
 #define NV2A_SCALE_DEFAULT NV2A_SCALE_MATCH
 
 /* The Xbox's frame, which the lines count from: a surface w x h is drawn

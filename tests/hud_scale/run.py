@@ -38,9 +38,9 @@ if vsh.count("uniform vec3 hudSize;") != 1:
 # have a row (menu.h, docs/menu-format.md): a hint of one sentence of at
 # most MENU_HINT_LONGEST characters; HUD scale a number from 0.5x to 1.5x a
 # tenth a step, and both rows at the HUD's own (1x, shown) in each of File >
-# Presets' three. Resolution applies at once, so it asks nothing and keeps
-# nothing for a restart, and it is Default in Xbox mode and Match screen in
-# JSRF-PC default and Max quality (spriteice, 01:29 UTC on 2026-11-21).
+# Presets' four. Resolution applies at once, so it asks nothing and keeps
+# nothing for a restart, and it is Default in Xbox and Match screen in the
+# others (spriteice, 01:29 UTC on 2026-11-21, and 2026-11-23).
 gl = (root / "src/nv2a_gl/nv2a_gl.c").read_text(encoding="utf-8")
 start = gl.find("static void sdl_menu_display(void)\n{")
 if start < 0:
@@ -65,8 +65,8 @@ longest = int(re.search(r"#define MENU_HINT_LONGEST (\d+)",
 res = display[display.index("const XBOX_MENU_ITEM res = {"):display.index("};", display.index("const XBOX_MENU_ITEM res = {"))]
 if ".confirm" in res or ".keep" in res or "(Restart)" in res:
     sys.exit("hud_scale: Resolution asks first or keeps for a restart")
-if ".preset = { NV2A_SCALE_XBOX, NV2A_SCALE_DEFAULT, NV2A_SCALE_DEFAULT }" not in res:
-    sys.exit("hud_scale: Resolution's presets aren't Default, then the default twice")
+if ".preset = { NV2A_SCALE_XBOX, NV2A_SCALE_DEFAULT, NV2A_SCALE_DEFAULT, NV2A_SCALE_DEFAULT }" not in res:
+    sys.exit("hud_scale: Resolution's presets aren't Default, then the default three times")
 if not re.search(r"#define NV2A_SCALE_DEFAULT NV2A_SCALE_MATCH\b",
                  (root / "src/nv2a_gl/nv2a_scale.h").read_text(encoding="utf-8")):
     sys.exit("hud_scale: the resolution's default isn't Match screen")
@@ -87,9 +87,10 @@ wants = {
     '"HUD scale"': (".kind = XBOX_ITEM_NUMBER", ".group = SDL_HUD_GROUP",
                     ".min = NV2A_HUD_SCALE_MIN, .max = NV2A_HUD_SCALE_MAX, .step = NV2A_HUD_SCALE_STEP",
                     '.format = "%.1fx"', ".presets = XBOX_PRESETS_SET",
-                    ".preset = { NV2A_HUD_SCALE_DEFAULT, NV2A_HUD_SCALE_DEFAULT, NV2A_HUD_SCALE_DEFAULT }"),
+                    ".preset = { NV2A_HUD_SCALE_DEFAULT, NV2A_HUD_SCALE_DEFAULT, NV2A_HUD_SCALE_DEFAULT,\n"
+                    "                      NV2A_HUD_SCALE_DEFAULT }"),
     '"Disable HUD"': (".kind = XBOX_ITEM_TOGGLE", ".group = SDL_HUD_GROUP",
-                      ".presets = XBOX_PRESETS_SET, .preset = { 0, 0, 0 }"),
+                      ".presets = XBOX_PRESETS_SET, .preset = { 0, 0, 0, 0 }"),
 }
 for label, want in wants.items():
     for w in want:

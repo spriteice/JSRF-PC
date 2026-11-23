@@ -259,19 +259,27 @@ in a submenu of its own.
 
 - Presets is File's second row, under About, with a separator
   above and below it, as between About and Restart before it. Its choices
-  are Xbox mode, JSRF-PC default and Max quality, in that order
-  (`XBOX_PRESET` in `menu.h`).
-- **Xbox mode** is the game as the Xbox runs it: 4:3 at Default, the
+  are Xbox, Performance, Balanced and Quality, in that order
+  (`XBOX_PRESET` in `menu.h`; spriteice, 23 November 2026).
+- **Xbox** is the game as the Xbox runs it: 4:3 at Default, the
   Xbox's 640x480, with everything JSRF-PC adds to how it looks and plays
   turned off.
-  **JSRF-PC default** is the settings a new install starts with. **Max
-  quality** is JSRF-PC default with each graphics and display setting that
-  has a most at its most: the last choice, or the most the device has. Far
-  buildings and Far shadows are the exception, at 3x, not All: All draws
-  parts of a map the game never shows from where the camera is, such as
-  Dogenzaka Hill's top in its sky.
+  **Performance** has the heavy settings at their least: Draw distance,
+  Far buildings and Far shadows at 1x, no anti-aliasing and no anisotropic
+  filtering, and Upscaling's Textures and Graffiti off.
+  **Balanced** is between: Draw distance at 2x, Far buildings and Far
+  shadows at 3x, MSAA at 4x in place of SMAA, anisotropic filtering at 8x,
+  and Upscaling at 4x but for Buttons.
+  **Quality** has each graphics and display setting that has a most at its
+  most: the last choice, or the most the device has. That takes in Far
+  buildings' and Far shadows' All, which draws parts of a map the game
+  never shows from where the camera is, such as Dogenzaka Hill's top in its
+  sky.
+  Every preset but Xbox has Resolution and Aspect ratio at Match screen,
+  Music info in pause and See through fix on, and Upscaling's Menus and HUD
+  at 4x or more.
 - The tick is on the preset whose value every row it sets has now, and on
-  none when one differs. A new install is at JSRF-PC default.
+  none when one differs.
 - Choosing one applies it at once, with no box: it sets each row through
   its own function, as choosing that row would, and saves it as the row
   does. No preset sets a (Restart) row, so none restarts the game: Shader
@@ -282,15 +290,18 @@ in a submenu of its own.
   preset leaves them alone** (`XBOX_PRESETS_LEFT` in `menu.h`): a player's
   own choices, not a quality setting, each with its own way back to its
   default, as the layouts' rows are (Layouts, above), and the free camera's
-  tuning, with its Reset to default (spriteice's card, 22 November 2026).
+  tuning, with its Reset to default (spriteice's card, 22 November 2026),
+  its Deadzone too (spriteice's card, 23 November 2026).
   Every other row of Display,
   Graphics, Audio, Input and Gameplay, in a submenu or not, gives its value in
-  each preset where it's added (`presets` and `preset` in `menu.h`), with
-  JSRF-PC default's from the constant its own default comes from, so the
-  preset moves with the default. That takes in Fullscreen, full screen in
-  each, Keyboard moves, at Camera in each, Stick shape, at Square in
-  each, and Button prompts' Style, at Default in each (spriteice, 23:57 UTC
-  on 2026-11-21). A row of
+  each preset where it's added (`presets` and `preset` in `menu.h`): a
+  value a preset shares with a new install from the constant the row's own
+  default comes from, so the preset moves with the default. That takes in
+  Fullscreen, full screen in each, HUD scale and Disable HUD, the HUD at its
+  own size and shown in each, Upscaling's Sharpness, Edge strength and
+  Cleanup, as a new install has them in each, and Gameplay's Skip
+  intro, Skip cutscenes and Visual indicator, off in each (spriteice's card,
+  23 November 2026). A row of
   ticks (`XBOX_ITEM_TOGGLES`), as
   Upscaling's Cleanup, gives the ticks it has in each, and a preset changes
   each tick that differs, as choosing it would. A (Restart) row the presets
@@ -301,14 +312,17 @@ in a submenu of its own.
   (`XBOX_ITEM_GROUP`) is no setting, so says nothing.
 - **A row the presets set may name presets that leave it** (`leave` in
   `menu.h`, a bit for each): those don't change it, and their tick goes by
-  the other rows. Xbox mode sets Input > Behaviour > Camera, Default cam
-  fix and No skater fade off and the game's three shots ticked, and Input >
-  Free camera's Enable free camera, off; JSRF-PC default and Max quality
-  leave both as the player has them (spriteice, 22 November 2026), each
-  tick and the switch its own way back. A row every preset leaves is told
-  once in the log and left alone.
-- The tests of the modules that add rows check their values, and that
-  JSRF-PC default's is what a start with no settings gives.
+  the other rows. Every preset but Xbox leaves Input's rows
+  (`XBOX_PRESETS_BUT_XBOX`; spriteice, 23 November 2026): Xbox sets
+  Keyboard moves to Camera, Stick shape to Square, Button prompts' Style to
+  Default, Input > Behaviour > Camera's Default cam fix and No skater fade
+  off and the game's three shots ticked, and Input > Free camera's Enable
+  free camera off; the others leave each as the player has it, each with
+  its own way back. A row every preset leaves is told once in the log and
+  left alone.
+- The tests of the modules that add rows check their values, and that a
+  value a preset takes from a default is what a start with no settings
+  gives.
 
 ## File > About
 

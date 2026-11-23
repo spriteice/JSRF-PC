@@ -19,7 +19,7 @@
  *     static const XBOX_MENU_ITEM rows[] = {
  *         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE,
  *           .label = "Fullscreen", .state = is_fullscreen, .run = toggle_fullscreen,
- *           .presets = XBOX_PRESETS_SET, .preset = { 1, 1, 1 },
+ *           .presets = XBOX_PRESETS_SET, .preset = { 1, 1, 1, 1 },
  *           .hint = "The window becomes fullscreen." },
  *     };
  *     xbox_MenuAdd(rows, (int)(sizeof rows / sizeof rows[0]));
@@ -71,15 +71,24 @@ typedef enum {
 
 /* File > Presets' presets, in its order (docs/menu-format.md). */
 typedef enum {
-    XBOX_PRESET_XBOX,       /* Xbox mode: the game as the console runs it      */
-    XBOX_PRESET_BALANCED,   /* JSRF-PC default: the engine's own defaults       */
-    XBOX_PRESET_QUALITY,    /* Max quality: JSRF-PC default, with the graphics
-                             * and display settings at their most             */
+    XBOX_PRESET_XBOX,           /* Xbox: the game as the console runs it   */
+    XBOX_PRESET_PERFORMANCE,    /* Performance: the heavy settings at their
+                                 * least                                  */
+    XBOX_PRESET_BALANCED,       /* Balanced: between Performance and Quality */
+    XBOX_PRESET_QUALITY,        /* Quality: the graphics and display settings
+                                 * at their most                          */
     XBOX_PRESETS
 } XBOX_PRESET;
 
 /* A preset's bit, for a row's leave (XBOX_MENU_ITEM, below). */
 #define XBOX_PRESET_BIT(p) (1u << (p))
+
+/* Every preset but Xbox, for a row's leave: a player's own choice, which
+ * only Xbox, the game as the console has it, sets (docs/menu-format.md,
+ * File > Presets). */
+#define XBOX_PRESETS_BUT_XBOX (XBOX_PRESET_BIT(XBOX_PRESET_PERFORMANCE) \
+                               | XBOX_PRESET_BIT(XBOX_PRESET_BALANCED)  \
+                               | XBOX_PRESET_BIT(XBOX_PRESET_QUALITY))
 
 /* What the presets do with a row (XBOX_MENU_ITEM's presets). A preset sets
  * every setting but Developer's, and those its row says it leaves alone:
@@ -112,7 +121,7 @@ typedef enum {
  * pad's Back or F1, at any of its box's presses. */
 #define XBOX_BIND_NO_INPUT (-1)
 
-/* A preset's value for a row that has no fixed most, as Max quality's
+/* A preset's value for a row that has no fixed most, as Quality's
  * anisotropic filtering: past a choice's last, a number's max, or a row of
  * ticks' every tick, it is the last, the max or every tick -- the most the
  * device has, which can stop short of the names a row could show. */
@@ -162,8 +171,9 @@ typedef struct XBOX_MENU_ITEM {
      * 1, a CHOICE's index, a NUMBER's value, a TOGGLES' ticks as state()
      * gives them (bit i for choice i, at most MENU_PRESET_TICKS of them),
      * each within the row's own (XBOX_PRESET_MOST). The owner gives them
-     * beside the row, from the same constants its setting uses, so JSRF-PC
-     * default's are the defaults. */
+     * beside the row, from the same constants its setting uses: a value a
+     * preset shares with a new install from the constant the default comes
+     * from, so it moves with the default. */
     XBOX_PRESETS_USE presets;
     double          preset[XBOX_PRESETS];
     /* A (Restart) row the presets set, a TOGGLE or a CHOICE, whose run or
@@ -204,7 +214,7 @@ typedef struct XBOX_MENU_ITEM {
     const char *const *choice_hints;
     /* XBOX_PRESETS_SET: the presets that leave the row as the player has
      * it, a bit each (XBOX_PRESET_BIT), whose preset[] is not read, as
-     * JSRF-PC default and Max quality leave Input > Behaviour > Camera. A
+     * every preset but Xbox leaves Input's rows (XBOX_PRESETS_BUT_XBOX). A
      * row every preset leaves is XBOX_PRESETS_LEFT instead (docs/
      * menu-format.md, File > Presets). */
     unsigned        leave;

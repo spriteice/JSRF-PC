@@ -24,8 +24,8 @@ button back.
 The game's button icons show the controller in your hands. The game draws
 four buttons as pictures, A, B, X and Y, and names the rest in words.
 Input > Button prompts > Style is Auto, Default, Xbox, PlayStation, Nintendo
-or Keyboard. Default, the style a new install starts with and the one each
-of File > Presets sets, is the game as the Xbox shows it: its own icons, its 3D
+or Keyboard. Default, the style a new install starts with and the one File >
+Presets > Xbox sets, is the game as the Xbox shows it: its own icons, its 3D
 A and B and its words, whatever the controller or the layouts. Auto follows
 the pad you last pressed, as SDL reports it: a PlayStation pad shows Cross,
 Circle, Square and Triangle in their colours, a Switch Pro pad or Joy-Cons
@@ -284,21 +284,30 @@ the buttons to press, in Input > Button prompts' style. The game keeps
 running while it is open, but your input goes to the menu.
 
 - **File:** About (the version and system details), Presets, Restart, and Exit.
-  Presets sets many settings at once, straight away, with no restart. Xbox
-  mode is the game as the Xbox runs it: 4:3 at Default resolution (640×480),
-  with everything JSRF-PC adds to how it looks and plays turned off. JSRF-PC
-  default is the settings a new install starts with. Max quality is JSRF-PC
-  default with the draw distance, anisotropic filtering, Upscaling's
-  Menus and HUD, Buttons, Textures and Graffiti, and both anti-aliasings at their most,
-  as far as the graphics card goes, and Far buildings and Far shadows at 3x.
-  A preset sets every setting but Developer's, Input's two layouts, Mute,
-  Shader cache and Audio effects: each one also puts the game full screen,
-  Upscaling's Cleanup as a new install has it, Keyboard moves at Camera,
-  Stick shape at Square, and Button prompts' Style at Default. Input >
-  Behaviour > Camera and Input > Free camera are yours: JSRF-PC default and
-  Max quality leave them as they are, and Xbox mode turns the free camera,
-  Default cam fix and No skater fade off and ticks the game's three shots,
-  leaving the free camera's own settings as they are. The one ticked is the
+  Presets sets many settings at once, straight away, with no restart: Xbox,
+  Performance, Balanced or Quality. Xbox is the game as the Xbox runs it:
+  4:3 at Default resolution (640×480), with everything JSRF-PC adds to how it
+  looks and plays turned off. Performance has the draw distance, Far
+  buildings and Far shadows at 1x, no anti-aliasing or anisotropic
+  filtering, and Upscaling's Textures and Graffiti off. Balanced has the
+  draw distance at 2x, Far buildings and Far shadows at 3x, MSAA at 4x in
+  place of SMAA, anisotropic filtering at 8x, and Upscaling at 4x but for
+  Buttons. Quality has the draw distance, Far buildings and Far shadows,
+  anisotropic filtering, Upscaling's Menus and HUD, Buttons, Textures and
+  Graffiti, and both anti-aliasings at their most, as far as the graphics
+  card goes; Far buildings and Far shadows at All draw parts of a map you
+  never see from where you are, such as the top of Dogenzaka Hill in its
+  sky. All but Xbox have the resolution and aspect ratio at Match screen,
+  Music info in pause and See through fix on, and Upscaling's Menus and HUD
+  at 4x or more. A preset sets every setting but Developer's, Input's two
+  layouts, the free camera's own settings, Mute, Shader cache and Audio
+  effects: each one also puts the game full screen, the HUD at its own size
+  and shown, Upscaling's Sharpness, Edge strength and Cleanup as a new
+  install has them, and Skip intro, Skip cutscenes and Visual indicator off.
+  Input is yours: only Xbox changes it, setting Keyboard moves to Camera,
+  Stick shape to Square and Button prompts' Style to Default, turning the
+  free camera, Default cam fix and No skater fade off, and ticking the
+  game's three shots; the others leave Input as it is. The one ticked is the
   one your settings match, if any.
 - **Display:** Full screen, the resolution (its choices as F9 gives them),
   the aspect ratio, the HUD submenu, the draw distance, the Building distance submenu (Far
@@ -394,7 +403,7 @@ running while it is open, but your input goes to the menu.
   differs from its default; Reset to default puts its page back. No preset
   changes them. Button prompts has Style, the look of the game's button
   icons and of the buttons along the menu's foot ([Controller](#controller),
-  above), Default in each preset. Free camera has [the free
+  above), Default in File > Presets > Xbox. Free camera has [the free
   camera](#free-camera)'s own settings: Enable free camera, Auto centre,
   Invert X, Invert Y, Sensitivity X, Sensitivity Y, Deadzone (10% by
   default), Mouse look (on by default), and Mouse sensitivity (5 by
@@ -409,7 +418,7 @@ running while it is open, but your input goes to the menu.
   No skater fade keeps the camera as far from your skater as the game shows
   them whole, seeing through a wall nearer than that ([Near
   walls](#near-walls), above): the free camera always, and the game's own
-  while Default cam fix is on. Off by default, and in Xbox mode: the
+  while Default cam fix is on. Off by default, and in the Xbox preset: the
   camera comes in to the wall and your skater fades out as it nears them. It
   changes at once, and is kept as `noskaterfade=` (1 or 0) in the settings
   file. The last three ticks are the game's own camera shots: Graffiti cam,
@@ -425,7 +434,7 @@ running while it is open, but your input goes to the menu.
   camera glides back to where you had it ([Free camera](#free-camera),
   above). The camera that holds
   still as you skate out of a level's exit is no tick's: it is always as on
-  the Xbox. All three are ticked by default, and in Xbox mode. Each
+  the Xbox. All three are ticked by default, and in the Xbox preset. Each
   changes at once, and is kept as `graffiti_cam=`, `half_pipe_cam=` and
   `loop_cam=` (1 or 0) in the settings file. Keyboard moves
   sets how W A S D move the skater ([Keyboard](#keyboard), above): from the
@@ -441,7 +450,7 @@ running while it is open, but your input goes to the menu.
   diagonal; with Square, a part push on a diagonal counts up to 41% more
   than the same push straight, as on the Xbox, and turns the free camera
   that much faster. The keys stay as they are. It changes at once, is
-  Square in each preset,
+  Square in the Xbox preset,
   and is kept as `stick_shape=` (0 Square, 1 Round) in the settings file. A
   recording holds the sticks as the game got them, so it plays back the
   same whichever shape is set.
@@ -666,4 +675,4 @@ These are in the in-game menu, under Graphics.
     differences, edges in the picture, as they are, and neither changes a
     texture's see-through parts. Changing either makes every copy again,
     which can pause the game for a moment. Both off by default, and in each of
-    File > Presets.
+    File > Presets' presets.

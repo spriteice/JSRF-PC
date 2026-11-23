@@ -74,7 +74,7 @@ static int g_fail;
  * File > Presets, which never sets them. The rows standing in for the other
  * menus' say nothing either, but for the presets' own, at the end: the log
  * says so once, for the first (run.py), and no preset sets them. */
-#define NO_PRESETS XBOX_PRESETS_UNSAID, { 0, 0, 0 }, NULL
+#define NO_PRESETS XBOX_PRESETS_UNSAID, { 0, 0, 0, 0 }, NULL
 #define NO_BIND    XBOX_BIND_NONE, NULL
 
 static int s_full, s_wide, s_scale = 1, s_exit, s_full_runs, s_wide_runs, s_picks = -1;
@@ -265,7 +265,7 @@ static int bind_two_second(int input)
     return 1;
 }
 static const char *bind_two_now(void)   { return "Space, J"; }
-#define BIND_LEFT XBOX_PRESETS_LEFT, { 0, 0, 0 }, NULL
+#define BIND_LEFT XBOX_PRESETS_LEFT, { 0, 0, 0, 0 }, NULL
 static const XBOX_MENU_ITEM k_binds[] = {
     { XBOX_MENU_GAMEPLAY, XBOX_ITEM_GROUP, "Controller layout", NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL,
       0, 0, 0, NULL, 0, NULL, "Sets which button presses each control.", NO_PRESETS, NULL, NULL, NULL, NO_BIND },
@@ -319,11 +319,12 @@ static const char *const k_switches[] = { "First (Restart)", "Second (Restart)",
  * scale's, and a toggle whose state is what it kept, as Audio effects'. A
  * toggle in a submenu, as Display > Enhancements' See through fix. And a row
  * of two ticks, as Graphics > Upscaling > Cleanup, the first ticked in
- * JSRF-PC default and both in Max quality. */
+ * Performance and Balanced and both in Quality. SMAA and the filtering off
+ * in Performance, as the only rows it differs from Balanced in. */
 static int    p_smaa = 1, p_effects = 1, p_glass = 1;
 static int    p_ticks = 1, p_tick_picks;
-static int    p_feel = 1, p_feel_runs;   /* a row Xbox mode alone sets */
-static int    p_aniso = 2;              /* 4x: JSRF-PC default's 8x is past this device's most */
+static int    p_feel = 1, p_feel_runs;   /* a row Xbox alone sets */
+static int    p_aniso = 2;              /* 4x: Balanced's 8x is past this device's most */
 static int    p_scale = 2;              /* 3x */
 static double p_dz = 0.15;
 static int    p_smaa_runs, p_aniso_picks, p_dz_sets, p_scale_picks, p_scale_keeps, p_scale_kept = -1;
@@ -358,43 +359,43 @@ static const char *k_p_many[MENU_PRESET_TICKS + 1];
 #define P_ASK "Apply selection and restart, losing unsaved progress?"
 static const XBOX_MENU_ITEM k_presets[] = {
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLE, "SMAA", p_smaa_state, p_smaa_run, NULL, NULL, 0, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Smooths edges.", XBOX_PRESETS_SET, { 0, 1, 1 }, NULL, NULL, NULL, NULL, NO_BIND },
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Smooths edges.", XBOX_PRESETS_SET, { 0, 0, 1, 1 }, NULL, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_CHOICE, "Filtering", p_aniso_state, NULL, p_aniso_pick, k_p_aniso, 3, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sharpens textures.", XBOX_PRESETS_SET, { 0, 3, XBOX_PRESET_MOST }, NULL, NULL, NULL, NULL, NO_BIND },
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sharpens textures.", XBOX_PRESETS_SET, { 0, 0, 3, XBOX_PRESET_MOST }, NULL, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_INPUT, XBOX_ITEM_NUMBER, "Deadzone %", NULL, NULL, NULL, NULL, 0, NULL, NULL,
-      p_dz_value, p_dz_set, 0, 100, 5, "%g%%", 0, NULL, "Sets the stick's slack.", XBOX_PRESETS_SET, { 0, 15, 15 }, NULL, NULL, NULL, NULL, NO_BIND },
+      p_dz_value, p_dz_set, 0, 100, 5, "%g%%", 0, NULL, "Sets the stick's slack.", XBOX_PRESETS_SET, { 0, 15, 15, 15 }, NULL, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_DISPLAY, XBOX_ITEM_CHOICE, "Scale (Restart)", p_scale_state, NULL, p_scale_pick, k_p_scales, 6, NULL,
-      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sets the scale.", XBOX_PRESETS_SET, { 0, 2, XBOX_PRESET_MOST },
+      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sets the scale.", XBOX_PRESETS_SET, { 0, 2, 2, XBOX_PRESET_MOST },
       p_scale_keep, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_AUDIO, XBOX_ITEM_TOGGLE, "Effects (Restart)", p_effects_state, p_effects_run, NULL, NULL, 0, NULL,
-      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Adds the effects.", XBOX_PRESETS_SET, { 1, 1, 1 }, p_effects_keep, NULL, NULL, NULL, NO_BIND },
+      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Adds the effects.", XBOX_PRESETS_SET, { 1, 1, 1, 1 }, p_effects_keep, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_AUDIO, XBOX_ITEM_TOGGLE, "Glass", p_glass_state, p_glass_run, NULL, NULL, 0, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Tints what is behind.", XBOX_PRESETS_SET, { 0, 1, 1 }, NULL,
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Tints what is behind.", XBOX_PRESETS_SET, { 0, 1, 1, 1 }, NULL,
       "Enhancements", NULL, NULL, NO_BIND },
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLES, "Cleanup", p_ticks_state, NULL, p_ticks_pick, k_p_ticks, 2, NULL,
       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Cleans the copies.", XBOX_PRESETS_SET,
-      { 0, 1, XBOX_PRESET_MOST }, NULL, NULL, NULL, NULL, NO_BIND },
-    /* A toggle Xbox mode sets, off, and JSRF-PC default and Max quality
-     * leave, as Input > Behaviour > Camera (menu.h, leave): their values,
-     * which would differ from the row's, are never read. */
+      { 0, 1, 1, XBOX_PRESET_MOST }, NULL, NULL, NULL, NULL, NO_BIND },
+    /* A toggle Xbox sets, off, and the others leave, as Input's rows
+     * (menu.h, leave): their values, which would differ from the row's, are
+     * never read. */
     { XBOX_MENU_INPUT, XBOX_ITEM_TOGGLE, "Feel", p_feel_state, p_feel_run, NULL, NULL, 0, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sets the feel.", XBOX_PRESETS_SET, { 0, 0, 0 }, NULL, NULL, NULL,
-      NULL, NO_BIND, NULL, NULL, XBOX_PRESET_BIT(XBOX_PRESET_BALANCED) | XBOX_PRESET_BIT(XBOX_PRESET_QUALITY) },
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Sets the feel.", XBOX_PRESETS_SET, { 0, 0, 0, 0 }, NULL, NULL, NULL,
+      NULL, NO_BIND, NULL, NULL, XBOX_PRESETS_BUT_XBOX },
     /* Three that say the wrong thing, which no preset can set, and are left
      * alone: one that asks first but keeps nothing, told once in the log,
      * then a button and a row of more ticks than an int has bits for, which
      * the same check has told of already (the rows standing in for the
      * other menus', which say nothing, are told too, run.py). */
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLE, "Asks, keeps nothing", p_bad_state, p_bad_run, NULL, NULL, 0, NULL,
-      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Asks first.", XBOX_PRESETS_SET, { 1, 1, 1 }, NULL, NULL, NULL, NULL, NO_BIND },
+      P_ASK, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Asks first.", XBOX_PRESETS_SET, { 1, 1, 1, 1 }, NULL, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_ACTION, "A button", NULL, p_bad_run, NULL, NULL, 0, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Does a thing.", XBOX_PRESETS_SET, { 1, 1, 1 }, NULL, NULL, NULL, NULL, NO_BIND },
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Does a thing.", XBOX_PRESETS_SET, { 1, 1, 1, 1 }, NULL, NULL, NULL, NULL, NO_BIND },
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLES, "Too many ticks", p_bad_state, NULL, p_bad_pick,
       k_p_many, MENU_PRESET_TICKS + 1, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Has too many.",
-      XBOX_PRESETS_SET, { 1, 1, 1 }, NULL, NULL, NULL, NULL, NO_BIND },
+      XBOX_PRESETS_SET, { 1, 1, 1, 1 }, NULL, NULL, NULL, NULL, NO_BIND },
     /* And one every preset leaves, which is told once and set by none. */
     { XBOX_MENU_GRAPHICS, XBOX_ITEM_TOGGLE, "Left by all", p_bad_state, p_bad_run, NULL, NULL, 0, NULL, NULL,
-      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Is left.", XBOX_PRESETS_SET, { 1, 1, 1 }, NULL, NULL, NULL,
+      NULL, NULL, 0, 0, 0, NULL, 0, NULL, "Is left.", XBOX_PRESETS_SET, { 1, 1, 1, 1 }, NULL, NULL, NULL,
       NULL, NO_BIND, NULL, NULL, XBOX_PRESET_BIT(XBOX_PRESETS) - 1 },
 };
 
@@ -1307,9 +1308,9 @@ int main(void)
     CHECK(s_bare == 0);
 
     /* File > Presets (menu.h). No row sets anything: no preset is ticked.
-     * Then the presets' rows, at JSRF-PC default's values, which is ticked:
-     * the choice's 8x is the most this device has, 4x; and Feel, on, which
-     * JSRF-PC default leaves, not read for it. */
+     * Then the presets' rows, at Balanced's values, which is ticked: the
+     * choice's 8x is the most this device has, 4x; and Feel, on, which
+     * Balanced leaves, not read for it. */
     CHECK(menu_preset_now() == -1);
     for (int i = 0; i < MENU_PRESET_TICKS + 1; i++) k_p_many[i] = "A tick";
     xbox_MenuAdd(k_presets, (int)(sizeof k_presets / sizeof k_presets[0]));
@@ -1318,13 +1319,13 @@ int main(void)
     CHECK(menu_preset_now() == XBOX_PRESET_BALANCED);
     CHECK(menu_preset_apply(-1) == 0 && menu_preset_apply(XBOX_PRESETS) == 0);
     CHECK(p_smaa_runs + p_aniso_picks + p_dz_sets + p_scale_keeps + p_effects_keeps + p_tick_picks == 0);
-    /* Xbox mode: each row through its own function, once, the one in a
-     * submenu too; the scale kept for the next start, not picked, and a
-     * restart asked for. The effects are already on, so not kept again.
-     * Until the restart, the scale is this run's, so nothing is ticked;
-     * after it, Xbox mode is. */
+    /* Xbox: each row through its own function, once, the one in a submenu
+     * too; the scale kept for the next start, not picked, and a restart
+     * asked for. The effects are already on, so not kept again. Until the
+     * restart, the scale is this run's, so nothing is ticked; after it,
+     * Xbox is. */
     CHECK(menu_preset_apply(XBOX_PRESET_XBOX) == 1);
-    fprintf(stderr, "presets: Xbox mode: smaa %d (%d runs), filtering %d (%d), deadzone %g (%d), "
+    fprintf(stderr, "presets: Xbox: smaa %d (%d runs), filtering %d (%d), deadzone %g (%d), "
             "scale kept %d (%d keeps, %d picks), effects %d (%d keeps, %d runs), glass %d (%d runs), "
             "ticks %d (%d picks)\n",
             p_smaa, p_smaa_runs, p_aniso, p_aniso_picks, p_dz, p_dz_sets, p_scale_kept, p_scale_keeps,
@@ -1340,20 +1341,20 @@ int main(void)
     CHECK(menu_preset_now() == -1);
     p_scale = p_scale_kept;
     CHECK(menu_preset_now() == XBOX_PRESET_XBOX);
-    /* Feel on by hand: no longer Xbox mode's; the presets that leave it
-     * leave it on, and are ticked with it on (below). */
+    /* Feel on by hand: no longer Xbox's; the presets that leave it leave it
+     * on, and are ticked with it on (below). */
     p_feel_run();
     CHECK(p_feel == 1 && menu_preset_now() == -1);
-    /* Max quality: the choice and the scale at their last, and every tick,
-     * past what the presets name: both ticks, each picked. */
+    /* Quality: the choice and the scale at their last, and every tick, past
+     * what the presets name: both ticks, each picked. */
     CHECK(menu_preset_apply(XBOX_PRESET_QUALITY) == 1);
     p_scale = p_scale_kept;
     CHECK(p_smaa == 1 && p_aniso == 2 && fabs(p_dz - 0.15) < 1e-9 && p_scale == 5 && p_glass == 1);
     CHECK(p_ticks == 3 && p_tick_picks == 3);
     CHECK(p_feel == 1 && p_feel_runs == 2);
     CHECK(menu_preset_now() == XBOX_PRESET_QUALITY);
-    /* Max quality again: every row is there already, so nothing is set and
-     * no restart. */
+    /* Quality again: every row is there already, so nothing is set and no
+     * restart. */
     {
         int runs = p_smaa_runs, picks = p_aniso_picks, sets = p_dz_sets, keeps = p_scale_keeps;
         int ticks = p_tick_picks;
@@ -1362,8 +1363,8 @@ int main(void)
         CHECK(p_tick_picks == ticks);
     }
     /* A row changed by hand: the settings are the player's own. Back to
-     * JSRF-PC default: 15% kept as 0.15 reads back a hair over 15, which is
-     * still its 15. */
+     * Balanced: 15% kept as 0.15 reads back a hair over 15, which is still
+     * its 15. */
     p_dz_set(20);
     CHECK(menu_preset_now() == -1);
     CHECK(menu_preset_apply(XBOX_PRESET_BALANCED) == 1);
@@ -1375,8 +1376,8 @@ int main(void)
     p_effects = 0;
     CHECK(menu_preset_apply(XBOX_PRESET_BALANCED) == 1);
     CHECK(p_effects == 1 && p_effects_keeps == 1 && p_effects_runs == 0);
-    /* SMAA off by hand, and back to JSRF-PC default: only a row that applies
-     * at once differs, so it is run and nothing restarts. */
+    /* SMAA off by hand, and back to Balanced: only a row that applies at
+     * once differs, so it is run and nothing restarts. */
     CHECK(menu_preset_now() == XBOX_PRESET_BALANCED);
     p_smaa_run();
     CHECK(p_smaa == 0 && menu_preset_now() == -1);
@@ -1387,12 +1388,24 @@ int main(void)
         CHECK(menu_preset_now() == XBOX_PRESET_BALANCED);
     }
     /* The second tick by hand: the settings are the player's again, and
-     * back to JSRF-PC default the tick is taken off, at once. */
+     * back to Balanced the tick is taken off, at once. */
     p_ticks_pick(1);
     CHECK(p_ticks == 3 && menu_preset_now() == -1);
     CHECK(menu_preset_apply(XBOX_PRESET_BALANCED) == 0);
     CHECK(p_ticks == 1 && p_tick_picks == 6 && menu_preset_now() == XBOX_PRESET_BALANCED);
-    /* Feel was never set again: JSRF-PC default and Max quality left it. */
+    /* Performance: SMAA off and the filtering Off, each through its own
+     * function, and nothing kept, as the scale and the effects are
+     * Balanced's; then Balanced again, which puts both back. */
+    {
+        int runs = p_smaa_runs, picks = p_aniso_picks, keeps = p_scale_keeps + p_effects_keeps;
+        CHECK(menu_preset_apply(XBOX_PRESET_PERFORMANCE) == 0);
+        CHECK(p_smaa == 0 && p_smaa_runs == runs + 1 && p_aniso == 0 && p_aniso_picks == picks + 1);
+        CHECK(p_scale_keeps + p_effects_keeps == keeps && p_ticks == 1 && p_tick_picks == 6);
+        CHECK(menu_preset_now() == XBOX_PRESET_PERFORMANCE);
+        CHECK(menu_preset_apply(XBOX_PRESET_BALANCED) == 0);
+        CHECK(p_smaa == 1 && p_aniso == 2 && menu_preset_now() == XBOX_PRESET_BALANCED);
+    }
+    /* Feel was never set again: the presets but Xbox left it. */
     CHECK(p_feel == 1 && p_feel_runs == 2);
     /* The three that said the wrong thing were never set (run.py finds
      * their lines in the log). */
@@ -1676,7 +1689,7 @@ int main(void)
     CHECK(s_twos == 7 && s_two_second == XBOX_BIND_NO_INPUT && menu_bind_waiting() == 0);
     CHECK(!strstr(open_menu(), "###bind") && hint_is("Takes two keys."));
     /* B, B, B: Gameplay's title, the pad never left with nothing to stand
-     * on. File > Presets: still at JSRF-PC default, and a preset hands the
+     * on. File > Presets: still at Balanced, and a preset hands the
      * rows nothing. */
     s_bare = 0;
     for (int i = 0; i < 3; i++) { frame(ImGuiKey_GamepadFaceRight); frames(2); }

@@ -107,12 +107,16 @@ with tempfile.TemporaryDirectory(prefix="menu-") as tmp:
                  "Asks, keeps nothing: asks first, and keeps nothing for a preset",
                  "Left by all: every preset leaves it, so no preset sets it",
                  "[MENU] preset: Scale (Restart) to 1x, from the next start",
-                 "[MENU] preset: Filtering to 4x\n",
                  "[MENU] preset: Cleanup to none\n",
                  "[MENU] preset: Cleanup to Deblock, Dedither\n",
                  "Broken: a bind row without what it takes, its bind or its text"]:
         if run.stderr.count(line) != 1:
             sys.exit(f"menu: {line!r} is in the log {run.stderr.count(line)} times, not once")
+    # The filtering at this device's most, 4x, twice: Quality's, and Balanced's
+    # back from Performance's Off.
+    line = "[MENU] preset: Filtering to 4x\n"
+    if run.stderr.count(line) != 2:
+        sys.exit(f"menu: {line!r} is in the log {run.stderr.count(line)} times, not twice")
     # Submenus are no setting, so say nothing about presets, and aren't told;
     # nor are rows the presets leave alone, as the layouts' bind rows.
     for line in ["Skips: nothing said about presets", "Enhancements: nothing said about presets",

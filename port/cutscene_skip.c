@@ -79,10 +79,10 @@ void cutscene_skip_start(void)
         const XBOX_MENU_ITEM row = {
             .menu = XBOX_MENU_GAMEPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Skip cutscenes",
             .state = menu_on, .run = menu_flip, .group = XBOX_GROUP_SKIPS,
-            /* File > Presets: scenes play to their end in Xbox mode, as on
-             * the Xbox. */
+            /* File > Presets: scenes play to their end in Xbox, as on the
+             * Xbox. */
             .presets = XBOX_PRESETS_SET,
-            .preset = { 0, CUTSCENE_SKIP_DEFAULT, CUTSCENE_SKIP_DEFAULT },
+            .preset = { 0, CUTSCENE_SKIP_DEFAULT, CUTSCENE_SKIP_DEFAULT, CUTSCENE_SKIP_DEFAULT },
             .hint = "Skips a cutscene when the jump button is pressed twice." };
         xbox_MenuAdd(&row, 1);
     }

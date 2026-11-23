@@ -323,13 +323,14 @@ int main(int argc, char **argv)
     CHECK(!strcmp(s_row.label, "Keyboard moves") && s_row.nchoices == 2);
     CHECK(!strcmp(s_row.choices[0], "Camera") && !strcmp(s_row.choices[1], "Skater"));
     CHECK(s_row.hint && strlen(s_row.hint) <= MENU_HINT_LONGEST && s_row.hint[strlen(s_row.hint) - 1] == '.');
+    /* File > Presets: Camera in Xbox, and left by the others, as all of
+     * Input is. */
     CHECK(s_row.presets == XBOX_PRESETS_SET && !s_row.keep);
-    CHECK(s_row.preset[XBOX_PRESET_XBOX] == 0 && s_row.preset[XBOX_PRESET_BALANCED] == 0
-          && s_row.preset[XBOX_PRESET_QUALITY] == 0);
-    /* Camera, the default, with no keyboard_moves= or one it doesn't know:
-     * JSRF-PC default's, as a start with no settings gives. */
+    CHECK(s_row.preset[XBOX_PRESET_XBOX] == 0 && s_row.leave == XBOX_PRESETS_BUT_XBOX);
+    /* Camera, the default, with no keyboard_moves= or one it doesn't know,
+     * as a start with no settings gives. */
     if (!strcmp(c, "default") || !strcmp(c, "unknown")) {
-        CHECK(s_row.state() == 0 && s_row.preset[XBOX_PRESET_BALANCED] == s_row.state());
+        CHECK(s_row.state() == 0);
         check_pad(1);
     }
     if (!strcmp(c, "default")) {

@@ -991,6 +991,7 @@ static void poly_offset_gl(float *factor, float *units)
  */
 #define SMAA_DEFAULT 1
 #define MSAA_DEFAULT 0          /* samples a pixel, as msaa= keeps them: 0, none */
+#define MSAA_BALANCED 4         /* File > Presets > Balanced's (spriteice, 2026-11-23) */
 static volatile int g_smaa_want;       /* asked for */
 static int          g_smaa_now;        /* and in use */
 static volatile int g_msaa_want = 1;   /* samples a pixel asked for, 1 none */
@@ -2289,29 +2290,30 @@ static void sdl_menu_display(void)
      * UTC, and the submenu under Aspect ratio, at 09:37 UTC; Render scale
      * became Resolution, applied at once, on 21 November 2026). The presets
      * (File > Presets) set every row: full screen in each, as the console
-     * filled the TV and a new install starts; Xbox mode is the console's 4:3
-     * at its 640x480 (spriteice, 01:29 UTC on 2026-11-21: "For Xbox mode,
-     * "Default" is the default, For JSRF-PC defaults and Max quality, "Match
-     * Screen" is default."). */
+     * filled the TV and a new install starts; Xbox is the console's 4:3 at
+     * its 640x480, and the others Match screen (spriteice, 01:29 UTC on
+     * 2026-11-21: "For Xbox mode, "Default" is the default, For JSRF-PC
+     * defaults and Max quality, "Match Screen" is default."; and Performance
+     * too, 2026-11-23). */
     const XBOX_MENU_ITEM fullscreen = {
         .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Fullscreen",
         .state = sdl_is_fullscreen, .run = sdl_choose_fullscreen,
         .presets = XBOX_PRESETS_SET,
-        .preset = { 1, SDL_CFG_FULLSCREEN_DEFAULT, SDL_CFG_FULLSCREEN_DEFAULT },
+        .preset = { 1, SDL_CFG_FULLSCREEN_DEFAULT, SDL_CFG_FULLSCREEN_DEFAULT, SDL_CFG_FULLSCREEN_DEFAULT },
         .hint = "The window becomes fullscreen." };
     const XBOX_MENU_ITEM res = {
         .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Resolution",
         .state = sdl_res_now, .pick = sdl_res_pick,
         .choices = nv2a_scale_names, .nchoices = NV2A_SCALE_CHOICES,
         .presets = XBOX_PRESETS_SET,
-        .preset = { NV2A_SCALE_XBOX, NV2A_SCALE_DEFAULT, NV2A_SCALE_DEFAULT },
+        .preset = { NV2A_SCALE_XBOX, NV2A_SCALE_DEFAULT, NV2A_SCALE_DEFAULT, NV2A_SCALE_DEFAULT },
         .hint = "Sets the height the game is drawn at. GPU heavy." };
     const XBOX_MENU_ITEM rows[] = {
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Aspect ratio",
           .state = sdl_aspect_now, .pick = sdl_aspect_pick,
           .choices = nv2a_wide_shape_names, .nchoices = NV2A_WIDE_SHAPES,
           .presets = XBOX_PRESETS_SET,
-          .preset = { NV2A_WIDE_SHAPE_4_3, SDL_CFG_SHAPE_DEFAULT, SDL_CFG_SHAPE_DEFAULT },
+          .preset = { NV2A_WIDE_SHAPE_4_3, SDL_CFG_SHAPE_DEFAULT, SDL_CFG_SHAPE_DEFAULT, SDL_CFG_SHAPE_DEFAULT },
           .hint = "Adjusts the aspect ratio. Menus, HUD, and effects adjust to match." },
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_GROUP, .label = SDL_HUD_GROUP,
           .hint = "Resizes the HUD or turns it off." },
@@ -2320,11 +2322,12 @@ static void sdl_menu_display(void)
           .group = SDL_HUD_GROUP, .value = sdl_hud_scale, .set = sdl_hud_scale_set,
           .min = NV2A_HUD_SCALE_MIN, .max = NV2A_HUD_SCALE_MAX, .step = NV2A_HUD_SCALE_STEP,
           .format = "%.1fx", .presets = XBOX_PRESETS_SET,
-          .preset = { NV2A_HUD_SCALE_DEFAULT, NV2A_HUD_SCALE_DEFAULT, NV2A_HUD_SCALE_DEFAULT },
+          .preset = { NV2A_HUD_SCALE_DEFAULT, NV2A_HUD_SCALE_DEFAULT, NV2A_HUD_SCALE_DEFAULT,
+                      NV2A_HUD_SCALE_DEFAULT },
           .hint = "Resizes the HUD from 0.5x to 1.5x." },
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "Disable HUD",
           .group = SDL_HUD_GROUP, .state = sdl_hud_off, .run = sdl_hud_off_flip,
-          .presets = XBOX_PRESETS_SET, .preset = { 0, 0, 0 },
+          .presets = XBOX_PRESETS_SET, .preset = { 0, 0, 0, 0 },
           .hint = "Hides the HUD." },
     };
     /* Display's submenu, at its foot whatever is added later (menu.h,
@@ -2375,7 +2378,8 @@ static void sdl_menu_msaa(void)
             .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Anti-aliasing (MSAA)",
             .state = sdl_msaa_now, .pick = sdl_msaa_pick, .choices = sdl_msaa_names, .nchoices = n,
             .presets = XBOX_PRESETS_SET,
-            .preset = { sdl_msaa_index(MSAA_DEFAULT), sdl_msaa_index(MSAA_DEFAULT), XBOX_PRESET_MOST },
+            .preset = { sdl_msaa_index(MSAA_DEFAULT), sdl_msaa_index(MSAA_DEFAULT),
+                        sdl_msaa_index(MSAA_BALANCED), XBOX_PRESET_MOST },
             .hint = "Smooths jagged edges, more effective than SMAA. GPU heavy." };
         xbox_MenuAdd(&row, 1);
     }
@@ -2395,7 +2399,9 @@ static void sdl_menu_smaa(void)
     const XBOX_MENU_ITEM row = {
         .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE, .label = "Anti-aliasing (SMAA)",
         .state = sdl_smaa_on, .run = sdl_smaa_flip,
-        .presets = XBOX_PRESETS_SET, .preset = { 0, SMAA_DEFAULT, 1 },
+        /* File > Presets: off in Xbox, Performance and Balanced, which has
+         * MSAA in its place (spriteice, 2026-11-23). */
+        .presets = XBOX_PRESETS_SET, .preset = { 0, 0, 0, 1 },
         .hint = "Smooths some jagged edges, less effective than MSAA. Light on the GPU." };
     if (G->target_smaa) xbox_MenuAdd(&row, 1);
 }
@@ -2428,7 +2434,8 @@ static void sdl_menu_aniso(void)
             .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Anisotropic filtering",
             .state = sdl_aniso_now, .pick = sdl_aniso_pick, .choices = sdl_aniso_names, .nchoices = n,
             .presets = XBOX_PRESETS_SET,
-            .preset = { sdl_aniso_index(ANISO_NONE), sdl_aniso_index(ANISO_DEFAULT), XBOX_PRESET_MOST },
+            .preset = { sdl_aniso_index(ANISO_NONE), sdl_aniso_index(ANISO_NONE),
+                        sdl_aniso_index(ANISO_DEFAULT), XBOX_PRESET_MOST },
             .hint = "Keeps textures sharp when seen at an angle. Light on the GPU." };
         xbox_MenuAdd(&row, 1);
     }
@@ -2448,8 +2455,8 @@ static void sdl_menu_seethru(void)
     const XBOX_MENU_ITEM row = {
         .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_TOGGLE, .label = "See through fix",
         .state = nv2a_seethru_on, .run = sdl_seethru_flip, .group = XBOX_GROUP_ENHANCEMENTS,
-        /* File > Presets: off in Xbox mode, as on the Xbox. */
-        .presets = XBOX_PRESETS_SET, .preset = { 0, NV2A_SEE_DEFAULT, NV2A_SEE_DEFAULT },
+        /* File > Presets: off in Xbox, as on the Xbox. */
+        .presets = XBOX_PRESETS_SET, .preset = { 0, NV2A_SEE_DEFAULT, NV2A_SEE_DEFAULT, NV2A_SEE_DEFAULT },
         .hint = "See characters and dynamic world objects through glass and water." };
     xbox_MenuAdd(&row, 1);
 }
@@ -2469,8 +2476,8 @@ static void sdl_up_pick(int i)
 }
 static void sdl_menu_up(void)
 {
-    /* The presets (File > Presets): off in Xbox mode, JSRF-PC default's
-     * (4x), and 8x in Max quality. */
+    /* The presets (File > Presets): off in Xbox, 4x in Performance and
+     * Balanced, and 8x in Quality. */
     const XBOX_MENU_ITEM rows[] = {
         { .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_UPSCALING, .last = 1,
           .hint = "Sharpens textures subtly with Super-xBR. Can cause minor hitching." },
@@ -2478,7 +2485,8 @@ static void sdl_menu_up(void)
           .state = sdl_up_now, .pick = sdl_up_pick, .choices = sdl_up_names,
           .nchoices = NV2A_UP_CHOICES,
           .presets = XBOX_PRESETS_SET,
-          .preset = { nv2a_up_choice(0), nv2a_up_choice(NV2A_UP_DEFAULT), nv2a_up_choice(8) },
+          .preset = { nv2a_up_choice(0), nv2a_up_choice(NV2A_UP_DEFAULT), nv2a_up_choice(NV2A_UP_DEFAULT),
+                      nv2a_up_choice(8) },
           .group = XBOX_GROUP_UPSCALING,
           .hint = "Sharpens menus, text and the HUD at higher resolutions." },
     };
@@ -2496,14 +2504,15 @@ static void sdl_upb_pick(int i)
 }
 static void sdl_menu_upb(void)
 {
-    /* The presets (File > Presets): off in Xbox mode, JSRF-PC default's
-     * (Off), and 8x in Max quality. */
+    /* The presets (File > Presets): off in Xbox, Performance and Balanced,
+     * and 8x in Quality. */
     const XBOX_MENU_ITEM row = {
         .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Buttons",
         .state = sdl_upb_now, .pick = sdl_upb_pick, .choices = sdl_up_names,
         .nchoices = NV2A_UP_CHOICES,
         .presets = XBOX_PRESETS_SET,
-        .preset = { nv2a_up_choice(0), nv2a_up_choice(NV2A_UPB_DEFAULT), nv2a_up_choice(8) },
+        .preset = { nv2a_up_choice(0), nv2a_up_choice(NV2A_UPB_DEFAULT), nv2a_up_choice(NV2A_UPB_DEFAULT),
+                    nv2a_up_choice(8) },
         .group = XBOX_GROUP_UPSCALING,
         .hint = "Smooths the button prompts' pictures with Super-xBR." };
     if (G->tex_upscale) xbox_MenuAdd(&row, 1);
@@ -2520,14 +2529,14 @@ static void sdl_up3_pick(int i)
 }
 static void sdl_menu_up3(void)
 {
-    /* The presets (File > Presets): off in Xbox mode, JSRF-PC default's
-     * (4x), and 8x in Max quality. */
+    /* The presets (File > Presets): off in Xbox and Performance, 4x in
+     * Balanced, and 8x in Quality. */
     const XBOX_MENU_ITEM row = {
         .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Textures",
         .state = sdl_up3_now, .pick = sdl_up3_pick, .choices = sdl_up_names,
         .nchoices = NV2A_UP_CHOICES,
         .presets = XBOX_PRESETS_SET,
-        .preset = { nv2a_up_choice(0), nv2a_up_choice(NV2A_UP3_DEFAULT), nv2a_up_choice(8) },
+        .preset = { nv2a_up_choice(0), nv2a_up_choice(0), nv2a_up_choice(NV2A_UP3_DEFAULT), nv2a_up_choice(8) },
         .group = XBOX_GROUP_UPSCALING,
         .hint = "Sharpens textures in the 3D world at higher resolutions." };
     if (G->tex_upscale) xbox_MenuAdd(&row, 1);
@@ -2544,14 +2553,14 @@ static void sdl_upg_pick(int i)
 }
 static void sdl_menu_upg(void)
 {
-    /* The presets (File > Presets): off in Xbox mode, JSRF-PC default's
-     * (4x), and 8x in Max quality. */
+    /* The presets (File > Presets): off in Xbox and Performance, 4x in
+     * Balanced, and 8x in Quality. */
     const XBOX_MENU_ITEM row = {
         .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Graffiti",
         .state = sdl_upg_now, .pick = sdl_upg_pick, .choices = sdl_up_names,
         .nchoices = NV2A_UP_CHOICES,
         .presets = XBOX_PRESETS_SET,
-        .preset = { nv2a_up_choice(0), nv2a_up_choice(NV2A_UPG_DEFAULT), nv2a_up_choice(8) },
+        .preset = { nv2a_up_choice(0), nv2a_up_choice(0), nv2a_up_choice(NV2A_UPG_DEFAULT), nv2a_up_choice(8) },
         .group = XBOX_GROUP_UPSCALING,
         .hint = "Sharpens the graffiti tags at higher resolutions." };
     if (G->tex_upscale) xbox_MenuAdd(&row, 1);
@@ -2574,7 +2583,7 @@ static void sdl_menu_up_sharp(void)
         .state = sdl_up_sharp_now, .pick = sdl_up_sharp_pick, .choices = nv2a_up_sharp_names,
         .nchoices = NV2A_UP_SHARP_CHOICES,
         .presets = XBOX_PRESETS_SET,
-        .preset = { NV2A_UP_SHARP_DEFAULT, NV2A_UP_SHARP_DEFAULT, NV2A_UP_SHARP_DEFAULT },
+        .preset = { NV2A_UP_SHARP_DEFAULT, NV2A_UP_SHARP_DEFAULT, NV2A_UP_SHARP_DEFAULT, NV2A_UP_SHARP_DEFAULT },
         .group = XBOX_GROUP_UPSCALING,
         .hint = "How crisp the upscaled edges are." };
     if (G->tex_upscale) xbox_MenuAdd(&row, 1);
@@ -2598,7 +2607,7 @@ static void sdl_menu_up_edge(void)
         .state = sdl_up_edge_now, .pick = sdl_up_edge_pick, .choices = nv2a_up_edge_names,
         .nchoices = NV2A_UP_EDGE_CHOICES,
         .presets = XBOX_PRESETS_SET,
-        .preset = { NV2A_UP_EDGE_DEFAULT, NV2A_UP_EDGE_DEFAULT, NV2A_UP_EDGE_DEFAULT },
+        .preset = { NV2A_UP_EDGE_DEFAULT, NV2A_UP_EDGE_DEFAULT, NV2A_UP_EDGE_DEFAULT, NV2A_UP_EDGE_DEFAULT },
         .group = XBOX_GROUP_UPSCALING,
         .hint = "How faint a diagonal the upscaling follows." };
     if (G->tex_upscale) xbox_MenuAdd(&row, 1);
@@ -2618,15 +2627,15 @@ static void sdl_up_clean_pick(int i)
 }
 static void sdl_menu_up_clean(void)
 {
-    /* The presets (File > Presets): both off in Xbox mode, which has no
-     * copies to clean, and JSRF-PC default's in the other two: the ticks
-     * have no most for Max quality to raise. */
+    /* The presets (File > Presets): both off in Xbox, which has no copies
+     * to clean, and a new install's in the others: the ticks have no most
+     * for Quality to raise. */
     const XBOX_MENU_ITEM row = {
         .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLES, .label = "Cleanup",
         .state = sdl_up_clean_now, .pick = sdl_up_clean_pick, .choices = nv2a_up_clean_names,
         .nchoices = NV2A_UP_CLEANS,
         .presets = XBOX_PRESETS_SET,
-        .preset = { 0, NV2A_UP_CLEAN_DEFAULT, NV2A_UP_CLEAN_DEFAULT },
+        .preset = { 0, NV2A_UP_CLEAN_DEFAULT, NV2A_UP_CLEAN_DEFAULT, NV2A_UP_CLEAN_DEFAULT },
         .group = XBOX_GROUP_UPSCALING,
         .hint = "Cleans upscaled textures slightly." };
     if (G->tex_upscale) xbox_MenuAdd(&row, 1);
