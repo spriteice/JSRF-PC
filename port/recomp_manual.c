@@ -2294,11 +2294,26 @@ static int voice_log_on(void)
 }
 static uint32_t s_sndmgr;   /* the sound manager (task 5), seen by its update */
 
+/* The sound manager's words that sound_slots reads. A slot's state is 1
+ * while it loads. */
+#define SNDMGR_READ           0x200u  /* as far into it as they reach, for the bounds check */
+#define SNDMGR_ADXT_MUSIC     0x68u   /* the music's two ADXTs: this word and the next */
+#define SNDMGR_ADXT_SPEECH_2  0x6Cu   /* the ADXT of speech's second slot and of the other two's second: the music's second */
+#define SNDMGR_ADXT_SPEECH    0x70u   /* the ADXT of speech's first slot */
+#define SNDMGR_ADXT_OTHER     0x74u   /* the ADXT of the other two slots' first */
+#define SNDMGR_MUSIC_PLAYING  0x78u   /* bit 0: which of the music's two ADXTs plays */
+#define SNDMGR_MUSIC_NEXT     0xA4u   /* set while the music's next track loads */
+#define SNDMGR_STATE_MUSIC    0xBCu   /* the music's state */
+#define SNDMGR_STATE_SPEECH   0xC0u   /* speech's first slot's state */
+#define SNDMGR_STATE_SPEECH_2 0xC4u   /* speech's second slot's */
+#define SNDMGR_STATE_OTHER    0xC8u   /* the other two slots' states */
+#define SNDMGR_STATE_OTHER_2  0xCCu
+
 /* The sound manager at o's slots as its slot step will find them, for
  * sound_keep_pass, while playback keeps the sound to the passes: loading,
- * in sound_keep_site's order, and the ADXT each loads. The music's two
- * ADXTs are at +0x68 and +0x6C, +0x78 the one playing; while +0xA4 is set,
- * the next track loads in the other, and the music's own state (+0xBC) isn't
+ * in sound_keep_site's order, and the ADXT each loads. Of the music's two
+ * ADXTs, SNDMGR_MUSIC_PLAYING says which plays; while SNDMGR_MUSIC_NEXT is
+ * set, the next track loads in the other, and the music's own state isn't
  * looked at. */
 static void sound_slots(uint32_t o)
 {
@@ -2307,14 +2322,16 @@ static void sound_slots(uint32_t o)
     uint32_t track[SOUND_KEEP_SLOTS] = { 0 };
     int passes = playback_sound_kept();
 #define SND(off) (*(const uint32_t *)(m + o + (off)))
-    if (passes && o >= 0x10000u && o + 0x200u < (64u << 20)) {
-        uint32_t next = SND(0xA4), cur = SND(0x78) & 1u;
-        loading[0] = next != 0;          track[0] = SND(0x68 + 4 * (cur ^ 1u));
-        loading[1] = !next && SND(0xBC) == 1; track[1] = SND(0x68 + 4 * cur);
-        loading[2] = SND(0xC0) == 1;     track[2] = SND(0x70);
-        loading[3] = SND(0xC8) == 1;     track[3] = SND(0x74);
-        loading[4] = SND(0xCC) == 1;     track[4] = SND(0x6C);
-        loading[5] = SND(0xC4) == 1;     track[5] = SND(0x6C);
+    if (passes && o >= 0x10000u && o + SNDMGR_READ < (64u << 20)) {
+        uint32_t next = SND(SNDMGR_MUSIC_NEXT), cur = SND(SNDMGR_MUSIC_PLAYING) & 1u;
+        loading[0] = next != 0;
+        track[0] = SND(SNDMGR_ADXT_MUSIC + 4 * (cur ^ 1u));
+        loading[1] = !next && SND(SNDMGR_STATE_MUSIC) == 1;
+        track[1] = SND(SNDMGR_ADXT_MUSIC + 4 * cur);
+        loading[2] = SND(SNDMGR_STATE_SPEECH) == 1;   track[2] = SND(SNDMGR_ADXT_SPEECH);
+        loading[3] = SND(SNDMGR_STATE_OTHER) == 1;    track[3] = SND(SNDMGR_ADXT_OTHER);
+        loading[4] = SND(SNDMGR_STATE_OTHER_2) == 1;  track[4] = SND(SNDMGR_ADXT_SPEECH_2);
+        loading[5] = SND(SNDMGR_STATE_SPEECH_2) == 1; track[5] = SND(SNDMGR_ADXT_SPEECH_2);
     }
 #undef SND
     sound_keep_pass(passes, loading, track);
@@ -5740,11 +5757,11 @@ static int preview_own_end(uint32_t runner, uint32_t at, uint32_t bit)
     int count, k;
     a[0] = bit;
     progress_call(sub_0003A890, SEEN_SET_RA, 1, a);
-    count = cutscene_skip_preview_ends((const uint8_t *)g_xbox_mem_offset, list, n, MEM32(at + 8u),
-                                       preview_holds, NULL, ends, 16);
+    count = cutscene_skip_preview_ends((const uint8_t *)g_xbox_mem_offset, list, n,
+                                       MEM32(at + CUTSCENE_SKIP_SEEN_EXIT), preview_holds, NULL, ends, 16);
     for (k = 0; k < count; k++) {
-        a[0] = MEM32(ends[k] + 8u);
-        a[1] = MEM32(ends[k] + 12u);
+        a[0] = MEM32(ends[k] + CUTSCENE_SKIP_EVENT_FLAGS);
+        a[1] = MEM32(ends[k] + CUTSCENE_SKIP_EVENT_FLAGS_MANY);
         if (a[1] && a[1] <= CUTSCENE_SKIP_CONDITIONS) progress_call(sub_00039D80, EVENTS_SET_RA, 2, a);
     }
     return count;
@@ -5773,7 +5790,7 @@ void sub_0003A8C0(void)
         const int ends = preview_own_end(runner, entry, bit);
         fprintf(stderr, "[SKIP] t=%.2f the preview ends: seen bit %X set, the flags of %d of its own ends "
                 "(command 230, exit %u) set, and its event 249's exit taken, as the game's own skip takes "
-                "it\n", jsrf_now(), bit, ends, MEM32(entry + 8u));
+                "it\n", jsrf_now(), bit, ends, MEM32(entry + CUTSCENE_SKIP_SEEN_EXIT));
         g_eax = 1;
     }
 }
@@ -5859,14 +5876,14 @@ static void preview_unskipped(uint32_t runner)
                                        CUTSCENE_SKIP_ANY_EXIT, preview_holds, NULL, ends, 16);
     if (!count) return;
     now = jsrf_now();
-    exit = MEM32(ends[0] + 0x14u);
+    exit = MEM32(ends[0] + CUTSCENE_SKIP_EVENT_EXIT);
     for (k = 1; k < count; k++) {
-        if (MEM32(ends[k] + 0x14u) == exit) continue;
+        if (MEM32(ends[k] + CUTSCENE_SKIP_EVENT_EXIT) == exit) continue;
         if (s_two_told != ends[0]) {
             s_two_told = ends[0];
             fprintf(stderr, "[SKIP] t=%.2f a preview with no skip of the game's own plays, but its ends "
                     "at %08X and %08X take exits %u and %u: it plays on\n", now, ends[0], ends[k], exit,
-                    MEM32(ends[k] + 0x14u));
+                    MEM32(ends[k] + CUTSCENE_SKIP_EVENT_EXIT));
         }
         return;
     }

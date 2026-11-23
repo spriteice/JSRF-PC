@@ -211,10 +211,10 @@ int cutscene_skip_preview_ends(const uint8_t *mem, uint32_t list, uint32_t n, ui
     int count = 0;
     for (i = 0; list && i < n && i < CUTSCENE_SKIP_EVENTS && count < max; i++) {
         const uint32_t e = list + i * CUTSCENE_SKIP_EVENT;
-        const uint32_t conditions = word_at(mem, e), many = word_at(mem, e + 4u);
+        const uint32_t conditions = word_at(mem, e), many = word_at(mem, e + CUTSCENE_SKIP_EVENT_MANY);
         int hold = many <= CUTSCENE_SKIP_CONDITIONS;
-        if (word_at(mem, e + 0x10u) != CUTSCENE_SKIP_END) continue;
-        if (exit != CUTSCENE_SKIP_ANY_EXIT && word_at(mem, e + 0x14u) != exit) continue;
+        if (word_at(mem, e + CUTSCENE_SKIP_EVENT_COMMAND) != CUTSCENE_SKIP_END) continue;
+        if (exit != CUTSCENE_SKIP_ANY_EXIT && word_at(mem, e + CUTSCENE_SKIP_EVENT_EXIT) != exit) continue;
         for (k = 0; hold && k < many; k++) {
             const uint32_t at = conditions + 4u * k;
             if ((word_at(mem, at) & 7u) != CUTSCENE_SKIP_BANK_MISSION) hold = holds(ctx, at);
@@ -232,7 +232,7 @@ int cutscene_skip_preview_list(const uint8_t *mem, uint32_t list, uint32_t n,
     if (!list || !n || n > CUTSCENE_SKIP_EVENTS)
         return CUTSCENE_SKIP_LIST_OTHER;
     for (i = 0; i < n; i++) {
-        const uint32_t command = word_at(mem, list + i * CUTSCENE_SKIP_EVENT + 0x10u);
+        const uint32_t command = word_at(mem, list + i * CUTSCENE_SKIP_EVENT + CUTSCENE_SKIP_EVENT_COMMAND);
         if (command == CUTSCENE_SKIP_SEEN)
             skips++;
         else if (command != CUTSCENE_SKIP_END)
@@ -242,9 +242,9 @@ int cutscene_skip_preview_list(const uint8_t *mem, uint32_t list, uint32_t n,
         return CUTSCENE_SKIP_LIST_OTHER;
     for (i = 0; i < n; i++) {
         const uint32_t e = list + i * CUTSCENE_SKIP_EVENT;
-        const uint32_t conditions = word_at(mem, e), many = word_at(mem, e + 4u);
+        const uint32_t conditions = word_at(mem, e), many = word_at(mem, e + CUTSCENE_SKIP_EVENT_MANY);
         int hold = many <= CUTSCENE_SKIP_CONDITIONS;
-        if (word_at(mem, e + 0x10u) != CUTSCENE_SKIP_SEEN) continue;
+        if (word_at(mem, e + CUTSCENE_SKIP_EVENT_COMMAND) != CUTSCENE_SKIP_SEEN) continue;
         for (k = 0; hold && k < many; k++)
             hold = holds(ctx, conditions + 4u * k);
         if (hold)

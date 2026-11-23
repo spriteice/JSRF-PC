@@ -133,6 +133,17 @@ void cutscene_skip_place(float size, const float width[CUTSCENE_SKIP_PIECES],
  * CUTSCENE_SKIP_CONDITIONS conditions is passed over, and at most
  * CUTSCENE_SKIP_EVENTS entries are looked at. */
 #define CUTSCENE_SKIP_EVENT          0x54u /* conditions and count, flags and count, command, its words */
+/* Where those are in an entry, a word each; the conditions' address is its
+ * first word. */
+#define CUTSCENE_SKIP_EVENT_MANY       0x04u /* how many conditions */
+#define CUTSCENE_SKIP_EVENT_FLAGS      0x08u /* the address of the flags it sets */
+#define CUTSCENE_SKIP_EVENT_FLAGS_MANY 0x0Cu /* how many flags */
+#define CUTSCENE_SKIP_EVENT_COMMAND    0x10u /* its command */
+#define CUTSCENE_SKIP_EVENT_EXIT       0x14u /* the command's first word: an end's exit */
+/* From a skip's command, where the game's scan holds its entry (the entry's
+ * CUTSCENE_SKIP_EVENT_COMMAND): its exit, the command's second word, after
+ * its seen bit. */
+#define CUTSCENE_SKIP_SEEN_EXIT        0x08u
 #define CUTSCENE_SKIP_END            230u  /* the mission's own end, by exit [exit] */
 #define CUTSCENE_SKIP_SEEN           249u  /* the game's skip of a preview seen before [seen bit, exit] */
 #define CUTSCENE_SKIP_ANY_EXIT       0xFFFFFFFFu /* for exit: the ends by any exit */
