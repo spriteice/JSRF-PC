@@ -17,8 +17,8 @@ as that file needs SDL, a window and OpenGL.
    from that file verbatim, with test_gate.c.
 5. File's rows (src/menu/menu_sdl.cpp's File section, unchanged), with the
    same and test_file.cpp, which stands in for SDL and the window's
-   restarts: the rows in order, Presets' four, its line and Reset, and the
-   presets chosen by their paths.
+   restarts: the rows in order, Presets' four, its line and Reset, the
+   presets chosen by their paths, and Xbox (Restart) by its OK.
 4. The window's submenus (src/nv2a_gl/nv2a_gl.c, sdl_menu_display), by
    text: Display's Enhancements, at its foot, then Gameplay's, in their
    order, Skips first, then Graffiti souls. That the menu then draws them
@@ -144,13 +144,14 @@ with tempfile.TemporaryDirectory(prefix="menu-") as tmp:
     sys.stderr.write(run.stderr)
     if run.returncode:
         sys.exit(run.returncode)
-    # Each preset said as it is chosen, twice (chosen again, ticked), and
-    # nothing the menu's own checks find in File's rows (menu.cpp's
-    # RECOMP_CHECK lines: a hint too long, or none).
-    for name in ("Xbox", "Performance", "Balanced", "Quality"):
+    # Each preset said as it is chosen: Performance, Balanced and Quality
+    # twice (chosen again, ticked), Xbox once (its OK); and nothing the
+    # menu's own checks find in File's rows (menu.cpp's RECOMP_CHECK lines:
+    # a hint too long, or none).
+    for name, times in (("Xbox", 1), ("Performance", 2), ("Balanced", 2), ("Quality", 2)):
         line = f"[MENU] preset {name} chosen\n"
-        if run.stderr.count(line) != 2:
-            sys.exit(f"menu: {line!r} is in File's log {run.stderr.count(line)} times, not twice")
+        if run.stderr.count(line) != times:
+            sys.exit(f"menu: {line!r} is in File's log {run.stderr.count(line)} times, not {times}")
     if "[CHECK]" in run.stderr:
         sys.exit("menu: the menu's checks found something in File's rows")
 

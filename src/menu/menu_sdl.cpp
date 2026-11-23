@@ -130,19 +130,30 @@ static void exit_game(void)
  * every row the presets set (menu.h) put at the Xbox's own settings, the
  * heavy ones at their least, between, or at their most, each by its owner's
  * own function (menu_preset_apply), and ticked while the settings are its;
- * then a line, and Reset (Restart) (spriteice, 23 November 2026). Each preset applies
- * at once, with no box, as Display > Resolution does: the (Restart) rows,
- * Shader cache and Audio effects, are left to the player (spriteice's card,
- * 02:00 UTC on 2026-11-21). A (Restart) row a preset set would keep its
- * value, and the game would start again once, after them all. */
+ * then a line, and Reset (Restart) (spriteice, 23 November 2026).
+ * Performance, Balanced and Quality apply at once, with no box, as Display
+ * > Resolution does, and set no (Restart) row: Shader cache and Audio
+ * effects are left to the player (spriteice's card, 02:00 UTC on
+ * 2026-11-21). Xbox also turns Audio effects (Restart) on, as the Xbox's
+ * own sound has them (spriteice, 23 November 2026), so its row is a
+ * (Restart) row: "Xbox (Restart)", which asks first, and OK applies it,
+ * keeping Audio effects for the next start, and restarts the game once, as
+ * any (Restart) row's OK does (docs/menu-format.md, (Restart)). */
 #define FILE_PRESETS "Presets"
 static const char *const k_preset_names[] = { "Xbox", "Performance", "Balanced", "Quality" };
 static_assert(sizeof k_preset_names / sizeof k_preset_names[0] == XBOX_PRESETS, "a name for each preset in menu.h");
+/* Each preset's row: its label, and the question a (Restart) row asks. */
+static const char *const k_preset_rows[] = { "Xbox (Restart)", "Performance", "Balanced", "Quality" };
+static const char *const k_preset_asks[] = { "Apply Xbox and restart, losing unsaved progress?", NULL, NULL, NULL };
+static_assert(sizeof k_preset_rows / sizeof k_preset_rows[0] == XBOX_PRESETS
+              && sizeof k_preset_asks / sizeof k_preset_asks[0] == XBOX_PRESETS, "a row for each preset in menu.h");
 
 static void preset_pick(int i)
 {
     fprintf(stderr, "[MENU] preset %s chosen\n", k_preset_names[i]);
-    if (menu_preset_apply(i)) nv_window_restart();     /* returns only where it can't */
+    /* A (Restart) row the preset set was kept, or its own row asked first:
+     * the game starts again (returns only where it can't). */
+    if (menu_preset_apply(i) || k_preset_asks[i]) nv_window_restart();
 }
 /* A preset's row: ticked while it is the one the settings are at, and
  * applied when chosen, ticked or not (nothing then differs). */
@@ -152,10 +163,12 @@ template <int P> static void preset_chosen(void) { preset_pick(P); }
 /* Every field, in order: C++11 has no designated initializers. */
 #define FILE_NO_PRESETS XBOX_PRESETS_UNSAID, { 0, 0, 0, 0 }, NULL
 #define FILE_NO_BIND    XBOX_BIND_NONE, NULL, NULL, NULL, 0
-/* A preset's row in File > Presets, by its name in k_preset_names. */
+/* A preset's row in File > Presets, by its label and question in
+ * k_preset_rows and k_preset_asks. */
 #define FILE_PRESET(p, hint) \
-    { XBOX_MENU_FILE, XBOX_ITEM_TOGGLE, k_preset_names[p], preset_ticked<p>, preset_chosen<p>, NULL, NULL, 0, \
-      NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL, hint, FILE_NO_PRESETS, FILE_PRESETS, NULL, NULL, FILE_NO_BIND }
+    { XBOX_MENU_FILE, XBOX_ITEM_TOGGLE, k_preset_rows[p], preset_ticked<p>, preset_chosen<p>, NULL, NULL, 0, \
+      NULL, k_preset_asks[p], NULL, NULL, 0, 0, 0, NULL, 0, NULL, hint, FILE_NO_PRESETS, FILE_PRESETS, NULL, NULL, \
+      FILE_NO_BIND }
 static const XBOX_MENU_ITEM k_file[] = {
     { XBOX_MENU_FILE, XBOX_ITEM_INFO,      "About", NULL, NULL,      NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
       "Shows the engine version and relevant system details.", FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },

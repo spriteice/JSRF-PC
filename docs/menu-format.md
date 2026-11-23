@@ -259,13 +259,14 @@ in a submenu of its own.
 
 - Presets is File's second row, under About, with a separator
   above and below it, as between About and Restart before it. It is a
-  submenu (`XBOX_ITEM_GROUP`): a row for each preset, Xbox, Performance,
-  Balanced and Quality, in that order (`XBOX_PRESET` in `menu.h`), then a
-  separator and Reset (Restart) (spriteice, 23 November 2026; Reset,
-  below).
+  submenu (`XBOX_ITEM_GROUP`): a row for each preset, Xbox (Restart),
+  Performance, Balanced and Quality, in that order (`XBOX_PRESET` in
+  `menu.h`), then a separator and Reset (Restart) (spriteice, 23 November
+  2026; Reset, below).
 - **Xbox** is the game as the Xbox runs it: 4:3 at Default, the
   Xbox's 640x480, with everything JSRF-PC adds to how it looks and plays
-  turned off.
+  turned off, and Audio effects on, as the Xbox's own sound has them
+  (spriteice, 23 November 2026).
   **Performance** has the heavy settings at their least: Draw distance,
   Far buildings and Far shadows at 1x, no anti-aliasing and no anisotropic
   filtering, and Upscaling's Textures and Graffiti off.
@@ -282,12 +283,18 @@ in a submenu of its own.
   at 4x or more.
 - A preset's row is ticked while every row it sets has its value, and
   none is when one differs.
-- Choosing one applies it at once, with no box: it sets each row through
-  its own function, as choosing that row would, and saves it as the row
-  does. No preset sets a (Restart) row, so none restarts the game: Shader
-  cache and Audio effects are left to the player, as Mute is (spriteice's
-  card, 02:00 UTC on 2026-11-21). A (Restart) row a preset did set would keep its value
-  instead, and the game would restart once, after them all, if one changed.
+- Choosing Performance, Balanced or Quality applies it at once, with no
+  box: it sets each row through its own function, as choosing that row
+  would, and saves it as the row does. They set no (Restart) row, so none
+  restarts the game: Shader cache and Audio effects are left to the
+  player, as Mute is (spriteice's card, 02:00 UTC on 2026-11-21).
+- **Xbox sets one (Restart) row, Audio effects, on**, so its row is a
+  (Restart) row, "Xbox (Restart)" ((Restart), above): it asks first ("Apply
+  Xbox and restart, losing unsaved progress?"), and OK sets every row as
+  the others do, keeps Audio effects for the next start (the row's `keep`)
+  and restarts the game once, as any (Restart) row's OK does, even with
+  Audio effects already on (spriteice, 23 November 2026). Asking first, it
+  can't be chosen by its path (input playback's), as Reset can't.
 - **A preset sets every setting but Developer's, and the rows that say a
   preset leaves them alone** (`XBOX_PRESETS_LEFT` in `menu.h`): a player's
   own choices, not a quality setting, each with its own way back to its

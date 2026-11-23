@@ -77,9 +77,11 @@ int main(int argc, char **argv)
     /* A hint, a sentence short enough for the strip (menu.h). */
     CHECK(s_row.hint && strlen(s_row.hint) <= MENU_HINT_LONGEST && s_row.hint[strlen(s_row.hint) - 1] == '.');
     CHECK(s_row.state() == audio_effects());
-    /* File > Presets leave it, as the player's own, so that no preset
-     * restarts the game (spriteice's card, 02:00 UTC on 2026-11-21). */
-    CHECK(s_row.presets == XBOX_PRESETS_LEFT && !s_row.keep);
+    /* File > Presets > Xbox (Restart) turns it on, as the Xbox's own sound
+     * has it, through keep; the other presets leave it, the player's own
+     * (spriteice, 23 November 2026). */
+    CHECK(s_row.presets == XBOX_PRESETS_SET && s_row.keep && s_row.leave == XBOX_PRESETS_BUT_XBOX);
+    CHECK(s_row.preset[XBOX_PRESET_XBOX] == 1);
     /* The setting, passed to the effects once, which leave the environment
      * to win over it. */
     CHECK(s_choices == 1 && s_chosen == audio_effects());
@@ -92,6 +94,14 @@ int main(int argc, char **argv)
         s_row.run();
         CHECK(audio_effects() == !on && s_row.state() == !on);
         CHECK(s_restarts == 1 && s_choices == 1);
+    }
+    if (!strcmp(c, "keep_on")) {
+        /* The presets' keep: on for the next start, kept (which run.py
+         * checks), with no restart of its own; the effects keep what this
+         * start chose. */
+        s_row.keep(1);
+        CHECK(audio_effects() == 1 && s_row.state() == 1);
+        CHECK(s_restarts == 0 && s_choices == 1);
     }
     if (!strncmp(c, "mute_flip_", 10)) {
         /* Mute's row: the other way at once, passed to the sound output and

@@ -284,10 +284,12 @@ the buttons to press, in Input > Button prompts' style. The game keeps
 running while it is open, but your input goes to the menu.
 
 - **File:** About (the version and system details), Presets, Restart, and Exit.
-  Presets, a submenu, sets many settings at once, straight away, with no
-  restart: Xbox, Performance, Balanced or Quality. Xbox is the game as the Xbox runs it:
+  Presets, a submenu, sets many settings at once: Xbox (Restart),
+  Performance, Balanced or Quality. Xbox is the game as the Xbox runs it:
   4:3 at Default resolution (640×480), with everything JSRF-PC adds to how it
-  looks and plays turned off. Performance has the draw distance, Far
+  looks and plays turned off, and Audio effects on, as the Xbox's own sound
+  has them; it asks first, and restarts the game. The other three apply
+  straight away, with no restart. Performance has the draw distance, Far
   buildings and Far shadows at 1x, no anti-aliasing or anisotropic
   filtering, and Upscaling's Textures and Graffiti off. Balanced has the
   draw distance at 2x, Far buildings and Far shadows at 3x, MSAA at 4x in
@@ -300,10 +302,11 @@ running while it is open, but your input goes to the menu.
   sky. All but Xbox have the resolution and aspect ratio at Match screen,
   Music info in pause and See through fix on, and Upscaling's Menus and HUD
   at 4x or more. A preset sets every setting but Developer's, Input's two
-  layouts, the free camera's own settings, Mute, Shader cache and Audio
-  effects: each one also puts the game full screen, the HUD at its own size
-  and shown, Upscaling's Sharpness, Edge strength and Cleanup as a new
-  install has them, and Skip intro, Skip cutscenes and Visual indicator off.
+  layouts, the free camera's own settings, Mute, Shader cache and, but for
+  Xbox, Audio effects: each one also puts the game full screen, the HUD at
+  its own size and shown, Upscaling's Sharpness, Edge strength and Cleanup
+  as a new install has them, and Skip intro, Skip cutscenes and Visual
+  indicator off.
   Input is yours: only Xbox changes it, setting Keyboard moves to Camera,
   Stick shape to Square and Button prompts' Style to Default, turning the
   free camera, Default cam fix and No skater fade off, and ticking the
@@ -396,7 +399,8 @@ running while it is open, but your input goes to the menu.
   limiter of their own for the 3D sounds, so a busy moment no longer turns
   the music and voices down. On by default; off, the sound is as before
   them. It is kept as `audioeffects=` in the
-  settings file, and changing it restarts the game. No preset changes it.
+  settings file, and changing it restarts the game. Only File > Presets >
+  Xbox (Restart) changes it, turning it on.
   [The audio
   effects](technical/audio-effects.md) says how they work.
 - **Input:** Five submenus. Controller layout and Keyboard layout set
@@ -609,11 +613,11 @@ running while it is open, but your input goes to the menu.
   apply from the next start.
 
 Everything is remembered but Far buildings test. Restart, Exit, File >
-Presets' Reset, the shader cache, Audio effects, and Purge shaders ask
-first, as anything since your last save is lost: all but Exit restart the
-game. The resolution and the presets change at once, with no restart. The
-other rows marked (Restart) apply from the next start, which File >
-Restart gives.
+Presets' Xbox and Reset, the shader cache, Audio effects, and Purge shaders
+ask first, as anything since your last save is lost: all but Exit restart
+the game. The resolution and the other presets change at once, with no
+restart. The other rows marked (Restart) apply from the next start, which
+File > Restart gives.
 
 ## Graphics options
 
