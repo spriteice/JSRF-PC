@@ -1473,6 +1473,25 @@ static void test_hooks_step(uint8_t *ch)
 #define GAME_RANDOM 0x0022E58Cu  /* the game's random generator: seed * 0x55 + 0x7F, drawn by
                                   * sub_0014C2B0 and sub_0014C2D0, seeded 0x416C at 0x00012335 */
 static uint32_t *game_random(void) { return (uint32_t *)((uint8_t *)g_xbox_mem_offset + GAME_RANDOM); }
+
+/* Each draw from it, counted for playback's checks (port/playback.c): on
+ * the game's own thread, the one that runs the main loop's passes
+ * (sub_00013A80 marks it), or another, and where it returns to. Phase 0
+ * found it drawn a number of times that follows the host's time; this says
+ * where. */
+static RECOMP_TLS int s_game_thread;
+extern void sub_0014C2B0_gen(void);
+void sub_0014C2B0(void)
+{
+    playback_drawn(s_game_thread, *(uint32_t *)((uint8_t *)g_xbox_mem_offset + g_esp));
+    sub_0014C2B0_gen();
+}
+extern void sub_0014C2D0_gen(void);
+void sub_0014C2D0(void)
+{
+    playback_drawn(s_game_thread, *(uint32_t *)((uint8_t *)g_xbox_mem_offset + g_esp));
+    sub_0014C2D0_gen();
+}
 static uint32_t s_mission_mgr;   /* the object whose vtable requests missions */
 static void mission_hook(const char *what)
 {
@@ -2454,6 +2473,7 @@ void sub_00013A80(void)
     uint8_t *m = (uint8_t *)g_xbox_mem_offset;
     uint32_t o = g_ecx;
     uint32_t w94 = (o > 0x10000u && o < (64u << 20)) ? *(uint32_t *)(m + o + 0x94) : 0;
+    s_game_thread = 1;
     s_loop_passes++;
     playback_pass();
     photo_frame(o);             /* before the pass takes up the holds asked for */
@@ -6861,7 +6881,7 @@ void sub_000A5070(void)
             if ((uint32_t)port == *(const uint32_t *)(m + GAME_MAIN_PORT))
                 playback_view((float *)(uintptr_t)(m + who + CHR_POSITION),
                               (uint32_t *)(uintptr_t)(m + who + CHR_TURN),
-                              ((const uint32_t *)(m + cam))[CAM_MODE / 4]);
+                              ((const uint32_t *)(m + cam))[CAM_MODE / 4], game_random());
         }
     }
     if (cam >= 0x10000u && cam + 0x240u < lim)

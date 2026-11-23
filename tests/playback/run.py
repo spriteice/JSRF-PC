@@ -17,8 +17,12 @@ where the skater is, but in the cutscene, as the camera update does.
 
 Recorded, then played back with nobody at the pad: the game reads what it
 read, pass for pass and read for read; the generator is put back at each
-anchor; the idle moment is found and the skater put back there; it ends on
-route, and --play's run closes the game. An anchor reached 30 frames late
+anchor; each check keeps the generator and its draws since the check
+before, on the game's thread and on others, and on playback, drawn a number
+of times that follows the host and once every seventh frame on another
+thread, it is said where they weren't as recorded and put back at each
+check and at the idle moment; the idle moment is found and the skater put
+back there; it ends on route, and --play's run closes the game. An anchor reached 30 frames late
 holds the pad as recorded until it comes and moves the presses after it, not
 before; one reached 20 frames early skips to it. Off route: the skater
 pushed 100 units off, a stage the recording doesn't have next, and an
@@ -31,7 +35,9 @@ photo mode's variables, and plays on route there, at a mission and at Load
 Game; started elsewhere, with other progress, or from the game's own start,
 it is off route at its first frame, and so is a recording from the game's
 own start played in a run from a mission; a start line that can't be read,
-comes twice or after a frame is refused. A run's folder: --play's with a
+comes twice or after a frame is refused. Checks by hand: one without the
+generator leaves it as it is, one with it puts it back; a check with the
+generator but no draws, and an idle moment with draws, are refused. A run's folder: --play's with a
 profile/ copied into a folder of the play's own in its plays/, steps.txt's
 setting and developer lines written into the copy, the settings file and
 both save folders pointed there and the player's untouched; played with the
@@ -132,6 +138,10 @@ with tempfile.TemporaryDirectory(prefix="playback-") as directory:
             "the camera ticks as recorded at frame",
             "no camera line: the game's own shots as before the Camera ticks",
             "the camera ticks were changed (the menu): the game is yours",
+            "on the game's thread since the check before (recorded ", "on others (recorded ",
+            "where they return to: 00015530 ", "00130BD1 0+9", "put back as recorded",
+            "(no more said: the summary counts them)",
+            "the game's random numbers at the checks: as recorded at ", ", first not at recorded frame ",
             "for this play, in ", "yours aren't opened",
             "steps.txt, line 2: mute=1 in the copy's settings.cfg",
             "steps.txt, line 3: RECOMP_GL_PROFILE=1 in the copy's developer.cfg",

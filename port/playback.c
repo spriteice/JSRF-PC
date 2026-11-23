@@ -50,7 +50,12 @@
 
 typedef struct { uint32_t frame, read; int none; XBOX_GAMEPAD pad; } PbPad;
 typedef struct { uint32_t frame; PLAYBACK_ANCHOR kind; uint32_t value, random; } PbAnchor;
-typedef struct { uint32_t frame, turn, camera; float pos[3]; } PbSpot;     /* a check or an idle moment */
+typedef struct {                                /* a check or an idle moment */
+    uint32_t frame, turn, camera;
+    float pos[3];
+    int has_random;                             /* its random generator kept, and a check's draws */
+    uint32_t random, drawn, others;
+} PbSpot;
 typedef struct { uint32_t frame; FREECAM_SETTINGS fc; } PbFreecam;
 typedef struct { uint32_t frame; int dx, dy; } PbMouse;
 typedef struct { uint32_t frame; unsigned ticks; } PbCamera;   /* Camera's ticks, a bit each */
@@ -88,6 +93,49 @@ static float s_still_pos[3];
 static uint32_t s_still_since, s_still_camera, s_idle_said;
 static int s_still_valid;
 
+/* Both: the draws from the game's random generator since the last check, on
+ * the game's own thread ([1]) and on others ([0]), and by the address each
+ * returns to (playback_drawn, from any thread). */
+#define PB_DRAW_SITES 16
+static uint32_t s_drawn[2];
+static struct { uint32_t from, n[2]; } s_draw_site[PB_DRAW_SITES];
+
+/* The draws since the last check, taken, and the sites with them as
+ * "<from> <game's>+<others'>" (sites may be NULL), counting from 0 again. */
+static void drawn_take(uint32_t n[2], char *sites, size_t len)
+{
+    size_t at = 0;
+    int i;
+    n[0] = __atomic_exchange_n(&s_drawn[0], 0, __ATOMIC_RELAXED);
+    n[1] = __atomic_exchange_n(&s_drawn[1], 0, __ATOMIC_RELAXED);
+    if (sites && len) sites[0] = 0;
+    for (i = 0; i < PB_DRAW_SITES; i++) {
+        uint32_t from = __atomic_load_n(&s_draw_site[i].from, __ATOMIC_RELAXED);
+        uint32_t g = __atomic_exchange_n(&s_draw_site[i].n[1], 0, __ATOMIC_RELAXED);
+        uint32_t o = __atomic_exchange_n(&s_draw_site[i].n[0], 0, __ATOMIC_RELAXED);
+        if (!from || (!g && !o) || !sites || at + 32 > len) continue;
+        at += (size_t)snprintf(sites + at, len - at, "%s%08X %u+%u", at ? ", " : "", from, g, o);
+    }
+}
+
+void playback_drawn(int game_thread, uint32_t from)
+{
+    int t = game_thread ? 1 : 0, i;
+    __atomic_add_fetch(&s_drawn[t], 1, __ATOMIC_RELAXED);
+    for (i = 0; i < PB_DRAW_SITES; i++) {
+        uint32_t was = __atomic_load_n(&s_draw_site[i].from, __ATOMIC_RELAXED);
+        if (!was) {
+            uint32_t none = 0;
+            was = __atomic_compare_exchange_n(&s_draw_site[i].from, &none, from, 0, __ATOMIC_RELAXED,
+                                              __ATOMIC_RELAXED) ? from : none;
+        }
+        if (was == from) {
+            __atomic_add_fetch(&s_draw_site[i].n[t], 1, __ATOMIC_RELAXED);
+            return;
+        }
+    }
+}
+
 static void run_start(void)
 {
     s_frame = 0;
@@ -96,6 +144,7 @@ static void run_start(void)
     s_still_valid = 0;
     s_idle_said = 0;
     memset(&s_res, 0, sizeof s_res);
+    { uint32_t n[2]; drawn_take(n, NULL, 0); }
 }
 
 /* Recording. */
@@ -139,6 +188,12 @@ static int s_profile, s_profile_bad;
 static int s_exit_at_end, s_drift_run, s_armed[PLAYBACK_PORTS];
 static float s_drift_said = -1;
 static uint32_t s_packet[PLAYBACK_PORTS];
+/* The random generator at the checks: whether the recording keeps it, the
+ * times it wasn't as recorded said so far, and whether the play held its
+ * pad (steps, or an anchor waited for) since the last check, so that the
+ * draws can't be compared there. */
+static int s_random_kept, s_random_said, s_window_held;
+#define PB_RANDOM_SAY 5
 
 #define PB_PADS(p)  ((PbPad *)s_pads[p].at)
 #define PB_FREECAM  ((PbFreecam *)s_freecams.at)
@@ -303,6 +358,13 @@ static void summary(void)
             s_res.drift_most, s_res.drift_most_at, s_res.idles_put_back, s_idles.n);
     if (s_steps.n)
         fprintf(stderr, "[PLAYBACK] steps run %d of %d (" PLAYBACK_STEPS ")\n", s_steps_run, s_steps.n);
+    if (s_random_kept && s_res.random_checks > s_res.random_same)
+        fprintf(stderr, "[PLAYBACK] the game's random numbers at the checks: as recorded at %d of %d,"
+                " first not at recorded frame %u; put back at each\n", s_res.random_same,
+                s_res.random_checks, s_res.random_apart_at);
+    else if (s_random_kept)
+        fprintf(stderr, "[PLAYBACK] the game's random numbers at the checks: as recorded at %d of %d\n",
+                s_res.random_same, s_res.random_checks);
 }
 
 /* A playback over: said, and the game closed for an unattended run. */
@@ -541,10 +603,16 @@ static int read_freecam(const char *s, PbFreecam *e)
         && c->mouse_sens >= FREECAM_SENS_MIN && c->mouse_sens <= FREECAM_SENS_MAX;
 }
 
-static int read_spot(const char *s, PbSpot *p)
+/* A check's line, or an idle moment's: with its random generator, and a
+ * check's draws, or (made before they were kept) without. */
+static int read_spot(const char *s, PbSpot *p, int check)
 {
-    return sscanf(s, "%u %f %f %f %x %u", &p->frame, &p->pos[0], &p->pos[1], &p->pos[2], &p->turn,
-                  &p->camera) == 6;
+    int n = sscanf(s, "%u %f %f %f %x %u %x %u %u", &p->frame, &p->pos[0], &p->pos[1], &p->pos[2],
+                   &p->turn, &p->camera, &p->random, &p->drawn, &p->others);
+    p->has_random = n > 6;
+    if (!p->has_random) p->random = p->drawn = p->others = 0;
+    if (!check) p->drawn = p->others = 0;
+    return n == 6 || n == (check ? 9 : 7);
 }
 
 static void forget(void)
@@ -562,6 +630,7 @@ static void forget(void)
     memset(&s_idles, 0, sizeof s_idles);
     free(s_steps.at);
     memset(&s_steps, 0, sizeof s_steps);
+    s_random_kept = 0;
 }
 
 /* The recording in folder, every line checked: 0, saying where, at the
@@ -653,8 +722,10 @@ static int load(const char *path)
         } else if (!strcmp(word, "check") || !strcmp(word, "idle")) {
             PbList *l = word[0] == 'c' ? &s_checks : &s_idles;
             PbSpot sp, *to;
-            ok = read_spot(s, &sp) && (!l->n || sp.frame > ((PbSpot *)l->at)[l->n - 1].frame);
+            ok = read_spot(s, &sp, l == &s_checks)
+                 && (!l->n || sp.frame > ((PbSpot *)l->at)[l->n - 1].frame);
             if (ok && (ok = (to = add(l, sizeof *to)) != NULL)) *to = sp;
+            if (ok && l == &s_checks && sp.has_random) s_random_kept = 1;
             frame = sp.frame;
         } else if (!strcmp(word, "end")) {
             ok = sscanf(s, "%u", &s_end) == 1 && s_end >= last;
@@ -995,6 +1066,7 @@ int playback_play(const char *folder, int exit_at_end)
     s_exit_at_end = exit_at_end;
     s_drift_run = 0;
     s_drift_said = -1;
+    s_random_said = s_window_held = 0;
     s_start_check = 1;
     s_res.state = PLAYBACK_PLAYING;
     s_res.anchors = s_anchors.n;
@@ -1075,6 +1147,7 @@ static void play_pass(void)
     }
     if (s_res.state == PLAYBACK_PLAYING && steps_hold()) {
         if (!s_holding) { s_holding = 1; s_hold_from = s_frame; }
+        s_window_held = 1;
         s_offset++;
         s_res.frames++;
         if (s_frame - s_hold_from > PLAYBACK_STEP_WAIT) {
@@ -1135,6 +1208,7 @@ static void play_anchor(PLAYBACK_ANCHOR kind, uint32_t value, uint32_t *random)
             j > s_anchor_next ? ", past anchors the game didn't reach" : "");
     s_res.anchors_skipped += j - s_anchor_next;
     s_res.anchors_met++;
+    if ((int64_t)s_frame - PB_ANCHOR[j].frame != s_offset) s_window_held = 1;   /* skipped to */
     s_offset = (int64_t)s_frame - PB_ANCHOR[j].frame;
     s_anchor_next = j + 1;
     s_res.state = PLAYBACK_PLAYING;
@@ -1256,11 +1330,46 @@ static int play_camscenes(unsigned *ticks)
     return 1;
 }
 
-static void play_view(float position[3], uint32_t *turn, uint32_t camera, int still)
+/* At a check the play reached on its frame: the random generator against
+ * the recording's, with the draws since the check before (unless the play
+ * held its pad since), said when they differ; then put back as recorded. */
+static void play_random(const PbSpot *c, uint32_t *random)
+{
+    uint32_t n[2];
+    char sites[PB_DRAW_SITES * 24];
+    int held = s_window_held;
+    drawn_take(n, sites, sizeof sites);
+    s_window_held = 0;
+    if (!c->has_random || !random) return;
+    if (!held) {
+        s_res.random_checks++;
+        if (*random == c->random && n[1] == c->drawn && n[0] == c->others)
+            s_res.random_same++;
+        else {
+            if (s_res.random_checks - s_res.random_same == 1) s_res.random_apart_at = c->frame;
+            if (s_random_said++ < PB_RANDOM_SAY)
+                fprintf(stderr, "[PLAYBACK] frame %u: check at recorded frame %u: the game's random numbers"
+                        " %08X, recorded %08X: drawn %u times on the game's thread since the check before"
+                        " (recorded %u), %u on others (recorded %u); where they return to: %s; put back"
+                        " as recorded%s\n", s_frame, c->frame, *random, c->random, n[1], c->drawn, n[0],
+                        c->others, sites[0] ? sites : "none",
+                        s_random_said == PB_RANDOM_SAY ? " (no more said: the summary counts them)" : "");
+        }
+    }
+    *random = c->random;
+}
+
+static void play_view(float position[3], uint32_t *turn, uint32_t camera, uint32_t *random, int still)
 {
     uint32_t f = recorded_frame();
     int last = -1;
     while (s_check_next < s_checks.n && PB_CHECK[s_check_next].frame <= f) last = s_check_next++;
+    if (last >= 0 && f == PB_CHECK[last].frame) play_random(&PB_CHECK[last], random);
+    else if (last >= 0) {
+        uint32_t n[2];
+        drawn_take(n, NULL, 0);             /* reached late: the draws can't be compared */
+        s_window_held = 0;
+    }
     if (last >= 0 && f - PB_CHECK[last].frame < PLAYBACK_CHECK_EVERY) {
         const PbSpot *c = &PB_CHECK[last];
         float d = distance(position, c->pos);
@@ -1299,6 +1408,7 @@ static void play_view(float position[3], uint32_t *turn, uint32_t camera, int st
                     " %.1f units away, turn %08X to %08X\n", s_frame, s_idle_next + 1, d, *turn, i->turn);
             memcpy(position, i->pos, sizeof i->pos);
             *turn = i->turn;
+            if (i->has_random && random && f == i->frame) *random = i->random;
             s_res.idles_put_back++;
         }
         s_idle_next++;
@@ -1470,7 +1580,7 @@ void playback_anchor(PLAYBACK_ANCHOR kind, uint32_t value, uint32_t *random)
     pb_unlock();
 }
 
-void playback_view(float position[3], uint32_t *turn, uint32_t camera)
+void playback_view(float position[3], uint32_t *turn, uint32_t camera, uint32_t *random)
 {
     int still;
     pb_lock();
@@ -1487,19 +1597,25 @@ void playback_view(float position[3], uint32_t *turn, uint32_t camera)
     still = s_frame - s_still_since >= PLAYBACK_IDLE_FRAMES;
     if (s_out) {
         if (s_frame >= s_next_check) {
-            fprintf(rec(), "check %u %.9g %.9g %.9g %08X %u\n", s_frame, position[0], position[1],
+            uint32_t n[2];
+            drawn_take(n, NULL, 0);
+            fprintf(rec(), "check %u %.9g %.9g %.9g %08X %u", s_frame, position[0], position[1],
                     position[2], *turn, camera);
+            if (random) fprintf(rec(), " %08X %u %u", *random, n[1], n[0]);
+            fputc('\n', rec());
             fflush(s_out);
             s_next_check = s_frame + PLAYBACK_CHECK_EVERY;
             s_res.checks++;
         }
         if (still && s_idle_said != s_still_since + 1) {
-            fprintf(rec(), "idle %u %.9g %.9g %.9g %08X %u\n", s_frame, position[0], position[1],
+            fprintf(rec(), "idle %u %.9g %.9g %.9g %08X %u", s_frame, position[0], position[1],
                     position[2], *turn, camera);
+            if (random) fprintf(rec(), " %08X", *random);
+            fputc('\n', rec());
             s_idle_said = s_still_since + 1;
         }
     } else
-        play_view(position, turn, camera, still);
+        play_view(position, turn, camera, random, still);
     pb_unlock();
 }
 

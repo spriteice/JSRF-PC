@@ -602,7 +602,11 @@ running while it is open, but your input goes to the menu.
     and cutscene it reached, so a slower load moves nothing. The game
     doesn't play exactly the same twice, so a long run can drift: each
     second the recording knows where your skater was, and when it stood
-    still with nothing pressed playback puts the skater back there. If the
+    still with nothing pressed playback puts the skater back there. Each
+    second it also knows the game's random numbers and how many times the
+    game drew them since the second before, on its own thread and on
+    others: playback puts them back each second and when it puts the
+    skater back, and the log says where they weren't as recorded. If the
     skater ends up far from where they were, or the game loads something
     the recording didn't, playback stops, and the log says where. Start a
     recording from the same saves and settings you will play it with.

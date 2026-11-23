@@ -20,11 +20,15 @@
  * - Checks: once a second of frames, the player's skater: where it is and
  *   which way it faces, and the camera's mode. Playback measures how far the
  *   skater is from that spot; past PLAYBACK_DRIFT_LIMIT for
- *   PLAYBACK_DRIFT_CHECKS checks in a row, the run stops as off route.
+ *   PLAYBACK_DRIFT_CHECKS checks in a row, the run stops as off route. Each
+ *   check keeps the random generator too, and how many times it was drawn
+ *   since the check before, on the game's own thread and on others
+ *   (playback_drawn): playback says where it was not as recorded, and puts
+ *   it back, as at an anchor.
  * - Idle moments: a second or more with nothing pressed and the skater
  *   still. Playback puts the skater back on the recorded spot there, facing
  *   the recorded way, when the camera is in the recorded mode and the skater
- *   is within the drift limit of it.
+ *   is within the drift limit of it, and the random generator with it.
  *
  * Every pad's state is recorded on all four ports, in the game's
  * XInputGetState (port/pad.c), after the keyboard has had the left stick and
@@ -90,8 +94,8 @@
  *   mouse <frame> <x> <y>
  *   camera <frame> <graffiti> <half_pipe> <loop> <back>
  *   anchor <frame> <kind> <value> <random>
- *   check <frame> <x> <y> <z> <turn> <camera>
- *   idle <frame> <x> <y> <z> <turn> <camera>
+ *   check <frame> <x> <y> <z> <turn> <camera> <random> <drawn> <drawn_others>
+ *   idle <frame> <x> <y> <z> <turn> <camera> <random>
  *   end <frame>
  *
  * A start line says the run was started from Developer > Missions with
@@ -133,8 +137,12 @@
  * shot only while the free camera is off (camscene_ticks_before). A kind is mission.bin,
  * mission.dat, stage, scene or scene-end, its value and the random generator
  * in eight hex digits. turn is the skater's turn, 0x10000 a whole turn, in
- * eight hex digits; camera the camera's mode. Lines starting with # are
- * comments. */
+ * eight hex digits; camera the camera's mode. A check's random is the
+ * generator in eight hex digits, drawn the times it was drawn since the
+ * check before (or the run's start) on the game's own thread, the main
+ * loop's, and drawn_others on any other, in decimal; an idle moment's is the
+ * generator. A check or idle line without them (made before they were kept)
+ * has its generator left as it is. Lines starting with # are comments. */
 #ifndef JSRF_PLAYBACK_H
 #define JSRF_PLAYBACK_H
 
@@ -189,6 +197,9 @@ typedef struct {
     int anchors, anchors_met; /* anchors in the recording, and met */
     int anchors_skipped;      /* recorded anchors an early one skipped */
     int checks, idles_put_back;
+    int random_checks;        /* checks with the random generator compared */
+    int random_same;          /* of them, the generator as recorded */
+    uint32_t random_apart_at; /* the recorded frame of the first that wasn't */
     float drift_most;         /* the largest drift at a check */
     uint32_t drift_most_at;   /* at which recorded frame */
     char why[160];            /* off route: why */
@@ -285,8 +296,15 @@ void playback_anchor(PLAYBACK_ANCHOR kind, uint32_t value, uint32_t *random);
 
 /* Each update of the camera that follows the main player's skater: its
  * position (x, y, z) and turn, which playback may put back at an idle
- * moment, and the camera's mode. */
-void playback_view(float position[3], uint32_t *turn, uint32_t camera);
+ * moment, the camera's mode, and the game's random generator, which it
+ * keeps at each check and idle moment and puts back there. */
+void playback_view(float position[3], uint32_t *turn, uint32_t camera, uint32_t *random);
+
+/* Each draw from the game's random generator (port/recomp_manual.c, as
+ * sub_0014C2B0 and sub_0014C2D0 are called): on the game's own thread, the
+ * main loop's, or not, and the address it returns to. Counted for the next
+ * check, on any thread. */
+void playback_drawn(int game_thread, uint32_t from);
 
 /* At each flip, on the window's thread (src/nv2a_gl/nv2a_gl.c's present),
  * while a run with steps plays: at its first, every menu row its steps name

@@ -165,6 +165,7 @@ typedef struct {
     float eye[FRAMES + 4000][3];                /* where the free camera put the eye: 0s for none */
     unsigned ticks[FRAMES + 4000];              /* Camera's ticks as the camera update had them */
     uint32_t random_after[8];                   /* the generator after each anchor */
+    uint32_t random_at[FRAMES + 4000];          /* the generator after the camera update */
     int anchors;
 } Game;
 static Game g_rec, g_play;
@@ -309,14 +310,22 @@ static void run(Game *g, const How *h)
         }
         /* The skater moves by the last read, forward the way the view
          * faces; the generator is drawn a number of times that follows the
-         * host, not the passes. */
+         * host, not the passes, on the game's thread, and on playback once
+         * every seventh frame on another, as the sound library might. */
         lx = *(int16_t *)(g_mem + STATE + 14) / 32767.0f;
         ly = *(int16_t *)(g_mem + STATE + 16) / 32767.0f;
         g->pos[0] += (lx * cosf(heading) + ly * sinf(heading)) * SPEED;
         g->pos[2] += (ly * cosf(heading) - lx * sinf(heading)) * SPEED;
         g->turn = (uint32_t)(f * 13) & 0xFFFFu;
         if (lx == 0 && ly == 0) g->turn = 0x4000u;  /* standing still, facing one way */
-        for (i = 0; i < (h->recording ? 1 + f % 3 : 1 + f % 5); i++) g->random = g->random * 0x55u + 0x7Fu;
+        for (i = 0; i < (h->recording ? 1 + f % 3 : 1 + f % 5); i++) {
+            g->random = g->random * 0x55u + 0x7Fu;
+            playback_drawn(1, 0x00015530u);
+        }
+        if (!h->recording && f % 7 == 3) {
+            g->random = g->random * 0x55u + 0x7Fu;
+            playback_drawn(0, 0x00130BD1u);
+        }
         if (h->push_at && f == h->push_at) g->pos[0] += h->push;
         for (i = 0; i < ANCHORS; i++) {
             uint32_t value = i == h->wrong_anchor ? 0x99999999u : k_anchors[i].value;
@@ -324,7 +333,8 @@ static void run(Game *g, const How *h)
             playback_anchor(k_anchors[i].kind, value, &g->random);
             g->random_after[g->anchors++] = g->random;
         }
-        if (!in_scene) playback_view(g->pos, &g->turn, CAMERA);
+        if (!in_scene) playback_view(g->pos, &g->turn, CAMERA, &g->random);
+        g->random_at[f] = g->random;
         memcpy(g->at[f], g->pos, sizeof g->pos);
         if (h->flips) playback_flip(shot);
     }
@@ -339,12 +349,18 @@ static float distance3(const float a[3], const float b[3])
 /* ---- the cases ----------------------------------------------------------- */
 
 static char g_run[600];
+/* The recording's checks and idle moment: each frame and its generator. */
+static unsigned g_kept_frame[32], g_kept_random[32], g_idle_frame, g_idle_random;
+static int g_kept;
 
 static void record(void)
 {
     How h = { .frames = FRAMES, .skip_anchor = -1, .wrong_anchor = -1, .recording = 1 };
     char path[700], line[256];
-    int pads = 0, anchors = 0, checks = 0, idles = 0, ends = 0, reads1 = 0, cams = 0;
+    int pads = 0, anchors = 0, checks = 0, idles = 0, ends = 0, reads1 = 0, cams = 0, idles_kept = 0;
+    int drawn_ok = 0, others = 0;
+    unsigned fr, t, c, rnd, drawn, oth, before = 0;
+    float x, y, z;
     FILE *f;
     snprintf(g_run, sizeof g_run, "%s/recordings/2026-11-19-090000", g_dir);
     CHECK(playback_record(g_run), "a recording couldn't start");
@@ -365,6 +381,25 @@ static void record(void)
         anchors += !strncmp(line, "anchor ", 7);
         checks += !strncmp(line, "check ", 6);
         idles += !strncmp(line, "idle ", 5);
+        /* Each check with the generator and the draws since the one before:
+         * on the game's thread as many as the stand-in drew there, and none
+         * on others; the idle moment with the generator. */
+        if (!strncmp(line, "check ", 6) && g_kept < 32
+            && sscanf(line + 6, "%u %f %f %f %x %u %x %u %u", &fr, &x, &y, &z, &t, &c, &rnd, &drawn, &oth) == 9) {
+            unsigned want = 0, k;
+            for (k = g_kept ? before + 1 : 1; k <= fr; k++) want += 1 + (k - 1) % 3;   /* frame k is pass k - 1 */
+            drawn_ok += drawn == want;
+            others += oth;
+            g_kept_frame[g_kept] = fr;
+            g_kept_random[g_kept++] = rnd;
+            before = fr;
+        }
+        if (!strncmp(line, "idle ", 5)
+            && sscanf(line + 5, "%u %f %f %f %x %u %x", &fr, &x, &y, &z, &t, &c, &rnd) == 7) {
+            idles_kept++;
+            g_idle_frame = fr;
+            g_idle_random = rnd;
+        }
         ends += !strcmp(line, "end 1000\n");
         cams += !strcmp(line, "freecam 1 0 0 0 5 5 0.1 0 1 5\n");
     }
@@ -376,6 +411,9 @@ static void record(void)
           && cams == 1,
           "the recording: %d pads (%d on a second read), %d anchors, %d checks, %d idle, %d ends, %d freecam",
           pads, reads1, anchors, checks, idles, ends, cams);
+    CHECK(g_kept == checks && idles_kept == idles && drawn_ok == checks && others == 0,
+          "the generator kept: %d of %d checks, %d of %d idle moments; %d checks with the stand-in's draws,"
+          " %u on others", g_kept, checks, idles_kept, idles, drawn_ok, others);
 }
 
 /* Played back as recorded: the game reads what it read, pass for pass and
@@ -396,6 +434,17 @@ static void play_same(void)
     for (i = 0; i < ANCHORS; i++)
         CHECK(g_play.random_after[i] == g_rec.random_after[i], "anchor %d: the generator %08X, recorded %08X",
               i, g_play.random_after[i], g_rec.random_after[i]);
+    /* Drawn a number of times that follows the host: not as recorded from
+     * the second check on, said, and put back at each. */
+    for (i = 0; i < g_kept; i++)
+        CHECK(g_play.random_at[g_kept_frame[i] - 1] == g_kept_random[i], "check at %u: the generator %08X,"
+              " recorded %08X", g_kept_frame[i], g_play.random_at[g_kept_frame[i] - 1], g_kept_random[i]);
+    CHECK(g_play.random_at[g_idle_frame - 1] == g_idle_random, "the idle moment: the generator %08X at frame %u,"
+          " kept %08X", g_play.random_at[g_idle_frame - 1], g_idle_frame, g_idle_random);
+    CHECK(res->random_checks == g_kept && res->random_same >= 1 && res->random_same < res->random_checks
+          && res->random_apart_at == g_kept_frame[1],
+          "the generator at the checks: %d compared, %d as recorded, the first not at %u", res->random_checks,
+          res->random_same, res->random_apart_at);
     CHECK(res->state == PLAYBACK_FINISHED && res->anchors_met == ANCHORS && res->drift_most < 0.01f
           && res->idles_put_back == 1 && g_closed == 1,
           "as recorded: state %d, anchors %d, drift %.2f, idles %d, closed %d", res->state, res->anchors_met,
@@ -693,6 +742,29 @@ static void by_hand(void)
     CHECK(!playback_play(folder, 0), "a line back in time, played");
     write_file(folder, "jsrf-pc-recording 1\nend 9\ncheck 10 0 0 0 0 3\n");
     CHECK(!playback_play(folder, 0), "a line after the end, played");
+    /* Checks by hand: one made before the generator was kept leaves it as
+     * it is; one with it puts it back, and its draws are compared. */
+    write_file(folder, "jsrf-pc-recording 1\ncheck 3 0 0 0 0 3\nend 10\n");
+    h.frames = 12;
+    CHECK(playback_play(folder, 0), "a check without the generator refused");
+    run(&g_play, &h);
+    CHECK(playback_result()->random_checks == 0 && playback_state() == PLAYBACK_FINISHED,
+          "a check without the generator: %d compared, state %d", playback_result()->random_checks,
+          playback_state());
+    write_file(folder, "jsrf-pc-recording 1\ncheck 3 0 0 0 0 3 12345678 9 0\nidle 5 0 0 0 0 3 0BADCAFE\n"
+               "end 10\n");
+    CHECK(playback_play(folder, 0), "a check with the generator refused");
+    run(&g_play, &h);
+    CHECK(g_play.random_at[2] == 0x12345678u && playback_result()->random_checks == 1
+          && playback_result()->random_same == 0 && playback_result()->random_apart_at == 3,
+          "a check with the generator: %08X at frame 3, %d compared, %d as recorded, apart at %u",
+          g_play.random_at[2], playback_result()->random_checks, playback_result()->random_same,
+          playback_result()->random_apart_at);
+    h.frames = 30;
+    write_file(folder, "jsrf-pc-recording 1\ncheck 3 0 0 0 0 3 12345678\nend 10\n");
+    CHECK(!playback_play(folder, 0), "a check with the generator and no draws, played");
+    write_file(folder, "jsrf-pc-recording 1\nidle 3 0 0 0 0 3 12345678 9 0\nend 10\n");
+    CHECK(!playback_play(folder, 0), "an idle moment with draws, played");
     write_file(folder, "jsrf-pc-recording 1\nwait 10\n");
     CHECK(!playback_play(folder, 0), "a word it doesn't know, played");
     snprintf(folder, sizeof folder, "%s/none", g_dir);
