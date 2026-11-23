@@ -201,19 +201,37 @@ int main(void)
     CHECK(put == PUSH && spaces == 0 && w.button == -1);
     CHECK(get32(PUSH) == ((NV2A_PROMPT_MARK_WORDS << 18) | NV2A_PROMPT_MARK_METHOD));
     CHECK(nv2a_prompts_mark_read(get32(PUSH + 4u), &button, &box, &art));
-    CHECK(button == 0 && box == 1 && art == PROMPT_ART_NINTENDO);
+    CHECK(button == INPUT_CTL_A && box == 1 && art == PROMPT_ART_NINTENDO);
     CHECK(CLOSE(bitsf(get32(PUSH + 8u)), 331.0f) && CLOSE(bitsf(get32(PUSH + 12u)), 243.0f)
           && CLOSE(bitsf(get32(PUSH + 16u)), 12.5f * 1.125f));
     CHECK(get32(DEVICE + WIDE_HUD_D3D_PUT) == PUSH + 20u);
-    /* Anything else isn't read as one. */
+    /* Anything else isn't read as one: another tag, a control or a group
+     * there isn't, an art there isn't. Every control and every group is. */
     CHECK(!nv2a_prompts_mark_read(0x48550000u, &button, &box, &art));
-    CHECK(!nv2a_prompts_mark_read(NV2A_PROMPT_MARK_TAG | 0x2u, &button, &box, &art));
+    CHECK(!nv2a_prompts_mark_read(NV2A_PROMPT_MARK_TAG | (uint32_t)INPUT_CTLS, &button, &box, &art));
+    CHECK(!nv2a_prompts_mark_read(NV2A_PROMPT_MARK_TAG | (uint32_t)(NV2A_PROMPT_MARK_GROUP - 1), &button, &box,
+                                  &art));
+    CHECK(!nv2a_prompts_mark_read(NV2A_PROMPT_MARK_TAG | (uint32_t)(NV2A_PROMPT_MARK_GROUP + PROMPT_GROUPS),
+                                  &button, &box, &art));
+    CHECK(!nv2a_prompts_mark_read(nv2a_prompts_mark(INPUT_CTL_A, 0, PROMPT_ARTS), &button, &box, &art));
     CHECK(nv2a_prompts_mark_read(NV2A_PROMPT_MARK_TAG | 0x200u, &button, &box, &art));   /* a fade */
+    {
+        int c, a;
+        for (a = 0; a < PROMPT_ARTS; a++) {
+            for (c = 0; c < INPUT_CTLS; c++)
+                CHECK(nv2a_prompts_mark_read(nv2a_prompts_mark(c, a & 1, a), &button, &box, &art)
+                      && button == c && box == (a & 1) && art == a);
+            for (c = 0; c < PROMPT_GROUPS; c++)
+                CHECK(nv2a_prompts_mark_read(nv2a_prompts_mark(NV2A_PROMPT_MARK_GROUP + c, 0, a), &button, &box,
+                                             &art)
+                      && button == NV2A_PROMPT_MARK_GROUP + c && !box && art == a);
+        }
+    }
 
     /* An upright size's mark, as the VS screen's objects' draws write it:
-     * read as its size, and not as a flat button's; a flat button's, a size
-     * of 0, none, past the most, or a stray word, not read as one; none with
-     * no device. */
+     * read as its size, and not as a flat button's or a window's; a flat
+     * button's, a size of 0, none, past the most, or a stray word, not read
+     * as one; none with no device. */
     {
         uint32_t words[NV2A_PROMPT_MARK_WORDS];
         float grow = 0.0f;
@@ -225,6 +243,10 @@ int main(void)
         for (k = 0; k < NV2A_PROMPT_MARK_WORDS; k++) words[k] = get32(PUSH + 4u + 4u * k);
         CHECK(nv2a_prompts_upright_read(words, &grow) && CLOSE(grow, 0.956f));
         CHECK(!nv2a_prompts_mark_read(words[0], &button, &box, &art));
+        {
+            float left, right;
+            CHECK(!nv2a_prompts_window_read(words, &left, &right));
+        }
         words[1] = 0x7FC00000u;                 /* no number */
         CHECK(!nv2a_prompts_upright_read(words, &grow));
         words[1] = 0u;
@@ -241,6 +263,34 @@ int main(void)
         CHECK(prompt_buttons_upright(mem, 0, PROMPT_BUTTONS_VS_UPRIGHT, make_space) == 0);
     }
 
+    /* A window's mark (the graffiti editor's ticker's, for its pictures),
+     * pushed as a button's is: read as its ends, a window while its right
+     * is above its left and none after; not as a button's or a size's; and
+     * no number, or a stray last word, not read as one. */
+    {
+        uint32_t words[NV2A_PROMPT_MARK_WORDS] = { NV2A_PROMPT_WINDOW_TAG, 0u, 0u, 0u };
+        float left = -1.0f, right = -1.0f, grow;
+        unsigned k;
+        memcpy(&words[1], &(float){ 80.0f }, sizeof words[1]);
+        memcpy(&words[2], &(float){ 560.0f }, sizeof words[2]);
+        put32(DEVICE + WIDE_HUD_D3D_PUT, PUSH);
+        CHECK(prompt_buttons_push(mem, DEVICE, words, make_space) == PUSH && spaces == 0);
+        for (k = 0; k < NV2A_PROMPT_MARK_WORDS; k++) CHECK(get32(PUSH + 4u + 4u * k) == words[k]);
+        CHECK(nv2a_prompts_window_read(words, &left, &right) && left == 80.0f && right == 560.0f);
+        CHECK(!nv2a_prompts_mark_read(words[0], &button, &box, &art));
+        CHECK(!nv2a_prompts_upright_read(words, &grow));
+        words[1] = words[2] = 0u;                /* none */
+        CHECK(nv2a_prompts_window_read(words, &left, &right) && !(right > left));
+        words[2] = 0x7FC00000u;                  /* no number */
+        CHECK(!nv2a_prompts_window_read(words, &left, &right));
+        words[2] = 0u;
+        words[3] = 1u;
+        CHECK(!nv2a_prompts_window_read(words, &left, &right));
+        words[3] = 0u;
+        words[0] = nv2a_prompts_mark(INPUT_CTL_A, 0, PROMPT_ART_XBOX);
+        CHECK(!nv2a_prompts_window_read(words, &left, &right));
+    }
+
     /* The B out of the box, near the limit: space made first. */
     put32(DEVICE + WIDE_HUD_D3D_PUT, PUSH + 0x100u - 16u);
     space_gives = PUSH2;
@@ -250,7 +300,7 @@ int main(void)
     put = prompt_buttons_end(&w, mem, DEVICE, 500.0f, 1.0f, view, make_space);
     CHECK(put == PUSH2 && spaces == 1);
     CHECK(nv2a_prompts_mark_read(get32(PUSH2 + 4u), &button, &box, &art));
-    CHECK(button == 1 && box == 0 && art == PROMPT_ART_XBOX);
+    CHECK(button == INPUT_CTL_B && box == 0 && art == PROMPT_ART_XBOX);
     CHECK(get32(DEVICE + WIDE_HUD_D3D_PUT) == PUSH2 + 20u);
 
     /* No room after making space: no mark, said once. */

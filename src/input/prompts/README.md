@@ -25,7 +25,15 @@ Which picture is which:
 - `nintendo_*`: Juliocacko's Switch (Retro) pictures, the face buttons red,
   yellow, blue and green; Capture the square button. The pack has no stick
   pressed, so the sticks are its L and R sticks.
-- `*_dpad_*`: each pad's own D-pad with one arm lit.
+- `*_dpad_up`, `_down`, `_left` and `_right`: each pad's own D-pad with one
+  arm lit.
+- `*_dpad_all`, `_across` and `_updown`, and `*_lstick_all`, `_across` and
+  `_updown`: Juliocacko's whole D-pad, its left and right arms lit, and its
+  up and down; and his left stick with an arrow every way, left and right,
+  and up and down. They stand for a D-pad or a left stick a line of the
+  game's names by the ways it means (`../prompt_art.h`, the
+  `PROMPT_GROUP_` pictures): the graffiti editor's help lines
+  (`port/prompt_text.h`).
 - `touchpad`: the PlayStation's, for every set.
 - `key_*` and `mouse_*`: Xelu's dark keys, and his mouse with the pressed
   button lit (none lit for the back and forward buttons). The / and ? key
@@ -38,8 +46,8 @@ Which picture is which:
   the paddles, P1 to P4 as the Xbox Elite labels them, as neither pack has
   a picture of them.
 
-No stick's direction, and no Home button, is ever shown, so their pictures
-are left out.
+No single way of a stick, no right stick's ways, and no Home button, is
+ever shown, so their pictures are left out.
 
 ## What is changed from the packs
 
@@ -54,8 +62,9 @@ controller in use (part 14)":
   PlayStation's coloured symbols keep their colour. The Vita's Select and
   Start were already that grey.
 - **The PlayStation D-pad outlined:** "As well as the dpad up, down, left,
-  right for playstation" (with the sticks' arrows, which aren't used): its
-  lit arm given a black outline two pixels wide, smooth at its edge.
+  right for playstation" (with the sticks' arrows): its lit arms, and its
+  left stick's arrows, given a black outline two pixels wide, smooth at its
+  edge. The whole D-pad has no arm lit, so nothing to outline.
 - **Enter a single bar:** Xelu's Enter is the L-shaped key; spriteice cut
   its step off, so it is a bar like Shift and Backspace, 100 x 79.
 - **Every one's colours more saturated,** last: "increase colour

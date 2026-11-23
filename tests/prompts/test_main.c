@@ -48,6 +48,39 @@ static void case_art(void)
                 if (!strcmp(prompt_art_files[i].name, name)) used[i] = 1;
         }
     }
+    /* A pad's whole D-pad and left stick, with all of their ways, their
+     * left and right, and their up and down (the graffiti editor's help
+     * lines' names): each pad set has all six, the keys and the game's own
+     * none. */
+    for (a = 0; a < sizeof arts / sizeof arts[0]; a++) {
+        int g;
+        for (g = 0; g < PROMPT_GROUPS; g++) {
+            const char *name = prompt_art_group(arts[a], g);
+            PromptImage im;
+            if (arts[a] == PROMPT_ART_KEYS) {
+                CHECK(!name, "the keys have a picture of group %d", g);
+                continue;
+            }
+            CHECK(name != NULL, "art %d has no picture of group %d", arts[a], g);
+            if (!name) continue;
+            n++;
+            CHECK(prompt_art_image(name, &im) && im.w >= 64 && im.w <= NV2A_PROMPT_SIDE && im.h >= 64
+               && im.h <= NV2A_PROMPT_SIDE, "art %d group %d: %s", arts[a], g, name);
+            for (i = 0; i < prompt_art_nfiles; i++)
+                if (!strcmp(prompt_art_files[i].name, name)) used[i] = 1;
+        }
+        CHECK(!prompt_art_group(arts[a], -1) && !prompt_art_group(arts[a], PROMPT_GROUPS),
+              "art %d has a group out of range", arts[a]);
+    }
+    CHECK(!prompt_art_group(PROMPT_ART_GAME, PROMPT_GROUP_DPAD) && !prompt_art_group(PROMPT_ARTS, PROMPT_GROUP_DPAD),
+          "a group in the game's art, or in none");
+    CHECK(!strcmp(prompt_art_group(PROMPT_ART_XBOX, PROMPT_GROUP_DPAD), "xbox_dpad_all")
+       && !strcmp(prompt_art_group(PROMPT_ART_PLAYSTATION, PROMPT_GROUP_DPAD_ACROSS), "ps_dpad_across")
+       && !strcmp(prompt_art_group(PROMPT_ART_NINTENDO, PROMPT_GROUP_DPAD_UPDOWN), "nintendo_dpad_updown")
+       && !strcmp(prompt_art_group(PROMPT_ART_XBOX, PROMPT_GROUP_LSTICK), "xbox_lstick_all")
+       && !strcmp(prompt_art_group(PROMPT_ART_PLAYSTATION, PROMPT_GROUP_LSTICK_ACROSS), "ps_lstick_across")
+       && !strcmp(prompt_art_group(PROMPT_ART_NINTENDO, PROMPT_GROUP_LSTICK_UPDOWN), "nintendo_lstick_updown"),
+          "the groups' names");
     for (i = 0; i < prompt_art_nfiles; i++)
         if (!strcmp(prompt_art_files[i].name, PROMPT_ART_BLANK)) used[i] = 1;
     for (i = 0; i < prompt_art_nfiles; i++)
@@ -115,10 +148,15 @@ static void case_art(void)
  * box's white as on a dark scene, and none mostly white (spriteice,
  * 2026-11-21: a white Nintendo A on the box's white was almost
  * unreadable); the Xbox and PlayStation ones the Nintendo ones' grey; and
- * the PlayStation D-pad's lit arm outlined in black. */
+ * the PlayStation D-pad's lit arm outlined in black. The pads' pictures of
+ * a whole D-pad or left stick (the graffiti editor's help lines',
+ * prompt_art_group) keep to the same: a D-pad with two arms lit is white
+ * over more of itself, though never mostly, and the PlayStation's lit arms
+ * and its stick's arrows are outlined as its one arm is. */
 #define SOLID      128  /* a texel this opaque is part of the picture */
 #define LIGHT      180  /* ... and over this in every channel, white */
 #define WHITE_MOST 3    /* at most a third of a picture's texels white: its letters and lit parts */
+#define WHITE_MOST_TWO 2 /* ... or half, of a D-pad with two of its arms lit */
 #define NEUTRAL    24   /* a texel's channels this close is grey */
 #define BODY_ALPHA 200  /* a grey texel this opaque ... */
 #define BODY_UNDER 160  /* ... and darker than this is the body's, as make.py measures it */
@@ -126,6 +164,7 @@ static void case_art(void)
 #define DARK_MOST  75   /* ... and at most this: dark grey */
 #define SHADED     69   /* the Nintendo pictures' body, the Xbox and PlayStation ones' (make.py, TARGET) ... */
 #define SHADED_NEAR 4   /* ... to within this (the PlayStation D-pad's outline takes its 3 darker) */
+#define OUTLINED_NEAR 8 /* ... or this, where two arms or a stick's arrows are outlined: more black in it */
 #define COLOUR_NEAR 40  /* a texel this close in each channel is of a colour (not NEAR:
                          * the Windows headers' own macro, which nv2a_prompts.h's
                          * includes bring in there) */
@@ -165,7 +204,15 @@ static void case_colours(void)
     for (i = 0; i < prompt_art_nfiles; i++) {
         const char *name = prompt_art_files[i].name;
         PromptImage im;
-        int face = -1, ps_dpad = !strncmp(name, "ps_dpad_", 8);
+        const size_t len = strlen(name);
+        /* A D-pad with two arms lit; and the PlayStation's pictures with an
+         * outline: every D-pad's but the whole one's, which has no arm lit,
+         * and the stick's, round its arrows. */
+        int two = strstr(name, "_dpad_") && ((len > 7 && !strcmp(name + len - 7, "_across"))
+                                             || (len > 7 && !strcmp(name + len - 7, "_updown")));
+        int ps_stick = !strncmp(name, "ps_lstick_", 10);
+        int ps_dpad = !strncmp(name, "ps_dpad_", 8) && strcmp(name, "ps_dpad_all");
+        int face = -1;
         int shaded = !strncmp(name, "xbox_", 5) || !strncmp(name, "ps_", 3) || !strcmp(name, "touchpad");
         int pad = shaded || !strncmp(name, "nintendo_", 9);
         size_t t, solid = 0, white = 0, coloured = 0, black = 0, body = 0, sum = 0, own = 0, others = 0;
@@ -197,8 +244,8 @@ static void case_colours(void)
             }
         }
         CHECK(solid > 1000, "%s: %u solid texels", name, (unsigned)solid);
-        CHECK(white * WHITE_MOST < solid, "%s: %u of %u solid texels white", name, (unsigned)white,
-              (unsigned)solid);
+        CHECK(white * (two ? WHITE_MOST_TWO : WHITE_MOST) < solid, "%s: %u of %u solid texels white", name,
+              (unsigned)white, (unsigned)solid);
         if (face >= 0) {
             CHECK(own >= FACE_LEAST && !others, "%s: %u solid texels its colour, %u another face button's",
                   name, (unsigned)own, (unsigned)others);
@@ -212,12 +259,14 @@ static void case_colours(void)
         }
         CHECK(sum / body >= 3 * DARK_LEAST && sum / body <= 3 * DARK_MOST, "%s: its body %u on average, "
               "not dark grey", name, (unsigned)(sum / body / 3));
-        CHECK(!shaded || labs((long)(sum / body) - 3 * SHADED) <= 3 * SHADED_NEAR,
+        CHECK(!shaded || labs((long)(sum / body) - 3 * SHADED)
+                         <= 3 * ((ps_dpad && two) || ps_stick ? OUTLINED_NEAR : SHADED_NEAR),
               "%s: its body %u on average, not about %d", name, (unsigned)(sum / body / 3), SHADED);
-        CHECK(!ps_dpad || black >= OUTLINE_LEAST, "%s: %u black texels round its arm", name, (unsigned)black);
+        CHECK(!(ps_dpad || ps_stick) || black >= OUTLINE_LEAST, "%s: %u black texels round its arm or arrows",
+              name, (unsigned)black);
     }
-    CHECK(pads == 51 && greys == 39 && keys == 87, "%d pads' pictures, %d grey, %d keys' and the mouse's, "
-          "not 51, 39 and 87", pads, greys, keys);
+    CHECK(pads == 69 && greys == 57 && keys == 87, "%d pads' pictures, %d grey, %d keys' and the mouse's, "
+          "not 69, 57 and 87", pads, greys, keys);
 }
 
 /* A PNG that isn't 8-bit RGBA or a palette, or is cut short, isn't
@@ -863,6 +912,108 @@ static void case_place(void)
     }
 }
 
+/* A pad's whole D-pad or left stick, flat (the graffiti editor's help
+ * lines' names): each pad set's six, at the size asked, and none at 0 or
+ * past NV2A_PROMPT_PICTURE_MAX, for the keys' art or the game's own, or a
+ * group there isn't. The D-pad with its left and right lit is light on
+ * those arms and dark on the other two, and with its up and down the other
+ * way; the whole one dark on all four. Each of a set's six is its own
+ * picture. */
+#define ARM_REACH 3     /* an arm's middle and this many texels each way: 49 */
+#define ARM_LIT   30    /* a lit arm's light texels there, at least (Nintendo's has an arrow in it) */
+#define ARM_UNLIT 2     /* an arm that isn't lit: at most */
+static int arm_light(const uint8_t *px, int cx, int cy)
+{
+    int x, y, n = 0;
+    for (y = cy - ARM_REACH; y <= cy + ARM_REACH; y++)
+        for (x = cx - ARM_REACH; x <= cx + ARM_REACH; x++) {
+            const uint8_t *p = flat_at(px, x, y);
+            n += p[3] >= SOLID && p[0] > LIGHT && p[1] > LIGHT && p[2] > LIGHT;
+        }
+    return n;
+}
+
+static void case_group_at(void)
+{
+    static const int pads[] = { PROMPT_ART_XBOX, PROMPT_ART_PLAYSTATION, PROMPT_ART_NINTENDO };
+    static uint8_t big[NV2A_PROMPT_PICTURE_MAX * NV2A_PROMPT_PICTURE_MAX * 4];
+    static uint8_t six[PROMPT_GROUPS][FLAT * FLAT * 4];
+    /* An arm's middle at FLAT pixels: 5 in from the picture's edge. */
+    static const int arm[4][2] = { { 5, 16 }, { 26, 16 }, { 16, 5 }, { 16, 26 } };
+    Nv2aPromptShows s;
+    size_t a;
+    int g, h, k;
+    shows_own(&s);
+    CHECK(!nv2a_prompts_group_at(PROMPT_GROUP_DPAD, PROMPT_ART_XBOX, 0, &s, g_flat), "size 0 drawn");
+    CHECK(!nv2a_prompts_group_at(PROMPT_GROUP_DPAD, PROMPT_ART_XBOX, NV2A_PROMPT_PICTURE_MAX + 1, &s, big),
+          "past the largest drawn");
+    CHECK(nv2a_prompts_group_at(PROMPT_GROUP_DPAD, PROMPT_ART_XBOX, NV2A_PROMPT_PICTURE_MAX, &s, big),
+          "the largest");
+    CHECK(!nv2a_prompts_group_at(PROMPT_GROUP_DPAD, PROMPT_ART_KEYS, FLAT, &s, g_flat)
+       && !nv2a_prompts_group_at(PROMPT_GROUP_DPAD, PROMPT_ART_GAME, FLAT, &s, g_flat), "the keys' or the game's");
+    CHECK(!nv2a_prompts_group_at(-1, PROMPT_ART_XBOX, FLAT, &s, g_flat)
+       && !nv2a_prompts_group_at(PROMPT_GROUPS, PROMPT_ART_XBOX, FLAT, &s, g_flat), "a group out of range");
+    for (a = 0; a < sizeof pads / sizeof pads[0]; a++) {
+        for (g = 0; g < PROMPT_GROUPS; g++) {
+            int solid = 0, i;
+            memset(six[g], 0, sizeof six[g]);
+            CHECK(nv2a_prompts_group_at(g, pads[a], FLAT, &s, six[g]), "art %d group %d", pads[a], g);
+            for (i = 0; i < FLAT * FLAT; i++) solid += six[g][(size_t)i * 4 + 3] > 200;
+            CHECK(solid > 150, "art %d group %d: %d solid texels", pads[a], g, solid);
+            for (h = 0; h < g; h++)
+                CHECK(memcmp(six[g], six[h], sizeof six[g]), "art %d: group %d is group %d's picture",
+                      pads[a], g, h);
+        }
+        /* The D-pad's arms: left, right, up, down. */
+        for (k = 0; k < 4; k++) {
+            const int all = arm_light(six[PROMPT_GROUP_DPAD], arm[k][0], arm[k][1]);
+            const int across = arm_light(six[PROMPT_GROUP_DPAD_ACROSS], arm[k][0], arm[k][1]);
+            const int updown = arm_light(six[PROMPT_GROUP_DPAD_UPDOWN], arm[k][0], arm[k][1]);
+            const int lit_across = k < 2;
+            CHECK(flat_at(six[PROMPT_GROUP_DPAD], arm[k][0], arm[k][1])[3] > 200 && all <= ARM_UNLIT,
+                  "art %d's D-pad, arm %d: %d light texels", pads[a], k, all);
+            CHECK(lit_across ? across >= ARM_LIT : across <= ARM_UNLIT,
+                  "art %d's D-pad's left and right, arm %d: %d light texels", pads[a], k, across);
+            CHECK(lit_across ? updown <= ARM_UNLIT : updown >= ARM_LIT,
+                  "art %d's D-pad's up and down, arm %d: %d light texels", pads[a], k, updown);
+        }
+    }
+}
+
+/* A picture cut to a window across (the graffiti editor's ticker's, 80 to
+ * 560 of the title's 640: -0.75 to 0.75 in NDC): whole inside it; cut at
+ * the edge it is over, with the part of the picture that is left; cut at
+ * both by a window narrower than it; and none of it outside, in a window
+ * that is none, or with no width. Its rows are never cut. */
+static void case_window_cut(void)
+{
+    static const struct { float rect[4], left, right; int want; float cut[2], uv[2]; } cases[] = {
+        { { -0.1f, -0.5f, 0.1f, 0.5f }, 80, 560, 1, { -0.1f, 0.1f }, { 0, 1 } },        /* inside */
+        { { -0.8f, 0.7f, -0.7f, 0.9f }, 80, 560, 1, { -0.75f, -0.7f }, { 0.5f, 1 } },   /* over the left edge */
+        { { 0.7f, 0.7f, 0.9f, 0.9f }, 80, 560, 1, { 0.7f, 0.75f }, { 0, 0.25f } },      /* over the right */
+        { { -1.0f, 0, 1.0f, 0.1f }, 80, 560, 1, { -0.75f, 0.75f }, { 0.125f, 0.875f } },/* wider than it */
+        { { -0.75f, 0, -0.65f, 0.1f }, 80, 560, 1, { -0.75f, -0.65f }, { 0, 1 } },      /* at the edge, inside */
+        { { -0.9f, 0, -0.75f, 0.1f }, 80, 560, 0, { 0, 0 }, { 0, 0 } },                 /* at the edge, outside */
+        { { 0.8f, 0, 0.9f, 0.1f }, 80, 560, 0, { 0, 0 }, { 0, 0 } },                    /* past the right */
+        { { -0.1f, 0, 0.1f, 0.1f }, 0, 0, 0, { 0, 0 }, { 0, 0 } },                      /* no window */
+        { { -0.1f, 0, 0.1f, 0.1f }, 560, 80, 0, { 0, 0 }, { 0, 0 } },                   /* its ends the wrong way */
+        { { 0.1f, 0, 0.1f, 0.1f }, 80, 560, 0, { 0, 0 }, { 0, 0 } },                    /* no width */
+        { { -0.5f, 0, 0.5f, 0.1f }, 0, 640, 1, { -0.5f, 0.5f }, { 0, 1 } },             /* the whole frame */
+    };
+    size_t i;
+    for (i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        float cut[4] = { 9, 9, 9, 9 }, uv[4] = { 9, 9, 9, 9 };
+        int got = nv2a_prompts_window_cut(cases[i].rect, cases[i].left, cases[i].right, cut, uv);
+        CHECK(got == cases[i].want, "case %zu: %d, not %d", i, got, cases[i].want);
+        if (!got || !cases[i].want) continue;
+        CHECK(fabsf(cut[0] - cases[i].cut[0]) < 1e-5f && fabsf(cut[2] - cases[i].cut[1]) < 1e-5f
+           && cut[1] == cases[i].rect[1] && cut[3] == cases[i].rect[3],
+              "case %zu: cut to %.4f %.4f %.4f %.4f", i, cut[0], cut[1], cut[2], cut[3]);
+        CHECK(fabsf(uv[0] - cases[i].uv[0]) < 1e-5f && fabsf(uv[2] - cases[i].uv[1]) < 1e-5f && uv[1] == 0.0f
+           && uv[3] == 1.0f, "case %zu: its part %.4f %.4f %.4f %.4f", i, uv[0], uv[1], uv[2], uv[3]);
+    }
+}
+
 /* Which icon a triangle's texels are on: the B's, all of it or a wedge of
  * it; set 1's A; the B's with its corners a texel outside it (within
  * NV2A_PROMPT_FACE_SLACK); where it is on two icons' rectangles, the one it
@@ -1108,8 +1259,8 @@ static void case_face_place(void)
               && fabsf(cy - (m.m[1][0] * 12 + m.m[1][1] * 4 + m.o[1])) < 1e-3f
               && fabsf(s - places[i].s * NV2A_PROMPT_UPRIGHT_GROW) < 1e-3f,
               "place %zu: %.3f, %.3f at %.4f a texel, not %.4f", i, cx, cy, s, places[i].s);
-        /* At a screen's own size (the VS screen's 0.956): the same middle,
-         * that much smaller. */
+        /* At a screen's own size (0.956): the same middle, that much
+         * smaller. */
         {
             float gx, gy, gs;
             CHECK(nv2a_prompts_face_place(&f, 0.956f, places[i].most, &gx, &gy, &gs) && gx == cx && gy == cy
@@ -1170,9 +1321,9 @@ static void case_twin(void)
  * had it (Disp/SprNorm1.dat's icon 5, texels 36.2..61.8 by 462.2..489.8,
  * its middle at 1742.2, 2394.9, turned about 50 degrees: 7.92 pixels a
  * texel across, 12.32 down), laid at 0.956 times its larger stretch, 12.37
- * (port/prompt_buttons.h, PROMPT_BUTTONS_VS_UPRIGHT). Its side, about its
- * turned face, is within reach; a triangle with a corner far off, or one
- * not worked out, is not. */
+ * (the size once asked for that menu's). Its side, about its turned face,
+ * is within reach; a triangle with a corner far off, or one not worked
+ * out, is not. */
 static void case_reach(void)
 {
     Nv2aPromptFace f;
@@ -1300,6 +1451,8 @@ int main(int argc, char **argv)
     else if (!strcmp(c, "icon_at")) case_icon_at();
     else if (!strcmp(c, "control_at")) case_control_at();
     else if (!strcmp(c, "place")) case_place();
+    else if (!strcmp(c, "group_at")) case_group_at();
+    else if (!strcmp(c, "window_cut")) case_window_cut();
     else if (!strcmp(c, "tri_icon")) case_tri_icon();
     else if (!strcmp(c, "faces")) case_faces();
     else if (!strcmp(c, "face_place")) case_face_place();

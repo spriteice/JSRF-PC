@@ -1,9 +1,9 @@
-"""The game's lines naming the A or B button, drawn with the button prompts'
-pictures in the letters' places (port/prompt_text.c), without the game.
+"""The game's lines naming a control, drawn with the button prompts'
+pictures in the names' places (port/prompt_text.c), without the game.
 
 Builds port/prompt_text.c as it is with test_main.c, which stands in for
 guest memory with made-up lines and a made-up font, and checks the log: the
-line whose letter isn't where its table says, said once, and nothing else.
+line whose name isn't where its table says, said once, and nothing else.
 Requires GCC on PATH, including MinGW on Windows. CC, when set, is the
 compiler instead of gcc.
 """
@@ -17,7 +17,7 @@ import tempfile
 root = pathlib.Path(__file__).resolve().parents[2]
 cc = shlex.split(os.environ.get("CC", "gcc"))
 
-SAID = ["[INPUT] button prompts: the game's line at 00020300 hasn't the letter the table has: "
+SAID = ["[INPUT] button prompts: the game's line at 00020300 hasn't the names the table has: "
         "left as it is"]
 
 with tempfile.TemporaryDirectory(prefix="prompt_text-") as directory:

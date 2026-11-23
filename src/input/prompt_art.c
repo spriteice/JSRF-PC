@@ -135,6 +135,23 @@ const char *prompt_art_name(int art, int input)
     return set[input] ? set[input] : k_shared[input];
 }
 
+/* Each pad set's pictures of its whole D-pad and left stick, in
+ * PROMPT_GROUP_...'s order (Juliocacko's, as the rest). */
+static const char *const k_groups[PROMPT_ARTS][PROMPT_GROUPS] = {
+    [PROMPT_ART_XBOX] = { "xbox_dpad_all", "xbox_dpad_across", "xbox_dpad_updown",
+                          "xbox_lstick_all", "xbox_lstick_across", "xbox_lstick_updown" },
+    [PROMPT_ART_PLAYSTATION] = { "ps_dpad_all", "ps_dpad_across", "ps_dpad_updown",
+                                 "ps_lstick_all", "ps_lstick_across", "ps_lstick_updown" },
+    [PROMPT_ART_NINTENDO] = { "nintendo_dpad_all", "nintendo_dpad_across", "nintendo_dpad_updown",
+                              "nintendo_lstick_all", "nintendo_lstick_across", "nintendo_lstick_updown" },
+};
+
+const char *prompt_art_group(int art, int group)
+{
+    if (art < 0 || art >= PROMPT_ARTS || group < 0 || group >= PROMPT_GROUPS) return NULL;
+    return k_groups[art][group];
+}
+
 const char *prompt_art_label(int art, int input)
 {
     if (art < PROMPT_ART_XBOX || art > PROMPT_ART_NINTENDO || input < 0 || input >= INPUT_PAD_INPUTS)

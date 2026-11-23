@@ -2139,16 +2139,17 @@ static uint32_t glx_tex_upscale(uint32_t tex, uint32_t w, uint32_t h, int factor
 /* ---- the button prompts' flat pictures ------------------------------------
  *
  * picture (nv2a_backend.h): one quad over the target being drawn into, its
- * corners from gl_VertexID, sampling the picture on the scratch unit,
- * which nothing the title draws samples. Built the first time; if it won't
+ * corners from gl_VertexID, sampling the part of the picture asked for on
+ * the scratch unit, which nothing the title draws samples. Built the first time; if it won't
  * build, the pictures aren't drawn and the log says so once. */
 static const char pic_vs[] =
     NV2A_GLSL_VERSION
     "uniform vec4 picRect;\n"
+    "uniform vec4 picPart;\n"
     "out vec2 picUv;\n"
     "void main()\n{\n"
     "    vec2 p = vec2(float(gl_VertexID & 1), float((gl_VertexID >> 1) & 1));\n"
-    "    picUv = vec2(p.x, 1.0 - p.y);\n"
+    "    picUv = mix(picPart.xw, picPart.zy, p);\n"
     "    gl_Position = vec4(mix(picRect.xy, picRect.zw, p), 0.0, 1.0);\n"
     "}\n";
 static const char pic_fs[] =
@@ -2162,12 +2163,13 @@ static const char pic_fs[] =
     "}\n";
 static struct {
     GLuint prog, vao;
-    GLint  rect_loc, alpha_loc;
+    GLint  rect_loc, part_loc, alpha_loc;
     int    bad;
 } g_pic;
 
-static void glx_picture(uint32_t tex, const float rect[4], float alpha)
+static void glx_picture(uint32_t tex, const float rect[4], const float part[4], float alpha)
 {
+    static const float whole[4] = { 0.0f, 0.0f, 1.0f, 1.0f };
     GLint vao = 0;
     GLboolean sc;
     if (!tex || !rect || !rt_ok(g_cur_rt) || g_pic.bad) return;
@@ -2181,6 +2183,7 @@ static void glx_picture(uint32_t tex, const float rect[4], float alpha)
         }
         glUseProgram(g_pic.prog);
         g_pic.rect_loc = glGetUniformLocation(g_pic.prog, "picRect");
+        g_pic.part_loc = glGetUniformLocation(g_pic.prog, "picPart");
         g_pic.alpha_loc = glGetUniformLocation(g_pic.prog, "picAlpha");
         glUniform1i(glGetUniformLocation(g_pic.prog, "picTex"), SCRATCH_UNIT);
         glGenVertexArrays(1, &g_pic.vao);
@@ -2197,6 +2200,7 @@ static void glx_picture(uint32_t tex, const float rect[4], float alpha)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glUseProgram(g_pic.prog);
     glUniform4fv(g_pic.rect_loc, 1, rect);
+    glUniform4fv(g_pic.part_loc, 1, part ? part : whole);
     glUniform1f(g_pic.alpha_loc, alpha);
     scratch_bind((GLuint)tex);
     glBindSampler(SCRATCH_UNIT, 0);

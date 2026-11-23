@@ -202,7 +202,7 @@ uint32_t prompt_buttons_end(PromptButtonsWalk *w, uint8_t *mem, uint32_t device,
     if (w->button < 0) return 0;
     placed = prompt_buttons_place(w, focal, tall, view, &x, &y, &half);
     if (placed && device) {
-        words[0] = nv2a_prompts_mark(w->button, w->box, w->art);
+        words[0] = nv2a_prompts_mark(w->button ? INPUT_CTL_B : INPUT_CTL_A, w->box, w->art);
         words[1] = float_bits(x);
         words[2] = float_bits(y);
         words[3] = float_bits(half);

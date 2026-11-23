@@ -4954,6 +4954,7 @@ static void wide_menu_model_draw(void)
  * have it. Nothing in the game's code is wrong: a feature's hook. */
 #include "prompt_buttons.h"
 #include "input_prompts.h"
+#include "nv2a_prompts.h"          /* the mark, and NV2A_PROMPT_LARGER */
 static uint32_t disp_models(void);
 static void prompt_view(float *focal, float *tall, uint32_t view[4]);
 static PromptButtonsWalk s_flat = { .button = -1 };
@@ -6076,7 +6077,7 @@ static void prompt_draw(void)
  * the matching and the pieces; how the lines look needs the game, the test
  * build's steps. */
 #include "prompt_text.h"
-#include "nv2a_prompts.h"          /* the mark */
+#include "input_remap.h"           /* the layouts now, for what a name's picture shows */
 extern void sub_0003D610_gen(void);
 extern void sub_0003D750_gen(void);
 #define TEXT_FONT_ARGS 7u
@@ -6127,12 +6128,12 @@ static float text_measure(void *ctx, uint32_t va, float scale)
     a[1] = va;
     return guest_call_float(sub_0003D750_gen, t->ra, 2, a);
 }
-static void text_mark(void *ctx, int button, float x, float y, float half)
+static void text_mark(void *ctx, PromptTextPicture pic, float x, float y, float half)
 {
     TextCall *t = (TextCall *)ctx;
     uint32_t words[NV2A_PROMPT_MARK_WORDS];
     const uint32_t device = MEM32(D3D_DEVICE);
-    words[0] = nv2a_prompts_mark_alpha(nv2a_prompts_mark(button, 0, t->art), t->a[3] >> 24);
+    words[0] = nv2a_prompts_mark_alpha(nv2a_prompts_mark(pic.show, 0, pic.art), t->a[3] >> 24);
     memcpy(&words[1], &x, sizeof x);
     memcpy(&words[2], &y, sizeof y);
     memcpy(&words[3], &half, sizeof half);
@@ -6144,16 +6145,26 @@ static void text_mark(void *ctx, int button, float x, float y, float half)
     if (device) prompt_buttons_push((uint8_t *)g_xbox_mem_offset, device, words, d3d_make_space);
 }
 static PromptTextMatch s_text;        /* the line text_line_now found */
-/* Whether the font call's text (its seventh argument) is a line, in a style
- * that draws it: s_text then holds it. */
-static int text_line_now(void)
+/* Whether the text at text is a line, in a style that draws it: *m then
+ * holds it, each name with the pictures of what is on its control now. */
+static int text_line(uint32_t text, PromptTextMatch *m)
 {
     const int art = input_prompts_art_now();
+    InputLayout pad, keys;
     if (art == PROMPT_ART_GAME) return 0;
-    return prompt_text_match(prompt_text_lines, prompt_text_nlines, (const uint8_t *)g_xbox_mem_offset,
-                             ADX_GUEST_RAM, MEM32(g_esp + 4u * TEXT_FONT_ARGS), &s_text);
+    if (!prompt_text_match(prompt_text_lines, prompt_text_nlines, (const uint8_t *)g_xbox_mem_offset,
+                           ADX_GUEST_RAM, text, m))
+        return 0;
+    input_remap_layouts(&pad, &keys);
+    prompt_text_show(m, art, &pad, &keys);
+    return 1;
 }
-/* ---- The graffiti editor's ticker (widescreen_menus.h) -----------------------
+/* ... the font call's own text (its seventh argument), into s_text. */
+static int text_line_now(void)
+{
+    return text_line(MEM32(g_esp + 4u * TEXT_FONT_ARGS), &s_text);
+}
+/* ---- The graffiti editor's ticker (widescreen_menus.h, prompt_text.h) --------
  * sub_001284F0, the editor's ticker's draw (this in ecx; one argument, the
  * editor's mode, ret 4): it sets a viewport round the bar of static at the
  * top of the screen (80 to 560 across by 38 to 68 down, through the game's
@@ -6163,7 +6174,8 @@ static int text_line_now(void)
  * less the scroll (sub_0003D610, returning to EDITOR_TICKER_FIRST) and,
  * while that copy's end is in the window, again a width on (returning to
  * EDITOR_TICKER_SECOND); then it takes the viewport off. Nothing in it is
- * wrong: it was laid out for the console's screen.
+ * wrong: it was laid out for the console's screen, and names the console's
+ * controls. Three things are done round it.
  *
  * In a widened scene its text is drawn between marks of its own for the
  * whole width in its own viewport (WIDE_MENU_PIECE_EDITOR_TICKER), so every
@@ -6173,31 +6185,73 @@ static int text_line_now(void)
  * call draws every copy that shows in the wider window, from its right end
  * as the game's comes on from its own (widescreen_menus_editor_copies, by
  * the line's turns, widescreen_menus_editor_turns), each through the font
- * call again, and the game's second copy's call draws nothing. The copies
- * are a width apart, the width the game measured: its measure's call's
- * answer is kept as it returns (sub_0003D750, below). */
+ * call again, and the game's second copy's call draws nothing.
+ *
+ * In any style but Default the line is drawn with its controls' pictures
+ * (the font call's override, below), which are wider than the names they
+ * stand for. The game spaces its copies and starts again by the width it
+ * measured, so its measure's call is given the line's width with its
+ * pictures (prompt_text_width): each copy follows the last with the gap
+ * the game left, and the scroll starts again as the next copy reaches the
+ * first's place.
+ *
+ * The game's viewport cuts its text at the window's ends, but not a
+ * picture, which the renderer draws over the frame: the window is marked
+ * for the pictures before the line (nv2a_prompts.h, NV2A_PROMPT_WINDOW_TAG)
+ * and none after the ticker. */
 #define EDITOR_TICKER_MEASURE 0x00128582u  /* the ticker's measure's call's return address */
 #define EDITOR_TICKER_FIRST   0x00128600u  /* its first copy's font call's */
 #define EDITOR_TICKER_SECOND  0x0012865Eu  /* its second copy's */
+#define EDITOR_TICKER_PIECE   0x001284F0u  /* a piece's measure, as a call of the ticker's own */
 #define EDITOR_TICKER_START   0x001DA394u  /* the float the line starts at: 78 */
 static struct {
     int on;                    /* the ticker's draw is running */
     int wide;                  /* ... between its marks, in a widened scene */
+    int windowed;              /* a window is marked for its pictures */
     int copying;               /* its copies are being drawn: the font call is the ticker's own again */
     int copied;                /* the first copy's call drew them all: */
     int copies, turns;         /* ... how many, and the line's turns then */
     float x, at;               /* ... the game's x, and the first copy's */
     float width;               /* the line's width as its measure's call gave it */
 } s_ticker;
+static void editor_ticker_window(float left, float right)
+{
+    uint32_t words[NV2A_PROMPT_MARK_WORDS] = { NV2A_PROMPT_WINDOW_TAG, 0u, 0u, 0u };
+    const uint32_t device = MEM32(D3D_DEVICE);
+    memcpy(&words[1], &left, sizeof left);
+    memcpy(&words[2], &right, sizeof right);
+    if (device && prompt_buttons_push((uint8_t *)g_xbox_mem_offset, device, words, d3d_make_space))
+        s_ticker.windowed = right > left;
+}
 /* sub_0003D750: the font's measure (scale, text; cdecl, the width a float
- * on the x87 stack), the game's own: the width the ticker's call of it
- * gives is kept, for the line's copies. */
+ * on the x87 stack). The ticker's call of it, for a line drawn with
+ * pictures, is given the width so drawn; any other is the game's own. The
+ * pieces are measured below the stack the caller left, as the font call's
+ * override draws them. */
 void sub_0003D750(void)
 {
-    const uint32_t ra = MEM32(g_esp);
+    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
+    const uint32_t esp = g_esp, ra = MEM32(esp), text = MEM32(esp + 8u);
+    const float scale = bits_f32(MEM32(esp + 4u));
+    PromptTextCalls c = { text_draw, text_measure, text_mark, NULL };
+    PromptTextMatch line;
+    TextCall t;
+    uint32_t left;
+    float width;
     sub_0003D750_gen();
     if (!s_ticker.on || ra != EDITOR_TICKER_MEASURE) return;
     s_ticker.width = (float)g_fp_stack[g_fp_top & 7];
+    if (!text_line(text, &line)) return;
+    memset(&t, 0, sizeof t);
+    t.ra = EDITOR_TICKER_PIECE;
+    c.ctx = &t;
+    left = g_esp;
+    g_esp = (esp - (line.len + 16u)) & ~15u;
+    width = prompt_text_width(&line, m, text, g_esp, scale, scale, &c);
+    g_esp = left;
+    if (!(width > 0.0f)) return;
+    g_fp_stack[g_fp_top & 7] = (double)width;
+    s_ticker.width = width;
 }
 /* The ticker's own font calls (above): 1 when the call was done here, its
  * `ret` with it; 0 for the font call's override to draw it. */
@@ -6214,6 +6268,8 @@ static int editor_ticker_text(void)
         g_esp = esp + 4u;
         return 1;
     }
+    /* The window the game's viewport is now, for the line's pictures. */
+    if (right > left && text_line_now()) editor_ticker_window(left, right);
     /* The line's turns are followed in 4:3 too, for a change of shape (F10)
      * while it scrolls. */
     turns = widescreen_menus_editor_turns(bits_f32(MEM32(esp + 4u)), bits_f32(MEM32(EDITOR_TICKER_START)));
@@ -6245,6 +6301,7 @@ void sub_001284F0(void)
     s_ticker.on = 1;
     s_ticker.wide = marked;
     sub_001284F0_gen();
+    if (s_ticker.windowed) editor_ticker_window(0.0f, 0.0f);
     if (s_ticker.copied && s_ticker.copies && !told[s_ticker.turns > 0]) {
         told[s_ticker.turns > 0] = 1;
         fprintf(stderr, "[WIDE] the graffiti editor's ticker: its line, %.1f wide, %s: the game's at %.1f, "

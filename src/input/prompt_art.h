@@ -45,6 +45,22 @@ typedef struct { int art, input; } PromptIcon;
  * Every pad set takes the same touchpad. */
 const char *prompt_art_name(int art, int input);
 
+/* A pad's whole D-pad or left stick as one picture, for a line of the
+ * game's that names it and not one of its ways (port/prompt_text.h, the
+ * graffiti editor's help lines): the D-pad as it is, with its left and
+ * right lit, and with its up and down; the left stick with every way's
+ * arrow, with left and right's, and with up and down's. */
+enum {
+    PROMPT_GROUP_DPAD, PROMPT_GROUP_DPAD_ACROSS, PROMPT_GROUP_DPAD_UPDOWN,
+    PROMPT_GROUP_LSTICK, PROMPT_GROUP_LSTICK_ACROSS, PROMPT_GROUP_LSTICK_UPDOWN,
+    PROMPT_GROUPS
+};
+
+/* The picture of group (PROMPT_GROUP_...) in a pad's set (PROMPT_ART_XBOX
+ * to PROMPT_ART_NINTENDO): its name, or NULL for any other art (the keys
+ * have none: a line shows each way's key) or group. */
+const char *prompt_art_group(int art, int group);
+
 /* A pad set's name for an input it has no picture of, which a layout can
  * put on a control, to write on PROMPT_ART_BLANK: the paddles, P1 to P4 as
  * the Xbox Elite labels them, and the PlayStation's Mute (SDL's Misc).

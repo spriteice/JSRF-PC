@@ -460,10 +460,38 @@ int nv2a_prompts_control_at(int c, int px, const Nv2aPromptShows *shows, uint8_t
     return l.how == PICTURE && draw_picture(&l, shows, out, px, px, (size_t)px * 4);
 }
 
+int nv2a_prompts_group_at(int group, int art, int px, const Nv2aPromptShows *shows, uint8_t *out)
+{
+    Look l = { PICTURE, NULL, NULL };
+    if (px < 1 || px > NV2A_PROMPT_PICTURE_MAX) return 0;
+    l.picture = prompt_art_group(art, group);
+    return l.picture && draw_picture(&l, shows, out, px, px, (size_t)px * 4);
+}
+
 /* The title's frame, in its pixels: NDC's 2 across is its 640, down its
  * 480. */
 #define FRAME_HALF_W 320.0f
 #define FRAME_HALF_H 240.0f
+
+int nv2a_prompts_window_cut(const float rect[4], float left, float right, float cut[4], float uv[4])
+{
+    const float l = left / FRAME_HALF_W - 1.0f, r = right / FRAME_HALF_W - 1.0f;
+    const float w = rect[2] - rect[0];
+    float x0 = rect[0], x1 = rect[2];
+    if (!(right > left) || !(w > 0.0f)) return 0;
+    if (x0 < l) x0 = l;
+    if (x1 > r) x1 = r;
+    if (!(x1 > x0)) return 0;
+    cut[0] = x0;
+    cut[1] = rect[1];
+    cut[2] = x1;
+    cut[3] = rect[3];
+    uv[0] = (x0 - rect[0]) / w;
+    uv[1] = 0.0f;
+    uv[2] = (x1 - rect[0]) / w;
+    uv[3] = 1.0f;
+    return 1;
+}
 
 void nv2a_prompts_place(float x, float y, float half, float s, float shift, float k, float ax,
                         float ay, float rect[4])

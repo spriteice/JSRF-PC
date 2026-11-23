@@ -49,8 +49,14 @@ by its letter, the letter is the style's picture of it, a little taller
 than the text, in every language the game has: the line to press B to go
 back in the pause menu's notebook and graffiti picker, Roboy's test run's
 line to press A to start, the save, load and memory messages, and the
-graffiti save screen's. START, and the graffiti editor's help lines, stay as
-words. Where a menu leans its buttons, as the VS menu and the graffiti
+graffiti save screen's.
+The help line that scrolls along the top of the graffiti editor names the
+D-pad, the left stick and the triggers too, in words, and each name there
+is the style's picture, scrolling with the line: a pad's D-pad or left
+stick as one picture with the ways the line means lit (a picture for each
+way instead, where Controller layout has one of those D-pad ways on
+another button), and with keys, the key for each way, side by side. The
+word START stays a word. Where a menu leans its buttons, as the VS menu and the graffiti
 menus slant theirs, the style's pictures are drawn upright, in the same
 place. Everywhere the style's pictures are drawn a little larger
 than the game's own icons: in the menus, on the HUD, beside the message

@@ -6,9 +6,9 @@ the keys, the mouse, and the PlayStation's Create and Options.
 
 The chosen folder holds XBOX, PLAYSTATION, NINTENDO and KEYBOARD, the packs' pictures by their own names (Enter_Key_Dark
 as spriteice edited it, 100 x 79). Each picture here is one of them by the name a set asks for (../prompt_art.c): the
-Xbox and PlayStation ones shaded the Nintendo ones' grey, the PlayStation D-pad's lit arm outlined, and every one's
-colours more saturated (below), written again as 8-bit RGBA. Needs Python 3 and Pillow; the same pictures
-give the same pixels."""
+Xbox and PlayStation ones shaded the Nintendo ones' grey, the PlayStation D-pad's lit arms and left stick's arrows
+outlined, and every one's colours more saturated (below), written again as 8-bit RGBA. Needs Python 3 and Pillow; the
+same pictures give the same pixels."""
 import colorsys
 import math
 import os
@@ -28,6 +28,11 @@ PICTURES = {
     'xbox_lb': (X, 'T_X_LB'), 'xbox_rb': (X, 'T_X_RB'), 'xbox_lt': (X, 'T_X_LT'), 'xbox_rt': (X, 'T_X_RT'),
     'xbox_dpad_up': (X, 'T_X_Dpad_Up'), 'xbox_dpad_down': (X, 'T_X_Dpad_Down'),
     'xbox_dpad_left': (X, 'T_X_Dpad_Left'), 'xbox_dpad_right': (X, 'T_X_Dpad_Right'),
+    # The whole D-pad, its left and right lit, and its up and down; the left stick with every way's arrow, with
+    # left and right's, and with up and down's (the graffiti editor's help lines, port/prompt_text.h).
+    'xbox_dpad_all': (X, 'T_X_Dpad'), 'xbox_dpad_across': (X, 'T_X_Dpad_X'), 'xbox_dpad_updown': (X, 'T_X_Dpad_Y'),
+    'xbox_lstick_all': (X, 'T_X_L_2D'), 'xbox_lstick_across': (X, 'T_X_L_X'),
+    'xbox_lstick_updown': (X, 'T_X_L_Y'),
     # PlayStation: Juliocacko's, with Xelu's PS Vita Select and Start as Create and Options.
     'ps_cross': (P, 'T_P4_Cross_Color_Retro'), 'ps_circle': (P, 'T_P4_Circle_Color_Retro'),
     'ps_square': (P, 'T_P4_Square_Color_Retro'), 'ps_triangle': (P, 'T_P4_Triangle_Color_Retro'),
@@ -37,6 +42,10 @@ PICTURES = {
     'ps_l2': (P, 'T_P4_L2_Retro'), 'ps_r2': (P, 'T_P4_R2_Retro'),
     'ps_dpad_up': (P, 'T_P4_Dpad_UP_Retro'), 'ps_dpad_down': (P, 'T_P4_Dpad_Down_Retro'),
     'ps_dpad_left': (P, 'T_P4_Dpad_Left_Retro'), 'ps_dpad_right': (P, 'T_P4_Dpad_Right_Retro'),
+    'ps_dpad_all': (P, 'T_P4_Dpad_Retro'), 'ps_dpad_across': (P, 'T_P4_Dpad_X_Retro'),
+    'ps_dpad_updown': (P, 'T_P4_Dpad_Y_Retro'),
+    'ps_lstick_all': (P, 'T_P4_L_2D_Retro'), 'ps_lstick_across': (P, 'T_P4_L_X_Retro'),
+    'ps_lstick_updown': (P, 'T_P4_L_Y_Retro'),
     'touchpad': (P, 'T_P4_Touch_Pad_Retro'),   # every set's
     # Nintendo: Juliocacko's. The sticks are its L and R, as it has no stick pressed.
     'nintendo_a': (N, 'T_S_A_Retro'), 'nintendo_b': (N, 'T_S_B_Retro'),
@@ -48,6 +57,10 @@ PICTURES = {
     'nintendo_zl': (N, 'T_S_LT_Retro'), 'nintendo_zr': (N, 'T_S_RT_Retro'),
     'nintendo_dpad_up': (N, 'T_S_Dpad_Up_Retro'), 'nintendo_dpad_down': (N, 'T_S_Dpad_Down_Retro'),
     'nintendo_dpad_left': (N, 'T_S_Dpad_Left_Retro'), 'nintendo_dpad_right': (N, 'T_S_Dpad_Right_Retro'),
+    'nintendo_dpad_all': (N, 'T_S_Dpad_Retro'), 'nintendo_dpad_across': (N, 'T_S_Dpad_X_Retro'),
+    'nintendo_dpad_updown': (N, 'T_S_Dpad_Y_Retro'),
+    'nintendo_lstick_all': (N, 'T_S_L_2D_Retro'), 'nintendo_lstick_across': (N, 'T_S_L_X_Retro'),
+    'nintendo_lstick_updown': (N, 'T_S_L_Y_Retro'),
     # The mouse: Xelu's, the pressed button lit; none lit for its back and forward buttons.
     'mouse_left': (K, 'Mouse_Left_Key_Dark'), 'mouse_middle': (K, 'Mouse_Middle_Key_Dark'),
     'mouse_right': (K, 'Mouse_Right_Key_Dark'), 'mouse_none': (K, 'Mouse_Simple_Key_Dark'),
@@ -81,12 +94,13 @@ for name, xelu in [
 TARGET = 69
 SHADED = {X, P}
 UNSHADED = {'T_X_A_Color_Retro', 'T_X_B_Color_Retro', 'T_X_X_Color_Retro', 'T_X_Y_Color_Retro'}
-# Outlining (spriteice: "the dpad up, down, left, right for playstation"): a black outline OUTLINE pixels wide round
-# the PlayStation D-pad's lit arm, every light pixel (each channel over 180, alpha 64 or more): each pixel near it that
-# isn't light is blended toward black by how far it lies inside the band, so its outer edge is smooth; one that is
-# clear becomes black at that coverage.
+# Outlining (spriteice: "the dpad up, down, left, right for playstation", with its sticks' arrows): a black outline
+# OUTLINE pixels wide round the PlayStation D-pad's lit arms and its left stick's arrows, every light pixel (each
+# channel over 180, alpha 64 or more): each pixel near it that isn't light is blended toward black by how far it lies
+# inside the band, so its outer edge is smooth; one that is clear becomes black at that coverage.
 OUTLINE = 2.0
-OUTLINED = {'T_P4_Dpad_UP_Retro', 'T_P4_Dpad_Down_Retro', 'T_P4_Dpad_Left_Retro', 'T_P4_Dpad_Right_Retro'}
+OUTLINED = {'T_P4_Dpad_UP_Retro', 'T_P4_Dpad_Down_Retro', 'T_P4_Dpad_Left_Retro', 'T_P4_Dpad_Right_Retro',
+            'T_P4_Dpad_X_Retro', 'T_P4_Dpad_Y_Retro', 'T_P4_L_2D_Retro', 'T_P4_L_X_Retro', 'T_P4_L_Y_Retro'}
 # Saturating, last (spriteice, 22 November 2026: "increase colour saturation on the glyphs by 25%", then "turn up the
 # saturation on the xbox buttons a little more (the red and green need to be very similar to the games glyphs" and
 # "turn it up a bit more on the playstation buttons too. the nintendo ones are good"), each folder by its own way and

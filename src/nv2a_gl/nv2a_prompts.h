@@ -134,31 +134,39 @@ void nv2a_prompts_fit(const uint8_t *src, int sw, int sh, uint8_t *dst, int w, i
 /* ---- the message boxes' A and B, flat (port/prompt_buttons.h) ------------ */
 
 /* The mark the game side writes into D3D's push buffer where a box's A or
- * B (or Skip cutscenes' A) would have been drawn, or a letter of the
- * game's text naming one (port/prompt_text.h): one header of
+ * B (or Skip cutscenes' A) would have been drawn, or a control's name in
+ * the game's text (port/prompt_text.h): one header of
  * NV2A_PROMPT_MARK_WORDS values, on NV2A_PROMPT_MARK_METHOD and the three
  * after it, past the highest method the title's D3D writes (0x1EA4) and
- * below the HUD's mark (nv2a_wide.h, NV2A_WIDE_HUD_METHOD). Word 0 is
- * NV2A_PROMPT_MARK_TAG with the button (0 the A, 1 the B), whether it is
- * the message box's (NV2A_PROMPT_MARK_BOX), the art (PROMPT_ART_...) and
- * how far it fades (NV2A_PROMPT_MARK_FADE: 0 not at all, as the box's
- * buttons; a letter's fades with its text), so that anything else on the
- * method is told apart and left alone; words 1 to 3 are the picture's
- * middle, x and y, and half its side, in the title's 640 x 480 pixels, as
- * a float's bits. The renderer draws the picture on the fourth. */
+ * below the HUD's mark (nv2a_wide.h, NV2A_WIDE_HUD_METHOD).
+ * Word 0 is NV2A_PROMPT_MARK_TAG, with NV2A_PROMPT_MARK_BOX for the message
+ * box's, and under it what the picture shows (NV2A_PROMPT_MARK_WHAT: a
+ * control, INPUT_CTL_..., drawn as the icons show it, the first input on
+ * it now; or NV2A_PROMPT_MARK_GROUP and a pad's whole D-pad or left stick,
+ * PROMPT_GROUP_..., prompt_art.h), the art (PROMPT_ART_...) and how far it
+ * fades (NV2A_PROMPT_MARK_FADE: 0 not at all, as the box's buttons; a
+ * name's fades with its text), so that anything else on the method is told
+ * apart and left alone; words 1 to 3 are the picture's middle, x and y, and
+ * half its side, in the title's 640 x 480 pixels, as a float's bits. The
+ * renderer draws the picture on the fourth. */
 #define NV2A_PROMPT_MARK_METHOD 0x1FE0u
 #define NV2A_PROMPT_MARK_WORDS  4u
 #define NV2A_PROMPT_MARK_TAG    0x50420000u   /* "PB" */
-#define NV2A_PROMPT_MARK_BOX    0x100u
-#define NV2A_PROMPT_MARK_ART    0xF0u         /* the art, from bit 4 */
+#define NV2A_PROMPT_MARK_BOX    0x10000u      /* the message box's: with the tag */
+#define NV2A_PROMPT_MARK_WHAT   0x3Fu         /* what it shows */
+#define NV2A_PROMPT_MARK_ART    0x1C0u        /* the art, from bit 6 */
 #define NV2A_PROMPT_MARK_FADE   0xFE00u       /* (255 - its alpha) / 2, from bit 9 */
-#define NV2A_PROMPT_MARK_LOW    0xFFFFu       /* what goes with the tag */
+#define NV2A_PROMPT_MARK_LOW    0xFFFFu       /* what goes under the tag */
+#define NV2A_PROMPT_MARK_GROUP  32            /* what, from here: PROMPT_GROUP_... */
+/* A mark's word has room for every control and art. */
+typedef char nv2a_prompt_mark_fits[INPUT_CTLS <= NV2A_PROMPT_MARK_GROUP && PROMPT_ARTS <= 8 ? 1 : -1];
 
-/* Word 0 for button, box and art. */
-static inline uint32_t nv2a_prompts_mark(int button, int box, int art)
+/* Word 0 for what (a control, or NV2A_PROMPT_MARK_GROUP and a group), box
+ * and art. */
+static inline uint32_t nv2a_prompts_mark(int what, int box, int art)
 {
     return NV2A_PROMPT_MARK_TAG | (box ? NV2A_PROMPT_MARK_BOX : 0u)
-         | (((uint32_t)art << 4) & NV2A_PROMPT_MARK_ART) | ((uint32_t)button & 1u);
+         | (((uint32_t)art << 6) & NV2A_PROMPT_MARK_ART) | ((uint32_t)what & NV2A_PROMPT_MARK_WHAT);
 }
 
 /* Word 0 with the alpha the picture is drawn at, 0 to 255 (its text's). */
@@ -174,17 +182,19 @@ static inline float nv2a_prompts_mark_opacity(uint32_t word)
     return 1.0f - (float)((word & NV2A_PROMPT_MARK_FADE) >> 9) * (2.0f / 255.0f);
 }
 
-/* Word 0 read: 1 with its button, box and art; 0 for a word that isn't
- * one. */
-static inline int nv2a_prompts_mark_read(uint32_t word, int *button, int *box, int *art)
+/* Word 0 read: 1 with what it shows, its box and art; 0 for a word that
+ * isn't one, or one that shows no control or group, or an art there
+ * isn't. */
+static inline int nv2a_prompts_mark_read(uint32_t word, int *what, int *box, int *art)
 {
-    if ((word & ~NV2A_PROMPT_MARK_LOW) != NV2A_PROMPT_MARK_TAG
-     || (word & NV2A_PROMPT_MARK_LOW
-         & ~(NV2A_PROMPT_MARK_BOX | NV2A_PROMPT_MARK_ART | NV2A_PROMPT_MARK_FADE | 1u)))
+    const int w = (int)(word & NV2A_PROMPT_MARK_WHAT), a = (int)((word & NV2A_PROMPT_MARK_ART) >> 6);
+    if ((word & ~(NV2A_PROMPT_MARK_LOW | NV2A_PROMPT_MARK_BOX)) != NV2A_PROMPT_MARK_TAG) return 0;
+    if (a >= PROMPT_ARTS) return 0;
+    if (w >= INPUT_CTLS && (w < NV2A_PROMPT_MARK_GROUP || w >= NV2A_PROMPT_MARK_GROUP + PROMPT_GROUPS))
         return 0;
-    *button = (int)(word & 1u);
+    *what = w;
     *box = (word & NV2A_PROMPT_MARK_BOX) != 0;
-    *art = (int)((word & NV2A_PROMPT_MARK_ART) >> 4);
+    *art = a;
     return 1;
 }
 
@@ -212,6 +222,41 @@ static inline int nv2a_prompts_upright_read(const uint32_t words[NV2A_PROMPT_MAR
     return 1;
 }
 
+/* The window the pictures after it are cut to across, a mark on the same
+ * method: word 0 NV2A_PROMPT_WINDOW_TAG, words 1 and 2 its left and right
+ * edges in the title's pixels, as a float's bits, word 3 0. The game's own
+ * window (a viewport, as the graffiti editor's ticker has) cuts the text
+ * drawn in it, but not a picture, which the renderer draws over the frame;
+ * so the game side marks the window before a text that scrolls through one
+ * and marks none after it (right not above left). The edges go on the frame
+ * as the window does, straight across it, whatever is squeezed in a
+ * widened scene. The renderer drops it at each frame's end as well. */
+#define NV2A_PROMPT_WINDOW_TAG 0x50570000u   /* "PW" */
+
+/* The window a mark's words say, into *left and *right: 1 for a window's
+ * mark, with *right above *left for a window and not for none; 0 for
+ * anything else. */
+static inline int nv2a_prompts_window_read(const uint32_t words[NV2A_PROMPT_MARK_WORDS], float *left,
+                                           float *right)
+{
+    union { uint32_t u; float f; } l, r;
+    if (words[0] != NV2A_PROMPT_WINDOW_TAG || words[3]) return 0;
+    l.u = words[1];
+    r.u = words[2];
+    if (l.f != l.f || r.f != r.f) return 0;
+    *left = l.f;
+    *right = r.f;
+    return 1;
+}
+
+/* A picture's rectangle rect (its left, bottom, right and top in the
+ * frame's NDC, nv2a_prompts_place) cut to a window from left to right, in
+ * the title's pixels across the frame (0 at its left edge, 640 at its
+ * right): into cut, the rectangle left, and into uv, the part of the
+ * picture that shows in it (its left, top, right and bottom, 0 to 1). 1
+ * with them; 0 when none of it is inside, or the window is empty. */
+int nv2a_prompts_window_cut(const float rect[4], float left, float right, float cut[4], float uv[4]);
+
 /* The picture of what control c shows (shows: the game's A, INPUT_CTL_A,
  * for the box's A), fitted to a px x px square of RGBA8 at out: the packs'
  * picture of its input, or the blank key with the name. Where c shows
@@ -222,6 +267,12 @@ static inline int nv2a_prompts_upright_read(const uint32_t words[NV2A_PROMPT_MAR
  * drawn; 0 for a picture that isn't there, or a size outside 1 to
  * NV2A_PROMPT_PICTURE_MAX. */
 int nv2a_prompts_control_at(int c, int px, const Nv2aPromptShows *shows, uint8_t *out);
+
+/* The picture of a pad's whole D-pad or left stick, group (PROMPT_GROUP_...)
+ * in art, fitted to a px x px square of RGBA8 at out, through shows'
+ * pictures. 1 when drawn; 0 for an art with none (the keys', the game's
+ * own), or a size outside 1 to NV2A_PROMPT_PICTURE_MAX. */
+int nv2a_prompts_group_at(int group, int art, int px, const Nv2aPromptShows *shows, uint8_t *out);
 
 /* Where a mark's picture goes on the frame, as a 3D draw there is placed
  * (nv2a_gl.c, do_draw): its middle (x, y) and half side half, in the

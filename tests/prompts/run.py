@@ -10,7 +10,8 @@ them, built as src/input/CMakeLists.txt builds it.
 The cases: every picture a set asks for is built in and decodes, and every
 one built in is asked for (art); no picture mostly white, the face buttons
 in their colours and the rest dark grey, the Xbox and PlayStation ones the
-Nintendo ones' grey, the PlayStation D-pad's arm outlined (colours); PNGs decoded, with each row filter, and refused when they
+Nintendo ones' grey, the PlayStation D-pad's lit arms and left stick's
+arrows outlined (colours); PNGs decoded, with each row filter, and refused when they
 aren't the kinds the decoder reads (png); the table's textures found
 by their size, format and content alone, said once each, and the engine's
 own table in order (find); the icons drawn at each level, as the game's own
@@ -19,7 +20,9 @@ PlayStation's Mute or a paddle, with no picture, on the blank key with its name 
 (text); a picture fitted to a
 rectangle, down, up and keeping its shape (fit); an upscaled copy's
 icons (icon_at); the message boxes' flat pictures, the packs' or the
-Xbox set's for the game's art (control_at); where a flat picture goes on the frame (place); and the
+Xbox set's for the game's art (control_at); where a flat picture goes on the frame (place); a pad's
+whole D-pad or left stick, flat, for the graffiti editor's help lines (group_at), and a picture cut
+to that editor's ticker's window (window_cut); and the
 menus' turned or slanted buttons: which icon a triangle's texels are on (tri_icon); the faces found
 among a draw's triangles, a button's front apart from its back and side, as a list, a strip or a fan,
 and in perspective (faces); where a face goes upright (face_place), and a smaller copy of one at the
@@ -71,6 +74,7 @@ with tempfile.TemporaryDirectory(prefix="prompts-") as directory:
                  "  [GL] button prompts: 64x32 format 0E head %s key %s: not in the table",
                  "  [GL] button prompts: 64x32 format 0E head %s: not in the table"],
         "draw": [], "label": [], "text": [], "fit": [], "icon_at": [], "control_at": [], "place": [],
+        "group_at": [], "window_cut": [],
         "tri_icon": [], "faces": [], "face_place": [], "twin": [], "reach": [], "solve": [], "copy": [], "copies": [],
     }
     for name, said in cases.items():

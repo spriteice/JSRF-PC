@@ -6910,13 +6910,16 @@ static void wide_hud_frame_end(void)
 }
 
 /*
- * The message boxes' A and B, flat (port/prompt_buttons.h), and the letter
- * A or B in the game's text (port/prompt_text.h): the game side's mark
+ * The message boxes' A and B, flat (port/prompt_buttons.h), and a control's
+ * name in the game's text (port/prompt_text.h): the game side's mark
  * (nv2a_prompts.h, NV2A_PROMPT_MARK_METHOD), its words kept as they come,
- * and on its last the picture of the control on that button, in the mark's
- * art, drawn over the frame where the game's 3D button would have been, or
- * in the letter's place, at the mark's alpha (a letter's fades with its
- * text). It is placed as a 3D draw there is (do_draw): squeezed in a widened
+ * and on its last the picture of what the mark shows (the control on that
+ * button, or a pad's whole D-pad or left stick), in the mark's art, drawn
+ * over the frame where the game's 3D button would have been, or in the
+ * name's place, at the mark's alpha (a name's fades with its text), and cut
+ * across to the window the game side marked, if it marked one (the
+ * graffiti editor's ticker, whose text the game's own viewport cuts). It
+ * is placed as a 3D draw there is (do_draw): squeezed in a widened
  * scene, moved with the HUD piece whose marks it is between (Skip
  * cutscenes' prompt), and sized with it by HUD scale, or not drawn while
  * HUD scale hides the HUD. Made at its size on the screen, so it is drawn a
@@ -6927,31 +6930,39 @@ static void wide_hud_frame_end(void)
  * freed for a new one. It is the same picture in the message box as out of it: no pad's
  * picture is white (src/input/prompts/README.md). The first of each
  * control's pictures, in each art, says so in the log, and whether it was
- * the message box's.
+ * the message box's. A line of the game's text can have one for each way
+ * of the D-pad and of the left stick, and more (port/prompt_text.h), so
+ * PROMPT_FLATS are kept.
  */
-#define PROMPT_FLATS 8
+#define PROMPT_FLATS 24
 static struct { int art, c, px; unsigned gen, pics, used; uint32_t tex; } g_prompt_flats[PROMPT_FLATS];
 static uint32_t g_prompt_mark[NV2A_PROMPT_MARK_WORDS];
 /* The menus' upright faces' size (prompts_upright_draw, below), as the game
  * side's last size mark set it (nv2a_prompts.h, NV2A_PROMPT_UPRIGHT_TAG),
  * NV2A_PROMPT_UPRIGHT_GROW again at each frame's end. */
 static float g_upright_grow = NV2A_PROMPT_UPRIGHT_GROW;
+/* The window the flat pictures are cut to across, as the game side's last
+ * window mark set it (nv2a_prompts.h, NV2A_PROMPT_WINDOW_TAG): its left and
+ * right in the title's pixels, none while the right isn't above the left,
+ * and none again at each frame's end. */
+static float g_prompt_window[2];
 
-static uint32_t prompts_flat_picture(int art, int c, int px, int box)
+/* what: a control, or NV2A_PROMPT_MARK_GROUP and a group (nv2a_prompts.h). */
+static uint32_t prompts_flat_picture(int art, int what, int px, int box)
 {
     static unsigned uses, said;
-    static uint32_t told[PROMPT_ARTS];
+    static uint64_t told[PROMPT_ARTS];
     unsigned gen = 0, pics = 0;
     Nv2aPromptShows shows;
     Nv2aSampler smp;
     uint8_t *rgba;
-    int i, old = 0;
+    int i, old = 0, drawn;
 #if defined(NV2A_GL_USE_SDL)
     gen = input_prompts_generation();
     pics = g_prompt_copies_gen;     /* written on this thread only */
 #endif
     for (i = 0; i < PROMPT_FLATS; i++) {
-        if (g_prompt_flats[i].tex && g_prompt_flats[i].art == art && g_prompt_flats[i].c == c
+        if (g_prompt_flats[i].tex && g_prompt_flats[i].art == art && g_prompt_flats[i].c == what
          && g_prompt_flats[i].px == px && g_prompt_flats[i].gen == gen && g_prompt_flats[i].pics == pics) {
             g_prompt_flats[i].used = ++uses;
             return g_prompt_flats[i].tex;
@@ -6962,7 +6973,10 @@ static uint32_t prompts_flat_picture(int art, int c, int px, int box)
     rgba = (uint8_t *)malloc((size_t)px * px * 4);
     if (!rgba) return 0;
     prompts_shows_in(art, &shows);
-    if (!nv2a_prompts_control_at(c, px, &shows, rgba)) {
+    drawn = what >= NV2A_PROMPT_MARK_GROUP
+          ? nv2a_prompts_group_at(what - NV2A_PROMPT_MARK_GROUP, art, px, &shows, rgba)
+          : nv2a_prompts_control_at(what, px, &shows, rgba);
+    if (!drawn) {
         free(rgba);
         return 0;
     }
@@ -6971,25 +6985,32 @@ static uint32_t prompts_flat_picture(int art, int c, int px, int box)
     g_prompt_flats[old].tex = G->tex_new((uint32_t)px, (uint32_t)px, rgba, &smp);
     free(rgba);
     g_prompt_flats[old].art = art;
-    g_prompt_flats[old].c = c;
+    g_prompt_flats[old].c = what;
     g_prompt_flats[old].px = px;
     g_prompt_flats[old].gen = gen;
     g_prompt_flats[old].pics = pics;
     g_prompt_flats[old].used = ++uses;
-    if (!(told[art] & (1u << (c & 31))) && said++ < 64) {
-        told[art] |= 1u << (c & 31);
-        fprintf(stderr, "  [GL] button prompts: the flat picture of control %d in art %d, %d pixels "
-                "across%s, from present %u\n", c, art, px, box ? ", in the message box" : "", S.flips);
+    if (!(told[art] & (1ull << (what & 63))) && said++ < 96) {
+        told[art] |= 1ull << (what & 63);
+        if (what >= NV2A_PROMPT_MARK_GROUP)
+            fprintf(stderr, "  [GL] button prompts: the flat picture of a pad's D-pad or left stick (group "
+                    "%d) in art %d, %d pixels across, from present %u\n", what - NV2A_PROMPT_MARK_GROUP,
+                    art, px, S.flips);
+        else
+            fprintf(stderr, "  [GL] button prompts: the flat picture of control %d in art %d, %d pixels "
+                    "across%s, from present %u\n", what, art, px, box ? ", in the message box" : "",
+                    S.flips);
     }
     return g_prompt_flats[old].tex;
 }
 
 static void prompts_flat(void)
 {
-    int button, box, art, moved = 0, px;
-    float x, y, half, sq = 1.0f, shift = 0.0f, k = 1.0f, ax = 0.0f, ay = 0.0f, rect[4], opacity;
+    int what, box, art, moved = 0, px;
+    float x, y, half, sq = 1.0f, shift = 0.0f, k = 1.0f, ax = 0.0f, ay = 0.0f, rect[4], uv[4], opacity;
+    const float *part = NULL;
     uint32_t tex;
-    if (!nv2a_prompts_mark_read(g_prompt_mark[0], &button, &box, &art)) {
+    if (!nv2a_prompts_mark_read(g_prompt_mark[0], &what, &box, &art)) {
         static int told;
         if (!told++)
             fprintf(stderr, "  [GL] method 0x%04X came with 0x%08X, not a flat button's mark: left "
@@ -7027,19 +7048,38 @@ static void prompts_flat(void)
     px = (int)((rect[3] - rect[1]) * 0.5f * (float)g_fbo_ph + 0.5f);
     if (px < 1) return;
     if (px > NV2A_PROMPT_PICTURE_MAX) px = NV2A_PROMPT_PICTURE_MAX;
-    tex = prompts_flat_picture(art, button ? INPUT_CTL_B : INPUT_CTL_A, px, box);
-    if (tex) G->picture(tex, rect, opacity);
+    /* In a window (a ticker's): what of it is inside, or none. */
+    if (g_prompt_window[1] > g_prompt_window[0]) {
+        float cut[4];
+        if (!nv2a_prompts_window_cut(rect, g_prompt_window[0], g_prompt_window[1], cut, uv)) return;
+        memcpy(rect, cut, sizeof cut);
+        part = uv;
+    }
+    tex = prompts_flat_picture(art, what, px, box);
+    if (tex) G->picture(tex, rect, part, opacity);
 }
 
 /* The mark's last word: an upright size's (nv2a_prompts.h,
  * NV2A_PROMPT_UPRIGHT_TAG), kept for the draws after it, the first of
- * each size said once in the log; or a flat button's, drawn. */
+ * each size said once in the log; a window's (NV2A_PROMPT_WINDOW_TAG), kept
+ * for the pictures after it, the first said once; or a flat button's,
+ * drawn. */
 static void prompts_mark(void)
 {
     static float said[8];
-    static int nsaid;
-    float grow;
+    static int nsaid, window_said;
+    float grow, left, right;
     int i;
+    if (nv2a_prompts_window_read(g_prompt_mark, &left, &right)) {
+        g_prompt_mark[0] = 0;
+        g_prompt_window[0] = left;
+        g_prompt_window[1] = right;
+        if (right > left && !window_said++)
+            fprintf(stderr, "  [GL] button prompts: the flat pictures cut to a window from %.1f to %.1f of "
+                    "the title's pixels across, from present %u, as the game side marks\n", (double)left,
+                    (double)right, S.flips);
+        return;
+    }
     if (!nv2a_prompts_upright_read(g_prompt_mark, &grow)) {
         prompts_flat();
         return;
@@ -7064,6 +7104,7 @@ static void prompts_upright_frame_end(void)
 {
     static int told;
     g_upright_laid_n = 0;
+    g_prompt_window[0] = g_prompt_window[1] = 0.0f;
     if (g_upright_grow == NV2A_PROMPT_UPRIGHT_GROW) return;
     if (!told++)
         fprintf(stderr, "  [GL] button prompts: the upright size %.2f still set at the frame's end: "
