@@ -653,6 +653,46 @@ static void by_hand(void)
     CHECK(!playback_play(folder, 0), "no recording, played");
 }
 
+/* The game restarting (port/main.c's restart): with nothing running,
+ * nothing said, between the two marks run.py looks between; a recording
+ * ends, kept, "the game restarted" its reason; a play stops, with its
+ * summary. */
+static void restart(void)
+{
+    char folder[700], path[760], line[256], last[256] = "";
+    How rec = { .frames = 40, .skip_anchor = -1, .wrong_anchor = -1, .recording = 1 };
+    How h = { .frames = 25, .skip_anchor = -1, .wrong_anchor = -1 };
+    FILE *f;
+    CHECK(playback_state() != PLAYBACK_RECORDING && playback_state() != PLAYBACK_PLAYING
+          && playback_state() != PLAYBACK_WAITING, "something runs before the restart: state %d", playback_state());
+    fflush(stderr);
+    fprintf(stderr, "<restart, nothing running>\n");
+    playback_restart();
+    fprintf(stderr, "</restart>\n");
+    fflush(stderr);
+    snprintf(folder, sizeof folder, "%s/restart", g_dir);
+    CHECK(playback_record(folder), "a recording to restart couldn't start");
+    run(&g_play, &rec);
+    playback_restart();
+    CHECK(playback_state() == PLAYBACK_RECORDED && playback_result()->frames == 40,
+          "restarted while recording: state %d after %u frames", playback_state(), playback_result()->frames);
+    snprintf(path, sizeof path, "%s/" PLAYBACK_FILE, folder);
+    f = fopen(path, "r");
+    CHECK(f != NULL, "no %s", path);
+    if (f) {
+        while (fgets(line, sizeof line, f)) snprintf(last, sizeof last, "%s", line);
+        fclose(f);
+    }
+    CHECK(!strcmp(last, "end 40\n"), "restarted while recording, its last line: %s", last);
+    CHECK(playback_play(folder, 1), "the restarted recording refused");
+    g_closed = 0;
+    run(&g_play, &h);
+    playback_restart();
+    CHECK(playback_state() == PLAYBACK_OFF && !strcmp(playback_result()->why, "the game restarted at frame 25")
+          && g_closed == 0, "restarted while playing: state %d (%s), closed %d", playback_state(),
+          playback_result()->why, g_closed);
+}
+
 /* Input > Behaviour > Camera's ticks: recorded at the first camera update
  * and when they change, then played with the player's left as they were;
  * by hand, the player's before the first camera line and the recording's
@@ -826,6 +866,7 @@ int main(int argc, char **argv)
     play_cam();
     play_cam_take_over();
     by_hand();
+    restart();
     camera_ticks();
     start();
     if (g_bad) return 1;

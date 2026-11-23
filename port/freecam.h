@@ -166,6 +166,11 @@ int freecam_on(void);
  * mode's look goes by them (port/photo_mode.h). */
 void freecam_settings(FREECAM_SETTINGS *out);
 
+/* Auto centre's level by the name the menu gives it ("Off", "Mild",
+ * "Medium", "High", "Aggressive"), for the log: "?" outside 0 to
+ * FREECAM_CENTRE_LEVELS - 1. */
+const char *freecam_centre_name(int level);
+
 /* A stick, -1..1 on each axis, past c's radial deadzone, rescaled so that
  * its edge is 0 and full tilt is 1. */
 void freecam_deadzone(const FREECAM_SETTINGS *c, double *x, double *y);

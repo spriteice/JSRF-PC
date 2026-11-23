@@ -223,8 +223,15 @@ void playback_anchor(PLAYBACK_ANCHOR kind, uint32_t value, uint32_t *random);
 void playback_view(float position[3], uint32_t *turn, uint32_t camera);
 
 /* Ends a recording, from the menu's thread: at the next pass, or now when
- * the game has stopped passing. Nothing while not recording. */
+ * the game has stopped passing. Nothing while not recording, but a line
+ * that says so, for whoever chose Stop recording. */
 void playback_stop(void);
+
+/* The game restarting (port/main.c's restart, File > Restart and every
+ * (Restart) row), which doesn't run this run's exit: a recording ends, its
+ * reason "the game restarted", and a play stops, with its summary. Nothing,
+ * and nothing said, while neither runs. */
+void playback_restart(void);
 
 /* The run so far. */
 PLAYBACK_STATE playback_state(void);

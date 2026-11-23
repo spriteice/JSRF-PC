@@ -22,7 +22,11 @@ route, and --play's run closes the game. An anchor reached 30 frames late
 holds the pad as recorded until it comes and moves the presses after it, not
 before; one reached 20 frames early skips to it. Off route: the skater
 pushed 100 units off, a stage the recording doesn't have next, and an
-anchor never reached. A real pad held from the start does nothing, and
+anchor never reached. A restart with nothing running says nothing; one
+while recording ends the recording, kept, and one while playing stops it,
+with its summary. The free camera a play puts in place is in the log
+with auto centre's level by name, as [FREECAM] gives it. A real pad held
+from the start does nothing, and
 pressed once let go of, hands the game back. With the free camera: turned
 on by F8, steered by the right stick and the mouse, its sensitivity, invert,
 auto centre and mouse sensitivity changed in the menu, off by R3 and on by
@@ -55,6 +59,7 @@ CC, when set, is the compiler instead of gcc.
 """
 import os
 import pathlib
+import re
 import shlex
 import subprocess
 import sys
@@ -85,7 +90,11 @@ with tempfile.TemporaryDirectory(prefix="playback-") as directory:
             "summary: off route", "summary: handed back",
             "idle moment 1: the skater put back",
             "the free camera as recorded at frame",
-            "auto centre 0, mouse look on at 5",
+            "auto centre Off, mouse look on at 5",
+            "auto centre High, mouse look on at 7",
+            "Stop recording: nothing is being recorded",
+            "recording ended at frame 40 (the game restarted)",
+            "summary: stopped: the game restarted at frame 25;",
             "the free camera was changed (F8, the pad or the menu): the game is yours",
             "the mouse was moved: the game is yours",
             "(yours again, as playback ended)",
@@ -94,6 +103,15 @@ with tempfile.TemporaryDirectory(prefix="playback-") as directory:
             "no camera line: the game's own shots as before the Camera ticks",
             "the camera ticks were changed (the menu): the game is yours"]
     missing = [s for s in said if s not in log]
+    # The free camera a play puts in place names auto centre's level, as
+    # [FREECAM] does, never by its number.
+    named = re.findall(r"the free camera as recorded at frame \d+: .*auto centre (\S+),", log)
+    if not named or any(n not in ("Off", "Mild", "Medium", "High", "Aggressive") for n in named):
+        missing.append(f"auto centre named in each free camera line played (it says {sorted(set(named))})")
+    # A restart with nothing running says nothing.
+    quiet = "<restart, nothing running>\n</restart>\n" in log
+    if not quiet:
+        missing.append("nothing between <restart, nothing running> and </restart>")
     if run.returncode != 0 or "playback: all cases pass" not in run.stdout or missing:
         print(log[-6000:])
         sys.exit(f"playback: exit {run.returncode}" + (f", the log doesn't say {missing}" if missing else ""))

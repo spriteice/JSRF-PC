@@ -252,15 +252,29 @@ static void end_recording(const char *why)
             pad_now(), s_frame, why, s_folder);
 }
 
-static void at_exit(void)
+/* The game closing or restarting, which ends a recording, or a play with its
+ * summary: said, or nothing while neither runs. Not under the lock. */
+static void game_gone(const char *why)
 {
-    pb_lock();
-    end_recording("the game closed");
+    end_recording(why);
     if (s_res.state == PLAYBACK_PLAYING || s_res.state == PLAYBACK_WAITING) {
-        snprintf(s_res.why, sizeof s_res.why, "the game closed at frame %u", s_frame);
+        snprintf(s_res.why, sizeof s_res.why, "%s at frame %u", why, s_frame);
         s_res.state = PLAYBACK_OFF;
         summary();
     }
+}
+
+static void at_exit(void)
+{
+    pb_lock();
+    game_gone("the game closed");
+    pb_unlock();
+}
+
+void playback_restart(void)
+{
+    pb_lock();
+    game_gone("the game restarted");
     pb_unlock();
 }
 
@@ -708,9 +722,9 @@ static int play_freecam(FREECAM_SETTINGS *fc)
     if (c != s_fc_cur) {
         const FREECAM_SETTINGS *r = &PB_FREECAM[c].fc;
         fprintf(stderr, "[PLAYBACK] frame %u: the free camera as recorded at frame %u: %s; invert x %d y %d,"
-                " sensitivity x %g y %g, deadzone %g, auto centre %d, mouse look %s at %g\n", s_frame,
+                " sensitivity x %g y %g, deadzone %g, auto centre %s, mouse look %s at %g\n", s_frame,
                 PB_FREECAM[c].frame, r->on ? "on" : "off", r->invert_x, r->invert_y, r->sens_x, r->sens_y,
-                r->deadzone, r->centre, r->mouse ? "on" : "off", r->mouse_sens);
+                r->deadzone, freecam_centre_name(r->centre), r->mouse ? "on" : "off", r->mouse_sens);
     }
     s_fc_cur = c;
     *fc = PB_FREECAM[c].fc;

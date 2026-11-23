@@ -124,6 +124,11 @@ _Static_assert(sizeof k_centre / sizeof k_centre[0] == FREECAM_CENTRE_LEVELS, "f
 _Static_assert(sizeof k_centre_names / sizeof k_centre_names[0] == FREECAM_CENTRE_LEVELS,
                "a name for each level");
 
+const char *freecam_centre_name(int level)
+{
+    return level >= 0 && level < FREECAM_CENTRE_LEVELS ? k_centre_names[level] : "?";
+}
+
 static const double k_rad = 3.14159265358979323846 / 180.0;
 
 #if defined(NV2A_GL_USE_SDL)
@@ -234,7 +239,7 @@ static void say(const char *why, const FREECAM_SETTINGS *c)
 {
     fprintf(stderr, "[FREECAM] %s (%s); invert x %d y %d, sensitivity x %g y %g, deadzone %g, auto centre %s,"
             " mouse look %s at %g\n", c->on ? "on" : "off", why, c->invert_x, c->invert_y, c->sens_x, c->sens_y,
-            c->deadzone, k_centre_names[c->centre], c->mouse ? "on" : "off", c->mouse_sens);
+            c->deadzone, freecam_centre_name(c->centre), c->mouse ? "on" : "off", c->mouse_sens);
 }
 
 #if defined(NV2A_GL_USE_SDL)

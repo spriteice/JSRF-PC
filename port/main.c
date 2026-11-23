@@ -180,8 +180,9 @@ void recomp_restart_self(void);
 void recomp_restart_self(void)
 {
     if (!g_argv || !g_argv[0]) return;
-    /* A recording ends here, as the new run doesn't run this one's exit. */
-    { extern void playback_stop(void); playback_stop(); }
+    /* A recording or a play ends here, as the new run doesn't run this one's
+     * exit (port/playback.c). */
+    { extern void playback_restart(void); playback_restart(); }
     { extern void developer_restart(void); developer_restart(); }
     fflush(stdout); fflush(stderr);
 #if defined(_WIN32)

@@ -571,7 +571,8 @@ running while it is open, but your input goes to the menu.
   - **Playback:** Records what you press, and plays a recording back, for
     testing. Record (Restart) asks first, then restarts the game and
     records every press the game reads, on every controller, from its
-    first frame, until Stop recording, File > Exit or closing the window.
+    first frame, until Stop recording, File > Exit, closing the window, or
+    the game restarting (File > Restart, or any row that restarts it).
     The [free camera](#free-camera) is recorded too: its stick, the
     mouse's turns of it, turning it on and off, and its settings under
     Input > Free camera, which a recording plays back in place of yours
