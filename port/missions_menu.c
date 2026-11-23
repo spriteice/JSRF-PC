@@ -25,9 +25,11 @@
  * to begin with, as New Game has him, kept in developer.cfg as
  * mission_skater= -- then, between two lines, Load game, which restarts the
  * game at the title's Load Game with the mission runs' saves; then Photo
- * mode, a tick, and a line below it (photo_mode.h: ticked, a mission holds
- * the world as soon as the player has control, with no HUD and a camera that
- * flies; it works at once in a level too); then each level in story order
+ * mode, a tick (photo_mode.h: ticked, a mission holds the world as soon as
+ * the player has control, with no HUD and a camera that flies; it works at
+ * once in a level too), then Record, a tick, and a line below them
+ * (playback.h: ticked, a pick records from the mission's first frame, as
+ * Developer > Playback > Record does); then each level in story order
  * (the order of its lowest mission number), as "99th Street (stg30)", a
  * choice of its missions in numerical order, each with its kind and, for a
  * race or a battle, who it is against: "0252 (flag game, Rapid99)". Two
@@ -42,7 +44,9 @@
  * JSRF_START_SKATER and restarts, as File > Restart does; missions.c starts
  * it. Load game asks first too, then sets JSRF_START_LOAD the same way. Both
  * carry Photo mode's tick over the restart in JSRF_START_PHOTO=1
- * (photo_mode.c reads it), so it stays ticked from pick to pick. The
+ * (photo_mode.c reads it), so it stays ticked from pick to pick, and
+ * Record's in JSRF_RECORD=1 (PLAYBACK_RECORD_VAR), which records the new run
+ * and ticks Record again there (port/playback.c). The
  * kinds' names are ours, as the game has none: what each rests on is in
  * mission-select/FINDINGS-3.md, section 11, in the project's shared folder. */
 #define _POSIX_C_SOURCE 200112L    /* setenv, unsetenv */
@@ -53,6 +57,7 @@
 #include "kernel.h"
 #include "missions.h"
 #include "photo_mode.h"
+#include "playback.h"
 #if defined(XBOXRECOMP_MENU)
 #  include "menu.h"
 #endif
@@ -481,12 +486,14 @@ static void level_pick(const void *data, int i)
     set_env("JSRF_START_MISSION", mission);
     set_env("JSRF_START_SKATER", skater);
     set_env(PHOTO_START_VAR, photo_mode_ticked() ? "1" : "");
-    fprintf(stderr, "[MISSION] %s picked in Developer > Missions, skater %s%s: restarting\n", mission, skater,
-            photo_mode_ticked() ? ", in photo mode" : "");
+    set_env(PLAYBACK_RECORD_VAR, playback_missions_ticked() ? "1" : "");
+    fprintf(stderr, "[MISSION] %s picked in Developer > Missions, skater %s%s%s: restarting\n", mission, skater,
+            photo_mode_ticked() ? ", in photo mode" : "", playback_missions_ticked() ? ", recording" : "");
     nv_window_restart();                /* does not return when it restarts */
     set_env("JSRF_START_MISSION", "");
     set_env("JSRF_START_SKATER", "");
     set_env(PHOTO_START_VAR, "");
+    set_env(PLAYBACK_RECORD_VAR, "");
     fprintf(stderr, "[MISSION] %s: the game couldn't restart; nothing started\n", mission);
 }
 
@@ -498,11 +505,13 @@ static void load_pick(void)
     set_env("JSRF_START_SKATER", "");
     set_env("JSRF_START_LOAD", "1");
     set_env(PHOTO_START_VAR, photo_mode_ticked() ? "1" : "");
-    fprintf(stderr, "[MISSION] Load game picked in Developer > Missions%s: restarting\n",
-            photo_mode_ticked() ? ", in photo mode" : "");
+    set_env(PLAYBACK_RECORD_VAR, playback_missions_ticked() ? "1" : "");
+    fprintf(stderr, "[MISSION] Load game picked in Developer > Missions%s%s: restarting\n",
+            photo_mode_ticked() ? ", in photo mode" : "", playback_missions_ticked() ? ", recording" : "");
     nv_window_restart();                /* does not return when it restarts */
     set_env("JSRF_START_LOAD", "");
     set_env(PHOTO_START_VAR, "");
+    set_env(PLAYBACK_RECORD_VAR, "");
     fprintf(stderr, "[MISSION] Load game: the game couldn't restart; nothing started\n");
 }
 
@@ -518,7 +527,7 @@ static void separator(XBOX_MENU_ITEM *row)
 void missions_menu_start(const uint8_t *mem, uint32_t size)
 {
 #if defined(XBOXRECOMP_MENU) && defined(NV2A_GL_USE_SDL)
-    XBOX_MENU_ITEM rows[6 + MSN_LEVELS];
+    XBOX_MENU_ITEM rows[7 + MSN_LEVELS];
     int i, n = 0, names, characters, unreadable, off = 0, kept;
     names = guest_names(mem, size, XBE_LEVEL_NAMES, LEVEL_NAMES, s_level_name) == LEVEL_NAMES;
     characters = guest_names(mem, size, XBE_CHARACTER_NAMES, CHARACTER_NAMES, s_character);
@@ -572,6 +581,13 @@ void missions_menu_start(const uint8_t *mem, uint32_t size)
     rows[n].state = photo_mode_ticked;
     rows[n].run = photo_mode_flip;
     rows[n++].hint = "Starts missions with the world held, no HUD and a flying camera.";
+    rows[n].menu = XBOX_MENU_DEVELOPER;
+    rows[n].kind = XBOX_ITEM_TOGGLE;
+    rows[n].label = "Record";
+    rows[n].group = XBOX_GROUP_MISSIONS;
+    rows[n].state = playback_missions_ticked;
+    rows[n].run = playback_missions_flip;
+    rows[n++].hint = "Records each mission picked, as Playback's Record does.";
     separator(&rows[n++]);
     for (i = 0; i < s_nlevels; i++, n++) {
         rows[n].menu = XBOX_MENU_DEVELOPER;

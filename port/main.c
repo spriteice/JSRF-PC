@@ -742,6 +742,10 @@ static int host_main(void)
      * before anything reads one (src/nv2a_gl/nv2a_gl.c). */
     { extern void nv_window_reset_at_start(void); nv_window_reset_at_start(); }
 #endif
+    /* A recording about to be played that starts at a mission puts that
+     * start in the environment, for Missions and Photo mode to read below
+     * (port/playback.c). */
+    { extern void playback_first(void); playback_first(); }
     /* The Developer menu's switches into the environment, before anything
      * reads them, and the log off if it was left off (port/developer.c). */
     { extern void developer_start(void); developer_start(); }

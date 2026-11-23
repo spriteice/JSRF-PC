@@ -56,6 +56,8 @@
  *
  *   jsrf-pc-recording 1                     the format, first
  *   version <version> <linux|windows>       the build it was made on
+ *   start mission <CCNN> <skater> <photo> <progress>
+ *   start load <photo>                      where the run started, before any frame
  *   pad <frame>[.<read>] <port> <buttons> <analog> <lx> <ly> <rx> <ry>
  *   pad <frame>[.<read>] <port> none        no pad on that port
  *   freecam <frame> <on> <invert_x> <invert_y> <sensitivity_x> <sensitivity_y> <deadzone> <autocentre> <mouse> <mouse_sensitivity>
@@ -65,6 +67,17 @@
  *   check <frame> <x> <y> <z> <turn> <camera>
  *   idle <frame> <x> <y> <z> <turn> <camera>
  *   end <frame>
+ *
+ * A start line says the run was started from Developer > Missions with
+ * Record ticked: at mission CCNN as skater (the game's number, -1 for none,
+ * New Game's), with photo mode's tick (0 or 1) and the progress the mission
+ * started with (missions_started's hash, in eight hex digits, 00000000 for
+ * New Game's); or at the title's Load Game. It is written with the first
+ * line after the version, once Missions has started the run or refused it
+ * (missions_paths, before the game's first pass). A play of it starts the game
+ * there again, as the pick did (playback_first), and stops at its first
+ * frame, off route, if this run didn't start there, as or with the same.
+ * Without one, the run started as the game does, and so must a play of it.
  *
  * A pad line is a change: the state from that read of that frame on (read is
  * the port's read in the frame, from 0; left out, 0). buttons is wButtons in
@@ -101,6 +114,7 @@
 
 #include <stdint.h>
 #include "freecam.h"
+#include "missions.h"
 #include "xinput_xbox.h"
 
 #define PLAYBACK_PORTS        4
@@ -148,17 +162,37 @@ typedef struct {
     char why[160];            /* off route: why */
 } PLAYBACK_RESULT;
 
+/* The environment variable Record (Restart), and a pick in Developer >
+ * Missions with Record ticked, carry over the restart: 1 records. */
+#define PLAYBACK_RECORD_VAR "JSRF_RECORD"
+
+/* First of all as the engine starts (port/main.c), before Missions and
+ * Photo mode read their variables: a recording about to be played (JSRF_PLAY
+ * or JSRF_PLAY_MENU, left for playback_start) that has a start line puts
+ * its start in their place, as Developer > Missions' pick does
+ * (JSRF_START_MISSION, JSRF_START_SKATER, JSRF_START_LOAD, JSRF_START_PHOTO). */
+void playback_first(void);
+
 /* As the engine starts (port/main.c), before the game: a recording or a
  * playback asked for by the environment, which is then taken out of it, so
  * File > Restart starts afresh: JSRF_RECORD=1 (Developer > Playback >
- * Record), JSRF_PLAY=<folder> (the launcher's --play, which closes the game
- * at the end) or JSRF_PLAY_MENU=<folder> (Developer > Playback > Play, which
- * gives it back). Then Developer > Playback's rows. */
+ * Record, or a mission picked with Developer > Missions > Record ticked),
+ * JSRF_PLAY=<folder> (the launcher's --play, which closes the game at the
+ * end) or JSRF_PLAY_MENU=<folder> (Developer > Playback > Play, which gives
+ * it back). Then Developer > Playback's rows. */
 void playback_start(void);
 
-/* A recording into folder, made if need be, or a playback of the one in it
- * (exit_at_end: close the game at the end, or when off route). 0 when it
- * can't be: the log says why. */
+/* Developer > Missions > Record's tick (port/missions_menu.c adds the row),
+ * and flipping it: while it is ticked, a mission or Load game picked there
+ * restarts with PLAYBACK_RECORD_VAR. Ticked when a run recording from a
+ * mission writes its start line, so it stays ticked from pick to pick. */
+int playback_missions_ticked(void);
+void playback_missions_flip(void);
+
+/* A recording into folder, made if need be, with a start line when this run
+ * was started at a mission or Load Game (missions_started), or a playback of
+ * the one in it (exit_at_end: close the game at the end, or when off route).
+ * 0 when it can't be: the log says why. */
 int playback_record(const char *folder);
 int playback_play(const char *folder, int exit_at_end);
 

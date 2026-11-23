@@ -20,6 +20,7 @@
 #endif
 
 #include "pad.h"
+#include "photo_mode.h"
 #if defined(XBOXRECOMP_MENU)
 #  include "menu.h"
 #endif
@@ -52,6 +53,9 @@ typedef struct { uint32_t frame; FREECAM_SETTINGS fc; } PbFreecam;
 typedef struct { uint32_t frame; int dx, dy; } PbMouse;
 typedef struct { uint32_t frame; unsigned ticks; } PbCamera;   /* Camera's ticks, a bit each */
 typedef struct { void *at; int n, cap; } PbList;
+/* Where a run started (a recording's start line): set, at Load Game or a
+ * mission (missions.h), with photo mode's tick. */
+typedef struct { int set, load, mission, skater, photo; uint32_t progress; } PbStart;
 
 static const char *const k_kind[PLAYBACK_ANCHOR_KINDS] = {
     "mission.bin", "mission.dat", "stage", "scene", "scene-end"
@@ -66,6 +70,8 @@ static uint32_t s_frame;                    /* the game's passes so far */
 static uint32_t s_reads[PLAYBACK_PORTS];    /* each port's reads in this pass */
 static char s_folder[1024];
 static int s_exit_hooked;
+static int s_missions_tick;                 /* Developer > Missions > Record */
+static int s_start_due;                     /* the start line not yet written (rec) */
 
 /* Both: whether the skater is idle, from what the game read; and the start
  * of a run, its frame 0 (a run starts before the game's first pass). */
@@ -109,6 +115,8 @@ static unsigned s_cam_player;               /* the player's ticks, as the last c
 static int s_anchor_next, s_check_next, s_idle_next;
 static int64_t s_offset;                    /* the frame played less the frame recorded */
 static uint32_t s_end, s_wait_from;
+static PbStart s_start;                     /* the recording's start line */
+static int s_start_check;                   /* this run's start not yet checked against it */
 static int s_exit_at_end, s_drift_run, s_armed[PLAYBACK_PORTS];
 static float s_drift_said = -1;
 static uint32_t s_packet[PLAYBACK_PORTS];
@@ -193,6 +201,66 @@ static void *add(PbList *l, size_t size)
     return (char *)l->at + (size_t)l->n++ * size;
 }
 
+/* ---- where a run started ------------------------------------------------ */
+
+/* This run's start, as Developer > Missions made it (missions.h), and photo
+ * mode's tick. */
+static PbStart start_now(void)
+{
+    PbStart st;
+    MISSIONS_START m;
+    memset(&st, 0, sizeof st);
+    if (missions_started(&m)) {
+        st.set = 1;
+        st.load = m.mission < 0;
+        st.mission = m.mission;
+        st.skater = m.skater;
+        st.progress = m.progress;
+        st.photo = photo_mode_ticked() != 0;
+    }
+    return st;
+}
+
+static int same_start(const PbStart *a, const PbStart *b)
+{
+    if (a->set != b->set) return 0;
+    if (!a->set) return 1;
+    if (a->load || b->load) return a->load == b->load && a->photo == b->photo;
+    return a->mission == b->mission && a->skater == b->skater && a->photo == b->photo
+        && a->progress == b->progress;
+}
+
+/* For the log: "the game's own start", "Load Game", or "mission 0252,
+ * skater 6, progress 1A2B3C4D", with ", photo mode" when it was ticked. */
+static void say_start(const PbStart *st, char *b, size_t n)
+{
+    if (!st->set) snprintf(b, n, "the game's own start");
+    else if (st->load) snprintf(b, n, "Load Game%s", st->photo ? ", photo mode" : "");
+    else
+        snprintf(b, n, "mission %04d, skater %d, progress %08X%s", st->mission, st->skater, st->progress,
+                 st->photo ? ", photo mode" : "");
+}
+
+/* A start line's words after "start": 0 for one that can't be read. */
+static int read_start(const char *s, PbStart *st)
+{
+    char kind[16];
+    int used = 0;
+    memset(st, 0, sizeof st[0]);
+    if (sscanf(s, "%15s %n", kind, &used) != 1 || !used) return 0;
+    s += used;
+    if (!strcmp(kind, "load")) {
+        st->set = st->load = 1;
+        st->mission = st->skater = -1;
+        return sscanf(s, "%d", &st->photo) == 1 && (st->photo == 0 || st->photo == 1);
+    }
+    st->set = 1;
+    return !strcmp(kind, "mission")
+        && sscanf(s, "%d %d %d %x", &st->mission, &st->skater, &st->photo, &st->progress) == 4
+        && st->mission >= 0 && st->mission <= 9999 && st->skater >= -1 && st->skater < MISSIONS_CHARACTERS
+        && (st->photo == 0 || st->photo == 1);
+}
+
 /* ---- the end of a run -------------------------------------------------- */
 
 static const char *outcome(void)
@@ -239,11 +307,34 @@ static void off_route(const char *fmt, ...)
     play_over(PLAYBACK_OFF_ROUTE);
 }
 
+/* The recording's file for its next line, with the start line first: where
+ * this run started, written once Developer > Missions has started it or
+ * refused (missions_paths, before the game's first pass). */
+static FILE *rec(void)
+{
+    if (s_start_due) {
+        PbStart st = start_now();
+        char said[96];
+        s_start_due = 0;
+        if (st.load) fprintf(s_out, "start load %d\n", st.photo);
+        else if (st.set)
+            fprintf(s_out, "start mission %04d %d %d %08X\n", st.mission, st.skater, st.photo, st.progress);
+        /* A run started at a mission records its next pick too. */
+        if (st.set) {
+            s_missions_tick = 1;
+            say_start(&st, said, sizeof said);
+            fprintf(stderr, "[PLAYBACK] this run started at %s (Developer > Missions): so will its plays\n",
+                    said);
+        }
+    }
+    return s_out;
+}
+
 /* Not under the lock. */
 static void end_recording(const char *why)
 {
     if (!s_out) return;
-    fprintf(s_out, "end %u\n", s_frame);
+    fprintf(rec(), "end %u\n", s_frame);
     fclose(s_out);
     s_out = NULL;
     s_res.state = PLAYBACK_RECORDED;
@@ -302,6 +393,7 @@ int playback_record(const char *folder)
     if (utc)
         fprintf(s_out, "# started %04d-%02d-%02d %02d:%02d:%02d UTC\n", utc->tm_year + 1900,
                 utc->tm_mon + 1, utc->tm_mday, utc->tm_hour, utc->tm_min, utc->tm_sec);
+    s_start_due = 1;
     fflush(s_out);
     run_start();
     s_res.state = PLAYBACK_RECORDING;
@@ -332,10 +424,10 @@ static void record_pad(uint32_t port, const XBOX_GAMEPAD *p, int none)
     s_last[port].none = none;
     s_last[port].pad = *p;
     if (none) {
-        fprintf(s_out, "pad %u.%u %u none\n", s_frame, s_reads[port], port);
+        fprintf(rec(), "pad %u.%u %u none\n", s_frame, s_reads[port], port);
         return;
     }
-    fprintf(s_out, "pad %u.%u %u %04X %02X%02X%02X%02X%02X%02X%02X%02X %d %d %d %d\n", s_frame,
+    fprintf(rec(), "pad %u.%u %u %04X %02X%02X%02X%02X%02X%02X%02X%02X %d %d %d %d\n", s_frame,
             s_reads[port], port, p->wButtons, p->bAnalogButtons[0], p->bAnalogButtons[1],
             p->bAnalogButtons[2], p->bAnalogButtons[3], p->bAnalogButtons[4], p->bAnalogButtons[5],
             p->bAnalogButtons[6], p->bAnalogButtons[7], p->sThumbLX, p->sThumbLY, p->sThumbRX,
@@ -351,7 +443,7 @@ static void put_number(double v)
         snprintf(b, sizeof b, "%.*g", digits, v);
         if (strtod(b, NULL) == v) break;
     }
-    fprintf(s_out, " %.*g", digits, v);
+    fprintf(rec(), " %.*g", digits, v);
 }
 
 static void record_freecam(const FREECAM_SETTINGS *fc)
@@ -359,13 +451,13 @@ static void record_freecam(const FREECAM_SETTINGS *fc)
     if (s_fc_last.seen && same_freecam(&s_fc_last.fc, fc)) return;
     s_fc_last.seen = 1;
     s_fc_last.fc = *fc;
-    fprintf(s_out, "freecam %u %d %d %d", s_frame, fc->on, fc->invert_x, fc->invert_y);
+    fprintf(rec(), "freecam %u %d %d %d", s_frame, fc->on, fc->invert_x, fc->invert_y);
     put_number(fc->sens_x);
     put_number(fc->sens_y);
     put_number(fc->deadzone);
-    fprintf(s_out, " %d %d", fc->centre, fc->mouse);
+    fprintf(rec(), " %d %d", fc->centre, fc->mouse);
     put_number(fc->mouse_sens);
-    fputc('\n', s_out);
+    fputc('\n', rec());
 }
 
 /* Input > Behaviour > Camera's ticks, three of them (camera_scenes.h). */
@@ -375,7 +467,7 @@ static void record_camscenes(unsigned ticks)
     if (s_cam_last.seen && s_cam_last.ticks == ticks) return;
     s_cam_last.seen = 1;
     s_cam_last.ticks = ticks;
-    fprintf(s_out, "camera %u %u %u %u %d\n", s_frame, ticks & 1u, (ticks >> 1) & 1u, (ticks >> 2) & 1u,
+    fprintf(rec(), "camera %u %u %u %u %d\n", s_frame, ticks & 1u, (ticks >> 1) & 1u, (ticks >> 2) & 1u,
             PLAYBACK_BACK_OUT);
 }
 
@@ -452,12 +544,13 @@ static void forget(void)
  * first that can't be read or goes back in time. */
 static int load(const char *path)
 {
-    char line[PB_LINE], word[16], version[64], platform[16];
+    char line[PB_LINE], word[16] = "", version[64], platform[16];
     uint32_t last = 0, port;
-    int n = 0, format = 0, ended = 0;
+    int n = 0, format = 0, ended = 0, framed = 0;
     FILE *f = fopen(path, "r");
     forget();
     s_end = 0;
+    memset(&s_start, 0, sizeof s_start);
     if (!f) { fprintf(stderr, "[PLAYBACK] can't read %s: nothing is played\n", path); return 0; }
     while (fgets(line, sizeof line, f)) {
         const char *s = line;
@@ -480,6 +573,12 @@ static int load(const char *path)
                         version, platform, JSRF_VERSION);
             continue;
         }
+        /* Once, before any line with a frame. */
+        if (!strcmp(word, "start")) {
+            if (!(ok = !framed && !s_start.set && read_start(s, &s_start))) goto bad;
+            continue;
+        }
+        framed = 1;
         if (!strcmp(word, "pad")) {
             PbPad p, *to;
             ok = read_pad(s, &p, &port);
@@ -544,7 +643,9 @@ bad:
         if (!ok || !format) {
             fprintf(stderr, "[PLAYBACK] %s, line %d: %s; nothing is played\n", path, n,
                     !format ? "not a recording (no \"" PB_FORMAT "\" first)"
-                    : ended ? "a line after the end" : "can't be read, or goes back in time");
+                    : ended ? "a line after the end"
+                    : !strcmp(word, "start") ? "a start line that can't be read, comes twice or after a frame"
+                    : "can't be read, or goes back in time");
             fclose(f);
             forget();
             return 0;
@@ -591,6 +692,7 @@ int playback_play(const char *folder, int exit_at_end)
     s_exit_at_end = exit_at_end;
     s_drift_run = 0;
     s_drift_said = -1;
+    s_start_check = 1;
     s_res.state = PLAYBACK_PLAYING;
     s_res.anchors = s_anchors.n;
     hook_exit();
@@ -617,10 +719,29 @@ static uint32_t recorded_frame(void)
     return f < 0 ? 0u : (uint32_t)f;
 }
 
+/* At the first pass of a play: this run started where the recording did
+ * (playback_first put a start line's start in place), as or with the same,
+ * or it is off route before anything is pressed. Missions has refused, or
+ * not, by then (missions_paths). */
+static int play_started_there(void)
+{
+    PbStart now = start_now();
+    char rec[96], here[96];
+    if (same_start(&s_start, &now)) return 1;
+    say_start(&s_start, rec, sizeof rec);
+    say_start(&now, here, sizeof here);
+    off_route("the recording started at %s; this run at %s", rec, here);
+    return 0;
+}
+
 /* At the start of each pass: the next anchor waited for, or past the end. */
 static void play_pass(void)
 {
     uint32_t f = recorded_frame();
+    if (s_start_check) {
+        s_start_check = 0;
+        if (!play_started_there()) return;
+    }
     if (s_res.state == PLAYBACK_PLAYING && s_anchor_next < s_anchors.n
         && f >= PB_ANCHOR[s_anchor_next].frame) {
         const PbAnchor *a = &PB_ANCHOR[s_anchor_next];
@@ -876,7 +997,7 @@ int playback_mouse(int *dx, int *dy)
     int played = 0;
     pb_lock();
     if (playing()) played = play_mouse(dx, dy);
-    else if (s_out && (*dx || *dy)) fprintf(s_out, "mouse %u %d %d\n", s_frame, *dx, *dy);
+    else if (s_out && (*dx || *dy)) fprintf(rec(), "mouse %u %d %d\n", s_frame, *dx, *dy);
     pb_unlock();
     return played;
 }
@@ -905,7 +1026,7 @@ void playback_anchor(PLAYBACK_ANCHOR kind, uint32_t value, uint32_t *random)
     if ((unsigned)kind >= PLAYBACK_ANCHOR_KINDS) return;
     pb_lock();
     if (s_out) {
-        fprintf(s_out, "anchor %u %s %08X %08X\n", s_frame, k_kind[kind], value, random ? *random : 0u);
+        fprintf(rec(), "anchor %u %s %08X %08X\n", s_frame, k_kind[kind], value, random ? *random : 0u);
         fflush(s_out);
     } else if (playing())
         play_anchor(kind, value, random);
@@ -929,14 +1050,14 @@ void playback_view(float position[3], uint32_t *turn, uint32_t camera)
     still = s_frame - s_still_since >= PLAYBACK_IDLE_FRAMES;
     if (s_out) {
         if (s_frame >= s_next_check) {
-            fprintf(s_out, "check %u %.9g %.9g %.9g %08X %u\n", s_frame, position[0], position[1],
+            fprintf(rec(), "check %u %.9g %.9g %.9g %08X %u\n", s_frame, position[0], position[1],
                     position[2], *turn, camera);
             fflush(s_out);
             s_next_check = s_frame + PLAYBACK_CHECK_EVERY;
             s_res.checks++;
         }
         if (still && s_idle_said != s_still_since + 1) {
-            fprintf(s_out, "idle %u %.9g %.9g %.9g %08X %u\n", s_frame, position[0], position[1],
+            fprintf(rec(), "idle %u %.9g %.9g %.9g %08X %u\n", s_frame, position[0], position[1],
                     position[2], *turn, camera);
             s_idle_said = s_still_since + 1;
         }
@@ -1002,10 +1123,10 @@ static void list_recordings(const char *folder)
 
 static void record_pick(void)
 {
-    set_env("JSRF_RECORD", "1");
+    set_env(PLAYBACK_RECORD_VAR, "1");
     fprintf(stderr, "[PLAYBACK] Record picked in Developer > Playback: restarting\n");
     nv_window_restart();                /* does not return when it restarts */
-    set_env("JSRF_RECORD", "");
+    set_env(PLAYBACK_RECORD_VAR, "");
     fprintf(stderr, "[PLAYBACK] Record: the game couldn't restart; nothing is recorded\n");
 }
 
@@ -1064,6 +1185,64 @@ static void rows(void)
 }
 #endif
 
+int playback_missions_ticked(void) { return s_missions_tick; }
+
+void playback_missions_flip(void)
+{
+    s_missions_tick = !s_missions_tick;
+    fprintf(stderr, "[PLAYBACK] Developer > Missions > Record %s\n", s_missions_tick ? "ticked" : "unticked");
+}
+
+/* The start line of the recording in folder, if it has one before its first
+ * frame (as load() takes it), into *st; 0 when the file can't be read as a
+ * recording that far, which playback_play then says. */
+static int start_of(const char *folder, PbStart *st)
+{
+    char path[1100], line[PB_LINE], word[16];
+    int format = 0, ok = 0;
+    FILE *f;
+    memset(st, 0, sizeof *st);
+    snprintf(path, sizeof path, "%s/" PLAYBACK_FILE, folder);
+    if (!(f = fopen(path, "r"))) return 0;
+    while (fgets(line, sizeof line, f)) {
+        const char *s = line;
+        int used = 0;
+        while (*s == ' ' || *s == '\t') s++;
+        if (!*s || *s == '#' || *s == '\r' || *s == '\n') continue;
+        if (!format) {
+            if (!(format = !strncmp(s, PB_FORMAT, strlen(PB_FORMAT)))) break;
+            continue;
+        }
+        if (sscanf(s, "%15s %n", word, &used) != 1) break;
+        if (!strcmp(word, "version")) continue;
+        ok = strcmp(word, "start") || read_start(s + used, st);
+        break;
+    }
+    fclose(f);
+    return format && ok;
+}
+
+/* Missions' variables, as Developer > Missions' pick sets them
+ * (missions_menu.c), and photo mode's. */
+void playback_first(void)
+{
+    const char *p = getenv("JSRF_PLAY"), *m = getenv("JSRF_PLAY_MENU"), *folder = p && *p ? p : m;
+    PbStart st;
+    char v[16], said[96];
+    if (!folder || !*folder || !start_of(folder, &st) || !st.set) return;
+    if (getenv("JSRF_START_MISSION") || getenv("JSRF_START_LOAD"))
+        fprintf(stderr, "[PLAYBACK] JSRF_START_MISSION or JSRF_START_LOAD replaced by the recording's start\n");
+    snprintf(v, sizeof v, "%04d", st.mission);
+    set_env("JSRF_START_MISSION", st.load ? "" : v);
+    snprintf(v, sizeof v, "%d", st.skater);
+    set_env("JSRF_START_SKATER", st.load || st.skater < 0 ? "" : v);
+    set_env("JSRF_START_LOAD", st.load ? "1" : "");
+    set_env(PHOTO_START_VAR, st.photo ? "1" : "");
+    say_start(&st, said, sizeof said);
+    fprintf(stderr, "[PLAYBACK] the recording to play started at %s: the game starts there, as Developer >"
+            " Missions starts it\n", said);
+}
+
 /* A variable read once and taken out of the environment, so the game's own
  * restart (File > Restart) starts afresh: its value, kept, or NULL. */
 static const char *take_env(const char *name, char *buf, size_t n)
@@ -1078,22 +1257,22 @@ static const char *take_env(const char *name, char *buf, size_t n)
 void playback_start(void)
 {
     char rec[16], play[1024], menu[1024], folder[1024], path[1100];
-    const char *r = take_env("JSRF_RECORD", rec, sizeof rec);
+    const char *r = take_env(PLAYBACK_RECORD_VAR, rec, sizeof rec);
     const char *p = take_env("JSRF_PLAY", play, sizeof play);
     const char *m = take_env("JSRF_PLAY_MENU", menu, sizeof menu);
 #if defined(XBOXRECOMP_MENU) && defined(NV2A_GL_USE_SDL)
     rows();
 #endif
     if (p || m) {
-        if (r) fprintf(stderr, "[PLAYBACK] JSRF_RECORD left out: a recording is played, not made\n");
+        if (r) fprintf(stderr, "[PLAYBACK] " PLAYBACK_RECORD_VAR " left out: a recording is played, not made\n");
         playback_play(p ? p : m, p != NULL);
         return;
     }
     if (!r) return;
     recordings_folder(folder, sizeof folder);
     if (!folder[0] || !make_folder(folder)) {
-        fprintf(stderr, "[PLAYBACK] JSRF_RECORD: no folder for recordings beside the settings file (%s);"
-                " nothing is recorded\n", folder[0] ? folder : "none");
+        fprintf(stderr, "[PLAYBACK] " PLAYBACK_RECORD_VAR ": no folder for recordings beside the settings file"
+                " (%s); nothing is recorded\n", folder[0] ? folder : "none");
         return;
     }
     {

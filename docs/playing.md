@@ -552,7 +552,10 @@ running while it is open, but your input goes to the menu.
     characters, Garam among them, Yoyo to begin with, as in a new game.
     Load game, between two lines below it, restarts the game at the title's
     Load Game screen, with the saves of the runs started here. Below it,
-    with a line under it, is [Photo mode](#photo-mode)'s tick. Below that,
+    with a line under them, are [Photo mode](#photo-mode)'s tick and
+    Record's. With Record ticked, a mission or Load game picked here is
+    recorded from its first frame, as Playback's Record (below) does, and
+    the recording plays back from the same start. Below that,
     each level, in story order, as "Dogenzaka Hill (stg12)", is a list of
     its missions, each with its number, its kind and, for a race or a
     battle, who it is against, as "0252 (flag game, Rapid99)". The garage
@@ -566,8 +569,8 @@ running while it is open, but your input goes to the menu.
     the story up to that mission done instead. A run started here keeps its saves in `mission-saves` in the save folder,
     apart from your own, which it never opens. File > Restart afterwards
     starts the game as usual. Character is kept in `developer.cfg`; Photo
-    mode is kept from pick to pick, but not after File > Restart or when
-    the game starts afresh.
+    mode and Record are kept from pick to pick, but not after File > Restart
+    or when the game starts afresh.
   - **Playback:** Records what you press, and plays a recording back, for
     testing. Record (Restart) asks first, then restarts the game and
     records every press the game reads, on every controller, from its
@@ -603,6 +606,12 @@ running while it is open, but your input goes to the menu.
     skater ends up far from where they were, or the game loads something
     the recording didn't, playback stops, and the log says where. Start a
     recording from the same saves and settings you will play it with.
+    A recording made from Developer > Missions with Record ticked notes
+    the mission, the character and Photo mode it started with, and the
+    story's progress it started from: playing it starts the game at that
+    mission again, as the pick did, and stops at once if the mission
+    doesn't start there with the same progress (from the same test build's
+    `start-states.txt`), and the log says why.
     Lines starting `[PLAYBACK]` in the log say what it did, with a summary
     at the end.
   - **Experimental:** Changes to how the game runs, to try out, when there

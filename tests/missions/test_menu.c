@@ -14,7 +14,8 @@
  * it; "pick_fails" has the restart come back; "load" and "load_fails" do the
  * same with Load game; "photo" ticks Photo mode then picks a mission,
  * "photo_fails" has that restart come back, and "photo_load" ticks it then
- * picks Load game; "no_folder" has no mission folder; "no_names" no names or
+ * picks Load game; "record", "record_fails" and "record_load" the same with
+ * Record; "no_folder" has no mission folder; "no_names" no names or
  * order of the characters in guest memory; "bad_order" an order that names a
  * character twice. A "check" line for each check. */
 #include <stdio.h>
@@ -23,6 +24,7 @@
 #include "kernel.h"
 #include "menu.h"
 #include "missions.h"
+#include "playback.h"
 
 #define RAM          0x240000u   /* the made-up guest memory */
 #define LEVEL_TABLE  0x21B988u   /* where the game has its tables */
@@ -162,10 +164,13 @@ void xbox_path_set_user_dir(const char *dir) { (void)dir; }
 
 /* ---- the menu, the restart and Photo mode's tick, stood in for ---- */
 
-/* port/photo_mode.c's tick, which tests/photo_mode drives. */
-static int s_photo;
+/* port/photo_mode.c's tick, which tests/photo_mode drives, and
+ * port/playback.c's Record, which tests/playback drives. */
+static int s_photo, s_record;
 int photo_mode_ticked(void) { return s_photo; }
 void photo_mode_flip(void) { s_photo = !s_photo; }
+int playback_missions_ticked(void) { return s_record; }
+void playback_missions_flip(void) { s_record = !s_record; }
 
 static XBOX_MENU_ITEM s_rows[MAX_ROWS];
 static int s_nrows;
@@ -200,11 +205,12 @@ void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count)
 void nv_window_restart(void)
 {
     const char *m = getenv("JSRF_START_MISSION"), *k = getenv("JSRF_START_SKATER"),
-               *l = getenv("JSRF_START_LOAD"), *p = getenv("JSRF_START_PHOTO");
-    printf("restart: JSRF_START_MISSION=%s JSRF_START_SKATER=%s JSRF_START_LOAD=%s JSRF_START_PHOTO=%s\n",
-           m ? m : "-", k ? k : "-", l ? l : "-", p ? p : "-");
+               *l = getenv("JSRF_START_LOAD"), *p = getenv("JSRF_START_PHOTO"), *r = getenv(PLAYBACK_RECORD_VAR);
+    printf("restart: JSRF_START_MISSION=%s JSRF_START_SKATER=%s JSRF_START_LOAD=%s JSRF_START_PHOTO=%s"
+           " JSRF_RECORD=%s\n", m ? m : "-", k ? k : "-", l ? l : "-", p ? p : "-", r ? r : "-");
     fflush(stdout);
-    if (strcmp(s_case, "pick_fails") && strcmp(s_case, "load_fails") && strcmp(s_case, "photo_fails"))
+    if (strcmp(s_case, "pick_fails") && strcmp(s_case, "load_fails") && strcmp(s_case, "photo_fails")
+        && strcmp(s_case, "record_fails"))
         exit(s_failed);                 /* a restart doesn't come back */
 }
 
@@ -302,6 +308,17 @@ int main(int argc, char **argv)
         if (!strcmp(s_case, "photo_load")) s_rows[g].run();
         else s_rows[l].pick_with(s_rows[l].data, 0);    /* 0110 */
         check("JSRF_START_PHOTO taken out again", !getenv("JSRF_START_PHOTO"));
+    }
+    if (!strncmp(s_case, "record", 6)) {
+        int t = row_named("Record"), g = row_named("Load game"), l = row_named("Name 2 (stg12)");
+        check("the rows there", t >= 0 && g >= 0 && l >= 0);
+        if (t < 0 || g < 0 || l < 0) return 1;
+        check("Record not ticked to begin with", s_rows[t].state() == 0);
+        s_rows[t].run();
+        check("Record ticked", s_rows[t].state() == 1);
+        if (!strcmp(s_case, "record_load")) s_rows[g].run();
+        else s_rows[l].pick_with(s_rows[l].data, 0);    /* 0110 */
+        check("JSRF_RECORD taken out again", !getenv(PLAYBACK_RECORD_VAR));
     }
     if (!strcmp(s_case, "load") || !strcmp(s_case, "load_fails")) {
         int g = row_named("Load game");

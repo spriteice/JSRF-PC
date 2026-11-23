@@ -24,9 +24,16 @@ before; one reached 20 frames early skips to it. Off route: the skater
 pushed 100 units off, a stage the recording doesn't have next, and an
 anchor never reached. A restart with nothing running says nothing; one
 while recording ends the recording, kept, and one while playing stops it,
-with its summary. The free camera a play puts in place is in the log
-with auto centre's level by name, as [FREECAM] gives it. A real pad held
-from the start does nothing, and
+with its summary. A run started from Developer > Missions: its recording
+starts with a line saying where, before its first frame, and Record is
+ticked from then; about to be played, it puts that start in Missions' and
+photo mode's variables, and plays on route there, at a mission and at Load
+Game; started elsewhere, with other progress, or from the game's own start,
+it is off route at its first frame, and so is a recording from the game's
+own start played in a run from a mission; a start line that can't be read,
+comes twice or after a frame is refused. The free camera a play puts in
+place is in the log with auto centre's level by name, as [FREECAM] gives
+it. A real pad held from the start does nothing, and
 pressed once let go of, hands the game back. With the free camera: turned
 on by F8, steered by the right stick and the mouse, its sensitivity, invert,
 auto centre and mouse sensitivity changed in the menu, off by R3 and on by
@@ -95,6 +102,15 @@ with tempfile.TemporaryDirectory(prefix="playback-") as directory:
             "Stop recording: nothing is being recorded",
             "recording ended at frame 40 (the game restarted)",
             "summary: stopped: the game restarted at frame 25;",
+            "this run started at mission 0252, skater 6, progress 1A2B3C4D, photo mode (Developer > Missions):"
+            " so will its plays",
+            "the recording to play started at mission 0252, skater 6, progress 1A2B3C4D, photo mode: the game"
+            " starts there, as Developer > Missions starts it",
+            "the recording to play started at Load Game: the game starts there",
+            "JSRF_START_MISSION or JSRF_START_LOAD replaced by the recording's start",
+            "frame 1: off route: the recording started at mission 0252",
+            "a start line that can't be read, comes twice or after a frame",
+            "Developer > Missions > Record unticked",
             "the free camera was changed (F8, the pad or the menu): the game is yours",
             "the mouse was moved: the game is yours",
             "(yours again, as playback ended)",

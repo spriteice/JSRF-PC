@@ -162,12 +162,28 @@ int main(int argc, char **argv)
     put(VARS + 4u * V_SKATER, 0x55u);
     if (!strcmp(s_case, "no_game_manager")) put(GAME_PTR, 0);
 
+    const char *load_var = getenv("JSRF_START_LOAD");
+    int asked_load = load_var && !strcmp(load_var, "1");
     missions_start();
     check("JSRF_START_MISSION taken out", getenv("JSRF_START_MISSION") == NULL);
     check("JSRF_START_STATE taken out", getenv("JSRF_START_STATE") == NULL);
     check("JSRF_START_SKATER taken out", getenv("JSRF_START_SKATER") == NULL);
     check("JSRF_START_LOAD taken out", getenv("JSRF_START_LOAD") == NULL);
     missions_paths("save");
+    /* What a recording made now would note (port/playback.c): run.py
+     * compares each case's progress with the others'. */
+    {
+        MISSIONS_START st;
+        int at = missions_started(&st);
+        if (!strcmp(s_case, "refused") || !strcmp(s_case, "no_file") || !strcmp(s_case, "nothing"))
+            check("not started at anything", !at);
+        else if (asked_load)
+            check("started at Load Game", at && st.mission == -1 && st.skater == -1 && st.progress == 0);
+        else {
+            check("started at 0110", at && st.mission == 110);
+            printf("started: skater %d, progress %08X\n", at ? st.skater : -2, at ? (unsigned)st.progress : 0u);
+        }
+    }
 
     if (!strcmp(s_case, "order")) {
         /* The later states before the title: nothing is written. */

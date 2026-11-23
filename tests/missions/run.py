@@ -33,7 +33,13 @@ written: a mission that isn't four digits, a chapter outside the story's 1 to
 doesn't know, a flag, skater, entrance, count or story out of range, a field
 given twice, a list it can't read, another mission's line, and a mission
 whose file isn't there. A state line or a skater without a mission is left
-alone, and with neither nothing is said.
+alone, and with neither nothing is said. What each start says it started
+at, for input playback (missions_started): nothing when refused or not
+asked for, Load Game, or the mission with the skater given; and its
+progress hashed the same for the same fields however the line came (the
+variable, start-states.txt, with its own number or another line ending), 0
+for New Game's (no line, or a line that gives nothing), and its own for
+each other line.
 
 A start at Load Game (JSRF_START_LOAD=1): the title's part as for a mission,
 but Load Game chosen, the saves apart, no mission's file asked for, and nothing
@@ -53,10 +59,10 @@ marks it off the story's way. Without the game's names, levels go by their
 sets and characters by number. Character is all 24 characters, in the
 game's order from its table (by number when the table isn't one), Galam
 shown as Garam, kept in developer.cfg; then Load game between two lines;
-then Photo mode, a tick, and a line below it. A pick asks first, sets the
-start's variables (JSRF_START_PHOTO=1 too while Photo mode is ticked, for a
-mission or Load game) and restarts, or takes them out again when the
-restart comes back. Every file it opens is closed, read
+then Photo mode, a tick, and Record, a tick, and a line below them. A pick
+asks first, sets the start's variables (JSRF_START_PHOTO=1 too while Photo
+mode is ticked, and JSRF_RECORD=1 while Record is, for a mission or Load
+game) and restarts, or takes them out again when the restart comes back. Every file it opens is closed, read
 only.
 Requires GCC on PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
@@ -283,6 +289,7 @@ def rows(skaters=CHARACTERS, ticked=0, named=True):
             " unsaved progress?\"",
             "row: SEPARATOR - in Missions",
             "row: TOGGLE Photo mode in Missions [ticked 0]",
+            "row: TOGGLE Record in Missions [ticked 0]",
             "row: SEPARATOR - in Missions",
             "row: CHOICE Garage (stg00) in Missions: 0100 (scene) | 0197 (scene, not on the story's way)"
             " [ticked -1]" + CONFIRM,
@@ -324,14 +331,14 @@ menu_cases = {
                   "[MISSION] Developer > Missions: no story mission files in D:\\Media\\Mission; not shown\n"),
     "pick": ("pick", LINES, None,
              rows() + [f"restart: JSRF_START_MISSION=0112 JSRF_START_SKATER={ORDER[1]} JSRF_START_LOAD=-"
-                        " JSRF_START_PHOTO=-"],
+                        " JSRF_START_PHOTO=- JSRF_RECORD=-"],
              SUMMARY.format(who="Char6")
              + f"[MISSION] Developer > Missions > Character: Char{ORDER[1]} (skater {ORDER[1]}), from the next"
              " mission picked\n"
              f"[MISSION] 0112 picked in Developer > Missions, skater {ORDER[1]}: restarting\n"),
     "pick_fails": ("pick_fails", LINES, None,
                    rows() + [f"restart: JSRF_START_MISSION=0112 JSRF_START_SKATER={ORDER[1]} JSRF_START_LOAD=-"
-                              " JSRF_START_PHOTO=-"],
+                              " JSRF_START_PHOTO=- JSRF_RECORD=-"],
                    SUMMARY.format(who="Char6")
                    + f"[MISSION] Developer > Missions > Character: Char{ORDER[1]} (skater {ORDER[1]}), from the"
                    " next mission picked\n"
@@ -339,31 +346,61 @@ menu_cases = {
                    "[MISSION] 0112: the game couldn't restart; nothing started\n"),
     "menu_load": ("load", LINES, None,
                   rows() + ["restart: JSRF_START_MISSION=- JSRF_START_SKATER=- JSRF_START_LOAD=1"
-                            " JSRF_START_PHOTO=-"],
+                            " JSRF_START_PHOTO=- JSRF_RECORD=-"],
                   SUMMARY.format(who="Char6") + "[MISSION] Load game picked in Developer > Missions: restarting\n"),
     "menu_load_fails": ("load_fails", LINES, None,
                    rows() + ["restart: JSRF_START_MISSION=- JSRF_START_SKATER=- JSRF_START_LOAD=1"
-                             " JSRF_START_PHOTO=-"],
+                             " JSRF_START_PHOTO=- JSRF_RECORD=-"],
                    SUMMARY.format(who="Char6") + "[MISSION] Load game picked in Developer > Missions: restarting\n"
                    "[MISSION] Load game: the game couldn't restart; nothing started\n"),
     # Photo mode ticked: carried over a pick's restart, and taken out again
     # when the restart comes back.
     "photo": ("photo", LINES, None,
-              rows() + ["restart: JSRF_START_MISSION=0110 JSRF_START_SKATER=6 JSRF_START_LOAD=- JSRF_START_PHOTO=1"],
+              rows() + ["restart: JSRF_START_MISSION=0110 JSRF_START_SKATER=6 JSRF_START_LOAD=- JSRF_START_PHOTO=1"
+                        " JSRF_RECORD=-"],
               SUMMARY.format(who="Char6")
               + "[MISSION] 0110 picked in Developer > Missions, skater 6, in photo mode: restarting\n"),
     "photo_fails": ("photo_fails", LINES, None,
                     rows() + ["restart: JSRF_START_MISSION=0110 JSRF_START_SKATER=6 JSRF_START_LOAD=-"
-                              " JSRF_START_PHOTO=1"],
+                              " JSRF_START_PHOTO=1 JSRF_RECORD=-"],
                     SUMMARY.format(who="Char6")
                     + "[MISSION] 0110 picked in Developer > Missions, skater 6, in photo mode: restarting\n"
                     "[MISSION] 0110: the game couldn't restart; nothing started\n"),
     "photo_load": ("photo_load", LINES, None,
                    rows() + ["restart: JSRF_START_MISSION=- JSRF_START_SKATER=- JSRF_START_LOAD=1"
-                             " JSRF_START_PHOTO=1"],
+                             " JSRF_START_PHOTO=1 JSRF_RECORD=-"],
                    SUMMARY.format(who="Char6")
                    + "[MISSION] Load game picked in Developer > Missions, in photo mode: restarting\n"),
+    # Record ticked: JSRF_RECORD=1 carried over a pick's restart, and taken
+    # out again when the restart comes back.
+    "record": ("record", LINES, None,
+               rows() + ["restart: JSRF_START_MISSION=0110 JSRF_START_SKATER=6 JSRF_START_LOAD=- JSRF_START_PHOTO=-"
+                         " JSRF_RECORD=1"],
+               SUMMARY.format(who="Char6")
+               + "[MISSION] 0110 picked in Developer > Missions, skater 6, recording: restarting\n"),
+    "record_fails": ("record_fails", LINES, None,
+                     rows() + ["restart: JSRF_START_MISSION=0110 JSRF_START_SKATER=6 JSRF_START_LOAD=-"
+                               " JSRF_START_PHOTO=- JSRF_RECORD=1"],
+                     SUMMARY.format(who="Char6")
+                     + "[MISSION] 0110 picked in Developer > Missions, skater 6, recording: restarting\n"
+                     "[MISSION] 0110: the game couldn't restart; nothing started\n"),
+    "record_load": ("record_load", LINES, None,
+                    rows() + ["restart: JSRF_START_MISSION=- JSRF_START_SKATER=- JSRF_START_LOAD=1"
+                              " JSRF_START_PHOTO=- JSRF_RECORD=1"],
+                    SUMMARY.format(who="Char6")
+                    + "[MISSION] Load game picked in Developer > Missions, recording: restarting\n"),
 }
+
+# What each start notes for a recording (missions_started), by the case: the
+# skater given, and its progress's hash. The same progress hashes the same
+# however its line came or is written; none, or a line that gives nothing,
+# is New Game's, 0; every other line its own.
+FULL_CASES = ["full", "own_line", "changed", "lines", "lines_crlf", "lines_last", "lines_env_wins"]
+NEW_GAME_CASES = ["no_state", "order", "skater", "skater_locked", "skater_last", "lines_none", "lines_bare",
+                  "lines_empty", "lines_too_big", "no_game_manager", "load_refused_mission"]
+OTHER_CASES = ["exit_names_none", "no_entrance", "story_off", "skater_line"]
+SKATERS = {"skater": 2, "skater_locked": 3, "skater_last": 23, "skater_line": 6, "lines_crlf": 1}
+started = {}
 
 failed = 0
 with tempfile.TemporaryDirectory(prefix="missions-") as directory:
@@ -408,6 +445,10 @@ with tempfile.TemporaryDirectory(prefix="missions-") as directory:
         log = log.replace("{folder}", str(folder) + os.sep)
         problems = [] if result.returncode == 0 else [f"exit {result.returncode}"]
         problems += [line for line in result.stdout.splitlines() if "FAILED" in line]
+        for line in result.stdout.splitlines():
+            if line.startswith("started: "):
+                skater, progress = line[len("started: skater "):].split(", progress ")
+                started[case] = (int(skater), progress)
         if result.stderr != log:
             problems.append(f"log was {result.stderr!r}, wanted {log!r}")
         print(f"{case}: {'ok' if not problems else 'FAILED'}")
@@ -432,6 +473,25 @@ with tempfile.TemporaryDirectory(prefix="missions-") as directory:
         for problem in problems:
             print(f"  {problem}")
         failed += bool(problems)
+
+    # What each start would note for a recording.
+    problems = []
+    full = {started[c][1] for c in FULL_CASES if c in started}
+    if len(full) != 1 or len([c for c in FULL_CASES if c in started]) != len(FULL_CASES) or "00000000" in full:
+        problems.append(f"the full line's progress: {[(c, started.get(c)) for c in FULL_CASES]}")
+    for c in NEW_GAME_CASES:
+        if started.get(c, (0, ""))[1] != "00000000":
+            problems.append(f"{c}: progress {started.get(c)}, wanted New Game's, 00000000")
+    others = [started.get(c, (0, "00000000"))[1] for c in OTHER_CASES]
+    if len(set(others) | full) != len(others) + 1 or "00000000" in others:
+        problems.append(f"each other line's progress its own: {list(zip(OTHER_CASES, others))}")
+    for c, (skater, _) in started.items():
+        if skater != SKATERS.get(c, -1):
+            problems.append(f"{c}: skater {skater}, wanted {SKATERS.get(c, -1)}")
+    print(f"started: {'ok' if not problems else 'FAILED'}")
+    for problem in problems:
+        print(f"  {problem}")
+    failed += bool(problems)
 if failed:
     raise SystemExit(f"missions: {failed} case(s) failed")
-print(f"missions: all {len(cases) + len(menu_cases)} cases pass")
+print(f"missions: all {len(cases) + len(menu_cases)} cases pass, and what each start notes")

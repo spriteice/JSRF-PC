@@ -16,7 +16,8 @@ keeps), Keyboard moves in `port/keyboard_move.c` and Stick
 shape in `src/input/stick_shape.c`, Gameplay's Skip intro in
 `port/intro.c`, Skip cutscenes in `port/cutscene_skip.c` and Visual indicator
 in `port/soul_indicator.c`, Developer in `port/developer.c`, with Missions'
-rows in `port/missions_menu.c` (its Photo mode's tick in `port/photo_mode.c`),
+rows in `port/missions_menu.c` (its Photo mode's tick in `port/photo_mode.c`
+and its Record's in `port/playback.c`),
 Playback's in `port/playback.c` and its Far
 buildings test in `port/draw_distance.c`). A row marked last goes below any added later
 (`last` in `menu.h`). A row can instead go right below another row of its
@@ -424,9 +425,10 @@ Dear ImGui
   as the engine starts from the game's own files and the names in its
   program, so nothing of the game's, its missions, levels or characters, is
   written into the repository. In this order: Character, a line, Load
-  game, a line, Photo mode, a tick (`port/photo_mode.c`'s, not kept), a
-  line, then the levels. Each level is a choice of its missions, and the
-  levels share one function, which each row tells which level it is
+  game, a line, Photo mode, a tick (`port/photo_mode.c`'s, not kept),
+  Record, a tick (`port/playback.c`'s, not kept), a line, then the levels.
+  Each level is a choice of its missions, and the levels share one
+  function, which each row tells which level it is
   (`pick_with` and `data` in `menu.h`). tests/developer and tests/missions
   check.
 - Playback is the submenu right below Missions (`XBOX_GROUP_PLAYBACK`,

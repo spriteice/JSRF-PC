@@ -22,6 +22,7 @@
 #include "input_remap.h"
 #include "menu.h"
 #include "pad.h"
+#include "photo_mode.h"
 #include "playback.h"
 
 #define STATE      0x0100u          /* the game's XINPUT_STATE */
@@ -54,6 +55,18 @@ DWORD xbox_InputGetState(DWORD port, XBOX_INPUT_STATE *st)
 DWORD xbox_InputSetState(DWORD port, const XBOX_VIBRATION *v) { (void)port; (void)v; return 0; }
 void kbmove_pad(unsigned port, short *lx, short *ly) { (void)port; (void)lx; (void)ly; }
 void photo_mode_pad(XBOX_INPUT_STATE *st) { (void)st; }
+
+/* Where this run started, as port/missions.c and photo mode would say:
+ * g_started 0 for the game's own start, else g_start (mission -1: Load
+ * Game). */
+static int g_started, g_photo;
+static MISSIONS_START g_start;
+int missions_started(MISSIONS_START *out)
+{
+    if (g_started) *out = g_start;
+    return g_started;
+}
+int photo_mode_ticked(void) { return g_photo; }
 void pad_test_start(void) {}
 int pad_test_inputs(uint32_t port, XBOX_INPUT_STATE *st) { (void)port; (void)st; return 0; }
 
@@ -693,6 +706,167 @@ static void restart(void)
           playback_result()->why, g_closed);
 }
 
+/* A run started from Developer > Missions: its recording says where, with
+ * Record ticked from then; a play of it starts there again (playback_first
+ * puts the start in Missions' variables) and goes on where the run started
+ * there, as or with the same, and is off route at its first frame where it
+ * didn't; so is a recording from the game's own start played in a run
+ * started at a mission. Load Game the same. A start line that can't be read,
+ * comes twice or after a frame is refused. */
+static void start_line(const char *line, int want_ok, const char *what)
+{
+    char folder[700], text[300];
+    snprintf(folder, sizeof folder, "%s/start-bad", g_dir);
+    snprintf(text, sizeof text, "jsrf-pc-recording 1\n%send 5\n", line);
+    write_file(folder, text);
+    CHECK(!playback_play(folder, 0) == !want_ok, "%s: %s", what, want_ok ? "refused" : "played");
+}
+
+static void missions_start_line(void)
+{
+    char folder[700], load[700], refused[700], path[760], line[256];
+    const char *heads[3] = { "jsrf-pc-recording 1\n", "version ", "# started " };
+    How rec = { .frames = 40, .skip_anchor = -1, .wrong_anchor = -1, .recording = 1 };
+    How h = { .frames = 30, .skip_anchor = -1, .wrong_anchor = -1 };
+    FILE *f;
+    int i;
+    const char *m, *k, *l, *p;
+    snprintf(folder, sizeof folder, "%s/from-mission", g_dir);
+    CHECK(!playback_missions_ticked(), "Developer > Missions > Record ticked before a run from a mission");
+    g_start.mission = 252;
+    g_start.skater = 6;
+    g_start.progress = 0x1A2B3C4Du;
+    g_photo = 1;
+    /* The mission refused after the recording began (missions_paths, before
+     * the game's first pass): no start line, and Record left unticked. */
+    snprintf(refused, sizeof refused, "%s/from-refused", g_dir);
+    g_started = 1;
+    CHECK(playback_record(refused), "a recording from a refused mission couldn't start");
+    g_started = 0;
+    run(&g_play, &rec);
+    playback_stop();
+    snprintf(path, sizeof path, "%s/" PLAYBACK_FILE, refused);
+    f = fopen(path, "r");
+    CHECK(f != NULL, "no %s", path);
+    if (!f) return;
+    i = 0;
+    while (fgets(line, sizeof line, f)) i += !strncmp(line, "start ", 6);
+    fclose(f);
+    CHECK(i == 0 && !playback_missions_ticked(), "a refused mission's recording: %d start lines, Record %s", i,
+          playback_missions_ticked() ? "ticked" : "not ticked");
+
+    g_started = 1;
+    CHECK(playback_record(folder), "a recording from a mission couldn't start");
+    run(&g_play, &rec);
+    CHECK(playback_missions_ticked(), "Record not ticked in a run recording from a mission");
+    playback_stop();
+    snprintf(path, sizeof path, "%s/" PLAYBACK_FILE, folder);
+    f = fopen(path, "r");
+    CHECK(f != NULL, "no %s", path);
+    if (!f) return;
+    for (i = 0; i < 3 && fgets(line, sizeof line, f); i++)
+        CHECK(!strncmp(line, heads[i], strlen(heads[i])), "the recording from a mission, line %d: %s", i + 1, line);
+    CHECK(fgets(line, sizeof line, f) && !strcmp(line, "start mission 0252 6 1 1A2B3C4D\n"),
+          "its start line: %s", line);
+    CHECK(fgets(line, sizeof line, f) && !strncmp(line, "pad ", 4), "a frame's line next: %s", line);
+    fclose(f);
+    playback_missions_flip();
+    CHECK(!playback_missions_ticked(), "Record not unticked");
+    playback_missions_flip();
+
+    /* About to play it: Missions' and photo mode's variables, as the pick
+     * set them; the play's own left for playback_start. */
+    g_started = 0;
+    g_photo = 0;
+    setenv("JSRF_PLAY_MENU", folder, 1);
+    setenv("JSRF_START_LOAD", "1", 1);
+    playback_first();
+    m = getenv("JSRF_START_MISSION");
+    k = getenv("JSRF_START_SKATER");
+    l = getenv("JSRF_START_LOAD");
+    p = getenv(PHOTO_START_VAR);
+    CHECK(m && !strcmp(m, "0252") && k && !strcmp(k, "6") && (!l || !*l) && p && !strcmp(p, "1")
+          && getenv("JSRF_PLAY_MENU"), "playback_first: JSRF_START_MISSION=%s JSRF_START_SKATER=%s"
+          " JSRF_START_LOAD=%s JSRF_START_PHOTO=%s", m ? m : "-", k ? k : "-", l ? l : "-", p ? p : "-");
+    setenv("JSRF_START_MISSION", "", 1);
+    setenv("JSRF_START_SKATER", "", 1);
+    setenv(PHOTO_START_VAR, "", 1);
+    setenv("JSRF_PLAY_MENU", "", 1);
+
+    /* Played where it started: on route. */
+    g_started = 1;
+    g_photo = 1;
+    CHECK(playback_play(folder, 1), "the recording from a mission refused");
+    run(&g_play, &h);
+    CHECK(playback_state() == PLAYBACK_PLAYING, "played from its mission: state %d (%s)", playback_state(),
+          playback_result()->why);
+    /* With other progress (another start-states.txt): off route at once,
+     * and --play's game closed. */
+    g_start.progress = 0x99u;
+    g_closed = 0;
+    CHECK(playback_play(folder, 1), "the recording from a mission refused");
+    run(&g_play, &h);
+    CHECK(playback_state() == PLAYBACK_OFF_ROUTE && playback_result()->frames == 0 && g_closed == 1
+          && !strcmp(playback_result()->why, "the recording started at mission 0252, skater 6, progress 1A2B3C4D,"
+                     " photo mode; this run at mission 0252, skater 6, progress 00000099, photo mode"),
+          "played with other progress: state %d after %u frames (%s), closed %d", playback_state(),
+          playback_result()->frames, playback_result()->why, g_closed);
+    /* In a run from the game's own start. */
+    g_started = 0;
+    CHECK(playback_play(folder, 0), "the recording from a mission refused");
+    run(&g_play, &h);
+    CHECK(playback_state() == PLAYBACK_OFF_ROUTE && strstr(playback_result()->why, "this run at the game's own start"),
+          "played from the game's own start: state %d (%s)", playback_state(), playback_result()->why);
+    /* A recording from the game's own start, in a run from a mission. */
+    g_started = 1;
+    g_photo = 0;
+    CHECK(playback_play(g_run, 0), "the first recording refused");
+    run(&g_play, &h);
+    CHECK(playback_state() == PLAYBACK_OFF_ROUTE
+          && strstr(playback_result()->why, "the recording started at the game's own start; this run at mission"),
+          "the game's own start's recording from a mission: state %d (%s)", playback_state(),
+          playback_result()->why);
+
+    /* Load Game: recorded, put in place, and played there. */
+    g_start.mission = -1;
+    g_start.skater = -1;
+    g_start.progress = 0;
+    snprintf(load, sizeof load, "%s/from-load", g_dir);
+    CHECK(playback_record(load), "a recording from Load Game couldn't start");
+    playback_stop();
+    setenv("JSRF_PLAY", load, 1);
+    setenv("JSRF_START_MISSION", "0110", 1);
+    playback_first();
+    m = getenv("JSRF_START_MISSION");
+    l = getenv("JSRF_START_LOAD");
+    p = getenv(PHOTO_START_VAR);
+    CHECK((!m || !*m) && l && !strcmp(l, "1") && (!p || !*p), "playback_first at Load Game:"
+          " JSRF_START_MISSION=%s JSRF_START_LOAD=%s JSRF_START_PHOTO=%s", m ? m : "-", l ? l : "-", p ? p : "-");
+    setenv("JSRF_START_LOAD", "", 1);
+    setenv("JSRF_PLAY", "", 1);
+    CHECK(playback_play(load, 0), "the recording from Load Game refused");
+    run(&g_play, &h);
+    CHECK(playback_state() == PLAYBACK_FINISHED, "played from Load Game: state %d (%s)", playback_state(),
+          playback_result()->why);
+    /* Nothing put in place for a recording from the game's own start. */
+    setenv("JSRF_PLAY", g_run, 1);
+    playback_first();
+    CHECK(!getenv("JSRF_START_MISSION") || !*getenv("JSRF_START_MISSION"), "playback_first without a start line");
+    setenv("JSRF_PLAY", "", 1);
+    g_started = 0;
+
+    start_line("start mission 0252 6 0 1A2B3C4D\n", 1, "a start line");
+    start_line("start load 1\n", 1, "a start line at Load Game");
+    start_line("start mission 0252 -1 0 0\n", 1, "a start line with New Game's skater and progress");
+    start_line("pad 0 0 0000 0000000000000000 0 0 0 0\nstart load 0\n", 0, "a start line after a frame");
+    start_line("start load 0\nstart load 0\n", 0, "two start lines");
+    start_line("start mission 252\n", 0, "a start line short of its skater, photo and progress");
+    start_line("start mission 0252 24 0 0\n", 0, "a start line with skater 24");
+    start_line("start mission 0252 6 2 0\n", 0, "a start line with photo 2");
+    start_line("start load\n", 0, "a start line at Load Game without photo");
+    start_line("start title 0\n", 0, "a start line at the title");
+}
+
 /* Input > Behaviour > Camera's ticks: recorded at the first camera update
  * and when they change, then played with the player's left as they were;
  * by hand, the player's before the first camera line and the recording's
@@ -867,6 +1041,7 @@ int main(int argc, char **argv)
     play_cam_take_over();
     by_hand();
     restart();
+    missions_start_line();
     camera_ticks();
     start();
     if (g_bad) return 1;

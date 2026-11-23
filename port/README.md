@@ -32,7 +32,9 @@ playback (Developer > Playback): the pad as the game read it, the free
 camera's switch and tuning, and the Camera ticks for the game's shots
 (`camera_scenes.c`), recorded by the game's own frame and played
 back, from `pad.c`, from `freecam.c` and from hooks in `recomp_manual.c` on
-the game's main loop, its loads, its cutscenes and its camera. Developer >
+the game's main loop, its loads, its cutscenes and its camera; a run started
+from Developer > Missions is recorded with where it started
+(`missions_started`), and played from there again. Developer >
 Missions, for one, is `missions.c`, which starts the game at a story mission
 through the game flow's update in `recomp_manual.c`, and `missions_menu.c`,
 its rows in the in-game menu, made from the game's own mission files as the

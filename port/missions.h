@@ -73,6 +73,22 @@ void missions_paths(const char *save_dir);
  * start refused. */
 int missions_starting(void);
 
+/* What this run was started at: what input playback notes at the head of a
+ * recording, and checks a play of one starts at again (port/playback.c). */
+typedef struct {
+    int mission;            /* CCNN; -1 for Load Game */
+    int skater;             /* JSRF_START_SKATER's skater; -1 for none (New Game's) */
+    uint32_t progress;      /* the start line's progress, hashed: its fields as read, so a
+                             * line says the same wherever it came from and however its
+                             * fields are ordered; 0 for New Game's progress, and at
+                             * Load Game */
+} MISSIONS_START;
+
+/* 1, with *out, when this run was asked to start at a mission or at Load
+ * Game and the start stands (missions_start, then missions_paths, which can
+ * refuse it), whether or not the game has got there yet; else 0. */
+int missions_started(MISSIONS_START *out);
+
 /* State 0xA's own calls that the start keeps, in the game's order: made by
  * the hook, which can call into the game. */
 typedef void (*missions_title_fn)(void);

@@ -121,6 +121,7 @@ static struct {
     int skater;                         /* JSRF_START_SKATER's; -1 none */
     int load;                           /* JSRF_START_LOAD's: Load Game, not a mission */
     StartLine line;
+    uint32_t progress;                  /* the line's fields hashed (progress_hash); 0 without one */
 } s;
 
 /* Taking a variable out of the environment, as developer.c's set_env does
@@ -253,6 +254,42 @@ static int read_state(const char *line, int mission, StartLine *st, char *why, s
         }
     }
     return 1;
+}
+
+/* A start line's progress as one number, for a recording to note
+ * (missions_started): FNV-1a over each field as read, in one order, a
+ * little-endian word each, with whether it was given. 0 is New Game's
+ * progress: no line, or one that gives nothing (its mission alone, souls=0,
+ * tanks=0, story=1); any other is never 0. */
+static uint32_t hash_word(uint32_t h, uint32_t w)
+{
+    int i;
+    for (i = 0; i < 4; i++) {
+        h ^= (w >> (8 * i)) & 0xFFu;
+        h *= 16777619u;
+    }
+    return h;
+}
+
+static uint32_t progress_hash(const StartLine *st)
+{
+    uint32_t h = 2166136261u;
+    unsigned b, i;
+    if (!st->have_entrance && !st->have_bank[BANK_CHAPTER] && !st->have_bank[BANK_GLOBAL]
+        && !st->have_bank[BANK_3] && !st->have_skaters && !st->souls && !st->tanks && !st->off_story)
+        return 0u;
+    h = hash_word(h, (uint32_t)st->have_entrance);
+    h = hash_word(h, st->have_entrance ? st->entrance : 0u);
+    for (b = 0; b < BANKS; b++) {
+        h = hash_word(h, (uint32_t)st->have_bank[b]);
+        for (i = 0; i < FLAG_DWORDS; i++) h = hash_word(h, st->have_bank[b] ? st->bank[b][i] : 0u);
+    }
+    h = hash_word(h, (uint32_t)st->have_skaters);
+    h = hash_word(h, st->have_skaters ? st->skaters : 0u);
+    h = hash_word(h, st->souls);
+    h = hash_word(h, st->tanks);
+    h = hash_word(h, (uint32_t)st->off_story);
+    return h ? h : 1u;
 }
 
 static unsigned count_bits(const uint32_t *w, unsigned words)
@@ -410,6 +447,7 @@ void missions_start(void)
         fprintf(stderr, "[MISSION] %s refused for %04d: %s; starting normally\n", from, s.mission, why);
     } else {
         s.step = STEP_TITLE;
+        s.progress = have_line ? progress_hash(&s.line) : 0u;
         if (skater) snprintf(skater_said, sizeof skater_said, ", skater %d", s.skater);
         if (!have_line)
             fprintf(stderr, "[MISSION] starting at %04d: chapter %d, mission %d%s; no JSRF_START_STATE or line"
@@ -452,6 +490,15 @@ void missions_paths(const char *save_dir)
 int missions_starting(void)
 {
     return s.step != STEP_NONE && s.step != STEP_DONE;
+}
+
+int missions_started(MISSIONS_START *out)
+{
+    if (s.step == STEP_NONE) return 0;
+    out->mission = s.load ? -1 : s.mission;
+    out->skater = s.load ? -1 : s.skater;
+    out->progress = s.load ? 0u : s.progress;
+    return 1;
 }
 
 static uint32_t *at(uint8_t *mem, uint32_t va)
