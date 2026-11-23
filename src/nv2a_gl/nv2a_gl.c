@@ -6853,7 +6853,8 @@ static uint32_t g_wide_slab_clip[4];  /* the right-hand copy's clip, raster pixe
 /* The HUD piece being drawn, from the game side's marks (nv2a_wide.h,
  * NV2A_WIDE_HUD_METHOD): its side, NV2A_WIDE_HUD_NONE between pieces, which
  * one, for the log, and its flags (NV2A_WIDE_HUD_OWN_VIEW,
- * NV2A_WIDE_HUD_ON_GRID, NV2A_WIDE_HUD_SIZED, NV2A_WIDE_HUD_LOW). A sized
+ * NV2A_WIDE_HUD_ON_GRID, NV2A_WIDE_HUD_SIZED, NV2A_WIDE_HUD_LOW,
+ * NV2A_WIDE_HUD_PLAIN). A sized
  * piece is sized only where its start mark found the viewport spanning the
  * frame (g_hud_whole, nv2a_wide_hud_whole_view): one player's HUD, not a
  * split screen's, whose pieces each sit in their player's view. */
@@ -9290,7 +9291,9 @@ static void do_draw_body(void)
      * was left unsqueezed (above), which does the same. Neither is clipped
      * to the 4:3 screen. The first draw of each part is logged. Its grid, a
      * 3D mesh of many vertices (nv2a_wide_slab), isn't stretched but drawn
-     * as the backdrop's two copies, so its cells keep the backdrop's lines. Text that
+     * as the backdrop's two copies, so its cells keep the backdrop's lines;
+     * a plain part (NV2A_WIDE_HUD_PLAIN) has no grid, and all of it is
+     * stretched. Text that
      * runs the whole width (NV2A_WIDE_HUD_WHOLE) is squeezed (above) and
      * neither moved nor clipped to the 4:3 screen: the game side spread it
      * out from the centre, so it shows across the whole screen. A copy of a
@@ -9320,7 +9323,7 @@ static void do_draw_body(void)
         static unsigned char told[256];
         int screen = draw_screen_space(slot);
         int over = g_hud_side == NV2A_WIDE_HUD_OVER;
-        if (!screen && !over && nv2a_wide_slab(out_n, g_wide_s)) {
+        if (!screen && !over && !(g_hud_flags & NV2A_WIDE_HUD_PLAIN) && nv2a_wide_slab(out_n, g_wide_s)) {
             /* The part's grid: not stretched, but drawn as a backdrop's two
              * copies are, the left one here and the right one after it
              * (wide_slab_right), each on its half of the screen. */
@@ -9364,7 +9367,12 @@ static void do_draw_body(void)
             }
         }
     } else if (g_hud_side == NV2A_WIDE_HUD_WHOLE) {
-        if (g_wide_squeeze && nv2a_wide_hud_whole_view(S.u.vp_scale[0])) {
+        /* In the whole view, or in a viewport of its own that the game
+         * side says is its window across the frame (NV2A_WIDE_HUD_OWN_VIEW,
+         * the graffiti editor's ticker): the window stays where it is on
+         * the frame, with the bar stretched under it. */
+        if (g_wide_squeeze && (nv2a_wide_hud_whole_view(S.u.vp_scale[0])
+                               || (g_hud_flags & NV2A_WIDE_HUD_OWN_VIEW))) {
             static unsigned char told[256];
             g_wide_whole = 1;
             if (!told[g_hud_piece & 0xFFu]) {

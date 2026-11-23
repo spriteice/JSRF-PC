@@ -449,6 +449,88 @@ int widescreen_menus_ticker_x(float x, float s, float *wide_x, unsigned *piece)
     return NV2A_WIDE_HUD_WHOLE;
 }
 
+/* ---- the graffiti editor -------------------------------------------------- */
+
+/* The holder whose parts are drawing, 0 for none. */
+static uint32_t s_editor;
+
+int widescreen_menus_editor_begin(const uint8_t *mem, uint32_t top, uint32_t holder, int on)
+{
+    (void)mem;
+    if (!on || s_editor || holder < 0x10000u || holder >= top
+     || top - holder < WIDE_EDITOR_PARTS + WIDE_EDITOR_NPARTS * 4u)
+        return 0;
+    s_editor = holder;
+    return 1;
+}
+
+void widescreen_menus_editor_end(int began)
+{
+    if (began) s_editor = 0;
+}
+
+int widescreen_menus_editor_part(const uint8_t *mem, uint32_t model)
+{
+    uint32_t i;
+    if (!s_editor || !model) return -1;
+    for (i = 0; i < WIDE_EDITOR_NPARTS; i++)
+        if (guest32(mem, s_editor + WIDE_EDITOR_PARTS + 4u * i) == model) return (int)i;
+    return -1;
+}
+
+int widescreen_menus_editor_bar(int part)
+{
+    static int told;
+    if (part != WIDE_EDITOR_BAR_PART) return 0;
+    if (!told) {
+        told = 1;
+        fprintf(stderr, "[WIDE] the graffiti editor's part %d, its bar of static: drawn across the width "
+                "(piece %u)\n", part, WIDE_MENU_PIECE_EDITOR_BAR);
+    }
+    return 1;
+}
+
+/* The ticker's line: the x of its last draw, once there was one, and its
+ * turns. */
+static float s_editor_x;
+static int s_editor_drawn, s_editor_turns;
+
+int widescreen_menus_editor_turns(float x, float start)
+{
+    if (x != x || start != start) return s_editor_turns;
+    if (x > start)
+        s_editor_turns = 0;     /* coming on: the game's scroll is below 0 only then */
+    else if (s_editor_drawn && s_editor_x <= start && x > s_editor_x && s_editor_turns < WIDE_EDITOR_COPIES)
+        s_editor_turns++;       /* back from the left: its scroll started again */
+    s_editor_x = x;
+    s_editor_drawn = 1;
+    return s_editor_turns;
+}
+
+int widescreen_menus_editor_copies(float x, float width, float left, float right, float s, int turns,
+                                   float out[WIDE_EDITOR_COPIES])
+{
+    const float mid = 0.5f * (left + right);
+    float wide_l, wide_r, at, k0;
+    int n = 0, k;
+    if (!(s > 0.0f) || !(s < 1.0f) || !(right > left) || x != x || width != width || turns < 0)
+        return -1;
+    wide_l = mid - (mid - left) / s;
+    wide_r = mid + (right - mid) / s;
+    at = wide_r - (right - x);
+    if (!(width > 0.0f)) {
+        out[0] = at;
+        return 1;
+    }
+    /* From the copy over the window's left end: before the game's own
+     * while the line has turned, after it once it is out past the left. */
+    k0 = floorf((wide_l - at) / width);
+    if (k0 < -(float)turns) k0 = -(float)turns;
+    for (k = 0; k < WIDE_EDITOR_COPIES && at + width * (k0 + (float)k) < wide_r; k++)
+        out[n++] = at + width * (k0 + (float)k);
+    return n;
+}
+
 int widescreen_menus_map(int mode, int on)
 {
     static unsigned char told[3];
@@ -485,6 +567,12 @@ static unsigned s_slider_flags;
 unsigned widescreen_menus_mark_flags(unsigned piece, int side)
 {
     if (side == NV2A_WIDE_HUD_OVER && piece == WIDE_MENU_PIECE_SLIDERS) return s_slider_flags;
+    /* The editor's ticker is in a viewport of its own, its window; its bar
+     * has no grid in it. */
+    if (side == NV2A_WIDE_HUD_WHOLE && piece == WIDE_MENU_PIECE_EDITOR_TICKER)
+        return NV2A_WIDE_HUD_OWN_VIEW;
+    if (side == NV2A_WIDE_HUD_ACROSS && piece == WIDE_MENU_PIECE_EDITOR_BAR)
+        return NV2A_WIDE_HUD_PLAIN;
     if (side != NV2A_WIDE_HUD_LEFT && side != NV2A_WIDE_HUD_RIGHT) return 0u;
     if (piece >= WIDE_MENU_PIECE0 && piece < WIDE_MENU_PIECE(WIDE_MENUS, 0))
         return menu_extends((piece - WIDE_MENU_PIECE0) / WIDE_MENU_PARTS_MAX)

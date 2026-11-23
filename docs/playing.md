@@ -118,7 +118,9 @@ These work in a window or full screen, and each one is remembered.
   has the other shapes. Widescreen widens the
   view rather than stretching it: the HUD and text keep their shape, the HUD
   sits at the screen's edges, the pause menus and the race previews are
-  laid out across the screen, the garage's menus and VS mode's setup screen
+  laid out across the screen, the graffiti editor's bar of static is
+  stretched across with its help line scrolling its whole length, the
+  garage's menus and VS mode's setup screen
   carry their colours on to its edges, the result screens' banner, time and
   choices sit at the right edge, clear of the dance, and the title screen
   fills the screen from its first frame, its opening's bars sweeping in from

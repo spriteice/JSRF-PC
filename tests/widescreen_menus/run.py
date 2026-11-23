@@ -5,7 +5,8 @@ widescreen unit (src/nv2a_gl/nv2a_wide.c), and driven by test_main.c
 against a guest memory of its own that holds D3D's device and push buffer
 and a menu's object: the laid-out menus' parts and marks, and the plain
 menus' marks for the side fill. How each menu then looks needs the game and
-the whole renderer: the test build's menu step.
+the whole renderer: the test build's menu step. The graffiti editor's parts,
+its bar and its ticker's turns and copies are driven the same way.
 Requires GCC on PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
 """
@@ -155,6 +156,7 @@ ONCE = (
     "[WIDE] menu part 205, the result screen's race time, mode 6: its last digit's place 560.0: "
     "not moved further",
     "[WIDE] VS mode's setup screen (sub_00071100): its frames' sides filled, piece 219",
+    "[WIDE] the graffiti editor's part 18, its bar of static: drawn across the width (piece 224)\n",
 )
 # Whole lines that come a set number of times: a node in each listing of
 # the models whose nodes the log lists (a plain menu's first models, each

@@ -138,6 +138,24 @@
  *      placed for a split screen (a quarter's flag or a y of its own), nor
  *      already past the banner's end, nor from a place that isn't one, nor
  *      when not begun, each said once.
+ *  14. The graffiti editor: its parts' draw begins only widened, with a
+ *      holder whose 128 models are within the memory, and not inside
+ *      itself; begun, a model in one of the holder's slots is that part,
+ *      any other none, and nothing is after the end. The bar of static is
+ *      the part named for it and no other, said once. The bar's piece is
+ *      marked across with the flag for a part with no grid, the ticker's
+ *      whole with its own viewport's flag, both past the plain menus'
+ *      pieces. The ticker's line's turns: none while it comes on or before
+ *      its scroll has started again, one more each time it has, 16 at most,
+ *      none again when another line comes on, and nothing changed by an x
+ *      that isn't a number. The ticker's copies: the game's own as far left
+ *      of the widened window's right end as it is of the game's, so none
+ *      for a line still at the right end, and one with nothing ahead of it
+ *      while it comes on; after a turn, the copy ahead of it too, as many
+ *      ahead as it has had turns and the window shows; a width apart, at
+ *      16:9 and 21:9 and at each scroll, a copy scrolled out of the window
+ *      left out, 16 at most; one for a line of no width; -1 in 4:3, for no
+ *      window, for turns below 0 or for numbers that aren't.
  */
 #include <math.h>
 #include <stdio.h>
@@ -155,6 +173,7 @@
 #define ARROW  0x6080u     /* the arrow's object, the banner's parent */
 #define HEADER 0x6100u     /* the other pause menu's header */
 
+#define HOLDER 0x30000u    /* the graffiti editor's holder, its 128 models from +0x2498 */
 #define RIG    0x10000u    /* a model and its animation, where a pointer can be */
 #define TOP    0x20000u    /* the guest memory's end, for the pointers' checks */
 #define GUEST  0x240000u   /* the array's: past the race time's places (WIDE_RESULT_HUNDREDTHS) */
@@ -1618,6 +1637,164 @@ static void time_move(void)
     CHECK(memcmp(mem() + WIDE_RESULT_PLACES, before, sizeof before) == 0);
 }
 
+/* The graffiti editor's parts, its bar and its ticker's copies (14). */
+static void editor(void)
+{
+    float at[WIDE_EDITOR_COPIES];
+    const float s169 = 0.75f, s219 = (4.0f / 3.0f) / (21.0f / 9.0f);
+    int began, marked, n, k;
+    unsigned i;
+    fresh();
+    for (i = 0; i < WIDE_EDITOR_NPARTS; i++) set(HOLDER + WIDE_EDITOR_PARTS + 4u * i, model(i));
+    set(HOLDER + WIDE_EDITOR_PARTS + 4u * 7u, 0);         /* an empty slot */
+
+    /* not begun: in 4:3, with no holder, or one whose models aren't all in
+     * the memory; then nothing is a part */
+    CHECK(!widescreen_menus_editor_begin(mem(), GUEST, HOLDER, 0));
+    CHECK(!widescreen_menus_editor_begin(mem(), GUEST, 0, 1));
+    CHECK(!widescreen_menus_editor_begin(mem(), GUEST, 0x100u, 1));
+    CHECK(!widescreen_menus_editor_begin(mem(), GUEST, GUEST, 1));
+    CHECK(!widescreen_menus_editor_begin(mem(), HOLDER + WIDE_EDITOR_PARTS + WIDE_EDITOR_NPARTS * 4u - 4u,
+                                         HOLDER, 1));
+    CHECK(widescreen_menus_editor_part(mem(), model(3)) == -1);
+    /* begun: each slot's model is its part */
+    began = widescreen_menus_editor_begin(mem(), HOLDER + WIDE_EDITOR_PARTS + WIDE_EDITOR_NPARTS * 4u, HOLDER, 1);
+    CHECK(began);
+    CHECK(!widescreen_menus_editor_begin(mem(), GUEST, HOLDER, 1));   /* not inside itself */
+    widescreen_menus_editor_end(0);                                    /* ... whose end ends nothing */
+    CHECK(widescreen_menus_editor_part(mem(), model(0)) == 0);
+    CHECK(widescreen_menus_editor_part(mem(), model(3)) == 3);
+    CHECK(widescreen_menus_editor_part(mem(), model(WIDE_EDITOR_NPARTS - 1)) == (int)WIDE_EDITOR_NPARTS - 1);
+    CHECK(widescreen_menus_editor_part(mem(), model(7)) == -1);        /* its slot is empty */
+    CHECK(widescreen_menus_editor_part(mem(), model(WIDE_EDITOR_NPARTS)) == -1);
+    CHECK(widescreen_menus_editor_part(mem(), 0) == -1);
+    widescreen_menus_editor_end(began);
+    CHECK(widescreen_menus_editor_part(mem(), model(3)) == -1);
+
+    /* the bar: the part named for it, no other */
+    CHECK(WIDE_EDITOR_BAR_PART >= 0 && WIDE_EDITOR_BAR_PART < (int)WIDE_EDITOR_NPARTS);
+    CHECK(widescreen_menus_editor_bar(WIDE_EDITOR_BAR_PART));
+    CHECK(widescreen_menus_editor_bar(WIDE_EDITOR_BAR_PART));          /* said once */
+    CHECK(!widescreen_menus_editor_bar(WIDE_EDITOR_BAR_PART - 1) && !widescreen_menus_editor_bar(48));
+    CHECK(!widescreen_menus_editor_bar(-1) && !widescreen_menus_editor_bar((int)WIDE_EDITOR_NPARTS));
+
+    /* their marks: the bar across with no grid, the ticker whole in its
+     * own viewport */
+    CHECK(WIDE_MENU_PIECE_EDITOR_BAR > WIDE_MENU_PIECE_FILL(WIDE_PLAINS - 1)
+          && WIDE_MENU_PIECE_EDITOR_TICKER > WIDE_MENU_PIECE_EDITOR_BAR && WIDE_MENU_PIECE_EDITOR_TICKER <= 0xFFu);
+    CHECK(widescreen_menus_mark_flags(WIDE_MENU_PIECE_EDITOR_TICKER, NV2A_WIDE_HUD_WHOLE) == NV2A_WIDE_HUD_OWN_VIEW);
+    CHECK(widescreen_menus_mark_flags(WIDE_MENU_PIECE_EDITOR_TICKER, NV2A_WIDE_HUD_LEFT) == 0u);
+    CHECK(widescreen_menus_mark_flags(WIDE_MENU_PIECE_EDITOR_TICKER, NV2A_WIDE_HUD_ACROSS) == 0u);
+    CHECK(widescreen_menus_mark_flags(WIDE_MENU_PIECE_EDITOR_BAR, NV2A_WIDE_HUD_ACROSS) == NV2A_WIDE_HUD_PLAIN);
+    CHECK(widescreen_menus_mark_flags(WIDE_MENU_PIECE_EDITOR_BAR, NV2A_WIDE_HUD_WHOLE) == 0u);
+    CHECK(widescreen_menus_mark_flags(WIDE_MENU_PIECE(0, 0), NV2A_WIDE_HUD_ACROSS) == 0u);   /* a menu's own bar */
+    fresh();
+    marked = widescreen_menus_mark(mem(), DEVICE, WIDE_MENU_PIECE_EDITOR_TICKER, NV2A_WIDE_HUD_WHOLE, space);
+    CHECK(marked && mark_flags_at(BUFFER, WIDE_MENU_PIECE_EDITOR_TICKER, NV2A_WIDE_HUD_WHOLE,
+                                  NV2A_WIDE_HUD_OWN_VIEW));
+    widescreen_menus_unmark(mem(), DEVICE, WIDE_MENU_PIECE_EDITOR_TICKER, marked, space);
+    CHECK(mark_at(BUFFER + 8, WIDE_MENU_PIECE_EDITOR_TICKER, NV2A_WIDE_HUD_NONE));
+    fresh();
+    marked = widescreen_menus_mark(mem(), DEVICE, WIDE_MENU_PIECE_EDITOR_BAR, NV2A_WIDE_HUD_ACROSS, space);
+    CHECK(marked && mark_flags_at(BUFFER, WIDE_MENU_PIECE_EDITOR_BAR, NV2A_WIDE_HUD_ACROSS, NV2A_WIDE_HUD_PLAIN));
+    widescreen_menus_unmark(mem(), DEVICE, WIDE_MENU_PIECE_EDITOR_BAR, marked, space);
+    CHECK(mark_at(BUFFER + 8, WIDE_MENU_PIECE_EDITOR_BAR, NV2A_WIDE_HUD_NONE));
+
+    /* the line's turns. The game's scroll starts again at 78. Seen first
+     * past the left with nothing before it: no turn in that; back at 78,
+     * one */
+    CHECK(widescreen_menus_editor_turns(10.0f, 78.0f) == 0);
+    CHECK(widescreen_menus_editor_turns(9.0f, 78.0f) == 0);
+    CHECK(widescreen_menus_editor_turns(78.0f, 78.0f) == 1);
+    /* another line comes on, from the window's right end: none, to the
+     * left end and out past it */
+    CHECK(widescreen_menus_editor_turns(560.0f, 78.0f) == 0);
+    CHECK(widescreen_menus_editor_turns(559.0f, 78.0f) == 0);
+    CHECK(widescreen_menus_editor_turns(79.0f, 78.0f) == 0);
+    CHECK(widescreen_menus_editor_turns(78.0f, 78.0f) == 0);
+    CHECK(widescreen_menus_editor_turns(77.0f, 78.0f) == 0);
+    CHECK(widescreen_menus_editor_turns(78.0f - 500.0f, 78.0f) == 0);
+    /* its scroll starts again: one, and one more each time; an x that
+     * isn't a number is no draw */
+    CHECK(widescreen_menus_editor_turns(78.0f, 78.0f) == 1);
+    CHECK(widescreen_menus_editor_turns(77.0f, 78.0f) == 1);
+    CHECK(widescreen_menus_editor_turns(NAN, 78.0f) == 1 && widescreen_menus_editor_turns(77.0f, NAN) == 1);
+    CHECK(widescreen_menus_editor_turns(78.0f - 500.0f, 78.0f) == 1);
+    CHECK(widescreen_menus_editor_turns(78.0f, 78.0f) == 2);
+    for (k = 0; k < 2 * WIDE_EDITOR_COPIES; k++) {
+        widescreen_menus_editor_turns(78.0f - 500.0f, 78.0f);
+        n = widescreen_menus_editor_turns(78.0f, 78.0f);
+        CHECK(n == (k + 3 < WIDE_EDITOR_COPIES ? k + 3 : WIDE_EDITOR_COPIES));
+    }
+    /* and a line coming on again has none */
+    CHECK(widescreen_menus_editor_turns(560.0f, 78.0f) == 0);
+
+    /* the copies. At 16:9 the window's ends, for squeezed text, are 0 and
+     * 640. A line 500 wide coming on, at the game's window's right end: at
+     * the wider window's right end, so none shows yet; a pixel on, one */
+    n = widescreen_menus_editor_copies(560.0f, 500.0f, 80.0f, 560.0f, s169, 0, at);
+    CHECK(n == 0);
+    n = widescreen_menus_editor_copies(559.0f, 500.0f, 80.0f, 560.0f, s169, 0, at);
+    CHECK(n == 1 && near(at[0], 639.0f));
+    /* at the game's window's left end (78, 2 left of it), where the game's
+     * own line fills its window: 482 from the wider one's right end, with
+     * nothing ahead of it */
+    n = widescreen_menus_editor_copies(78.0f, 500.0f, 80.0f, 560.0f, s169, 0, at);
+    CHECK(n == 1 && near(at[0], 158.0f));
+    /* scrolled 100 more: the next copy has come on behind it */
+    n = widescreen_menus_editor_copies(-22.0f, 500.0f, 80.0f, 560.0f, s169, 0, at);
+    CHECK(n == 2 && near(at[0], 58.0f) && near(at[1], 558.0f));
+    /* scrolled 160: at the wider window's left end as the game's is at its own */
+    n = widescreen_menus_editor_copies(78.0f - 160.0f, 500.0f, 80.0f, 560.0f, s169, 0, at);
+    CHECK(n == 2 && near(at[0], -2.0f) && near(at[1], 498.0f));
+    /* scrolled 499, the game's last before it starts again */
+    n = widescreen_menus_editor_copies(78.0f - 499.0f, 500.0f, 80.0f, 560.0f, s169, 0, at);
+    CHECK(n == 2 && near(at[0], -341.0f) && near(at[1], 159.0f));
+    /* started again, its first turn: the game's own is back at 158, and the
+     * copy ahead of it is drawn too, a pixel on from where the first was */
+    n = widescreen_menus_editor_copies(78.0f, 500.0f, 80.0f, 560.0f, s169, 1, at);
+    CHECK(n == 2 && near(at[0], -342.0f) && near(at[1], 158.0f));
+    n = widescreen_menus_editor_copies(78.0f, 500.0f, 80.0f, 560.0f, s169, 5, at);   /* no more ahead than show */
+    CHECK(n == 2 && near(at[0], -342.0f) && near(at[1], 158.0f));
+    /* ... and once the game's own is out past the left end, it is left out */
+    n = widescreen_menus_editor_copies(78.0f - 600.0f, 400.0f, 80.0f, 560.0f, s169, 1, at);
+    CHECK(n == 2 && near(at[0], -42.0f) && near(at[1], 358.0f));
+    /* a short line: a width apart to the window's right end, as many ahead
+     * as it has had turns; 16 at most */
+    n = widescreen_menus_editor_copies(78.0f, 100.0f, 80.0f, 560.0f, s169, 0, at);
+    CHECK(n == 5);
+    for (k = 0; k < n; k++) CHECK(near(at[k], 158.0f + 100.0f * (float)k));
+    n = widescreen_menus_editor_copies(78.0f, 100.0f, 80.0f, 560.0f, s169, 1, at);
+    CHECK(n == 6 && near(at[0], 58.0f) && near(at[5], 558.0f));
+    n = widescreen_menus_editor_copies(78.0f, 100.0f, 80.0f, 560.0f, s169, 2, at);
+    CHECK(n == 7 && near(at[0], -42.0f) && near(at[6], 558.0f));
+    n = widescreen_menus_editor_copies(78.0f, 100.0f, 80.0f, 560.0f, s169, 3, at);
+    CHECK(n == 7 && near(at[0], -42.0f));
+    n = widescreen_menus_editor_copies(78.0f, 30.0f, 80.0f, 560.0f, s169, WIDE_EDITOR_COPIES, at);
+    CHECK(n == WIDE_EDITOR_COPIES && near(at[0], -22.0f)
+          && near(at[WIDE_EDITOR_COPIES - 1], -22.0f + 30.0f * (WIDE_EDITOR_COPIES - 1)));
+    /* a line of no width: once, where the game's own is */
+    n = widescreen_menus_editor_copies(78.0f, 0.0f, 80.0f, 560.0f, s169, 1, at);
+    CHECK(n == 1 && near(at[0], 158.0f));
+    /* 21:9: the ends at -100 and 740 */
+    n = widescreen_menus_editor_copies(560.0f, 500.0f, 80.0f, 560.0f, s219, 0, at);
+    CHECK(n == 0);
+    n = widescreen_menus_editor_copies(78.0f, 500.0f, 80.0f, 560.0f, s219, 0, at);
+    CHECK(n == 1 && near(at[0], 258.0f));
+    n = widescreen_menus_editor_copies(78.0f, 500.0f, 80.0f, 560.0f, s219, 1, at);
+    CHECK(n == 2 && near(at[0], -242.0f) && near(at[1], 258.0f));
+    n = widescreen_menus_editor_copies(78.0f - 200.0f, 500.0f, 80.0f, 560.0f, s219, 1, at);
+    CHECK(n == 3 && near(at[0], -442.0f) && near(at[1], 58.0f) && near(at[2], 558.0f));
+    /* -1: 4:3, a squeeze that isn't one, no window, turns below 0, no numbers */
+    CHECK(widescreen_menus_editor_copies(78.0f, 500.0f, 80.0f, 560.0f, 1.0f, 0, at) == -1);
+    CHECK(widescreen_menus_editor_copies(78.0f, 500.0f, 80.0f, 560.0f, 0.0f, 0, at) == -1);
+    CHECK(widescreen_menus_editor_copies(78.0f, 500.0f, 80.0f, 560.0f, NAN, 0, at) == -1);
+    CHECK(widescreen_menus_editor_copies(78.0f, 500.0f, 560.0f, 80.0f, s169, 0, at) == -1);
+    CHECK(widescreen_menus_editor_copies(78.0f, 500.0f, 80.0f, 560.0f, s169, -1, at) == -1);
+    CHECK(widescreen_menus_editor_copies(NAN, 500.0f, 80.0f, 560.0f, s169, 0, at) == -1);
+    CHECK(widescreen_menus_editor_copies(78.0f, NAN, 80.0f, 560.0f, s169, 0, at) == -1);
+}
+
 int main(void)
 {
     menus();
@@ -1637,6 +1814,7 @@ int main(void)
     sliders_band();
     title();
     results();
+    editor();
     if (s_failures) {
         printf("widescreen_menus: %d failed\n", s_failures);
         return 1;

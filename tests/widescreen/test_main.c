@@ -374,8 +374,10 @@ static void hud_marks(void)
                                             | NV2A_WIDE_HUD_LOW };
     /* past the last side, with each flag and all of them; not tagged; in
      * HUD scale's tag, past the last side or with an anchor's bits */
-    static const uint32_t others[] = { 0u, 1u, 2u, 5u, 8u, 9u, 0x4855000Du, 0x4855008Du,
-                                       0x4855004Du, 0x485500CDu, 0x4855001Du, 0x4855002Eu,
+    static const uint32_t others[] = { 0u, 1u, 2u, 5u, 8u, 9u, 0x4855000Eu, 0x4855008Eu,
+                                       0x4855004Eu, 0x485500CEu, 0x4855001Eu, 0x4855002Fu,
+                                       /* a plain part's with a flag's bit */
+                                       0x4855008Du, 0x4855004Du, 0x4855002Du, 0x4855001Du,
                                        0x485500FFu, 0x48560001u, 0x00000102u, 0xFFFFFFFFu,
                                        0x4853000Du, 0x485300CFu, 0x48530021u, 0x48530012u,
                                        0x485300B1u, 0x48520001u };
@@ -423,6 +425,20 @@ static void hud_marks(void)
     CHECK(nv2a_wide_hud_mark(0xC8, NV2A_WIDE_HUD_BARS, 0) == 0x4855C809u);
     CHECK(nv2a_wide_hud_mark(8, NV2A_WIDE_HUD_STRIP, 0) == 0x4855080Au);
     CHECK(nv2a_wide_hud_mark(0x44, NV2A_WIDE_HUD_RIGHT, NV2A_WIDE_HUD_ON_GRID) == 0x48554442u);
+    /* a plain part drawn across (the graffiti editor's bar): a mark of its
+     * own, read back as ACROSS with the flag; the flag with ACROSS only,
+     * and nothing else with it */
+    CHECK(nv2a_wide_hud_mark(0xE0, NV2A_WIDE_HUD_ACROSS, NV2A_WIDE_HUD_PLAIN) == 0x4855E00Du);
+    piece = 999; side = 9; fl = 99;
+    CHECK(nv2a_wide_hud_read(0x4855E00Du, &piece, &side, &fl));
+    CHECK(piece == 0xE0u && side == NV2A_WIDE_HUD_ACROSS && fl == NV2A_WIDE_HUD_PLAIN);
+    CHECK(nv2a_wide_hud_mark(0xE0, NV2A_WIDE_HUD_ACROSS, NV2A_WIDE_HUD_PLAIN | NV2A_WIDE_HUD_ON_GRID
+                             | NV2A_WIDE_HUD_OWN_VIEW) == 0x4855E00Du);
+    for (j = 0; j < sizeof sides / sizeof sides[0]; j++)
+        if (sides[j] != NV2A_WIDE_HUD_ACROSS)
+            CHECK(nv2a_wide_hud_mark(7, sides[j], NV2A_WIDE_HUD_PLAIN) == nv2a_wide_hud_mark(7, sides[j], 0));
+    CHECK(nv2a_wide_hud_mark(7, NV2A_WIDE_HUD_ACROSS, NV2A_WIDE_HUD_PLAIN | NV2A_WIDE_HUD_SIZED)
+          == nv2a_wide_hud_mark(7, NV2A_WIDE_HUD_ACROSS, NV2A_WIDE_HUD_SIZED));
     CHECK(nv2a_wide_hud_mark(0xC9, NV2A_WIDE_HUD_LINES, 0) == 0x4855C90Bu);
     CHECK(nv2a_wide_hud_mark(0xC0, NV2A_WIDE_HUD_LEFT, NV2A_WIDE_HUD_ON_GRID) == 0x4855C041u);
     /* a chain's anchor and the parts stretched about it */

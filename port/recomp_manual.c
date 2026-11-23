@@ -5108,6 +5108,21 @@ static int button_begin(uint32_t model)
     const uint32_t id = button_noted(model);
     return id && prompt_buttons_open(&s_flat, model, id, input_prompts_art_now(), s_in_box > 0);
 }
+/* The graffiti editor's parts (widescreen_menus.h, "The graffiti editor"),
+ * while its parts' draw runs in a widened scene (sub_0012A640, below): the
+ * bar of static behind its ticker is drawn between marks for across the
+ * width, as the pause menus' top bar is, all of it stretched. 1 when the
+ * draw was done here. */
+static int editor_part_draw(void)
+{
+    int marked;
+    if (!widescreen_menus_editor_bar(widescreen_menus_editor_part((const uint8_t *)g_xbox_mem_offset, g_ecx)))
+        return 0;
+    marked = wide_menu_mark(WIDE_MENU_PIECE_EDITOR_BAR, NV2A_WIDE_HUD_ACROSS);
+    sub_00047690_gen();
+    wide_menu_unmark(WIDE_MENU_PIECE_EDITOR_BAR, marked);
+    return 1;
+}
 void sub_00047690(void)
 {
     uint8_t *mem = (uint8_t *)g_xbox_mem_offset;
@@ -5118,7 +5133,9 @@ void sub_00047690(void)
         || !(prompt_buttons_begin(&s_flat, mem, ADX_GUEST_RAM, disp_models(), g_ecx,
                                   input_prompts_art_now(), s_in_box > 0)
              || button_begin(g_ecx))) {
-        const uint32_t watch = s_flat.button < 0 ? menu_watch(g_ecx) : MENU_NOTED;
+        uint32_t watch;
+        if (s_flat.button < 0 && editor_part_draw()) return;
+        watch = s_flat.button < 0 ? menu_watch(g_ecx) : MENU_NOTED;
         if (watch < MENU_NOTED) s_watch.button = 0;
         wide_menu_model_draw();
         if (watch < MENU_NOTED) menu_told(watch);
@@ -6061,7 +6078,7 @@ static void prompt_draw(void)
 #include "prompt_text.h"
 #include "nv2a_prompts.h"          /* the mark */
 extern void sub_0003D610_gen(void);
-extern void sub_0003D750(void);
+extern void sub_0003D750_gen(void);
 #define TEXT_FONT_ARGS 7u
 /* guest_call_cdecl, for a function returning a float on the x87 stack: the
  * float, the stack as it was. */
@@ -6108,7 +6125,7 @@ static float text_measure(void *ctx, uint32_t va, float scale)
     uint32_t a[2];
     memcpy(&a[0], &scale, sizeof scale);
     a[1] = va;
-    return guest_call_float(sub_0003D750, t->ra, 2, a);
+    return guest_call_float(sub_0003D750_gen, t->ra, 2, a);
 }
 static void text_mark(void *ctx, int button, float x, float y, float half)
 {
@@ -6136,6 +6153,124 @@ static int text_line_now(void)
     return prompt_text_match(prompt_text_lines, prompt_text_nlines, (const uint8_t *)g_xbox_mem_offset,
                              ADX_GUEST_RAM, MEM32(g_esp + 4u * TEXT_FONT_ARGS), &s_text);
 }
+/* ---- The graffiti editor's ticker (widescreen_menus.h) -----------------------
+ * sub_001284F0, the editor's ticker's draw (this in ecx; one argument, the
+ * editor's mode, ret 4): it sets a viewport round the bar of static at the
+ * top of the screen (80 to 560 across by 38 to 68 down, through the game's
+ * device), measures the mode's help line (sub_0003D750, returning to
+ * EDITOR_TICKER_MEASURE), moves its scroll on a pixel and starts it again
+ * past the line's width, draws the line at once at EDITOR_TICKER_START
+ * less the scroll (sub_0003D610, returning to EDITOR_TICKER_FIRST) and,
+ * while that copy's end is in the window, again a width on (returning to
+ * EDITOR_TICKER_SECOND); then it takes the viewport off. Nothing in it is
+ * wrong: it was laid out for the console's screen.
+ *
+ * In a widened scene its text is drawn between marks of its own for the
+ * whole width in its own viewport (WIDE_MENU_PIECE_EDITOR_TICKER), so every
+ * page of the font is squeezed alike, in the window where the game put it,
+ * over the bar drawn across (editor_part_draw, above; known bug 77). The
+ * squeezed line no longer reaches the window's ends, so the first copy's
+ * call draws every copy that shows in the wider window, from its right end
+ * as the game's comes on from its own (widescreen_menus_editor_copies, by
+ * the line's turns, widescreen_menus_editor_turns), each through the font
+ * call again, and the game's second copy's call draws nothing. The copies
+ * are a width apart, the width the game measured: its measure's call's
+ * answer is kept as it returns (sub_0003D750, below). */
+#define EDITOR_TICKER_MEASURE 0x00128582u  /* the ticker's measure's call's return address */
+#define EDITOR_TICKER_FIRST   0x00128600u  /* its first copy's font call's */
+#define EDITOR_TICKER_SECOND  0x0012865Eu  /* its second copy's */
+#define EDITOR_TICKER_START   0x001DA394u  /* the float the line starts at: 78 */
+static struct {
+    int on;                    /* the ticker's draw is running */
+    int wide;                  /* ... between its marks, in a widened scene */
+    int copying;               /* its copies are being drawn: the font call is the ticker's own again */
+    int copied;                /* the first copy's call drew them all: */
+    int copies, turns;         /* ... how many, and the line's turns then */
+    float x, at;               /* ... the game's x, and the first copy's */
+    float width;               /* the line's width as its measure's call gave it */
+} s_ticker;
+/* sub_0003D750: the font's measure (scale, text; cdecl, the width a float
+ * on the x87 stack), the game's own: the width the ticker's call of it
+ * gives is kept, for the line's copies. */
+void sub_0003D750(void)
+{
+    const uint32_t ra = MEM32(g_esp);
+    sub_0003D750_gen();
+    if (!s_ticker.on || ra != EDITOR_TICKER_MEASURE) return;
+    s_ticker.width = (float)g_fp_stack[g_fp_top & 7];
+}
+/* The ticker's own font calls (above): 1 when the call was done here, its
+ * `ret` with it; 0 for the font call's override to draw it. */
+static int editor_ticker_text(void)
+{
+    const uint32_t esp = g_esp, ra = MEM32(esp);
+    const float left = (float)MEM32(VIEW_NOW), right = left + (float)MEM32(VIEW_NOW + 8u);
+    uint32_t a[TEXT_FONT_ARGS];
+    float at[WIDE_EDITOR_COPIES];
+    int i, n, turns;
+    if (ra != EDITOR_TICKER_FIRST && ra != EDITOR_TICKER_SECOND) return 0;
+    if (ra == EDITOR_TICKER_SECOND) {
+        if (!s_ticker.copied) return 0;
+        g_esp = esp + 4u;
+        return 1;
+    }
+    /* The line's turns are followed in 4:3 too, for a change of shape (F10)
+     * while it scrolls. */
+    turns = widescreen_menus_editor_turns(bits_f32(MEM32(esp + 4u)), bits_f32(MEM32(EDITOR_TICKER_START)));
+    if (!s_ticker.wide) return 0;
+    for (i = 0; i < (int)TEXT_FONT_ARGS; i++) a[i] = MEM32(esp + 4u + 4u * (uint32_t)i);
+    n = widescreen_menus_editor_copies(bits_f32(a[0]), s_ticker.width, left, right, nv2a_wide_squeeze(), turns,
+                                       at);
+    if (n < 0) return 0;
+    s_ticker.copying = 1;
+    for (i = 0; i < n; i++) {
+        memcpy(&a[0], &at[i], sizeof at[i]);
+        guest_call_cdecl(sub_0003D610, ra, (int)TEXT_FONT_ARGS, a);
+    }
+    s_ticker.copying = 0;
+    s_ticker.copied = 1;
+    s_ticker.copies = n;
+    s_ticker.turns = turns;
+    s_ticker.x = bits_f32(MEM32(esp + 4u));
+    s_ticker.at = n ? at[0] : 0.0f;
+    g_esp = esp + 4u;   /* the call's `ret` */
+    return 1;
+}
+extern void sub_001284F0_gen(void);
+void sub_001284F0(void)
+{
+    static unsigned char told[2];   /* a line coming on, and one that has turned */
+    int marked = nv2a_wide_scene() && wide_menu_mark(WIDE_MENU_PIECE_EDITOR_TICKER, NV2A_WIDE_HUD_WHOLE);
+    memset(&s_ticker, 0, sizeof s_ticker);
+    s_ticker.on = 1;
+    s_ticker.wide = marked;
+    sub_001284F0_gen();
+    if (s_ticker.copied && s_ticker.copies && !told[s_ticker.turns > 0]) {
+        told[s_ticker.turns > 0] = 1;
+        fprintf(stderr, "[WIDE] the graffiti editor's ticker: its line, %.1f wide, %s: the game's at %.1f, "
+                "drawn in %d %s from %.1f in the widened window (squeeze %.3f)\n", (double)s_ticker.width,
+                s_ticker.turns > 0 ? "after its scroll started again" : "coming on", (double)s_ticker.x,
+                s_ticker.copies, s_ticker.copies == 1 ? "copy" : "copies", (double)s_ticker.at,
+                (double)nv2a_wide_squeeze());
+    }
+    wide_menu_unmark(WIDE_MENU_PIECE_EDITOR_TICKER, marked);
+    s_ticker.on = 0;
+}
+/* sub_0012A640: the graffiti editor's parts' draw (called by its draw's
+ * sub_0012B180), which draws each of the holder's 128 models that is shown
+ * through the models' draw: while it runs in a widened scene, that draw
+ * knows the editor's parts (editor_part_draw). Nothing in it is wrong: the
+ * editor was laid out for the console's screen. */
+extern void sub_0012A640_gen(void);
+void sub_0012A640(void)
+{
+    const uint32_t gm = MEM32(GAME_MANAGER);
+    const uint32_t holder = gm ? MEM32(gm + GM_ACTORS + WIDE_EDITOR_HOLDER * 4u) : 0;
+    int began = widescreen_menus_editor_begin((const uint8_t *)g_xbox_mem_offset, ADX_GUEST_RAM, holder,
+                                              nv2a_wide_scene());
+    sub_0012A640_gen();
+    widescreen_menus_editor_end(began);
+}
 void sub_0003D610(void)
 {
     static unsigned char told[256];
@@ -6146,6 +6281,7 @@ void sub_0003D610(void)
     float f[4];
     uint32_t i, text;
     int line;
+    if (s_ticker.on && !s_ticker.copying && editor_ticker_text()) return;
     if (!text_line_now()) {
         sub_0003D610_gen();
         return;

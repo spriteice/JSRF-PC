@@ -413,6 +413,94 @@ void widescreen_menus_ticker_end(int began);
  * number, or an s that isn't between 0 and 1, NV2A_WIDE_HUD_NONE. */
 int widescreen_menus_ticker_x(float x, float s, float *wide_x, unsigned *piece);
 
+/* The graffiti editor (class 0x1DA350, its draw sub_0012B280), which draws
+ * its screen from the 128 models of Media/Mark/model.dat, one a slot of its
+ * holder (the game manager's object WIDE_EDITOR_HOLDER, the models at
+ * +WIDE_EDITOR_PARTS), through the models' draw (its parts' draw,
+ * sub_0012A640), and last a ticker of its own (sub_001284F0): the help line
+ * for the tool in hand, scrolling along a bar of TV static at the top of
+ * the screen, in a viewport the game sets round it (80 to 560 across by 38
+ * to 68 down) and takes off after. Widened, the bar, a 3D model with no
+ * mark, kept its 4:3 shape in the middle while the line, 2D as wide as its
+ * viewport, was stretched across it, and a letter on another page of the
+ * font, a small draw, was squeezed as an overlay: off its line by more the
+ * further from the middle it was (known bug 77; spriteice, 02:35 UTC on 22
+ * November 2026, the "v" of "individual").
+ *
+ * So the bar is drawn across the width, as the pause menus' top bar is
+ * (NV2A_WIDE_HUD_ACROSS, and NV2A_WIDE_HUD_PLAIN with it: the bar has no
+ * grid in it, so all of it is stretched, however many vertices its draw
+ * has), and the ticker's text between marks of its own for the whole width
+ * in its own viewport (NV2A_WIDE_HUD_WHOLE with NV2A_WIDE_HUD_OWN_VIEW):
+ * every page squeezed alike, so the letters keep their shape and their
+ * places, in the window where the game put it on the frame, over the
+ * stretched bar. Squeezed, the line that filled the 4:3 window would end
+ * short of the wider one's ends, so it is placed from the wider window's
+ * right end, where the game's line comes on from its own, and drawn again
+ * at each width of the line (widescreen_menus_editor_copies), at the game's
+ * own scroll.
+ *
+ * Which of the 128 parts the bar is isn't in the game's code: the parts
+ * are told apart by tables. Test build 7260528-editor1 placed every part on
+ * the screen as it was drawn, and its log from the Ally X (22 November
+ * 2026) has one over the ticker's window: part WIDE_EDITOR_BAR_PART, one
+ * node, its sphere at 320.0, 55.4 of the title's pixels and 320.5 across.
+ * (That build looked for the bar by that sphere, at three quarters of the
+ * window's width or more, and so took none: the sphere is two thirds of
+ * it.) In 4:3 nothing is marked. */
+#define WIDE_EDITOR_HOLDER     0x1DE2u    /* the editor's holder's slot in the game manager */
+#define WIDE_EDITOR_PARTS      0x2498u    /* the holder's: its parts' models, a pointer each */
+#define WIDE_EDITOR_NPARTS     128u
+#define WIDE_EDITOR_BAR_PART   18         /* the bar of static, of the parts */
+#define WIDE_MENU_PIECE_EDITOR_BAR    0xE0u   /* the editor's bar of static */
+#define WIDE_MENU_PIECE_EDITOR_TICKER 0xE1u   /* its ticker's text */
+#define WIDE_EDITOR_COPIES     16         /* the most copies of the line drawn in a frame */
+
+/* The editor's parts' draw: it starts, with the editor's holder at holder
+ * (0 for none) in guest memory mem of top bytes, on as for
+ * widescreen_menus_begin. Returns whether it began, for
+ * widescreen_menus_editor_end; while begun, widescreen_menus_editor_part
+ * knows the holder's models. */
+int widescreen_menus_editor_begin(const uint8_t *mem, uint32_t top, uint32_t holder, int on);
+void widescreen_menus_editor_end(int began);
+
+/* For the models' draw: the editor's part that model is (0 to
+ * WIDE_EDITOR_NPARTS - 1), while its parts' draw runs; -1 for any other
+ * model, or outside it. */
+int widescreen_menus_editor_part(const uint8_t *mem, uint32_t model);
+
+/* Whether part is the bar of static, to draw across the width; the log
+ * says so the first time it is. */
+int widescreen_menus_editor_bar(int part);
+
+/* The ticker's line's turns, from the x the game draws it at each frame
+ * and start, where the game's scroll starts again (2 pixels left of its
+ * window's left end). On a change of the editor's screen the game brings
+ * the new line on from its window's right end (x above start), then
+ * scrolls it out past the left end and starts again at start, a second
+ * copy following the first. Returns how many times the scroll has started
+ * again since the line came on, WIDE_EDITOR_COPIES at most: 0 while its
+ * first copy has had nothing ahead of it. An x or a start that isn't a
+ * number changes nothing. */
+int widescreen_menus_editor_turns(float x, float start);
+
+/* The ticker's copies in a widened scene. The game draws its line at x in
+ * a window from left to right, each copy a width after the last; the line
+ * is width wide, as the game measures it, and has had turns turns
+ * (widescreen_menus_editor_turns). Squeezed by s about the frame's middle,
+ * the window's ends are at left and right for text placed 1/s as far from
+ * the window's middle: into out, the x of each copy that shows in that
+ * wider window, the game's own as far left of the wider window's right
+ * end as it is of the game's (so a line comes on at the bar's right end,
+ * as the game's does), the others at each width of the line before and
+ * after it, WIDE_EDITOR_COPIES at most; none more than turns widths before
+ * the game's own, as nothing is ahead of a line that is still coming on.
+ * Returns how many, which may be none; one copy for a width that isn't
+ * above 0; -1, with nothing in out, for an s that isn't between 0 and 1, a
+ * window that isn't one, turns below 0 or numbers that aren't. */
+int widescreen_menus_editor_copies(float x, float width, float left, float right, float s, int turns,
+                                   float out[WIDE_EDITOR_COPIES]);
+
 /* The flags of piece's mark at side: NV2A_WIDE_HUD_ON_GRID for a piece at
  * the left or right of a menu whose backdrop is drawn in two copies
  * (WIDE_MENU_EXTEND), so that it moves with its side's copy of the grid and
@@ -423,7 +511,11 @@ int widescreen_menus_ticker_x(float x, float s, float *wide_x, unsigned *piece);
  * the sides (WIDE_MENU_PIECE_SLIDERS, NV2A_WIDE_HUD_OVER): the flags of the
  * node widescreen_menus_slider last found, NV2A_WIDE_HUD_ANCHOR for a still
  * node that carries a chain and NV2A_WIDE_HUD_FROM_ANCHOR for it and what it
- * carries (widescreen_menus_sliders_begin). 0 for anything else. */
+ * carries (widescreen_menus_sliders_begin). For the graffiti editor's
+ * ticker's text (WIDE_MENU_PIECE_EDITOR_TICKER, NV2A_WIDE_HUD_WHOLE):
+ * NV2A_WIDE_HUD_OWN_VIEW, as it draws in a viewport of its own; for its bar
+ * of static (WIDE_MENU_PIECE_EDITOR_BAR, NV2A_WIDE_HUD_ACROSS):
+ * NV2A_WIDE_HUD_PLAIN, as it has no grid. 0 for anything else. */
 unsigned widescreen_menus_mark_flags(unsigned piece, int side);
 
 /* A menu's 3D map's draw starts: the pause menus' (sub_00114A80 for mode 0,

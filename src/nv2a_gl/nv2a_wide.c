@@ -120,7 +120,8 @@ float nv2a_wide_overlay_shift(float centre, float half, float s)
 enum { WIDE_HUD_CODE_NONE, WIDE_HUD_CODE_LEFT, WIDE_HUD_CODE_RIGHT, WIDE_HUD_CODE_ACROSS,
        WIDE_HUD_CODE_WHOLE, WIDE_HUD_CODE_LEFT_HALF, WIDE_HUD_CODE_RIGHT_HALF,
        WIDE_HUD_CODE_FILL, WIDE_HUD_CODE_OVER, WIDE_HUD_CODE_BARS, WIDE_HUD_CODE_STRIP,
-       WIDE_HUD_CODE_LINES, WIDE_HUD_CODE_MIDDLE };
+       WIDE_HUD_CODE_LINES, WIDE_HUD_CODE_MIDDLE,
+       WIDE_HUD_CODE_ACROSS_PLAIN };   /* ACROSS with NV2A_WIDE_HUD_PLAIN: no flag bit is left for it */
 #define WIDE_HUD_CODE_OWN_VIEW    0x80u
 #define WIDE_HUD_CODE_ON_GRID     0x40u
 #define WIDE_HUD_CODE_ANCHOR      0x20u
@@ -141,6 +142,8 @@ uint32_t nv2a_wide_hud_mark(unsigned piece, int side, unsigned flags)
                   : side == NV2A_WIDE_HUD_STRIP ? WIDE_HUD_CODE_STRIP
                   : side == NV2A_WIDE_HUD_LINES ? WIDE_HUD_CODE_LINES
                   : side == NV2A_WIDE_HUD_MIDDLE ? WIDE_HUD_CODE_MIDDLE : WIDE_HUD_CODE_NONE;
+    if (side == NV2A_WIDE_HUD_ACROSS && (flags & NV2A_WIDE_HUD_PLAIN) && !(flags & NV2A_WIDE_HUD_SIZED))
+        return NV2A_WIDE_HUD_TAG | ((uint32_t)(piece & 0xFFu) << 8) | WIDE_HUD_CODE_ACROSS_PLAIN;
     if (flags & NV2A_WIDE_HUD_OWN_VIEW) code |= WIDE_HUD_CODE_OWN_VIEW;
     if (flags & NV2A_WIDE_HUD_SIZED) {
         if (flags & NV2A_WIDE_HUD_LOW) code |= WIDE_HUD_CODE_LOW;
@@ -156,9 +159,17 @@ int nv2a_wide_hud_read(uint32_t value, unsigned *piece, int *side, unsigned *fla
 {
     uint32_t code = value & WIDE_HUD_CODE_SIDE;
     int sized = (value & 0xFFFF0000u) == NV2A_WIDE_HUD_SIZED_TAG;
-    if (((value & 0xFFFF0000u) != NV2A_WIDE_HUD_TAG && !sized) || code > WIDE_HUD_CODE_MIDDLE)
+    if (((value & 0xFFFF0000u) != NV2A_WIDE_HUD_TAG && !sized) || code > WIDE_HUD_CODE_ACROSS_PLAIN)
         return 0;
     if (sized && (value & (WIDE_HUD_CODE_ANCHOR | WIDE_HUD_CODE_FROM_ANCHOR))) return 0;
+    if (code == WIDE_HUD_CODE_ACROSS_PLAIN) {
+        /* A plain part drawn across: a mark of its own, with no flag's bit. */
+        if (sized || (value & 0xF0u)) return 0;
+        *piece = (value >> 8) & 0xFFu;
+        *side = NV2A_WIDE_HUD_ACROSS;
+        *flags = NV2A_WIDE_HUD_PLAIN;
+        return 1;
+    }
     *piece = (value >> 8) & 0xFFu;
     *side = code == WIDE_HUD_CODE_LEFT ? NV2A_WIDE_HUD_LEFT
           : code == WIDE_HUD_CODE_RIGHT ? NV2A_WIDE_HUD_RIGHT

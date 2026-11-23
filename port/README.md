@@ -54,6 +54,11 @@ The game's lines that name the A or B button by its letter are
 `prompt_text.c`, from the font calls' overrides there: it knows each line
 by its bytes and draws it in pieces, each letter's place marked for the
 style's picture the same way.
+The graffiti editor's help line scrolls along a bar of static, in a ticker
+of the game's own: its override there, in widescreen, draws the line in
+copies along the bar, coming on at its right end, which
+`widescreen_menus.c` names among the editor's parts and has drawn across
+(known bug 77).
 
 The bulk of the port — the hundreds of thousands of lines of C the pipeline
 generates from the XBE — is **not** here and will not be: it is derived from a

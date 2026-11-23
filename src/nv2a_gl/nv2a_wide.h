@@ -248,7 +248,13 @@ float nv2a_wide_lines_coord(float c, float span);
 /* A mark's flag: the piece draws in a viewport of its own, a strip that cuts
  * off what rolls past its edges. Its 2D fills that viewport, so measured
  * there it would be a backdrop and left unsqueezed: it is squeezed whatever
- * its span, and moved from that viewport's centre, not the frame's. */
+ * its span, and moved from that viewport's centre, not the frame's. With
+ * WHOLE (the graffiti editor's ticker, port/widescreen_menus.h), the text
+ * runs the whole width of that viewport: squeezed about its centre and not
+ * moved, while the viewport's own cut stays where it is on the frame,
+ * straight across it, over the bar the game side has drawn across under
+ * it; without the flag, text marked WHOLE in a viewport narrower than the
+ * frame is left as an unmarked draw is. */
 #define NV2A_WIDE_HUD_OWN_VIEW 1u
 
 /* A mark's flag: the piece is one of a menu's parts at a side, on a
@@ -292,9 +298,19 @@ float nv2a_wide_lines_coord(float c, float span);
 #define NV2A_WIDE_HUD_LOW         32u
 #define NV2A_WIDE_HUD_SIZED_TAG   0x48530000u   /* "HS" */
 
+/* A mark's flag for a part drawn across (NV2A_WIDE_HUD_ACROSS) that has no
+ * grid in it: all of its 3D is stretched, however many vertices a draw of
+ * it has (nv2a_wide_slab isn't asked). The graffiti editor's bar of static,
+ * which is no menu's part and has no backdrop beside it to line up with
+ * (port/widescreen_menus.h). It goes with ACROSS alone and no other flag:
+ * with those its mark is a value of its own; a mark of any other side, or a
+ * sized piece's, leaves it out. */
+#define NV2A_WIDE_HUD_PLAIN       64u
+
 /* The mark's value for piece (0 to 255, which the log names), side and
  * flags (any of the NV2A_WIDE_HUD_ flags above, or 0). With
- * NV2A_WIDE_HUD_SIZED, a menu's flags are left out. */
+ * NV2A_WIDE_HUD_SIZED, a menu's flags are left out. NV2A_WIDE_HUD_PLAIN
+ * counts with NV2A_WIDE_HUD_ACROSS only, and no other flag goes with it. */
 uint32_t nv2a_wide_hud_mark(unsigned piece, int side, unsigned flags);
 
 /* A value read on NV2A_WIDE_HUD_METHOD as a mark: 1, with its piece, side
