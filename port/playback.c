@@ -91,7 +91,7 @@ enum { PB_STEP_MENU, PB_STEP_MARK, PB_STEP_SHOT };
 typedef struct { int line, idle, what; uint32_t at; char text[PB_STEP_TEXT]; } PbStep;
 
 static const char *const k_kind[PLAYBACK_ANCHOR_KINDS] = {
-    "mission.bin", "mission.dat", "stage", "scene", "scene-end"
+    "mission.bin", "mission.dat", "stage", "scene", "scene-end", "flow"
 };
 
 /* The settings a recording keeps (playback.h): each by its key in the
@@ -175,9 +175,17 @@ void playback_drawn(int game_thread, uint32_t from)
     }
 }
 
+/* The mission flows seen running (playback_flow), and the step each was
+ * last about to run. */
+#define PB_FLOWS 4
+static struct { uint32_t flow, step; } s_flows[PB_FLOWS];
+static unsigned s_flows_new;
+
 static void run_start(void)
 {
     s_frame = 0;
+    memset(s_flows, 0, sizeof s_flows);
+    s_flows_new = 0;
     memset(s_reads, 0, sizeof s_reads);
     s_pressed_ever = 0;
     s_still_valid = 0;
@@ -242,6 +250,7 @@ static uint32_t s_packet[PLAYBACK_PORTS];
  * pad (steps, or an anchor waited for) since the last check, so that the
  * draws can't be compared there. */
 static int s_random_kept, s_random_said, s_window_held;
+static int s_flow_kept;                     /* the recording has the flow's anchors */
 #define PB_RANDOM_SAY 5
 
 #define PB_PADS(p)  ((PbPad *)s_pads[p].at)
@@ -408,6 +417,9 @@ static void summary(void)
             pad_now(), outcome(), s_res.why[0] ? ": " : "", s_res.why, s_res.frames,
             s_res.anchors_met, s_res.anchors, s_res.anchors_skipped, s_res.checks,
             s_res.drift_most, s_res.drift_most_at, s_res.idles_put_back, s_idles.n);
+    if (s_flow_kept)
+        fprintf(stderr, "[PLAYBACK] the mission's steps: %d met, %d of them late or early\n", s_res.flow_met,
+                s_res.flow_off);
     if (s_steps.n)
         fprintf(stderr, "[PLAYBACK] steps run %d of %d (" PLAYBACK_STEPS ")\n", s_steps_run, s_steps.n);
     if (s_random_kept && s_res.random_checks > s_res.random_same)
@@ -814,6 +826,7 @@ static void forget(void)
     memset(&s_traces, 0, sizeof s_traces);
     memset(&s_settings, 0, sizeof s_settings);
     s_random_kept = 0;
+    s_flow_kept = 0;
 }
 
 /* The recording in folder, every line checked: 0, saying where, at the
@@ -901,6 +914,7 @@ static int load(const char *path)
                  && (!s_anchors.n || a.frame >= PB_ANCHOR[s_anchors.n - 1].frame);
             a.kind = (PLAYBACK_ANCHOR)k;
             if (ok && (ok = (to = add(&s_anchors, sizeof *to)) != NULL)) *to = a;
+            if (ok && a.kind == PLAYBACK_FLOW) s_flow_kept = 1;
             frame = a.frame;
         } else if (!strcmp(word, "check") || !strcmp(word, "idle")) {
             PbList *l = word[0] == 'c' ? &s_checks : &s_idles;
@@ -1408,8 +1422,11 @@ static void play_pass(void)
         const PbAnchor *a = &PB_ANCHOR[s_anchor_next];
         s_res.state = PLAYBACK_WAITING;
         s_wait_from = s_frame;
-        fprintf(stderr, "[PLAYBACK] frame %u: waiting for anchor %d of %d (%s %08X), recorded at frame %u\n",
-                s_frame, s_anchor_next + 1, s_anchors.n, k_kind[a->kind], a->value, a->frame);
+        /* The flow's steps are many, and most are met on their frame: one
+         * is said only as it is met late or early (play_anchor). */
+        if (a->kind != PLAYBACK_FLOW)
+            fprintf(stderr, "[PLAYBACK] frame %u: waiting for anchor %d of %d (%s %08X), recorded at frame %u\n",
+                    s_frame, s_anchor_next + 1, s_anchors.n, k_kind[a->kind], a->value, a->frame);
     }
     if (s_res.state == PLAYBACK_WAITING) {
         s_res.frames++;
@@ -1429,7 +1446,7 @@ static void play_pass(void)
 
 static void play_anchor(PLAYBACK_ANCHOR kind, uint32_t value, uint32_t *random)
 {
-    uint32_t was = recorded_frame();
+    uint32_t was = recorded_frame(), off;
     int j;
     for (j = s_anchor_next; j < s_anchors.n && j <= s_anchor_next + PLAYBACK_ANCHOR_AHEAD; j++)
         if (PB_ANCHOR[j].kind == kind && PB_ANCHOR[j].value == value) break;
@@ -1443,11 +1460,14 @@ static void play_anchor(PLAYBACK_ANCHOR kind, uint32_t value, uint32_t *random)
     }
     /* Reached late, the pad was held for it (recorded_frame); reached
      * early, the recording skips to it. Either way it goes on from there. */
-    fprintf(stderr, "[PLAYBACK] frame %u: anchor %d of %d met (%s %08X), recorded at frame %u: %u frames"
-            " %s%s\n", s_frame, j + 1, s_anchors.n, k_kind[kind], value, PB_ANCHOR[j].frame,
-            s_res.state == PLAYBACK_WAITING ? s_frame - s_wait_from : PB_ANCHOR[j].frame - was,
-            s_res.state == PLAYBACK_WAITING ? "late" : "early",
-            j > s_anchor_next ? ", past anchors the game didn't reach" : "");
+    off = s_res.state == PLAYBACK_WAITING ? s_frame - s_wait_from : PB_ANCHOR[j].frame - was;
+    if (kind != PLAYBACK_FLOW || off || j > s_anchor_next)
+        fprintf(stderr, "[PLAYBACK] frame %u: anchor %d of %d met (%s %08X), recorded at frame %u: %u frames"
+                " %s%s\n", s_frame, j + 1, s_anchors.n, k_kind[kind], value, PB_ANCHOR[j].frame, off,
+                s_res.state == PLAYBACK_WAITING ? "late" : "early",
+                j > s_anchor_next ? ", past anchors the game didn't reach" : "");
+    if (kind == PLAYBACK_FLOW) s_res.flow_met++;
+    if (kind == PLAYBACK_FLOW && off) s_res.flow_off++;
     s_res.anchors_skipped += j - s_anchor_next;
     s_res.anchors_met++;
     if ((int64_t)s_frame - PB_ANCHOR[j].frame != s_offset) s_window_held = 1;   /* skipped to */
@@ -2032,9 +2052,27 @@ void playback_anchor(PLAYBACK_ANCHOR kind, uint32_t value, uint32_t *random)
     if (s_out) {
         fprintf(rec(), "anchor %u %s %08X %08X\n", s_frame, k_kind[kind], value, random ? *random : 0u);
         fflush(s_out);
-    } else if (playing())
+    } else if (playing() && (kind != PLAYBACK_FLOW || s_flow_kept))
         play_anchor(kind, value, random);
     pb_unlock();
+}
+
+void playback_flow(uint32_t flow, uint32_t mission, uint32_t step, uint32_t *random)
+{
+    int i;
+    pb_lock();
+    for (i = 0; i < PB_FLOWS && s_flows[i].flow != flow; i++) { }
+    if (i < PB_FLOWS && s_flows[i].step == step) {
+        pb_unlock();
+        return;
+    }
+    if (i == PB_FLOWS) {                        /* new: in place of the one seen first */
+        i = (int)(s_flows_new++ % PB_FLOWS);
+        s_flows[i].flow = flow;
+    }
+    s_flows[i].step = step;
+    pb_unlock();
+    playback_anchor(PLAYBACK_FLOW, (mission & 0xFFFFu) << 16 | (step & 0xFFFFu), random);
 }
 
 void playback_view(float position[3], uint32_t *turn, uint32_t camera, const float look[2], const float eye[3],

@@ -24,7 +24,13 @@ thread, it is said where they weren't as recorded and put back at each
 check and at the idle moment; the idle moment is found and the skater put
 back there; it ends on route, and --play's run closes the game. An anchor reached 30 frames late
 holds the pad as recorded until it comes and moves the presses after it, not
-before; one reached 20 frames early skips to it. Off route: the skater
+before; one reached 20 frames early skips to it. The mission's steps, with
+the stand-in's mission flows running: recorded, each change of a flow's
+step and each new flow, the two flows of a hand-over each on its own; the
+course's start (its sound ready) reached a frame late holds the pad a
+frame, and a frame early skips a recorded frame, and the trace is as
+recorded throughout; a recording made before them plays as it did, the
+flows running. Off route: the skater
 pushed 100 units off, a stage the recording doesn't have next, and an
 anchor never reached. A restart with nothing running says nothing; one
 while recording ends the recording, kept, and one while playing stops it,
@@ -127,6 +133,9 @@ with tempfile.TemporaryDirectory(prefix="playback-") as directory:
             "line 3: a line after the end",
             "not a recording (no \"jsrf-pc-recording 1\" first)",
             "frames late", "frames early", "summary: finished on route",
+            "anchor 6 of 14 met (flow 000C0016), recorded at frame 361: 1 frames late",
+            "anchor 6 of 14 met (flow 000C0016), recorded at frame 361: 1 frames early",
+            "the mission's steps: 8 met, 1 of them late or early",
             "summary: off route", "summary: handed back",
             "idle moment 1: the skater put back",
             "the free camera as recorded at frame",

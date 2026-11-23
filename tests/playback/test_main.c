@@ -273,6 +273,9 @@ typedef struct {
     int set_at;                 /* the player turns Default cam fix off at this frame (0: never) */
     int state_at;               /* the skater's state changes at this frame where nothing follows it, at
                                  * byte SKATER_HIDDEN of its object (0: never) */
+    int flow;                   /* the mission flows run, their steps as k_flow has them (those from
+                                 * FLOW_START late with the anchors from late_anchor) */
+    int flow_holds;             /* and the skater held still until the course's start lets it go */
 } How;
 
 /* Where the stand-in skater's object keeps its place, its turn, and a value
@@ -299,6 +302,47 @@ static int anchor_frame(const How *h, int i)
 {
     if (i == h->skip_anchor) return -1;
     return k_anchors[i].frame + (h->late && i >= h->late_anchor ? h->late : 0);
+}
+
+/* The stand-in's mission flows, each pass, by the recorded frame each step
+ * starts at: the course's start (20) starts its music (21) and waits for the
+ * sound to be ready, which it is at FLOW_START, then lets the skater go
+ * (22); at 600 the flow hands over (93) to the next mission's, which runs
+ * beside it until the first lets itself go (94). */
+#define FLOW_A     0x00400000u
+#define FLOW_B     0x00410000u
+#define FLOW_START 360
+typedef struct { int frame; uint32_t flow, mission, step; } FlowStep;
+static const FlowStep k_flow[] = {
+    { 120,        FLOW_A, 0x0001000Cu, 20 },
+    { 250,        FLOW_A, 0x0001000Cu, 21 },
+    { FLOW_START, FLOW_A, 0x0001000Cu, 22 },
+    { 600,        FLOW_A, 0x0001000Cu, 93 },
+    { 600,        FLOW_B, 0x0001000Du, 0 },
+    { 620,        FLOW_B, 0x0001000Du, 1 },
+    { 650,        FLOW_A, 0x0001000Cu, 94 },
+    { 650,        FLOW_B, 0x0001000Du, 2 },
+};
+#define FLOW_STEPS ((int)(sizeof k_flow / sizeof k_flow[0]))
+#define FLOW_A_GONE 650                 /* the first flow's last pass */
+
+static int flow_frame(const How *h, int frame)
+{
+    return frame + (frame >= FLOW_START ? h->late : 0);
+}
+
+/* Each flow running at pass f, about to run its step: the first, then the
+ * second. */
+static void flows(Game *g, const How *h, int f)
+{
+    const uint32_t which[2] = { FLOW_A, FLOW_B };
+    int w, i;
+    for (w = 0; w < 2; w++) {
+        if (which[w] == FLOW_A && f > flow_frame(h, FLOW_A_GONE)) continue;
+        for (i = FLOW_STEPS - 1; i >= 0; i--)
+            if (k_flow[i].flow == which[w] && flow_frame(h, k_flow[i].frame) <= f) break;
+        if (i >= 0) playback_flow(k_flow[i].flow, k_flow[i].mission, k_flow[i].step, &g->random);
+    }
 }
 
 static void run(Game *g, const How *h)
@@ -365,9 +409,14 @@ static void run(Game *g, const How *h)
          * every seventh frame on another, as the sound library might. */
         lx = *(int16_t *)(g_mem + STATE + 14) / 32767.0f;
         ly = *(int16_t *)(g_mem + STATE + 16) / 32767.0f;
+        /* The mission's flows, then the skater: held still, with the flows,
+         * until the pass after the course's start; then turned by the stick. */
+        if (h->flow) flows(g, h, f);
+        if (h->flow_holds && f <= flow_frame(h, FLOW_START)) lx = ly = 0;
         g->pos[0] += (lx * cosf(heading) + ly * sinf(heading)) * SPEED;
         g->pos[2] += (ly * cosf(heading) - lx * sinf(heading)) * SPEED;
         g->turn = (uint32_t)(f * 13) & 0xFFFFu;
+        if (h->flow_holds) g->turn = (uint32_t)(int32_t)(lx * 8000.0f + ly * 3000.0f) & 0xFFFFu;
         if (lx == 0 && ly == 0) g->turn = 0x4000u;  /* standing still, facing one way */
         for (i = 0; i < (h->recording ? 1 + f % 3 : 1 + f % 5); i++) {
             g->random = g->random * 0x55u + 0x7Fu;
@@ -708,6 +757,93 @@ static void play_hand_back(void)
           "a press at 300: state %d at frame %u, closed %d", res->state, res->frames, g_closed);
     CHECK(g_play.seen[5][0].bAnalogButtons[XBOX_BUTTON_B] == 0 && g_play.seen[300][0].bAnalogButtons[XBOX_BUTTON_B] == 255,
           "the pad held from the start reached the game, or the press after didn't");
+}
+
+/* ---- the mission's steps --------------------------------------------------- */
+
+static Game g_flow;
+static char g_flow_run[600];
+
+/* Pad by pad, the play against the recording, the course's start reached
+ * late frames late (negative: early): as recorded to it; reached late, the
+ * pad held as recorded while it waits; after it, the presses moved by as
+ * much. */
+static int flow_pads(int late)
+{
+    int f, r;
+    for (f = 0; f < FRAMES; f++)
+        for (r = 0; r < READS; r++) {
+            const XBOX_GAMEPAD *want;
+            if (f <= (late < 0 ? FLOW_START + late : FLOW_START)) want = &g_flow.seen[f][r];
+            else if (late > 0 && f <= FLOW_START + late) want = &g_flow.seen[FLOW_START][READS - 1];
+            else if (f - late < FRAMES) want = &g_flow.seen[f - late][r];
+            else continue;
+            if (!same(&g_play.seen[f][r], want)) return f;
+        }
+    return -1;
+}
+
+/* The mission's steps as anchors. A recording keeps each change of a
+ * flow's step, and each new flow, the two flows of a hand-over each on its
+ * own. Its course's start (the sound ready) reached a frame late, the pad
+ * held a frame there; a frame early, a recorded frame skipped: either way
+ * the skater lets go as recorded and the trace is as recorded throughout.
+ * A recording made before them plays as it did, the game's flows running. */
+static void play_flow(void)
+{
+    How rec = { .frames = FRAMES, .skip_anchor = -1, .wrong_anchor = -1, .recording = 1, .flow = 1,
+                .flow_holds = 1 };
+    How old = { .frames = FRAMES + 10, .skip_anchor = -1, .wrong_anchor = -1, .flow = 1 };
+    const char *want[FLOW_STEPS] = { "000C0014", "000C0015", "000C0016", "000C005D", "000D0000", "000D0001",
+                                     "000C005E", "000D0002" };
+    const PLAYBACK_RESULT *res = playback_result();
+    char path[700], line[512], kind[32], value[16];
+    unsigned fr, start_at = 0;
+    int n = 0, in_order = 0, late, bad;
+    FILE *f;
+    snprintf(g_flow_run, sizeof g_flow_run, "%s/flow-recording", g_dir);     /* not among Play's */
+    CHECK(playback_record(g_flow_run), "a recording with the mission's steps couldn't start");
+    run(&g_flow, &rec);
+    playback_stop();
+    snprintf(path, sizeof path, "%s/" PLAYBACK_FILE, g_flow_run);
+    f = fopen(path, "r");
+    CHECK(f != NULL, "no %s", path);
+    if (!f) return;
+    while (fgets(line, sizeof line, f))
+        if (sscanf(line, "anchor %u %31s %15s", &fr, kind, value) == 3 && !strcmp(kind, "flow")) {
+            in_order += n < FLOW_STEPS && !strcmp(value, want[n]);
+            if (!strcmp(value, "000C0016")) start_at = fr;
+            n++;
+        }
+    fclose(f);
+    CHECK(n == FLOW_STEPS && in_order == FLOW_STEPS && start_at == FLOW_START + 1,
+          "the flows' steps recorded: %d of %d (%d in order), the course's start at frame %u", n, FLOW_STEPS,
+          in_order, start_at);
+
+    for (late = 1; late >= -1; late -= 2) {
+        How h = { .frames = FRAMES + 10, .late = late, .late_anchor = 3, .skip_anchor = -1, .wrong_anchor = -1,
+                  .flow = 1, .flow_holds = 1 };
+        CHECK(playback_play(g_flow_run, 0), "playback with the mission's steps couldn't start");
+        run(&g_play, &h);
+        bad = flow_pads(late);
+        CHECK(bad < 0, "the course's start a frame %s: frame %d not the recorded pad", late > 0 ? "late" : "early",
+              bad);
+        CHECK(res->state == PLAYBACK_FINISHED && res->anchors_met == ANCHORS + FLOW_STEPS
+              && res->flow_met == FLOW_STEPS && res->flow_off == 1 && res->drift_most < 0.01f
+              && res->trace_frames > 0 && res->trace_same == res->trace_frames && res->trace_apart_at == 0,
+              "the course's start a frame %s: state %d (%s), anchors %d, the flow's %d (%d off), drift %.2f,"
+              " the trace %d of %d (first apart at %u)", late > 0 ? "late" : "early", res->state, res->why,
+              res->anchors_met, res->flow_met, res->flow_off, res->drift_most, res->trace_same, res->trace_frames,
+              res->trace_apart_at);
+    }
+
+    /* Made before them: the game's flows running, nothing waited for. */
+    CHECK(playback_play(g_run, 0), "playback couldn't start");
+    run(&g_play, &old);
+    CHECK(res->state == PLAYBACK_FINISHED && res->anchors == ANCHORS && res->anchors_met == ANCHORS
+          && res->flow_met == 0 && res->trace_same == res->trace_frames && res->drift_most < 0.01f,
+          "a recording with no steps: state %d (%s), anchors %d of %d, the flow's %d, the trace %d of %d",
+          res->state, res->why, res->anchors_met, res->anchors, res->flow_met, res->trace_same, res->trace_frames);
 }
 
 /* ---- the free camera ------------------------------------------------------ */
@@ -1659,6 +1795,7 @@ int main(int argc, char **argv)
     play_off_route();
     play_idle();
     play_hand_back();
+    play_flow();
     play_settings();
     mark();
     record_cam();

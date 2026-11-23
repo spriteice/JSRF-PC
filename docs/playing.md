@@ -598,8 +598,10 @@ running while it is open, but your input goes to the menu.
     the game is yours from there; it stops itself at the recording's end,
     or if the game has gone another way (below). The launcher plays one
     with `--play <folder>`, and closes the game at its end. A recording is
-    pressed frame by frame, not by time, and waits for each load, mission
-    and cutscene it reached, so a slower load moves nothing. The game
+    pressed frame by frame, not by time, and waits for each load, mission,
+    cutscene and step of a mission it reached, so a slower load, or a
+    mission's music ready a moment later, moves nothing; one made before it
+    kept the steps waits for the rest only. The game
     doesn't play exactly the same twice, so a long run can drift: each
     second the recording knows where your skater was, and when it stood
     still with nothing pressed playback puts the skater back there. Each

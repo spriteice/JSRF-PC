@@ -10,13 +10,18 @@
  * the host's time somewhere), so playback doesn't count on the presses
  * alone:
  *
- * - Anchors: each mission file and stage the game asks for, and each
- *   cutscene's start and end. The game's random generator is kept with each,
- *   and put back on playback. Playback holds the pad as the recording had it
- *   until the game reaches the next anchor, then goes on from that anchor's
- *   frame; one the game reaches early skips to it. One the game doesn't
- *   reach within PLAYBACK_ANCHOR_WAIT, or one it reaches in another order,
- *   stops the run as off route.
+ * - Anchors: each mission file and stage the game asks for, each
+ *   cutscene's start and end, and each change of the mission flow's step.
+ *   The flow's steps are anchors because some wait on the sound: a step
+ *   starts a track and the next waits until the sound manager has it ready,
+ *   which it is once enough of it is decoded, on the host's time, so a play
+ *   can reach the step after a pass sooner or later than its recording did.
+ *   The game's random generator is kept with each, and put back on
+ *   playback. Playback holds the pad as the recording had it until the
+ *   game reaches the next anchor, then goes on from that anchor's frame;
+ *   one the game reaches early skips to it. One the game doesn't reach
+ *   within PLAYBACK_ANCHOR_WAIT, or one it reaches in another order, stops
+ *   the run as off route.
  * - Checks: once a second of frames, the player's skater: where it is and
  *   which way it faces, and the camera's mode. Playback measures how far the
  *   skater is from that spot; past PLAYBACK_DRIFT_LIMIT for
@@ -158,9 +163,10 @@
  * from the game's view then, as does a recording with no camera line,
  * which has the half pipe's and the stage's fixed shots, and the graffiti
  * shot only while the free camera is off (camscene_ticks_before). A kind is mission.bin,
- * mission.dat, stage, scene or scene-end, its value and the random generator
- * in eight hex digits. turn is the skater's turn, 0x10000 a whole turn, in
- * eight hex digits; camera the camera's mode. A check's random is the
+ * mission.dat, stage, scene, scene-end or flow, its value and the random
+ * generator in eight hex digits; a recording with no flow anchor (made
+ * before them) is played without them. turn is the skater's turn, 0x10000 a
+ * whole turn, in eight hex digits; camera the camera's mode. A check's random is the
  * generator in eight hex digits, drawn the times it was drawn since the
  * check before (or the run's start) on the game's own thread, the main
  * loop's, and drawn_others on any other, in decimal; an idle moment's is the
@@ -217,6 +223,8 @@ typedef enum {
     PLAYBACK_STAGE,           /* a stage the mission's flow asks for: 0x0001000N for Stg1N */
     PLAYBACK_SCENE,           /* a cutscene starts playing (sub_00023790): 0 */
     PLAYBACK_SCENE_END,       /* and ends: 0 */
+    PLAYBACK_FLOW,            /* a mission flow's step changes, seen before it runs (playback_flow):
+                                 the mission's number (its id's low half) << 16 | the step */
     PLAYBACK_ANCHOR_KINDS
 } PLAYBACK_ANCHOR;
 
@@ -246,6 +254,7 @@ typedef struct {
     uint32_t frames;          /* frames played, or recorded */
     int anchors, anchors_met; /* anchors in the recording, and met */
     int anchors_skipped;      /* recorded anchors an early one skipped */
+    int flow_met, flow_off;   /* of those met, the flow's steps, and those met late or early */
     int checks, idles_put_back;
     int random_checks;        /* checks with the random generator compared */
     int random_same;          /* of them, the generator as recorded */
@@ -353,6 +362,13 @@ int playback_freecam_back(void);
 /* An anchor, as the game reaches it, with its random generator: kept, or
  * put back. */
 void playback_anchor(PLAYBACK_ANCHOR kind, uint32_t value, uint32_t *random);
+
+/* The mission flow at flow (its object's address), of mission (its id),
+ * about to run its step (sub_00051FC0), each pass: an anchor (PLAYBACK_FLOW)
+ * when the step isn't the one that flow was last about to run, or the flow
+ * is new. Each flow is followed on its own, as two run at once while one
+ * hands over to the next; a recording or a play starts with none. */
+void playback_flow(uint32_t flow, uint32_t mission, uint32_t step, uint32_t *random);
 
 /* Each update of the camera that follows the main player's skater: its
  * position (x, y, z) and turn, which playback may put back at an idle

@@ -1949,6 +1949,22 @@ __attribute__((constructor)) static void jsrf_wide_boot(void)
     const char *v = getenv("JSRF_WIDE_BOOT");
     nv2a_set_wide_scene(v && v[0] == '0' ? 0 : 1);
 }
+/* Input playback's flow anchors (port/playback.h, playback_flow): each
+ * flow's step, seen as the pass's step is about to run (after it, a flow
+ * handing over may have let itself go); playback makes each change, and each
+ * new flow, an anchor. Some steps wait on the sound manager: a step starts a
+ * track (sub_00117350) and the next waits until the manager has it ready
+ * (step 21 on its music slot, sub_001167F0; 27, 53, 69, 75, 79, 85 and 89 the
+ * same), which it is once the track has decoded enough to play
+ * (sub_00116C30), on the host's time, not the game's passes. So a play can
+ * reach the step after a pass sooner or later than its recording did, and
+ * the anchor lines the presses up with it again. */
+static void flow_anchor(const uint8_t *m, uint32_t flow)
+{
+    if (flow < ADX_GUEST_LOW || flow + SOUL_FLOW_SIZE > ADX_GUEST_RAM) return;
+    playback_flow(flow, *(const uint32_t *)(m + flow + SOUL_FLOW_MISSION),
+                  *(const uint32_t *)(m + flow + SOUL_FLOW_STATE), game_random());
+}
 extern void sub_00051FC0_gen(void);
 void sub_00051FC0(void)
 {
@@ -2048,6 +2064,7 @@ void sub_00051FC0(void)
          * when the flow hands over to the next (port/soul_indicator.c). */
         soul_indicator_flow(m, ADX_GUEST_RAM, flow, jsrf_now());
     }
+    flow_anchor(m, flow);
     sub_00051FC0_gen();
 }
 
