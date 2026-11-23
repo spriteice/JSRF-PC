@@ -3,7 +3,9 @@
  * XInputGetState does, running the free camera once a frame and around the
  * skater as the follow camera does, moving the skater by what it read the way
  * the view faces, drawing random numbers and reaching anchors, and reporting
- * the skater to playback as the camera update does (tests/playback/run.py). */
+ * the skater, the view's heading and the free camera's angles to playback as
+ * the camera update does; and the settings a recording keeps, and the mark
+ * that a recording plays (tests/playback/run.py). */
 #define _POSIX_C_SOURCE 200809L    /* setenv */
 #include <math.h>
 #include <stdio.h>
@@ -24,6 +26,7 @@
 #include "pad.h"
 #include "photo_mode.h"
 #include "playback.h"
+#include "playback_mark.h"
 
 #define STATE      0x0100u          /* the game's XINPUT_STATE */
 #define FRAMES     1000             /* the recorded run's passes */
@@ -68,6 +71,26 @@ int missions_started(MISSIONS_START *out)
     return g_started;
 }
 int photo_mode_ticked(void) { return g_photo; }
+
+/* The settings a recording keeps (port/playback.c's k_setting), as their
+ * modules hold them: Default cam fix, No skater fade, Skip intro, Skip
+ * cutscenes, Draw distance, Far buildings and Far shadows. */
+#define SETTINGS 7
+static int g_set[SETTINGS] = { 1, 0, 1, 1, 1, 3, 3 };
+int camwall_on(void) { return g_set[0]; }
+void camwall_set(int v) { g_set[0] = v; }
+int camwall_whole(void) { return g_set[1]; }
+void camwall_whole_set(int v) { g_set[1] = v; }
+int intro_skip(void) { return g_set[2]; }
+void intro_skip_set(int v) { g_set[2] = v; }
+int cutscene_skip_on(void) { return g_set[3]; }
+void cutscene_skip_set(int v) { g_set[3] = v; }
+int draw_distance_step(void) { return g_set[4]; }
+void draw_distance_set(int v) { g_set[4] = v; }
+int draw_far_buildings(void) { return g_set[5]; }
+void draw_far_buildings_set(int v) { g_set[5] = v; }
+int draw_far_shadows(void) { return g_set[6]; }
+void draw_far_shadows_set(int v) { g_set[6] = v; }
 void pad_test_start(void) {}
 int pad_test_inputs(uint32_t port, XBOX_INPUT_STATE *st) { (void)port; (void)st; return 0; }
 
@@ -166,6 +189,7 @@ typedef struct {
     unsigned ticks[FRAMES + 4000];              /* Camera's ticks as the camera update had them */
     uint32_t random_after[8];                   /* the generator after each anchor */
     uint32_t random_at[FRAMES + 4000];          /* the generator after the camera update */
+    int dcamfix[FRAMES + 4000];                 /* Default cam fix as the frame had it */
     int anchors;
 } Game;
 static Game g_rec, g_play;
@@ -241,6 +265,10 @@ typedef struct {
     unsigned ticks, ticks2;     /* the player's Camera ticks, and from ticks_at (0: never) */
     int ticks_at;
     int flips;                  /* the window flips once a pass, running a run's steps */
+    int yaw_at;                 /* the free camera turned yaw_by radians at this frame, after it placed
+                                 * the eye, as nothing in the recording turned it (0: never) */
+    double yaw_by;
+    int set_at;                 /* the player turns Default cam fix off at this frame (0: never) */
 } How;
 
 /* The window's picture written at a flip, as the renderer's shot_write
@@ -269,7 +297,7 @@ static void run(Game *g, const How *h)
     memset(g, 0, sizeof *g);
     g->random = 0x416Cu;
     for (f = 0; f < h->frames; f++) {
-        float lx = 0, ly = 0, heading = 0;
+        float lx = 0, ly = 0, heading = 0, look[2] = { 0, CAM_BACK };
         int in_scene = 0;
         PLAYBACK_STATE was = playback_state();
         playback_pass();
@@ -298,11 +326,22 @@ static void run(Game *g, const How *h)
          * skater, or the free camera's around it, whose view the skater is
          * steered by. */
         freecam_frame();
+        if (h->set_at && f == h->set_at) g_set[0] = 0;
+        g->dcamfix[f] = g_set[0];
         if (!in_scene) {
             float seye[3] = { g->pos[0], g->pos[1] + CAM_UP, g->pos[2] - CAM_BACK };
             unsigned ticks = h->ticks_at && f >= h->ticks_at ? h->ticks2 : h->ticks;
-            if (freecam_orbit(CAM, CAMERA, g->pos, seye, 0, g->eye[f]) != FREECAM_OFF)
+            look[0] = 0;
+            look[1] = CAM_BACK;
+            if (freecam_orbit(CAM, CAMERA, g->pos, seye, 0, g->eye[f]) != FREECAM_OFF) {
                 heading = atan2f(g->pos[0] - g->eye[f][0], g->pos[2] - g->eye[f][2]);
+                look[0] = g->pos[0] - g->eye[f][0];
+                look[1] = g->pos[2] - g->eye[f][2];
+            }
+            if (h->yaw_at && f == h->yaw_at) {
+                double yaw, pitch;
+                if (freecam_angles(&yaw, &pitch)) freecam_put(yaw + h->yaw_by, pitch);
+            }
             freecam_ran(CAM);
             /* And the camera update's Camera ticks, as it reads them. */
             playback_camscenes(&ticks);
@@ -333,7 +372,7 @@ static void run(Game *g, const How *h)
             playback_anchor(k_anchors[i].kind, value, &g->random);
             g->random_after[g->anchors++] = g->random;
         }
-        if (!in_scene) playback_view(g->pos, &g->turn, CAMERA, &g->random);
+        if (!in_scene) playback_view(g->pos, &g->turn, CAMERA, look, &g->random);
         g->random_at[f] = g->random;
         memcpy(g->at[f], g->pos, sizeof g->pos);
         if (h->flips) playback_flip(shot);
@@ -355,10 +394,11 @@ static int g_kept;
 
 static void record(void)
 {
-    How h = { .frames = FRAMES, .skip_anchor = -1, .wrong_anchor = -1, .recording = 1 };
+    How h = { .frames = FRAMES, .skip_anchor = -1, .wrong_anchor = -1, .recording = 1, .set_at = 300 };
     char path[700], line[256];
     int pads = 0, anchors = 0, checks = 0, idles = 0, ends = 0, reads1 = 0, cams = 0, idles_kept = 0;
-    int drawn_ok = 0, others = 0;
+    int drawn_ok = 0, others = 0, settings = 0, first_settings = 0, set_later = 0, traces = 0, no_view = 0;
+    unsigned trace_first = 0, trace_last = 0;
     unsigned fr, t, c, rnd, drawn, oth, before = 0;
     float x, y, z;
     FILE *f;
@@ -402,8 +442,27 @@ static void record(void)
         }
         ends += !strcmp(line, "end 1000\n");
         cams += !strcmp(line, "freecam 1 0 0 0 5 5 0.1 0 1 5\n");
+        /* The settings at the first frame, each once, and Default cam fix
+         * off as the player turned it, at the next pass; the trace, every
+         * frame from the first press; each check with the free camera's
+         * angles, none while it steers no camera. */
+        settings += !strncmp(line, "setting ", 8);
+        first_settings += !strncmp(line, "setting 1 ", 10);
+        set_later += !strcmp(line, "setting 302 dcamfix 0\n");
+        if (sscanf(line, "trace %u", &fr) == 1) {
+            if (!traces++) trace_first = fr;
+            trace_last = fr;
+        }
+        no_view += !strncmp(line, "check ", 6) && strstr(line, " - -\n") != NULL;
     }
     fclose(f);
+    g_set[0] = 1;                                   /* the player's again */
+    CHECK(settings == SETTINGS + 1 && first_settings == SETTINGS && set_later == 1,
+          "the recording's settings: %d lines, %d at the first frame, %d for Default cam fix turned off", settings,
+          first_settings, set_later);
+    CHECK(traces == PLAYBACK_TRACE_FRAMES && trace_first == 51 && trace_last == 51 + PLAYBACK_TRACE_FRAMES - 1,
+          "the trace: %d frames, %u to %u", traces, trace_first, trace_last);
+    CHECK(no_view == checks, "the checks' free camera: %d of %d with - -", no_view, checks);
     /* A check a second of frames from the first: 7 before the scene (400 to
      * 519, with no view), 8 after it. The free camera off, at its defaults,
      * from the first frame. */
@@ -449,6 +508,97 @@ static void play_same(void)
           && res->idles_put_back == 1 && g_closed == 1,
           "as recorded: state %d, anchors %d, drift %.2f, idles %d, closed %d", res->state, res->anchors_met,
           res->drift_most, res->idles_put_back, g_closed);
+    CHECK(res->trace_frames == (int)PLAYBACK_TRACE_FRAMES && res->trace_same == res->trace_frames
+          && res->freecam_checks == g_kept && res->freecam_same == res->freecam_checks && res->follows == 0,
+          "as recorded: the trace %d of %d frames, the free camera %d of %d checks, %d takeovers", res->trace_same,
+          res->trace_frames, res->freecam_same, res->freecam_checks, res->follows);
+}
+
+/* The recording's settings in place of the player's for the play: Skip
+ * cutscenes, the player's off, and Draw distance, the player's 4x, as
+ * recorded from the first frame, and Default cam fix turned off where the
+ * recording's player turned it off; the player's back at the end. The mark
+ * green as it ends. */
+static void play_settings(void)
+{
+    How h = { .frames = FRAMES + 10, .skip_anchor = -1, .wrong_anchor = -1, .set_at = 0 };
+    const PLAYBACK_RESULT *res = playback_result();
+    PbMarkShape shape;
+    g_set[3] = 0;
+    g_set[4] = 4;
+    CHECK(playback_play(g_run, 0), "playback couldn't start");
+    run(&g_play, &h);
+    CHECK(res->state == PLAYBACK_FINISHED && res->settings_changed == 2 && g_play.dcamfix[200] == 1
+          && g_play.dcamfix[400] == 0 && g_set[0] == 1 && g_set[3] == 0 && g_set[4] == 4,
+          "the recording's settings: state %d, %d not the player's, Default cam fix %d then %d, after the play"
+          " %d, Skip cutscenes %d, Draw distance %d", res->state, res->settings_changed, g_play.dcamfix[200],
+          g_play.dcamfix[400], g_set[0], g_set[3], g_set[4]);
+    CHECK(playback_mark(pad_now() + 1.0, &shape) && shape.disc == (0xFF000000u | PB_MARK_GREEN),
+          "the mark as the play ended on route: %08X", shape.disc);
+    g_set[4] = 1;
+}
+
+/* The mark, frame by frame: in at its first draw, white while the play is
+ * on route; green, red or blue as it ends, held, then out; and its quads. */
+static void mark(void)
+{
+    static const struct { int how; uint32_t colour; } k_end[] = {
+        { PLAYBACK_MARK_FINISHED, PB_MARK_GREEN }, { PLAYBACK_MARK_OFF_ROUTE, PB_MARK_RED },
+        { PLAYBACK_MARK_TAKEN, PB_MARK_BLUE },
+    };
+    PbMark m;
+    PbMarkShape s;
+    uint8_t mem[PB_MARK_BYTES + 16];
+    float x, y;
+    unsigned k;
+    memset(&m, 0, sizeof m);
+    CHECK(!playback_mark_frame(&m, 1.0, &s), "the mark shown before a play");
+    playback_mark_end(&m, PLAYBACK_MARK_FINISHED, 1.0);
+    CHECK(!playback_mark_frame(&m, 1.0, &s), "the mark shown, ended with no play");
+    for (k = 0; k < sizeof k_end / sizeof k_end[0]; k++) {
+        playback_mark_play(&m);
+        CHECK(!playback_mark_frame(&m, 10.0, &s), "shown at its first draw's start, at alpha %.3f", s.alpha);
+        CHECK(playback_mark_frame(&m, 10.1, &s) && fabsf(s.alpha - 0.4f) < 1e-4f
+              && fabsf(s.r - PB_MARK_SIZE * 0.5f * (float)(PB_MARK_IN_FROM - 0.15 * 0.4)) < 1e-3f,
+              "coming in: alpha %.3f, radius %.3f", s.alpha, s.r);
+        CHECK(playback_mark_frame(&m, 12.0, &s) && s.alpha == 1.0f && s.disc == 0xFFFFFFFFu
+              && s.cx == PB_MARK_LEFT + PB_MARK_SIZE / 2 && s.cy == PB_MARK_MIDDLE_Y && s.r == PB_MARK_SIZE / 2,
+              "on route: alpha %.3f, disc %08X at %.1f %.1f", s.alpha, s.disc, s.cx, s.cy);
+        playback_mark_end(&m, k_end[k].how, 20.0);
+        CHECK(playback_mark_frame(&m, 20.5, &s) && s.disc == (0xFF000000u | k_end[k].colour),
+              "ended (%d): disc %08X, not %06X", k_end[k].how, s.disc, k_end[k].colour);
+        CHECK(playback_mark_frame(&m, 22.1, &s) && s.disc == (0xFF000000u | k_end[k].colour),
+              "ended (%d), held: disc %08X", k_end[k].how, s.disc);
+        CHECK(playback_mark_frame(&m, 22.15 + PB_MARK_OUT_TIME / 2, &s) && s.alpha > 0.4f && s.alpha < 0.6f
+              && s.r > PB_MARK_SIZE / 2, "going out: alpha %.3f, radius %.3f", s.alpha, s.r);
+        CHECK(!playback_mark_frame(&m, 22.15 + PB_MARK_OUT_TIME + 0.01, &s), "still shown after going out");
+    }
+    /* Ended before it came in: straight to its colour. */
+    playback_mark_play(&m);
+    playback_mark_end(&m, PLAYBACK_MARK_TAKEN, 5.0);
+    CHECK(playback_mark_frame(&m, 5.5, &s) && s.disc == (0xFF000000u | PB_MARK_BLUE),
+          "taken before it came in: disc %08X", s.disc);
+    /* Its quads: the disc's top band from its top point, its bottom band to
+     * its bottom point, and the play sign's tip twice. */
+    playback_mark_play(&m);
+    playback_mark_frame(&m, 0.0, &s);
+    playback_mark_frame(&m, 1.0, &s);
+    memset(mem, 0, sizeof mem);
+    playback_mark_vertices(mem, 8, &s);
+    memcpy(&x, mem + 8, 4);
+    memcpy(&y, mem + 8 + 4, 4);
+    CHECK(x == s.cx && y == s.cy - s.r, "the disc's top: %.2f %.2f", x, y);
+    memcpy(&y, mem + 8 + ((PB_MARK_BANDS - 1) * 4 + 3) * 0x18 + 4, 4);
+    CHECK(fabsf(y - (s.cy + s.r)) < 1e-3f, "the disc's bottom: %.2f", y);
+    memcpy(&x, mem + 8 + (PB_MARK_BANDS * 4 + 1) * 0x18, 4);
+    memcpy(&y, mem + 8 + (PB_MARK_BANDS * 4 + 3) * 0x18 + 4, 4);
+    CHECK(x > s.cx && y == s.cy, "the play sign's tip: %.2f %.2f", x, y);
+    {
+        uint32_t c;
+        memcpy(&c, mem + 8 + (PB_MARK_BANDS * 4) * 0x18 + 8, 4);
+        CHECK(c == (0xFF000000u | PB_MARK_SIGN), "the play sign's colour %08X", c);
+        CHECK(mem[8 + PB_MARK_BYTES] == 0 && mem[7] == 0, "the quads written past their bytes");
+    }
 }
 
 /* An anchor reached late: the pad held as recorded until it comes, the
@@ -624,12 +774,51 @@ static void play_cam(void)
     CHECK(res->state == PLAYBACK_FINISHED && res->anchors_met == ANCHORS && res->drift_most < 0.01f,
           "free camera, as recorded: state %d (%s), anchors %d, drift %.2f", res->state, res->why,
           res->anchors_met, res->drift_most);
+    CHECK(res->follows >= 2 && res->follows_same == res->follows && res->freecam_checks > 5
+          && res->freecam_same == res->freecam_checks && res->trace_same == (int)PLAYBACK_TRACE_FRAMES,
+          "free camera, as recorded: %d of %d takeovers, %d of %d checks, the trace %d of %d frames",
+          res->follows_same, res->follows, res->freecam_same, res->freecam_checks, res->trace_same,
+          res->trace_frames);
     freecam_frame();
     CHECK(!freecam_on() && pref("freecam") == 0 && pref("sensitivity_x") == 2 && pref("deadzone") == 0.3
           && pref("autocentre") == 1 && pref("invert_x") == 1 && cam_row("Sensitivity Y")->value() == 9
           && pref("mouse") == 0 && pref("mouse_sensitivity") == 9 && !g_mouse_want(),
           "the player's free camera after playback: on %d, freecam= %g, sensitivity_x= %g, deadzone= %g",
           freecam_on(), pref("freecam"), pref("sensitivity_x"), pref("deadzone"));
+}
+
+/* The free camera turned a hundredth of a radian at frame 130, as nothing
+ * in the recording turned it: the trace says so from that frame, the check
+ * after it says so and puts it back, and from there the eye is where it
+ * was from the skater (who went another way meanwhile, until the idle
+ * moment put it back). */
+static void play_cam_apart(void)
+{
+    How h = { .frames = FRAMES + 10, .skip_anchor = -1, .wrong_anchor = -1, .yaw_at = 130, .yaw_by = 0.01 };
+    const PLAYBACK_RESULT *res = playback_result();
+    int f, bad = 0;
+    cam_yours();
+    CHECK(playback_play(g_cam_run, 1), "playback with the free camera couldn't start");
+    run(&g_play, &h);
+    /* The eye from the skater, which went another way meanwhile. */
+    for (f = 182; f < 300 && !bad; f++) {
+        float px = g_play.eye[f][0] - g_play.at[f - 1][0], pz = g_play.eye[f][2] - g_play.at[f - 1][2];
+        float rx = g_cam.eye[f][0] - g_cam.at[f - 1][0], rz = g_cam.eye[f][2] - g_cam.at[f - 1][2];
+        if ((fabsf(px - rx) > 1e-4f || fabsf(pz - rz) > 1e-4f) && ++bad)
+            CHECK(0, "the free camera put back: frame %d's eye from the skater %.5f %.5f, recorded %.5f %.5f", f,
+                  px, pz, rx, rz);
+    }
+    CHECK(!memcmp(g_play.eye[130], g_cam.eye[130], sizeof g_cam.eye[130])
+          && memcmp(g_play.eye[131], g_cam.eye[131], sizeof g_cam.eye[131]),
+          "the free camera turned at 130: the eye as recorded at 130 %d, at 131 %d",
+          !memcmp(g_play.eye[130], g_cam.eye[130], sizeof g_cam.eye[130]),
+          !memcmp(g_play.eye[131], g_cam.eye[131], sizeof g_cam.eye[131]));
+    CHECK(res->state == PLAYBACK_FINISHED && res->freecam_same == res->freecam_checks - 1
+          && res->freecam_apart_at == 181 && res->trace_apart_at == 131
+          && res->trace_same >= 131 - 51 && res->trace_same < res->trace_frames && res->drift_most > 0.0f,
+          "the free camera apart: state %d, %d of %d checks, the first at %u, the trace %d of %d from %u,"
+          " drift %.3f", res->state, res->freecam_same, res->freecam_checks, res->freecam_apart_at,
+          res->trace_same, res->trace_frames, res->trace_apart_at, res->drift_most);
 }
 
 /* While it plays: the real right stick hands the game back, though the free
@@ -765,6 +954,53 @@ static void by_hand(void)
     CHECK(!playback_play(folder, 0), "a check with the generator and no draws, played");
     write_file(folder, "jsrf-pc-recording 1\nidle 3 0 0 0 0 3 12345678 9 0\nend 10\n");
     CHECK(!playback_play(folder, 0), "an idle moment with draws, played");
+    /* The free camera off at frame 1 and taking over at frame 2, by hand:
+     * put back as the follow line has it, and a check's angles put back at
+     * frame 3. */
+    write_file(folder, "jsrf-pc-recording 1\nfreecam 1 0 0 0 5 5 0.15 0 0 5\nfreecam 2 1 0 0 5 5 0.15 0 0 5\n"
+               "follow 2 0.5 0.125\ncheck 3 0 0 0 0 3 12345678 9 0 0.25 -0.0625\nend 10\n");
+    h.frames = 2;
+    CHECK(playback_play(folder, 0), "a takeover by hand refused");
+    run(&g_play, &h);
+    {
+        double yaw = 0, pitch = 0;
+        CHECK(freecam_angles(&yaw, &pitch) && yaw == 0.5 && pitch == 0.125 && playback_result()->follows == 1
+              && playback_result()->follows_same == 0,
+              "by hand, the takeover: heading %.4f, pitch %.4f, %d compared", yaw, pitch, playback_result()->follows);
+        h.frames = 12;
+        CHECK(playback_play(folder, 0), "a takeover by hand refused");
+        run(&g_play, &h);
+        freecam_angles(&yaw, &pitch);
+        CHECK(playback_result()->freecam_checks == 1 && playback_result()->freecam_same == 0
+              && playback_result()->freecam_apart_at == 3 && yaw == 0.25 && pitch == -0.0625,
+              "by hand, the check's free camera: %d compared, %d as recorded, heading %.4f, pitch %.4f",
+              playback_result()->freecam_checks, playback_result()->freecam_same, yaw, pitch);
+        freecam_frame();
+    }
+    h.frames = 30;
+    write_file(folder, "jsrf-pc-recording 1\ncheck 3 0 0 0 0 3 12345678 9 0 0.25\nend 10\n");
+    CHECK(!playback_play(folder, 0), "a check with one of the free camera's two, played");
+    write_file(folder, "jsrf-pc-recording 1\ncheck 3 0 0 0 0 3 12345678 9 0 - 0.25\nend 10\n");
+    CHECK(!playback_play(folder, 0), "a check with the free camera steering and not, played");
+    write_file(folder, "jsrf-pc-recording 1\ncheck 3 0 0 0 0 3 12345678 9 0 - -\n"
+               "trace 4 0 0 0 0 3 0 10 - -\ntrace 5 0 0 0 0 3 0 10 0.5 0.25\nend 10\n");
+    CHECK(playback_play(folder, 0), "checks and traces by hand refused");
+    write_file(folder, "jsrf-pc-recording 1\ntrace 4 0 0 0 0 3 0 10 -\n");
+    CHECK(!playback_play(folder, 0), "a trace line short of its pitch, played");
+    write_file(folder, "jsrf-pc-recording 1\ntrace 5 0 0 0 0 3 0 10 - -\ntrace 5 0 0 0 0 3 0 10 - -\n");
+    CHECK(!playback_play(folder, 0), "a trace line twice for a frame, played");
+    write_file(folder, "jsrf-pc-recording 1\nfollow 3 - -\n");
+    CHECK(!playback_play(folder, 0), "a takeover with no angles, played");
+    write_file(folder, "jsrf-pc-recording 1\nsetting 1 dcamfix 1\nsetting 1 farshadowsahead 4\nend 10\n");
+    CHECK(playback_play(folder, 0), "settings by hand refused");
+    write_file(folder, "jsrf-pc-recording 1\nsetting 1 dcamfix 2\n");
+    CHECK(!playback_play(folder, 0), "a Default cam fix of 2, played");
+    write_file(folder, "jsrf-pc-recording 1\nsetting 1 drawdistance 5\n");
+    CHECK(!playback_play(folder, 0), "a draw distance of 5, played");
+    write_file(folder, "jsrf-pc-recording 1\nsetting 1 volume 3\n");
+    CHECK(!playback_play(folder, 0), "a setting it doesn't keep, played");
+    write_file(folder, "jsrf-pc-recording 1\nsetting 5 dcamfix 1\nsetting 4 skipintro 1\n");
+    CHECK(!playback_play(folder, 0), "a setting line back in time, played");
     write_file(folder, "jsrf-pc-recording 1\nwait 10\n");
     CHECK(!playback_play(folder, 0), "a word it doesn't know, played");
     snprintf(folder, sizeof folder, "%s/none", g_dir);
@@ -873,6 +1109,9 @@ static void missions_start_line(void)
         CHECK(!strncmp(line, heads[i], strlen(heads[i])), "the recording from a mission, line %d: %s", i + 1, line);
     CHECK(fgets(line, sizeof line, f) && !strcmp(line, "start mission 0252 6 1 1A2B3C4D\n"),
           "its start line: %s", line);
+    /* The settings as the run started, then its frames. */
+    for (i = 0; i < SETTINGS; i++)
+        CHECK(fgets(line, sizeof line, f) && !strncmp(line, "setting 1 ", 10), "a setting line next: %s", line);
     CHECK(fgets(line, sizeof line, f) && !strncmp(line, "pad ", 4), "a frame's line next: %s", line);
     fclose(f);
     playback_missions_flip();
@@ -1331,8 +1570,11 @@ int main(int argc, char **argv)
     play_off_route();
     play_idle();
     play_hand_back();
+    play_settings();
+    mark();
     record_cam();
     play_cam();
+    play_cam_apart();
     play_cam_take_over();
     by_hand();
     restart();

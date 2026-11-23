@@ -68,6 +68,9 @@ enum {
     WIDE_HUD_SOUL,      /* the graffiti soul indicator, at the bottom left
                          * (soul_indicator.h): the port's, drawn after the
                          * gauge by the gauge's override */
+    WIDE_HUD_MARK,      /* the mark that a recording plays, at the middle of
+                         * the left edge (playback_mark.h): the port's, drawn
+                         * after the soul indicator */
     WIDE_HUD_PIECES
 };
 

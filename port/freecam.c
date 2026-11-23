@@ -549,6 +549,9 @@ int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float s
         int glide = back >= PLAYBACK_BACK_GLIDE && cam == s_shown_cam;
         s_yaw = glide ? remainder(gyaw + s_kept_yaw, 2 * 180.0 * k_rad) : gyaw;
         s_pitch = glide ? gpitch + s_kept_pitch : gpitch;
+        /* Recorded, as it takes over: or, played on the recorded frame, the
+         * recording's in their place (port/playback.c). */
+        playback_freecam_took(&s_yaw, &s_pitch);
         s_idle = 0;
         s_back = back && !glide ? 1 : 0;
         s_glide = 0;
@@ -600,6 +603,21 @@ int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float s
     eye[2] = (float)(tgt[2] - d * cp * cos(s_yaw));
     s_placed_cam = cam;
     return again ? FREECAM_STARTED : FREECAM_PLACED;
+}
+
+int freecam_angles(double *yaw, double *pitch)
+{
+    if (!s_cfg.on || !s_cam) return 0;
+    *yaw = s_yaw;
+    *pitch = s_pitch;
+    return 1;
+}
+
+void freecam_put(double yaw, double pitch)
+{
+    if (!s_cfg.on || !s_cam) return;
+    s_yaw = yaw;
+    s_pitch = pitch;
 }
 
 int freecam_on(void)

@@ -99,6 +99,12 @@ int camwall_on(void);
  * fade). */
 int camwall_whole(void);
 
+/* Input playback's (port/playback.c): Default cam fix and No skater fade as
+ * a recording has them, for its play, and the player's back after, the
+ * settings file left as it is. */
+void camwall_set(int on);
+void camwall_whole_set(int on);
+
 #if defined(XBOXRECOMP_MENU)
 /* Default cam fix, and No skater fade, turned over from their ticks: at
  * once, said in the log and kept in the settings file. */

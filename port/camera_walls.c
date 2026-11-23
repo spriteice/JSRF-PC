@@ -67,6 +67,16 @@ int camwall_whole(void)
     return s_whole;
 }
 
+void camwall_set(int on)
+{
+    s_on = on != 0;
+}
+
+void camwall_whole_set(int on)
+{
+    s_whole = on != 0;
+}
+
 double camwall_least(int freecam, double whole)
 {
     return s_whole && (freecam || s_on) ? whole : 0;

@@ -130,6 +130,14 @@ int draw_far_buildings(void);
 /* Far shadows' step: 0 while off, to DRAW_FAR_WHOLE. */
 int draw_far_shadows(void);
 
+/* Input playback's (port/playback.c): the three steps set for a play, as a
+ * recording has them, and the player's back after it, as the menu sets them
+ * but for the settings file, which they leave as it is. Out of range: left
+ * as they are. */
+void draw_distance_set(int step);
+void draw_far_buildings_set(int step);
+void draw_far_shadows_set(int step);
+
 #define DRAW_AREAS_MAX 256                      /* the game's set: a bit an area */
 #define DRAW_SET_WORDS (DRAW_AREAS_MAX / 32)
 

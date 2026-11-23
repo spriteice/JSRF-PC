@@ -65,3 +65,8 @@ int intro_skip(void)
 {
     return s_skip;
 }
+
+void intro_skip_set(int on)
+{
+    s_skip = on != 0;
+}

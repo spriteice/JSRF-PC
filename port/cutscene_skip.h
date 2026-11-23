@@ -64,6 +64,11 @@ void cutscene_skip_start(void);
 /* Whether Skip cutscenes is on. */
 int cutscene_skip_on(void);
 
+/* Input playback's (port/playback.c): Skip cutscenes as a recording has it,
+ * for its play, and the player's back after, the settings file left as it
+ * is. */
+void cutscene_skip_set(int on);
+
 /* One frame of a playing scene, after its own update: scene is its address
  * (another one starts afresh), pressed whether A was pressed this frame, now
  * the time in seconds. Returns 1 when the scene is to end now: a second

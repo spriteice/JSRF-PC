@@ -94,6 +94,7 @@ int playback_mouse(int *dx, int *dy)
  * case says otherwise; the glide is the glide case's. */
 static int s_back_mode = PLAYBACK_BACK_EASE;
 int playback_freecam_back(void) { return s_back_mode; }
+void playback_freecam_took(double *yaw, double *pitch) { (void)yaw; (void)pitch; }
 
 /* The menu's xbox_MenuAdd: the Input page's rows, caught. */
 #define ROWS_MOST 16

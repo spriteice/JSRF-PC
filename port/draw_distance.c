@@ -810,6 +810,26 @@ void draw_buildings_shadows(uint32_t set[DRAW_SET_WORDS], const uint32_t game[DR
 
 /* ---- the settings -------------------------------------------------------- */
 
+/* Input playback's: a recording's steps for its play, and the player's back
+ * after, as the menu's picks set them, but for the settings file. */
+void draw_distance_set(int step)
+{
+    if (step >= 0 && step < DRAW_DISTANCE_STEPS) s_step = step;
+}
+
+void draw_far_buildings_set(int step)
+{
+    if (step < 0 || step >= DRAW_FAR_STEPS || step == s_far) return;
+    s_misc_map = 0;     /* the map may change while it is off */
+    s_far = step;
+}
+
+void draw_far_shadows_set(int step)
+{
+    if (step >= 0 && step < DRAW_FAR_STEPS) s_shadows_far = step;
+}
+
+
 #if defined(XBOXRECOMP_MENU)
 static int  menu_step(void) { return s_step; }
 static void menu_step_pick(int i)

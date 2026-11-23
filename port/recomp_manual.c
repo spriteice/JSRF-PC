@@ -1304,6 +1304,7 @@ void sub_0017CAB0(void)
 #include "missions.h"
 #include "photo_mode.h"
 #include "playback.h"
+#include "playback_mark.h"
 #include "soul_indicator.h"
 
 static struct { double t, dur; uint16_t buttons; uint8_t analog[8];
@@ -4371,6 +4372,7 @@ void sub_001060B0(void)
  * take the pointer back to its buffer's start. */
 extern void sub_0010D480_gen(void);
 static void soul_draw(uint32_t pass);
+static void mark_draw(void);
 static uint32_t d3d_put(void)
 {
     uint32_t dev = MEM32(D3D_DEVICE);
@@ -4384,7 +4386,10 @@ void sub_0010D480(void)
     sub_0010D480_gen();
     drew = d3d_put() != put;
     wide_hud_end(WIDE_HUD_GAUGE, marked);
-    if (drew) soul_draw(pass);
+    if (drew) {
+        soul_draw(pass);
+        mark_draw();
+    }
 }
 /* ---- the graffiti soul indicator's badge (soul_indicator.h) -----------------
  * The game has no badge to show while a soul challenge is on track, so the
@@ -4627,6 +4632,112 @@ static void soul_draw(uint32_t pass)
     a[1] = 1;
     soul_vcall(HUD_DEV_ALPHA_TEST, SOUL_ALPHA_ON_RET, 2, a, &ok);
     wide_hud_end(WIDE_HUD_SOUL, marked);
+    g_esp = esp;
+    if (!ok) given_up = 1;
+}
+
+/* ---- the mark that a recording plays (playback_mark.h) ---------------------
+ * While a recording plays, a disc with a play sign at the middle of the
+ * HUD's left edge, which turns green, red or blue as the play ends. Drawn
+ * after the soul badge, once a pass of the game's loop, the same way as it
+ * (soul_draw's calls, states and return addresses), but with no texture:
+ * stage 0's colour and alpha are the diffuse's, which is the quads' colour
+ * at the fade (playback_mark_vertices). Its batch, of PB_MARK_QUADS quads,
+ * is made once from the game's factory; each quad goes in with an add of
+ * its own. A HUD piece of its own (WIDE_HUD_MARK), so widescreen takes it to
+ * the left edge, Display > HUD scale sizes it, and Disable HUD hides it. Its
+ * time is pad_now's, as playback's end of a play. */
+#define MARK_SCRATCH (PB_MARK_BYTES + 0x20u)    /* the quads, then six dwords */
+static void mark_draw(void)
+{
+    static const uint32_t state[6] = { D3D_COLORARG1, D3D_COLORARG2, D3D_COLOROP,
+                                       D3D_ALPHAARG1, D3D_ALPHAARG2, D3D_ALPHAOP };
+    static const uint32_t plain[6] = { D3D_TA_TEXTURE, D3D_TA_DIFFUSE, D3D_OP_SELECTARG2,
+                                       D3D_TA_TEXTURE, D3D_TA_DIFFUSE, D3D_OP_SELECTARG2 };
+    static uint32_t batch;
+    static unsigned drawn_in = ~0u;
+    static int given_up;
+    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
+    uint32_t esp = g_esp, scratch, ops, dev, blend, a[4], kept[6], count;
+    int ok = 1, marked, k;
+    PbMarkShape sh;
+    if (given_up || drawn_in == s_loop_passes) return;
+    if (!playback_mark(pad_now(), &sh)) return;
+    drawn_in = s_loop_passes;
+    dev = adx_word(HUD_DEVICE);
+    if (!dev) return;
+    g_esp -= MARK_SCRATCH;
+    scratch = g_esp;
+    ops = scratch + PB_MARK_BYTES;
+    if (!batch) {
+        int32_t hr;
+        a[0] = adx_word(HUD_FACTORY);
+        a[1] = PB_MARK_QUADS;
+        a[2] = 0;
+        a[3] = scratch;
+        MEM32(scratch) = 0;
+        hr = (int32_t)soul_vcall(HUD_FACTORY_MAKE, SOUL_MAKE_RET, 4, a, &ok);
+        batch = ok && hr >= 0 ? adx_word(scratch) : 0;
+        if (!batch) {
+            fprintf(stderr, "[PLAYBACK] the mark: the factory at %08X gave no batch (%08X): no mark\n", a[0],
+                    (uint32_t)hr);
+            given_up = 1;
+            g_esp = esp;
+            return;
+        }
+    }
+    marked = wide_hud_begin(WIDE_HUD_MARK);
+    /* The gauge's states, as soul_draw sets them, and no texture on either
+     * stage, each set only when the game's cache differs. */
+    a[0] = dev;
+    a[1] = 0;
+    soul_vcall(HUD_DEV_ALPHA_TEST, SOUL_ALPHA_OFF_RET, 2, a, &ok);
+    blend = MEM32(HUD_BLEND_SET);
+    if (blend != 1) {
+        MEM32(HUD_BLEND_SET) = 1;
+        a[1] = 1;
+        soul_vcall(HUD_DEV_BLEND, SOUL_BLEND_ON_RET, 2, a, &ok);
+    }
+    for (k = 1; k >= 0; k--) {
+        uint32_t cache = k ? HUD_STAGE1_SET : HUD_STAGE0_SET;
+        if (MEM32(cache) == HUD_NO_TEXTURE) continue;
+        MEM32(cache) = HUD_NO_TEXTURE;
+        a[1] = (uint32_t)k;
+        a[2] = HUD_NO_TEXTURE;
+        soul_vcall(HUD_DEV_TEXTURE, k ? SOUL_STAGE1_RET : SOUL_STAGE0_RET, 3, a, &ok);
+    }
+    for (k = 0; k < 6; k++) {
+        kept[k] = MEM32(D3D_STAGE_STATES + state[k]);
+        MEM32(ops + 4u * (uint32_t)k) = plain[k];
+    }
+    soul_stage_ops(dev, ops, &ok);
+    playback_mark_vertices(m, scratch, &sh);
+    /* The quads through the batch: its z, begin, an add each, end, draw. */
+    a[0] = batch;
+    a[1] = SOUL_Z;
+    a[2] = 0;
+    soul_vcall(HUD_BATCH_Z, SOUL_Z_RET, 3, a, &ok);
+    if (ok && (int32_t)soul_vcall(HUD_BATCH_BEGIN, SOUL_BEGIN_RET, 1, a, &ok) >= 0 && ok) {
+        for (k = 0; k < PB_MARK_QUADS && ok; k++) {
+            a[1] = scratch + (uint32_t)k * (PB_MARK_BYTES / PB_MARK_QUADS);
+            a[2] = HUD_BATCH_ADD_QUAD;
+            soul_vcall(HUD_BATCH_ADD, SOUL_ADD_RET, 3, a, &ok);
+        }
+        count = soul_vcall(HUD_BATCH_END, SOUL_END_RET, 1, a, &ok);
+        a[1] = count;
+        if (ok) soul_vcall(HUD_BATCH_DRAW, SOUL_DRAW_RET, 2, a, &ok);
+    }
+    for (k = 0; k < 6; k++) MEM32(ops + 4u * (uint32_t)k) = kept[k];
+    soul_stage_ops(dev, ops, &ok);
+    a[0] = dev;
+    if (blend != 1) {
+        MEM32(HUD_BLEND_SET) = blend;
+        a[1] = blend;
+        soul_vcall(HUD_DEV_BLEND, SOUL_BLEND_BACK_RET, 2, a, &ok);
+    }
+    a[1] = 1;
+    soul_vcall(HUD_DEV_ALPHA_TEST, SOUL_ALPHA_ON_RET, 2, a, &ok);
+    wide_hud_end(WIDE_HUD_MARK, marked);
     g_esp = esp;
     if (!ok) given_up = 1;
 }
@@ -6878,10 +6989,13 @@ void sub_000A5070(void)
             s_keys_cam[port].cam = cam;
             s_keys_cam[port].who = who;
             s_keys_cam[port].at = pad_now();
-            if ((uint32_t)port == *(const uint32_t *)(m + GAME_MAIN_PORT))
+            if ((uint32_t)port == *(const uint32_t *)(m + GAME_MAIN_PORT)) {
+                const float look[2] = { cf[CAM_VIEW_TARGET / 4] - cf[CAM_VIEW_EYE / 4],
+                                        cf[CAM_VIEW_TARGET / 4 + 2] - cf[CAM_VIEW_EYE / 4 + 2] };
                 playback_view((float *)(uintptr_t)(m + who + CHR_POSITION),
                               (uint32_t *)(uintptr_t)(m + who + CHR_TURN),
-                              ((const uint32_t *)(m + cam))[CAM_MODE / 4], game_random());
+                              ((const uint32_t *)(m + cam))[CAM_MODE / 4], look, game_random());
+            }
         }
     }
     if (cam >= 0x10000u && cam + 0x240u < lim)

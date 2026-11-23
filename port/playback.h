@@ -24,7 +24,15 @@
  *   check keeps the random generator too, and how many times it was drawn
  *   since the check before, on the game's own thread and on others
  *   (playback_drawn): playback says where it was not as recorded, and puts
- *   it back, as at an anchor.
+ *   it back, as at an anchor. A check keeps the free camera's heading and
+ *   pitch too, while it steers (freecam_angles): playback says where they
+ *   were not as recorded and puts them back, and does as the free camera
+ *   takes over a camera, on the recorded frame (playback_freecam_took).
+ * - The trace: every frame for PLAYBACK_TRACE_FRAMES from the first frame
+ *   something is pressed while the camera follows the player, the skater,
+ *   the way the camera looks and the free camera's angles. Playback says at
+ *   which frames of it the play was not as recorded, and what was not, and
+ *   puts nothing back: it shows where a play first comes apart.
  * - Idle moments: a second or more with nothing pressed and the skater
  *   still. Playback puts the skater back on the recorded spot there, facing
  *   the recorded way, when the camera is in the recorded mode and the skater
@@ -36,6 +44,13 @@
  * the right stick as the pad gave it while the free camera steers. On
  * playback the recording's state takes its place there, and the free camera
  * takes its stick from it as it did. The
+ * The settings that change how a run plays but aren't the pad's (Default
+ * cam fix, No skater fade, Skip intro, Skip cutscenes and the three draw
+ * distances, PLAYBACK_SETTINGS) are recorded as the run starts and as they
+ * change, and a play has the recording's in place of the player's, the
+ * player's back once it ends; the settings file is left as it is. Stick
+ * shape and the keyboard's moves are the pad's before it is recorded, so a
+ * play doesn't need them. The
  * free camera's switch and tuning are recorded too, as the game's frame takes
  * them up (port/freecam.c): at the start, and whenever F8, the pad or the
  * menu changes them. On playback the recording's are in place of the player's
@@ -93,8 +108,11 @@
  *   freecam <frame> <on> <invert_x> <invert_y> <sensitivity_x> <sensitivity_y> <deadzone> <autocentre> <mouse> <mouse_sensitivity>
  *   mouse <frame> <x> <y>
  *   camera <frame> <graffiti> <half_pipe> <loop> <back>
+ *   setting <frame> <key> <value>
  *   anchor <frame> <kind> <value> <random>
- *   check <frame> <x> <y> <z> <turn> <camera> <random> <drawn> <drawn_others>
+ *   follow <frame> <yaw> <pitch>
+ *   check <frame> <x> <y> <z> <turn> <camera> <random> <drawn> <drawn_others> <yaw> <pitch>
+ *   trace <frame> <x> <y> <z> <turn> <camera> <look_x> <look_z> <yaw> <pitch>
  *   idle <frame> <x> <y> <z> <turn> <camera> <random>
  *   end <frame>
  *
@@ -142,7 +160,18 @@
  * check before (or the run's start) on the game's own thread, the main
  * loop's, and drawn_others on any other, in decimal; an idle moment's is the
  * generator. A check or idle line without them (made before they were kept)
- * has its generator left as it is. Lines starting with # are comments. */
+ * has its generator left as it is. A setting line is one of
+ * PLAYBACK_SETTINGS' keys, as the settings file names it, and its value
+ * from that frame on (frame 0: as the run started), a whole number; before
+ * the first for a key, or for one with none, the player's. A follow line is
+ * the free camera taking over a camera from the game's view (freecam_orbit):
+ * its yaw and pitch, in radians, as many digits as read back the same. A
+ * check's yaw and pitch are the free camera's, so, or - - while it steers
+ * no camera; one without them (made before they were kept) leaves the free
+ * camera as it is. A trace line is a frame of the trace: the skater as a
+ * check has it, the way the camera looks on the ground (from its eye to
+ * what it looks at, x and z, the heading the controls follow) and the free
+ * camera's yaw and pitch, or - -. Lines starting with # are comments. */
 #ifndef JSRF_PLAYBACK_H
 #define JSRF_PLAYBACK_H
 
@@ -167,6 +196,8 @@
 #define PLAYBACK_PLAYS        "plays"        /* a folder for each play: its copy, its screenshots */
 #define PLAYBACK_STEP_SETTLE  5u             /* flips after a menu row before the next step */
 #define PLAYBACK_STEP_WAIT    600u           /* frames steps may hold the recording: ten seconds */
+#define PLAYBACK_TRACE_FRAMES 240u           /* frames traced from the first press: four seconds */
+#define PLAYBACK_SAY          5              /* differences said of each kind; the summary counts the rest */
 
 /* What starts a stretch of play. */
 typedef enum {
@@ -200,6 +231,14 @@ typedef struct {
     int random_checks;        /* checks with the random generator compared */
     int random_same;          /* of them, the generator as recorded */
     uint32_t random_apart_at; /* the recorded frame of the first that wasn't */
+    int freecam_checks;       /* checks with the free camera's angles compared */
+    int freecam_same;         /* of them, as recorded */
+    uint32_t freecam_apart_at;/* the recorded frame of the first that weren't */
+    int follows, follows_same;/* the free camera's takeovers compared, and as recorded */
+    int trace_frames;         /* the trace's frames compared */
+    int trace_same;           /* of them, as recorded */
+    uint32_t trace_apart_at;  /* the recorded frame of the first that wasn't */
+    int settings_changed;     /* settings the play had as recorded, not as the player has them */
     float drift_most;         /* the largest drift at a check */
     uint32_t drift_most_at;   /* at which recorded frame */
     char why[160];            /* off route: why */
@@ -296,9 +335,27 @@ void playback_anchor(PLAYBACK_ANCHOR kind, uint32_t value, uint32_t *random);
 
 /* Each update of the camera that follows the main player's skater: its
  * position (x, y, z) and turn, which playback may put back at an idle
- * moment, the camera's mode, and the game's random generator, which it
- * keeps at each check and idle moment and puts back there. */
-void playback_view(float position[3], uint32_t *turn, uint32_t camera, uint32_t *random);
+ * moment, the camera's mode, the way it looks on the ground (x and z, from
+ * its eye to what it looks at), for the trace, and the game's random
+ * generator, which it keeps at each check and idle moment and puts back
+ * there. */
+void playback_view(float position[3], uint32_t *turn, uint32_t camera, const float look[2],
+                   uint32_t *random);
+
+/* The free camera taking over a camera from the game's view (freecam_orbit),
+ * with its yaw and pitch: recorded, or, while a recording plays, compared
+ * with the recording's follow line for this frame and put back as it has
+ * them. */
+void playback_freecam_took(double *yaw, double *pitch);
+
+/* The settings a recording keeps (the format, above), by their keys in the
+ * settings file and their names in the log, with their modules' reading and
+ * setting of them now (port/playback.c). */
+#define PLAYBACK_SETTINGS 7
+
+/* The mark at the middle of the HUD's left edge while a recording plays
+ * (port/playback_mark.h): what a play came to, for its colour. */
+enum { PLAYBACK_MARK_FINISHED, PLAYBACK_MARK_OFF_ROUTE, PLAYBACK_MARK_TAKEN };
 
 /* Each draw from the game's random generator (port/recomp_manual.c, as
  * sub_0014C2B0 and sub_0014C2D0 are called): on the game's own thread, the

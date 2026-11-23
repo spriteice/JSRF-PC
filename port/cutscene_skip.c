@@ -94,6 +94,11 @@ int cutscene_skip_on(void)
     return s_on;
 }
 
+void cutscene_skip_set(int on)
+{
+    s_on = on != 0;
+}
+
 int cutscene_skip_frame(uint32_t scene, int pressed, double now)
 {
     if (!s_on) {

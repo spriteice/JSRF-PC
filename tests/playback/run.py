@@ -75,6 +75,15 @@ otherwise; by hand, the player's before the first camera line and the
 recording's from there, and with none the shots as before the ticks; the
 player's change while it plays hands the game back; a camera line out of
 its range, short of a tick or back in time is refused.
+The settings that change how a run plays (Default cam fix, No skater fade,
+the skips, the draw distances): recorded at the first and when the player
+changes one, used for the play only, said where the player's differs, and
+the player's back as it ends, the settings file untouched. The free
+camera's exact heading and pitch as it takes over and at each check:
+played, said where they weren't as recorded and put back; turned 0.01 off
+at frame 130, the trace from the first press finds it at the next frame
+and the check after puts it back. The mark a recording plays: in at its
+first draw, green, red or blue as the play ends, held, out and gone.
 As the engine starts: JSRF_RECORD, JSRF_PLAY and JSRF_PLAY_MENU taken out
 of the environment, a recording made beside the settings file, and
 Developer > Playback's rows, each with its hint, Play's choices newest
@@ -100,7 +109,8 @@ with tempfile.TemporaryDirectory(prefix="playback-") as directory:
     subprocess.run(cc + ["-O2", "-std=gnu11", "-Wall", "-Wextra", "-Werror",
                     "-DXBOXRECOMP_MENU", "-DNV2A_GL_USE_SDL",
                     "-I", "port", "-I", "src", "-I", "src/input", "-I", "src/menu",
-                    "port/playback.c", "port/pad.c", "port/freecam.c", "tests/playback/test_main.c",
+                    "port/playback.c", "port/playback_mark.c", "port/pad.c", "port/freecam.c",
+                    "tests/playback/test_main.c",
                     "-pthread", "-lm", "-o", exe], cwd=root, check=True)
     work = pathlib.Path(directory) / "work"
     work.mkdir()
@@ -165,7 +175,14 @@ with tempfile.TemporaryDirectory(prefix="playback-") as directory:
             "steps.txt, line 1: menu Graphics > No such row: nothing there has that label: the play stops",
             "steps.txt's menu rows not looked for within 600 frames (no picture shown): the play stops",
             "profile left out: only --play plays on a copy of a run's profile; Play plays on your own settings"
-            " and saves"]
+            " and saves",
+            "the settings as recorded at frame 1, for this play: ", "more settings as recorded at frame 302",
+            "(yours differs)", "(changed)", "your settings back, as the play ends: ",
+            "the free camera took over at recorded frame", "the free camera's heading",
+            "the free camera taking over: as recorded at ", "the free camera at the checks: as recorded at ",
+            "first not at recorded frame 181; put back at each",
+            "trace at recorded frame 131: not as recorded",
+            "the trace from the first press: as recorded at 240 of 240 frames"]
     missing = [s for s in said if s not in log]
     # The free camera a play puts in place names auto centre's level, as
     # [FREECAM] does, never by its number.

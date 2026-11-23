@@ -112,6 +112,7 @@ static void pieces(void)
         { WIDE_HUD_COUNTER, 0x00104AB0u, NV2A_WIDE_HUD_MIDDLE },
         { WIDE_HUD_SKIP,    0x000131F0u, NV2A_WIDE_HUD_RIGHT },
         { WIDE_HUD_SOUL,    0x0010D480u, NV2A_WIDE_HUD_LEFT },
+        { WIDE_HUD_MARK,    0x0010D480u, NV2A_WIDE_HUD_LEFT },
     };
     unsigned i, j;
     CHECK(WIDE_HUD_HEALTH == 0);
@@ -129,13 +130,14 @@ static void pieces(void)
         CHECK(p->flags == (own | text | low));
         for (j = 0; j < i; j++)
             CHECK(widescreen_hud_pieces[want[j].piece].va != p->va
-                  || (want[i].piece == WIDE_HUD_SOUL && want[j].piece == WIDE_HUD_GAUGE));
+                  || ((want[i].piece == WIDE_HUD_SOUL || want[i].piece == WIDE_HUD_MARK)
+                      && (want[j].piece == WIDE_HUD_GAUGE || want[j].piece == WIDE_HUD_SOUL)));
     }
     CHECK((WIDE_HUD_TEXT & (NV2A_WIDE_HUD_OWN_VIEW | NV2A_WIDE_HUD_LOW | NV2A_WIDE_HUD_SIZED)) == 0);
     /* the middle pieces after the edges' eleven, then Skip cutscenes' prompt,
-     * then the soul indicator */
+     * then the soul indicator, then the mark that a recording plays */
     CHECK(WIDE_HUD_SIGN == 11 && WIDE_HUD_COUNTER == 12 && WIDE_HUD_SKIP == 13
-          && WIDE_HUD_SOUL == 14 && WIDE_HUD_PIECES == 15);
+          && WIDE_HUD_SOUL == 14 && WIDE_HUD_MARK == 15 && WIDE_HUD_PIECES == 16);
 }
 
 static void off(void)

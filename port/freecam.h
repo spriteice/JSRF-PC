@@ -161,6 +161,14 @@ int freecam_orbit(uint32_t cam, uint32_t mode, const float tgt[3], const float s
  * Behaviour > Camera's, camera_scenes.h, with freecam or without it.) */
 int freecam_on(void);
 
+/* Input playback's (port/playback.c): the way the free camera faces and how
+ * high the eye is, in radians (yaw and pitch, as freecam_orbit keeps them),
+ * for a recording's checks. 1 and both while it steers a camera, else 0.
+ * freecam_put puts both back as a recording had them, while it steers one:
+ * its next frame turns from there. */
+int freecam_angles(double *yaw, double *pitch);
+void freecam_put(double yaw, double pitch);
+
 /* The player's switch and tuning, as the settings file, F8, the pad's button
  * and the menu's rows last made them, whatever a recording plays: photo
  * mode's look goes by them (port/photo_mode.h). */

@@ -19,8 +19,13 @@
 #  include <direct.h>
 #endif
 
+#include "camera_walls.h"
+#include "cutscene_skip.h"
+#include "draw_distance.h"
+#include "intro.h"
 #include "pad.h"
 #include "photo_mode.h"
+#include "playback_mark.h"
 #if defined(XBOXRECOMP_MENU)
 #  include "menu.h"
 #endif
@@ -55,7 +60,17 @@ typedef struct {                                /* a check or an idle moment */
     float pos[3];
     int has_random;                             /* its random generator kept, and a check's draws */
     uint32_t random, drawn, others;
+    int has_view, view_on;                      /* a check's free camera kept; steering then */
+    double yaw, pitch;
 } PbSpot;
+typedef struct { uint32_t frame; double yaw, pitch; } PbFollow;   /* the free camera taking over */
+typedef struct {                                /* a frame of the trace */
+    uint32_t frame, turn, camera;
+    float pos[3], look[2];
+    int view_on;
+    double yaw, pitch;
+} PbTrace;
+typedef struct { uint32_t frame; int key, value; } PbSetting;
 typedef struct { uint32_t frame; FREECAM_SETTINGS fc; } PbFreecam;
 typedef struct { uint32_t frame; int dx, dy; } PbMouse;
 typedef struct { uint32_t frame; unsigned ticks; } PbCamera;   /* Camera's ticks, a bit each */
@@ -71,6 +86,24 @@ typedef struct { int line, idle, what; uint32_t at; char text[PB_STEP_TEXT]; } P
 
 static const char *const k_kind[PLAYBACK_ANCHOR_KINDS] = {
     "mission.bin", "mission.dat", "stage", "scene", "scene-end"
+};
+
+/* The settings a recording keeps (playback.h): each by its key in the
+ * settings file and its name in the menu, its module's reading and setting
+ * of it now, and its most. */
+static const struct {
+    const char *key, *name;
+    int (*get)(void);
+    void (*set)(int v);
+    int most;
+} k_setting[PLAYBACK_SETTINGS] = {
+    { "dcamfix",           "Default cam fix", camwall_on,         camwall_set,            1 },
+    { "noskaterfade",      "No skater fade",  camwall_whole,      camwall_whole_set,      1 },
+    { "skipintro",         "Skip intro",      intro_skip,         intro_skip_set,         1 },
+    { "skipcutscenes",     "Skip cutscenes",  cutscene_skip_on,   cutscene_skip_set,      1 },
+    { "drawdistance",      "Draw distance",   draw_distance_step, draw_distance_set,      DRAW_DISTANCE_STEPS - 1 },
+    { "farbuildingsahead", "Far buildings",   draw_far_buildings, draw_far_buildings_set, DRAW_FAR_STEPS - 1 },
+    { "farshadowsahead",   "Far shadows",     draw_far_shadows,   draw_far_shadows_set,   DRAW_FAR_STEPS - 1 },
 };
 
 static volatile int s_lock;
@@ -153,9 +186,19 @@ static struct { int seen, none; XBOX_GAMEPAD pad; } s_last[PLAYBACK_PORTS];
 static struct { int seen; FREECAM_SETTINGS fc; } s_fc_last;
 static struct { int seen; unsigned ticks; } s_cam_last;
 static uint32_t s_next_check;
+static struct { int seen, value; } s_set_last[PLAYBACK_SETTINGS];
+static int s_trace_on;                      /* the trace started (both) */
+static uint32_t s_trace_from;               /* at this frame */
 
 /* Playing. */
 static PbList s_pads[PLAYBACK_PORTS], s_freecams, s_mice, s_cameras, s_anchors, s_checks, s_idles;
+static PbList s_follows, s_traces, s_settings;
+static int s_follow_next, s_trace_next, s_setting_next;
+static int s_freecam_said, s_follow_said, s_trace_said;
+/* The settings a play put in place (k_setting): the player's from before,
+ * and what it set, to give the player's back at its end. */
+static struct { int put, player, now; } s_set_play[PLAYBACK_SETTINGS];
+static PbMark s_mark;                       /* the mark at the HUD's left edge (playback_mark.h) */
 static int s_cur[PLAYBACK_PORTS] = { -1, -1, -1, -1 };
 static int s_fc_cur = -1, s_fc_player_seen;
 static int s_mouse_next, s_mouse_armed;     /* the next mouse line to take; the player's mouse still once */
@@ -203,6 +246,9 @@ static int s_random_kept, s_random_said, s_window_held;
 #define PB_CHECK    ((PbSpot *)s_checks.at)
 #define PB_IDLE     ((PbSpot *)s_idles.at)
 #define PB_STEP     ((PbStep *)s_steps.at)
+#define PB_FOLLOW   ((PbFollow *)s_follows.at)
+#define PB_TRACE    ((PbTrace *)s_traces.at)
+#define PB_SETTING  ((PbSetting *)s_settings.at)
 
 #if defined(NV2A_GL_USE_SDL)
 /* nv2a_gl.c: a file beside the settings file, the restart, and the window's
@@ -365,6 +411,48 @@ static void summary(void)
     else if (s_random_kept)
         fprintf(stderr, "[PLAYBACK] the game's random numbers at the checks: as recorded at %d of %d\n",
                 s_res.random_same, s_res.random_checks);
+    if (s_res.follows)
+        fprintf(stderr, "[PLAYBACK] the free camera taking over: as recorded at %d of %d%s\n",
+                s_res.follows_same, s_res.follows, s_res.follows_same < s_res.follows ? "; put back at each" : "");
+    if (s_res.freecam_checks && s_res.freecam_checks > s_res.freecam_same)
+        fprintf(stderr, "[PLAYBACK] the free camera at the checks: as recorded at %d of %d, first not at"
+                " recorded frame %u; put back at each\n", s_res.freecam_same, s_res.freecam_checks,
+                s_res.freecam_apart_at);
+    else if (s_res.freecam_checks)
+        fprintf(stderr, "[PLAYBACK] the free camera at the checks: as recorded at %d of %d\n",
+                s_res.freecam_same, s_res.freecam_checks);
+    if (s_res.trace_frames && s_res.trace_frames > s_res.trace_same)
+        fprintf(stderr, "[PLAYBACK] the trace from the first press: as recorded at %d of %d frames, first not"
+                " at recorded frame %u\n", s_res.trace_same, s_res.trace_frames, s_res.trace_apart_at);
+    else if (s_res.trace_frames)
+        fprintf(stderr, "[PLAYBACK] the trace from the first press: as recorded at %d of %d frames\n",
+                s_res.trace_same, s_res.trace_frames);
+}
+
+/* The player's settings back, those a play put in place (k_setting), but
+ * one the player changed while it played: said. */
+static void settings_back(void)
+{
+    char said[512] = "";
+    int k, n = 0;
+    for (k = 0; k < PLAYBACK_SETTINGS; k++) {
+        size_t len = strlen(said);
+        if (!s_set_play[k].put) continue;
+        s_set_play[k].put = 0;
+        if (k_setting[k].get() != s_set_play[k].now) continue;     /* the player's own since */
+        if (s_set_play[k].player == s_set_play[k].now) continue;
+        k_setting[k].set(s_set_play[k].player);
+        snprintf(said + len, sizeof said - len, "%s%s %d", n++ ? ", " : "", k_setting[k].name,
+                 s_set_play[k].player);
+    }
+    if (n) fprintf(stderr, "[PLAYBACK] your settings back, as the play ends: %s\n", said);
+}
+
+/* The mark's colour for how a play ended. */
+static int mark_how(PLAYBACK_STATE state)
+{
+    return state == PLAYBACK_FINISHED ? PLAYBACK_MARK_FINISHED
+         : state == PLAYBACK_HANDED_BACK ? PLAYBACK_MARK_TAKEN : PLAYBACK_MARK_OFF_ROUTE;
 }
 
 /* A playback over: said, and the game closed for an unattended run. */
@@ -372,6 +460,8 @@ static void play_over(PLAYBACK_STATE state)
 {
     s_res.state = state;
     summary();
+    settings_back();
+    playback_mark_end(&s_mark, mark_how(state), pad_now());
     if (!s_exit_at_end || state == PLAYBACK_HANDED_BACK) return;
 #if defined(NV2A_GL_USE_SDL)
     fprintf(stderr, "[PLAYBACK] closing the game, as --play asks\n");
@@ -436,6 +526,7 @@ static void game_gone(const char *why)
         snprintf(s_res.why, sizeof s_res.why, "%s at frame %u", why, s_frame);
         s_res.state = PLAYBACK_OFF;
         summary();
+        settings_back();
     }
 }
 
@@ -485,6 +576,8 @@ int playback_record(const char *folder)
     memset(s_last, 0, sizeof s_last);
     s_fc_last.seen = 0;
     s_cam_last.seen = 0;
+    memset(s_set_last, 0, sizeof s_set_last);
+    s_trace_on = 0;
     hook_exit();
     fprintf(stderr, "[PLAYBACK] recording from the first frame into %s (JSRF-PC %s, " PB_PLATFORM ")\n",
             path, JSRF_VERSION);
@@ -605,14 +698,53 @@ static int read_freecam(const char *s, PbFreecam *e)
 
 /* A check's line, or an idle moment's: with its random generator, and a
  * check's draws, or (made before they were kept) without. */
+/* An angle of the free camera's, or "-" while it steers none: 1, with
+ * whether it steered, or 0. */
+static int read_angle(const char *word, int *on, double *v)
+{
+    char *end;
+    if (!strcmp(word, "-")) { *on = 0; *v = 0; return 1; }
+    *v = strtod(word, &end);
+    *on = 1;
+    return end != word && !*end && isfinite(*v);
+}
+
 static int read_spot(const char *s, PbSpot *p, int check)
 {
-    int n = sscanf(s, "%u %f %f %f %x %u %x %u %u", &p->frame, &p->pos[0], &p->pos[1], &p->pos[2],
-                   &p->turn, &p->camera, &p->random, &p->drawn, &p->others);
+    char yaw[40] = "", pitch[40] = "", more[8];
+    int used = 0, n = sscanf(s, "%u %f %f %f %x %u %x %u %u%n", &p->frame, &p->pos[0], &p->pos[1], &p->pos[2],
+                             &p->turn, &p->camera, &p->random, &p->drawn, &p->others, &used);
+    int angles = 0, on_yaw = 0, on_pitch = 0;
     p->has_random = n > 6;
     if (!p->has_random) p->random = p->drawn = p->others = 0;
     if (!check) p->drawn = p->others = 0;
+    p->has_view = p->view_on = 0;
+    p->yaw = p->pitch = 0;
+    /* A check's free camera, after its draws: both, or neither. */
+    if (check && n == 9) {
+        angles = sscanf(s + used, "%39s %39s %7s", yaw, pitch, more);
+        if (angles == 2) {
+            if (!read_angle(yaw, &on_yaw, &p->yaw) || !read_angle(pitch, &on_pitch, &p->pitch)
+                || on_yaw != on_pitch)
+                return 0;
+            p->has_view = 1;
+            p->view_on = on_yaw;
+        } else if (angles > 0)
+            return 0;
+    }
     return n == 6 || n == (check ? 9 : 7);
+}
+
+/* A trace line: the skater, the camera's look and the free camera's two. */
+static int read_trace(const char *s, PbTrace *t)
+{
+    char yaw[40], pitch[40];
+    int on_pitch = 0;
+    if (sscanf(s, "%u %f %f %f %x %u %f %f %39s %39s", &t->frame, &t->pos[0], &t->pos[1], &t->pos[2],
+               &t->turn, &t->camera, &t->look[0], &t->look[1], yaw, pitch) != 10)
+        return 0;
+    return read_angle(yaw, &t->view_on, &t->yaw) && read_angle(pitch, &on_pitch, &t->pitch)
+           && on_pitch == t->view_on;
 }
 
 static void forget(void)
@@ -630,6 +762,10 @@ static void forget(void)
     memset(&s_idles, 0, sizeof s_idles);
     free(s_steps.at);
     memset(&s_steps, 0, sizeof s_steps);
+    free(s_follows.at); free(s_traces.at); free(s_settings.at);
+    memset(&s_follows, 0, sizeof s_follows);
+    memset(&s_traces, 0, sizeof s_traces);
+    memset(&s_settings, 0, sizeof s_settings);
     s_random_kept = 0;
 }
 
@@ -727,6 +863,31 @@ static int load(const char *path)
             if (ok && (ok = (to = add(l, sizeof *to)) != NULL)) *to = sp;
             if (ok && l == &s_checks && sp.has_random) s_random_kept = 1;
             frame = sp.frame;
+        } else if (!strcmp(word, "follow")) {
+            PbFollow e, *to;
+            char yaw[40], pitch[40];
+            int on_yaw = 0, on_pitch = 0;
+            ok = sscanf(s, "%u %39s %39s", &e.frame, yaw, pitch) == 3 && read_angle(yaw, &on_yaw, &e.yaw)
+                 && read_angle(pitch, &on_pitch, &e.pitch) && on_yaw && on_pitch
+                 && (!s_follows.n || e.frame >= PB_FOLLOW[s_follows.n - 1].frame);
+            if (ok && (ok = (to = add(&s_follows, sizeof *to)) != NULL)) *to = e;
+            frame = e.frame;
+        } else if (!strcmp(word, "trace")) {
+            PbTrace t, *to;
+            ok = read_trace(s, &t) && (!s_traces.n || t.frame > PB_TRACE[s_traces.n - 1].frame);
+            if (ok && (ok = (to = add(&s_traces, sizeof *to)) != NULL)) *to = t;
+            frame = t.frame;
+        } else if (!strcmp(word, "setting")) {
+            PbSetting e, *to;
+            char key[32];
+            int k;
+            ok = sscanf(s, "%u %31s %d", &e.frame, key, &e.value) == 3;
+            for (k = 0; ok && k < PLAYBACK_SETTINGS && strcmp(key, k_setting[k].key); k++) { }
+            ok = ok && k < PLAYBACK_SETTINGS && e.value >= 0 && e.value <= k_setting[k].most
+                 && (!s_settings.n || e.frame >= PB_SETTING[s_settings.n - 1].frame);
+            e.key = k;
+            if (ok && (ok = (to = add(&s_settings, sizeof *to)) != NULL)) *to = e;
+            frame = e.frame;
         } else if (!strcmp(word, "end")) {
             ok = sscanf(s, "%u", &s_end) == 1 && s_end >= last;
             frame = s_end;
@@ -1039,6 +1200,7 @@ int playback_play(const char *folder, int exit_at_end)
         s_profile = s_profile_bad = 0;
         s_play_dir[0] = s_play_for[0] = '\0';
     }
+    settings_back();                        /* a play before this one's, not ended */
     s_step_next = s_steps_run = s_holding = 0;
     s_step_settle = 0;
     s_steps_checked = 1;
@@ -1067,13 +1229,18 @@ int playback_play(const char *folder, int exit_at_end)
     s_drift_run = 0;
     s_drift_said = -1;
     s_random_said = s_window_held = 0;
+    s_follow_next = s_trace_next = s_setting_next = 0;
+    s_freecam_said = s_follow_said = s_trace_said = 0;
+    memset(s_set_play, 0, sizeof s_set_play);
     s_start_check = 1;
     s_res.state = PLAYBACK_PLAYING;
     s_res.anchors = s_anchors.n;
+    playback_mark_play(&s_mark);
     hook_exit();
     fprintf(stderr, "[PLAYBACK] playing %s: %d pad changes, %d free camera changes, %d mouse moves,"
-            " %d camera tick changes, %d anchors, %d checks, %d idle moments, %u frames%s\n", path, pads,
-            s_freecams.n, s_mice.n, s_cameras.n, s_anchors.n, s_checks.n, s_idles.n, s_end,
+            " %d camera tick changes, %d setting lines, %d anchors, %d checks, %d free camera takeovers,"
+            " %d trace frames, %d idle moments, %u frames%s\n", path, pads, s_freecams.n, s_mice.n,
+            s_cameras.n, s_settings.n, s_anchors.n, s_checks.n, s_follows.n, s_traces.n, s_idles.n, s_end,
             exit_at_end ? "; the game closes at its end" : "; the game is yours at its end");
     pb_unlock();
     return 1;
@@ -1137,7 +1304,34 @@ static void steps_stop(const char *fmt, ...)
     play_over(PLAYBACK_OFF);
 }
 
-/* At the start of each pass: the next anchor waited for, or past the end. */
+/* The recording's setting lines up to frame f put in place (k_setting), the
+ * player's kept to give back at the end: said, with where the player's
+ * differ. */
+static void play_settings(uint32_t f)
+{
+    char said[512] = "";
+    int n = 0, first = s_setting_next == 0;
+    while (s_setting_next < s_settings.n && PB_SETTING[s_setting_next].frame <= f) {
+        const PbSetting *e = &PB_SETTING[s_setting_next++];
+        int k = e->key, was = k_setting[k].get();
+        size_t len = strlen(said);
+        if (!s_set_play[k].put) {
+            s_set_play[k].put = 1;
+            s_set_play[k].player = was;
+            if (was != e->value) s_res.settings_changed++;
+        }
+        s_set_play[k].now = e->value;
+        if (was != e->value) k_setting[k].set(e->value);
+        snprintf(said + len, sizeof said - len, "%s%s %d%s", n++ ? ", " : "", k_setting[k].name, e->value,
+                 was != e->value ? (first ? " (yours differs)" : " (changed)") : "");
+    }
+    if (n)
+        fprintf(stderr, "[PLAYBACK] frame %u: %s settings as recorded at frame %u, for this play: %s\n",
+                s_frame, first ? "the" : "more", f, said);
+}
+
+/* At the start of each pass: the recording's settings, the next anchor
+ * waited for, or past the end. */
 static void play_pass(void)
 {
     uint32_t f = recorded_frame();
@@ -1145,6 +1339,7 @@ static void play_pass(void)
         s_start_check = 0;
         if (!play_started_there()) return;
     }
+    play_settings(f);
     if (s_res.state == PLAYBACK_PLAYING && steps_hold()) {
         if (!s_holding) { s_holding = 1; s_hold_from = s_frame; }
         s_window_held = 1;
@@ -1359,12 +1554,100 @@ static void play_random(const PbSpot *c, uint32_t *random)
     *random = c->random;
 }
 
-static void play_view(float position[3], uint32_t *turn, uint32_t camera, uint32_t *random, int still)
+/* An angle in degrees, for the log. */
+static double degrees(double radians)
+{
+    return radians * 180.0 / 3.14159265358979323846;
+}
+
+/* The free camera at a check reached on its frame: compared with the
+ * recording's, said where it isn't, and put back as recorded while both
+ * steer. */
+static void play_freecam_check(const PbSpot *c)
+{
+    double yaw = 0, pitch = 0;
+    int on;
+    if (!c->has_view) return;
+    on = freecam_angles(&yaw, &pitch);
+    s_res.freecam_checks++;
+    if (on == c->view_on && (!on || (yaw == c->yaw && pitch == c->pitch))) {
+        s_res.freecam_same++;
+        return;
+    }
+    if (s_res.freecam_checks - s_res.freecam_same == 1) s_res.freecam_apart_at = c->frame;
+    if (on && c->view_on) freecam_put(c->yaw, c->pitch);
+    if (s_freecam_said++ >= PLAYBACK_SAY) return;
+    if (on && c->view_on)
+        fprintf(stderr, "[PLAYBACK] frame %u: check at recorded frame %u: the free camera's heading %.6f"
+                " degrees, pitch %.6f, recorded %.6f, %.6f; put back as recorded%s\n", s_frame, c->frame,
+                degrees(yaw), degrees(pitch), degrees(c->yaw), degrees(c->pitch),
+                s_freecam_said == PLAYBACK_SAY ? " (no more said: the summary counts them)" : "");
+    else
+        fprintf(stderr, "[PLAYBACK] frame %u: check at recorded frame %u: the free camera %s, where the"
+                " recording's %s; left as it is\n", s_frame, c->frame, on ? "steers" : "steers no camera",
+                c->view_on ? "steers" : "steers none");
+}
+
+/* A frame of the trace reached on its frame: compared with the recording's,
+ * and said what isn't as it was. Nothing is put back. */
+static void play_trace(const float position[3], uint32_t turn, uint32_t camera, const float look[2])
+{
+    uint32_t f = recorded_frame();
+    const PbTrace *t;
+    double yaw = 0, pitch = 0;
+    char said[640] = "";
+    size_t len;
+    int on;
+    while (s_trace_next < s_traces.n && PB_TRACE[s_trace_next].frame < f) s_trace_next++;
+    if (s_trace_next >= s_traces.n || PB_TRACE[s_trace_next].frame != f) return;
+    t = &PB_TRACE[s_trace_next++];
+    on = freecam_angles(&yaw, &pitch);
+    if (!s_res.trace_frames)
+        fprintf(stderr, "[PLAYBACK] frame %u: the trace from recorded frame %u, %d frames: compared frame by"
+                " frame\n", s_frame, t->frame, s_traces.n);
+    s_res.trace_frames++;
+    if (memcmp(position, t->pos, sizeof t->pos)) {
+        len = strlen(said);
+        snprintf(said + len, sizeof said - len, "; the skater at %.9g %.9g %.9g, recorded %.9g %.9g %.9g",
+                 position[0], position[1], position[2], t->pos[0], t->pos[1], t->pos[2]);
+    }
+    if (turn != t->turn || camera != t->camera) {
+        len = strlen(said);
+        snprintf(said + len, sizeof said - len, "; turn %08X, camera %u, recorded %08X, %u", turn, camera,
+                 t->turn, t->camera);
+    }
+    if (look[0] != t->look[0] || look[1] != t->look[1]) {
+        len = strlen(said);
+        snprintf(said + len, sizeof said - len, "; the camera looking %.9g %.9g, recorded %.9g %.9g", look[0],
+                 look[1], t->look[0], t->look[1]);
+    }
+    if (on != t->view_on || (on && (yaw != t->yaw || pitch != t->pitch))) {
+        len = strlen(said);
+        if (on && t->view_on)
+            snprintf(said + len, sizeof said - len, "; the free camera's heading %.6f degrees, pitch %.6f,"
+                     " recorded %.6f, %.6f", degrees(yaw), degrees(pitch), degrees(t->yaw), degrees(t->pitch));
+        else
+            snprintf(said + len, sizeof said - len, "; the free camera %s, recorded %s",
+                     on ? "steering" : "steering none", t->view_on ? "steering" : "none");
+    }
+    if (!said[0]) { s_res.trace_same++; return; }
+    if (s_res.trace_frames - s_res.trace_same == 1) s_res.trace_apart_at = t->frame;
+    if (s_trace_said++ < PLAYBACK_SAY)
+        fprintf(stderr, "[PLAYBACK] frame %u: trace at recorded frame %u: not as recorded%s%s\n", s_frame,
+                t->frame, said, s_trace_said == PLAYBACK_SAY ? " (no more said: the summary counts them)" : "");
+}
+
+static void play_view(float position[3], uint32_t *turn, uint32_t camera, const float look[2], uint32_t *random,
+                      int still)
 {
     uint32_t f = recorded_frame();
     int last = -1;
+    play_trace(position, *turn, camera, look);
     while (s_check_next < s_checks.n && PB_CHECK[s_check_next].frame <= f) last = s_check_next++;
-    if (last >= 0 && f == PB_CHECK[last].frame) play_random(&PB_CHECK[last], random);
+    if (last >= 0 && f == PB_CHECK[last].frame) {
+        play_random(&PB_CHECK[last], random);
+        play_freecam_check(&PB_CHECK[last]);
+    }
     else if (last >= 0) {
         uint32_t n[2];
         drawn_take(n, NULL, 0);             /* reached late: the draws can't be compared */
@@ -1508,12 +1791,83 @@ void playback_flip(int (*shot)(const char *path))
     pb_unlock();
 }
 
+/* The settings a recording keeps (k_setting), at its first pass and as they
+ * change. */
+static void record_settings(void)
+{
+    int k;
+    for (k = 0; k < PLAYBACK_SETTINGS; k++) {
+        int v = k_setting[k].get();
+        if (s_set_last[k].seen && s_set_last[k].value == v) continue;
+        s_set_last[k].seen = 1;
+        s_set_last[k].value = v;
+        fprintf(rec(), "setting %u %s %d\n", s_frame, k_setting[k].key, v);
+    }
+}
+
 void playback_pass(void)
 {
     pb_lock();
     s_frame++;
     memset(s_reads, 0, sizeof s_reads);
     if (playing()) play_pass();
+    else if (s_out) record_settings();
+    pb_unlock();
+}
+
+int playback_mark(double now, PbMarkShape *s)
+{
+    int shown;
+    pb_lock();
+    shown = playback_mark_frame(&s_mark, now, s);
+    pb_unlock();
+    return shown;
+}
+
+/* The free camera's two, as a recording's line has them: each as short as
+ * reads back the same, or - - while it steers none. */
+static void put_angles(void)
+{
+    double yaw, pitch;
+    if (!freecam_angles(&yaw, &pitch)) { fputs(" - -", rec()); return; }
+    put_number(yaw);
+    put_number(pitch);
+}
+
+void playback_freecam_took(double *yaw, double *pitch)
+{
+    uint32_t f;
+    const PbFollow *e;
+    pb_lock();
+    if (s_out) {
+        fprintf(rec(), "follow %u", s_frame);
+        put_number(*yaw);
+        put_number(*pitch);
+        fputc('\n', rec());
+        fprintf(stderr, "[PLAYBACK] frame %u: the free camera took over, heading %.6f degrees, pitch %.6f:"
+                " recorded\n", s_frame, degrees(*yaw), degrees(*pitch));
+    } else if (playing()) {
+        f = recorded_frame();
+        while (s_follow_next < s_follows.n && PB_FOLLOW[s_follow_next].frame < f) s_follow_next++;
+        e = s_follow_next < s_follows.n && PB_FOLLOW[s_follow_next].frame == f ? &PB_FOLLOW[s_follow_next++] : NULL;
+        if (!e) {
+            if (s_follows.n && s_follow_said++ < PLAYBACK_SAY)
+                fprintf(stderr, "[PLAYBACK] frame %u: the free camera took over at recorded frame %u, heading"
+                        " %.6f degrees, pitch %.6f, where the recording has it take over at no frame:"
+                        " left as it is\n", s_frame, f, degrees(*yaw), degrees(*pitch));
+        } else {
+            int same = *yaw == e->yaw && *pitch == e->pitch;
+            s_res.follows++;
+            s_res.follows_same += same;
+            if (s_follow_said++ < PLAYBACK_SAY)
+                fprintf(stderr, "[PLAYBACK] frame %u: the free camera took over at recorded frame %u, heading"
+                        " %.6f degrees, pitch %.6f%s%.6f, %.6f%s\n", s_frame, f, degrees(*yaw), degrees(*pitch),
+                        same ? ", as recorded (" : "; recorded ", degrees(e->yaw), degrees(e->pitch),
+                        same ? ")" : ": put back as recorded");
+            *yaw = e->yaw;
+            *pitch = e->pitch;
+        }
+    }
     pb_unlock();
 }
 
@@ -1580,7 +1934,8 @@ void playback_anchor(PLAYBACK_ANCHOR kind, uint32_t value, uint32_t *random)
     pb_unlock();
 }
 
-void playback_view(float position[3], uint32_t *turn, uint32_t camera, uint32_t *random)
+void playback_view(float position[3], uint32_t *turn, uint32_t camera, const float look[2],
+                   uint32_t *random)
 {
     int still;
     pb_lock();
@@ -1596,12 +1951,27 @@ void playback_view(float position[3], uint32_t *turn, uint32_t camera, uint32_t 
     }
     still = s_frame - s_still_since >= PLAYBACK_IDLE_FRAMES;
     if (s_out) {
+        /* The trace: from the first frame something is pressed while the
+         * camera follows the player, PLAYBACK_TRACE_FRAMES of them. */
+        if (!s_trace_on && s_pressed_ever && s_pressed_at == s_frame) {
+            s_trace_on = 1;
+            s_trace_from = s_frame;
+        }
+        if (s_trace_on && s_frame - s_trace_from < PLAYBACK_TRACE_FRAMES) {
+            fprintf(rec(), "trace %u %.9g %.9g %.9g %08X %u %.9g %.9g", s_frame, position[0], position[1],
+                    position[2], *turn, camera, look[0], look[1]);
+            put_angles();
+            fputc('\n', rec());
+        }
         if (s_frame >= s_next_check) {
             uint32_t n[2];
             drawn_take(n, NULL, 0);
             fprintf(rec(), "check %u %.9g %.9g %.9g %08X %u", s_frame, position[0], position[1],
                     position[2], *turn, camera);
-            if (random) fprintf(rec(), " %08X %u %u", *random, n[1], n[0]);
+            if (random) {
+                fprintf(rec(), " %08X %u %u", *random, n[1], n[0]);
+                put_angles();
+            }
             fputc('\n', rec());
             fflush(s_out);
             s_next_check = s_frame + PLAYBACK_CHECK_EVERY;
@@ -1615,7 +1985,7 @@ void playback_view(float position[3], uint32_t *turn, uint32_t camera, uint32_t 
             s_idle_said = s_still_since + 1;
         }
     } else
-        play_view(position, turn, camera, random, still);
+        play_view(position, turn, camera, look, random, still);
     pb_unlock();
 }
 

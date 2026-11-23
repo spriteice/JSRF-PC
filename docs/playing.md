@@ -606,10 +606,24 @@ running while it is open, but your input goes to the menu.
     second it also knows the game's random numbers and how many times the
     game drew them since the second before, on its own thread and on
     others: playback puts them back each second and when it puts the
-    skater back, and the log says where they weren't as recorded. If the
+    skater back, and the log says where they weren't as recorded. So with
+    the free camera's exact heading and pitch, kept as it takes over from
+    the game's camera and each second. For 240 frames from your first
+    press, the recording keeps every frame's place, heading and camera
+    too, and the log says the first frame a play wasn't the same. If the
     skater ends up far from where they were, or the game loads something
     the recording didn't, playback stops, and the log says where. Start a
-    recording from the same saves and settings you will play it with.
+    recording from the same saves you will play it with. The settings that
+    change how a run plays, Default cam fix, No skater fade, Skip intro,
+    Skip cutscenes, Draw distance, Far buildings and Far shadows, are kept
+    in it as they were and as you changed them: a play uses them, and
+    yours are back as it ends, the settings file untouched. While a
+    recording plays, a white disc with a play sign shows at the middle of
+    the HUD's left edge, straight above the graffiti soul badge; as the
+    play ends it turns green (finished), red (off route or stopped) or
+    blue (you took the game back), holds for two seconds, then fades out.
+    HUD scale sizes it, widescreen moves it to the edge, and Disable HUD
+    hides it.
     A recording's folder can also hold `steps.txt`, a line each: `idle 2:
     menu Graphics > Anti-aliasing (SMAA) > Off` chooses that row as a click
     would at the recording's second idle moment, holding the recording

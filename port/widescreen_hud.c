@@ -27,6 +27,7 @@ const WideHudPiece widescreen_hud_pieces[WIDE_HUD_PIECES] = {
     [WIDE_HUD_SKIP]    = { 0x000131F0u, "the skip prompt", NV2A_WIDE_HUD_RIGHT, NV2A_WIDE_HUD_LOW },
     [WIDE_HUD_SOUL]    = { 0x0010D480u, "the graffiti soul indicator", NV2A_WIDE_HUD_LEFT,
                            NV2A_WIDE_HUD_LOW },
+    [WIDE_HUD_MARK]    = { 0x0010D480u, "the mark that a recording plays", NV2A_WIDE_HUD_LEFT, 0 },
 };
 
 /* A piece's flags that its start mark carries to the renderer. */

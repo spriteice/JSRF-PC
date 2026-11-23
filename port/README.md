@@ -32,8 +32,14 @@ playback (Developer > Playback): the pad as the game read it, the free
 camera's switch and tuning, and the Camera ticks for the game's shots
 (`camera_scenes.c`), recorded by the game's own frame and played
 back, from `pad.c`, from `freecam.c` and from hooks in `recomp_manual.c` on
-the game's main loop, its loads, its cutscenes, its camera and its random
-numbers (each draw counted, by thread, for the checks); a run started
+the game's main loop, its loads, its cutscenes, its camera (the view's
+heading, and the free camera's angles as it takes over) and its random
+numbers (each draw counted, by thread, for the checks); the settings that
+change how a run plays are recorded and set for a play through their
+modules' own setters (`draw_distance.c`, `intro.c`, `cutscene_skip.c`,
+`camera_walls.c`), and the mark that a recording plays
+(`playback_mark.c`) is drawn after the soul badge, in the gauge's override
+in `recomp_manual.c`, as a HUD piece of its own; a run started
 from Developer > Missions is recorded with where it started
 (`missions_started`), and played from there again; a run's folder adds its
 steps, run at each flip by the renderer's hook (`playback_flip`), and with

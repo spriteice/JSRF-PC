@@ -15,4 +15,8 @@ void intro_start(void);
 /* Whether the intro is left out. */
 int intro_skip(void);
 
+/* Input playback's (port/playback.c): Skip intro as a recording has it, for
+ * its play, and the player's back after, the settings file left as it is. */
+void intro_skip_set(int on);
+
 #endif
