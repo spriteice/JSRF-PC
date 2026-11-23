@@ -129,6 +129,7 @@ set(JSRF_SOURCES
     music_info.c
     soul_indicator.c
     playback_mark.c
+    sound_keep.c
     draw_distance.c
     audio.c
     developer.c

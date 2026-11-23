@@ -27,6 +27,7 @@
 #include "pad.h"
 #include "photo_mode.h"
 #include "playback_mark.h"
+#include "sound_keep.h"
 #if defined(XBOXRECOMP_MENU)
 #  include "menu.h"
 #endif
@@ -184,6 +185,7 @@ static unsigned s_flows_new;
 static void run_start(void)
 {
     s_frame = 0;
+    sound_keep_start();
     memset(s_flows, 0, sizeof s_flows);
     s_flows_new = 0;
     memset(s_reads, 0, sizeof s_reads);
@@ -251,6 +253,8 @@ static uint32_t s_packet[PLAYBACK_PORTS];
  * draws can't be compared there. */
 static int s_random_kept, s_random_said, s_window_held;
 static int s_flow_kept;                     /* the recording has the flow's anchors */
+static int s_sound_passes;                  /* the sound kept to the passes: this recording's, or the one
+                                            * played's sounds line (0: none, made before) */
 #define PB_RANDOM_SAY 5
 
 #define PB_PADS(p)  ((PbPad *)s_pads[p].at)
@@ -420,6 +424,7 @@ static void summary(void)
     if (s_flow_kept)
         fprintf(stderr, "[PLAYBACK] the mission's steps: %d met, %d of them late or early\n", s_res.flow_met,
                 s_res.flow_off);
+    if (s_sound_passes) sound_keep_say();
     if (s_steps.n)
         fprintf(stderr, "[PLAYBACK] steps run %d of %d (" PLAYBACK_STEPS ")\n", s_steps_run, s_steps.n);
     if (s_random_kept && s_res.random_checks > s_res.random_same)
@@ -553,6 +558,7 @@ static void end_recording(const char *why)
     s_res.frames = s_frame;
     fprintf(stderr, "[PLAYBACK] t=%.1f recording ended at frame %u (%s): %s/" PLAYBACK_FILE "\n",
             pad_now(), s_frame, why, s_folder);
+    if (s_sound_passes) sound_keep_say();
 }
 
 /* The game closing or restarting, which ends a recording, or a play with its
@@ -602,7 +608,8 @@ int playback_record(const char *folder)
         pb_unlock();
         return 0;
     }
-    fprintf(s_out, PB_FORMAT "\nversion %s " PB_PLATFORM "\n", JSRF_VERSION);
+    fprintf(s_out, PB_FORMAT "\nversion %s " PB_PLATFORM "\nsounds %d\n", JSRF_VERSION, PLAYBACK_SOUND_PASSES);
+    s_sound_passes = PLAYBACK_SOUND_PASSES;
     if (utc)
         fprintf(s_out, "# started %04d-%02d-%02d %02d:%02d:%02d UTC\n", utc->tm_year + 1900,
                 utc->tm_mon + 1, utc->tm_mday, utc->tm_hour, utc->tm_min, utc->tm_sec);
@@ -827,6 +834,7 @@ static void forget(void)
     memset(&s_settings, 0, sizeof s_settings);
     s_random_kept = 0;
     s_flow_kept = 0;
+    s_sound_passes = 0;
 }
 
 /* The recording in folder, every line checked: 0, saying where, at the
@@ -865,6 +873,13 @@ static int load(const char *path)
         /* Once, before any line with a frame. */
         if (!strcmp(word, "start")) {
             if (!(ok = !framed && !s_start.set && read_start(s, &s_start))) goto bad;
+            continue;
+        }
+        if (!strcmp(word, "sounds")) {
+            int v = 0;
+            if (!(ok = !framed && !s_sound_passes && sscanf(s, "%d", &v) == 1 && v >= 1 && v <= PLAYBACK_SOUND_MOST))
+                goto bad;
+            s_sound_passes = v;
             continue;
         }
         framed = 1;
@@ -962,6 +977,7 @@ bad:
                     !format ? "not a recording (no \"" PB_FORMAT "\" first)"
                     : ended ? "a line after the end"
                     : !strcmp(word, "start") ? "a start line that can't be read, comes twice or after a frame"
+                    : !strcmp(word, "sounds") ? "a sounds line that can't be read, comes twice or after a frame"
                     : "can't be read, or goes back in time");
             fclose(f);
             forget();
@@ -1303,6 +1319,10 @@ int playback_play(const char *folder, int exit_at_end)
             " %d trace frames, %d idle moments, %u frames%s\n", path, pads, s_freecams.n, s_mice.n,
             s_cameras.n, s_settings.n, s_anchors.n, s_checks.n, s_follows.n, s_traces.n, s_idles.n, s_end,
             exit_at_end ? "; the game closes at its end" : "; the game is yours at its end");
+    if (s_sound_passes)
+        fprintf(stderr, "[PLAYBACK] the sound kept to %d passes, as it was recorded\n", s_sound_passes);
+    else
+        fprintf(stderr, "[PLAYBACK] recorded before the sound was kept to the passes: played without it\n");
     pb_unlock();
     return 1;
 }
@@ -2075,6 +2095,15 @@ void playback_flow(uint32_t flow, uint32_t mission, uint32_t step, uint32_t *ran
     playback_anchor(PLAYBACK_FLOW, (mission & 0xFFFFu) << 16 | (step & 0xFFFFu), random);
 }
 
+int playback_sound_kept(void)
+{
+    int n;
+    pb_lock();
+    n = s_res.state == PLAYBACK_RECORDING || playing() ? s_sound_passes : 0;
+    pb_unlock();
+    return n;
+}
+
 void playback_view(float position[3], uint32_t *turn, uint32_t camera, const float look[2], const float eye[3],
                    const uint8_t *skater, uint32_t *random)
 {
@@ -2286,7 +2315,7 @@ static int start_of(const char *folder, PbStart *st)
             continue;
         }
         if (sscanf(s, "%15s %n", word, &used) != 1) break;
-        if (!strcmp(word, "version")) continue;
+        if (!strcmp(word, "version") || !strcmp(word, "sounds")) continue;
         ok = strcmp(word, "start") || read_start(s + used, st);
         break;
     }

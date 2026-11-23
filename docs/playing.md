@@ -601,7 +601,12 @@ running while it is open, but your input goes to the menu.
     pressed frame by frame, not by time, and waits for each load, mission,
     cutscene and step of a mission it reached, so a slower load, or a
     mission's music ready a moment later, moves nothing; one made before it
-    kept the steps waits for the rest only. The game
+    kept the steps waits for the rest only. While a run is recorded or
+    played, each piece of music or speech starts a second after the game
+    asks for it, the same frame every time, rather than as soon as the disc
+    has it, so what the game waits on (a course's countdown, a mission's
+    music) comes on the same frame in a play as when you recorded it; one
+    recorded before this plays the sound as the game does. The game
     doesn't play exactly the same twice, so a long run can drift: each
     second the recording knows where your skater was, and when it stood
     still with nothing pressed playback puts the skater back there. Each

@@ -22,6 +22,13 @@
  *   one the game reaches early skips to it. One the game doesn't reach
  *   within PLAYBACK_ANCHOR_WAIT, or one it reaches in another order, stops
  *   the run as off route.
+ * - The sound: while a run is recorded or played, each of the sound
+ *   manager's slots is ready PLAYBACK_SOUND_PASSES after it starts loading,
+ *   not when enough of it is decoded (port/sound_keep.h), so what the game
+ *   waits on there -- a flow's step, the course's start sign's speech line
+ *   -- comes on the same pass in a play as in its recording, and its flow
+ *   anchors are met on their frame. A recording made before (no sounds
+ *   line) is played without it, its flow anchors lining up what they can.
  * - Checks: once a second of frames, the player's skater: where it is and
  *   which way it faces, and the camera's mode. Playback measures how far the
  *   skater is from that spot; past PLAYBACK_DRIFT_LIMIT for
@@ -111,6 +118,7 @@
  *
  *   jsrf-pc-recording 1                     the format, first
  *   version <version> <linux|windows>       the build it was made on
+ *   sounds <passes>                         the sound's slots kept to the passes, before any frame
  *   start mission <CCNN> <skater> <photo> <progress>
  *   start load <photo>                      where the run started, before any frame
  *   pad <frame>[.<read>] <port> <buttons> <analog> <lx> <ly> <rx> <ry>
@@ -131,7 +139,7 @@
  * New Game's), with photo mode's tick (0 or 1) and the progress the mission
  * started with (missions_started's hash, in eight hex digits, 00000000 for
  * New Game's); or at the title's Load Game. It is written with the first
- * line after the version, once Missions has started the run or refused it
+ * line after the version and sounds lines, once Missions has started the run or refused it
  * (missions_paths, before the game's first pass). A play of it starts the game
  * there again, as the pick did (playback_first), and stops at its first
  * frame, off route, if this run didn't start there, as or with the same.
@@ -165,7 +173,9 @@
  * shot only while the free camera is off (camscene_ticks_before). A kind is mission.bin,
  * mission.dat, stage, scene, scene-end or flow, its value and the random
  * generator in eight hex digits; a recording with no flow anchor (made
- * before them) is played without them. turn is the skater's turn, 0x10000 a
+ * before them) is played without them. A sounds line says the sound's slots
+ * were ready that many passes after they started loading (sound_keep.h), and
+ * a play of it keeps them so. turn is the skater's turn, 0x10000 a
  * whole turn, in eight hex digits; camera the camera's mode. A check's random is the
  * generator in eight hex digits, drawn the times it was drawn since the
  * check before (or the run's start) on the game's own thread, the main
@@ -215,6 +225,8 @@
 #define PLAYBACK_SKATER_BYTES 0x1000u        /* the skater's object the trace fingerprints */
 #define PLAYBACK_SKATER_PARTS 16             /* in parts, each hashed: 0x100 bytes each */
 #define PLAYBACK_SAY          5              /* differences said of each kind; the summary counts the rest */
+#define PLAYBACK_SOUND_PASSES 60             /* a sound's slot ready this long after it starts loading: a second */
+#define PLAYBACK_SOUND_MOST   3600           /* a recording's sounds line, at most */
 
 /* What starts a stretch of play. */
 typedef enum {
@@ -369,6 +381,12 @@ void playback_anchor(PLAYBACK_ANCHOR kind, uint32_t value, uint32_t *random);
  * is new. Each flow is followed on its own, as two run at once while one
  * hands over to the next; a recording or a play starts with none. */
 void playback_flow(uint32_t flow, uint32_t mission, uint32_t step, uint32_t *random);
+
+/* The passes the sound's slots are kept to (sound_keep.h): while recording,
+ * PLAYBACK_SOUND_PASSES; while playing, the recording's sounds line's, or 0
+ * for one made before; otherwise 0. Asked once a pass, before the sound
+ * manager's slot step. */
+int playback_sound_kept(void);
 
 /* Each update of the camera that follows the main player's skater: its
  * position (x, y, z) and turn, which playback may put back at an idle

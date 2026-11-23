@@ -118,7 +118,8 @@ with tempfile.TemporaryDirectory(prefix="playback-") as directory:
     subprocess.run(cc + ["-O2", "-std=gnu11", "-Wall", "-Wextra", "-Werror",
                     "-DXBOXRECOMP_MENU", "-DNV2A_GL_USE_SDL",
                     "-I", "port", "-I", "src", "-I", "src/input", "-I", "src/menu",
-                    "port/playback.c", "port/playback_mark.c", "port/pad.c", "port/freecam.c",
+                    "port/playback.c", "port/playback_mark.c", "port/sound_keep.c", "port/pad.c",
+                    "port/freecam.c",
                     "tests/playback/test_main.c",
                     "-pthread", "-lm", "-o", exe], cwd=root, check=True)
     work = pathlib.Path(directory) / "work"
@@ -136,6 +137,15 @@ with tempfile.TemporaryDirectory(prefix="playback-") as directory:
             "anchor 6 of 14 met (flow 000C0016), recorded at frame 361: 1 frames late",
             "anchor 6 of 14 met (flow 000C0016), recorded at frame 361: 1 frames early",
             "the mission's steps: 8 met, 1 of them late or early",
+            "the sound kept to 60 passes: 1 slots ready on their pass, their data there 20 to 20 passes after they"
+            " began loading; none waited for",
+            "the sound kept to 60 passes, as it was recorded",
+            "the sound: speech (+0xC0) waited for at its pass, 60 passes after it began loading: 0.4",
+            "the sound kept to 60 passes: 1 slots ready on their pass, their data there 60 to 60 passes after they"
+            " began loading; 1 waited for at their pass (at most 0.4",
+            "recorded before the sound was kept to the passes: played without it",
+            "the sound: the music not there 10 s after its pass (3840 samples of 8192): ready on its own time",
+            "a sounds line that can't be read, comes twice or after a frame",
             "summary: off route", "summary: handed back",
             "idle moment 1: the skater put back",
             "the free camera as recorded at frame",

@@ -43,7 +43,11 @@ in `recomp_manual.c`, as a HUD piece of its own; a run started
 from Developer > Missions is recorded with where it started
 (`missions_started`), and played from there again; a run's folder adds its
 steps, run at each flip by the renderer's hook (`playback_flip`), and with
-`--play` a copy of its profile the play runs on. Developer >
+`--play` a copy of its profile the play runs on; and while a run is recorded
+or played, the sound manager's slots are ready a fixed number of the game's
+passes after they start loading (`sound_keep.c`, from the sound manager's
+update and the sample count its slot step asks, in `recomp_manual.c`), so
+what the game waits on there comes on the same frame. Developer >
 Missions, for one, is `missions.c`, which starts the game at a story mission
 through the game flow's update in `recomp_manual.c`, and `missions_menu.c`,
 its rows in the in-game menu, made from the game's own mission files as the

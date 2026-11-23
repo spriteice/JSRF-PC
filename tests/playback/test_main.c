@@ -4,8 +4,10 @@
  * skater as the follow camera does, moving the skater by what it read the way
  * the view faces, drawing random numbers and reaching anchors, and reporting
  * the skater, the view's heading and the free camera's angles to playback as
- * the camera update does; and the settings a recording keeps, and the mark
- * that a recording plays (tests/playback/run.py). */
+ * the camera update does; and the settings a recording keeps, the mark
+ * that a recording plays, and a sound manager whose slot is ready when its
+ * data is there, kept to the passes by port/sound_keep.c
+ * (tests/playback/run.py). */
 #define _POSIX_C_SOURCE 200809L    /* setenv */
 #include <math.h>
 #include <stdio.h>
@@ -27,6 +29,7 @@
 #include "photo_mode.h"
 #include "playback.h"
 #include "playback_mark.h"
+#include "sound_keep.h"
 
 #define STATE      0x0100u          /* the game's XINPUT_STATE */
 #define FRAMES     1000             /* the recorded run's passes */
@@ -193,6 +196,9 @@ typedef struct {
     int anchors;
     uint8_t skater[PLAYBACK_SKATER_BYTES];      /* the skater's object: where it is, its turn and more */
     unsigned char viewed[FRAMES + 4000];        /* the camera update told playback of the skater */
+    int sound_state, sound_ready_at;            /* the sign's speech slot: 1 loading, 2 ready, and when */
+    uint32_t sound_age;                         /* its passes since it began loading */
+    int sign_count, let_go_at;                  /* the sign's passes since then, and its last */
 } Game;
 static Game g_rec, g_play;
 
@@ -276,6 +282,9 @@ typedef struct {
     int flow;                   /* the mission flows run, their steps as k_flow has them (those from
                                  * FLOW_START late with the anchors from late_anchor) */
     int flow_holds;             /* and the skater held still until the course's start lets it go */
+    int sound;                  /* the course's start sign: the skater held until it lets go, after its
+                                 * speech line is ready, its data there this many passes after it began
+                                 * loading, the host's time */
 } How;
 
 /* Where the stand-in skater's object keeps its place, its turn, and a value
@@ -302,6 +311,61 @@ static int anchor_frame(const How *h, int i)
 {
     if (i == h->skip_anchor) return -1;
     return k_anchors[i].frame + (h->late && i >= h->late_anchor ? h->late : 0);
+}
+
+/* The stand-in's sound manager and the course's start sign (sound): at
+ * SOUND_LOAD the sign starts a speech line loading into a slot, waits until
+ * the slot is ready, counts SOUND_COUNT passes and lets the skater go. The
+ * slot step makes the slot ready on the first pass its data is there, which
+ * is h->sound passes after it began loading, or, waited for, 16 naps a pass:
+ * another in each run, or as port/sound_keep.c keeps it. */
+#define SOUND_LOAD  300
+#define SOUND_COUNT 40
+#define SOUND_SLOT  2                   /* speech, the sound manager's +0xC0 */
+#define SOUND_TRACK 0x00402000u
+typedef struct { int data; uint32_t age; int naps; } SoundData;
+static double g_clock;                  /* the waits' clock: a millisecond a nap */
+static double clock_now(void) { return g_clock; }
+static uint32_t data_count(void *ctx)
+{
+    const SoundData *d = (const SoundData *)ctx;
+    return d->age + (uint32_t)(d->naps / 16) >= (uint32_t)d->data ? SOUND_KEEP_READY : d->age * 64u;
+}
+static void data_nap(void *ctx)
+{
+    ((SoundData *)ctx)->naps++;
+    g_clock += 0.001;
+}
+
+/* The sound manager's update, the slot step first, then the sign, in the
+ * game's frame. */
+static void sound(Game *g, const How *h, int f)
+{
+    int loading[SOUND_KEEP_SLOTS] = { 0 };
+    uint32_t track[SOUND_KEEP_SLOTS] = { 0 };
+    loading[SOUND_SLOT] = g->sound_state == 1;
+    track[SOUND_SLOT] = SOUND_TRACK;
+    sound_keep_pass(playback_sound_kept(), loading, track);
+    if (g->sound_state == 1) {
+        SoundData d;
+        SOUND_KEEP_IO io;
+        d.data = h->sound;
+        d.age = g->sound_age++;
+        d.naps = 0;
+        io.count = data_count;
+        io.nap = data_nap;
+        io.now = clock_now;
+        io.ctx = &d;
+        if (sound_keep_count(SOUND_SLOT, &io) >= SOUND_KEEP_READY) {
+            g->sound_state = 2;
+            g->sound_ready_at = f;
+        }
+    }
+    if (f == SOUND_LOAD) {
+        g->sound_state = 1;
+        g->sound_age = 0;
+    } else if (g->sound_state == 2 && !g->let_go_at && ++g->sign_count >= SOUND_COUNT)
+        g->let_go_at = f;
 }
 
 /* The stand-in's mission flows, each pass, by the recorded frame each step
@@ -380,6 +444,7 @@ static void run(Game *g, const How *h)
          * skater, or the free camera's around it, whose view the skater is
          * steered by. */
         freecam_frame();
+        if (h->sound) sound(g, h, f);
         if (h->set_at && f == h->set_at) g_set[0] = 0;
         g->dcamfix[f] = g_set[0];
         if (!in_scene) {
@@ -413,10 +478,11 @@ static void run(Game *g, const How *h)
          * until the pass after the course's start; then turned by the stick. */
         if (h->flow) flows(g, h, f);
         if (h->flow_holds && f <= flow_frame(h, FLOW_START)) lx = ly = 0;
+        if (h->sound && (!g->let_go_at || f <= g->let_go_at)) lx = ly = 0;
         g->pos[0] += (lx * cosf(heading) + ly * sinf(heading)) * SPEED;
         g->pos[2] += (ly * cosf(heading) - lx * sinf(heading)) * SPEED;
         g->turn = (uint32_t)(f * 13) & 0xFFFFu;
-        if (h->flow_holds) g->turn = (uint32_t)(int32_t)(lx * 8000.0f + ly * 3000.0f) & 0xFFFFu;
+        if (h->flow_holds || h->sound) g->turn = (uint32_t)(int32_t)(lx * 8000.0f + ly * 3000.0f) & 0xFFFFu;
         if (lx == 0 && ly == 0) g->turn = 0x4000u;  /* standing still, facing one way */
         for (i = 0; i < (h->recording ? 1 + f % 3 : 1 + f % 5); i++) {
             g->random = g->random * 0x55u + 0x7Fu;
@@ -844,6 +910,164 @@ static void play_flow(void)
           && res->flow_met == 0 && res->trace_same == res->trace_frames && res->drift_most < 0.01f,
           "a recording with no steps: state %d (%s), anchors %d of %d, the flow's %d, the trace %d of %d",
           res->state, res->why, res->anchors_met, res->anchors, res->flow_met, res->trace_same, res->trace_frames);
+}
+
+/* ---- the sound kept to the passes --------------------------------------- */
+
+static Game g_sound;
+static char g_sound_run[600];
+static void write_file(const char *folder, const char *text);
+
+/* A recording keeps the sound to the passes and says so: its speech slot
+ * ready PLAYBACK_SOUND_PASSES after it began loading, though its data was
+ * there sooner. Played with the data there later, much later (waited for at
+ * its pass) and sooner, the slot is ready on the recorded pass every time,
+ * the sign lets the skater go on the recorded frame, and the trace is as
+ * recorded throughout. The same recording without its sounds line, as one
+ * made before, plays with the slot ready when its data is. */
+static void play_sound(void)
+{
+    How rec = { .frames = FRAMES, .skip_anchor = -1, .wrong_anchor = -1, .recording = 1, .sound = 20 };
+    static const int data[3] = { 45, 90, 5 };
+    const PLAYBACK_RESULT *res = playback_result();
+    const SOUND_KEEP_STATS *k = sound_keep_stats();
+    char path[700], old[700], line[512];
+    int i, bad, f, r, n = 0, sounds_at = 0;
+    FILE *in, *out;
+    snprintf(g_sound_run, sizeof g_sound_run, "%s/sound-recording", g_dir);     /* not among Play's */
+    CHECK(playback_record(g_sound_run), "a recording with the sound kept couldn't start");
+    run(&g_sound, &rec);
+    playback_stop();
+    CHECK(g_sound.sound_ready_at == SOUND_LOAD + 1 + PLAYBACK_SOUND_PASSES
+          && g_sound.let_go_at == g_sound.sound_ready_at + SOUND_COUNT - 1 && k->passes == PLAYBACK_SOUND_PASSES
+          && k->ready == 1 && k->data_least == 20 && k->data_most == 20 && k->waited == 0,
+          "recorded: the slot ready at %d, the skater let go at %d; kept to %d, %d ready, data at %d to %d,"
+          " %d waited", g_sound.sound_ready_at, g_sound.let_go_at, k->passes, k->ready, k->data_least,
+          k->data_most, k->waited);
+
+    /* Its sounds line, and a copy without it. */
+    snprintf(path, sizeof path, "%s/" PLAYBACK_FILE, g_sound_run);
+    snprintf(old, sizeof old, "%s/sound-before", g_dir);
+    mkdir(old, 0755);
+    snprintf(old, sizeof old, "%s/sound-before/" PLAYBACK_FILE, g_dir);
+    in = fopen(path, "r");
+    out = fopen(old, "w");
+    CHECK(in && out, "can't copy %s", path);
+    if (!in || !out) return;
+    while (fgets(line, sizeof line, in)) {
+        n++;
+        if (!strncmp(line, "sounds ", 7)) {
+            sounds_at = n;
+            CHECK(atoi(line + 7) == PLAYBACK_SOUND_PASSES, "the sounds line says %s", line);
+            continue;
+        }
+        fputs(line, out);
+    }
+    fclose(in);
+    fclose(out);
+    CHECK(sounds_at == 3, "the sounds line at line %d, not after the version", sounds_at);
+
+    for (i = 0; i < 3; i++) {
+        How h = { .frames = FRAMES + 10, .skip_anchor = -1, .wrong_anchor = -1, .sound = data[i] };
+        CHECK(playback_play(g_sound_run, 0), "playback with the sound kept couldn't start");
+        run(&g_play, &h);
+        for (f = 0, bad = -1; f < FRAMES && bad < 0; f++)
+            for (r = 0; r < READS; r++)
+                if (!same(&g_play.seen[f][r], &g_sound.seen[f][r])) bad = f;
+        CHECK(bad < 0 && g_play.sound_ready_at == g_sound.sound_ready_at && g_play.let_go_at == g_sound.let_go_at,
+              "its data %d passes in: frame %d not the recorded pad, the slot ready at %d (recorded %d), the skater"
+              " let go at %d (recorded %d)", data[i], bad, g_play.sound_ready_at, g_sound.sound_ready_at,
+              g_play.let_go_at, g_sound.let_go_at);
+        CHECK(res->state == PLAYBACK_FINISHED && res->drift_most < 0.01f && res->trace_frames > 0
+              && res->trace_same == res->trace_frames && res->trace_apart_at == 0,
+              "its data %d passes in: state %d (%s), drift %.2f, the trace %d of %d (first apart at %u)", data[i],
+              res->state, res->why, res->drift_most, res->trace_same, res->trace_frames, res->trace_apart_at);
+        CHECK(k->ready == 1 && k->data_most == (data[i] > PLAYBACK_SOUND_PASSES ? PLAYBACK_SOUND_PASSES : data[i])
+              && k->waited == (data[i] > PLAYBACK_SOUND_PASSES),
+              "its data %d passes in: %d ready, data at %d, %d waited", data[i], k->ready, k->data_most, k->waited);
+    }
+
+    /* As one made before: ready when its data is, so the skater goes sooner. */
+    {
+        How h = { .frames = FRAMES + 10, .skip_anchor = -1, .wrong_anchor = -1, .sound = 21 };
+        snprintf(old, sizeof old, "%s/sound-before", g_dir);
+        CHECK(playback_play(old, 0), "playback without the sounds line couldn't start");
+        run(&g_play, &h);
+        CHECK(g_play.sound_ready_at == SOUND_LOAD + 1 + 21 && res->trace_same < res->trace_frames,
+              "without the sounds line: the slot ready at %d, not %d; the trace %d of %d",
+              g_play.sound_ready_at, SOUND_LOAD + 1 + 21, res->trace_same, res->trace_frames);
+    }
+
+    /* By hand: once, before any frame, 1 to PLAYBACK_SOUND_MOST. */
+    {
+        static const struct { const char *text; int ok; } hand[] = {
+            { "jsrf-pc-recording 1\nversion x linux\nsounds 30\nend 20\n", 1 },
+            { "jsrf-pc-recording 1\npad 0 0 0000 0000000000000000 0 0 0 0\nsounds 60\nend 20\n", 0 },
+            { "jsrf-pc-recording 1\nsounds 60\nsounds 60\nend 20\n", 0 },
+            { "jsrf-pc-recording 1\nsounds 0\nend 20\n", 0 },
+            { "jsrf-pc-recording 1\nsounds 3601\nend 20\n", 0 },
+            { "jsrf-pc-recording 1\nsounds\nend 20\n", 0 },
+        };
+        snprintf(old, sizeof old, "%s/sound-hand", g_dir);
+        for (i = 0; i < (int)(sizeof hand / sizeof hand[0]); i++) {
+            write_file(old, hand[i].text);
+            CHECK(playback_play(old, 0) == hand[i].ok, "%s %s", hand[i].ok ? "refused:" : "played:", hand[i].text);
+        }
+    }
+}
+
+/* sound_keep.c by itself: the slot step's sites; a new track in a slot
+ * counts from its start; data that never comes is waited for
+ * SOUND_KEEP_WAIT at its pass, said, and the slot then left to its own
+ * time; keeping off, the counts as they are. */
+static void sound_alone(void)
+{
+    int loading[SOUND_KEEP_SLOTS] = { 0 };
+    uint32_t track[SOUND_KEEP_SLOTS] = { 0 };
+    SoundData d = { 0, 0, 0 };
+    SOUND_KEEP_IO io = { data_count, data_nap, clock_now, &d };
+    const SOUND_KEEP_STATS *k = sound_keep_stats();
+    uint32_t n = 0;
+    int p, held = 0, ready_at = -1;
+    CHECK(sound_keep_site(0x00116C5Cu) == 0 && sound_keep_site(0x00116C93u) == 1
+          && sound_keep_site(0x00116CFBu) == 2 && sound_keep_site(0x00116D56u) == 3
+          && sound_keep_site(0x00116DB1u) == 4 && sound_keep_site(0x00116DFBu) == 5
+          && sound_keep_site(0x00116C57u) == -1, "the slot step's sites");
+
+    /* A track loading 30 passes, its data there at once, then another. */
+    loading[1] = 1;
+    track[1] = 0x1000u;
+    d.data = 0;
+    for (p = 0; p < 200 && ready_at < 0; p++) {
+        if (p == 30) track[1] = 0x2000u;
+        sound_keep_pass(60, loading, track);
+        d.age = (uint32_t)p;
+        n = sound_keep_count(1, &io);
+        if (n >= SOUND_KEEP_READY) ready_at = p;
+        else held++;
+    }
+    CHECK(ready_at == 30 + 60 && held == 90, "a new track: ready at pass %d, held %d", ready_at, held);
+
+    /* Data that never comes. */
+    sound_keep_pass(0, loading, track);
+    d.data = 1000000;
+    d.naps = 0;
+    for (p = 0; p <= 60; p++) {
+        sound_keep_pass(60, loading, track);
+        d.age = (uint32_t)p;
+        n = sound_keep_count(1, &io);
+    }
+    CHECK(n < SOUND_KEEP_READY && k->given_up == 1 && k->ready == 0 && d.naps >= 9000 && d.naps <= 10001,
+          "data that never comes: %u samples, %d given up, %d naps", n, k->given_up, d.naps);
+    d.data = 0;
+    sound_keep_pass(60, loading, track);
+    CHECK(sound_keep_count(1, &io) == SOUND_KEEP_READY, "given up: not held after");
+
+    /* Off: as it is, what it did kept. */
+    sound_keep_pass(0, loading, track);
+    d.data = 0;
+    d.age = 0;
+    CHECK(sound_keep_count(1, &io) == SOUND_KEEP_READY && k->passes == 60 && k->given_up == 1, "off: held");
 }
 
 /* ---- the free camera ------------------------------------------------------ */
@@ -1291,7 +1515,7 @@ static void start_line(const char *line, int want_ok, const char *what)
 static void missions_start_line(void)
 {
     char folder[700], load[700], refused[700], path[760], line[256];
-    const char *heads[3] = { "jsrf-pc-recording 1\n", "version ", "# started " };
+    const char *heads[4] = { "jsrf-pc-recording 1\n", "version ", "sounds 60\n", "# started " };
     How rec = { .frames = 40, .skip_anchor = -1, .wrong_anchor = -1, .recording = 1 };
     How h = { .frames = 30, .skip_anchor = -1, .wrong_anchor = -1 };
     FILE *f;
@@ -1330,7 +1554,7 @@ static void missions_start_line(void)
     f = fopen(path, "r");
     CHECK(f != NULL, "no %s", path);
     if (!f) return;
-    for (i = 0; i < 3 && fgets(line, sizeof line, f); i++)
+    for (i = 0; i < 4 && fgets(line, sizeof line, f); i++)
         CHECK(!strncmp(line, heads[i], strlen(heads[i])), "the recording from a mission, line %d: %s", i + 1, line);
     CHECK(fgets(line, sizeof line, f) && !strcmp(line, "start mission 0252 6 1 1A2B3C4D\n"),
           "its start line: %s", line);
@@ -1796,6 +2020,8 @@ int main(int argc, char **argv)
     play_idle();
     play_hand_back();
     play_flow();
+    play_sound();
+    sound_alone();
     play_settings();
     mark();
     record_cam();

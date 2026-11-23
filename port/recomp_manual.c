@@ -1306,6 +1306,7 @@ void sub_0017CAB0(void)
 #include "playback.h"
 #include "playback_mark.h"
 #include "soul_indicator.h"
+#include "sound_keep.h"
 
 static struct { double t, dur; uint16_t buttons; uint8_t analog[8];
                 int16_t axis[4]; int has_axis; char name[16]; int said; } s_pad_script[64];
@@ -2269,7 +2270,9 @@ void sub_000A6110(void)
     sub_000A6110_gen();
 }
 
-/* ---- sub_00116E30: the sound manager's per-frame update; counts frames.
+/* ---- sub_00116E30: the sound manager's per-frame update; counts frames,
+ * and hands its slots to sound_keep.h before its slot step (sub_00116C30,
+ * its first call) runs.
  *
  * JSRF_VOICE_LOG=1 (test only): the speech slots, frame by frame. The
  * sound manager (task 5) keeps two ADXTs for speech: +0x6C with its state
@@ -2282,7 +2285,7 @@ void sub_000A6110(void)
  * [VOICE] lines give the time, the game frame and the present count for
  * every change, so a line's real start and end can be set against the
  * frames captured while it plays. */
-extern void sub_0013A9A0(void);
+extern void sub_0013A9A0_gen(void);
 static int voice_log_on(void)
 {
     static int on = -1;
@@ -2290,6 +2293,33 @@ static int voice_log_on(void)
     return on;
 }
 static uint32_t s_sndmgr;   /* the sound manager (task 5), seen by its update */
+
+/* The sound manager at o's slots as its slot step will find them, for
+ * sound_keep_pass, while playback keeps the sound to the passes: loading,
+ * in sound_keep_site's order, and the ADXT each loads. The music's two
+ * ADXTs are at +0x68 and +0x6C, +0x78 the one playing; while +0xA4 is set,
+ * the next track loads in the other, and the music's own state (+0xBC) isn't
+ * looked at. */
+static void sound_slots(uint32_t o)
+{
+    const uint8_t *m = (const uint8_t *)g_xbox_mem_offset;
+    int loading[SOUND_KEEP_SLOTS] = { 0 };
+    uint32_t track[SOUND_KEEP_SLOTS] = { 0 };
+    int passes = playback_sound_kept();
+#define SND(off) (*(const uint32_t *)(m + o + (off)))
+    if (passes && o >= 0x10000u && o + 0x200u < (64u << 20)) {
+        uint32_t next = SND(0xA4), cur = SND(0x78) & 1u;
+        loading[0] = next != 0;          track[0] = SND(0x68 + 4 * (cur ^ 1u));
+        loading[1] = !next && SND(0xBC) == 1; track[1] = SND(0x68 + 4 * cur);
+        loading[2] = SND(0xC0) == 1;     track[2] = SND(0x70);
+        loading[3] = SND(0xC8) == 1;     track[3] = SND(0x74);
+        loading[4] = SND(0xCC) == 1;     track[4] = SND(0x6C);
+        loading[5] = SND(0xC4) == 1;     track[5] = SND(0x6C);
+    }
+#undef SND
+    sound_keep_pass(passes, loading, track);
+}
+
 extern void sub_00116E30_gen(void);
 void sub_00116E30(void)
 {
@@ -2304,6 +2334,7 @@ void sub_00116E30(void)
     s_game_frames++;
     freecam_frame();
     if (adx_err_on()) adx_err_sound_update();
+    sound_slots(o);
     sub_00116E30_gen();
     if (!voice_log_on() || o < 0x10000u || o + 0x200u >= (64u << 20)) return;
     s_sndmgr = o;
@@ -2327,8 +2358,53 @@ void sub_00116E30(void)
             uint32_t a[2]; a[0] = h; a[1] = 0;
             next_level[k] = pad_now() + 0.5;
             fprintf(stderr, "[VOICE] t=%.3f slot %X obuf %u samples\n", pad_now(), hoff[k],
-                    guest_call_cdecl(sub_0013A9A0, 0x00116C5Cu, 2, a));
+                    guest_call_cdecl(sub_0013A9A0_gen, 0x00116C5Cu, 2, a));
         }
+    }
+}
+
+/* ---- sub_0013A9A0: a track's samples decoded (its ADXT's), which only the
+ * sound manager's slot step asks, a slot ready at 0x2000: the count it sees
+ * kept to the game's passes while playback keeps the sound (sound_keep.h).
+ * The slot step's own call runs first; any more, while a slot's data is
+ * waited for at its pass, run as the game's would, between naps in which
+ * the game's thread gives up the guest lock, so the file system's and the
+ * sound's threads, which bring the data, can run. */
+typedef struct { uint32_t a[2], ra, first; int asked; } SoundCall;
+static uint32_t sound_count(void *ctx)
+{
+    SoundCall *c = (SoundCall *)ctx;
+    if (!c->asked++) return c->first;
+    return guest_call_cdecl(sub_0013A9A0_gen, c->ra, 2, c->a);
+}
+static void sound_nap(void *ctx)
+{
+    extern int xbox_guest_lock_drop(void);
+    extern void xbox_guest_lock_retake(int held);
+    struct timespec ts = { 0, 1000000L };
+    int held = xbox_guest_lock_drop();
+    (void)ctx;
+    nanosleep(&ts, NULL);
+    xbox_guest_lock_retake(held);
+}
+void sub_0013A9A0(void)
+{
+    SoundCall c;
+    int slot = sound_keep_site(GARG(0));
+    c.ra = GARG(0);
+    c.a[0] = GARG(1);
+    c.a[1] = GARG(2);
+    c.asked = 0;
+    sub_0013A9A0_gen();
+    if (slot < 0) return;
+    c.first = g_eax;
+    {
+        SOUND_KEEP_IO io;
+        io.count = sound_count;
+        io.nap = sound_nap;
+        io.now = pad_now;
+        io.ctx = &c;
+        g_eax = sound_keep_count(slot, &io);
     }
 }
 
