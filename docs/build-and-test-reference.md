@@ -196,12 +196,15 @@ the first test build that carries it, you may play my recordings yourself,
 unattended, and read their logs.
 
 - **A run** is its folder, as the shared folder's
-  `input-playback/RUNS.md` lists it: my recording, the steps you wrote for
-  it (the settings and Developer switches set before it, and the in-game
-  menu's rows run at its idle moments), and the saves it starts from,
-  which stay on the device it was recorded on. The engine plays it on a
-  scratch copy of them, so my own settings and saves are never changed,
-  and it ends at the recording's end, or when it drifts off route.
+  `input-playback/RUNS.md` lists it: my recording (`recording.txt`), the
+  steps you wrote for it (`steps.txt`: the settings and Developer switches
+  set before it, and the in-game menu's rows, marks in the log and
+  screenshots at its idle moments and frames), and the settings and saves
+  it starts from (`profile/`), which stay on the device it was recorded
+  on. The engine plays it with `--play` on a copy of them, made for each
+  play in the run's `plays/<date>-<time>/` with its screenshots, so my own
+  settings and saves are never opened, and it ends at the recording's end,
+  or when it drifts off route (docs/playing.md, Playback).
 - **Never by hand:** you never record a run, or press anything during
   one. A run's log shows what a log can; how anything looks or feels
   stays mine to judge (project rules, Workflow 4).

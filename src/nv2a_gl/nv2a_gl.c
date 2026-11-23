@@ -6557,13 +6557,14 @@ static void draw_log_latch(void)
  * the question at hand -- is there any geometry under the floating bus, or
  * is the deck simply never drawn -- the colour and the depth have to be the
  * same frame or they say nothing. */
-static void write_bmp(const char *nm, const uint8_t *buf,
-                      uint32_t pw, uint32_t ph)
+static int write_bmp(const char *nm, const uint8_t *buf,
+                     uint32_t pw, uint32_t ph)
 {
     FILE *f = fopen(nm, "wb");
     uint8_t hdr[54];
     uint32_t row, sz, x, y;
-    if (!f) return;
+    int bad;
+    if (!f) return 0;
     row = (pw * 3 + 3) & ~3u;
     sz = 54 + row * ph;
     memset(hdr, 0, sizeof hdr);
@@ -6588,7 +6589,8 @@ static void write_bmp(const char *nm, const uint8_t *buf,
         for (x = 0; x < pw; x++) fwrite(r + x * 4, 1, 3, f);
         fwrite(pad, 1, row - pw * 3, f);
     }
-    fclose(f);
+    bad = ferror(f);
+    return !(fclose(f) | bad);
 }
 
 /* How many times the frame dumps (RECOMP_GL_DUMP_FB) fire: 24, or
@@ -14058,6 +14060,24 @@ static void wide_fill_strip(uint32_t rt, uint32_t pw, uint32_t ph, float shape, 
     }
 }
 
+/* Input playback's steps (port/playback.c's playback_flip), at each flip on
+ * this, the window's thread: a menu row chosen as a click chooses it, or the
+ * picture this flip shows written as a BMP (shot_write). Weak, for the
+ * tests that build the renderer without port/. */
+extern void playback_flip(int (*shot)(const char *path)) __attribute__((weak));
+static uint32_t g_shot_rt, g_shot_w, g_shot_h;
+
+static int shot_write(const char *path)
+{
+    static uint8_t *buf;
+    static size_t cap;
+    size_t need = (size_t)g_shot_w * g_shot_h * 4;
+    if (!g_shot_rt || !need) return 0;
+    if (cap < need) { free(buf); buf = (uint8_t *)malloc(need); cap = buf ? need : 0; }
+    return buf && G->target_read(g_shot_rt, 0, 0, g_shot_w, g_shot_h, 1, buf)
+        && write_bmp(path, buf, g_shot_w, g_shot_h);
+}
+
 static void present(int is_frame)
 {
     uint32_t va, bpp, x, y;
@@ -14167,6 +14187,12 @@ static void present(int is_frame)
         if (strip) wide_fill_strip(prt, pw, ph, shape, strip - 1u);
         g_shown_rt = prt;
         card_mark();
+        if (playback_flip) {
+            g_shot_rt = prt;
+            g_shot_w = pw;
+            g_shot_h = ph;
+            playback_flip(shot_write);
+        }
 #if defined(NV2A_GL_USE_SDL)
         if (g_window) {
             sdl_show(nv2a_gfx_gl_fbo(prt), (int)pw, (int)ph, shape);

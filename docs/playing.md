@@ -606,6 +606,20 @@ running while it is open, but your input goes to the menu.
     skater ends up far from where they were, or the game loads something
     the recording didn't, playback stops, and the log says where. Start a
     recording from the same saves and settings you will play it with.
+    A recording's folder can also hold `steps.txt`, a line each: `idle 2:
+    menu Graphics > Anti-aliasing (SMAA) > Off` chooses that row as a click
+    would at the recording's second idle moment, holding the recording
+    there while it does; `frame 600: screenshot` writes the picture shown
+    then as a BMP; `idle 1: mark <words>` puts a line in the log. Every
+    line is checked before anything is played, and a row that isn't there
+    stops it. With `--play`, the folder can hold `profile/` too: a settings
+    file (`settings.cfg`), `developer.cfg`, `start-states.txt`, `saves/`
+    and `cache/`, as a portable folder has them. Each play then runs on a
+    copy of it, in the folder's `plays/<date>-<time>/` with its
+    screenshots, so your own settings and saves are never opened, and
+    `steps.txt`'s `setting mute=1` and `developer RECOMP_GL_PROFILE=1`
+    lines are written into that copy first. Menu rows and those lines need
+    a `profile/`, as they change settings; Play (Restart) leaves one out.
     A recording made from Developer > Missions with Record ticked notes
     the mission, the character and Photo mode it started with, and the
     story's progress it started from: playing it starts the game at that

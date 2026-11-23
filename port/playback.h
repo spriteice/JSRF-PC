@@ -54,6 +54,32 @@
  * file (`portable/recordings/` in portable mode), holding recording.txt: one
  * line each, so a run can be written by hand.
  *
+ * A run's folder, as --play takes it, can hold two more beside it:
+ *
+ *   steps.txt   a line each, in the recording's order, # for a comment:
+ *     setting <key>=<value>     into the play's copy of the settings file
+ *     developer <NAME>=<value>  into its developer.cfg (port/developer.c)
+ *     idle <n>: menu <path>     a row by its labels (menu.h, menu_path_run)
+ *     idle <n>: mark <words>    a line in the log
+ *     idle <n>: screenshot      the picture shown, as shot-<line>.bmp
+ *     frame <n>: ...            menu, mark or screenshot, at a recorded frame
+ *   profile/    settings.cfg, developer.cfg, start-states.txt, saves/ and
+ *               cache/, as a portable folder has them
+ *
+ * An idle moment's steps run once playback has reached it (the skater put
+ * back, or not), and hold the recording there, the pad still, until they
+ * are done; a frame's run once the recording reaches it, holding nothing.
+ * Each line is checked as the recording is loaded, and each menu row at
+ * the play's first flip (playback_flip): one that can't be stops the play.
+ * With --play, a profile/ is copied for each play into plays/<date>-<time>/
+ * in the run's folder before anything reads them (playback_first), its
+ * setting and developer lines written into the copy, and the settings file
+ * (JSRF_SETTINGS_FILE), the engine's save folder (JSRF_SAVE_DIR) and the
+ * game's saves (JSRF_USER_DIR) pointed at it, so the player's are never
+ * opened; the screenshots go there too. Menu rows and setting lines change
+ * settings, so they need that copy: Play (Restart) leaves a profile/ out,
+ * and runs marks and screenshots alone, into a plays/ folder of their own.
+ *
  *   jsrf-pc-recording 1                     the format, first
  *   version <version> <linux|windows>       the build it was made on
  *   start mission <CCNN> <skater> <photo> <progress>
@@ -127,6 +153,12 @@
 #define PLAYBACK_DRIFT_CHECKS 3              /* checks in a row past it: off route */
 #define PLAYBACK_ANCHOR_WAIT  3600u          /* frames an anchor is waited for: a minute */
 #define PLAYBACK_ANCHOR_AHEAD 4              /* recorded anchors an early one may skip */
+#define PLAYBACK_STEPS        "steps.txt"    /* a run's steps, beside its recording */
+#define PLAYBACK_PROFILE      "profile"      /* the settings and saves a run starts from */
+#define PLAYBACK_PROFILE_SETTINGS "settings.cfg" /* its settings file, as a portable folder has it */
+#define PLAYBACK_PLAYS        "plays"        /* a folder for each play: its copy, its screenshots */
+#define PLAYBACK_STEP_SETTLE  5u             /* flips after a menu row before the next step */
+#define PLAYBACK_STEP_WAIT    600u           /* frames steps may hold the recording: ten seconds */
 
 /* What starts a stretch of play. */
 typedef enum {
@@ -255,6 +287,15 @@ void playback_anchor(PLAYBACK_ANCHOR kind, uint32_t value, uint32_t *random);
  * position (x, y, z) and turn, which playback may put back at an idle
  * moment, and the camera's mode. */
 void playback_view(float position[3], uint32_t *turn, uint32_t camera);
+
+/* At each flip, on the window's thread (src/nv2a_gl/nv2a_gl.c's present),
+ * while a run with steps plays: at its first, every menu row its steps name
+ * looked for; then each step whose moment has come, one a flip, in the
+ * file's order: a menu row chosen by its labels as a click chooses it
+ * (menu_path_run), then PLAYBACK_STEP_SETTLE flips for it to show; a mark
+ * in the log; or the picture this flip shows written by shot as a BMP
+ * (1 when written), shot-<line>.bmp in the play's folder. */
+void playback_flip(int (*shot)(const char *path));
 
 /* Ends a recording, from the menu's thread: at the next pass, or now when
  * the game has stopped passing. Nothing while not recording, but a line

@@ -45,6 +45,8 @@
 #define PB_LINE       512
 #define PB_LIST       16          /* recordings Play offers at most, newest first */
 #define PB_NAME       32          /* a recording's folder name: its date and time */
+#define PB_STEP_TEXT  256         /* a step's menu path or mark */
+#define PB_COPY_DEPTH 16          /* folders within folders a profile's copy goes down */
 
 typedef struct { uint32_t frame, read; int none; XBOX_GAMEPAD pad; } PbPad;
 typedef struct { uint32_t frame; PLAYBACK_ANCHOR kind; uint32_t value, random; } PbAnchor;
@@ -56,6 +58,11 @@ typedef struct { void *at; int n, cap; } PbList;
 /* Where a run started (a recording's start line): set, at Load Game or a
  * mission (missions.h), with photo mode's tick. */
 typedef struct { int set, load, mission, skater, photo; uint32_t progress; } PbStart;
+/* A run's step (steps.txt): at an idle moment of the recording (idle, at
+ * its number from 1) or at a recorded frame, a menu row, a mark or a
+ * screenshot, with its line in the file. */
+enum { PB_STEP_MENU, PB_STEP_MARK, PB_STEP_SHOT };
+typedef struct { int line, idle, what; uint32_t at; char text[PB_STEP_TEXT]; } PbStep;
 
 static const char *const k_kind[PLAYBACK_ANCHOR_KINDS] = {
     "mission.bin", "mission.dat", "stage", "scene", "scene-end"
@@ -117,6 +124,18 @@ static int64_t s_offset;                    /* the frame played less the frame r
 static uint32_t s_end, s_wait_from;
 static PbStart s_start;                     /* the recording's start line */
 static int s_start_check;                   /* this run's start not yet checked against it */
+static PbList s_steps;                      /* the run's steps, in steps.txt's order */
+static int s_step_next, s_steps_run;
+static int s_steps_checked;                 /* its menu rows found, on the window's thread */
+static int s_step_running;                  /* one runs there: its changes aren't the player's */
+static uint32_t s_step_settle;              /* flips left to wait after a menu row */
+static int s_holding;                       /* an idle moment's steps hold the recording */
+static uint32_t s_hold_from;
+/* This play's folder (a run's plays/<date>-<time>/), the run it is for, and
+ * whether it holds a copy of the run's profile/ (playback_first) or that
+ * copy failed. */
+static char s_play_dir[1100], s_play_for[1024];
+static int s_profile, s_profile_bad;
 static int s_exit_at_end, s_drift_run, s_armed[PLAYBACK_PORTS];
 static float s_drift_said = -1;
 static uint32_t s_packet[PLAYBACK_PORTS];
@@ -128,6 +147,7 @@ static uint32_t s_packet[PLAYBACK_PORTS];
 #define PB_ANCHOR   ((PbAnchor *)s_anchors.at)
 #define PB_CHECK    ((PbSpot *)s_checks.at)
 #define PB_IDLE     ((PbSpot *)s_idles.at)
+#define PB_STEP     ((PbStep *)s_steps.at)
 
 #if defined(NV2A_GL_USE_SDL)
 /* nv2a_gl.c: a file beside the settings file, the restart, and the window's
@@ -281,6 +301,8 @@ static void summary(void)
             pad_now(), outcome(), s_res.why[0] ? ": " : "", s_res.why, s_res.frames,
             s_res.anchors_met, s_res.anchors, s_res.anchors_skipped, s_res.checks,
             s_res.drift_most, s_res.drift_most_at, s_res.idles_put_back, s_idles.n);
+    if (s_steps.n)
+        fprintf(stderr, "[PLAYBACK] steps run %d of %d (" PLAYBACK_STEPS ")\n", s_steps_run, s_steps.n);
 }
 
 /* A playback over: said, and the game closed for an unattended run. */
@@ -538,6 +560,8 @@ static void forget(void)
     memset(&s_anchors, 0, sizeof s_anchors);
     memset(&s_checks, 0, sizeof s_checks);
     memset(&s_idles, 0, sizeof s_idles);
+    free(s_steps.at);
+    memset(&s_steps, 0, sizeof s_steps);
 }
 
 /* The recording in folder, every line checked: 0, saying where, at the
@@ -664,6 +688,272 @@ bad:
     return 1;
 }
 
+/* ---- a run's folder: its steps, and a copy of its profile -------------- */
+
+/* A folder of its own for this play in the run's plays/, by the time in
+ * UTC, as recordings are named: s_play_dir, or 0. */
+static int play_folder(const char *run)
+{
+    char plays[1100];
+    struct stat st;
+    time_t now = time(NULL);
+    struct tm *utc = gmtime(&now);
+    int i;
+    s_play_dir[0] = '\0';
+    snprintf(s_play_for, sizeof s_play_for, "%s", run);
+    if (!utc || (size_t)snprintf(plays, sizeof plays, "%s/" PLAYBACK_PLAYS, run) >= sizeof plays
+        || !make_folder(plays))
+        return 0;
+    for (i = 1; i <= 9; i++) {
+        char name[48];
+        snprintf(name, sizeof name, i > 1 ? "%04d-%02d-%02d-%02d%02d%02d-%d" : "%04d-%02d-%02d-%02d%02d%02d",
+                 utc->tm_year + 1900, utc->tm_mon + 1, utc->tm_mday, utc->tm_hour, utc->tm_min, utc->tm_sec, i);
+        if ((size_t)snprintf(s_play_dir, sizeof s_play_dir, "%s/%s", plays, name) >= sizeof s_play_dir) break;
+        if (stat(s_play_dir, &st) && make_folder(s_play_dir)) return 1;
+    }
+    s_play_dir[0] = '\0';
+    return 0;
+}
+
+static int copy_file(const char *from, const char *to)
+{
+    char buf[65536];
+    size_t n;
+    int bad = 0;
+    FILE *in = fopen(from, "rb"), *out = in ? fopen(to, "wb") : NULL;
+    if (!out) { if (in) fclose(in); return 0; }
+    while (!bad && (n = fread(buf, 1, sizeof buf, in)) > 0) bad = fwrite(buf, 1, n, out) != n;
+    bad |= ferror(in);
+    fclose(in);
+    return !(fclose(out) | bad);
+}
+
+/* Every file and folder in from, into to (made): 0, saying which, at the
+ * first that can't be copied. */
+static int copy_tree(const char *from, const char *to, int depth)
+{
+    char a[1100], b[1100];
+    struct stat st;
+    struct dirent *e;
+    DIR *d;
+    int ok = 1;
+    if (depth > PB_COPY_DEPTH || !make_folder(to) || !(d = opendir(from))) {
+        fprintf(stderr, "[PLAYBACK] can't copy %s to %s\n", from, to);
+        return 0;
+    }
+    while (ok && (e = readdir(d))) {
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+        if ((size_t)snprintf(a, sizeof a, "%s/%s", from, e->d_name) >= sizeof a
+            || (size_t)snprintf(b, sizeof b, "%s/%s", to, e->d_name) >= sizeof b || stat(a, &st)) {
+            fprintf(stderr, "[PLAYBACK] can't copy %s/%s\n", from, e->d_name);
+            ok = 0;
+        } else if (S_ISDIR(st.st_mode))
+            ok = copy_tree(a, b, depth + 1);    /* which says what it can't */
+        else if (S_ISREG(st.st_mode) && !(ok = copy_file(a, b)))
+            fprintf(stderr, "[PLAYBACK] can't copy %s to %s\n", a, b);
+    }
+    closedir(d);
+    return ok;
+}
+
+/* A setting or developer line's key=value, after its first word: the key
+ * (no space or =) into key, and where its value starts; 0 for one that
+ * can't be read. */
+static int read_setting(const char *s, char *key, size_t n, const char **value)
+{
+    const char *eq = strchr(s, '=');
+    size_t k = eq ? (size_t)(eq - s) : 0;
+    if (!k || k >= n || strcspn(s, " \t") < k) return 0;
+    memcpy(key, s, k);
+    key[k] = '\0';
+    *value = eq + 1;
+    return 1;
+}
+
+/* key=value in a file of key=value lines (the settings file, developer.cfg):
+ * its line replaced, or added at the end; the file made if need be. */
+static int set_key(const char *path, const char *key, const char *value)
+{
+    char line[PB_LINE];
+    char *text = NULL;
+    size_t len = 0, k = strlen(key);
+    int found = 0, bad = 0;
+    FILE *f = fopen(path, "r");
+    while (f && fgets(line, sizeof line, f)) {
+        size_t l;
+        char *grown;
+        if (!found && !strncmp(line, key, k) && line[k] == '=') {
+            found = 1;
+            snprintf(line, sizeof line, "%s=%s\n", key, value);
+        }
+        l = strlen(line);
+        if (!(grown = (char *)realloc(text, len + l + 1))) { bad = 1; break; }
+        text = grown;
+        memcpy(text + len, line, l + 1);
+        len += l;
+    }
+    if (f) fclose(f);
+    if (!bad && (f = fopen(path, "w"))) {
+        if (len) fputs(text, f);
+        if (len && text[len - 1] != '\n') fputc('\n', f);
+        if (!found) fprintf(f, "%s=%s\n", key, value);
+        bad = ferror(f);
+        bad |= fclose(f);
+    } else
+        bad = 1;
+    free(text);
+    return !bad;
+}
+
+/* A line of steps.txt, its ends trimmed, in place. */
+static char *trimmed(char *s)
+{
+    size_t n;
+    while (*s == ' ' || *s == '\t') s++;
+    n = strlen(s);
+    while (n && (s[n - 1] == '\n' || s[n - 1] == '\r' || s[n - 1] == ' ' || s[n - 1] == '\t')) s[--n] = '\0';
+    return s;
+}
+
+/* --play's run with a profile/ (the settings file, developer.cfg,
+ * start-states.txt, saves/ and cache/, as a portable folder has them): a
+ * copy of it in a folder of this play's own (plays/<date>-<time>/), with
+ * steps.txt's setting and developer lines written into it, and the
+ * settings file, the engine's save folder and the game's saves pointed at
+ * it, before anything reads them. The player's own are never opened. A
+ * copy that fails is said, and playback_play refuses to play on it. */
+static void profile_copy(const char *run)
+{
+    char from[1100], path[1200], line[PB_LINE], key[64];
+    struct stat st;
+    FILE *f;
+    int n = 0, ok;
+    s_profile = s_profile_bad = 0;
+    s_play_dir[0] = s_play_for[0] = '\0';
+    snprintf(from, sizeof from, "%s/" PLAYBACK_PROFILE, run);
+    if (stat(from, &st) || !S_ISDIR(st.st_mode)) return;
+    s_profile = 1;
+    if (!play_folder(run)) {
+        fprintf(stderr, "[PLAYBACK] no folder for this play in %s/" PLAYBACK_PLAYS "\n", run);
+        s_profile_bad = 1;
+        return;
+    }
+    ok = copy_tree(from, s_play_dir, 0);
+    snprintf(path, sizeof path, "%s/saves", s_play_dir);
+    ok = make_folder(path) && ok;
+    set_env("JSRF_USER_DIR", path);
+    snprintf(path, sizeof path, "%s/cache", s_play_dir);
+    ok = make_folder(path) && ok;
+    set_env("JSRF_SAVE_DIR", path);
+    snprintf(path, sizeof path, "%s/" PLAYBACK_PROFILE_SETTINGS, s_play_dir);
+    set_env("JSRF_SETTINGS_FILE", path);
+    fprintf(stderr, "[PLAYBACK] a copy of %s for this play, in %s: its settings, Developer switches and saves;"
+            " yours aren't opened\n", from, s_play_dir);
+    snprintf(path, sizeof path, "%s/" PLAYBACK_STEPS, run);
+    f = fopen(path, "r");
+    while (ok && f && fgets(line, sizeof line, f)) {
+        char *s = trimmed(line);
+        const char *value;
+        int dev = !strncmp(s, "developer ", 10);
+        n++;
+        if (!dev && strncmp(s, "setting ", 8)) continue;
+        if (!read_setting(s + (dev ? 10 : 8), key, sizeof key, &value)) continue;  /* playback_play says */
+        snprintf(path, sizeof path, "%s/%s", s_play_dir, dev ? "developer.cfg" : PLAYBACK_PROFILE_SETTINGS);
+        ok = set_key(path, key, value);
+        fprintf(stderr, "[PLAYBACK] " PLAYBACK_STEPS ", line %d: %s=%s %s the copy's %s\n", n, key, value,
+                ok ? "in" : "can't be written into", dev ? "developer.cfg" : PLAYBACK_PROFILE_SETTINGS);
+    }
+    if (f) fclose(f);
+    s_profile_bad = !ok;
+}
+
+/* The run's steps.txt beside its recording, if it has one, every line
+ * checked against the recording just loaded: 0, saying where, at the first
+ * that can't be read, names a moment the recording doesn't have or comes
+ * before the one above it, or changes a setting with no copy of a profile
+ * to change it in. */
+static int load_steps(const char *run)
+{
+    char path[1100], line[PB_LINE], key[64];
+    FILE *f;
+    int n = 0, shots = 0, menus = 0;
+    uint32_t last = 0;
+    snprintf(path, sizeof path, "%s/" PLAYBACK_STEPS, run);
+    if (!(f = fopen(path, "r"))) return 1;          /* none: the recording alone */
+    while (fgets(line, sizeof line, f)) {
+        char *s = trimmed(line), *e;
+        const char *why = NULL, *value;
+        unsigned long v;
+        PbStep st, *to;
+        n++;
+        if (!*s || *s == '#') continue;
+        if (!strncmp(s, "setting ", 8) || !strncmp(s, "developer ", 10)) {
+            if (!read_setting(s + (s[0] == 's' ? 8 : 10), key, sizeof key, &value))
+                why = "not key=value";
+            else if (!s_profile)
+                why = "a setting goes into a copy of the run's " PLAYBACK_PROFILE "/, which only --play makes";
+            if (!why) continue;                     /* written into the copy (profile_copy) */
+        } else {
+            memset(&st, 0, sizeof st);
+            st.line = n;
+            st.idle = !strncmp(s, "idle ", 5);
+            if (!st.idle && strncmp(s, "frame ", 6)) { why = "not a step"; goto said; }
+            s += st.idle ? 5 : 6;
+            v = strtoul(s, &e, 10);
+            if (e == s || *s == '-' || *s == '+' || e[0] != ':' || e[1] != ' ') { why = "not a step"; goto said; }
+            s = e + 2;
+            if (st.idle ? v < 1 || v > (unsigned long)s_idles.n : v > s_end) {
+                why = st.idle ? "the recording has no such idle moment" : "past the recording's end";
+                goto said;
+            }
+            st.at = (uint32_t)v;
+            if ((st.idle ? PB_IDLE[v - 1].frame : st.at) < last) {
+                why = "comes before the step above it in the recording";
+                goto said;
+            }
+            last = st.idle ? PB_IDLE[v - 1].frame : st.at;
+            if (!strcmp(s, "screenshot")) st.what = PB_STEP_SHOT, s += 10;
+            else if (!strncmp(s, "mark ", 5)) st.what = PB_STEP_MARK, s += 5;
+            else if (!strncmp(s, "menu ", 5)) st.what = PB_STEP_MENU, s += 5;
+            else { why = "not a step"; goto said; }
+#if !defined(XBOXRECOMP_MENU)
+            if (st.what == PB_STEP_MENU) { why = "a menu row, in a build without the in-game menu"; goto said; }
+#endif
+            if (st.what == PB_STEP_MENU && !s_profile)
+                why = "a menu row changes settings: it needs a copy of the run's " PLAYBACK_PROFILE "/, which only"
+                      " --play makes";
+            else if (st.what != PB_STEP_SHOT && !*s)
+                why = "nothing after it";
+            else if (strlen(s) >= sizeof st.text)
+                why = "too long";
+            else if (!(to = (PbStep *)add(&s_steps, sizeof st)))
+                why = "no memory for it";
+            else {
+                snprintf(st.text, sizeof st.text, "%s", s);
+                *to = st;
+                shots += st.what == PB_STEP_SHOT;
+                menus += st.what == PB_STEP_MENU;
+            }
+        }
+said:
+        if (why) {
+            fprintf(stderr, "[PLAYBACK] %s, line %d: %s; nothing is played\n", path, n, why);
+            fclose(f);
+            return 0;
+        }
+    }
+    fclose(f);
+    if (shots && !s_play_dir[0] && !play_folder(run)) {
+        fprintf(stderr, "[PLAYBACK] %s: no folder in %s/" PLAYBACK_PLAYS " for its screenshots; nothing is"
+                " played\n", path, run);
+        return 0;
+    }
+    s_steps_checked = !menus;
+    fprintf(stderr, "[PLAYBACK] %s: %d steps, %d of them menu rows, %d screenshots%s%s\n", path, s_steps.n, menus,
+            shots, shots ? ", into " : "", shots ? s_play_dir : "");
+    return 1;
+}
+
 int playback_play(const char *folder, int exit_at_end)
 {
     char path[sizeof s_folder + 32];
@@ -672,7 +962,20 @@ int playback_play(const char *folder, int exit_at_end)
     snprintf(s_folder, sizeof s_folder, "%s", folder);
     snprintf(path, sizeof path, "%s/" PLAYBACK_FILE, folder);
     run_start();
-    if (!load(path)) {
+    /* This run's copy of its profile/ (playback_first), only if it is this
+     * run's. */
+    if (strcmp(s_play_for, folder) || !s_profile) {
+        s_profile = s_profile_bad = 0;
+        s_play_dir[0] = s_play_for[0] = '\0';
+    }
+    s_step_next = s_steps_run = s_holding = 0;
+    s_step_settle = 0;
+    s_steps_checked = 1;
+    if (s_profile_bad)
+        fprintf(stderr, "[PLAYBACK] %s/" PLAYBACK_PROFILE " couldn't be copied for this play; nothing is played\n",
+                folder);
+    if (s_profile_bad || !load(path) || !load_steps(folder)) {
+        forget();
         s_res.state = PLAYBACK_OFF;
         pb_unlock();
         return 0;
@@ -734,6 +1037,34 @@ static int play_started_there(void)
     return 0;
 }
 
+/* A step's moment come: its idle moment reached (put back or not), or its
+ * frame. */
+static int step_due(const PbStep *st)
+{
+    return st->idle ? s_idle_next >= (int)st->at : recorded_frame() >= st->at;
+}
+
+/* The recording held where it is (the pad as it has it there, still at an
+ * idle moment): while the steps' menu rows are still to be found, and while
+ * an idle moment's steps run. */
+static int steps_hold(void)
+{
+    if (!s_steps_checked) return 1;
+    return s_step_next < s_steps.n && PB_STEP[s_step_next].idle && step_due(&PB_STEP[s_step_next]);
+}
+
+/* A play stopped by its steps: a menu row that isn't there, or steps the
+ * window never ran. */
+static void steps_stop(const char *fmt, ...)
+{
+    va_list a;
+    va_start(a, fmt);
+    vsnprintf(s_res.why, sizeof s_res.why, fmt, a);
+    va_end(a);
+    fprintf(stderr, "[PLAYBACK] frame %u: %s: the play stops\n", s_frame, s_res.why);
+    play_over(PLAYBACK_OFF);
+}
+
 /* At the start of each pass: the next anchor waited for, or past the end. */
 static void play_pass(void)
 {
@@ -742,6 +1073,21 @@ static void play_pass(void)
         s_start_check = 0;
         if (!play_started_there()) return;
     }
+    if (s_res.state == PLAYBACK_PLAYING && steps_hold()) {
+        if (!s_holding) { s_holding = 1; s_hold_from = s_frame; }
+        s_offset++;
+        s_res.frames++;
+        if (s_frame - s_hold_from > PLAYBACK_STEP_WAIT) {
+            if (!s_steps_checked)
+                steps_stop(PLAYBACK_STEPS "'s menu rows not looked for within %u frames (no picture shown)",
+                           PLAYBACK_STEP_WAIT);
+            else
+                steps_stop(PLAYBACK_STEPS ", line %d: not run within %u frames (no picture shown)",
+                           PB_STEP[s_step_next].line, PLAYBACK_STEP_WAIT);
+        }
+        return;
+    }
+    s_holding = 0;
     if (s_res.state == PLAYBACK_PLAYING && s_anchor_next < s_anchors.n
         && f >= PB_ANCHOR[s_anchor_next].frame) {
         const PbAnchor *a = &PB_ANCHOR[s_anchor_next];
@@ -819,7 +1165,7 @@ static int play_pad(uint32_t port, XBOX_INPUT_STATE *st, int connected)
     st->dwPacketNumber = ++s_packet[port];
     if (c < 0) return port == 0;          /* before the recording's first read: as pad_read has it */
     if (ev[c].none) return 0;
-    st->Gamepad = ev[c].pad;
+    if (!s_holding) st->Gamepad = ev[c].pad;    /* held still while steps hold the recording */
     return 1;
 }
 
@@ -830,7 +1176,7 @@ static int play_freecam(FREECAM_SETTINGS *fc)
     uint32_t f = recorded_frame();
     int c = s_fc_cur;
     /* The player's own change, by F8, the pad or the menu: the game is theirs. */
-    if (s_fc_player_seen && !same_freecam(fc, &s_fc_player)) {
+    if (s_fc_player_seen && !same_freecam(fc, &s_fc_player) && !s_step_running) {
         fprintf(stderr, "[PLAYBACK] frame %u: the free camera was changed (F8, the pad or the menu): the game is yours\n",
                 s_frame);
         play_over(PLAYBACK_HANDED_BACK);
@@ -882,7 +1228,7 @@ static int play_camscenes(unsigned *ticks)
     uint32_t f = recorded_frame();
     int c = s_cam_cur;
     /* The player's own change, in the menu: the game is theirs. */
-    if (s_cam_player_seen && *ticks != s_cam_player) {
+    if (s_cam_player_seen && *ticks != s_cam_player && !s_step_running) {
         fprintf(stderr, "[PLAYBACK] frame %u: the camera ticks were changed (the menu): the game is yours\n",
                 s_frame);
         play_over(PLAYBACK_HANDED_BACK);
@@ -960,6 +1306,97 @@ static void play_view(float position[3], uint32_t *turn, uint32_t camera, int st
 }
 
 /* ---- the game's calls ---------------------------------------------------- */
+
+#if defined(XBOXRECOMP_MENU)
+/* At the play's first flip: every menu row its steps name, looked for as
+ * the menu has its rows now; the play stops at the first that isn't there,
+ * or can't be chosen so. */
+static void steps_check(void)
+{
+    int i, n, r = MENU_PATH_OK;
+    PbStep st;
+    pb_lock();
+    n = s_steps.n;
+    pb_unlock();
+    for (i = 0; i < n; i++) {
+        pb_lock();
+        st = PB_STEP[i];
+        pb_unlock();
+        if (st.what != PB_STEP_MENU || (r = menu_path_check(st.text)) == MENU_PATH_OK) continue;
+        pb_lock();
+        if (playing())
+            steps_stop(PLAYBACK_STEPS ", line %d: menu %s: %s", st.line, st.text, menu_path_why(r));
+        pb_unlock();
+        return;
+    }
+    pb_lock();
+    if (playing() && !s_steps_checked) {
+        s_steps_checked = 1;
+        fprintf(stderr, "[PLAYBACK] frame %u: each menu row in " PLAYBACK_STEPS " is there\n", s_frame);
+    }
+    pb_unlock();
+}
+#endif
+
+void playback_flip(int (*shot)(const char *path))
+{
+    char path[1200];
+    PbStep st;
+    uint32_t frame;
+    int ok = 1, r = 0;
+    pb_lock();
+    if (!playing() || !s_steps.n) { pb_unlock(); return; }
+#if defined(XBOXRECOMP_MENU)
+    if (!s_steps_checked) {
+        pb_unlock();
+        steps_check();
+        return;
+    }
+#endif
+    if (s_step_next >= s_steps.n || !step_due(&PB_STEP[s_step_next])) { pb_unlock(); return; }
+    if (s_step_settle) { s_step_settle--; pb_unlock(); return; }
+    st = PB_STEP[s_step_next];
+    frame = s_frame;
+    s_step_running = 1;
+    snprintf(path, sizeof path, "%s/shot-%d.bmp", s_play_dir, st.line);
+    pb_unlock();
+    /* Outside the lock: a row's own run may reach playback (Developer >
+     * Playback's). */
+#if defined(XBOXRECOMP_MENU)
+    if (st.what == PB_STEP_MENU) ok = (r = menu_path_run(st.text)) == MENU_PATH_OK;
+#endif
+    if (st.what == PB_STEP_SHOT) ok = shot && shot(path);
+    pb_lock();
+    /* What the row changed is the player's from here (play_freecam,
+     * play_camscenes). */
+    s_step_running = 0;
+    s_fc_player_seen = 0;
+    s_cam_player_seen = 0;
+    if (!playing()) { pb_unlock(); return; }
+    switch (st.what) {
+    case PB_STEP_MENU:
+#if defined(XBOXRECOMP_MENU)
+        if (!ok) {
+            steps_stop(PLAYBACK_STEPS ", line %d: menu %s: %s", st.line, st.text, menu_path_why(r));
+            pb_unlock();
+            return;
+        }
+#endif
+        fprintf(stderr, "[PLAYBACK] frame %u: menu %s (" PLAYBACK_STEPS ", line %d)\n", frame, st.text, st.line);
+        s_step_settle = PLAYBACK_STEP_SETTLE;
+        break;
+    case PB_STEP_MARK:
+        fprintf(stderr, "[PLAYBACK] frame %u: mark: %s (" PLAYBACK_STEPS ", line %d)\n", frame, st.text, st.line);
+        break;
+    default:
+        fprintf(stderr, "[PLAYBACK] frame %u: screenshot %s%s (" PLAYBACK_STEPS ", line %d)\n", frame, path,
+                ok ? "" : " couldn't be written", st.line);
+        break;
+    }
+    s_step_next++;
+    s_steps_run++;
+    pb_unlock();
+}
 
 void playback_pass(void)
 {
@@ -1228,8 +1665,19 @@ void playback_first(void)
 {
     const char *p = getenv("JSRF_PLAY"), *m = getenv("JSRF_PLAY_MENU"), *folder = p && *p ? p : m;
     PbStart st;
-    char v[16], said[96];
-    if (!folder || !*folder || !start_of(folder, &st) || !st.set) return;
+    struct stat ps;
+    char v[16], said[96], profile[1100];
+    if (!folder || !*folder) return;
+    /* --play's run on a copy of its profile/, before the settings file and
+     * the rest are read. */
+    if (p && *p) profile_copy(p);
+    else {
+        snprintf(profile, sizeof profile, "%s/" PLAYBACK_PROFILE, m);
+        if (!stat(profile, &ps) && S_ISDIR(ps.st_mode))
+            fprintf(stderr, "[PLAYBACK] %s left out: only --play plays on a copy of a run's profile; Play plays"
+                    " on your own settings and saves\n", profile);
+    }
+    if (!start_of(folder, &st) || !st.set) return;
     if (getenv("JSRF_START_MISSION") || getenv("JSRF_START_LOAD"))
         fprintf(stderr, "[PLAYBACK] JSRF_START_MISSION or JSRF_START_LOAD replaced by the recording's start\n");
     snprintf(v, sizeof v, "%04d", st.mission);

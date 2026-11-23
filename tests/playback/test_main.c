@@ -33,6 +33,7 @@
 #define IDLE_FROM  200              /* nothing pressed from here ... */
 #define IDLE_TO    330              /* ... to here */
 #define CAM        0x00401000u      /* the camera the free camera follows */
+#define PB_TEST_LINE 512            /* a recording's line, at most */
 #define CAM_BACK   10.0f            /* the game's own eye: this far behind the skater ... */
 #define CAM_UP     3.0f             /* ... and this far above */
 
@@ -130,6 +131,22 @@ int nv_window_mouse_take(int asker, int *dx, int *dy)
 void nv_window_hotkey(const char *name, void (*run)(void)) { if (!strcmp(name, "F8")) g_f8 = run; }
 void input_remap_pad_hotkey(int control, void (*run)(void)) { if (control == INPUT_CTL_FREECAM) g_r3 = run; }
 void nv_window_file_path(const char *file, char *buf, size_t n) { snprintf(buf, n, "%s/%s", g_dir, file); }
+
+/* The menu's rows by their labels (menu.h), as a run's steps choose them:
+ * each path chosen kept, and the one row that isn't there. */
+#define NO_ROW "Graphics > No such row"
+static char g_chosen[8][128];
+static int g_nchosen;
+int menu_path_check(const char *path) { return strcmp(path, NO_ROW) ? MENU_PATH_OK : MENU_PATH_NO_ROW; }
+static const XBOX_MENU_ITEM *cam_row(const char *label);
+int menu_path_run(const char *path)
+{
+    if (!strcmp(path, NO_ROW)) return MENU_PATH_NO_ROW;
+    if (!strcmp(path, "Input > Free camera > Invert Y")) cam_row("Invert Y")->run();
+    if (g_nchosen < 8) snprintf(g_chosen[g_nchosen++], sizeof g_chosen[0], "%s", path);
+    return MENU_PATH_OK;
+}
+const char *menu_path_why(int result) { return result == MENU_PATH_OK ? "done" : "nothing there has that label"; }
 void nv_window_close(void) { g_closed++; }
 void nv_window_restart(void)
 {
@@ -222,7 +239,22 @@ typedef struct {
     int recording;              /* the host is the player: recording; 2, with the free camera */
     unsigned ticks, ticks2;     /* the player's Camera ticks, and from ticks_at (0: never) */
     int ticks_at;
+    int flips;                  /* the window flips once a pass, running a run's steps */
 } How;
+
+/* The window's picture written at a flip, as the renderer's shot_write
+ * writes it: each path kept. */
+static char g_shots[4][800];
+static int g_nshots;
+static int shot(const char *path)
+{
+    FILE *f = fopen(path, "wb");
+    if (!f) return 0;
+    fputs("BM", f);
+    fclose(f);
+    if (g_nshots < 4) snprintf(g_shots[g_nshots++], sizeof g_shots[0], "%s", path);
+    return 1;
+}
 
 static int anchor_frame(const How *h, int i)
 {
@@ -294,6 +326,7 @@ static void run(Game *g, const How *h)
         }
         if (!in_scene) playback_view(g->pos, &g->turn, CAMERA);
         memcpy(g->at[f], g->pos, sizeof g->pos);
+        if (h->flips) playback_flip(shot);
     }
 }
 
@@ -1017,6 +1050,196 @@ static void start(void)
     CHECK(playback_state() == PLAYBACK_PLAYING && !getenv("JSRF_PLAY"), "JSRF_PLAY: state %d", playback_state());
 }
 
+
+/* ---- a run's folder: its steps, and a copy of its profile ---------------- */
+
+static void put(const char *path, const char *text)
+{
+    FILE *f = fopen(path, "w");
+    if (f) { fputs(text, f); fclose(f); }
+}
+
+static int got(const char *path, const char *text)
+{
+    char buf[256] = "";
+    size_t n;
+    FILE *f = fopen(path, "r");
+    if (!f) return 0;
+    n = fread(buf, 1, sizeof buf - 1, f);
+    buf[n] = '\0';
+    fclose(f);
+    return !strcmp(buf, text);
+}
+
+/* A run's folder: the first recording, and these steps (none: no
+ * steps.txt). */
+static void run_folder(const char *run, const char *steps)
+{
+    char from[700], to[760], line[PB_TEST_LINE];
+    FILE *in, *out;
+    mkdir(run, 0755);
+    snprintf(from, sizeof from, "%s/" PLAYBACK_FILE, g_run);
+    snprintf(to, sizeof to, "%s/" PLAYBACK_FILE, run);
+    in = fopen(from, "r");
+    out = fopen(to, "w");
+    while (in && out && fgets(line, sizeof line, in)) fputs(line, out);
+    if (in) fclose(in);
+    if (out) fclose(out);
+    snprintf(to, sizeof to, "%s/" PLAYBACK_STEPS, run);
+    if (steps) put(to, steps);
+    else remove(to);
+}
+
+/* A step that can't be, refused before anything is played. */
+static void step_refused(const char *steps, const char *what)
+{
+    char dir[700];
+    snprintf(dir, sizeof dir, "%s/runs/refused", g_dir);
+    run_folder(dir, steps);
+    CHECK(!playback_play(dir, 0) && playback_state() == PLAYBACK_OFF, "%s: played", what);
+}
+
+/* --play's dir with a profile/: copied for the play into its plays/,
+ * steps.txt's settings in the copy, and the settings file and both save
+ * folders pointed there, yours untouched; then played with the window
+ * flipping once a pass: each step at its moment, the idle moment's holding
+ * the recording, a free camera row's change not the player's, a screenshot
+ * in the play's folder, and on route to the end. A step that can't be is
+ * refused before anything is played; a menu row that isn't there stops
+ * the play at its first flip, and one never looked for (no window) when
+ * the steps' wait runs out. Play from the menu leaves a profile/ out. */
+static void steps(void)
+{
+    char dir[600], prof[660], path[900], own[700], play[700];
+    const char *v;
+    const PLAYBACK_RESULT *res = playback_result();
+    How h = { .frames = FRAMES + 30, .skip_anchor = -1, .wrong_anchor = -1, .flips = 1 };
+    snprintf(path, sizeof path, "%s/runs", g_dir);
+    mkdir(path, 0755);
+    snprintf(dir, sizeof dir, "%s/runs/garage", g_dir);
+    run_folder(dir, "# a run's steps\n"
+                    "setting mute=1\n"
+                    "developer RECOMP_GL_PROFILE=1\n"
+                    "frame 50: mark before the idle moment\n"
+                    "idle 1: menu Input > Free camera > Invert Y\n"
+                    "idle 1: screenshot\n"
+                    "idle 1: mark at the idle moment\n"
+                    "frame 600: screenshot\n");
+    snprintf(prof, sizeof prof, "%s/" PLAYBACK_PROFILE, dir);
+    mkdir(prof, 0755);
+    snprintf(path, sizeof path, "%s/" PLAYBACK_PROFILE_SETTINGS, prof);
+    put(path, "mute=0\nscale=2\n");
+    snprintf(path, sizeof path, "%s/developer.cfg", prof);
+    put(path, "RECOMP_GL_PROFILE=0\nRECOMP_APU_MIX=1");
+    snprintf(path, sizeof path, "%s/saves", prof);
+    mkdir(path, 0755);
+    snprintf(path, sizeof path, "%s/saves/UDATA", prof);
+    mkdir(path, 0755);
+    snprintf(path, sizeof path, "%s/saves/UDATA/game.sav", prof);
+    put(path, "a save");
+    snprintf(own, sizeof own, "%s/own", g_dir);
+    mkdir(own, 0755);
+    snprintf(path, sizeof path, "%s/" PLAYBACK_PROFILE_SETTINGS, own);
+    setenv("JSRF_SETTINGS_FILE", path, 1);
+    snprintf(path, sizeof path, "%s/cache", own);
+    setenv("JSRF_SAVE_DIR", path, 1);
+    snprintf(path, sizeof path, "%s/saves", own);
+    setenv("JSRF_USER_DIR", path, 1);
+    setenv("JSRF_PLAY", dir, 1);
+    playback_first();
+    v = getenv("JSRF_SETTINGS_FILE");
+    snprintf(path, sizeof path, "%s/" PLAYBACK_PLAYS "/", dir);
+    CHECK(v && !strncmp(v, path, strlen(path)) && strlen(v) > 13
+          && !strcmp(v + strlen(v) - 13, "/" PLAYBACK_PROFILE_SETTINGS), "the play's settings file: %s", v ? v : "-");
+    snprintf(play, sizeof play, "%.*s", v ? (int)(strlen(v) - 13) : 0, v ? v : "");
+    snprintf(path, sizeof path, "%s/cache", play);
+    v = getenv("JSRF_SAVE_DIR");
+    CHECK(v && !strcmp(v, path), "the play's save folder: %s", v ? v : "-");
+    snprintf(path, sizeof path, "%s/saves", play);
+    v = getenv("JSRF_USER_DIR");
+    CHECK(v && !strcmp(v, path), "the play's saves: %s", v ? v : "-");
+    snprintf(path, sizeof path, "%s/" PLAYBACK_PROFILE_SETTINGS, play);
+    CHECK(got(path, "mute=1\nscale=2\n"), "the copy's settings, with steps.txt's");
+    snprintf(path, sizeof path, "%s/developer.cfg", play);
+    CHECK(got(path, "RECOMP_GL_PROFILE=1\nRECOMP_APU_MIX=1\n"), "the copy's developer.cfg, with steps.txt's");
+    snprintf(path, sizeof path, "%s/saves/UDATA/game.sav", play);
+    CHECK(got(path, "a save"), "the copy's saves");
+    snprintf(path, sizeof path, "%s/" PLAYBACK_PROFILE_SETTINGS, prof);
+    CHECK(got(path, "mute=0\nscale=2\n"), "the run's own profile changed");
+    snprintf(path, sizeof path, "%s/" PLAYBACK_PROFILE_SETTINGS, own);
+    CHECK(!got(path, ""), "your own settings file opened");
+
+    /* Played, as playback_start plays --play's dir. */
+    setenv("JSRF_PLAY", "", 1);
+    g_closed = g_nshots = g_nchosen = 0;
+    CHECK(playback_play(dir, 1), "the run with steps refused");
+    run(&g_play, &h);
+    CHECK(res->state == PLAYBACK_FINISHED && g_closed == 1 && res->idles_put_back == 1,
+          "the run with steps: state %d (%s), closed %d, put back %d", res->state, res->why, g_closed,
+          res->idles_put_back);
+    CHECK(g_nchosen == 1 && !strcmp(g_chosen[0], "Input > Free camera > Invert Y"), "its menu row: %d chosen",
+          g_nchosen);
+    snprintf(path, sizeof path, "%s/shot-6.bmp", play);
+    CHECK(g_nshots == 2 && !strcmp(g_shots[0], path) && got(path, "BM"), "its screenshots: %d, %s", g_nshots,
+          g_nshots ? g_shots[0] : "-");
+    snprintf(path, sizeof path, "%s/shot-8.bmp", play);
+    CHECK(g_nshots == 2 && !strcmp(g_shots[1], path), "its frame's screenshot: %s", g_nshots > 1 ? g_shots[1] : "-");
+    /* The idle moment's hold, its three steps and the row's wait, is in the
+     * log: the next anchor met that much early (run.py). */
+    cam_row("Invert Y")->run();             /* the player's free camera as it was */
+
+    /* Refused before anything is played. */
+    step_refused("frame 50: jump\n", "a word it doesn't know");
+    step_refused("frame -5: mark x\n", "a frame before the first");
+    step_refused("idle 2: mark x\n", "an idle moment the recording doesn't have");
+    step_refused("idle 0: mark x\n", "idle moment 0");
+    step_refused("frame 2000: screenshot\n", "a frame past the end");
+    step_refused("frame 600: mark a\nframe 50: mark b\n", "a step out of order");
+    step_refused("frame 50: mark\n", "a mark with nothing after it");
+    step_refused("idle 1: menu Graphics > Anti-aliasing (SMAA) > Off\n", "a menu row without a profile");
+    step_refused("setting mute=1\n", "a setting without a profile");
+    step_refused("setting mute\n", "a setting that isn't key=value");
+
+    /* A menu row that isn't there: the play stops at its first flip. */
+    snprintf(dir, sizeof dir, "%s/runs/no-row", g_dir);
+    run_folder(dir, "idle 1: menu " NO_ROW "\n");
+    snprintf(prof, sizeof prof, "%s/" PLAYBACK_PROFILE, dir);
+    mkdir(prof, 0755);
+    setenv("JSRF_PLAY", dir, 1);
+    playback_first();
+    setenv("JSRF_PLAY", "", 1);
+    g_closed = 0;
+    CHECK(playback_play(dir, 1), "the run with a row that isn't there refused");
+    run(&g_play, &h);
+    CHECK(res->state == PLAYBACK_OFF && g_closed == 1 && res->frames <= 1
+          && !strcmp(res->why, PLAYBACK_STEPS ", line 1: menu " NO_ROW ": nothing there has that label"),
+          "a row that isn't there: state %d after %u frames (%s), closed %d", res->state, res->frames, res->why,
+          g_closed);
+    /* With no window to look for it: held, then stopped. */
+    h.flips = 0;
+    g_closed = 0;
+    CHECK(playback_play(dir, 1), "the run with a row that isn't there refused");
+    run(&g_play, &h);
+    CHECK(res->state == PLAYBACK_OFF && g_closed == 1 && res->frames == PLAYBACK_STEP_WAIT + 2
+          && strstr(res->why, "menu rows not looked for within 600 frames"),
+          "no window: state %d after %u frames (%s), closed %d", res->state, res->frames, res->why, g_closed);
+
+    /* Play, from the menu: a profile/ left out, marks and screenshots dir. */
+    snprintf(dir, sizeof dir, "%s/runs/garage", g_dir);
+    run_folder(dir, "frame 50: mark from the menu\nidle 1: screenshot\n");
+    setenv("JSRF_PLAY_MENU", dir, 1);
+    playback_first();
+    setenv("JSRF_PLAY_MENU", "", 1);
+    h.flips = 1;
+    g_nshots = 0;
+    CHECK(playback_play(dir, 0), "Play's run refused");
+    run(&g_play, &h);
+    snprintf(path, sizeof path, "%s/", play);
+    CHECK(res->state == PLAYBACK_FINISHED && g_nshots == 1 && strncmp(g_shots[0], path, strlen(path)),
+          "Play's run: state %d (%s), %d screenshots, in %s", res->state, res->why, g_nshots,
+          g_nshots ? g_shots[0] : "-");
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) { printf("usage: test <folder>\n"); return 2; }
@@ -1044,6 +1267,7 @@ int main(int argc, char **argv)
     missions_start_line();
     camera_ticks();
     start();
+    steps();
     if (g_bad) return 1;
     printf("playback: all cases pass\n");
     return 0;

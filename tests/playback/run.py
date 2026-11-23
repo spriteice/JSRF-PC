@@ -31,7 +31,21 @@ photo mode's variables, and plays on route there, at a mission and at Load
 Game; started elsewhere, with other progress, or from the game's own start,
 it is off route at its first frame, and so is a recording from the game's
 own start played in a run from a mission; a start line that can't be read,
-comes twice or after a frame is refused. The free camera a play puts in
+comes twice or after a frame is refused. A run's folder: --play's with a
+profile/ copied into a folder of the play's own in its plays/, steps.txt's
+setting and developer lines written into the copy, the settings file and
+both save folders pointed there and the player's untouched; played with the
+window flipping once a pass, its menu rows looked for at the first flip,
+each step at its moment (a mark at a frame, a free camera row, a screenshot
+and a mark at the idle moment, which hold the recording seven frames, the
+row's change not the player's, and a screenshot at a frame), on route to its
+end, the screenshots in the play's folder. A step that isn't one, names an
+idle moment or a frame the recording doesn't have, comes before the one
+above it, has nothing after it, or is a menu row or a setting with no
+profile/ copied, is refused before anything is played; a menu row that
+isn't there stops the play at the first flip, and steps never run (no
+window) stop it once their wait runs out. Play from the menu leaves a
+profile/ out, and runs marks and screenshots. The free camera a play puts in
 place is in the log with auto centre's level by name, as [FREECAM] gives
 it. A real pad held from the start does nothing, and
 pressed once let go of, hands the game back. With the free camera: turned
@@ -117,13 +131,44 @@ with tempfile.TemporaryDirectory(prefix="playback-") as directory:
             "JSRF_RECORD left out: a recording is played, not made",
             "the camera ticks as recorded at frame",
             "no camera line: the game's own shots as before the Camera ticks",
-            "the camera ticks were changed (the menu): the game is yours"]
+            "the camera ticks were changed (the menu): the game is yours",
+            "for this play, in ", "yours aren't opened",
+            "steps.txt, line 2: mute=1 in the copy's settings.cfg",
+            "steps.txt, line 3: RECOMP_GL_PROFILE=1 in the copy's developer.cfg",
+            "steps.txt: 5 steps, 1 of them menu rows, 2 screenshots, into ",
+            "each menu row in steps.txt is there",
+            "mark: before the idle moment (steps.txt, line 4)",
+            "menu Input > Free camera > Invert Y (steps.txt, line 5)",
+            "/shot-6.bmp (steps.txt, line 6)",
+            "mark: at the idle moment (steps.txt, line 7)",
+            "/shot-8.bmp (steps.txt, line 8)",
+            "steps run 5 of 5 (steps.txt)",
+            "steps.txt, line 1: not a step; nothing is played",
+            "steps.txt, line 1: the recording has no such idle moment; nothing is played",
+            "steps.txt, line 1: past the recording's end; nothing is played",
+            "steps.txt, line 2: comes before the step above it in the recording; nothing is played",
+            "steps.txt, line 1: a menu row changes settings: it needs a copy of the run's profile/, which only"
+            " --play makes; nothing is played",
+            "steps.txt, line 1: a setting goes into a copy of the run's profile/, which only --play makes;"
+            " nothing is played",
+            "steps.txt, line 1: not key=value; nothing is played",
+            "steps.txt, line 1: menu Graphics > No such row: nothing there has that label: the play stops",
+            "steps.txt's menu rows not looked for within 600 frames (no picture shown): the play stops",
+            "profile left out: only --play plays on a copy of a run's profile; Play plays on your own settings"
+            " and saves"]
     missing = [s for s in said if s not in log]
     # The free camera a play puts in place names auto centre's level, as
     # [FREECAM] does, never by its number.
     named = re.findall(r"the free camera as recorded at frame \d+: .*auto centre (\S+),", log)
     if not named or any(n not in ("Off", "Mild", "Medium", "High", "Aggressive") for n in named):
         missing.append(f"auto centre named in each free camera line played (it says {sorted(set(named))})")
+    # The idle moment's steps held the recording: the row, five flips for it
+    # to show, the screenshot and the mark, so the next anchor came seven
+    # frames early.
+    held = re.search(r"steps\.txt: 5 steps.*?anchor 4 of 6 met \(scene 00000000\), recorded at frame 401: (\d+)"
+                     r" frames early", log, re.S)
+    if not held or held.group(1) != "7":
+        missing.append(f"the idle moment's steps holding the recording 7 frames (it says {held and held.group(1)})")
     # A restart with nothing running says nothing.
     quiet = "<restart, nothing running>\n</restart>\n" in log
     if not quiet:
