@@ -2,9 +2,10 @@
 one thread from another (test_main.c): a suspend of another thread is
 counted, and the thread stops only at a checkpoint, so one suspended inside
 the guest heap's lock can't hold it (known bug 49). The first run must pass.
-The second, with RECOMP_SUSPEND_REAL=1, which stops a thread where it is,
-must find the main thread's allocation waiting, or the first run tests
-nothing; under the thread sanitizer (tests/run_all.py --tsan sets
+The second, which stops a thread where it is (on Linux with
+RECOMP_SUSPEND_REAL=1, on Windows by the system's own SuspendThread, called
+by the test), must find the main thread's allocation waiting, or the first
+run tests nothing; under the thread sanitizer (tests/run_all.py --tsan sets
 TEST_SANITIZER) it's left out. On Linux the threads are
 src/platform/win32_compat.c's, on Windows the system's. Requires GCC on PATH,
 including MinGW on Windows.

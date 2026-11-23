@@ -175,8 +175,8 @@ guest lock given up and none of the runtime's own locks held
 (`kernel_thread.c`). Linux has always done that; Windows has since known bug
 49, where Windows' own `SuspendThread` stopped CRI's spinner thread inside the
 guest heap's lock as it started, and the game hung before the Sega logo.
-`RECOMP_SUSPEND_REAL=1` makes a suspend of another thread stop it where it is,
-on both.
+On Linux, `RECOMP_SUSPEND_REAL=1` makes a suspend of another thread stop it
+where it is, by a signal. Windows has no such switch.
 
 A thread starts on the console with MXCSR at 0x1F80: rounding to nearest,
 nothing flushed to zero, every exception masked. On the host it starts with

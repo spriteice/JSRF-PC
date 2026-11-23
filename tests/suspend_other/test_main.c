@@ -22,15 +22,16 @@
  * - A thread that suspends itself, through its own handle, stops there
  *   until another resumes it.
  *
- * "real" (the second, with RECOMP_SUSPEND_REAL=1): only the first case, with
- * a watch of 100 ms, and it must fail, so that the first run is known to see
- * the hang: on Windows the suspend stops the thread where it is, which was
- * every Windows build's way before this, and on Linux a signal stops it
- * there for up to a quarter of a second. It lets the thread run for a
- * moment after each resume, and goes on suspending until an allocation
- * waits, for up to REAL_MS: on the PC, 2,000 rounds one straight after
- * another missed it in one run of 20 (11 November), and a control that
- * misses fails the test.
+ * "real" (the second): only the first case, with a watch of 100 ms, and it
+ * must fail, so that the first run is known to see the hang. On Windows the
+ * test suspends and resumes the thread with the system's own SuspendThread
+ * and ResumeThread, which stop it where it is: every Windows build's way
+ * before this, and one the kernel has no switch back to. On Linux, with
+ * RECOMP_SUSPEND_REAL=1, a signal stops it there for up to a quarter of a
+ * second. It lets the thread run for a moment after each resume, and goes
+ * on suspending until an allocation waits, for up to REAL_MS: on the PC,
+ * 2,000 rounds one straight after another missed it in one run of 20
+ * (11 November), and a control that misses fails the test.
  */
 #include "kernel.h"
 #include <stdio.h>
@@ -74,9 +75,20 @@ static int load(volatile int *p) { return __atomic_load_n(p, __ATOMIC_ACQUIRE); 
 static void store(volatile int *p, int v) { __atomic_store_n(p, v, __ATOMIC_RELEASE); }
 static long long load64(volatile long long *p) { return __atomic_load_n(p, __ATOMIC_ACQUIRE); }
 
+/* The control ("real"), on Windows: the system's own suspend and resume, in
+ * place of the kernel's. */
+static int s_real;
+
 static ULONG suspend(HANDLE h)
 {
     ULONG prev = 0xAAAAAAAAu;
+#ifdef _WIN32
+    if (s_real) {
+        prev = SuspendThread(h);
+        if (prev == (DWORD)-1) fail("SuspendThread failed");
+        return prev;
+    }
+#endif
     if (xbox_NtSuspendThread(h, &prev) != STATUS_SUCCESS) fail("NtSuspendThread failed");
     return prev;
 }
@@ -84,6 +96,13 @@ static ULONG suspend(HANDLE h)
 static ULONG resume(HANDLE h)
 {
     ULONG prev = 0xAAAAAAAAu;
+#ifdef _WIN32
+    if (s_real) {
+        prev = ResumeThread(h);
+        if (prev == (DWORD)-1) fail("ResumeThread failed");
+        return prev;
+    }
+#endif
     if (xbox_NtResumeThread(h, &prev) != STATUS_SUCCESS) fail("NtResumeThread failed");
     return prev;
 }
@@ -304,6 +323,7 @@ int main(int argc, char **argv)
     if (!ram) fail("no memory for the guest");
     g_xbox_mem_offset = (ptrdiff_t)ram;
     xbox_HeapInit();                            /* as xbox_MemoryLayoutInit does */
+    s_real = real;
     s_watch_ms = real ? 100 : WAIT_MS;
     w = CreateThread(NULL, 0, watch, NULL, 0, NULL);
     if (!w) fail("CreateThread");

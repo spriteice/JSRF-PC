@@ -14,7 +14,6 @@
 #include "kernel.h"
 #include "xbox_memory_layout.h"   /* XBOX_WORKER_STACK_* + worker-stack decls */
 #include <stdio.h>
-#include <stdlib.h>
 
 /* ============================================================================
  * KeDelayExecutionThread
@@ -281,9 +280,10 @@ NTSTATUS __stdcall xbox_NtYieldExecution(void)
  *
  * CRI's spinner runs natively and reaches no checkpoint, so it carries on
  * through CRI's holds, sleeping 2 ms a turn and counting a counter nothing
- * reads (port/recomp_manual.c). It did that on Linux all along.
- * RECOMP_SUSPEND_REAL=1 stops the thread where it is again, on Windows as on
- * Linux.
+ * reads (port/recomp_manual.c). It did that on Linux all along. On Linux
+ * RECOMP_SUSPEND_REAL=1 stops the thread where it is, by a signal
+ * (src/platform/win32_compat.c); Windows has no way back to its own
+ * SuspendThread for another thread.
  * ============================================================================ */
 
 #if defined(_WIN32)
@@ -297,13 +297,6 @@ static CONDITION_VARIABLE g_suspended_resumed = CONDITION_VARIABLE_INIT;
 /* The counts' sum, read without the lock: while it is 0 a checkpoint costs a
  * load. */
 static volatile LONG g_suspended_total;
-
-static int suspend_real(void)
-{
-    static int real = -1;
-    if (real < 0) real = getenv("RECOMP_SUSPEND_REAL") ? 1 : 0;
-    return real;
-}
 
 /* The slot of thread tid (0: a free slot), or -1. With the lock held. */
 static int suspended_slot(DWORD tid)
@@ -367,7 +360,7 @@ static int suspend_count_down(HANDLE h, DWORD *prev)
 static DWORD suspend_thread(HANDLE h)
 {
     DWORD prev;
-    if (!suspend_real() && !xbox_thread_is_current(h) && suspend_count_up(h, &prev))
+    if (!xbox_thread_is_current(h) && suspend_count_up(h, &prev))
         return prev;
     return SuspendThread(h);
 }
