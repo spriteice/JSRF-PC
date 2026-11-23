@@ -49,11 +49,9 @@ button is, and the renderer draws the style's picture there
 bubble, so only its ball's node is taken, and the rest drawn as the game
 draws it; its picture is fitted under the bubble's word, where the others
 are a quarter larger than the game's.
-It also has the mark for a size of the VS menu's own for its upright
-buttons, which `recomp_manual.c` writes round the draws of that screen's
-three objects. The mark doesn't reach the VS menu's Back yet, which is
-drawn at every menu's size: what draws it is still to be found (b3.1 row
-9).
+It also has the mark for a size of a screen's own for its upright buttons,
+which nothing writes now: the VS menu's Back is drawn at every menu's size,
+and what draws it is still to be found (b3.1 row 9).
 The game's lines that name a control (the A or B by its letter, and in the
 graffiti editor's help lines the D-pad, the left stick and the triggers in
 words) are `prompt_text.c`, from the font calls' overrides there: it knows

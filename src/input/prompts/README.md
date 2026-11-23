@@ -103,13 +103,12 @@ the same shape (`src/nv2a_gl/nv2a_gl.c`, `prompts_copy_make`, and
 are here. tests/prompts (copy) checks that every picture is small enough
 for a copy of the whole of it.
 
-Everywhere but the VS menu, the pictures are drawn an eighth larger than
-the size each place first had (spriteice, 2026-11-22: "10-15% larger
-everywhere, except the VS menu"; `NV2A_PROMPT_LARGER` in
-`src/nv2a_gl/nv2a_prompts.h`). The VS menu's are 15% smaller than that,
-as these pictures fill more of their square than the ones before
-(spriteice, 2026-11-22: "make VS mode 15% smaller";
-`PROMPT_BUTTONS_VS_UPRIGHT` in `port/prompt_buttons.h`).
+The pictures are drawn an eighth larger than the size each place first
+had (spriteice, 2026-11-22: "10-15% larger everywhere, except the VS
+menu"; `NV2A_PROMPT_LARGER` in `src/nv2a_gl/nv2a_prompts.h`). The VS
+menu's are that size too for now: the size asked for them (spriteice,
+2026-11-22: "make VS mode 15% smaller") waits for what draws that menu's
+Back to be found (b3.1 row 9).
 
 ## Making them again
 

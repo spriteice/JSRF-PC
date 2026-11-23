@@ -13,7 +13,7 @@
  * the ball, the smallest sphere, and the walks after take the ball alone,
  * the other nodes left to the game and noted for the log; its picture is
  * fitted to its ball, not grown; and the talking head's bubble is no
- * button. An upright size's mark (the VS screen's) goes the same way, and
+ * button. An upright size's mark goes the same way as a button's, and
  * reads back as its size. run.py checks the log's lines.
  */
 #include <math.h>
@@ -38,6 +38,7 @@
 #define NODE_WORD   4u         /* its word, */
 #define NODE_BALL   5u         /* and the ball */
 #define START_NODES 3u
+#define SIZE_OWN    0.9f       /* an upright size of a screen's own */
 #define ESP     0x40000u     /* the guest's stack, as a node function finds it */
 #define STACK   0x50000u     /* the stack's top entry */
 #define MATRIX  0x51000u
@@ -381,20 +382,19 @@ int main(void)
         }
     }
 
-    /* An upright size's mark, as the VS screen's objects' draws write it:
-     * read as its size, and not as a flat button's or a window's; a flat
-     * button's, a size of 0, none, past the most, or a stray word, not read
-     * as one; none with no device. */
+    /* An upright size's mark: read as its size, and not as a flat
+     * button's or a window's; a flat button's, a size of 0, none, past the
+     * most, or a stray word, not read as one; none with no device. */
     {
         uint32_t words[NV2A_PROMPT_MARK_WORDS];
         float grow = 0.0f;
         unsigned k;
         put32(DEVICE + WIDE_HUD_D3D_PUT, PUSH);
-        CHECK(prompt_buttons_upright(mem, DEVICE, PROMPT_BUTTONS_VS_UPRIGHT, make_space) == PUSH);
+        CHECK(prompt_buttons_upright(mem, DEVICE, SIZE_OWN, make_space) == PUSH);
         CHECK(get32(PUSH) == ((NV2A_PROMPT_MARK_WORDS << 18) | NV2A_PROMPT_MARK_METHOD) && spaces == 0);
         CHECK(get32(DEVICE + WIDE_HUD_D3D_PUT) == PUSH + 20u);
         for (k = 0; k < NV2A_PROMPT_MARK_WORDS; k++) words[k] = get32(PUSH + 4u + 4u * k);
-        CHECK(nv2a_prompts_upright_read(words, &grow) && CLOSE(grow, 0.956f));
+        CHECK(nv2a_prompts_upright_read(words, &grow) && CLOSE(grow, SIZE_OWN));
         CHECK(!nv2a_prompts_mark_read(words[0], &button, &box, &art));
         {
             float left, right;
@@ -413,7 +413,7 @@ int main(void)
         words[3] = 0u;
         words[0] = nv2a_prompts_mark(0, 1, PROMPT_ART_XBOX);
         CHECK(!nv2a_prompts_upright_read(words, &grow));
-        CHECK(prompt_buttons_upright(mem, 0, PROMPT_BUTTONS_VS_UPRIGHT, make_space) == 0);
+        CHECK(prompt_buttons_upright(mem, 0, SIZE_OWN, make_space) == 0);
     }
 
     /* A window's mark (the graffiti editor's ticker's, for its pictures),

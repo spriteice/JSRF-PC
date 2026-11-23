@@ -6498,7 +6498,8 @@ void sub_00066550(void)
  * one full-screen picture, is fitted into the 4:3 screen with its panels'
  * shades, and its teal carried out to the screen's edges. Its draw (through
  * sub_0006FE40 or sub_00070060, which it jumps to) is flat quads and text
- * only: its 3D models, the Back among them, are its objects' (below). */
+ * only: its 3D models, the Back among them, are its objects', each drawn
+ * on its own from the game's list of objects. */
 extern void sub_00071100_gen(void);
 void sub_00071100(void)
 {
@@ -6506,33 +6507,6 @@ void sub_00071100(void)
     sub_00071100_gen();
     widescreen_menus_fill_end(began);
 }
-/* The VS setup screen's 3D models, its Back among them, which the renderer
- * draws upright in any style but Default (nv2a_prompts.h), at the screen's
- * own size (prompt_buttons.h, PROMPT_BUTTONS_VS_UPRIGHT). The screen makes
- * three kinds of object for them as it opens (sub_00071850), each drawn on
- * its own from the game's list of objects, never inside the screen's draw:
- * class 0x1CCA38's (sub_00070C90), 0x1D7B60's (sub_001199C0) and
- * 0x1D7BA0's (sub_0011A070), each its class's slot +0xC (this in ecx; one
- * argument, the pass, ret 4), and each class made only there. So each
- * draw is marked with the screen's size before it and the size back after
- * it. Until prompts18 the mark was put round the screen's own draw, where
- * no model is, and the Back kept every menu's size (spriteice, 6:26pm and
- * 7:07pm UTC+8 on 22 November 2026: still too large).
- * Nothing in these functions is wrong: a feature's hook. */
-static void vs_models_draw(void (*draw)(void))
-{
-    uint8_t *mem = (uint8_t *)g_xbox_mem_offset;
-    const uint32_t device = MEM32(D3D_DEVICE);
-    int sized = prompt_buttons_upright(mem, device, PROMPT_BUTTONS_VS_UPRIGHT, d3d_make_space) != 0;
-    draw();
-    if (sized) prompt_buttons_upright(mem, device, NV2A_PROMPT_UPRIGHT_GROW, d3d_make_space);
-}
-extern void sub_00070C90_gen(void);
-void sub_00070C90(void) { vs_models_draw(sub_00070C90_gen); }
-extern void sub_001199C0_gen(void);
-void sub_001199C0(void) { vs_models_draw(sub_001199C0_gen); }
-extern void sub_0011A070_gen(void);
-void sub_0011A070(void) { vs_models_draw(sub_0011A070_gen); }
 /* The result screens (widescreen_menus.h): the choice's draw, its class's
  * slot +0xC (this in ecx; one argument, the pass, ret 4), marked whole for
  * the right edge on the passes it draws on. The race time's is marked the

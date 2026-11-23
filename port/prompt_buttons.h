@@ -189,26 +189,14 @@ int prompt_buttons_place(const PromptButtonsWalk *w, float focal, float tall, co
 uint32_t prompt_buttons_push(uint8_t *mem, uint32_t device, const uint32_t *words,
                              widescreen_hud_space_fn make_space);
 
-/* The VS setup screen's buttons, which the renderer draws upright (its
- * menus' faces, nv2a_prompts.h), at this much of their faces' size, not
- * NV2A_PROMPT_UPRIGHT_GROW's: 110 against the 125 they looked at the
- * faces' own size (spriteice, 03:40 UTC on 22 November 2026, "110%, rather
- * than 125%"; 03:55 UTC, the VS menu's only). Its B, turned about 50
- * degrees, covers 1/1.25 of the area it has upright at its face's size
- * (prompts11's log, button-prompts/p13/VS-GLYPH-FINDING.md in the shared
- * folder). Until prompts18 that size never reached the Back: its mark was
- * put round the screen's own draw, and the Back is its objects'
- * (recomp_manual.c, "The VS setup screen's 3D models"), so it had every
- * menu's size, 1.0, then NV2A_PROMPT_UPRIGHT_GROW once the other pictures
- * were made NV2A_PROMPT_LARGER times larger. Asked to be 15% smaller than
- * that (spriteice, 5:50pm UTC+8: "make VS mode 15% smaller"; 7:32pm, on a
- * card: "15% smaller than you saw"): 1.125 * 0.85. */
-#define PROMPT_BUTTONS_VS_UPRIGHT 0.956f
-
 /* An upright size's mark (nv2a_prompts.h, NV2A_PROMPT_UPRIGHT_TAG): the
  * renderer draws the menus' upright faces after it at grow times their
  * faces' size. Written as prompt_buttons_push writes one; returns where it
- * went, or 0 for no device or no room. */
+ * went, or 0 for no device or no room. No screen writes one now: the VS
+ * setup screen's, round the draws of its three kinds of object
+ * (prompts18), never ran (spriteice's prompts18 log, 22 November 2026: the
+ * Back kept every menu's size) and was taken out; what draws that screen's
+ * Back, and its size, are still to be found (b3.1 row 9). */
 uint32_t prompt_buttons_upright(uint8_t *mem, uint32_t device, float grow,
                                 widescreen_hud_space_fn make_space);
 

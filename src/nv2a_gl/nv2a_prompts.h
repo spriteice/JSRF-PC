@@ -203,9 +203,9 @@ static inline int nv2a_prompts_mark_read(uint32_t word, int *what, int *box, int
  * NV2A_PROMPT_UPRIGHT_TAG, word 1 the size as a float's bits, words 2 and
  * 3 0. The game side writes one before a screen whose buttons are wanted
  * at another size, and one of NV2A_PROMPT_UPRIGHT_GROW after it
- * (port/prompt_buttons.h, prompt_buttons_upright); the renderer goes back
- * to NV2A_PROMPT_UPRIGHT_GROW at each frame's end as well, so one whose
- * end was lost lasts that frame only. */
+ * (port/prompt_buttons.h, prompt_buttons_upright; no screen does now); the
+ * renderer goes back to NV2A_PROMPT_UPRIGHT_GROW at each frame's end as
+ * well, so one whose end was lost lasts that frame only. */
 #define NV2A_PROMPT_UPRIGHT_TAG  0x50550000u  /* "PU" */
 #define NV2A_PROMPT_UPRIGHT_MOST 4.0f         /* the largest size read */
 
@@ -294,12 +294,14 @@ void nv2a_prompts_place(float x, float y, float half, float s, float shift, floa
  * screen, about the face's middle. */
 
 /* Every picture of the prompts' drawn this much larger than the size it was
- * first given, about its middle, but the VS menu's (spriteice, 1:34pm on
- * 22 November 2026, UTC+8: "make the new glyphs appear 10-15% larger everywhere,
- * except the VS menu"): the upright faces, the HUD's icons among them
+ * first given, about its middle (spriteice, 1:34pm on 22 November 2026,
+ * UTC+8: "make the new glyphs appear 10-15% larger everywhere, except the
+ * VS menu"): the upright faces, the HUD's icons among them
  * (NV2A_PROMPT_UPRIGHT_GROW), and the flat buttons (port/prompt_buttons.c,
  * prompt_buttons_place). The in-game menu's strip has its own, as much
- * (src/menu/menu.cpp, MENU_PICTURE_SIZE). */
+ * (src/menu/menu.cpp, MENU_PICTURE_SIZE). The VS menu's are this much
+ * larger too for now: its own size is b3.1 row 9's, with what draws its
+ * Back. */
 #define NV2A_PROMPT_LARGER 1.125f
 
 /* An upright face's size against the face's own on the screen: the same
@@ -307,8 +309,7 @@ void nv2a_prompts_place(float x, float y, float half, float s, float shift, floa
  * looks correct but tilt is still applied"), NV2A_PROMPT_LARGER times. So
  * a face upright already, as the HUD's icons are, is drawn at this size
  * too. A screen may want its own, which the game side marks
- * (NV2A_PROMPT_UPRIGHT_TAG, below): the VS menu's is its own
- * (port/prompt_buttons.h, PROMPT_BUTTONS_VS_UPRIGHT). */
+ * (NV2A_PROMPT_UPRIGHT_TAG, above); none does now. */
 #define NV2A_PROMPT_UPRIGHT_GROW NV2A_PROMPT_LARGER
 /* How far a face's vertices may be off upright, in pixels, and it upright. */
 #define NV2A_PROMPT_UPRIGHT_TOL  0.5f
