@@ -6992,9 +6992,13 @@ void sub_000A5070(void)
             if ((uint32_t)port == *(const uint32_t *)(m + GAME_MAIN_PORT)) {
                 const float look[2] = { cf[CAM_VIEW_TARGET / 4] - cf[CAM_VIEW_EYE / 4],
                                         cf[CAM_VIEW_TARGET / 4 + 2] - cf[CAM_VIEW_EYE / 4 + 2] };
+                const float eye[3] = { cf[CAM_VIEW_EYE / 4], cf[CAM_VIEW_EYE / 4 + 1], cf[CAM_VIEW_EYE / 4 + 2] };
+                /* The skater's object, for the trace's fingerprint, where all
+                 * of it is in guest memory. */
+                const uint8_t *skater = who >= 0x10000u && who + PLAYBACK_SKATER_BYTES < lim ? m + who : NULL;
                 playback_view((float *)(uintptr_t)(m + who + CHR_POSITION),
                               (uint32_t *)(uintptr_t)(m + who + CHR_TURN),
-                              ((const uint32_t *)(m + cam))[CAM_MODE / 4], look, game_random());
+                              ((const uint32_t *)(m + cam))[CAM_MODE / 4], look, eye, skater, game_random());
             }
         }
     }

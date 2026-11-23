@@ -191,6 +191,8 @@ typedef struct {
     uint32_t random_at[FRAMES + 4000];          /* the generator after the camera update */
     int dcamfix[FRAMES + 4000];                 /* Default cam fix as the frame had it */
     int anchors;
+    uint8_t skater[PLAYBACK_SKATER_BYTES];      /* the skater's object: where it is, its turn and more */
+    unsigned char viewed[FRAMES + 4000];        /* the camera update told playback of the skater */
 } Game;
 static Game g_rec, g_play;
 
@@ -269,7 +271,15 @@ typedef struct {
                                  * the eye, as nothing in the recording turned it (0: never) */
     double yaw_by;
     int set_at;                 /* the player turns Default cam fix off at this frame (0: never) */
+    int state_at;               /* the skater's state changes at this frame where nothing follows it, at
+                                 * byte SKATER_HIDDEN of its object (0: never) */
 } How;
+
+/* Where the stand-in skater's object keeps its place, its turn, and a value
+ * nothing else follows. */
+#define SKATER_PLACE  0x010
+#define SKATER_TURN   0x01C
+#define SKATER_HIDDEN 0x7F0
 
 /* The window's picture written at a flip, as the renderer's shot_write
  * writes it: each path kept. */
@@ -297,7 +307,7 @@ static void run(Game *g, const How *h)
     memset(g, 0, sizeof *g);
     g->random = 0x416Cu;
     for (f = 0; f < h->frames; f++) {
-        float lx = 0, ly = 0, heading = 0, look[2] = { 0, CAM_BACK };
+        float lx = 0, ly = 0, heading = 0, look[2] = { 0, CAM_BACK }, eye[3] = { 0, 0, 0 };
         int in_scene = 0;
         PLAYBACK_STATE was = playback_state();
         playback_pass();
@@ -333,10 +343,12 @@ static void run(Game *g, const How *h)
             unsigned ticks = h->ticks_at && f >= h->ticks_at ? h->ticks2 : h->ticks;
             look[0] = 0;
             look[1] = CAM_BACK;
+            memcpy(eye, seye, sizeof eye);
             if (freecam_orbit(CAM, CAMERA, g->pos, seye, 0, g->eye[f]) != FREECAM_OFF) {
                 heading = atan2f(g->pos[0] - g->eye[f][0], g->pos[2] - g->eye[f][2]);
                 look[0] = g->pos[0] - g->eye[f][0];
                 look[1] = g->pos[2] - g->eye[f][2];
+                memcpy(eye, g->eye[f], sizeof eye);
             }
             if (h->yaw_at && f == h->yaw_at) {
                 double yaw, pitch;
@@ -372,7 +384,11 @@ static void run(Game *g, const How *h)
             playback_anchor(k_anchors[i].kind, value, &g->random);
             g->random_after[g->anchors++] = g->random;
         }
-        if (!in_scene) playback_view(g->pos, &g->turn, CAMERA, look, &g->random);
+        if (h->state_at && f == h->state_at) g->skater[SKATER_HIDDEN] ^= 1;
+        memcpy(g->skater + SKATER_PLACE, g->pos, sizeof g->pos);
+        memcpy(g->skater + SKATER_TURN, &g->turn, sizeof g->turn);
+        if (!in_scene) playback_view(g->pos, &g->turn, CAMERA, look, eye, g->skater, &g->random);
+        g->viewed[f] = !in_scene;
         g->random_at[f] = g->random;
         memcpy(g->at[f], g->pos, sizeof g->pos);
         if (h->flips) playback_flip(shot);
@@ -390,14 +406,15 @@ static float distance3(const float a[3], const float b[3])
 static char g_run[600];
 /* The recording's checks and idle moment: each frame and its generator. */
 static unsigned g_kept_frame[32], g_kept_random[32], g_idle_frame, g_idle_random;
-static int g_kept;
+static int g_kept, g_traces;
 
 static void record(void)
 {
     How h = { .frames = FRAMES, .skip_anchor = -1, .wrong_anchor = -1, .recording = 1, .set_at = 300 };
-    char path[700], line[256];
+    char path[700], line[512];
     int pads = 0, anchors = 0, checks = 0, idles = 0, ends = 0, reads1 = 0, cams = 0, idles_kept = 0;
     int drawn_ok = 0, others = 0, settings = 0, first_settings = 0, set_later = 0, traces = 0, no_view = 0;
+    int viewed = 0, fingerprinted = 0;
     unsigned trace_first = 0, trace_last = 0;
     unsigned fr, t, c, rnd, drawn, oth, before = 0;
     float x, y, z;
@@ -450,8 +467,16 @@ static void record(void)
         first_settings += !strncmp(line, "setting 1 ", 10);
         set_later += !strcmp(line, "setting 302 dcamfix 0\n");
         if (sscanf(line, "trace %u", &fr) == 1) {
+            const char *last = strrchr(line, ' ');
+            unsigned rd = 0;
+            float ex, ey, ez;
             if (!traces++) trace_first = fr;
             trace_last = fr;
+            /* The eye, the reads (both of the pass's, before the camera
+             * update) and the fingerprint's sixteen hashes, last. */
+            fingerprinted += last && strlen(last + 1) == PLAYBACK_SKATER_PARTS * 8 + 1
+                             && sscanf(line, "trace %*u %*f %*f %*f %*x %*u %*f %*f %*s %*s %f %f %f %u", &ex, &ey,
+                                       &ez, &rd) == 4 && rd == READS;
         }
         no_view += !strncmp(line, "check ", 6) && strstr(line, " - -\n") != NULL;
     }
@@ -460,8 +485,11 @@ static void record(void)
     CHECK(settings == SETTINGS + 1 && first_settings == SETTINGS && set_later == 1,
           "the recording's settings: %d lines, %d at the first frame, %d for Default cam fix turned off", settings,
           first_settings, set_later);
-    CHECK(traces == PLAYBACK_TRACE_FRAMES && trace_first == 51 && trace_last == 51 + PLAYBACK_TRACE_FRAMES - 1,
-          "the trace: %d frames, %u to %u", traces, trace_first, trace_last);
+    for (fr = 50; fr < FRAMES; fr++) viewed += g_rec.viewed[fr];  /* pass f is recorded frame f + 1 */
+    CHECK(traces == viewed && traces > 600 && trace_first == 51 && fingerprinted == traces,
+          "the trace: %d frames, %u to %u, of the %d the skater was viewed from 51; %d with the eye, %d reads and"
+          " the fingerprint", traces, trace_first, trace_last, viewed, fingerprinted, READS);
+    g_traces = traces;
     CHECK(no_view == checks, "the checks' free camera: %d of %d with - -", no_view, checks);
     /* A check a second of frames from the first: 7 before the scene (400 to
      * 519, with no view), 8 after it. The free camera off, at its defaults,
@@ -508,7 +536,7 @@ static void play_same(void)
           && res->idles_put_back == 1 && g_closed == 1,
           "as recorded: state %d, anchors %d, drift %.2f, idles %d, closed %d", res->state, res->anchors_met,
           res->drift_most, res->idles_put_back, g_closed);
-    CHECK(res->trace_frames == (int)PLAYBACK_TRACE_FRAMES && res->trace_same == res->trace_frames
+    CHECK(res->trace_frames == g_traces && res->trace_same == res->trace_frames
           && res->freecam_checks == g_kept && res->freecam_same == res->freecam_checks && res->follows == 0,
           "as recorded: the trace %d of %d frames, the free camera %d of %d checks, %d takeovers", res->trace_same,
           res->trace_frames, res->freecam_same, res->freecam_checks, res->follows);
@@ -775,7 +803,8 @@ static void play_cam(void)
           "free camera, as recorded: state %d (%s), anchors %d, drift %.2f", res->state, res->why,
           res->anchors_met, res->drift_most);
     CHECK(res->follows >= 2 && res->follows_same == res->follows && res->freecam_checks > 5
-          && res->freecam_same == res->freecam_checks && res->trace_same == (int)PLAYBACK_TRACE_FRAMES,
+          && res->freecam_same == res->freecam_checks && res->trace_same == res->trace_frames
+          && res->trace_frames > 600,
           "free camera, as recorded: %d of %d takeovers, %d of %d checks, the trace %d of %d frames",
           res->follows_same, res->follows, res->freecam_same, res->freecam_checks, res->trace_same,
           res->trace_frames);
@@ -819,6 +848,41 @@ static void play_cam_apart(void)
           "the free camera apart: state %d, %d of %d checks, the first at %u, the trace %d of %d from %u,"
           " drift %.3f", res->state, res->freecam_same, res->freecam_checks, res->freecam_apart_at,
           res->trace_same, res->trace_frames, res->trace_apart_at, res->drift_most);
+    /* What went first: the free camera at 131, turned after it placed the
+     * eye, then the eye and the look at 132; the pad's reads never. */
+    CHECK(res->trace_first[PLAYBACK_TRACE_FREECAM] == 131 && res->trace_first[PLAYBACK_TRACE_EYE] == 132
+          && res->trace_first[PLAYBACK_TRACE_LOOK] == 132 && res->trace_first[PLAYBACK_TRACE_READS] == 0
+          && (res->trace_first[PLAYBACK_TRACE_PLACE] == 0 || res->trace_first[PLAYBACK_TRACE_PLACE] >= 132),
+          "the free camera apart, first: free camera %u, eye %u, look %u, reads %u, place %u",
+          res->trace_first[PLAYBACK_TRACE_FREECAM], res->trace_first[PLAYBACK_TRACE_EYE],
+          res->trace_first[PLAYBACK_TRACE_LOOK], res->trace_first[PLAYBACK_TRACE_READS],
+          res->trace_first[PLAYBACK_TRACE_PLACE]);
+}
+
+/* The skater's state changed where nothing follows it, at frame 300: the
+ * trace's fingerprint finds it at the first frame the skater is viewed from
+ * there, in the part that holds it, with everything else as recorded, and
+ * the play goes on to its end. */
+static void play_state_apart(void)
+{
+    How h = { .frames = FRAMES + 10, .skip_anchor = -1, .wrong_anchor = -1, .state_at = 300 };
+    const PLAYBACK_RESULT *res = playback_result();
+    const int part = SKATER_HIDDEN / (PLAYBACK_SKATER_BYTES / PLAYBACK_SKATER_PARTS);
+    unsigned at = 0, f;
+    int k, others = 0, whats = 0, before = 0;
+    g_closed = 0;
+    CHECK(playback_play(g_run, 1), "playback couldn't start");
+    run(&g_play, &h);
+    for (f = 300; f < FRAMES && !g_play.viewed[f]; f++) { }
+    at = f + 1;                                                   /* pass f is recorded frame f + 1 */
+    for (f = 50; f + 1 < at; f++) before += g_rec.viewed[f];      /* the trace's frames before it */
+    for (k = 0; k < PLAYBACK_SKATER_PARTS; k++) others += k != part && res->trace_part_first[k] != 0;
+    for (k = 0; k < PLAYBACK_TRACE_WHATS; k++) whats += res->trace_first[k] != 0;
+    CHECK(res->state == PLAYBACK_FINISHED && res->trace_apart_at == at && res->trace_part_first[part] == at
+          && others == 0 && whats == 0 && res->trace_same == before,
+          "the skater's state apart at 300: state %d, the trace first apart at %u, the part at %u (expected %u),"
+          " %d other parts, %d other things, %d of %d as recorded", res->state, res->trace_apart_at,
+          res->trace_part_first[part], at, others, whats, res->trace_same, res->trace_frames);
 }
 
 /* While it plays: the real right stick hands the game back, though the free
@@ -987,6 +1051,31 @@ static void by_hand(void)
     CHECK(playback_play(folder, 0), "checks and traces by hand refused");
     write_file(folder, "jsrf-pc-recording 1\ntrace 4 0 0 0 0 3 0 10 -\n");
     CHECK(!playback_play(folder, 0), "a trace line short of its pitch, played");
+    /* Since playback5's: the eye, the reads and the fingerprint, or - for
+     * none; a fingerprint that isn't sixteen hashes, or anything short or
+     * after it, is refused. */
+    {
+        char line[600], parts[PLAYBACK_SKATER_PARTS * 8 + 1];
+        int k;
+        for (k = 0; k < PLAYBACK_SKATER_PARTS; k++) memcpy(parts + k * 8, "0123ABCD", 8);
+        parts[PLAYBACK_SKATER_PARTS * 8] = 0;
+        snprintf(line, sizeof line, "jsrf-pc-recording 1\ntrace 4 0 0 0 0 3 0 10 - - 1 2 3 2 -\n"
+                 "trace 5 0 0 0 0 3 0 10 0.5 0.25 1 2 3 2 %s\nend 10\n", parts);
+        write_file(folder, line);
+        CHECK(playback_play(folder, 0), "traces with the eye, the reads and the fingerprint refused");
+        snprintf(line, sizeof line, "jsrf-pc-recording 1\ntrace 5 0 0 0 0 3 0 10 - - 1 2 3 2 %.*s\n",
+                 PLAYBACK_SKATER_PARTS * 8 - 1, parts);
+        write_file(folder, line);
+        CHECK(!playback_play(folder, 0), "a fingerprint a digit short, played");
+        parts[9] = 'G';
+        snprintf(line, sizeof line, "jsrf-pc-recording 1\ntrace 5 0 0 0 0 3 0 10 - - 1 2 3 2 %s\n", parts);
+        write_file(folder, line);
+        CHECK(!playback_play(folder, 0), "a fingerprint with a G in it, played");
+        write_file(folder, "jsrf-pc-recording 1\ntrace 5 0 0 0 0 3 0 10 - - 1 2 3 2\n");
+        CHECK(!playback_play(folder, 0), "a trace line short of its fingerprint, played");
+        write_file(folder, "jsrf-pc-recording 1\ntrace 5 0 0 0 0 3 0 10 - - 1 2 3 2 - 7\n");
+        CHECK(!playback_play(folder, 0), "a trace line with a word after its fingerprint, played");
+    }
     write_file(folder, "jsrf-pc-recording 1\ntrace 5 0 0 0 0 3 0 10 - -\ntrace 5 0 0 0 0 3 0 10 - -\n");
     CHECK(!playback_play(folder, 0), "a trace line twice for a frame, played");
     write_file(folder, "jsrf-pc-recording 1\nfollow 3 - -\n");
@@ -1575,6 +1664,7 @@ int main(int argc, char **argv)
     record_cam();
     play_cam();
     play_cam_apart();
+    play_state_apart();
     play_cam_take_over();
     by_hand();
     restart();

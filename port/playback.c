@@ -7,6 +7,7 @@
 #define _POSIX_C_SOURCE 200112L    /* setenv, unsetenv */
 #include "playback.h"
 
+#include <ctype.h>
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -69,6 +70,11 @@ typedef struct {                                /* a frame of the trace */
     float pos[3], look[2];
     int view_on;
     double yaw, pitch;
+    int has_more;                               /* the eye and the reads (made since playback5) */
+    float eye[3];
+    uint32_t reads;
+    int has_skater;                             /* the skater's fingerprint */
+    uint32_t part[PLAYBACK_SKATER_PARTS];
 } PbTrace;
 typedef struct { uint32_t frame; int key, value; } PbSetting;
 typedef struct { uint32_t frame; FREECAM_SETTINGS fc; } PbFreecam;
@@ -427,6 +433,26 @@ static void summary(void)
     else if (s_res.trace_frames)
         fprintf(stderr, "[PLAYBACK] the trace from the first press: as recorded at %d of %d frames\n",
                 s_res.trace_same, s_res.trace_frames);
+    if (s_res.trace_frames > s_res.trace_same) {
+        static const char *const what[PLAYBACK_TRACE_WHATS] = {
+            "the skater's place", "its turn", "the camera's mode", "the way the camera looks", "the camera's eye",
+            "the free camera's angles", "the pad's reads" };
+        char said[1024] = "";
+        int k, n = 0;
+        for (k = 0; k < PLAYBACK_TRACE_WHATS; k++) {
+            size_t len = strlen(said);
+            if (s_res.trace_first[k])
+                snprintf(said + len, sizeof said - len, "%s%s at %u", n++ ? ", " : "", what[k],
+                         s_res.trace_first[k]);
+        }
+        for (k = 0; k < PLAYBACK_SKATER_PARTS; k++) {
+            size_t len = strlen(said);
+            if (s_res.trace_part_first[k])
+                snprintf(said + len, sizeof said - len, "%sthe skater's state at bytes %03X at %u", n++ ? ", " : "",
+                         (unsigned)(k * (PLAYBACK_SKATER_BYTES / PLAYBACK_SKATER_PARTS)), s_res.trace_part_first[k]);
+        }
+        fprintf(stderr, "[PLAYBACK] the trace, each first not as recorded at recorded frame: %s\n", said);
+    }
 }
 
 /* The player's settings back, those a play put in place (k_setting), but
@@ -735,16 +761,37 @@ static int read_spot(const char *s, PbSpot *p, int check)
     return n == 6 || n == (check ? 9 : 7);
 }
 
-/* A trace line: the skater, the camera's look and the free camera's two. */
+/* A trace line: the skater, the camera's look and the free camera's two;
+ * then, since playback5's, the camera's eye, the reads and the skater's
+ * fingerprint (or -). */
 static int read_trace(const char *s, PbTrace *t)
 {
-    char yaw[40], pitch[40];
-    int on_pitch = 0;
-    if (sscanf(s, "%u %f %f %f %x %u %f %f %39s %39s", &t->frame, &t->pos[0], &t->pos[1], &t->pos[2],
-               &t->turn, &t->camera, &t->look[0], &t->look[1], yaw, pitch) != 10)
+    char yaw[40], pitch[40], parts[PLAYBACK_SKATER_PARTS * 8 + 2], end[2];
+    int on_pitch = 0, used = 0, k;
+    memset(t, 0, sizeof *t);
+    if (sscanf(s, "%u %f %f %f %x %u %f %f %39s %39s%n", &t->frame, &t->pos[0], &t->pos[1], &t->pos[2],
+               &t->turn, &t->camera, &t->look[0], &t->look[1], yaw, pitch, &used) != 10)
         return 0;
-    return read_angle(yaw, &t->view_on, &t->yaw) && read_angle(pitch, &on_pitch, &t->pitch)
-           && on_pitch == t->view_on;
+    if (!read_angle(yaw, &t->view_on, &t->yaw) || !read_angle(pitch, &on_pitch, &t->pitch)
+        || on_pitch != t->view_on)
+        return 0;
+    s += used;
+    if (sscanf(s, "%1s", end) != 1) return 1;                       /* playback5's */
+    if (sscanf(s, "%f %f %f %u %129s %1s", &t->eye[0], &t->eye[1], &t->eye[2], &t->reads, parts, end) != 5)
+        return 0;
+    t->has_more = 1;
+    if (!strcmp(parts, "-")) return 1;
+    if (strlen(parts) != PLAYBACK_SKATER_PARTS * 8) return 0;
+    for (k = 0; k < PLAYBACK_SKATER_PARTS * 8; k++)
+        if (!isxdigit((unsigned char)parts[k])) return 0;
+    for (k = 0; k < PLAYBACK_SKATER_PARTS; k++) {
+        char hex[9];
+        memcpy(hex, parts + k * 8, 8);
+        hex[8] = 0;
+        t->part[k] = (uint32_t)strtoul(hex, NULL, 16);
+    }
+    t->has_skater = 1;
+    return 1;
 }
 
 static void forget(void)
@@ -1588,16 +1635,53 @@ static void play_freecam_check(const PbSpot *c)
                 c->view_on ? "steers" : "steers none");
 }
 
-/* A frame of the trace reached on its frame: compared with the recording's,
- * and said what isn't as it was. Nothing is put back. */
-static void play_trace(const float position[3], uint32_t turn, uint32_t camera, const float look[2])
+/* The pad's reads in this pass so far, on every port. */
+static uint32_t reads_now(void)
 {
-    uint32_t f = recorded_frame();
+    uint32_t n = 0;
+    int p;
+    for (p = 0; p < PLAYBACK_PORTS; p++) n += s_reads[p];
+    return n;
+}
+
+/* The skater's fingerprint: each part of PLAYBACK_SKATER_BYTES hashed
+ * (FNV-1a). */
+static void fingerprint(const uint8_t *skater, uint32_t part[PLAYBACK_SKATER_PARTS])
+{
+    const uint32_t size = PLAYBACK_SKATER_BYTES / PLAYBACK_SKATER_PARTS;
+    int k;
+    uint32_t i;
+    for (k = 0; k < PLAYBACK_SKATER_PARTS; k++) {
+        uint32_t h = 2166136261u;
+        for (i = 0; i < size; i++) h = (h ^ skater[k * size + i]) * 16777619u;
+        part[k] = h;
+    }
+}
+
+/* What trace said of one thing not as recorded: added to said, and the
+ * first recorded frame it wasn't kept. */
+static void trace_not(char *said, size_t size, int what, uint32_t frame, const char *fmt, ...)
+{
+    size_t len = strlen(said);
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(said + len, size - len, fmt, ap);
+    va_end(ap);
+    if (!s_res.trace_first[what]) s_res.trace_first[what] = frame;
+}
+
+/* A frame of the trace reached on its frame: compared with the recording's,
+ * and said what isn't as it was; the first frame each part of the skater's
+ * fingerprint isn't, said on its own. Nothing is put back. */
+static void play_trace(const float position[3], uint32_t turn, uint32_t camera, const float look[2],
+                       const float eye[3], const uint8_t *skater)
+{
+    const uint32_t size = PLAYBACK_SKATER_BYTES / PLAYBACK_SKATER_PARTS;
+    uint32_t f = recorded_frame(), part[PLAYBACK_SKATER_PARTS], reads = reads_now();
     const PbTrace *t;
     double yaw = 0, pitch = 0;
-    char said[640] = "";
-    size_t len;
-    int on;
+    char said[1024] = "", parts[200] = "";
+    int on, k, n = 0;
     while (s_trace_next < s_traces.n && PB_TRACE[s_trace_next].frame < f) s_trace_next++;
     if (s_trace_next >= s_traces.n || PB_TRACE[s_trace_next].frame != f) return;
     t = &PB_TRACE[s_trace_next++];
@@ -1606,29 +1690,48 @@ static void play_trace(const float position[3], uint32_t turn, uint32_t camera, 
         fprintf(stderr, "[PLAYBACK] frame %u: the trace from recorded frame %u, %d frames: compared frame by"
                 " frame\n", s_frame, t->frame, s_traces.n);
     s_res.trace_frames++;
-    if (memcmp(position, t->pos, sizeof t->pos)) {
-        len = strlen(said);
-        snprintf(said + len, sizeof said - len, "; the skater at %.9g %.9g %.9g, recorded %.9g %.9g %.9g",
-                 position[0], position[1], position[2], t->pos[0], t->pos[1], t->pos[2]);
-    }
-    if (turn != t->turn || camera != t->camera) {
-        len = strlen(said);
-        snprintf(said + len, sizeof said - len, "; turn %08X, camera %u, recorded %08X, %u", turn, camera,
-                 t->turn, t->camera);
-    }
-    if (look[0] != t->look[0] || look[1] != t->look[1]) {
-        len = strlen(said);
-        snprintf(said + len, sizeof said - len, "; the camera looking %.9g %.9g, recorded %.9g %.9g", look[0],
-                 look[1], t->look[0], t->look[1]);
-    }
+    if (memcmp(position, t->pos, sizeof t->pos))
+        trace_not(said, sizeof said, PLAYBACK_TRACE_PLACE, t->frame, "; the skater at %.9g %.9g %.9g, recorded"
+                  " %.9g %.9g %.9g", position[0], position[1], position[2], t->pos[0], t->pos[1], t->pos[2]);
+    if (turn != t->turn)
+        trace_not(said, sizeof said, PLAYBACK_TRACE_TURN, t->frame, "; turn %08X, recorded %08X", turn, t->turn);
+    if (camera != t->camera)
+        trace_not(said, sizeof said, PLAYBACK_TRACE_CAMERA, t->frame, "; camera %u, recorded %u", camera,
+                  t->camera);
+    if (look[0] != t->look[0] || look[1] != t->look[1])
+        trace_not(said, sizeof said, PLAYBACK_TRACE_LOOK, t->frame, "; the camera looking %.9g %.9g, recorded"
+                  " %.9g %.9g", look[0], look[1], t->look[0], t->look[1]);
     if (on != t->view_on || (on && (yaw != t->yaw || pitch != t->pitch))) {
-        len = strlen(said);
         if (on && t->view_on)
-            snprintf(said + len, sizeof said - len, "; the free camera's heading %.6f degrees, pitch %.6f,"
-                     " recorded %.6f, %.6f", degrees(yaw), degrees(pitch), degrees(t->yaw), degrees(t->pitch));
+            trace_not(said, sizeof said, PLAYBACK_TRACE_FREECAM, t->frame, "; the free camera's heading %.6f"
+                      " degrees, pitch %.6f, recorded %.6f, %.6f", degrees(yaw), degrees(pitch), degrees(t->yaw),
+                      degrees(t->pitch));
         else
-            snprintf(said + len, sizeof said - len, "; the free camera %s, recorded %s",
-                     on ? "steering" : "steering none", t->view_on ? "steering" : "none");
+            trace_not(said, sizeof said, PLAYBACK_TRACE_FREECAM, t->frame, "; the free camera %s, recorded %s",
+                      on ? "steering" : "steering none", t->view_on ? "steering" : "none");
+    }
+    if (t->has_more && memcmp(eye, t->eye, sizeof t->eye))
+        trace_not(said, sizeof said, PLAYBACK_TRACE_EYE, t->frame, "; the camera's eye at %.9g %.9g %.9g,"
+                  " recorded %.9g %.9g %.9g", eye[0], eye[1], eye[2], t->eye[0], t->eye[1], t->eye[2]);
+    if (t->has_more && reads != t->reads)
+        trace_not(said, sizeof said, PLAYBACK_TRACE_READS, t->frame, "; the pad read %u times in the pass,"
+                  " recorded %u", reads, t->reads);
+    if (t->has_skater && skater) {
+        fingerprint(skater, part);
+        for (k = 0; k < PLAYBACK_SKATER_PARTS; k++) {
+            size_t len = strlen(parts);
+            if (part[k] == t->part[k]) continue;
+            snprintf(parts + len, sizeof parts - len, "%s%03X", n++ ? ", " : "", (unsigned)(k * size));
+            if (s_res.trace_part_first[k]) continue;
+            s_res.trace_part_first[k] = t->frame;
+            fprintf(stderr, "[PLAYBACK] frame %u: trace at recorded frame %u: the skater's state at bytes %03X"
+                    " to %03X, first not as recorded\n", s_frame, t->frame, (unsigned)(k * size),
+                    (unsigned)((k + 1) * size - 1));
+        }
+        if (n) {
+            size_t len = strlen(said);
+            snprintf(said + len, sizeof said - len, "; the skater's state at bytes %s", parts);
+        }
     }
     if (!said[0]) { s_res.trace_same++; return; }
     if (s_res.trace_frames - s_res.trace_same == 1) s_res.trace_apart_at = t->frame;
@@ -1637,12 +1740,12 @@ static void play_trace(const float position[3], uint32_t turn, uint32_t camera, 
                 t->frame, said, s_trace_said == PLAYBACK_SAY ? " (no more said: the summary counts them)" : "");
 }
 
-static void play_view(float position[3], uint32_t *turn, uint32_t camera, const float look[2], uint32_t *random,
-                      int still)
+static void play_view(float position[3], uint32_t *turn, uint32_t camera, const float look[2],
+                      const float eye[3], const uint8_t *skater, uint32_t *random, int still)
 {
     uint32_t f = recorded_frame();
     int last = -1;
-    play_trace(position, *turn, camera, look);
+    play_trace(position, *turn, camera, look, eye, skater);
     while (s_check_next < s_checks.n && PB_CHECK[s_check_next].frame <= f) last = s_check_next++;
     if (last >= 0 && f == PB_CHECK[last].frame) {
         play_random(&PB_CHECK[last], random);
@@ -1934,8 +2037,8 @@ void playback_anchor(PLAYBACK_ANCHOR kind, uint32_t value, uint32_t *random)
     pb_unlock();
 }
 
-void playback_view(float position[3], uint32_t *turn, uint32_t camera, const float look[2],
-                   uint32_t *random)
+void playback_view(float position[3], uint32_t *turn, uint32_t camera, const float look[2], const float eye[3],
+                   const uint8_t *skater, uint32_t *random)
 {
     int still;
     pb_lock();
@@ -1952,7 +2055,7 @@ void playback_view(float position[3], uint32_t *turn, uint32_t camera, const flo
     still = s_frame - s_still_since >= PLAYBACK_IDLE_FRAMES;
     if (s_out) {
         /* The trace: from the first frame something is pressed while the
-         * camera follows the player, PLAYBACK_TRACE_FRAMES of them. */
+         * camera follows the player, at most PLAYBACK_TRACE_FRAMES of them. */
         if (!s_trace_on && s_pressed_ever && s_pressed_at == s_frame) {
             s_trace_on = 1;
             s_trace_from = s_frame;
@@ -1961,6 +2064,14 @@ void playback_view(float position[3], uint32_t *turn, uint32_t camera, const flo
             fprintf(rec(), "trace %u %.9g %.9g %.9g %08X %u %.9g %.9g", s_frame, position[0], position[1],
                     position[2], *turn, camera, look[0], look[1]);
             put_angles();
+            fprintf(rec(), " %.9g %.9g %.9g %u ", eye[0], eye[1], eye[2], reads_now());
+            if (skater) {
+                uint32_t part[PLAYBACK_SKATER_PARTS];
+                int k;
+                fingerprint(skater, part);
+                for (k = 0; k < PLAYBACK_SKATER_PARTS; k++) fprintf(rec(), "%08X", part[k]);
+            } else
+                fputc('-', rec());
             fputc('\n', rec());
         }
         if (s_frame >= s_next_check) {
@@ -1985,7 +2096,7 @@ void playback_view(float position[3], uint32_t *turn, uint32_t camera, const flo
             s_idle_said = s_still_since + 1;
         }
     } else
-        play_view(position, turn, camera, look, random, still);
+        play_view(position, turn, camera, look, eye, skater, random, still);
     pb_unlock();
 }
 

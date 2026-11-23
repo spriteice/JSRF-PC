@@ -28,11 +28,16 @@
  *   pitch too, while it steers (freecam_angles): playback says where they
  *   were not as recorded and puts them back, and does as the free camera
  *   takes over a camera, on the recorded frame (playback_freecam_took).
- * - The trace: every frame for PLAYBACK_TRACE_FRAMES from the first frame
- *   something is pressed while the camera follows the player, the skater,
- *   the way the camera looks and the free camera's angles. Playback says at
- *   which frames of it the play was not as recorded, and what was not, and
- *   puts nothing back: it shows where a play first comes apart.
+ * - The trace: every frame from the first frame something is pressed while
+ *   the camera follows the player to the recording's end, at most
+ *   PLAYBACK_TRACE_FRAMES: the skater, the way the camera looks, the
+ *   camera's eye, the free camera's angles, the pad's reads in the pass so
+ *   far, and a fingerprint of the skater's object (PLAYBACK_SKATER_BYTES of
+ *   it, in PLAYBACK_SKATER_PARTS parts, each hashed). Playback says at which
+ *   frames of it the play was not as recorded, and what was not, the first
+ *   frame each of them and each part of the fingerprint was not, and puts
+ *   nothing back: it shows where a play first comes apart, and what went
+ *   first.
  * - Idle moments: a second or more with nothing pressed and the skater
  *   still. Playback puts the skater back on the recorded spot there, facing
  *   the recorded way, when the camera is in the recorded mode and the skater
@@ -112,7 +117,7 @@
  *   anchor <frame> <kind> <value> <random>
  *   follow <frame> <yaw> <pitch>
  *   check <frame> <x> <y> <z> <turn> <camera> <random> <drawn> <drawn_others> <yaw> <pitch>
- *   trace <frame> <x> <y> <z> <turn> <camera> <look_x> <look_z> <yaw> <pitch>
+ *   trace <frame> <x> <y> <z> <turn> <camera> <look_x> <look_z> <yaw> <pitch> <eye_x> <eye_y> <eye_z> <reads> <skater>
  *   idle <frame> <x> <y> <z> <turn> <camera> <random>
  *   end <frame>
  *
@@ -171,7 +176,11 @@
  * camera as it is. A trace line is a frame of the trace: the skater as a
  * check has it, the way the camera looks on the ground (from its eye to
  * what it looks at, x and z, the heading the controls follow) and the free
- * camera's yaw and pitch, or - -. Lines starting with # are comments. */
+ * camera's yaw and pitch, or - -, then the camera's eye, the pad's reads in
+ * the pass when the camera updated, and the skater's fingerprint: each
+ * part's hash in eight hex digits, one after another, or - for none. A trace
+ * line made before the last five (by 7260528-playback5) is compared for what
+ * it has. Lines starting with # are comments. */
 #ifndef JSRF_PLAYBACK_H
 #define JSRF_PLAYBACK_H
 
@@ -196,7 +205,9 @@
 #define PLAYBACK_PLAYS        "plays"        /* a folder for each play: its copy, its screenshots */
 #define PLAYBACK_STEP_SETTLE  5u             /* flips after a menu row before the next step */
 #define PLAYBACK_STEP_WAIT    600u           /* frames steps may hold the recording: ten seconds */
-#define PLAYBACK_TRACE_FRAMES 240u           /* frames traced from the first press: four seconds */
+#define PLAYBACK_TRACE_FRAMES 36000u         /* frames traced from the first press at most: ten minutes */
+#define PLAYBACK_SKATER_BYTES 0x1000u        /* the skater's object the trace fingerprints */
+#define PLAYBACK_SKATER_PARTS 16             /* in parts, each hashed: 0x100 bytes each */
 #define PLAYBACK_SAY          5              /* differences said of each kind; the summary counts the rest */
 
 /* What starts a stretch of play. */
@@ -221,6 +232,14 @@ typedef enum {
     PLAYBACK_RECORDED         /* a recording, ended */
 } PLAYBACK_STATE;
 
+/* What a trace line has, each compared on its own: the skater's place, its
+ * turn, the camera's mode, the way it looks, its eye, the free camera's
+ * angles and the pad's reads. */
+enum {
+    PLAYBACK_TRACE_PLACE, PLAYBACK_TRACE_TURN, PLAYBACK_TRACE_CAMERA, PLAYBACK_TRACE_LOOK,
+    PLAYBACK_TRACE_EYE, PLAYBACK_TRACE_FREECAM, PLAYBACK_TRACE_READS, PLAYBACK_TRACE_WHATS
+};
+
 /* What a run came to, for the log's summary and tests/playback. */
 typedef struct {
     PLAYBACK_STATE state;
@@ -238,6 +257,8 @@ typedef struct {
     int trace_frames;         /* the trace's frames compared */
     int trace_same;           /* of them, as recorded */
     uint32_t trace_apart_at;  /* the recorded frame of the first that wasn't */
+    uint32_t trace_first[PLAYBACK_TRACE_WHATS];        /* the recorded frame each first wasn't (0: never) */
+    uint32_t trace_part_first[PLAYBACK_SKATER_PARTS];  /* so, each part of the skater's fingerprint */
     int settings_changed;     /* settings the play had as recorded, not as the player has them */
     float drift_most;         /* the largest drift at a check */
     uint32_t drift_most_at;   /* at which recorded frame */
@@ -336,11 +357,12 @@ void playback_anchor(PLAYBACK_ANCHOR kind, uint32_t value, uint32_t *random);
 /* Each update of the camera that follows the main player's skater: its
  * position (x, y, z) and turn, which playback may put back at an idle
  * moment, the camera's mode, the way it looks on the ground (x and z, from
- * its eye to what it looks at), for the trace, and the game's random
- * generator, which it keeps at each check and idle moment and puts back
- * there. */
-void playback_view(float position[3], uint32_t *turn, uint32_t camera, const float look[2],
-                   uint32_t *random);
+ * its eye to what it looks at), its eye and the skater's object
+ * (PLAYBACK_SKATER_BYTES of it from its start, or NULL), for the trace, and
+ * the game's random generator, which it keeps at each check and idle moment
+ * and puts back there. */
+void playback_view(float position[3], uint32_t *turn, uint32_t camera, const float look[2], const float eye[3],
+                   const uint8_t *skater, uint32_t *random);
 
 /* The free camera taking over a camera from the game's view (freecam_orbit),
  * with its yaw and pitch: recorded, or, while a recording plays, compared

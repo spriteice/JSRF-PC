@@ -81,8 +81,11 @@ changes one, used for the play only, said where the player's differs, and
 the player's back as it ends, the settings file untouched. The free
 camera's exact heading and pitch as it takes over and at each check:
 played, said where they weren't as recorded and put back; turned 0.01 off
-at frame 130, the trace from the first press finds it at the next frame
-and the check after puts it back. The mark a recording plays: in at its
+at frame 130, the trace, every frame from the first press to the end,
+finds it at the next frame, the eye and the skater the frame after, and
+the check after puts it back. The skater's state changed where nothing
+else follows it: the trace's fingerprint of the skater's object finds it,
+in the part that holds it, and nothing else. The mark a recording plays: in at its
 first draw, green, red or blue as the play ends, held, out and gone.
 As the engine starts: JSRF_RECORD, JSRF_PLAY and JSRF_PLAY_MENU taken out
 of the environment, a recording made beside the settings file, and
@@ -182,7 +185,11 @@ with tempfile.TemporaryDirectory(prefix="playback-") as directory:
             "the free camera taking over: as recorded at ", "the free camera at the checks: as recorded at ",
             "first not at recorded frame 181; put back at each",
             "trace at recorded frame 131: not as recorded",
-            "the trace from the first press: as recorded at 240 of 240 frames"]
+            "the trace from the first press: as recorded at ",
+            "the skater's state at bytes 700 to 7FF, first not as recorded",
+            "the trace, each first not as recorded at recorded frame: the skater's place at 132, the way the camera"
+            " looks at 132, the camera's eye at 132, the free camera's angles at 131, the skater's state at bytes"
+            " 000 at 132"]
     missing = [s for s in said if s not in log]
     # The free camera a play puts in place names auto centre's level, as
     # [FREECAM] does, never by its number.

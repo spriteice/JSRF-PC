@@ -608,9 +608,10 @@ running while it is open, but your input goes to the menu.
     others: playback puts them back each second and when it puts the
     skater back, and the log says where they weren't as recorded. So with
     the free camera's exact heading and pitch, kept as it takes over from
-    the game's camera and each second. For 240 frames from your first
-    press, the recording keeps every frame's place, heading and camera
-    too, and the log says the first frame a play wasn't the same. If the
+    the game's camera and each second. From your first press to the end,
+    the recording keeps every frame's place, heading and camera too, the
+    camera's eye, and a fingerprint of the skater's whole state, and the log
+    says the first frame a play wasn't the same, and what went first. If the
     skater ends up far from where they were, or the game loads something
     the recording didn't, playback stops, and the log says where. Start a
     recording from the same saves you will play it with. The settings that
