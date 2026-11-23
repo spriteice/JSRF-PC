@@ -15,6 +15,10 @@ as that file needs SDL, a window and OpenGL.
    same and test_window.cpp, which stands in for SDL and the backends.
 3. The input layer's gate (menu_gate in src/input/xinput_device.c), taken
    from that file verbatim, with test_gate.c.
+5. File's rows (src/menu/menu_sdl.cpp's File section, unchanged), with the
+   same and test_file.cpp, which stands in for SDL and the window's
+   restarts: the rows in order, Presets' four, its line and Reset, and the
+   presets chosen by their paths.
 4. The window's submenus (src/nv2a_gl/nv2a_gl.c, sdl_menu_display), by
    text: Display's Enhancements, at its foot, then Gameplay's, in their
    order, Skips first, then Graffiti souls. That the menu then draws them
@@ -65,6 +69,7 @@ if groups.count("{ .menu") != len(found):
     sys.exit("menu: the window's submenus hold a row that isn't a submenu")
 
 window = (root / "src/menu/menu_sdl.cpp").read_text(encoding="utf-8")
+file_cut = cut(window, "/* ---- File:", "/* ---- opening and closing")
 window_cut = (cut(window, "#define OV_GAME_LINES", "/* ---- File:")
               + cut(window, "/* With g_mu held. */", "/* ---- the calls from the window")
               + cut(window, "/* ---- a bind row's press", "static void scale_to_window(void)")
@@ -130,6 +135,24 @@ with tempfile.TemporaryDirectory(prefix="menu-") as tmp:
     subprocess.run(cxx + flags + ["-I" + str(tmp), "-o", str(window_exe), str(here / "test_window.cpp")]
                    + objects + threads, check=True)
     subprocess.run([str(window_exe)], check=True, timeout=60)
+
+    (tmp / "menu_file_cut.inc").write_text(file_cut, encoding="utf-8")
+    file_exe = tmp / "file_test"
+    subprocess.run(cxx + flags + ["-I" + str(tmp), "-o", str(file_exe), str(here / "test_file.cpp")]
+                   + objects + threads, check=True)
+    run = subprocess.run([str(file_exe)], timeout=60, capture_output=True, text=True)
+    sys.stderr.write(run.stderr)
+    if run.returncode:
+        sys.exit(run.returncode)
+    # Each preset said as it is chosen, twice (chosen again, ticked), and
+    # nothing the menu's own checks find in File's rows (menu.cpp's
+    # RECOMP_CHECK lines: a hint too long, or none).
+    for name in ("Xbox", "Performance", "Balanced", "Quality"):
+        line = f"[MENU] preset {name} chosen\n"
+        if run.stderr.count(line) != 2:
+            sys.exit(f"menu: {line!r} is in File's log {run.stderr.count(line)} times, not twice")
+    if "[CHECK]" in run.stderr:
+        sys.exit("menu: the menu's checks found something in File's rows")
 
     gate_exe = pathlib.Path(tmp) / "gate_test"
     subprocess.run(cc + ["-std=c11", "-Wall", "-Wextra", "-I" + str(root / "src"),

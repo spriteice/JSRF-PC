@@ -258,9 +258,11 @@ in a submenu of its own.
 ## File > Presets
 
 - Presets is File's second row, under About, with a separator
-  above and below it, as between About and Restart before it. Its choices
-  are Xbox, Performance, Balanced and Quality, in that order
-  (`XBOX_PRESET` in `menu.h`; spriteice, 23 November 2026).
+  above and below it, as between About and Restart before it. It is a
+  submenu (`XBOX_ITEM_GROUP`): a row for each preset, Xbox, Performance,
+  Balanced and Quality, in that order (`XBOX_PRESET` in `menu.h`), then a
+  separator and Reset (Restart) (spriteice, 23 November 2026; Reset,
+  below).
 - **Xbox** is the game as the Xbox runs it: 4:3 at Default, the
   Xbox's 640x480, with everything JSRF-PC adds to how it looks and plays
   turned off.
@@ -278,8 +280,8 @@ in a submenu of its own.
   Every preset but Xbox has Resolution and Aspect ratio at Match screen,
   Music info in pause and See through fix on, and Upscaling's Menus and HUD
   at 4x or more.
-- The tick is on the preset whose value every row it sets has now, and on
-  none when one differs.
+- A preset's row is ticked while every row it sets has its value, and
+  none is when one differs.
 - Choosing one applies it at once, with no box: it sets each row through
   its own function, as choosing that row would, and saves it as the row
   does. No preset sets a (Restart) row, so none restarts the game: Shader
@@ -323,6 +325,23 @@ in a submenu of its own.
 - The tests of the modules that add rows check their values, and that a
   value a preset takes from a default is what a start with no settings
   gives.
+- **Reset** puts every setting back to its default and restarts the game,
+  after a box ("Reset every setting to its default and restart, losing
+  unsaved progress?"), as Restart asks first (spriteice, 23 November 2026:
+  "reset ALL settings to engine defaults after a restart"). The new start
+  clears the settings before anything reads one
+  (`nv_window_reset_at_start` in `nv2a_gl.c`, the first thing
+  `port/main.c` starts), so nothing the run before held can write one
+  back. The settings file keeps only the launchers' `game_dir=`, so the
+  game isn't asked for again, and the files beside it that hold settings
+  go: `remap.cfg`, the layouts, and `developer.cfg`, Developer's switches
+  and Missions' skater. The saves, the shader cache, the logs, Missions'
+  `start-states.txt` and Playback's recordings are no settings, and stay.
+  The game starts full screen, as a new install does. Reset and the
+  separator above it are there only where the game can start itself again,
+  as Restart is. Its row is "Reset (Restart)", as a row that restarts the
+  game is named ((Restart), above; spriteice, 23 November 2026).
+  tests/settings_reset checks the clearing, and tests/menu File's rows.
 
 ## File > About
 

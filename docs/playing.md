@@ -284,8 +284,8 @@ the buttons to press, in Input > Button prompts' style. The game keeps
 running while it is open, but your input goes to the menu.
 
 - **File:** About (the version and system details), Presets, Restart, and Exit.
-  Presets sets many settings at once, straight away, with no restart: Xbox,
-  Performance, Balanced or Quality. Xbox is the game as the Xbox runs it:
+  Presets, a submenu, sets many settings at once, straight away, with no
+  restart: Xbox, Performance, Balanced or Quality. Xbox is the game as the Xbox runs it:
   4:3 at Default resolution (640×480), with everything JSRF-PC adds to how it
   looks and plays turned off. Performance has the draw distance, Far
   buildings and Far shadows at 1x, no anti-aliasing or anisotropic
@@ -308,7 +308,12 @@ running while it is open, but your input goes to the menu.
   Stick shape to Square and Button prompts' Style to Default, turning the
   free camera, Default cam fix and No skater fade off, and ticking the
   game's three shots; the others leave Input as it is. The one ticked is the
-  one your settings match, if any.
+  one your settings match, if any. Below them, after a line, Reset (Restart)
+  puts every setting back to how a new install has it, once you say yes,
+  and restarts the game: Developer's switches and both layouts too. It
+  keeps where the game is, so it isn't asked for again, and your saves, the
+  shader cache, your logs, Missions' start states and Playback's
+  recordings, which are no settings. It is there where Restart is.
 - **Display:** Full screen, the resolution (its choices as F9 gives them),
   the aspect ratio, the HUD submenu, the draw distance, the Building distance submenu (Far
   buildings and Far shadows), and a submenu at the end, Enhancements, with
@@ -603,11 +608,12 @@ running while it is open, but your input goes to the menu.
   Experimental are kept in `developer.cfg` beside the settings file, and
   apply from the next start.
 
-Everything is remembered but Far buildings test. Restart, Exit, the
-shader cache, Audio effects, and Purge shaders ask first, as anything since
-your last save is lost: all but Exit restart the game. The resolution and
-the presets change at once, with no restart. The other rows
-marked (Restart) apply from the next start, which File > Restart gives.
+Everything is remembered but Far buildings test. Restart, Exit, File >
+Presets' Reset, the shader cache, Audio effects, and Purge shaders ask
+first, as anything since your last save is lost: all but Exit restart the
+game. The resolution and the presets change at once, with no restart. The
+other rows marked (Restart) apply from the next start, which File >
+Restart gives.
 
 ## Graphics options
 

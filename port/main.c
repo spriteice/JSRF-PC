@@ -736,6 +736,11 @@ static int host_main(void)
 
     printf("=== JSRF-PC %s -- Jet Set Radio Future, statically recompiled ===\n",
            JSRF_VERSION);
+#if defined(NV2A_GL_USE_SDL)
+    /* File > Presets > Reset's start: every setting back to its default
+     * before anything reads one (src/nv2a_gl/nv2a_gl.c). */
+    { extern void nv_window_reset_at_start(void); nv_window_reset_at_start(); }
+#endif
     /* The Developer menu's switches into the environment, before anything
      * reads them, and the log off if it was left off (port/developer.c). */
     { extern void developer_start(void); developer_start(); }

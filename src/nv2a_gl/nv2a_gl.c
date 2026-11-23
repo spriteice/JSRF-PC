@@ -1809,6 +1809,48 @@ void nv_window_file_path(const char *file, char *buf, size_t n)
     sdl_cfg_beside(buf, n, file);
 }
 
+/* File > Presets > Reset (nv_window_reset, below): every setting back to its
+ * default. The settings file keeps only the launchers' record of where the
+ * game is (SDL_CFG_KEEP: launcher/linux/jsrf_launcher.c's and
+ * launcher/windows/jsrf_launcher.c's game_dir=), without which the next start
+ * would ask for the game again; and the files beside it that hold settings
+ * go: Input's layouts (src/input/input_remap.c's INPUT_REMAP_FILE) and
+ * Developer's switches (port/developer.c's DEV_FILE). The saves, the shader
+ * cache and the logs are no settings, and stay. At the start the reset
+ * restarts into, before anything reads a setting (nv_window_reset_at_start),
+ * so nothing the run before held can write one back. */
+#define SDL_CFG_KEEP "game_dir"
+static const char *const k_cfg_side[] = { "remap.cfg", "developer.cfg" };
+void nv_window_settings_reset(void);
+void nv_window_settings_reset(void)
+{
+    char path[1024], tmp[1100], line[1200];
+    size_t kl = strlen(SDL_CFG_KEEP), i;
+    FILE *in, *out;
+    sdl_cfg_path(path, sizeof path);
+    if (!path[0]) return;
+    snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    if ((in = fopen(path, "r")) != NULL) {
+        if ((out = fopen(tmp, "w")) != NULL) {
+            while (fgets(line, sizeof line, in))
+                if (!strncmp(line, SDL_CFG_KEEP, kl) && line[kl] == '=') fputs(line, out);
+            fclose(out);
+            fclose(in);
+            /* As sdl_cfg_write: Windows' rename() replaces no file. */
+            if (rename(tmp, path) != 0) {
+                remove(path);
+                rename(tmp, path);
+            }
+        } else fclose(in);
+    }
+    for (i = 0; i < sizeof k_cfg_side / sizeof k_cfg_side[0]; i++) {
+        sdl_cfg_beside(path, sizeof path, k_cfg_side[i]);
+        if (path[0]) remove(path);
+    }
+    fprintf(stderr, "[WIN] settings reset to their defaults: the settings file but its "
+            SDL_CFG_KEEP "=, %s and %s\n", k_cfg_side[0], k_cfg_side[1]);
+}
+
 /* nv2a_widescreen() asks this when RECOMP_WIDESCREEN is not set. */
 int nv_window_pref_widescreen(void) { return sdl_cfg_get("widescreen", 1) != 0; }
 
@@ -2253,6 +2295,39 @@ void nv_window_restart(void)
     if (!recomp_restart_self) return;
     fprintf(stderr, "[WIN] restart chosen; restarting\n");
     sdl_restart(sdl_is_fullscreen());
+}
+
+/* File > Presets > Reset (src/menu/menu_sdl.cpp): the game started again at
+ * every setting's default, full screen as a new install starts. The new
+ * start is told by SDL_RESET_ENV, as it is told full screen, and clears the
+ * settings before anything reads one (nv_window_reset_at_start, which
+ * port/main.c calls first). Not offered where the game can't start itself
+ * again. */
+#define SDL_RESET_ENV "RECOMP_RESET_SETTINGS"
+static void sdl_reset_env(const char *v)
+{
+#if defined(_WIN32)
+    _putenv_s(SDL_RESET_ENV, v);
+#else
+    setenv(SDL_RESET_ENV, v, 1);
+#endif
+}
+void nv_window_reset(void);
+void nv_window_reset(void)
+{
+    if (!recomp_restart_self) return;
+    fprintf(stderr, "[WIN] reset chosen; restarting at the defaults\n");
+    sdl_reset_env("1");
+    sdl_restart(SDL_CFG_FULLSCREEN_DEFAULT);
+    sdl_reset_env("");          /* it couldn't: no reset at a later restart */
+}
+void nv_window_reset_at_start(void);
+void nv_window_reset_at_start(void)
+{
+    const char *e = getenv(SDL_RESET_ENV);
+    if (!e || strcmp(e, "1")) return;
+    sdl_reset_env("");          /* this start's alone, not File > Restart's after it */
+    nv_window_settings_reset();
 }
 
 /* Display > HUD (nv2a_hud_scale.h), a submenu right under Aspect ratio

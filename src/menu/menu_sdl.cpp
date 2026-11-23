@@ -113,6 +113,9 @@ static const char *about_text(void)
  * cannot start itself again (port/main.c's). */
 extern "C" void nv_window_restart(void);
 extern "C" void recomp_restart_self(void) __attribute__((weak));
+/* File > Presets > Reset: the game started again at every setting's
+ * default (nv2a_gl.c's nv_window_reset), where it can start itself again. */
+extern "C" void nv_window_reset(void);
 
 /* The window's close button: sdl_pump's SDL_QUIT, which reports and exits. */
 static void exit_game(void)
@@ -123,14 +126,16 @@ static void exit_game(void)
     SDL_PushEvent(&e);
 }
 
-/* File > Presets: every row the presets set (menu.h) put at the Xbox's own
- * settings, the heavy ones at their least, between, or at their most, each
- * by its owner's own function (menu_preset_apply); ticked where the
- * settings are now. Each applies at once, with no box, as Display >
- * Resolution does: the (Restart) rows, Shader cache and Audio effects, are
- * left to the player (spriteice's card, 02:00 UTC on 2026-11-21). A
- * (Restart) row a preset set would keep its value, and the game would
- * start again once, after them all. */
+/* File > Presets, a submenu (docs/menu-format.md): a row for each preset,
+ * every row the presets set (menu.h) put at the Xbox's own settings, the
+ * heavy ones at their least, between, or at their most, each by its owner's
+ * own function (menu_preset_apply), and ticked while the settings are its;
+ * then a line, and Reset (Restart) (spriteice, 23 November 2026). Each preset applies
+ * at once, with no box, as Display > Resolution does: the (Restart) rows,
+ * Shader cache and Audio effects, are left to the player (spriteice's card,
+ * 02:00 UTC on 2026-11-21). A (Restart) row a preset set would keep its
+ * value, and the game would start again once, after them all. */
+#define FILE_PRESETS "Presets"
 static const char *const k_preset_names[] = { "Xbox", "Performance", "Balanced", "Quality" };
 static_assert(sizeof k_preset_names / sizeof k_preset_names[0] == XBOX_PRESETS, "a name for each preset in menu.h");
 
@@ -139,19 +144,36 @@ static void preset_pick(int i)
     fprintf(stderr, "[MENU] preset %s chosen\n", k_preset_names[i]);
     if (menu_preset_apply(i)) nv_window_restart();     /* returns only where it can't */
 }
+/* A preset's row: ticked while it is the one the settings are at, and
+ * applied when chosen, ticked or not (nothing then differs). */
+template <int P> static int  preset_ticked(void) { return menu_preset_now() == P; }
+template <int P> static void preset_chosen(void) { preset_pick(P); }
 
 /* Every field, in order: C++11 has no designated initializers. */
 #define FILE_NO_PRESETS XBOX_PRESETS_UNSAID, { 0, 0, 0, 0 }, NULL
 #define FILE_NO_BIND    XBOX_BIND_NONE, NULL, NULL, NULL, 0
+/* A preset's row in File > Presets, by its name in k_preset_names. */
+#define FILE_PRESET(p, hint) \
+    { XBOX_MENU_FILE, XBOX_ITEM_TOGGLE, k_preset_names[p], preset_ticked<p>, preset_chosen<p>, NULL, NULL, 0, \
+      NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL, hint, FILE_NO_PRESETS, FILE_PRESETS, NULL, NULL, FILE_NO_BIND }
 static const XBOX_MENU_ITEM k_file[] = {
     { XBOX_MENU_FILE, XBOX_ITEM_INFO,      "About", NULL, NULL,      NULL, NULL, 0, about_text, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
       "Shows the engine version and relevant system details.", FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },
     { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL,    NULL, NULL,      NULL, NULL, 0, NULL,       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
       NULL, FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },
-    { XBOX_MENU_FILE, XBOX_ITEM_CHOICE,    "Presets", menu_preset_now, NULL, preset_pick,
-      k_preset_names, XBOX_PRESETS, NULL,
+    { XBOX_MENU_FILE, XBOX_ITEM_GROUP,     FILE_PRESETS, NULL, NULL, NULL, NULL, 0, NULL,
       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
-      "Sets many settings at once: the Xbox's own, the lightest, or the best.", FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },
+      "Sets many settings at once, or resets them all.", FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },
+    FILE_PRESET(XBOX_PRESET_XBOX,        "The game as the Xbox runs it: 640x480, 4:3, nothing added."),
+    FILE_PRESET(XBOX_PRESET_PERFORMANCE, "Lowers the heavy settings, for weaker PCs and handhelds."),
+    FILE_PRESET(XBOX_PRESET_BALANCED,    "Draws further and sharper than Performance, with MSAA at 4x."),
+    FILE_PRESET(XBOX_PRESET_QUALITY,     "Sets every graphics and display setting to its most."),
+    { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL,    NULL, NULL,      NULL, NULL, 0, NULL,       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
+      NULL, FILE_NO_PRESETS, FILE_PRESETS, NULL, NULL, FILE_NO_BIND },
+    { XBOX_MENU_FILE, XBOX_ITEM_ACTION,    "Reset (Restart)", NULL, nv_window_reset, NULL, NULL, 0, NULL,
+      "Reset every setting to its default and restart, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL,
+      "Puts every setting back to its default, then restarts the game.", FILE_NO_PRESETS, FILE_PRESETS, NULL, NULL,
+      FILE_NO_BIND },
     { XBOX_MENU_FILE, XBOX_ITEM_SEPARATOR, NULL,    NULL, NULL,      NULL, NULL, 0, NULL,       NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL,
       NULL, FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },
     { XBOX_MENU_FILE, XBOX_ITEM_ACTION,    "Restart", NULL, nv_window_restart, NULL, NULL, 0, NULL,
@@ -161,6 +183,21 @@ static const XBOX_MENU_ITEM k_file[] = {
       "Close the game, losing unsaved progress?", NULL, NULL, 0, 0, 0, NULL, 0, NULL,
       "Closes the game, losing unsaved progress.", FILE_NO_PRESETS, NULL, NULL, NULL, FILE_NO_BIND },
 };
+#define FILE_ROWS (int)(sizeof k_file / sizeof k_file[0])
+
+/* File's rows as the menu gets them, into rows, and how many: Restart, and
+ * Presets' Reset with the line above it, only where the game can start
+ * itself again (restarts: port/main.c's recomp_restart_self). */
+static int file_rows(XBOX_MENU_ITEM *rows, int restarts)
+{
+    int n = 0;
+    for (const XBOX_MENU_ITEM &it : k_file) {
+        int restarting = it.run == nv_window_restart || it.run == nv_window_reset
+                      || (it.kind == XBOX_ITEM_SEPARATOR && it.group);  /* Reset's line */
+        if (!restarting || restarts) rows[n++] = it;
+    }
+    return n;
+}
 
 /* ---- opening and closing ------------------------------------------------ */
 
@@ -233,13 +270,9 @@ extern "C" int xbox_MenuInit(SDL_Window *window, void *gl_context, const char *a
     if (!g_mu) return 0;
     g_about_gpu = about_gpu;
     g_about_gl = about_gl;
-    /* Restart only where the game can start itself again (port/main.c). */
     {
-        XBOX_MENU_ITEM rows[sizeof k_file / sizeof k_file[0]];
-        int n = 0;
-        for (const XBOX_MENU_ITEM &it : k_file)
-            if (it.run != nv_window_restart || recomp_restart_self) rows[n++] = it;
-        xbox_MenuAdd(rows, n);
+        XBOX_MENU_ITEM rows[FILE_ROWS];
+        xbox_MenuAdd(rows, file_rows(rows, recomp_restart_self ? 1 : 0));
     }
     g_ready = 1;
     fprintf(stderr, "[MENU] in-game menu: F1, or Back on a controller (Dear ImGui %s)\n",
