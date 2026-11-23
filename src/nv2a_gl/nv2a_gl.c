@@ -986,10 +986,11 @@ static void poly_offset_gl(float *factor, float *units)
  *
  * Nothing the title can observe changes with either -- its surfaces, their
  * sizes and the raster stay what they were. RECOMP_GL_SMAA=0|1 and
- * RECOMP_GL_MSAA=n win over the settings (the window's smaa= and msaa=). SMAA
- * is on by default, multisampling off.
+ * RECOMP_GL_MSAA=n win over the settings (the window's smaa= and msaa=). Both
+ * are off by default: SMAA was on before b2.2 (spriteice, 2026-11-23: "smaa
+ * off for engine defaults and performance").
  */
-#define SMAA_DEFAULT 1
+#define SMAA_DEFAULT 0
 #define MSAA_DEFAULT 0          /* samples a pixel, as msaa= keeps them: 0, none */
 #define MSAA_BALANCED 4         /* File > Presets > Balanced's (spriteice, 2026-11-23) */
 static volatile int g_smaa_want;       /* asked for */
@@ -1168,14 +1169,17 @@ enum { UP_SAID_VERDICT = 1, UP_SAID_NOT_2D = 2, UP_SAID_3D = 4, UP_SAID_3D_DEPTH
 
 /*
  * Anisotropic filtering: the most samples a texture with mipmaps is given
- * (tex_aniso), 8x unless RECOMP_GL_ANISO=n or the window's aniso= setting
- * asks for other; 0 or 1 is none beyond what the title asks for itself. It
+ * (tex_aniso), none unless RECOMP_GL_ANISO=n or the window's aniso= setting
+ * asks for more; 0 or 1 is none beyond what the title asks for itself. It
  * can change while the game runs: asked for at any time (the in-game menu)
  * and taken at the next flip, where every texture it reaches is made again
  * (aniso_take).
  */
 #define ANISO_NONE 1            /* one sample: off */
-#define ANISO_DEFAULT 8         /* our default (upstream's is 16x) */
+#define ANISO_DEFAULT ANISO_NONE /* our default since b2.2 (spriteice, 2026-11-23: "Texture
+                                 * filter off for engine defaults and performance"); it was
+                                 * 8x, and upstream's is 16x */
+#define ANISO_BALANCED 8        /* File > Presets > Balanced's */
 static volatile int g_aniso_want = ANISO_NONE;  /* the most samples asked for */
 static int          g_aniso_now = ANISO_NONE;   /* and in use */
 
@@ -1196,7 +1200,7 @@ static Nv2aUpSecond g_up_sec;   /* this second's work, for RECOMP_GL_UPSCALE_LOG
 
 /*
  * 3D upscaling (nv2a_upscale.h): the same, from the window's upscale_3d=
- * setting, 4x unless set otherwise (NV2A_UP3_DEFAULT), and at every
+ * setting, off unless set otherwise (NV2A_UP3_DEFAULT), and at every
  * resolution: a surface close to the camera magnifies its texture at
  * Default too.
  */
@@ -1206,7 +1210,7 @@ static Nv2aUpSecond g_up3_sec;  /* this second's work, for RECOMP_GL_UPSCALE_LOG
 
 /*
  * Graffiti upscaling (nv2a_upscale.h): the same, from the window's
- * upscale_graffiti= setting, 4x unless set otherwise (NV2A_UPG_DEFAULT),
+ * upscale_graffiti= setting, off unless set otherwise (NV2A_UPG_DEFAULT),
  * for the graffiti tags' sheets, with copies held under a cap of their own.
  */
 static volatile int g_upg_want; /* the factor asked for: 0, 2, 4 or 8 */
@@ -2475,9 +2479,10 @@ static void sdl_menu_smaa(void)
     const XBOX_MENU_ITEM row = {
         .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_TOGGLE, .label = "Anti-aliasing (SMAA)",
         .state = sdl_smaa_on, .run = sdl_smaa_flip,
-        /* File > Presets: off in Xbox, Performance and Balanced, which has
-         * MSAA in its place (spriteice, 2026-11-23). */
-        .presets = XBOX_PRESETS_SET, .preset = { 0, 0, 0, 0, 1 },
+        /* File > Presets: off in Xbox, in Performance, as the default is,
+         * and in Balanced, which has MSAA in its place (spriteice,
+         * 2026-11-23). */
+        .presets = XBOX_PRESETS_SET, .preset = { 0, 0, SMAA_DEFAULT, 0, 1 },
         .hint = "Smooths some jagged edges, less effective than MSAA. Light on the GPU." };
     if (G->target_smaa) xbox_MenuAdd(&row, 1);
 }
@@ -2510,8 +2515,8 @@ static void sdl_menu_aniso(void)
             .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Anisotropic filtering",
             .state = sdl_aniso_now, .pick = sdl_aniso_pick, .choices = sdl_aniso_names, .nchoices = n,
             .presets = XBOX_PRESETS_SET,
-            .preset = { sdl_aniso_index(ANISO_NONE), sdl_aniso_index(16), sdl_aniso_index(ANISO_NONE),
-                        sdl_aniso_index(ANISO_DEFAULT), XBOX_PRESET_MOST },
+            .preset = { sdl_aniso_index(ANISO_NONE), sdl_aniso_index(16), sdl_aniso_index(ANISO_DEFAULT),
+                        sdl_aniso_index(ANISO_BALANCED), XBOX_PRESET_MOST },
             .hint = "Keeps textures sharp when seen at an angle. Light on the GPU." };
         xbox_MenuAdd(&row, 1);
     }
@@ -2605,15 +2610,15 @@ static void sdl_up3_pick(int i)
 }
 static void sdl_menu_up3(void)
 {
-    /* The presets (File > Presets): off in Xbox and Performance, 4x in
-     * Balanced, and 8x in Quality. */
+    /* The presets (File > Presets): off in Xbox and, as the default is, in
+     * Performance, 4x in Balanced, and 8x in Quality. */
     const XBOX_MENU_ITEM row = {
         .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Textures",
         .state = sdl_up3_now, .pick = sdl_up3_pick, .choices = sdl_up_names,
         .nchoices = NV2A_UP_CHOICES,
         .presets = XBOX_PRESETS_SET,
-        .preset = { nv2a_up_choice(0), nv2a_up_choice(8), nv2a_up_choice(0), nv2a_up_choice(NV2A_UP3_DEFAULT),
-                    nv2a_up_choice(8) },
+        .preset = { nv2a_up_choice(0), nv2a_up_choice(8), nv2a_up_choice(NV2A_UP3_DEFAULT),
+                    nv2a_up_choice(NV2A_UP3_BALANCED), nv2a_up_choice(8) },
         .group = XBOX_GROUP_UPSCALING,
         .hint = "Sharpens textures in the 3D world at higher resolutions." };
     if (G->tex_upscale) xbox_MenuAdd(&row, 1);
@@ -2630,15 +2635,15 @@ static void sdl_upg_pick(int i)
 }
 static void sdl_menu_upg(void)
 {
-    /* The presets (File > Presets): off in Xbox and Performance, 4x in
-     * Balanced, and 8x in Quality. */
+    /* The presets (File > Presets): off in Xbox and, as the default is, in
+     * Performance, 4x in Balanced, and 8x in Quality. */
     const XBOX_MENU_ITEM row = {
         .menu = XBOX_MENU_GRAPHICS, .kind = XBOX_ITEM_CHOICE, .label = "Graffiti",
         .state = sdl_upg_now, .pick = sdl_upg_pick, .choices = sdl_up_names,
         .nchoices = NV2A_UP_CHOICES,
         .presets = XBOX_PRESETS_SET,
-        .preset = { nv2a_up_choice(0), nv2a_up_choice(4), nv2a_up_choice(0), nv2a_up_choice(NV2A_UPG_DEFAULT),
-                    nv2a_up_choice(8) },
+        .preset = { nv2a_up_choice(0), nv2a_up_choice(4), nv2a_up_choice(NV2A_UPG_DEFAULT),
+                    nv2a_up_choice(NV2A_UPG_BALANCED), nv2a_up_choice(8) },
         .group = XBOX_GROUP_UPSCALING,
         .hint = "Sharpens the graffiti tags at higher resolutions." };
     if (G->tex_upscale) xbox_MenuAdd(&row, 1);
@@ -16209,9 +16214,9 @@ static void aa_start(void)
 }
 
 /* Anisotropic filtering from the start, before the first texture is made:
- * RECOMP_GL_ANISO, else the window's setting, else 8x, as the
- * most samples the device takes at or below it, in powers of two; and its
- * menu row. */
+ * RECOMP_GL_ANISO, else the window's setting, else none (ANISO_DEFAULT), as
+ * the most samples the device takes at or below it, in powers of two; and
+ * its menu row. */
 static void aniso_start(void)
 {
     const char *v = getenv("RECOMP_GL_ANISO");
@@ -16286,7 +16291,7 @@ static void up_start(void)
                 g_up_now && !g_up_above ? ", nothing made at Default's resolution" : "");
 }
 
-/* 3D upscaling from the start: the window's setting, else 4x
+/* 3D upscaling from the start: the window's setting, else off
  * (NV2A_UP3_DEFAULT). Its menu row, Textures, comes after Buttons'
  * (gfx_init). */
 static void up3_start(void)
@@ -16302,7 +16307,7 @@ static void up3_start(void)
         fprintf(stderr, "  [GL] 3D upscaling: %dx from the settings (0 is off)\n", g_up3_now);
 }
 
-/* Graffiti upscaling from the start: the window's setting, else 4x
+/* Graffiti upscaling from the start: the window's setting, else off
  * (NV2A_UPG_DEFAULT). Its menu row, Graffiti, comes after Textures'
  * (gfx_init). */
 static void upg_start(void)

@@ -116,16 +116,17 @@ and Skip intro, Skip cutscenes, and Visual indicator on. Xbox and Modern each
 ask first, and restart the game; the other three apply straight away, with no
 restart.
 
-Performance has the draw distance, Far buildings and Far shadows at 1x, no
-anti-aliasing or anisotropic filtering, and Upscaling's Textures and Graffiti
-off. Balanced has the draw distance at 2x, Far buildings and Far shadows at
-3x, MSAA at 4x in place of SMAA, anisotropic filtering at 8x, and Upscaling at
-4x but for Buttons. Quality has the draw distance, Far buildings and Far
-shadows, anisotropic filtering, Upscaling's Menus and HUD, Buttons, Textures
-and Graffiti, and both anti-aliasings at their most, as far as the graphics
-card goes: it asks a lot of the computer, and Far buildings and Far shadows at
-All draw parts of a map you never see from where you are, such as the top of
-Dogenzaka Hill in its sky.
+Performance, which a new install starts with, has the draw distance, Far
+buildings and Far shadows at 1x, no anti-aliasing or anisotropic filtering,
+and Upscaling's Textures and Graffiti off. Balanced has the draw distance at
+2x, Far buildings and Far shadows at 3x, MSAA at 4x in place of SMAA,
+anisotropic filtering at 8x, and Upscaling at 4x but for Buttons. Quality has
+the draw distance, Far buildings and Far shadows, anisotropic filtering,
+Upscaling's Menus and HUD, Buttons, Textures and Graffiti, and both
+anti-aliasings at their most, as far as the graphics card goes: it asks a lot
+of the computer, and Far buildings and Far shadows at All draw parts of a map
+you never see from where you are, such as the top of Dogenzaka Hill in its
+sky.
 
 All but Xbox have the resolution and aspect ratio at Match screen, Music info
 in pause and See through fix on, and Upscaling's Menus and HUD at 4x or more.
@@ -148,38 +149,38 @@ are remembered as hudscale= (0.5 to 1.5) and hudoff= (1 for hidden) in the
 settings file. In split screen the HUD keeps its own size, though Disable HUD
 still hides it.
 
-Display > Draw distance in the in-game menu is how far away the game draws
-the things in its world: crowds, spray cans, props you can knock over,
-traffic, the police and the race's checkpoints. 1x is the game's own
-distances, 2x (the default) to 4x twice to four times them, and Unlimited as
-far as the camera sees. It changes straight away, asks more of the computer the
-further it goes, and is remembered as drawdistance= in the settings file (0
-for 1x to 4 for Unlimited). Above 2x it will struggle on weak hardware.
+Display > Draw distance in the in-game menu is how far away the game draws the
+things in its world: crowds, spray cans, props you can knock over, traffic,
+the police and the race's checkpoints. 1x, the default, is the game's own
+distances, 2x to 4x twice to four times them, and Unlimited as far as the
+camera sees. It changes straight away, asks more of the computer the further
+it goes, and is remembered as drawdistance= in the settings file (0 for 1x to
+4 for Unlimited). Above 2x it will struggle on weak hardware.
 
 Display > Building distance > Far buildings in the in-game menu draws more of
 the map, with the things in it, so buildings further off don't pop in as you
 come near. The game splits each map into areas, and draws only the ones the
-area the camera is in lists. Off is the game's own; 1x, 2x and 3x (the
-default) draw what the game would show from the areas one, two or three areas
-ahead; and All draws every area the game ever shows, which can put a part of
-the map in view where the game never shows it, such as the top of Dogenzaka
-Hill in the sky at its bottom. At any choice, a few areas of Dogenzaka Hill,
-Hikage Street, Kibogaoka Hill and Chuo Street aren't drawn from the places
-where they would hang in the sky or stand in the street's view, and come in as
-you reach them. It changes straight away, asks more of the computer the
-further it goes, and is remembered as farbuildingsahead= in the settings file
-(0 for Off to 4 for All).
+area the camera is in lists. Off is the game's own; 1x (the default), 2x and
+3x draw what the game would show from the areas one, two or three areas ahead;
+and All draws every area the game ever shows, which can put a part of the map
+in view where the game never shows it, such as the top of Dogenzaka Hill in
+the sky at its bottom. At any choice, a few areas of Dogenzaka Hill, Hikage
+Street, Kibogaoka Hill and Chuo Street aren't drawn from the places where they
+would hang in the sky or stand in the street's view, and come in as you reach
+them. It changes straight away, asks more of the computer the further it goes,
+and is remembered as farbuildingsahead= in the settings file (0 for Off to 4
+for All).
 
 Display > Building distance > Far shadows, below Far buildings, draws the
 shadows of the areas Far buildings adds too, as many areas ahead as its own
-choice, Off to All, and never further than Far buildings, so they don't pop
-in as you come near, at the cost of minor visual glitches, such as patches
-of light in shadows that move with the camera. Off, those areas have no
-shadows until you're near enough for the game to show them itself. 3x by
-default. It does nothing with Far buildings off, changes straight away, and
-is remembered as farshadowsahead= in the settings file (0 for Off to 4 for
-All). Before b2.1-hotfix the two were on or off, remembered as farbuildings=
-and farshadows=: until you choose again, 1 there reads as 3x and 0 as Off.
+choice, Off to All, and never further than Far buildings, so they don't pop in
+as you come near, at the cost of minor visual glitches, such as patches of
+light in shadows that move with the camera. Off, those areas have no shadows
+until you're near enough for the game to show them itself. 1x by default. It
+does nothing with Far buildings off, changes straight away, and is remembered
+as farshadowsahead= in the settings file (0 for Off to 4 for All). Before
+b2.1-hotfix the two were on or off, remembered as farbuildings= and
+farshadows=: until you choose again, 1 there reads as 3x and 0 as Off.
 
 Gameplay > Skips > Skip intro in the in-game menu leaves out the logos and the
 graffiti disclaimer the game opens with: it starts at the title screen's
@@ -227,19 +228,19 @@ straight away, with no restart, and is remembered as msaa= in the settings
 file (0, 2, 4, or 8). More asks more of the graphics card, the more so at the
 higher resolutions.
 
-Graphics > Anti-aliasing (SMAA) in the in-game menu smooths jagged edges
-with a quick pass over each finished frame, at much the same small cost
-whatever is on screen. It smooths the HUD too. It works alone or on top of
-MSAA. On by default; it changes straight away, with no restart, and is
-remembered as smaa= in the settings file (0 or 1).
+Graphics > Anti-aliasing (SMAA) in the in-game menu smooths jagged edges with
+a quick pass over each finished frame, at much the same small cost whatever is
+on screen. It smooths the HUD too. It works alone or on top of MSAA. Off by
+default; it changes straight away, with no restart, and is remembered as smaa=
+in the settings file (0 or 1).
 
 Graphics > Anisotropic filtering in the in-game menu keeps textures sharp
 where they are seen at a steep angle, such as streets and walls running into
-the distance: Off, 2x, 4x, 8x (the default), or 16x, as far as the graphics
+the distance: Off (the default), 2x, 4x, 8x, or 16x, as far as the graphics
 card goes. It changes straight away, with no restart, though the textures it
 reaches take a moment to load again, and is remembered as aniso= in the
-settings file (0, 2, 4, 8, or 16). It leaves things that face the screen,
-such as the HUD, as they were.
+settings file (0, 2, 4, 8, or 16). It leaves things that face the screen, such
+as the HUD, as they were.
 
 Graphics > Upscaling > Menus and HUD in the in-game menu draws the menus,
 text, HUD and icons from sharper copies of the game's art: Off, 2x, 4x (the
@@ -260,7 +261,7 @@ no restart, and is remembered as upscale_buttons= in the settings file (0, 2,
 
 Graphics > Upscaling > Textures in the in-game menu draws the textures of the
 3D world (walls, the ground, signs and the characters) from sharper copies:
-Off, 2x, 4x (the default), or 8x. The graphics card makes the copies in a
+Off (the default), 2x, 4x, or 8x. The graphics card makes the copies in a
 level's first moments, a few a frame. They show where a surface comes close
 enough to the camera for its texture to be enlarged, at any resolution and
 more so the higher it is. Distant surfaces, cut-out edges such as fences, and
@@ -271,7 +272,7 @@ textures 4x. The copies take up to 4 GB of the graphics card's memory, 1 to
 2.5 GB at 4x in play; whatever doesn't fit keeps the game's own textures.
 
 Graphics > Upscaling > Graffiti in the in-game menu draws the graffiti tags
-from sharper copies: Off, 2x, 4x (the default), or 8x. The tags come 16 to a
+from sharper copies: Off (the default), 2x, 4x, or 8x. The tags come 16 to a
 sheet of 1024 x 1024, and the graphics card makes a sheet's copy the first
 time it is drawn, after the 3D world's; the garage's graffiti picker has its
 copy made as it draws it, which can pause the menu for a moment. It changes
@@ -403,7 +404,7 @@ Controller layout can move the switch to another button.
 Input > Behaviour > Camera in the in-game menu is five ticks. Default cam fix
 keeps the game's own camera from showing through a wall beside it, which
 happens on the Xbox too and more in widescreen: near a wall, the view shifts a
-little to the side, or in. On by default; off, the game's camera is as on the
+little to the side, or in. Off by default, so the game's camera is as on the
 Xbox. No skater fade keeps the camera as far from your skater as the game
 shows them whole, seeing through a wall nearer than that; off by default, so
 the camera comes in to the wall and your skater fades out as it nears them.

@@ -68,19 +68,19 @@ MISC_SECOND = "[DRAW] Misc group 01E5E760: model 2C50, in area 1, at 0 places"
 
 # case: (settings file or None for none, log lines it must print)
 cases = {
-    "default": (None, ["[DRAW] objects at 2x (settings)", "[DRAW] Far buildings 3x (settings)",
-                       "[DRAW] Far shadows 3x (settings)"]),
+    "default": (None, ["[DRAW] objects at 1x (settings)", "[DRAW] Far buildings 1x (settings)",
+                       "[DRAW] Far shadows 1x (settings)"]),
     "off": ("drawdistance=0\nfarbuildingsahead=0\n", ["[DRAW] objects at 1x (settings)"]),
     "2x": ("drawdistance=1\n", ["[DRAW] objects at 2x (settings)"]),
     "3x": ("drawdistance=2\n", ["[DRAW] objects at 3x (settings)"]),
     "4x": ("drawdistance=3\n", ["[DRAW] objects at 4x (settings)"]),
     "unlimited": ("drawdistance=4\r\n", ["[DRAW] objects at Unlimited (settings)"]),
-    "bad_far": ("drawdistance=5\n", ["drawdistance=5 is not 0 to 4; using 1",
-                                     "[DRAW] objects at 2x (settings)"]),
-    "bad_half": ("drawdistance=2.5\n", ["drawdistance=2.5 is not 0 to 4; using 1"]),
-    "bad_below": ("drawdistance=-1\n", ["drawdistance=-1 is not 0 to 4; using 1"]),
-    "bad_word": ("drawdistance=far\n", ["drawdistance is not a number; using 1"]),
-    "bad_nan": ("drawdistance=nan\n", ["drawdistance=nan is not 0 to 4; using 1"]),
+    "bad_far": ("drawdistance=5\n", ["drawdistance=5 is not 0 to 4; using 0",
+                                     "[DRAW] objects at 1x (settings)"]),
+    "bad_half": ("drawdistance=2.5\n", ["drawdistance=2.5 is not 0 to 4; using 0"]),
+    "bad_below": ("drawdistance=-1\n", ["drawdistance=-1 is not 0 to 4; using 0"]),
+    "bad_word": ("drawdistance=far\n", ["drawdistance is not a number; using 0"]),
+    "bad_nan": ("drawdistance=nan\n", ["drawdistance=nan is not 0 to 4; using 0"]),
     "pick": ("game_dir=/games/jsrf\ndrawdistance=0\n",
              ["[DRAW] objects at 1x (settings)", "[DRAW] objects at 4x (the menu)"]),
     "log": ("drawdistance=1\nfarbuildingsahead=0\n", [LOG, "props and traffic 2.0 (0.0), enemies 0.0 (0.0), "
@@ -95,16 +95,17 @@ cases = {
     "reach_all": ("farbuildingsahead=4\nfarshadowsahead=4\n",
                   ["[DRAW] Far buildings All (settings)", "[DRAW] Far shadows All (settings)",
                    *map_lines("All")]),
-    # A key the rows don't have: 3x, the default, and the log says so.
+    # A key the rows don't have: 1x, the default, and the log says so.
     "far_bad": ("farbuildingsahead=5\nfarshadowsahead=1.5\n",
-                ["[DRAW] settings: farbuildingsahead=5 is not 0 to 4; using 3",
-                 "[DRAW] settings: farshadowsahead=1.5 is not 0 to 4; using 3",
-                 "[DRAW] Far buildings 3x (settings)", "[DRAW] Far shadows 3x (settings)"]),
+                ["[DRAW] settings: farbuildingsahead=5 is not 0 to 4; using 1",
+                 "[DRAW] settings: farshadowsahead=1.5 is not 0 to 4; using 1",
+                 "[DRAW] Far buildings 1x (settings)", "[DRAW] Far shadows 1x (settings)"]),
     "far_bad_word": ("farbuildingsahead=far\nfarbuildings=0\n",
-                     ["[DRAW] settings: farbuildingsahead is not a number; using 3",
-                      "[DRAW] Far buildings 3x (settings)"]),
+                     ["[DRAW] settings: farbuildingsahead is not a number; using 1",
+                      "[DRAW] Far buildings 1x (settings)"]),
     # The toggles kept before b2.1-hotfix, with no key of the new: 0 Off, and
-    # 1, which drew every listed area, the default, 3x.
+    # 1, which drew every listed area, 3x, as b2.1-hotfix read it, though the
+    # default is 1x since b2.2.
     "legacy_on": ("farbuildings=1\nfarshadows=1\n",
                   ["[DRAW] Far buildings 3x (settings)", "[DRAW] Far shadows 3x (settings)"]),
     "legacy_off": ("farbuildings=0\nfarshadows=0\n",
@@ -114,18 +115,18 @@ cases = {
     "far_pick": ("game_dir=/games/jsrf\nfarbuildingsahead=0\nfarbuildings=1\n",
                  ["[DRAW] Far buildings Off (settings)", "[DRAW] Far buildings 2x (the menu)", *map_lines("2x")]),
     "shadows_pick": ("game_dir=/games/jsrf\n",
-                     ["[DRAW] Far shadows 3x (settings)", "[DRAW] Far shadows 1x (the menu)"]),
+                     ["[DRAW] Far shadows 1x (settings)", "[DRAW] Far shadows 2x (the menu)"]),
     "shadows": ("game_dir=/games/jsrf\n",
                 ["[DRAW] Far buildings 1x (the menu)", "[DRAW] Far shadows All (the menu)",
                  "[DRAW] Far buildings All (the menu)", "[DRAW] Far shadows Off (the menu)"]),
-    "far_log": ("drawdistance=0\nfarshadowsahead=0\n", ["[DRAW] t=5.1 1x, " + AREAS + EYE]),
-    "far_log_shadows": ("drawdistance=0\n",
+    "far_log": ("drawdistance=0\nfarbuildingsahead=3\nfarshadowsahead=0\n", ["[DRAW] t=5.1 1x, " + AREAS + EYE]),
+    "far_log_shadows": ("drawdistance=0\nfarbuildingsahead=3\nfarshadowsahead=3\n",
                         ["[DRAW] t=5.1 1x, " + AREAS.replace("Off, shadow passes a frame 2.0, each adding 0.0",
                                                              "3x, shadow passes a frame 2.0, each adding 4.0")]),
-    "far_log_1x": ("drawdistance=0\nfarshadowsahead=1\n",
+    "far_log_1x": ("drawdistance=0\nfarbuildingsahead=3\nfarshadowsahead=1\n",
                    ["[DRAW] t=5.1 1x, " + AREAS.replace("Off, shadow passes a frame 2.0, each adding 0.0",
                                                         "1x, shadow passes a frame 2.0, each adding 1.0")]),
-    "far_log_2x": ("drawdistance=1\nfarshadowsahead=0\n",
+    "far_log_2x": ("drawdistance=1\nfarbuildingsahead=3\nfarshadowsahead=0\n",
                    ["[DRAW] t=5.1 2x, a frame's objects (past 1x's distance): crowds 1.0 (0.0), pickups 0.0 (0.0)",
                     "attached part 0.0 (0.0); " + AREAS]),
     "far_misc": ("farbuildingsahead=3\n", [MISC_FIRST, MISC_FIRST.replace("at 0", "at 1"),
@@ -211,7 +212,7 @@ unwanted = {
 # Far shadows', with the file's other keys as they were.
 kept_after = {
     "far_pick": (["farbuildingsahead=2\n", "farbuildings=1\n", "game_dir=/games/jsrf\n"], ["farshadowsahead"]),
-    "shadows_pick": (["farshadowsahead=1\n", "game_dir=/games/jsrf\n"], ["farbuildingsahead"]),
+    "shadows_pick": (["farshadowsahead=2\n", "game_dir=/games/jsrf\n"], ["farbuildingsahead"]),
     "shadows": (["farbuildingsahead=4\n", "farshadowsahead=0\n", "game_dir=/games/jsrf\n"], []),
     # Developer > Far buildings test's rows aren't kept.
     "far_test": (["farbuildingsahead=3\nfarshadowsahead=1\n"], ["leave", "backdrop", "test"]),

@@ -892,8 +892,8 @@ static void test_backdrop_flip(void)
 #endif
 
 /* A step from the settings, key= 0 to 4. With no key=, the toggle kept before
- * b2.1-hotfix, legacy=: Off for 0, and def for 1 rather than All, which was
- * what on drew (known bug 57). */
+ * b2.1-hotfix, legacy=: Off for 0, and 3x (DRAW_FAR_ONCE_ON) for 1 rather
+ * than All, which was what on drew (known bug 57). With neither, def. */
 static int far_setting(const char *key, const char *legacy, int def)
 {
     double v;
@@ -905,7 +905,7 @@ static int far_setting(const char *key, const char *legacy, int def)
     else if (r < 0)
         fprintf(stderr, "[DRAW] settings: %s is not a number; using %d\n", key, def);
     else if (nv_window_pref_num(legacy, &v) > 0)
-        return v != 0 ? def : 0;
+        return v != 0 ? DRAW_FAR_ONCE_ON : 0;
     return def;
 }
 
@@ -935,15 +935,16 @@ void draw_distance_start(void)
          * there; Far buildings and Far shadows go in the submenu. */
         const XBOX_MENU_ITEM rows[] = {
             /* File > Presets: the game's own distances and areas in Xbox,
-             * 3x of each in Modern, the least past the game's in
-             * Performance, the defaults in Balanced, and the most in
-             * Quality, Far buildings' and Far shadows' All among them
+             * 3x of each in Modern, the defaults in Performance (the least
+             * past the game's), 2x and 3x in Balanced (the defaults before
+             * b2.2), and the most in Quality, All among them
              * (spriteice, 2026-11-23; docs/menu-format.md). */
             { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Draw distance",
               .state = menu_step, .pick = menu_step_pick,
               .choices = k_names, .nchoices = DRAW_DISTANCE_STEPS, .under = DRAW_UNDER,
               .presets = XBOX_PRESETS_SET,
-              .preset = { 0, 2, 0, DRAW_DISTANCE_DEFAULT, DRAW_DISTANCE_UNLIMITED },  /* 1x, 3x, 1x, 2x, Unlimited */
+              .preset = { 0, 2, DRAW_DISTANCE_DEFAULT, DRAW_DISTANCE_BALANCED,
+                          DRAW_DISTANCE_UNLIMITED },                      /* 1x, 3x, 1x, 2x, Unlimited */
               .hint = "Sets how far crowds, vehicles, props, and police are drawn. CPU heavy." },
             { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_GROUP, .label = DRAW_GROUP,
               .under = DRAW_UNDER, .hint = "Draws more of the map and its shadows to reduce pop-in." },
@@ -953,15 +954,15 @@ void draw_distance_start(void)
               .state = menu_far, .pick = menu_far_pick, .group = DRAW_GROUP,
               .choices = k_far_names, .nchoices = DRAW_FAR_STEPS,
               .presets = XBOX_PRESETS_SET,
-              .preset = { 0, 3, 1, DRAW_FAR_DEFAULT, DRAW_FAR_WHOLE },     /* Off, 3x, 1x, 3x, All */
+              .preset = { 0, 3, DRAW_FAR_DEFAULT, DRAW_FAR_BALANCED, DRAW_FAR_WHOLE },     /* Off, 3x, 1x, 3x, All */
               .hint = "Sets how many areas ahead buildings are drawn. CPU heavy." },
-            /* 3x by default: less pop-in is worth the glitches it can cause
-             * (known bug 52). Never further than Far buildings. */
+            /* On by default, at 1x: less pop-in is worth the glitches it can
+             * cause (known bug 52). Never further than Far buildings. */
             { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_CHOICE, .label = "Far shadows",
               .state = menu_shadows, .pick = menu_shadows_pick, .group = DRAW_GROUP,
               .choices = k_far_names, .nchoices = DRAW_FAR_STEPS,
               .presets = XBOX_PRESETS_SET,
-              .preset = { 0, 3, 1, DRAW_SHADOWS_DEFAULT, DRAW_FAR_WHOLE },     /* Off, 3x, 1x, 3x, All */
+              .preset = { 0, 3, DRAW_SHADOWS_DEFAULT, DRAW_SHADOWS_BALANCED, DRAW_FAR_WHOLE }, /* Off, 3x, 1x, 3x, All */
               .hint = "Sets how many areas ahead shadows are drawn. Minor glitches." },
         };
         /* Developer > Far buildings test, a submenu of two rows that change at

@@ -280,10 +280,14 @@ in a submenu of its own.
   Skip cutscenes and Visual indicator on.
   **Performance** has the heavy settings at their least: Draw distance,
   Far buildings and Far shadows at 1x, no anti-aliasing and no anisotropic
-  filtering, and Upscaling's Textures and Graffiti off.
+  filtering, and Upscaling's Textures and Graffiti off. Since b2.2 these
+  are the defaults, each taken from its row's own default, so a new
+  install, and Reset, start with Performance ticked (spriteice, 23 November
+  2026: "New engine defaults to performance").
   **Balanced** is between: Draw distance at 2x, Far buildings and Far
   shadows at 3x, MSAA at 4x in place of SMAA, anisotropic filtering at 8x,
-  and Upscaling at 4x but for Buttons.
+  and Upscaling at 4x but for Buttons. But for its anti-aliasing, these
+  were the defaults before b2.2; each is now a value of Balanced's own.
   **Quality** has each graphics and display setting that has a most at its
   most: the last choice, or the most the device has. That takes in Far
   buildings' and Far shadows' All, which draws parts of a map the game

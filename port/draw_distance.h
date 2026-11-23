@@ -1,8 +1,8 @@
 /* Draw distance: how far the game draws the objects in its world, and its
  * buildings.
  *
- * Display > Draw distance, kept as drawdistance= in the settings file: 1x (0)
- * is the game's own distances, 2x, 3x and 4x (1 to 3, 2x the default) twice to
+ * Display > Draw distance, kept as drawdistance= in the settings file: 1x (0,
+ * the default) is the game's own distances, 2x, 3x and 4x (1 to 3) twice to
  * four times them, and Unlimited (4) no distance at all, up to the camera's far
  * plane. It changes at once. The game decides whether to draw each object in a
  * few gates, each comparing the object's depth in front of the eye with
@@ -11,7 +11,7 @@
  * one attached part.
  *
  * Display > Building distance, a submenu right below Draw distance, holds two
- * rows. Far buildings, kept as farbuildingsahead= (0 to 4, 3 the default):
+ * rows. Far buildings, kept as farbuildingsahead= (0 to 4, 1 the default):
  * the buildings aren't cut by distance but by area. Each frame the camera
  * makes the set of the map's areas to draw, the ones the visible list of the
  * area it is in names, and nothing outside the set is drawn: neither the
@@ -34,7 +34,7 @@
  * past the halfpipe's west end, from a stretch further down it (known bug
  * 75; draw_buildings_stage). It changes at once.
  *
- * Far shadows, below it, kept as farshadowsahead= (the same steps, 3 the
+ * Far shadows, below it, kept as farshadowsahead= (the same steps, 1 the
  * default): the map's shadows are drawn from the game's set widened the same
  * way, as far as Far buildings goes and no further (draw_buildings_shadows),
  * so the areas Far buildings adds have their shadows and a far street's
@@ -51,7 +51,7 @@
  *
  * Before b2.1-hotfix the two rows were toggles, kept as farbuildings= and
  * farshadows= (1 on, 0 off, on drawing the whole map): with no step of its
- * own in the settings, a row takes Off for 0 and its default for 1.
+ * own in the settings, a row takes Off for 0 and 3x for 1 (DRAW_FAR_ONCE_ON).
  *
  * Developer > Far buildings test holds two rows, not kept, to find which
  * area Far buildings adds draws what it shouldn't (draw_far_test_backdrop).
@@ -76,13 +76,23 @@
  * and All (every listed area). */
 #define DRAW_FAR_STEPS          5
 #define DRAW_FAR_WHOLE          4
-/* The defaults, with nothing for them in the settings: 2x, and Far buildings
- * and Far shadows 3x (spriteice, 14 November 2026: "3 areas ahead" on the
- * card at 15:22 UTC, and at 15:23 UTC "with 3 areas ahead being the default"
- * for Far shadows; named 3x at 15:24 UTC). */
-#define DRAW_DISTANCE_DEFAULT   1
-#define DRAW_FAR_DEFAULT        3
-#define DRAW_SHADOWS_DEFAULT    3
+/* The defaults, with nothing for them in the settings: 1x, and Far buildings
+ * and Far shadows 1x, which are File > Presets > Performance's (spriteice,
+ * 23 November 2026: "New engine defaults to performance"). Before b2.2 they
+ * were 2x, and 3x for the two. */
+#define DRAW_DISTANCE_DEFAULT   0
+#define DRAW_FAR_DEFAULT        1
+#define DRAW_SHADOWS_DEFAULT    1
+/* File > Presets > Balanced's: 2x, and Far buildings and Far shadows 3x,
+ * the defaults before b2.2 (spriteice, 14 November 2026: "3 areas ahead" on
+ * the card at 15:22 UTC, and at 15:23 UTC "with 3 areas ahead being the
+ * default" for Far shadows; named 3x at 15:24 UTC). */
+#define DRAW_DISTANCE_BALANCED  1
+#define DRAW_FAR_BALANCED       3
+#define DRAW_SHADOWS_BALANCED   3
+/* What the toggle kept before b2.1-hotfix reads as, on (farbuildings=1,
+ * farshadows=1): 3x, as b2.1-hotfix read it, whatever the default is now. */
+#define DRAW_FAR_ONCE_ON        3
 
 /* At start, before the game runs: reads the settings and adds the in-game
  * menu's Display rows: Draw distance, then the Building distance submenu with

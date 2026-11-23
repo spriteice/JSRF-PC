@@ -39,8 +39,8 @@ src/nv2a_gl/nv2a_gl.c verbatim (sdl_cfg_path through sdl_cfg_set, with
 nv_window_pref_num between them), as tests/intro does; test_setting.c
 stands in for the menu, to see that the file adds no row: the two are
 the first ticks of Input > Behaviour > Camera, port/camera_scenes.c's row
-(tests/camera_scenes). Default cam fix: on with no dcamfix= and with
-dcamfix=1, off with dcamfix=0, and its tick (camwall_flip) turning it off
+(tests/camera_scenes). Default cam fix: off with no dcamfix= and with
+dcamfix=0, on with dcamfix=1, and its tick (camwall_flip) turning it off
 at once and keeping dcamfix=0. No skater fade: off with no noskaterfade=
 and with noskaterfade=0, on with noskaterfade=1, and its tick
 (camwall_whole_flip) turning it on at once, off again and on, keeping
@@ -126,15 +126,15 @@ cases = {
 # Default cam fix and No skater fade: case: (settings file or None for
 # none, log lines it must print)
 setting_cases = {
-    "default": (None, ["[CAMWALL] default cam fix on (settings)",
+    "default": (None, ["[CAMWALL] default cam fix off (settings)",
                        "[CAMWALL] no skater fade off (settings)"]),
     "on": ("dcamfix=1\n", ["[CAMWALL] default cam fix on (settings)",
                            "[CAMWALL] no skater fade off (settings)"]),
     "off": ("dcamfix=0\n", ["[CAMWALL] default cam fix off (settings)"]),
-    "flip": ("game_dir=/games/jsrf\nnoskaterfade=1\n",
+    "flip": ("game_dir=/games/jsrf\ndcamfix=1\nnoskaterfade=1\n",
              ["[CAMWALL] default cam fix on (settings)", "[CAMWALL] no skater fade on (settings)",
               "[CAMWALL] default cam fix off (the menu)"]),
-    "whole_on": ("noskaterfade=1\n", ["[CAMWALL] no skater fade on (settings)"]),
+    "whole_on": ("dcamfix=1\nnoskaterfade=1\n", ["[CAMWALL] no skater fade on (settings)"]),
     "whole_off": ("noskaterfade=0\n", ["[CAMWALL] no skater fade off (settings)"]),
     "whole_flip": ("game_dir=/games/jsrf\ndcamfix=0\n",
                    ["[CAMWALL] no skater fade off (settings)",

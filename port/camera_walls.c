@@ -27,8 +27,9 @@ static int nv_window_pref_num(const char *key, double *v)
 }
 #endif
 
-/* On with no dcamfix= in the settings. */
-#define CAMWALL_DEFAULT 1
+/* Off with no dcamfix= in the settings, since b2.2 (spriteice, 23 November
+ * 2026: "with default cam switch off"); it was on. */
+#define CAMWALL_DEFAULT 0
 
 static volatile int s_on = CAMWALL_DEFAULT;
 static volatile int s_whole = CAMWALL_WHOLE_DEFAULT;

@@ -647,9 +647,10 @@ static void bytes_3d(void)
     CHECK(nv2a_up_bytes(8, 8, 2, 1, 1) == nv2a_up_bytes(8, 8, 2, 1, 4));
     /* The largest at 8x with its whole chain, about 85 MB. */
     CHECK(nv2a_up_bytes(512, 512, 8, 1, 10) / MB == 85);
-    /* The setting: 4x as a new install starts, the Graphics row's third
-     * choice. */
-    CHECK(NV2A_UP3_DEFAULT == 4 && nv2a_up_choice(NV2A_UP3_DEFAULT) == 2);
+    /* The setting: off as a new install starts since b2.2, the Graphics
+     * row's first choice; and Balanced's, 4x, its third. */
+    CHECK(NV2A_UP3_DEFAULT == 0 && nv2a_up_choice(NV2A_UP3_DEFAULT) == 0);
+    CHECK(NV2A_UP3_BALANCED == 4 && nv2a_up_choice(NV2A_UP3_BALANCED) == 2);
     CHECK(NV2A_UP3_HELD_MAX == 4096 * MB);
 }
 
@@ -854,9 +855,10 @@ static void factor_g(void)
     CHECK(nv2a_up_bytes(1024, 1024, 8, 1, 11) / MB == 341);
     CHECK(3 * nv2a_up_bytes(1024, 1024, 8, 1, 11) <= NV2A_UPG_HELD_MAX);
     CHECK(3 * nv2a_up_bytes(1024, 1024, 8, 0, 1) <= NV2A_UPG_HELD_MAX);
-    /* The setting: 4x as a new install starts, the row's third choice;
-     * the cap, 1 GB. */
-    CHECK(NV2A_UPG_DEFAULT == 4 && nv2a_up_choice(NV2A_UPG_DEFAULT) == 2);
+    /* The setting: off as a new install starts since b2.2, the row's first
+     * choice; Balanced's, 4x, its third; the cap, 1 GB. */
+    CHECK(NV2A_UPG_DEFAULT == 0 && nv2a_up_choice(NV2A_UPG_DEFAULT) == 0);
+    CHECK(NV2A_UPG_BALANCED == 4 && nv2a_up_choice(NV2A_UPG_BALANCED) == 2);
     CHECK(NV2A_UPG_HELD_MAX == 1024 * MB);
     /* The summary line a second. */
     memset(&s, 0, sizeof s);

@@ -388,9 +388,11 @@ int nv2a_up3_census_wants(const Nv2aUp3Bind *b, int verdict);
 int nv2a_up3_census_line(char *buf, size_t n, uint32_t addr, uint32_t fmt,
                          const Nv2aUp3Bind *b, int vp, int verdict);
 
-/* The setting a new install starts with: 4x, whose copies of a busy scene
- * fit under NV2A_UP3_HELD_MAX whole. */
-#define NV2A_UP3_DEFAULT 4
+/* The setting a new install starts with: off since b2.2, as File > Presets >
+ * Performance has it (spriteice, 2026-11-23). And Balanced's, the default
+ * before: 4x, whose copies of a busy scene fit under NV2A_UP3_HELD_MAX whole. */
+#define NV2A_UP3_DEFAULT 0
+#define NV2A_UP3_BALANCED 4
 
 /* The longest side a 3D copy may have, in texels. A texture whose side
  * times the setting would pass it is copied at the largest smaller factor
@@ -463,10 +465,12 @@ int nv2a_upg_census_wants(const Nv2aUp3Bind *b, int verdict);
 int nv2a_upg_census_line(char *buf, size_t n, uint32_t addr, uint32_t fmt,
                          const Nv2aUp3Bind *b, int vp, int verdict);
 
-/* The setting a new install starts with: 4x, as 3D upscaling's: about
- * 85 MB a sheet, and the garage picker's two copies (its sheet and the
- * chosen design) well under NV2A_UPG_HELD_MAX. */
-#define NV2A_UPG_DEFAULT 4
+/* The setting a new install starts with: off since b2.2, as 3D upscaling's.
+ * And Balanced's, the default before: 4x, about 85 MB a sheet, and the
+ * garage picker's two copies (its sheet and the chosen design) well under
+ * NV2A_UPG_HELD_MAX. */
+#define NV2A_UPG_DEFAULT 0
+#define NV2A_UPG_BALANCED 4
 
 /* The longest side a graffiti copy may have: a 1024 sheet at 8x. Every
  * graphics card the port runs on takes 8192 a side or more; one whose limit

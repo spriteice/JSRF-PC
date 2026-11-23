@@ -297,9 +297,10 @@ running while it is open, but your input goes to the menu.
   Button prompts' Style Auto, Default cam fix on and the game's three shots
   off, the free camera on, and Skip intro, Skip cutscenes and Visual
   indicator on. Xbox and Modern each ask first, and restart the game. The
-  other three apply straight away, with no restart. Performance has the
-  draw distance, Far buildings and Far shadows at 1x, no anti-aliasing or
-  anisotropic filtering, and Upscaling's Textures and Graffiti off. Balanced
+  other three apply straight away, with no restart. Performance, which a
+  new install starts with, has the draw distance, Far buildings and Far
+  shadows at 1x, no anti-aliasing or anisotropic filtering, and Upscaling's
+  Textures and Graffiti off. Balanced
   has the draw distance at 2x, Far buildings and Far shadows at 3x, MSAA at
   4x in place of SMAA, anisotropic filtering at 8x, and Upscaling at 4x but
   for Buttons. Quality has the draw distance, Far buildings and Far
@@ -344,14 +345,14 @@ running while it is open, but your input goes to the menu.
   `aspect=` (with `widescreen=` for on or off) in the settings file. Draw
   distance is how far away the game draws the things in its world: crowds,
   spray cans, props you can knock over, traffic, the police and the race's
-  checkpoints. 1x is the game's own distances, 2x (the default) to 4x twice
+  checkpoints. 1x, the default, is the game's own distances, 2x to 4x twice
   to four times them, and Unlimited as far as the camera sees. It changes at once, costs
   more the further it goes, and is kept as `drawdistance=` (0 for 1x to 4 for
   Unlimited) in the settings file. Above 2x it will struggle on weak hardware.
   In Building distance, Far buildings draws more of the map, with the things
   in it, so buildings further off don't pop in as you come near. The game
   splits each map into areas, and draws only the ones the area the camera is
-  in lists. Off is the game's own; 1x, 2x and 3x (the default) draw what the
+  in lists. Off is the game's own; 1x (the default), 2x and 3x draw what the
   game would show from the areas one, two or three areas ahead; and All draws
   every area the game ever shows, which can put a part of the map in view
   where the game never shows it, such as the top of Dogenzaka Hill in the sky
@@ -378,7 +379,7 @@ running while it is open, but your input goes to the menu.
   patches on that wall, and so does some scenery on Kibogaoka Hill, whose
   shadows lit patches on a walkway across the bowl from it. Off, those areas
   have no shadows until you're near enough for the game to show them itself.
-  3x by default; it does nothing with Far buildings off, changes at once, and
+  1x by default; it does nothing with Far buildings off, changes at once, and
   is kept as `farshadowsahead=` (0 for
   Off to 4 for All) in the settings file. Before b2.1-hotfix the two were on
   or off, kept as `farbuildings=` and `farshadows=`: until you choose again,
@@ -431,7 +432,7 @@ running while it is open, but your input goes to the menu.
   line along the bottom: Default cam fix and No skater fade, for walls, then
   the game's own shots, Graffiti cam, Half pipe cam and Loop cam. Default
   cam fix keeps the game's own camera out of
-  walls (Near walls, above). On by default; off, the game's camera is as on the Xbox. It
+  walls (Near walls, above). Off by default, so the game's camera is as on the Xbox. It
   changes at once, and is kept as `dcamfix=` (1 or 0) in the settings file.
   No skater fade keeps the camera as far from your skater as the game shows
   them whole, seeing through a wall nearer than that ([Near
@@ -688,12 +689,11 @@ These are in the in-game menu, under Graphics.
   when it starts, so play doesn't pause for them. On by default. Changing it
   restarts the game, and no preset changes it.
 - **Anisotropic filtering:** 2× to 16×. It keeps textures sharp where they are
-  seen at an angle, such as streets running into the distance. 8× by default,
-  or as much as the graphics card takes, if that is less.
+  seen at an angle, such as streets running into the distance. Off by default.
 - **Anti-aliasing:** Smooths jagged edges. SMAA costs little and smooths the
   finished picture, the HUD included. MSAA (2×, 4×, or 8×) gives the cleanest
-  edges but asks the most of the graphics card. Use either, or both. SMAA is
-  on by default, MSAA off.
+  edges but asks the most of the graphics card. Use either, or both. Both are
+  off by default.
 - **Upscaling:** A submenu at the foot of Graphics, with seven rows:
   - **Menus and HUD:** Off, 2×, 4×, or 8×. The menus, text, HUD and icons are
     drawn from sharper copies of the game's art, which the graphics card makes
@@ -721,14 +721,14 @@ These are in the in-game menu, under Graphics.
     shadow look as they always have. No
     copy is larger than 2048 a side, so 8× enlarges the larger textures 4×. The
     copies take up to 4 GB of the graphics card's memory, 1 to 2.5 GB at 4× in
-    play; whatever doesn't fit keeps the game's own textures. 4× by default.
+    play; whatever doesn't fit keeps the game's own textures. Off by default.
   - **Graffiti:** Off, 2×, 4×, or 8×. The graffiti tags are drawn from sharper
     copies. The tags come 16 to a sheet of 1024 × 1024, and the graphics card
     makes a sheet's copy the first time it is drawn, after the 3D world's; the
     garage's graffiti picker has its copy made as it draws it, which can pause
     the menu for a moment. The copies take up to 1 GB of the graphics card's
     memory, apart from Textures': about 85 MB a sheet at 4× and 340 MB at 8×.
-    4× by default.
+    Off by default.
   - **Sharpness:** Soft, Normal, or Sharp. How crisp the edges in the 2D, 3D,
     buttons' and graffiti copies are. Normal is Super-xBR as its author set it; Sharp draws
     edges crisper and Soft softer, neither with halos. Changing it makes every

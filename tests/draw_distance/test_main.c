@@ -409,7 +409,7 @@ static void check_misc(void)
      * object 1 is named once on it, not once before and again after. */
     s_far_row.pick(0);
     draw_misc_drawn(MISC_OBJECT(1), MISC_MODEL(1), 1, 0);
-    s_far_row.pick(DRAW_FAR_DEFAULT);
+    s_far_row.pick(3);
     CHECK(draw_far_buildings());
     draw_misc_drawn(MISC_OBJECT(1), MISC_MODEL(1), 1, 0);
     misc_map(AREAS - 1);
@@ -1179,9 +1179,10 @@ int main(int argc, char **argv)
     CHECK(!strcmp(s_row.choices[DRAW_DISTANCE_UNLIMITED], "Unlimited"));
     CHECK(s_row.state() == draw_distance_step());
     /* File > Presets: the game's own 1x and areas in Xbox (Off), 3x of each
-     * in Modern, 1x in Performance, the most in Quality (Unlimited, and All
-     * for Far buildings and Far shadows, the sky buildings of known bug 57
-     * with it), and Balanced's what a start with none of the keys gives. */
+     * in Modern, 1x in Performance, which is what a start with none of the
+     * keys gives, 2x and 3x in Balanced, the defaults before b2.2, and the
+     * most in Quality (Unlimited, and All for Far buildings and Far
+     * shadows, the sky buildings of known bug 57 with it). */
     CHECK(s_row.presets == XBOX_PRESETS_SET && !s_row.keep && s_far_row.presets == XBOX_PRESETS_SET && !s_far_row.keep);
     CHECK(s_row.preset[XBOX_PRESET_MODERN] == 2 && s_far_row.preset[XBOX_PRESET_MODERN] == 3
           && s_shadow_row.preset[XBOX_PRESET_MODERN] == 3);         /* 3x of each */
@@ -1192,19 +1193,30 @@ int main(int argc, char **argv)
     CHECK(s_shadow_row.presets == XBOX_PRESETS_SET && !s_shadow_row.keep);
     CHECK(s_shadow_row.preset[XBOX_PRESET_XBOX] == 0 && s_shadow_row.preset[XBOX_PRESET_PERFORMANCE] == 1
           && s_shadow_row.preset[XBOX_PRESET_QUALITY] == DRAW_FAR_WHOLE);
+    CHECK(s_row.preset[XBOX_PRESET_BALANCED] == 1 && DRAW_DISTANCE_BALANCED == 1
+          && s_far_row.preset[XBOX_PRESET_BALANCED] == 3 && DRAW_FAR_BALANCED == 3
+          && s_shadow_row.preset[XBOX_PRESET_BALANCED] == 3 && DRAW_SHADOWS_BALANCED == 3);
     if (!strcmp(c, "default"))
-        CHECK(s_row.preset[XBOX_PRESET_BALANCED] == draw_distance_step() &&
-              s_far_row.preset[XBOX_PRESET_BALANCED] == draw_far_buildings() &&
-              s_shadow_row.preset[XBOX_PRESET_BALANCED] == draw_far_shadows());
+        CHECK(s_row.preset[XBOX_PRESET_PERFORMANCE] == draw_distance_step() &&
+              s_far_row.preset[XBOX_PRESET_PERFORMANCE] == draw_far_buildings() &&
+              s_shadow_row.preset[XBOX_PRESET_PERFORMANCE] == draw_far_shadows());
     if (!strcmp(c, "off")) check_step(0);
-    /* None, or one the row doesn't have: 2x, the default. */
-    if (!strcmp(c, "default") || !strncmp(c, "bad", 3)) check_step(1);
-    /* Far buildings and Far shadows 3x by default, and from a key the row
+    /* None, or one the row doesn't have: 1x, the default since b2.2
+     * (spriteice, 23 November 2026: "New engine defaults to performance"). */
+    if (!strcmp(c, "default") || !strncmp(c, "bad", 3)) {
+        CHECK(DRAW_DISTANCE_DEFAULT == 0);
+        check_step(0);
+    }
+    /* Far buildings and Far shadows 1x by default, and from a key the row
      * doesn't have. */
     if (!strcmp(c, "default") || !strncmp(c, "far_bad", 7)) {
-        CHECK(draw_far_buildings() == 3 && s_far_row.state() == 3 && DRAW_FAR_DEFAULT == 3);
-        CHECK(draw_far_shadows() == 3 && s_shadow_row.state() == 3 && DRAW_SHADOWS_DEFAULT == 3);
+        CHECK(draw_far_buildings() == 1 && s_far_row.state() == 1 && DRAW_FAR_DEFAULT == 1);
+        CHECK(draw_far_shadows() == 1 && s_shadow_row.state() == 1 && DRAW_SHADOWS_DEFAULT == 1);
     }
+    /* The toggle kept before b2.1-hotfix, on: 3x, not the default. */
+    if (!strcmp(c, "legacy_on"))
+        CHECK(draw_far_buildings() == 3 && draw_far_shadows() == 3 && DRAW_FAR_ONCE_ON == 3);
+    if (!strcmp(c, "legacy_mixed")) CHECK(draw_far_buildings() == 3 && draw_far_shadows() == 0);
     if (!strcmp(c, "2x")) check_step(1);
     if (!strcmp(c, "3x")) check_step(2);
     if (!strcmp(c, "4x")) check_step(3);
@@ -1266,9 +1278,9 @@ int main(int argc, char **argv)
         check_reach(2);
     }
     if (!strcmp(c, "shadows_pick")) {
-        /* The row: 1x at once (and kept alone, which run.py checks). */
-        s_shadow_row.pick(1);
-        CHECK(draw_far_shadows() == 1 && s_shadow_row.state() == 1);
+        /* The row: 2x at once (and kept alone, which run.py checks). */
+        s_shadow_row.pick(2);
+        CHECK(draw_far_shadows() == 2 && s_shadow_row.state() == 2);
     }
     if (!strncmp(c, "far_log", 7)) {
         /* Far buildings and Far shadows from the settings, at whatever steps

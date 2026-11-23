@@ -52,17 +52,19 @@ int main(int argc, char **argv)
     camwall_start();
     /* No row of its own: Camera's first two ticks are these. */
     CHECK(s_rows == 0);
-    if (!strcmp(c, "default") || !strcmp(c, "on")) CHECK(camwall_on());
-    if (!strcmp(c, "off")) CHECK(!camwall_on());
+    /* Default cam fix: off with no dcamfix=, since b2.2 (spriteice, 23
+     * November 2026: "with default cam switch off"). */
+    if (!strcmp(c, "on")) CHECK(camwall_on());
+    if (!strcmp(c, "default") || !strcmp(c, "off")) CHECK(!camwall_on());
     /* No skater fade: off with no noskaterfade= (spriteice, 19 November
      * 2026: "No skater fade should be off by default"). */
     CHECK(CAMWALL_WHOLE_DEFAULT == 0);
     /* The hold each setting gives: with no settings, No skater fade off, so
      * neither eye; on, both eyes, or with Default cam fix off, the free
      * camera's alone. */
-    if (!strcmp(c, "default") || !strcmp(c, "on") || !strcmp(c, "whole_off"))
-        CHECK(!camwall_whole() && camwall_on() && holds(0, 0));
-    if (!strcmp(c, "off")) CHECK(!camwall_whole() && !camwall_on() && holds(0, 0));
+    if (!strcmp(c, "on")) CHECK(!camwall_whole() && camwall_on() && holds(0, 0));
+    if (!strcmp(c, "default") || !strcmp(c, "off") || !strcmp(c, "whole_off"))
+        CHECK(!camwall_whole() && !camwall_on() && holds(0, 0));
     if (!strcmp(c, "whole_on")) CHECK(camwall_whole() && camwall_on() && holds(1, 1));
     if (!strcmp(c, "flip")) {
         /* No skater fade on, then Default cam fix's tick: off at once (and
