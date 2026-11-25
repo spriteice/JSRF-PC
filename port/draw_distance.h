@@ -30,9 +30,11 @@
  * Street, at All, the spaces above the street's three ends, from its other
  * zones (known bug 70); on Kibogaoka Hill, the areas past the bowl's far
  * side, and areas 4 and 6, in the map's middle, from its rim, the way to it
- * and just past it (known bug 71); on Chuo Street, two pieces of scenery
- * past the halfpipe's west end, from a stretch further down it (known bug
- * 75; draw_buildings_stage). It changes at once.
+ * and just past it (known bug 71), and areas 96, 105 and 107, on, past and
+ * for the bowl's west side, from four zones at and past the map's middle's
+ * east edge (known bug 84); on Chuo Street, two pieces of scenery past the
+ * halfpipe's west end, from a stretch further down it (known bug 75;
+ * draw_buildings_stage). It changes at once.
  *
  * Far shadows, below it, kept as farshadowsahead= (the same steps, 1 the
  * default): the map's shadows are drawn from the game's set widened the same
@@ -221,8 +223,12 @@ int draw_set_whole_map(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WORDS
  * to 121, past the bowl's far side, and 4 and 6, in the map's middle,
  * while the game's set is the rim's, area 31, that of 27 or 23 on the way
  * to it, or that of 32, just past it, where they hung in the air (known
- * bug 71); and the shadows of 115 to 117, from every area, which lit patches
- * on a walkway (known bug 72). A rule can also hold only while one of the
+ * bug 71); areas 96, on the bowl's west side, 105, far past it, and 107,
+ * scenery the game draws only from there, while the game's set is that of
+ * 7, 9, 13 or 20, at and past the map's middle's east edge, where 107 hung
+ * in the air too (known bug 84); and the
+ * shadows of 115 to 117, from every area, which lit patches on a walkway
+ * (known bug 72). A rule can also hold only while one of the
  * game's scenes plays (draw_buildings_scene): on 99th Street (stage
  * 0x00030000, its 63 areas), no area at all, from any area, while scene 36
  * plays, the one the first time the player comes in, whose camera in the

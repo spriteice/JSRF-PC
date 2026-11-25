@@ -177,13 +177,15 @@ cases = {
                     "never added from areas 0, 2 to 6, 8 to 11 and 17, where the game hides them",
                     "[DRAW] Far buildings: stage 00010003 has 45 areas, not Hikage Street's 46, so its rule is "
                     "left out"]),
-    # Kibogaoka Hill's two rules (test_main.c, check_kibogaoka): each logged
+    # Kibogaoka Hill's three rules (test_main.c, check_kibogaoka): each logged
     # on its map, and each left out on a map of another size.
     "far_kibogaoka": ("farbuildingsahead=1\nfarshadowsahead=1\n",
                       ["[DRAW] Far buildings: Kibogaoka Hill (stage 00020002), areas 4, 6 and 56 to 121 and what "
                        "lies past them never added from areas 23, 27, 31 and 32, where the game hides them",
                        "[DRAW] Far shadows: Kibogaoka Hill (stage 00020002), the shadows of areas 115 to 117 never "
                        "added from any area, where they make patches of light",
+                       "[DRAW] Far buildings: Kibogaoka Hill (stage 00020002), areas 96, 105 and 107 and what lies "
+                       "past them never added from areas 7, 9, 13 and 20, where the game hides them",
                        "[DRAW] Far buildings: stage 00020002 has 123 areas, not Kibogaoka Hill's 124, so its rule "
                        "is left out"]),
     # 99th Street's rule for its first scene (test_main.c, check_99th):

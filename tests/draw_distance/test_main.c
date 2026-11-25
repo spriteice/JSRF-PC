@@ -38,10 +38,12 @@
  * area two crossings from the eye.
  * Hikage Street's rule (known bug 70) is given a made-up map of 46 areas, as
  * Stg13's, where the spaces above the ends, 14 to 16, are named by no list
- * but their own; and Kibogaoka Hill's two (known bugs 71 and 72) one of 124,
- * as stg22's, where the rim's tunnel lists areas in the run the rule hides,
- * one in it the game draws from the rim, and one past it, the way to the rim
- * is two areas before it, and the walkway is a crossing from 115 to 117.
+ * but their own; and Kibogaoka Hill's three (known bugs 71, 72 and 84) one
+ * of 124, as stg22's, where the rim's tunnel lists areas in the run the rule
+ * hides, one in it the game draws from the rim, and one past it, the way to
+ * the rim is two areas before it, the walkway is a crossing from 115 to 117,
+ * and 96, 105 and 107 are a crossing from 7 and 9, two from 20 and only
+ * listed from 13, with 80 one past 96.
  * 99th Street's rule for its first scene (known bug 80) is given a made-up
  * map of 63 areas, as Stg30's, where the street lists the plaza and the
  * plaza an area further off, with scene 36 playing, another, and none.
@@ -976,7 +978,12 @@ static void check_hikage(void)
  * through it; the way to the rim, 23, which lists 27, and 27, which lists
  * the rim; the walkway, 74, which lists 75; 75, which lists 115, 116 and
  * 117; 13, which lists area 4, in the map's middle; 4, which lists 115 and
- * 6, beside it; and 6, which lists 10, reached only through it. */
+ * 6, beside it; 6, which lists 10, reached only through it; and for known
+ * bug 84, 9, east of the middle, and 7, at its east edge, which each list
+ * 71, on the west side; 71, which lists 107, scenery the game draws from
+ * there, 96, beside it, and 105, far past it; 96, which lists 80, reached
+ * only through it; and 20, past 13, which lists 9. So 1x adds 107, 96 and
+ * 105 from 7 and 9, 2x from 20, and All from 13, and 80 a crossing later. */
 #define KIBO_AREAS    124
 #define KIBO_STAGE    0x00020002u   /* stg22, as the mission asks for it */
 #define KIBO_TO_RIM   23
@@ -986,11 +993,21 @@ static void check_hikage(void)
 #define KIBO_TUNNEL   35
 #define KIBO_WALKWAY  74
 #define KIBO_MIDDLE   4             /* and 6 beside it */
+#define KIBO_EAST_EDGE 7            /* then 9 */
+#define KIBO_EAST     9             /* then 13, and 20 past it */
+#define KIBO_EAST_ON  13
+#define KIBO_EAST_PAST 20
+#define KIBO_WEST     71
+#define KIBO_WEST_TOO 96            /* beside it, and 80 past it */
+#define KIBO_WEST_FAR 105           /* far past it */
+#define KIBO_SIGHT    107           /* scenery the game draws from the west side */
 static const uint32_t k_kibo_rim[] = { 31, 32, 35, 108, 13 }, k_kibo_32[] = { 32, 35, 13 },
                       k_kibo_tunnel[] = { 35, 31, 56, 115, 121, 122 }, k_kibo_56[] = { 56, 123 },
                       k_kibo_walkway[] = { 74, 75 }, k_kibo_75[] = { 75, 115, 116, 117 },
                       k_kibo_13[] = { 13, 4 }, k_kibo_4[] = { 4, 115, 6 }, k_kibo_6[] = { 6, 10 },
-                      k_kibo_23[] = { 23, 27 }, k_kibo_27[] = { 27, 31 };
+                      k_kibo_23[] = { 23, 27 }, k_kibo_27[] = { 27, 31 },
+                      k_kibo_9[] = { 9, 71 }, k_kibo_7[] = { 7, 71 }, k_kibo_71[] = { 71, 107, 96, 105 },
+                      k_kibo_96[] = { 96, 80 }, k_kibo_20[] = { 20, 9 };
 
 static void kibo_make(void)
 {
@@ -1006,6 +1023,11 @@ static void kibo_make(void)
     MADE_LIST(6, k_kibo_6);
     MADE_LIST(KIBO_TO_RIM, k_kibo_23);
     MADE_LIST(KIBO_BY_RIM, k_kibo_27);
+    MADE_LIST(KIBO_EAST, k_kibo_9);
+    MADE_LIST(KIBO_EAST_EDGE, k_kibo_7);
+    MADE_LIST(KIBO_WEST, k_kibo_71);
+    MADE_LIST(KIBO_WEST_TOO, k_kibo_96);
+    MADE_LIST(KIBO_EAST_PAST, k_kibo_20);
 }
 
 /* Far buildings 1x and Far shadows 1x from the settings. On Kibogaoka
@@ -1016,8 +1038,11 @@ static void kibo_make(void)
  * 27 and 23, on the way to it, at any setting. From the tunnel, all of
  * them are, as before. From the walkway at 2x, Far buildings
  * adds 115, 116 and 117, and the shadows never take them; from area 4, where
- * the game draws 115, its shadows stay. On a map of 123 areas after the
- * stage, nothing is hidden. run.py checks the lines. */
+ * the game draws 115, its shadows stay. From 7, 9, 13 and 20, 96, 105 and
+ * 107 are never added, at any setting, nor 80 past 96 from 7 and 9; from 71
+ * the game draws them, and at All from 12 they are added. On a map of 123
+ * areas after the stage, nothing is hidden, and 1x adds all three from 9.
+ * run.py checks the lines. */
 static void check_kibogaoka(void)
 {
     uint32_t b[DRAW_SET_WORDS], sh[DRAW_SET_WORDS];
@@ -1039,6 +1064,20 @@ static void check_kibogaoka(void)
         check_every_setting(s_made, KIBO_AREAS, from[a], 6, 6, 0);     /* 5 between them, at All, is */
     }
     check_every_setting(s_made, KIBO_AREAS, KIBO_WALKWAY, 115, 117, 1);
+    check_every_setting(s_made, KIBO_AREAS, KIBO_EAST, KIBO_SIGHT, KIBO_SIGHT, 0);
+    check_every_setting(s_made, KIBO_AREAS, KIBO_EAST_ON, KIBO_SIGHT, KIBO_SIGHT, 0);
+    check_every_setting(s_made, KIBO_AREAS, KIBO_EAST_PAST, KIBO_SIGHT, KIBO_SIGHT, 0);
+    check_every_setting(s_made, KIBO_AREAS, KIBO_EAST, KIBO_WEST_TOO, KIBO_WEST_TOO, 0);
+    check_every_setting(s_made, KIBO_AREAS, KIBO_EAST_ON, KIBO_WEST_TOO, KIBO_WEST_TOO, 0);
+    check_every_setting(s_made, KIBO_AREAS, KIBO_EAST_PAST, KIBO_WEST_TOO, KIBO_WEST_TOO, 0);
+    check_every_setting(s_made, KIBO_AREAS, KIBO_EAST, 80, 80, 0);
+    check_every_setting(s_made, KIBO_AREAS, KIBO_EAST, KIBO_WEST_FAR, KIBO_WEST_FAR, 0);
+    check_every_setting(s_made, KIBO_AREAS, KIBO_EAST_ON, KIBO_WEST_FAR, KIBO_WEST_FAR, 0);
+    check_every_setting(s_made, KIBO_AREAS, KIBO_EAST_PAST, KIBO_WEST_FAR, KIBO_WEST_FAR, 0);
+    check_every_setting(s_made, KIBO_AREAS, KIBO_EAST_EDGE, KIBO_WEST_TOO, KIBO_WEST_TOO, 0);
+    check_every_setting(s_made, KIBO_AREAS, KIBO_EAST_EDGE, KIBO_WEST_FAR, KIBO_WEST_FAR, 0);
+    check_every_setting(s_made, KIBO_AREAS, KIBO_EAST_EDGE, KIBO_SIGHT, KIBO_SIGHT, 0);
+    check_every_setting(s_made, KIBO_AREAS, KIBO_EAST_EDGE, 80, 80, 0);
     for (step = 2; step <= DRAW_FAR_WHOLE; step++) {
         s_far_row.pick(step);
         made_sets(KIBO_RIM, KIBO_AREAS, b, sh);
@@ -1064,12 +1103,41 @@ static void check_kibogaoka(void)
     /* From area 4 the game draws 115: its shadows stay. */
     made_sets(KIBO_MIDDLE, KIBO_AREAS, b, sh);
     CHECK(set_holds(sh, 115));
+    /* 96, 105 and 107: only from 9, 13 and 20 are they left out, and 80 past
+     * 96 with them; 71 past 9 stays. From 71 the game draws them, and 80 a
+     * crossing on; at All from 12 they are added, and 80, and from 13, where
+     * 80 lies past none of them, 80 is too. */
+    made_sets(KIBO_EAST, KIBO_AREAS, b, sh);
+    CHECK(set_holds(b, KIBO_WEST) && !set_holds(b, KIBO_SIGHT) && !set_holds(sh, KIBO_SIGHT));
+    CHECK(!set_holds(b, KIBO_WEST_FAR) && !set_holds(sh, KIBO_WEST_FAR));
+    CHECK(!set_holds(b, KIBO_WEST_TOO) && !set_holds(sh, KIBO_WEST_TOO) && !set_holds(b, 80) && !set_holds(sh, 80));
+    made_sets(KIBO_WEST, KIBO_AREAS, b, sh);
+    CHECK(set_holds(b, KIBO_SIGHT) && set_holds(sh, KIBO_SIGHT));
+    CHECK(set_holds(b, KIBO_WEST_FAR) && set_holds(sh, KIBO_WEST_FAR));
+    CHECK(set_holds(b, KIBO_WEST_TOO) && set_holds(sh, KIBO_WEST_TOO) && set_holds(b, 80) && set_holds(sh, 80));
+    s_far_row.pick(DRAW_FAR_WHOLE);
+    s_shadow_row.pick(DRAW_FAR_WHOLE);
+    made_sets(12, KIBO_AREAS, b, sh);
+    CHECK(set_holds(b, KIBO_SIGHT) && set_holds(sh, KIBO_SIGHT));
+    CHECK(set_holds(b, KIBO_WEST_FAR) && set_holds(sh, KIBO_WEST_FAR));
+    CHECK(set_holds(b, KIBO_WEST_TOO) && set_holds(sh, KIBO_WEST_TOO) && set_holds(b, 80) && set_holds(sh, 80));
+    made_sets(KIBO_EAST_ON, KIBO_AREAS, b, sh);
+    CHECK(!set_holds(b, KIBO_WEST_TOO) && set_holds(b, 80) && set_holds(sh, 80));
+    s_far_row.pick(2);
+    s_shadow_row.pick(2);
     /* A map of 123 areas after the stage: not the one, so no rule. */
     made_sets(KIBO_RIM, KIBO_AREAS - 1, b, sh);
     CHECK(set_holds(b, 56) && set_holds(b, 121) && set_holds(b, KIBO_MIDDLE));
     made_sets(KIBO_WALKWAY, KIBO_AREAS - 1, b, sh);
     CHECK(set_holds(sh, 115));
-    printf("kibogaoka hill: 4, 6 and 56 to 121 never added from the rim or by it, nor the shadows of 115 to 117\n");
+    s_far_row.pick(1);
+    s_shadow_row.pick(1);
+    made_sets(KIBO_EAST, KIBO_AREAS - 1, b, sh);
+    CHECK(set_holds(b, KIBO_SIGHT) && set_holds(sh, KIBO_SIGHT));
+    CHECK(set_holds(b, KIBO_WEST_TOO) && set_holds(sh, KIBO_WEST_TOO));
+    CHECK(set_holds(b, KIBO_WEST_FAR) && set_holds(sh, KIBO_WEST_FAR));
+    printf("kibogaoka hill: 4, 6 and 56 to 121 never added from the rim or by it, nor the shadows of 115 to 117, "
+           "nor 96, 105 and 107 from 7, 9, 13 or 20\n");
 }
 
 /* ---- 99th Street's rule, for one scene ---------------------------------- */

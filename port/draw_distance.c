@@ -419,7 +419,31 @@ static const RuleRun k_hikage_never[] = { { HIKAGE_ABOVE_EAST, HIKAGE_ABOVE_NORT
  * east side, and each takes the shadow off a walkway there in a pale patch
  * (known bug 72, at 3x and All; named the same way). Far shadows never adds
  * them, from any area, as on Chuo Street: where the game draws them itself
- * their shadows stay, and Far buildings still draws their scenery. */
+ * their shadows stay, and Far buildings still draws their scenery. And 107,
+ * scenery with no space of its own that the game draws only from the bowl's
+ * west side (from 71 to 93), Far buildings adds at 3x and All from 9 and 13,
+ * east of the map's middle, and at All from 20, past 13, where it hangs in
+ * the air (Adri, GitHub issue 2, 20 November 2026; named with Developer >
+ * Far buildings test from 9 by spriteice, 25 November 2026; known bug 84).
+ * It is never added from those three, where spriteice opened the menu ("We
+ * also need to leave out 107 from the kibogoaga hill from the zones I opened
+ * the menu a few times"); it lists no area, so nothing past it goes too.
+ * Nor is 96, on the bowl's west side, which the game draws from the map's
+ * middle (1, 3, 4 and 6) and from the west side, and which Far buildings
+ * adds from 9 and 13 at 1x to All and from 20 at 2x to All (spriteice, 25
+ * November 2026: "we also need to leave out area 96 on kibogoaga hill in
+ * the same areas"). What lies past it from there goes with it: at 2x from 9
+ * and 13 and at 3x from 20, 74, 75, 80, 82, 84 and 120, and at 3x from 9,
+ * 66 and 68, which come in through its list only; at All, 96 alone. Nor is
+ * 105, far past the west side, with a space but an empty list, which the
+ * game draws from the west side (71 to 96) and 100, and which Far buildings
+ * adds from 9 and 13 at 2x to All and from 20 at 3x and All (spriteice, 25
+ * November 2026: "We also need to leave out 105. I can't see anything
+ * else"). It lists no area, so nothing past it goes too. Nor are the three
+ * added from 7, at the east edge of the map's middle on the way to 9, where
+ * spriteice saw 96 next with Developer > Far buildings test (25 November
+ * 2026: "96 also needs to go", "from the same areas as before"): from 7 that
+ * takes out 96 and 105 at 1x and all three from 2x, and nothing past them. */
 #define STAGE_KIBOGAOKA_HILL 0x00020002u    /* as the mission asks for it */
 #define KIBOGAOKA_AREAS      124            /* its map's, so it's the one */
 #define KIBOGAOKA_TO_RIM     23             /* then 27, by the rim */
@@ -432,11 +456,22 @@ static const RuleRun k_hikage_never[] = { { HIKAGE_ABOVE_EAST, HIKAGE_ABOVE_NORT
 #define KIBOGAOKA_PAST_LAST  121
 #define KIBOGAOKA_LIT_FIRST  115
 #define KIBOGAOKA_LIT_LAST   117
+#define KIBOGAOKA_EAST_EDGE  7              /* the middle's east edge, then 9 */
+#define KIBOGAOKA_EAST       9              /* then 13, and 20 past it */
+#define KIBOGAOKA_EAST_ON    13
+#define KIBOGAOKA_EAST_PAST  20
+#define KIBOGAOKA_WEST_SIDE  96             /* on the bowl's west side */
+#define KIBOGAOKA_WEST_FAR   105            /* far past it */
+#define KIBOGAOKA_WEST_SIGHT 107
 static const RuleRun k_kibogaoka_never[] = { RULE_ONE(KIBOGAOKA_MIDDLE), RULE_ONE(KIBOGAOKA_MIDDLE_TOO),
                                              { KIBOGAOKA_PAST_FIRST, KIBOGAOKA_PAST_LAST } },
                      k_kibogaoka_from[] = { RULE_ONE(KIBOGAOKA_TO_RIM), RULE_ONE(KIBOGAOKA_BY_RIM),
                                             RULE_ONE(KIBOGAOKA_RIM), RULE_ONE(KIBOGAOKA_PAST_RIM) },
-                     k_kibogaoka_lit[] = { { KIBOGAOKA_LIT_FIRST, KIBOGAOKA_LIT_LAST } };
+                     k_kibogaoka_lit[] = { { KIBOGAOKA_LIT_FIRST, KIBOGAOKA_LIT_LAST } },
+                     k_kibogaoka_west[] = { RULE_ONE(KIBOGAOKA_WEST_SIDE), RULE_ONE(KIBOGAOKA_WEST_FAR),
+                                            RULE_ONE(KIBOGAOKA_WEST_SIGHT) },
+                     k_kibogaoka_east[] = { RULE_ONE(KIBOGAOKA_EAST_EDGE), RULE_ONE(KIBOGAOKA_EAST),
+                                            RULE_ONE(KIBOGAOKA_EAST_ON), RULE_ONE(KIBOGAOKA_EAST_PAST) };
 /* 99th Street (Stg30): the scene the first time the player comes in, scene
  * 36, which mission 0250's setup starts (its command 227 [0x24]), takes its
  * camera from the plaza, area 0, into the street west of it, area 8, for a
@@ -483,6 +518,8 @@ static const struct {
       RULE_AREAS(k_kibogaoka_never), RULE_AREAS(k_kibogaoka_from), 0, RULE_ANY_SCENE },
     { "Kibogaoka Hill", STAGE_KIBOGAOKA_HILL, KIBOGAOKA_AREAS, RULE_AREAS(k_kibogaoka_lit), NULL, 0, 1,
       RULE_ANY_SCENE },
+    { "Kibogaoka Hill", STAGE_KIBOGAOKA_HILL, KIBOGAOKA_AREAS,
+      RULE_AREAS(k_kibogaoka_west), RULE_AREAS(k_kibogaoka_east), 0, RULE_ANY_SCENE },
     { "99th Street", STAGE_99TH_STREET, STREET99_AREAS, RULE_AREAS(k_street99_all), NULL, 0, 0,
       STREET99_OPENING },
 };
