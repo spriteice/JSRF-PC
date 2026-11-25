@@ -375,8 +375,12 @@ running while it is open, but your input goes to the menu.
   the way to it, where they would hang in the air, nor are some in the map's
   middle; they come back in the tunnel. At All on Chuo Street, two pieces of
   scenery from past the long halfpipe's end wall aren't drawn from a stretch
-  further down it. It changes at once, costs more the further it goes, and is
-  kept as `farbuildingsahead=` (0 for Off to 4 for All) in the settings file.
+  further down it. In 99th Street's opening scene, the one the first time you
+  come in, nothing more than the game's own is drawn, as from the street west
+  of the plaza thin lines crossed its close-up of the dragon; along that
+  street the rest of the time it draws as anywhere. It changes at once, costs
+  more the further it goes, and is kept as `farbuildingsahead=` (0 for Off to
+  4 for All) in the settings file.
   Far shadows, below it, draws the shadows of the areas Far buildings adds
   too, as many areas ahead as its own choice, Off to All, and never further
   than Far buildings, so they don't pop in as you come near, at the cost of

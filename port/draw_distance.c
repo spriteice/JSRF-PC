@@ -437,8 +437,27 @@ static const RuleRun k_kibogaoka_never[] = { RULE_ONE(KIBOGAOKA_MIDDLE), RULE_ON
                      k_kibogaoka_from[] = { RULE_ONE(KIBOGAOKA_TO_RIM), RULE_ONE(KIBOGAOKA_BY_RIM),
                                             RULE_ONE(KIBOGAOKA_RIM), RULE_ONE(KIBOGAOKA_PAST_RIM) },
                      k_kibogaoka_lit[] = { { KIBOGAOKA_LIT_FIRST, KIBOGAOKA_LIT_LAST } };
+/* 99th Street (Stg30): the scene the first time the player comes in, scene
+ * 36, which mission 0250's setup starts (its command 227 [0x24]), takes its
+ * camera from the plaza, area 0, into the street west of it, area 8, for a
+ * close-up of the dragon on Benten Tower. From area 8 Far buildings adds 30
+ * areas the game doesn't draw there, and one of them puts four thin straight
+ * lines across that shot, in front of the dragon (Adri, GitHub issue 2, 24
+ * November 2026; gone with Far buildings Off on spriteice's PC, 25 November
+ * 2026; known bug 80). The game frames a scene's shots with its own set, so
+ * while scene 36 plays Far buildings and Far shadows add no area of the map,
+ * from any area; the rest of the time, along the street too, they add as
+ * before (spriteice, 25 November 2026: "The street (in and out of the level)
+ * is where we need far buildings the most in that level. Can we disable them
+ * just for that cutscene?"). Which of the 30 draws the lines isn't named. */
+#define STAGE_99TH_STREET    0x00030000u    /* as the mission asks for it */
+#define STREET99_AREAS       63             /* its map's, so it's the one */
+#define STREET99_OPENING     0x24u          /* scene 36, as mission 0250's command 227 names it */
+static const RuleRun k_street99_all[] = { { 0, STREET99_AREAS - 1 } };
 /* A list of runs, and how many it holds, for a rule. */
 #define RULE_AREAS(a) (a), (int)(sizeof (a) / sizeof (a)[0])
+/* A rule for no one scene: it holds whatever the game plays. */
+#define RULE_ANY_SCENE DRAW_SCENE_NONE
 static const struct {
     const char *map;            /* its name, for the log */
     uint32_t    stage;          /* as the mission asks for it */
@@ -448,18 +467,24 @@ static const struct {
     const RuleRun *from;        /* from the sets these areas make; none: from every set */
     int         nfrom;
     int         shadows_only;   /* hides them from Far shadows, not Far buildings */
+    uint32_t    scene;          /* only while this scene of the game's plays (draw_buildings_scene); or
+                                   RULE_ANY_SCENE */
 } k_rules[] = {
     { "Dogenzaka Hill", STAGE_DOGENZAKA_HILL, DOGENZAKA_AREAS,
-      RULE_AREAS(k_dogenzaka_never), RULE_AREAS(k_dogenzaka_from), 0 },
+      RULE_AREAS(k_dogenzaka_never), RULE_AREAS(k_dogenzaka_from), 0, RULE_ANY_SCENE },
     { "Dogenzaka Hill", STAGE_DOGENZAKA_HILL, DOGENZAKA_AREAS,
-      RULE_AREAS(k_dogenzaka_hill), RULE_AREAS(k_dogenzaka_far), 0 },
-    { "Chuo Street", STAGE_CHUO_STREET, CHUO_AREAS, RULE_AREAS(k_chuo_never), NULL, 0, 1 },
-    { "Chuo Street", STAGE_CHUO_STREET, CHUO_AREAS, RULE_AREAS(k_chuo_past), RULE_AREAS(k_chuo_down), 0 },
+      RULE_AREAS(k_dogenzaka_hill), RULE_AREAS(k_dogenzaka_far), 0, RULE_ANY_SCENE },
+    { "Chuo Street", STAGE_CHUO_STREET, CHUO_AREAS, RULE_AREAS(k_chuo_never), NULL, 0, 1, RULE_ANY_SCENE },
+    { "Chuo Street", STAGE_CHUO_STREET, CHUO_AREAS, RULE_AREAS(k_chuo_past), RULE_AREAS(k_chuo_down), 0,
+      RULE_ANY_SCENE },
     { "Hikage Street", STAGE_HIKAGE_STREET, HIKAGE_AREAS,
-      RULE_AREAS(k_hikage_never), RULE_AREAS(k_hikage_from), 0 },
+      RULE_AREAS(k_hikage_never), RULE_AREAS(k_hikage_from), 0, RULE_ANY_SCENE },
     { "Kibogaoka Hill", STAGE_KIBOGAOKA_HILL, KIBOGAOKA_AREAS,
-      RULE_AREAS(k_kibogaoka_never), RULE_AREAS(k_kibogaoka_from), 0 },
-    { "Kibogaoka Hill", STAGE_KIBOGAOKA_HILL, KIBOGAOKA_AREAS, RULE_AREAS(k_kibogaoka_lit), NULL, 0, 1 },
+      RULE_AREAS(k_kibogaoka_never), RULE_AREAS(k_kibogaoka_from), 0, RULE_ANY_SCENE },
+    { "Kibogaoka Hill", STAGE_KIBOGAOKA_HILL, KIBOGAOKA_AREAS, RULE_AREAS(k_kibogaoka_lit), NULL, 0, 1,
+      RULE_ANY_SCENE },
+    { "99th Street", STAGE_99TH_STREET, STREET99_AREAS, RULE_AREAS(k_street99_all), NULL, 0, 0,
+      STREET99_OPENING },
 };
 #define DRAW_RULES ((int)(sizeof k_rules / sizeof k_rules[0]))
 _Static_assert(sizeof k_rules / sizeof k_rules[0] <= 32, "a bit of s_map.rules for each rule");
@@ -467,6 +492,15 @@ _Static_assert(sizeof k_rules / sizeof k_rules[0] <= 32, "a bit of s_map.rules f
 void draw_buildings_stage(uint32_t stage)
 {
     s_stage = stage;
+}
+
+/* The game's scene now (draw_buildings_scene), and the one the log last
+ * said (scene_note). */
+static uint32_t s_scene = DRAW_SCENE_NONE, s_scene_said = DRAW_SCENE_NONE;
+
+void draw_buildings_scene(uint32_t scene)
+{
+    s_scene = scene;
 }
 
 /* The map, told from another: FNV-1a over its areas' volumes and lists. */
@@ -562,7 +596,11 @@ static void map_take(const DrawArea *a, int n, uint32_t key)
                                 runs_many(k_rules[i].from, k_rules[i].nfrom) ? "s" : "");
             areas_said(from + said, (int)sizeof from - said, k_rules[i].from, k_rules[i].nfrom);
         } else snprintf(from, sizeof from, "any area");
-        if (k_rules[i].shadows_only)
+        if (k_rules[i].scene != RULE_ANY_SCENE)
+            fprintf(stderr, "[DRAW] Far buildings: %s (stage %08X), area%s %s never added from %s while "
+                    "the game's scene %u plays, whose shots it frames without them\n", k_rules[i].map,
+                    s_map.stage, many ? "s" : "", never, from, (unsigned)k_rules[i].scene);
+        else if (k_rules[i].shadows_only)
             fprintf(stderr, "[DRAW] Far shadows: %s (stage %08X), the shadows of area%s %s never added "
                     "from %s, where they make patches of light\n", k_rules[i].map, s_map.stage,
                     many ? "s" : "", never, from);
@@ -658,14 +696,16 @@ static void set_leave_out(uint32_t set[DRAW_SET_WORDS], const uint32_t game[DRAW
 
 /* The areas the map's rules (k_rules) hide while game is the set one of
  * their areas makes, or from every set, for set_reach's wall: for Far
- * shadows' set (shadows nonzero) or Far buildings'. But none game has: what
- * the game draws itself is never hidden. */
+ * shadows' set (shadows nonzero) or Far buildings'. A rule for one scene
+ * only while that scene plays. But none game has: what the game draws
+ * itself is never hidden. */
 static void rules_hidden(uint32_t hidden[DRAW_SET_WORDS], const uint32_t game[DRAW_SET_WORDS], int shadows)
 {
     int r, k, a, w, from;
     memset(hidden, 0, DRAW_SET_WORDS * sizeof hidden[0]);
     for (r = 0; r < DRAW_RULES; r++) {
         if (!(s_map.rules >> r & 1u) || (k_rules[r].shadows_only && !shadows)) continue;
+        if (k_rules[r].scene != RULE_ANY_SCENE && k_rules[r].scene != s_scene) continue;
         for (k = 0, from = !k_rules[r].nfrom; k < k_rules[r].nfrom && !from; k++)
             for (a = k_rules[r].from[k].first; a <= k_rules[r].from[k].last && !from; a++)
                 from = a >= 0 && a < s_map.n && set_from_area(game, a);
@@ -740,6 +780,25 @@ static void leave_step(void)
     fprintf(stderr, ", Far buildings %s adding %s\n", k_far_names[s_far], added);
 }
 
+/* A line as a scene one of the map's rules is for starts or ends, at the
+ * first set after it (s_scene_said): the map's rules (s_map.rules) are known
+ * only once its first set is made. */
+static void scene_note(double now)
+{
+    int r;
+    if (s_scene == s_scene_said) return;
+    for (r = 0; r < DRAW_RULES; r++) {
+        if (!(s_map.rules >> r & 1u) || k_rules[r].scene == RULE_ANY_SCENE) continue;
+        if (k_rules[r].scene == s_scene)
+            fprintf(stderr, "[DRAW] t=%.2f the game's scene %u plays: %s's rule for it holds\n", now,
+                    (unsigned)s_scene, k_rules[r].map);
+        else if (k_rules[r].scene == s_scene_said)
+            fprintf(stderr, "[DRAW] t=%.2f the game's scene %u is over: %s's rule for it no longer holds\n",
+                    now, (unsigned)s_scene_said, k_rules[r].map);
+    }
+    s_scene_said = s_scene;
+}
+
 void draw_buildings_widen(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WORDS],
                           double now, unsigned frame)
 {
@@ -757,6 +816,7 @@ void draw_buildings_widen(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WO
     s_misc_map = 1;
     game = set_count(set);
     memcpy(was, set, sizeof was);
+    scene_note(now);
     eye_note(set, now);
     rules_hidden(hidden, was, 0);
     set_reach(set, reach, hidden);

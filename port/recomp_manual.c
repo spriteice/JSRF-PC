@@ -8256,10 +8256,28 @@ static void area_set_from_photo(uint32_t set[DRAW_SET_WORDS], uint32_t eye_at, u
     if (area_set_empty(set)) draw_set_whole_map(areas, dd_areas(areas), set);
 }
 
+/* The game's scene now, for the map's rules for one scene (draw_distance.h,
+ * draw_buildings_scene): the number the mission's command 227 gave the scene
+ * the game manager holds (sub_000524E0 passes the command's first word to
+ * sub_00024240, which makes the scene, sub_0001E540, keeping it at +0x8C),
+ * from its start to its end, loading and fading in too; DRAW_SCENE_NONE
+ * without one. */
+#define SCENE_NUMBER 0x8Cu
+static uint32_t scene_number(void)
+{
+    uint32_t gm = MEM32(GAME_MANAGER), scene;
+    if (gm < 0x10000u || gm + GM_ACTORS + SCENE_ACTOR * 4u + 4u >= (64u << 20)) return DRAW_SCENE_NONE;
+    scene = MEM32(gm + GM_ACTORS + SCENE_ACTOR * 4u);
+    if (scene < 0x10000u || scene + SCENE_NUMBER + 4u >= (64u << 20) || MEM32(scene) != SCENE_CLASS)
+        return DRAW_SCENE_NONE;
+    return MEM32(scene + SCENE_NUMBER);
+}
+
 /* sub_0006A970(eye), thiscall on AREA_SET: the game's set; made again from
  * the game's eye while the free camera's is in no area (above), or from the
  * last point in an area while photo mode's is in none; then, with Far
- * buildings on, the areas added to it. */
+ * buildings on, the areas added to it, the map's rules taken as the game's
+ * scene now has them (scene_number). */
 void sub_0006A970(void)
 {
     static DrawArea areas[DRAW_AREAS_MAX];
@@ -8275,6 +8293,7 @@ void sub_0006A970(void)
     if (!n) return;
     memcpy(s_game_set, set, sizeof s_game_set);
     s_set_widened = 1;
+    draw_buildings_scene(scene_number());
     draw_buildings_widen(areas, n, set, pad_now(), nv2a_gl_flips());
 }
 

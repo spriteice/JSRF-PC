@@ -42,6 +42,9 @@
  * as stg22's, where the rim's tunnel lists areas in the run the rule hides,
  * one in it the game draws from the rim, and one past it, the way to the rim
  * is two areas before it, and the walkway is a crossing from 115 to 117.
+ * 99th Street's rule for its first scene (known bug 80) is given a made-up
+ * map of 63 areas, as Stg30's, where the street lists the plaza and the
+ * plaza an area further off, with scene 36 playing, another, and none.
  */
 #include <float.h>
 #include <math.h>
@@ -1069,6 +1072,71 @@ static void check_kibogaoka(void)
     printf("kibogaoka hill: 4, 6 and 56 to 121 never added from the rim or by it, nor the shadows of 115 to 117\n");
 }
 
+/* ---- 99th Street's rule, for one scene ---------------------------------- */
+
+/* A made-up map with the shape of 99th Street's plaza and the street west
+ * of it (known bug 80): 63 areas, as Stg30 has, each listing itself, but the
+ * street, area 8, which lists the plaza, 0; and the plaza, which lists the
+ * street and 20, further off. So the game draws 20 from the plaza only, and
+ * 1x adds it from the street. */
+#define STREET99_AREAS 63
+#define STREET99_STAGE 0x00030000u  /* Stg30, as the mission asks for it */
+#define STREET99_SCENE 0x24u        /* scene 36, the first time the player comes in */
+#define STREET99_WEST  8
+#define STREET99_PLAZA 0
+#define STREET99_OFF   20
+static const uint32_t k_99_west[] = { STREET99_WEST, STREET99_PLAZA },
+                      k_99_plaza[] = { STREET99_PLAZA, STREET99_WEST, STREET99_OFF };
+
+static void street99_make(void)
+{
+    made_map(STREET99_AREAS);
+    MADE_LIST(STREET99_WEST, k_99_west);
+    MADE_LIST(STREET99_PLAZA, k_99_plaza);
+}
+
+/* Whether Far buildings' set from the street holds 20, and the shadows' the
+ * same: 1 both, 0 neither, -1 one of them. */
+static int street99_off(int n)
+{
+    uint32_t b[DRAW_SET_WORDS], sh[DRAW_SET_WORDS];
+    made_sets(STREET99_WEST, n, b, sh);
+    CHECK(set_holds(b, STREET99_WEST) && set_holds(b, STREET99_PLAZA));
+    return set_holds(b, STREET99_OFF) && set_holds(sh, STREET99_OFF) ? 1
+         : !set_holds(b, STREET99_OFF) && !set_holds(sh, STREET99_OFF) ? 0 : -1;
+}
+
+/* Far buildings 1x and Far shadows 1x from the settings. On 99th Street's
+ * map after its stage, 20 is added from the street with no scene playing and
+ * with another; while scene 36 plays, no area at any setting, from the street
+ * or the plaza, nor to the shadows; and as before once it is over. On a map of
+ * 62 areas after the stage, and on another map after another stage, scene 36
+ * changes nothing. run.py checks the lines. */
+static void check_99th(void)
+{
+    CHECK(draw_far_buildings() == 1 && draw_far_shadows() == 1);
+    street99_make();
+    draw_buildings_stage(STREET99_STAGE);
+    CHECK(street99_off(STREET99_AREAS) == 1);
+    draw_buildings_scene(STREET99_SCENE + 1);
+    CHECK(street99_off(STREET99_AREAS) == 1);
+    draw_buildings_scene(STREET99_SCENE);
+    CHECK(street99_off(STREET99_AREAS) == 0);
+    check_every_setting(s_made, STREET99_AREAS, STREET99_WEST, 0, STREET99_AREAS - 1, 0);
+    check_every_setting(s_made, STREET99_AREAS, STREET99_PLAZA, 0, STREET99_AREAS - 1, 0);
+    draw_buildings_scene(DRAW_SCENE_NONE);
+    CHECK(street99_off(STREET99_AREAS) == 1);
+    /* A map of 62 areas after the stage, and another map after another
+     * stage: not the one, so no rule while the scene plays. */
+    draw_buildings_scene(STREET99_SCENE);
+    CHECK(street99_off(STREET99_AREAS - 1) == 1);
+    draw_buildings_stage(STREET99_STAGE + 1);
+    s_made_self[STREET99_AREAS - 1] = STREET99_AREAS - 2;     /* another map, told from the first */
+    CHECK(street99_off(STREET99_AREAS) == 1);
+    draw_buildings_scene(DRAW_SCENE_NONE);
+    printf("99th street: no area added while scene 36 plays, and 20 from the street the rest of the time\n");
+}
+
 /* The whole map's set, for the free camera when its eye and the game's
  * camera's are both in no area (recomp_manual.c, area_set_from_game_eye;
  * known bug 61): every area some list names, as All has it, whatever Far
@@ -1265,6 +1333,7 @@ int main(int argc, char **argv)
     if (!strcmp(c, "far_chuo")) check_chuo();
     if (!strcmp(c, "far_hikage")) check_hikage();
     if (!strcmp(c, "far_kibogaoka")) check_kibogaoka();
+    if (!strcmp(c, "far_99th")) check_99th();
     if (!strcmp(c, "shadows")) check_shadows();
     if (!strcmp(c, "whole_map")) check_whole_map();
     if (!strcmp(c, "far_pick")) {

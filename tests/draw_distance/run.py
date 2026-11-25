@@ -186,6 +186,16 @@ cases = {
                        "added from any area, where they make patches of light",
                        "[DRAW] Far buildings: stage 00020002 has 123 areas, not Kibogaoka Hill's 124, so its rule "
                        "is left out"]),
+    # 99th Street's rule for its first scene (test_main.c, check_99th):
+    # logged on its map, a line as the scene starts and as it is over, and
+    # left out on a map of another size.
+    "far_99th": ("farbuildingsahead=1\nfarshadowsahead=1\n",
+                 ["[DRAW] Far buildings: 99th Street (stage 00030000), areas 0 to 62 never added from any area "
+                  "while the game's scene 36 plays, whose shots it frames without them",
+                  "[DRAW] t=0.00 the game's scene 36 plays: 99th Street's rule for it holds",
+                  "[DRAW] t=0.00 the game's scene 36 is over: 99th Street's rule for it no longer holds",
+                  "[DRAW] Far buildings: stage 00030000 has 62 areas, not 99th Street's 63, so its rule is "
+                  "left out"]),
     "whole_map": ("farbuildingsahead=0\n", ["[DRAW] Far buildings Off (settings)"]),
     "far_eye": ("farbuildingsahead=1\nfarshadowsahead=0\n",
                 ["[DRAW] the eye at t=0.00: area 0, from -1; Far buildings adds 2 there",

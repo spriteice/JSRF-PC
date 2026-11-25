@@ -222,11 +222,25 @@ int draw_set_whole_map(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WORDS
  * while the game's set is the rim's, area 31, that of 27 or 23 on the way
  * to it, or that of 32, just past it, where they hung in the air (known
  * bug 71); and the shadows of 115 to 117, from every area, which lit patches
- * on a walkway (known bug 72). Each such rule is kept by hand, for one case
- * seen and named; the first call on the map logs each. Before any stage,
- * DRAW_STAGE_NONE, which no rule has. */
+ * on a walkway (known bug 72). A rule can also hold only while one of the
+ * game's scenes plays (draw_buildings_scene): on 99th Street (stage
+ * 0x00030000, its 63 areas), no area at all, from any area, while scene 36
+ * plays, the one the first time the player comes in, whose camera in the
+ * street west of the plaza, area 8, showed thin lines across a close-up
+ * (known bug 80); along the street the rest of the time Far buildings adds
+ * as before. Each such rule is kept by hand, for one case seen and named;
+ * the first call on the map logs each. Before any stage, DRAW_STAGE_NONE,
+ * which no rule has. */
 #define DRAW_STAGE_NONE 0xFFFFFFFFu
 void draw_buildings_stage(uint32_t stage);
+
+/* The game's scene playing now, as its mission's command 227 numbers it, or
+ * DRAW_SCENE_NONE: from the game's set's hook (recomp_manual.c,
+ * sub_0006A970) each time it makes the set, before draw_buildings_widen, for
+ * the map's rules for one scene (draw_buildings_stage). The [DRAW] log has a
+ * line as a scene one of them is for starts and ends. */
+#define DRAW_SCENE_NONE 0xFFFFFFFFu
+void draw_buildings_scene(uint32_t scene);
 
 /* With Far buildings on, the map's shadows: runs run() with set holding
  * game, the set the game made, widened as draw_buildings_widen widens it to
