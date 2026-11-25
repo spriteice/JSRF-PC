@@ -70,6 +70,18 @@
  * the title never sees: set from the held-back halves just before the
  * outline, with the pieces' own stencil write folded in, and cleared from
  * them right after it.
+ *
+ * b2.2-hotfix row 5: the speed trail (spriteice, 6:40pm on 2026-11-25, UTC+8:
+ * "Basically it appears too light"). One recording played twice, the fix on
+ * and off (the shared folder's see-through/speed-trail/DIAGNOSIS.md): the
+ * see-through copies of the skater that trail behind it at speed are skinned
+ * draws with depth writes that no outline follows, drawn with the characters
+ * before the shadow's second pass. Split, their see-through halves came after
+ * its darkening quad, so never shadowed, pale over a skater in shadow, and
+ * the dash's burst drawn after them showed through them. A skinned mesh no
+ * outline follows (the trail, the crowd) is kept whole now, as the title
+ * draws it and as on the console; glass, water and faded characters are
+ * split as before.
  */
 #include "nv2a_seethru.h"
 
@@ -120,13 +132,14 @@ enum { CK_SOLID, CK_SEE_Z, CK_SEE, CK_UNTESTED, CK_CLEAR, CK_FLUSH };
 /* Why a draw went as it did. */
 enum { WHY_PLAIN, WHY_SPLIT, WHY_SPLIT_INPLACE, WHY_HELD, WHY_PIECE, WHY_OUTLINE,
        WHY_NO_ATEST, WHY_OVER, WHY_READS, WHY_FUNC, WHY_OFF, WHY_CUT, WHY_PIECE_SPLIT, WHY_MASKED,
-       WHYS };
+       WHY_MESH, WHYS };
 static const char *const k_why[WHYS] = {
     "", ", split", ", split, drawn in place", ", held back", ", kept whole for an outline",
     ", an outline", ", kept whole: no alpha test", ", kept whole: over the finished picture",
     ", kept whole: reads its surface", ", kept whole: its depth function",
     ", kept whole: the fix is off", ", drawn after what is held back: writes depth everywhere",
-    ", split, a piece an outline follows", ", an outline, kept off its pieces' see-through pixels" };
+    ", split, a piece an outline follows", ", an outline, kept off its pieces' see-through pixels",
+    ", kept whole: skinned, no outline" };
 /* What drew the held-back list. */
 enum { FL_CLEAR, FL_SURFACE, FL_READ, FL_FLIP, FL_CUT, FL_FREE, FL_OTHER, FLS };
 static const char *const k_fl[FLS] = {
@@ -217,12 +230,12 @@ static void census_report(void)
     fprintf(stderr, "  [SEETHRU] frame %u%s: %d draws, %d see-through with depth writes: %d split"
             " (%d of them drawn in place, %d using the stencil, %d pieces an outline follows),"
             " kept whole %d for an outline, %d outlines (%d of them kept off %u marked pieces),"
-            " %d without the alpha test, %d over the finished picture, %d reading"
+            " %d skinned with no outline, %d without the alpha test, %d over the finished picture, %d reading"
             " their surface, %d for their depth function, %d with the fix off; %d more held back"
             " whole; %d held-back lists drawn (", g_c_frame,
             g_c_lost ? " (longer than the record)" : "", n_draws, n_see_z, n_split, n_inplace,
             n_split_st, n_pieces, n_kept[WHY_PIECE], n_kept[WHY_OUTLINE] + n_kept[WHY_MASKED],
-            n_kept[WHY_MASKED], g_c_marked, n_kept[WHY_NO_ATEST] + n_kept[WHY_CUT],
+            n_kept[WHY_MASKED], g_c_marked, n_kept[WHY_MESH], n_kept[WHY_NO_ATEST] + n_kept[WHY_CUT],
             n_kept[WHY_OVER], n_kept[WHY_READS], n_kept[WHY_FUNC], n_kept[WHY_OFF], n_held,
             n_flushes);
     for (i = 0, k = 0; i < FLS; i++)
@@ -1074,6 +1087,12 @@ int nv2a_seethru_draw(const Nv2aRenderState *rs, const Nv2aSeeDraw *d)
     else if (!see_z) why = WHY_PLAIN;
     else if (!g_on) why = WHY_OFF;
     else if (ol == 3 || (ol == 1 && !(hold_on() && fold(rs, &mref, &mwmask)))) why = WHY_PIECE;
+    /* A skinned mesh no outline follows (the speed trail's copies of the
+     * skater, the crowd) is drawn as the title draws it: where it is
+     * see-through, it keeps its place before the shadow's second pass, which
+     * darkens it, and hides what is drawn after it and behind it, as on the
+     * console. Split, its see-through half would come after the shadow. */
+    else if (d->skinned && !ol) why = WHY_MESH;
     else if (over) why = WHY_OVER;
     else if (read) why = WHY_READS;
     else if (!rs->alpha_test || !d->alpha_uniforms) why = WHY_NO_ATEST;

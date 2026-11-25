@@ -46,9 +46,12 @@
  *
  * Some draws are left as the title draws them, by draw state and order, not
  * by program: draws without the alpha test (the speed bar's cut), which
- * write depth where they are invisible on purpose; and draws over the
+ * write depth where they are invisible on purpose; draws over the
  * finished picture, after a depth clear of a surface the frame has already
- * drawn to (the title's logo, menus, fades).
+ * drawn to (the title's logo, menus, fades); and skinned meshes no outline
+ * follows (the speed trail's copies of the skater, the crowd), which keep
+ * their place before the shadows, so the shadow falls on them, and hide
+ * what is drawn after them and behind them, as on the console.
  *
  * The held-back list lives in a wrapper round the device (Nv2aGfx): every
  * call goes through, and the wrapper keeps what a held-back draw needs, and
@@ -97,7 +100,7 @@ typedef struct {
     uint32_t verts;
     int      slot;          /* its program, for the census */
     uint8_t  textured;      /* its first stage samples a texture */
-    uint8_t  skinned;       /* for the census */
+    uint8_t  skinned;       /* its program blends by a matrix palette (A0) */
     uint8_t  alpha_uniforms;/* its program reads the alpha test's function and reference */
 } Nv2aSeeDraw;
 

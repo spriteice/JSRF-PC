@@ -24,9 +24,10 @@ modes = {
                 ["drawn over them: their see-through pixels in place (RECOMP_GL_SEETHRU_HOLD=0)"]),
     "census": ({"RECOMP_GL_SEETHRU_LOG": "1"},
                ["census on: one whole frame in 600",
-                "[SEETHRU] frame 600: 6 draws, 4 see-through with depth writes: 3 split"
+                "[SEETHRU] frame 600: 7 draws, 5 see-through with depth writes: 3 split"
                 " (0 of them drawn in place, 2 using the stencil, 1 pieces an outline follows),"
-                " kept whole 0 for an outline, 1 outlines (1 of them kept off 1 marked pieces),",
+                " kept whole 0 for an outline, 1 outlines (1 of them kept off 1 marked pieces),"
+                " 1 skinned with no outline,",
                 " 0 for their depth function, 0 with the fix off;"
                 " 1 more held back whole; 1 held-back lists drawn (1 at a clear),"
                 " 4 draws drawn again,",
@@ -45,8 +46,12 @@ modes = {
                 " masks FF FF ops 1E00 1E00 0000, surface 00001000, programs 1, 12 verts,"
                 " 0 textured; blend 0302 0303, alpha test on, depth func 203,"
                 " an outline, kept off its pieces' see-through pixels",
-                "at draw 7: 4 held back drawn, at a clear",
-                "at draw 7: depth clear, surface 00001000"]),
+                "draws 8-8 (1): see-through with depth writes, skinned, stencil func 207 ref 01"
+                " masks FF FF ops 1E00 1E00 0000, surface 00001000, programs 1, 12 verts,"
+                " 1 textured; blend 0302 0303, alpha test on, depth func 203,"
+                " kept whole: skinned, no outline",
+                "at draw 8: 4 held back drawn, at a clear",
+                "at draw 8: depth clear, surface 00001000"]),
 }
 
 with tempfile.TemporaryDirectory(prefix="seethru-") as directory:

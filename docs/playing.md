@@ -409,9 +409,11 @@ running while it is open, but your input goes to the menu.
   arrow as it fades in, let what is behind them show through too, tinted by
   them, their own far side as well: on the Xbox they hide what the game
   draws after them, such as other characters, glass and water. Their dark
-  outline then shows round the edge of each part, not across it. On by
-  default; it changes at once, and is kept as `seethru=` (1 or 0) in the
-  settings file.
+  outline then shows round the edge of each part, not across it. The
+  copies of your skater that trail behind at speed, and the crowd, are
+  drawn as on the Xbox: the trail in shadow is shadowed, and hides the
+  dash's burst behind it. On by default; it changes at once, and is kept as
+  `seethru=` (1 or 0) in the settings file.
 - **Graphics:** The [graphics options](#graphics-options) below.
 - **Audio:** Mute, then Audio effects. Mute silences the game's sound at
   once, and ticked again, brings it back; the game and its sound run on as

@@ -243,21 +243,22 @@ typedef struct {
     int      reads, breaks;
     float    c1, c100;          /* constants 1 and 100, sent as the front half sends them */
     int      wrap;              /* how its texture is sampled: its wrap on s */
+    int      skinned;           /* its program blends by a matrix palette */
 } Spec;
 
 static Spec glass(float v)
 {
-    Spec s = { v, 0, 0, 1, 0.5f, 0, 4, 0, 1, 5, -1, 1, 1, 0x203, 0x302, 0, 0, 3, 1, 0, 0, 0, 0, 0, 0 };
+    Spec s = { v, 0, 0, 1, 0.5f, 0, 4, 0, 1, 5, -1, 1, 1, 0x203, 0x302, 0, 0, 3, 1, 0, 0, 0, 0, 0, 0, 0 };
     return s;
 }
 static Spec solid(float v)
 {
-    Spec s = { v, 0, 0, 2, 1, 0, 4, 0, 1, 6, -1, 1, 1, 0x203, 0, 0, 0, 3, 1, 0, 0, 0, 0, 0, 0 };
+    Spec s = { v, 0, 0, 2, 1, 0, 4, 0, 1, 6, -1, 1, 1, 0x203, 0, 0, 0, 3, 1, 0, 0, 0, 0, 0, 0, 0 };
     return s;
 }
 static Spec hud(float v)
 {
-    Spec s = { v, 0, 0, 3, 1, 0, 4, 0, 1, 7, -1, 0, 0, 0x203, 0x302, 0, 0, 3, 1, 0, 0, 0, 0, 0, 0 };
+    Spec s = { v, 0, 0, 3, 1, 0, 4, 0, 1, 7, -1, 0, 0, 0x203, 0x302, 0, 0, 3, 1, 0, 0, 0, 0, 0, 0, 0 };
     return s;
 }
 
@@ -353,7 +354,7 @@ static int fh_draw(Spec s)
     G->state(&rs);
     g_fh_rs = rs;
     d.surf = k_surf; d.frame = g_frame; d.draw = g_draws++; d.pos = s.pos; d.verts = s.verts;
-    d.slot = (int)s.prog; d.textured = (uint8_t)s.textured; d.skinned = 0; d.alpha_uniforms = 1;
+    d.slot = (int)s.prog; d.textured = (uint8_t)s.textured; d.skinned = (uint8_t)s.skinned; d.alpha_uniforms = 1;
     how = nv2a_seethru_draw(&rs, &d);
     keep = rs;
     if (how == NV2A_SEE_SPLIT) {
@@ -939,6 +940,39 @@ static void cases_hold(void)
                " | v2 p1 t0.5 a4/0 z1/203 b302 T5 s207,1,FF,FF,0"
                " | CLEAR 3");
 
+    /* The speed trail (b2.2-hotfix row 5): a skinned see-through draw with
+     * depth writes that no outline follows is kept whole, as the title draws
+     * it, with glass held back before it as ever: it keeps its place before
+     * the shadows, which darken it, and its depth hides what is drawn after
+     * it and behind it. Split, its see-through half came after the shadow. */
+    start("skinned");
+    fh_draw(glass(1));
+    s = glass(3); s.pos = 0xA00; s.verts = 12; s.stencil = 3; s.skinned = 1;
+    expect_how("skinned: no outline", fh_draw(s), NV2A_SEE_KEEP);
+    fh_clear(3);
+    expect_log("skinned", "v1 p1 t0.5 a20/0 z1/203 b302 T5"
+               " | v3 p1 t0.5 a4/0 z1/203 b302 T5 s207,1,FF,FF,0"
+               " | v1 p1 t0.5 a36/0 z0/203 b302 T5"
+               " | CLEAR 3");
+    expect_device("skinned");
+
+    /* A skinned mesh an outline follows (a character): kept whole the frame
+     * it is first seen, its outline as the title draws it; learnt from that
+     * outline, and split, its outline kept off it, from the next frame. */
+    start("skinned: outlined");
+    for (kept = 0; kept < 2; kept++) {
+        g_frame++;
+        s = glass(1); s.pos = 0xA10; s.verts = 12; s.stencil = 3; s.skinned = 1;
+        expect_how(kept ? "skinned, outlined: a piece, learnt" : "skinned, outlined: a piece, not yet known",
+                   fh_draw(s), kept ? NV2A_SEE_SPLIT : NV2A_SEE_KEEP);
+        s = glass(2); s.pos = 0xA20; s.verts = 12; s.textured = 0; s.stencil = 3; s.skinned = 1;
+        expect_how(kept ? "skinned, outlined: the outline, kept off it" : "skinned, outlined: the outline",
+                   fh_draw(s), kept ? NV2A_SEE_MASK : NV2A_SEE_KEEP);
+        expect_device("skinned: outlined");
+        fh_clear(3);
+    }
+    dev.n = 0;
+
     /* A call that has no place in a held draw: the rest of it drawn in
      * place, said once. */
     start("break");
@@ -1024,6 +1058,8 @@ static void cases_census(void)
     s = glass(5); s.pos = 0x900; s.verts = 12; s.stencil = 3;
     fh_draw(s);
     s = glass(6); s.pos = 0x910; s.verts = 12; s.textured = 0; s.stencil = 3;
+    fh_draw(s);
+    s = glass(7); s.pos = 0x920; s.verts = 12; s.stencil = 3; s.skinned = 1;    /* the trail */
     fh_draw(s);
     fh_clear(3);
     g_frame = 601;
