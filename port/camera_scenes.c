@@ -99,7 +99,8 @@ void camscene_start(void)
         /* Input > Behaviour's first row, before Keyboard moves: it adds the
          * submenu too, which adds nothing once that has (menu.h). Each tick
          * has its own line at the bottom. File > Presets: Xbox's
-         * (CAMROW_XBOX); Modern's, the walls' fix alone (CAMROW_MODERN); and
+         * (CAMROW_XBOX); Modern's, the walls' fix and Half pipe cam
+         * (CAMROW_MODERN); and
          * left by the others. */
         const XBOX_MENU_ITEM rows[] = {
             { .menu = XBOX_MENU_INPUT, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_BEHAVIOUR,

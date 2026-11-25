@@ -301,9 +301,9 @@ running while it is open, but your input goes to the menu.
   4x, anisotropic filtering at 16x, Upscaling's Menus and HUD and Textures
   at 8x, Graffiti at 4x and Buttons off, Sharp, Strong and both Cleanup
   ticks, Audio effects on, Keyboard moves on Camera, Stick shape Square,
-  Button prompts' Style Auto, Default cam fix on and the game's three shots
-  off, the free camera on, and Skip intro, Skip cutscenes and Visual
-  indicator on. Xbox and Modern each ask first, and restart the game. The
+  Button prompts' Style Auto, Default cam fix and Half pipe cam on and the
+  game's other two shots off, the free camera on, and Skip intro, Skip
+  cutscenes and Visual indicator on. Xbox and Modern each ask first, and restart the game. The
   other three apply straight away, with no restart. Performance, which a
   new install starts with, has the draw distance, Far buildings and Far
   shadows at 1x, no anti-aliasing or anisotropic filtering, and Upscaling's
@@ -466,12 +466,15 @@ running while it is open, but your input goes to the menu.
   following you, the free camera too if it's on. Through a half pipe's jump
   with Half pipe cam unticked, the camera rises and falls with you, at its
   own angle and distance, and settles back as you land; on the Xbox's own
-  follow camera you would fly up out of view. After a shot the free
+  follow camera you would fly up out of view. With Half pipe cam unticked,
+  the free camera can go through a half pipe's wall, riding it with the
+  camera turned into it or coming down from a big jump: a known issue,
+  which Modern leaves ticked for. After a shot the free
   camera glides back to where you had it ([Free camera](#free-camera),
   above). The camera that holds
   still as you skate out of a level's exit is no tick's: it is always as on
   the Xbox. All three are ticked by default, and in the Xbox preset, and
-  none in Modern. Each
+  Half pipe cam alone in Modern. Each
   changes at once, and is kept as `graffiti_cam=`, `half_pipe_cam=` and
   `loop_cam=` (1 or 0) in the settings file. Keyboard moves
   sets how W A S D move the skater ([Keyboard](#keyboard), above): from the

@@ -62,12 +62,14 @@ enum { CAMROW_FIX, CAMROW_FADE, CAMROW_SHOTS, CAMROW_TICKS = CAMROW_SHOTS + CAMS
 
 /* File > Presets: Xbox sets the row, the console's own camera, no fix and
  * no floor at a wall, and every shot the game's; Modern sets Default cam fix
- * alone, none of the game's shots; the others leave it as the player has it
- * (spriteice, 22 November 2026: "our Default and Max presets to not touch
- * any of the users changes in the camera menu at all"; and all of Input, 23
- * November 2026). */
+ * and the half pipe's shot, the other two shots off, as with Half pipe cam
+ * unticked the free camera can go through a half pipe's wall (known bug 83;
+ * spriteice, 25 November 2026: "modern ships with half pipe cam on"); the
+ * others leave it as the player has it (spriteice, 22 November 2026: "our
+ * Default and Max presets to not touch any of the users changes in the
+ * camera menu at all"; and all of Input, 23 November 2026). */
 #define CAMROW_XBOX   (CAMSCENE_ALL << CAMROW_SHOTS)
-#define CAMROW_MODERN (1 << CAMROW_FIX)
+#define CAMROW_MODERN ((1 << CAMROW_FIX) | (CAMSCENE_BIT(CAMSCENE_HALF_PIPE) << CAMROW_SHOTS))
 
 /* The ticks, read once, at start, before the game runs, which also adds
  * their row, Input > Behaviour > Camera, Behaviour's first, after

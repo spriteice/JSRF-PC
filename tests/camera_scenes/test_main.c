@@ -117,7 +117,9 @@ static void check_row(void)
     CHECK(!strcmp(row->choice_hints[CAMROW_FADE],
                   "Keeps the camera back at a wall instead of fading your skater."));
     /* File > Presets: Xbox sets it, Default cam fix and No skater
-     * fade off and every shot on; Modern too, Default cam fix alone on;
+     * fade off and every shot on; Modern too, Default cam fix and Half pipe
+     * cam on (spriteice, 25 November 2026: "modern ships with half pipe cam
+     * on");
      * Performance, Balanced and Quality leave it as it is
      * ("our Default and Max presets to not touch any of the users changes
      * in the camera menu at all", and all of Input, 23 November 2026). A start with no keys
@@ -125,7 +127,7 @@ static void check_row(void)
      * default"). */
     CHECK(row->presets == XBOX_PRESETS_SET);
     CHECK(row->preset[XBOX_PRESET_XBOX] == CAMROW_XBOX && CAMROW_XBOX == 28);
-    CHECK(row->preset[XBOX_PRESET_MODERN] == CAMROW_MODERN && CAMROW_MODERN == 1);   /* Default cam fix */
+    CHECK(row->preset[XBOX_PRESET_MODERN] == CAMROW_MODERN && CAMROW_MODERN == 9);   /* Default cam fix, Half pipe cam */
     CHECK(row->leave == XBOX_PRESETS_LEVELS && !(row->leave & XBOX_PRESET_BIT(XBOX_PRESET_XBOX))
           && !(row->leave & XBOX_PRESET_BIT(XBOX_PRESET_MODERN)));
     CHECK(CAMSCENE_DEFAULT == 7);
