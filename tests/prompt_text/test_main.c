@@ -23,7 +23,16 @@
  *   name first, two names, a name in words, several pictures in one place,
  *   a line placed by its right end, and a font that isn't there;
  * - width: a line's width with its pictures, the draw's own end;
- * - mark: the mark's fade, read back.
+ * - mark: the mark's fade, read back;
+ * - find: the names in the game's loaded text (known bug 81): each of the
+ *   table's names, in English and in Shift-JIS, with its place, its bytes
+ *   and what it names; an English name only as a word of its own, a
+ *   two-byte character's second byte never taken for a letter, the font's
+ *   codes stepped over whole; a name the text's end cuts found through
+ *   where the text goes on, and not without it; the first names only, in
+ *   order; default.xbe's own strings never searched;
+ * - colour: a piece after a picture starting in the colour in force there,
+ *   and the width of a found line with its pictures.
  */
 #include <math.h>
 #include <stdio.h>
@@ -35,12 +44,13 @@
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); exit(1); } } while (0)
 #define CLOSE(a, b) (fabsf((float)(a) - (float)(b)) < 1e-3f * (1.0f + fabsf((float)(b))))
 
-#define TOP     (1u << 20)
+#define TOP     (1u << 22)   /* past default.xbe's own strings (PROMPT_TEXT_OWN_LOW to _HIGH) */
 #define LINES   0x20000u     /* the made-up lines, 0x100 apart */
 #define TEXT_AT 0x40000u     /* the text a call is given (not TEXT: the Windows
                               * headers' own macro, which prompt_text.h's
                               * includes bring in there) */
 #define SCRATCH 0x50000u     /* the pieces' text */
+#define MORE_AT 0x60000u     /* where a text goes on */
 
 static uint8_t *mem;
 
@@ -60,12 +70,13 @@ static void case_table(void)
         const PromptTextLine *l = &prompt_text_lines[i];
         int words = 0;
         CHECK(l->va >= 0x1C3F60u && l->va < 0x1EB760u);   /* .rdata and .data */
+        CHECK(l->va >= PROMPT_TEXT_OWN_LOW && l->va < PROMPT_TEXT_OWN_HIGH);   /* never searched for names */
         CHECK(l->n >= 1 && l->n <= PROMPT_TEXT_NAMES);
         CHECK(l->right == (i < 5));
         for (k = 0; k < l->n; k++) {
             CHECK(l->name[k].what < PROMPT_TEXT_WHATS && l->name[k].bytes >= 1);
             /* A letter is one byte, or two full-width; a name in words more. */
-            if (l->name[k].what > PROMPT_TEXT_B) words = 1;
+            if (l->name[k].what > PROMPT_TEXT_Y) words = 1;
             else if (l->name[k].bytes > 2) words = 1;
             if (k) CHECK(l->name[k].at > l->name[k - 1].at + l->name[k - 1].bytes);
             count[l->name[k].what]++;
@@ -224,6 +235,7 @@ static void case_pictures(void)
     };
     static const struct { int what, control; } ones[] = {
         { PROMPT_TEXT_A, INPUT_CTL_A }, { PROMPT_TEXT_B, INPUT_CTL_B },
+        { PROMPT_TEXT_X, INPUT_CTL_X }, { PROMPT_TEXT_Y, INPUT_CTL_Y },
         { PROMPT_TEXT_LTRIGGER, INPUT_CTL_LTRIGGER }, { PROMPT_TEXT_RTRIGGER, INPUT_CTL_RTRIGGER },
     };
     InputLayout pad, keys;
@@ -306,7 +318,8 @@ static void case_pictures(void)
 
 /* ---- drawing -------------------------------------------------------------- */
 
-/* The made-up font: what it drew and the pictures marked. */
+/* The made-up font: what it drew and the pictures marked. A colour code,
+ * $c and its digit, takes no room, as in the game's font. */
 #define WIDE 10.0f                    /* a character's advance at scale 1 */
 static struct { char text[64]; float x, y; } g_piece[8];
 static struct { PromptTextPicture pic; float x, y, half; } g_mark[8];
@@ -326,6 +339,7 @@ static int font_draw(void *ctx, uint32_t va, float x, float y, float *px, float 
     g_npieces++;
     for (; *s; s++) {
         if (s[0] == '$' && s[1] == 'n') { pen = x; top += PROMPT_TEXT_CELL * g_ys; s++; continue; }
+        if (s[0] == '$' && s[1] == 'c' && s[2]) { s += 2; continue; }
         pen += WIDE * g_xs;
     }
     *px = pen;
@@ -336,8 +350,14 @@ static int font_draw(void *ctx, uint32_t va, float x, float y, float *px, float 
 
 static float font_measure(void *ctx, uint32_t va, float scale)
 {
+    const char *s = (const char *)mem + va;
+    float w = 0.0f;
     (void)ctx;
-    return (float)strlen((const char *)mem + va) * WIDE * scale;
+    for (; *s; s++) {
+        if (s[0] == '$' && s[1] == 'c' && s[2]) { s += 2; continue; }
+        w += WIDE * scale;
+    }
+    return w;
 }
 
 static void font_mark(void *ctx, PromptTextPicture pic, float x, float y, float half)
@@ -557,6 +577,185 @@ static void case_mark(void)
     printf("prompt_text mark: pass\n");
 }
 
+/* ---- names in the game's loaded text -------------------------------------- */
+
+/* Whether prompt_text_find finds, in text (and where it goes on, more, if
+ * not NULL), n names, the first at at, of bytes bytes, naming what. */
+static int find_in(const char *text, const char *more, PromptTextMatch *m)
+{
+    memset(mem + TEXT_AT, 0, 0x1000u);
+    memset(mem + MORE_AT, 0, 0x1000u);
+    put_text(TEXT_AT, text);
+    if (more) put_text(MORE_AT, more);
+    return prompt_text_find(prompt_text_names, prompt_text_nnames, mem, TOP, TEXT_AT, more ? MORE_AT : 0u, m);
+}
+
+static int found(const PromptTextMatch *m, int k, uint32_t at, uint32_t bytes, int what)
+{
+    return k < m->n && m->name[k].at == at && m->name[k].bytes == bytes && m->name[k].what == what
+        && m->name[k].pics == 0;
+}
+
+static void case_find(void)
+{
+    static const struct { const char *bytes; int what; uint32_t take; } k_want[] = {
+        { "A button", PROMPT_TEXT_A, 1 }, { "B button", PROMPT_TEXT_B, 1 },
+        { "X button", PROMPT_TEXT_X, 1 }, { "Y button", PROMPT_TEXT_Y, 1 },
+        { "Right Trigger", PROMPT_TEXT_RTRIGGER, 13 }, { "right trigger", PROMPT_TEXT_RTRIGGER, 13 },
+        { "Left Trigger", PROMPT_TEXT_LTRIGGER, 12 }, { "left trigger", PROMPT_TEXT_LTRIGGER, 12 },
+        { "left thumbstick", PROMPT_TEXT_LSTICK, 15 },
+        { "\x82\x60\x83\x7B\x83\x5E\x83\x93", PROMPT_TEXT_A, 2 },
+        { "\x82\x61\x83\x7B\x83\x5E\x83\x93", PROMPT_TEXT_B, 2 },
+        { "\x82\x77\x83\x7B\x83\x5E\x83\x93", PROMPT_TEXT_X, 2 },
+        { "\x82\x78\x83\x7B\x83\x5E\x83\x93", PROMPT_TEXT_Y, 2 },
+        { "\x89\x45\x83\x67\x83\x8A\x83\x4B", PROMPT_TEXT_RTRIGGER, 8 },
+        { "\x8D\xB6\x83\x67\x83\x8A\x83\x4B", PROMPT_TEXT_LTRIGGER, 8 },
+        { "\x8D\xB6\x83\x54\x83\x80\x83\x58\x83\x65\x83\x42\x83\x62\x83\x4E", PROMPT_TEXT_LSTICK, 16 },
+    };
+    char text[128];
+    PromptTextMatch m;
+    size_t i;
+    int j;
+    memset(mem, 0, TOP);
+    /* The table: every name once, each the length it says, its picture's
+     * bytes within it; and each found where a made-up line has it, in
+     * quote marks and a colour as the game's files have them, the
+     * Japanese in the full-width quote marks. */
+    CHECK(prompt_text_nnames == (int)(sizeof k_want / sizeof k_want[0]));
+    for (j = 0; j < prompt_text_nnames; j++) {
+        const PromptTextName *nm = &prompt_text_names[j];
+        CHECK(nm->len == strlen(nm->bytes) && nm->take >= 1 && nm->take <= nm->len && nm->what < PROMPT_TEXT_WHATS);
+        CHECK(!strcmp(nm->bytes, k_want[j].bytes) && nm->what == k_want[j].what && nm->take == k_want[j].take);
+        CHECK(nm->word == (nm->bytes[0] > 0 && (uint8_t)nm->bytes[0] < 0x80u));
+    }
+    for (i = 0; i < sizeof k_want / sizeof k_want[0]; i++) {
+        const int english = (uint8_t)k_want[i].bytes[0] < 0x80u;
+        snprintf(text, sizeof text, english ? "Use the $c2\x81\x67%s\x81\x68$c0 now." : "\x82\xB1\x82\xEA$c2\x81\x75%s\x81\x76$c0",
+                 k_want[i].bytes);
+        CHECK(find_in(text, NULL, &m) == 1);
+        CHECK(m.line == PROMPT_TEXT_FOUND && !m.right && m.n == 1 && m.len == strlen(text));
+        CHECK(found(&m, 0, english ? 13u : 9u, k_want[i].take, k_want[i].what));
+    }
+    /* The plain quote mark one line closes with, and none at all. */
+    CHECK(find_in("Hold \"left trigger\" down", NULL, &m) && found(&m, 0, 6, 12, PROMPT_TEXT_LTRIGGER));
+    CHECK(find_in("left thumbstick", NULL, &m) && found(&m, 0, 0, 15, PROMPT_TEXT_LSTICK) && m.len == 15);
+
+    /* An English name only as a word: no letter or digit just before it or
+     * just after; a two-byte character before it is no letter, even with a
+     * second byte that reads as one (0x81 0x41, 0x81 0x67). */
+    CHECK(!find_in("Hit the BA button", NULL, &m));
+    CHECK(!find_in("Hit the 2A button", NULL, &m));
+    CHECK(!find_in("Hit the A buttons", NULL, &m));
+    CHECK(!find_in("upright trigger", NULL, &m));
+    CHECK(find_in("\x81\x41" "A button", NULL, &m) && found(&m, 0, 2, 1, PROMPT_TEXT_A));
+    CHECK(find_in("\x81\x67" "B button" "\x81\x68", NULL, &m) && found(&m, 0, 2, 1, PROMPT_TEXT_B));
+    CHECK(find_in("(Y button)", NULL, &m) && found(&m, 0, 1, 1, PROMPT_TEXT_Y));
+    /* A letter that is a two-byte character's second byte is never a
+     * name's first: 0x82 0x41 then " button". */
+    CHECK(!find_in("x\x82\x41 button", NULL, &m));
+    CHECK(!find_in("\x82\x82\x60\x83\x7B\x83\x5E\x83\x93", NULL, &m));
+    /* The font's codes stepped over whole: a name just after one is found,
+     * and one inside a code's digits isn't there to find. */
+    CHECK(find_in("$nA button", NULL, &m) && found(&m, 0, 2, 1, PROMPT_TEXT_A));
+    CHECK(find_in("$x120X button", NULL, &m) && found(&m, 0, 5, 1, PROMPT_TEXT_X));
+    CHECK(find_in("$c1$$B button", NULL, &m) && found(&m, 0, 5, 1, PROMPT_TEXT_B));
+
+    /* The text's end cutting a name: found through where it goes on, the
+     * picture taking what the text has of it; not without it; and a name
+     * wholly past the text's end isn't the text's. */
+    CHECK(!find_in("Pull the Right Trig", NULL, &m));
+    CHECK(find_in("Pull the Right Trig", "ger to go.", &m) && m.n == 1 && m.len == 19);
+    CHECK(found(&m, 0, 9, 10, PROMPT_TEXT_RTRIGGER));
+    CHECK(!find_in("Press the A", NULL, &m));
+    CHECK(find_in("Press the A", " button.", &m) && found(&m, 0, 10, 1, PROMPT_TEXT_A));
+    CHECK(!find_in("Press the A", "-OK", &m));
+    CHECK(!find_in("Press the A", " buttons", &m));
+    CHECK(find_in("\x82\x60", "\x83\x7B\x83\x5E\x83\x93", &m) && found(&m, 0, 0, 2, PROMPT_TEXT_A) && m.len == 2);
+    CHECK(!find_in("Press the ", "A button.", &m));
+    CHECK(find_in("Hold the A button", "", &m) && found(&m, 0, 9, 1, PROMPT_TEXT_A));
+
+    /* Several: in order, the first PROMPT_TEXT_NAMES. */
+    CHECK(find_in("A button, B button$nleft trigger and Y button or X button", NULL, &m));
+    CHECK(m.n == PROMPT_TEXT_NAMES && found(&m, 0, 0, 1, PROMPT_TEXT_A) && found(&m, 1, 10, 1, PROMPT_TEXT_B)
+          && found(&m, 2, 20, 12, PROMPT_TEXT_LTRIGGER) && found(&m, 3, 37, 1, PROMPT_TEXT_Y));
+
+    /* None: no name, empty, outside guest memory; and default.xbe's own
+     * strings, the table's, never searched, a name in them or not. */
+    CHECK(!find_in("Nothing to press here.", NULL, &m));
+    CHECK(!find_in("", "A button", &m));
+    CHECK(!prompt_text_find(prompt_text_names, prompt_text_nnames, mem, TOP, 0x100u, 0u, &m));
+    CHECK(!prompt_text_find(prompt_text_names, prompt_text_nnames, mem, TOP, TOP, 0u, &m));
+    put_text(PROMPT_TEXT_OWN_LOW, "the A button");
+    put_text(PROMPT_TEXT_OWN_HIGH - 0x20u, "the B button");
+    put_text(PROMPT_TEXT_OWN_HIGH, "the X button");
+    CHECK(!prompt_text_find(prompt_text_names, prompt_text_nnames, mem, TOP, PROMPT_TEXT_OWN_LOW, 0u, &m));
+    CHECK(!prompt_text_find(prompt_text_names, prompt_text_nnames, mem, TOP, PROMPT_TEXT_OWN_HIGH - 0x20u, 0u, &m));
+    CHECK(prompt_text_find(prompt_text_names, prompt_text_nnames, mem, TOP, PROMPT_TEXT_OWN_HIGH, 0u, &m)
+          && found(&m, 0, 4, 1, PROMPT_TEXT_X));
+    printf("prompt_text find: pass\n");
+}
+
+/* ---- a found line drawn: its colour, its pictures and its width ----------- */
+
+/* text, its names found, drawn from (x, y) at scale s in art, as the
+ * font call's override draws it. */
+static int draw_found(const char *text, const char *more, int art, float x, float y, float s, PromptTextMatch *m)
+{
+    InputLayout pad, keys;
+    layouts(&pad, &keys);
+    CHECK(find_in(text, more, m));
+    prompt_text_show(m, art, &pad, &keys);
+    g_npieces = g_nmarks = 0;
+    g_xs = g_ys = s;
+    g_end = x;
+    return prompt_text_draw(m, mem, TEXT_AT, SCRATCH, x, y, s, s, &k_font);
+}
+
+static void case_colour(void)
+{
+    const float side = PROMPT_TEXT_SIDE, pad = PROMPT_TEXT_PAD;
+    PromptTextMatch m;
+    float x, w;
+    /* A letter in a colour: the picture in its place, the word button and
+     * the rest after it still in that colour, to the code that ends it. */
+    memset(mem, 0, TOP);
+    CHECK(draw_found("Hit $c2\"A button\"$c0 now", NULL, PROMPT_ART_PLAYSTATION, 20.0f, 30.0f, 1.0f, &m) == 1);
+    CHECK(g_npieces == 2 && g_nmarks == 1);
+    CHECK(piece_is(0, "Hit $c2\"", 20.0f, 30.0f));
+    x = 20.0f + 5.0f * WIDE;
+    CHECK(mark_at(0, INPUT_CTL_A, PROMPT_ART_PLAYSTATION, 0, x, 30.0f, 1.0f));
+    CHECK(piece_is(1, "$c2 button\"$c0 now", x + side + 2.0f * pad, 30.0f));
+    /* The last colour before the picture, after several; none, none. */
+    CHECK(draw_found("$c1Go, $c3right trigger$c0!", NULL, PROMPT_ART_XBOX, 0.0f, 0.0f, 1.0f, &m) == 1);
+    CHECK(g_npieces == 2 && piece_is(0, "$c1Go, $c3", 0.0f, 0.0f));
+    CHECK(mark_is(0, INPUT_CTL_RTRIGGER, 4.0f * WIDE, 0.0f, 1.0f));
+    CHECK(piece_is(1, "$c3$c0!", 4.0f * WIDE + side + 2.0f * pad, 0.0f));
+    CHECK(draw_found("Y button first", NULL, PROMPT_ART_KEYS, 0.0f, 0.0f, 1.0f, &m) == 1);
+    CHECK(g_npieces == 1 && piece_is(0, " button first", side + 2.0f * pad, 0.0f));
+    CHECK(mark_at(0, INPUT_CTL_Y, PROMPT_ART_KEYS, 0, 0.0f, 0.0f, 1.0f));
+    /* A colour over a new line: the next line's piece in it too. */
+    CHECK(draw_found("$c2X button$nand on$c0", NULL, PROMPT_ART_XBOX, 0.0f, 0.0f, 1.0f, &m) == 1);
+    CHECK(g_npieces == 3 && piece_is(0, "$c2", 0.0f, 0.0f) && piece_is(1, "$c2 button", side + 2.0f * pad, 0.0f)
+          && piece_is(2, "$c2and on$c0", 0.0f, PROMPT_TEXT_CELL));
+    /* A cut name, its picture whole with what the text has of it: nothing
+     * after it yet. */
+    CHECK(draw_found("Pull the $c2Right Tr", "igger$c0 now", PROMPT_ART_NINTENDO, 0.0f, 0.0f, 1.0f, &m) == 1);
+    CHECK(g_npieces == 1 && g_nmarks == 1 && piece_is(0, "Pull the $c2", 0.0f, 0.0f));
+    CHECK(mark_at(0, INPUT_CTL_RTRIGGER, PROMPT_ART_NINTENDO, 0, 9.0f * WIDE, 0.0f, 1.0f));
+
+    /* The width a found line is measured at, as for a centred row: its
+     * pieces without the colour codes and its pictures' room, where its
+     * draw ends; the words' width the picture's less the name's. */
+    CHECK(draw_found("Hit $c2\"A button\"$c0 now", NULL, PROMPT_ART_XBOX, 50.0f, 0.0f, 0.5f, &m) == 1);
+    w = prompt_text_width(&m, mem, TEXT_AT, SCRATCH, 0.5f, 0.5f, &k_font);
+    CHECK(CLOSE(w, g_end - 50.0f));
+    CHECK(CLOSE(w, 17.0f * WIDE * 0.5f + 0.5f * (side + 2.0f * pad)));
+    CHECK(draw_found("Hold the left thumbstick", NULL, PROMPT_ART_KEYS, 0.0f, 0.0f, 1.0f, &m) == 4);
+    w = prompt_text_width(&m, mem, TEXT_AT, SCRATCH, 1.0f, 1.0f, &k_font);
+    CHECK(CLOSE(g_end, 9.0f * WIDE) && CLOSE(w, 9.0f * WIDE + 4.0f * side + 2.0f * pad));   /* a key a way */
+    printf("prompt_text colour: pass\n");
+}
+
 int main(void)
 {
     mem = (uint8_t *)calloc(1, TOP);
@@ -569,6 +768,8 @@ int main(void)
     case_more();
     case_width();
     case_mark();
+    case_find();
+    case_colour();
     free(mem);
     printf("prompt_text: all cases pass\n");
     return 0;

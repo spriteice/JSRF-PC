@@ -71,7 +71,11 @@ The game's lines that name a control (the A or B by its letter, and in the
 graffiti editor's help lines the D-pad, the left stick and the triggers in
 words) are `prompt_text.c`, from the font calls' overrides there: it knows
 each line by its bytes and draws it in pieces, each name's place marked
-for the style's pictures the same way. The editor's help line scrolls
+for the style's pictures the same way. The talks' and the missions'
+messages, which the game loads from its files into memory of its own,
+have no line of the table to be: their names are found by their own bytes
+(known bug 81), with the rest of the talk window's page, not yet typed, so
+a name it is typing is found whole. The editor's help line scrolls
 along a bar of static, in a ticker of the game's own: its override there
 gives the game's measure the line's width with its pictures, marks the
 ticker's window for them, and in widescreen draws the line in copies along

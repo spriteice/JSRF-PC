@@ -5539,9 +5539,10 @@ void sub_00115F40(void)
  * float at +4. While the ticker draws, its text is drawn at once across the
  * whole width, its x spread out from the middle (widescreen_menus_ticker_x)
  * and put back after. Any other text that is one of the game's lines
- * naming the A or B button by its letter, in a style that draws those
- * (prompt_text.h, below), is drawn at once too, through sub_0003D610's
- * override, so its pictures are drawn with it. */
+ * naming the A or B button by its letter, or the game's loaded text naming
+ * a control, in a style that draws those (prompt_text.h, below), is drawn
+ * at once too, through sub_0003D610's override, so its pictures are drawn
+ * with it. */
 extern void sub_0003D5D0_gen(void);
 extern void sub_0003D610(void);
 static int text_line_now(void);
@@ -5581,8 +5582,9 @@ void sub_0003D5D0(void)
         wide_menu_unmark(piece, marked);
         return;
     }
-    /* A line naming the A or B by its letter, in a style that draws it: at
-     * once, with its pictures (prompt_text.h, below). */
+    /* A line naming the A or B by its letter, or loaded text naming a
+     * control, in a style that draws it: at once, with its pictures
+     * (prompt_text.h, below). */
     if (text_line_now()) {
         sub_0003D610();
         return;
@@ -6235,7 +6237,9 @@ static void prompt_draw(void)
  * sub_0003D610, the font's call that draws at once (x, y, depth, colour,
  * x scale, y scale, text; cdecl), wrapped: a text that is one of the
  * game's lines naming the A or B button by its letter (prompt_text_match),
- * in any style but Default (the game's own art), is drawn in pieces
+ * or the game's loaded text, a talk's or a mission's, naming a control
+ * (prompt_text_find, known bug 81), in any style but Default (the game's
+ * own art), is drawn in pieces
  * through the call's own body, each letter's place left for its picture, a
  * mark in the push buffer (prompt_text_draw); any other text, and every
  * text in Default, is the call's own. The font call that queues,
@@ -6245,7 +6249,8 @@ static void prompt_draw(void)
  * each piece ended, and the game's measure (sub_0003D750, its float read
  * off the x87 stack) a letter's width. Then the call returns to its caller
  * as its own `ret` would. The first time each line is drawn so, the log
- * says where its first picture went. tests/prompt_text checks the table,
+ * says where its first picture went; for loaded text, the first time each
+ * font call draws some (loaded_text_told). tests/prompt_text checks the table,
  * the matching and the pieces; how the lines look needs the game, the test
  * build's steps. */
 #include "prompt_text.h"
@@ -6317,24 +6322,70 @@ static void text_mark(void *ctx, PromptTextPicture pic, float x, float y, float 
     if (device) prompt_buttons_push((uint8_t *)g_xbox_mem_offset, device, words, d3d_make_space);
 }
 static PromptTextMatch s_text;        /* the line text_line_now found */
-/* Whether the text at text is a line, in a style that draws it: *m then
- * holds it, each name with the pictures of what is on its control now. */
-static int text_line(uint32_t text, PromptTextMatch *m)
+/* Whether the text at text is a line, in a style that draws it: one of the
+ * table's, or the game's loaded text with names in it (more, if not 0,
+ * where it goes on: prompt_text_find). *m then holds it, each name with the
+ * pictures of what is on its control now. */
+static int text_line_more(uint32_t text, uint32_t more, PromptTextMatch *m)
 {
+    const uint8_t *mem = (const uint8_t *)g_xbox_mem_offset;
     const int art = input_prompts_art_now();
     InputLayout pad, keys;
     if (art == PROMPT_ART_GAME) return 0;
-    if (!prompt_text_match(prompt_text_lines, prompt_text_nlines, (const uint8_t *)g_xbox_mem_offset,
-                           ADX_GUEST_RAM, text, m))
+    if (!prompt_text_match(prompt_text_lines, prompt_text_nlines, mem, ADX_GUEST_RAM, text, m)
+     && !prompt_text_find(prompt_text_names, prompt_text_nnames, mem, ADX_GUEST_RAM, text, more, m))
         return 0;
     input_remap_layouts(&pad, &keys);
     prompt_text_show(m, art, &pad, &keys);
     return 1;
 }
+static int text_line(uint32_t text, PromptTextMatch *m)
+{
+    return text_line_more(text, 0u, m);
+}
+/* The talk window (class 0x1D07B0, made by the talk display's manager,
+ * actor 0x1165) types a page of a talk out: each frame sub_000F8360 copies
+ * the next character of its page (its pages at +0x50, 0x114 bytes each, the
+ * one it types at +0x15C, how far into it at +0x16C) to its own text at
+ * +0x54, a colour code over whole and the codes that play a sound or wait
+ * acted on, not copied; and its draw, sub_000F8130, hands that text as
+ * typed so far to the font's queuing call, by one of two calls. For those
+ * calls the rest of the page is where the text goes on (prompt_text_find),
+ * so a name's picture comes in as the typing reaches it (known bug 81).
+ * Taken only while the window is the class, its page is one of its pages,
+ * and the text's last byte is the page's last one read: otherwise 0, and a
+ * name is drawn once it is typed whole. */
+#define TALK_WINDOW_CLASS    0x001D07B0u /* its class: the first word of the window */
+#define TALK_WINDOW_DRAW_AT  0x000F8181u /* its draw's font call's return, at the window's own x and y */
+#define TALK_WINDOW_DRAW_ROW 0x000F81AAu /*   the other's, at its page's y */
+#define TALK_WINDOW_PAGES    0x50u       /* its pages */
+#define TALK_WINDOW_TEXT     0x54u       /* its text, as typed so far */
+#define TALK_WINDOW_NPAGES   0x158u      /* how many pages */
+#define TALK_WINDOW_PAGE     0x15Cu      /* the page it types */
+#define TALK_WINDOW_READ     0x16Cu      /* how far into it */
+#define TALK_WINDOW_PAGE_SIZE 0x114u     /* a page's bytes */
+#define TALK_WINDOW_PAGE_TEXT 0x100u     /* ... its text's room */
+static uint32_t talk_window_rest(uint32_t ra, uint32_t text)
+{
+    const uint32_t w = text - TALK_WINDOW_TEXT;
+    uint32_t pages, page, read, at, typed;
+    if (ra != TALK_WINDOW_DRAW_AT && ra != TALK_WINDOW_DRAW_ROW) return 0;
+    if (adx_word(w) != TALK_WINDOW_CLASS) return 0;
+    pages = adx_word(w + TALK_WINDOW_PAGES);
+    page = adx_word(w + TALK_WINDOW_PAGE);
+    read = adx_word(w + TALK_WINDOW_READ);
+    if (!pages || page >= adx_word(w + TALK_WINDOW_NPAGES) || !read || read >= TALK_WINDOW_PAGE_TEXT) return 0;
+    at = pages + page * TALK_WINDOW_PAGE_SIZE;
+    if (at < ADX_GUEST_LOW || at + TALK_WINDOW_PAGE_SIZE > ADX_GUEST_RAM) return 0;
+    for (typed = 0; typed < TALK_WINDOW_PAGE_TEXT && MEM8(text + typed); typed++) {}
+    if (!typed || MEM8(text + typed - 1u) != MEM8(at + read - 1u)) return 0;
+    return at + read;
+}
 /* ... the font call's own text (its seventh argument), into s_text. */
 static int text_line_now(void)
 {
-    return text_line(MEM32(g_esp + 4u * TEXT_FONT_ARGS), &s_text);
+    const uint32_t text = MEM32(g_esp + 4u * TEXT_FONT_ARGS);
+    return text_line_more(text, talk_window_rest(MEM32(g_esp), text), &s_text);
 }
 /* ---- The graffiti editor's ticker (widescreen_menus.h, prompt_text.h) --------
  * sub_001284F0, the editor's ticker's draw (this in ecx; one argument, the
@@ -6397,25 +6448,27 @@ static void editor_ticker_window(float left, float right)
 }
 /* sub_0003D750: the font's measure (scale, text; cdecl, the width a float
  * on the x87 stack). The ticker's call of it, for a line drawn with
- * pictures, is given the width so drawn; any other is the game's own. The
- * pieces are measured below the stack the caller left, as the font call's
+ * pictures, is given the width so drawn, as is any measure of the game's
+ * loaded text with names in it (prompt_text_find), such as the talk
+ * window's of a line it centres; any other is the game's own. The pieces
+ * are measured below the stack the caller left, as the font call's
  * override draws them. */
 void sub_0003D750(void)
 {
     uint8_t *m = (uint8_t *)g_xbox_mem_offset;
     const uint32_t esp = g_esp, ra = MEM32(esp), text = MEM32(esp + 8u);
     const float scale = bits_f32(MEM32(esp + 4u));
+    const int ticker = s_ticker.on && ra == EDITOR_TICKER_MEASURE;
     PromptTextCalls c = { text_draw, text_measure, text_mark, NULL };
     PromptTextMatch line;
     TextCall t;
     uint32_t left;
     float width;
     sub_0003D750_gen();
-    if (!s_ticker.on || ra != EDITOR_TICKER_MEASURE) return;
-    s_ticker.width = (float)g_fp_stack[g_fp_top & 7];
-    if (!text_line(text, &line)) return;
+    if (ticker) s_ticker.width = (float)g_fp_stack[g_fp_top & 7];
+    if (!text_line(text, &line) || (!ticker && line.line != PROMPT_TEXT_FOUND)) return;
     memset(&t, 0, sizeof t);
-    t.ra = EDITOR_TICKER_PIECE;
+    t.ra = ticker ? EDITOR_TICKER_PIECE : ra;
     c.ctx = &t;
     left = g_esp;
     g_esp = (esp - (line.len + 16u)) & ~15u;
@@ -6423,7 +6476,7 @@ void sub_0003D750(void)
     g_esp = left;
     if (!(width > 0.0f)) return;
     g_fp_stack[g_fp_top & 7] = (double)width;
-    s_ticker.width = width;
+    if (ticker) s_ticker.width = width;
 }
 /* The ticker's own font calls (above): 1 when the call was done here, its
  * `ret` with it; 0 for the font call's override to draw it. */
@@ -6500,6 +6553,38 @@ void sub_0012A640(void)
     sub_0012A640_gen();
     widescreen_menus_editor_end(began);
 }
+/* The log's line for the game's loaded text drawn with pictures
+ * (prompt_text_find): once for each font call that draws it, by its
+ * return address, with what its names were the first time. */
+#define LOADED_TEXT_CALLS 32
+static void loaded_text_told(uint32_t ra, const PromptTextMatch *s, int marks, int art, const float f[4],
+                             const float first[3])
+{
+    static uint32_t told[LOADED_TEXT_CALLS];
+    static const char *const what[PROMPT_TEXT_WHATS] = {
+        [PROMPT_TEXT_A] = "A", [PROMPT_TEXT_B] = "B", [PROMPT_TEXT_X] = "X", [PROMPT_TEXT_Y] = "Y",
+        [PROMPT_TEXT_LTRIGGER] = "left trigger", [PROMPT_TEXT_RTRIGGER] = "right trigger",
+        [PROMPT_TEXT_DPAD] = "D-pad", [PROMPT_TEXT_DPAD_ACROSS] = "D-pad across",
+        [PROMPT_TEXT_DPAD_UPDOWN] = "D-pad up and down", [PROMPT_TEXT_LSTICK] = "left stick",
+        [PROMPT_TEXT_LSTICK_ACROSS] = "left stick across", [PROMPT_TEXT_LSTICK_UPDOWN] = "left stick up and down",
+    };
+    char names[160];
+    int i, k, len = 0;
+    for (i = 0; i < LOADED_TEXT_CALLS && told[i] && told[i] != ra; i++) {}
+    if (i == LOADED_TEXT_CALLS || told[i]) return;
+    told[i] = ra;
+    names[0] = 0;
+    for (k = 0; k < s->n && len < (int)sizeof names; k++)
+        len += snprintf(names + len, sizeof names - (size_t)len, "%s%s at byte %u", k ? ", " : "",
+                        s->name[k].what < PROMPT_TEXT_WHATS && what[s->name[k].what] ? what[s->name[k].what] : "?",
+                        (unsigned)s->name[k].at);
+    fprintf(stderr, "[INPUT] button prompts: the game's loaded text, by the font call returning to %08X%s, "
+            "drawn with %d picture%s in art %d (%s; %u bytes), from %.1f, %.1f at scale %.2f: the first at "
+            "%.1f, %.1f, %.1f pixels across\n", (unsigned)ra,
+            ra == TALK_WINDOW_DRAW_AT || ra == TALK_WINDOW_DRAW_ROW ? " (the talk window)" : "", marks,
+            marks == 1 ? "" : "s", art, names, (unsigned)s->len, (double)f[0], (double)f[1], (double)f[3],
+            (double)first[0], (double)first[1], (double)(2.0f * first[2]));
+}
 void sub_0003D610(void)
 {
     static unsigned char told[256];
@@ -6533,7 +6618,7 @@ void sub_0003D610(void)
     c.ctx = &t;
     g_esp = (esp - (s_text.len + 16u)) & ~15u;
     prompt_text_draw(&s_text, m, text, g_esp, f[0], f[1], f[2], f[3], &c);
-    if (line < (int)sizeof told && !told[line] && t.marks) {
+    if (line >= 0 && line < (int)sizeof told && !told[line] && t.marks) {
         told[line] = 1;
         fprintf(stderr, "[INPUT] button prompts: the game's line at %08X drawn with %d picture%s in art %d, "
                 "from %.1f, %.1f at scale %.2f: the first at %.1f, %.1f, %.1f pixels across\n",
@@ -6541,6 +6626,7 @@ void sub_0003D610(void)
                 (double)f[1], (double)f[3], (double)t.first[0], (double)t.first[1],
                 (double)(2.0f * t.first[2]));
     }
+    if (line == PROMPT_TEXT_FOUND && t.marks) loaded_text_told(t.ra, &s_text, t.marks, t.art, f, t.first);
     g_esp = esp + 4u;   /* its `ret`: the caller takes its arguments off */
 }
 static void photo_draw(void);

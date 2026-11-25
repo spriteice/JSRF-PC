@@ -236,6 +236,34 @@ const PromptTextLine prompt_text_lines[] = {
 };
 const int prompt_text_nlines = (int)(sizeof prompt_text_lines / sizeof prompt_text_lines[0]);
 
+/* The names the game's loaded text uses (prompt_text.h), as its files have
+ * them: read from every talk (Media/Event/TalkEvent) and mission
+ * (Media/Mission) file of the US release, the 57 that name a control. In
+ * English the A, B, X and Y buttons ("the A button", the letter the
+ * picture), the triggers with and without capitals, and the left
+ * thumbstick; in Japanese the full-width letters with the word for button
+ * (the letter the picture), the right and left trigger and the left
+ * thumbstick. START, in the few lines that name it, stays a word. */
+const PromptTextName prompt_text_names[] = {
+    { "A button", 8, 1, PROMPT_TEXT_A, 1 },
+    { "B button", 8, 1, PROMPT_TEXT_B, 1 },
+    { "X button", 8, 1, PROMPT_TEXT_X, 1 },
+    { "Y button", 8, 1, PROMPT_TEXT_Y, 1 },
+    { "Right Trigger", 13, 13, PROMPT_TEXT_RTRIGGER, 1 },
+    { "right trigger", 13, 13, PROMPT_TEXT_RTRIGGER, 1 },
+    { "Left Trigger", 12, 12, PROMPT_TEXT_LTRIGGER, 1 },
+    { "left trigger", 12, 12, PROMPT_TEXT_LTRIGGER, 1 },
+    { "left thumbstick", 15, 15, PROMPT_TEXT_LSTICK, 1 },
+    { "\x82\x60\x83\x7B\x83\x5E\x83\x93", 8, 2, PROMPT_TEXT_A, 0 },   /* the full-width A, button */
+    { "\x82\x61\x83\x7B\x83\x5E\x83\x93", 8, 2, PROMPT_TEXT_B, 0 },   /* B, button */
+    { "\x82\x77\x83\x7B\x83\x5E\x83\x93", 8, 2, PROMPT_TEXT_X, 0 },   /* X, button */
+    { "\x82\x78\x83\x7B\x83\x5E\x83\x93", 8, 2, PROMPT_TEXT_Y, 0 },   /* Y, button */
+    { "\x89\x45\x83\x67\x83\x8A\x83\x4B", 8, 8, PROMPT_TEXT_RTRIGGER, 0 },   /* right, trigger */
+    { "\x8D\xB6\x83\x67\x83\x8A\x83\x4B", 8, 8, PROMPT_TEXT_LTRIGGER, 0 },   /* left, trigger */
+    { "\x8D\xB6\x83\x54\x83\x80\x83\x58\x83\x65\x83\x42\x83\x62\x83\x4E", 16, 16, PROMPT_TEXT_LSTICK, 0 }, /* left, thumbstick */
+};
+const int prompt_text_nnames = (int)(sizeof prompt_text_names / sizeof prompt_text_names[0]);
+
 static int in_guest(uint32_t top, uint32_t va, uint32_t bytes)
 {
     return va >= GUEST_LOW && va < top && bytes <= top - va;
@@ -337,6 +365,92 @@ int prompt_text_match(const PromptTextLine *table, int n, const uint8_t *mem, ui
     return 0;
 }
 
+/* ---- names in the game's loaded text ------------------------------------- */
+
+/* The font's codes (sub_0003CF20): a $ and a letter, and after some letters
+ * more bytes it reads with them: $c a colour's digit, $g two digits, $x a
+ * pen's three; any other, the two alone. */
+#define CODE_BYTES     2u
+#define CODE_COLOUR_MORE 1u
+#define CODE_DIGITS_MORE 2u
+#define CODE_PEN_MORE    3u
+
+/* How many bytes the font reads as the code at its $, in text t of len
+ * bytes: never past its end. */
+static uint32_t code_bytes(const uint8_t *t, uint32_t len)
+{
+    uint32_t n = CODE_BYTES;
+    if (len < CODE_BYTES) return len;
+    if (t[1] == 'c') n += CODE_COLOUR_MORE;
+    else if (t[1] == 'g') n += CODE_DIGITS_MORE;
+    else if (t[1] == 'x') n += CODE_PEN_MORE;
+    return n < len ? n : len;
+}
+
+static int lead(uint8_t c) { return c >= PROMPT_TEXT_LEAD_LOW && c <= PROMPT_TEXT_LEAD_HIGH; }
+static int letter(uint8_t c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || digit(c); }
+
+/* The text, and where it goes on, as one: in host memory, read once. */
+typedef struct {
+    uint8_t b[2u * PROMPT_TEXT_LONGEST + 1u];
+    uint32_t len, all;        /* the text's bytes, and with what goes on */
+} Joined;
+
+/* Up to PROMPT_TEXT_LONGEST bytes from va, to its 0 or memory's end. */
+static uint32_t copy_in(uint8_t *to, const uint8_t *mem, uint32_t top, uint32_t va)
+{
+    uint32_t n = 0;
+    while (n < PROMPT_TEXT_LONGEST && in_guest(top, va + n, 1u) && mem[va + n]) {
+        to[n] = mem[va + n];
+        n++;
+    }
+    return n;
+}
+
+int prompt_text_find(const PromptTextName *names, int n, const uint8_t *mem, uint32_t top, uint32_t text,
+                     uint32_t more, PromptTextMatch *m)
+{
+    static Joined j;
+    uint32_t p, step;
+    uint8_t last;
+    int k = 0, i, was_letter = 0;
+    if (!in_guest(top, text, 1u) || !mem[text]) return 0;
+    if (text >= PROMPT_TEXT_OWN_LOW && text < PROMPT_TEXT_OWN_HIGH) return 0;
+    j.len = copy_in(j.b, mem, top, text);
+    j.all = j.len + (more ? copy_in(j.b + j.len, mem, top, more) : 0u);
+    j.b[j.all] = 0;
+    for (p = 0; p < j.len && k < PROMPT_TEXT_NAMES; p += step) {
+        const uint8_t c = j.b[p];
+        if (c == '$') {
+            step = code_bytes(j.b + p, j.len - p);
+            was_letter = 0;
+            continue;
+        }
+        step = lead(c) ? 2u : 1u;
+        last = step == 1u ? c : 0u;
+        for (i = 0; i < n; i++) {
+            const PromptTextName *nm = &names[i];
+            if (nm->len > j.all - p || memcmp(j.b + p, nm->bytes, nm->len)) continue;
+            if (nm->word && (was_letter || (p + nm->len < j.all && letter(j.b[p + nm->len])))) continue;
+            m->name[k].at = p;
+            m->name[k].bytes = nm->take < j.len - p ? nm->take : j.len - p;
+            m->name[k].what = nm->what;
+            m->name[k].pics = 0;
+            k++;
+            step = nm->len;
+            last = nm->word ? j.b[p + nm->len - 1u] : 0u;   /* an English name's last letter */
+            break;
+        }
+        was_letter = letter(last);
+    }
+    if (!k) return 0;
+    m->line = PROMPT_TEXT_FOUND;
+    m->right = 0;
+    m->n = k;
+    m->len = j.len;
+    return 1;
+}
+
 /* ---- what stands in a name's place --------------------------------------- */
 
 /* A layout's first input on control c, or INPUT_NONE, as the icons take it
@@ -366,6 +480,8 @@ static const uint8_t k_lstick[WAYS] = {
 static const struct { uint8_t control, ways, stick, group; } k_whats[PROMPT_TEXT_WHATS] = {
     [PROMPT_TEXT_A]        = { INPUT_CTL_A, 0, 0, 0 },
     [PROMPT_TEXT_B]        = { INPUT_CTL_B, 0, 0, 0 },
+    [PROMPT_TEXT_X]        = { INPUT_CTL_X, 0, 0, 0 },
+    [PROMPT_TEXT_Y]        = { INPUT_CTL_Y, 0, 0, 0 },
     [PROMPT_TEXT_LTRIGGER] = { INPUT_CTL_LTRIGGER, 0, 0, 0 },
     [PROMPT_TEXT_RTRIGGER] = { INPUT_CTL_RTRIGGER, 0, 0, 0 },
     [PROMPT_TEXT_DPAD]          = { 0, WAY_UP | WAY_LEFT | WAY_DOWN | WAY_RIGHT, 0, PROMPT_GROUP_DPAD },
@@ -426,13 +542,38 @@ void prompt_text_show(PromptTextMatch *m, int art, const InputLayout *pad, const
 
 /* ---- drawing a line ------------------------------------------------------ */
 
-/* Bytes from to to of the text drawn at (x, y) through scratch; the pen
- * where it ended. */
+/* The colour code in force at byte at of the text, the last $c before it,
+ * into code: its bytes, 0 for none. */
+static uint32_t colour_at(const uint8_t *mem, uint32_t text, uint32_t at, uint8_t code[PROMPT_TEXT_COLOUR])
+{
+    uint32_t p = 0, n = 0;
+    while (p < at) {
+        const uint8_t *t = mem + text + p;
+        if (*t == '$') {
+            const uint32_t step = code_bytes(t, at - p);
+            if (step == PROMPT_TEXT_COLOUR && t[1] == 'c') {
+                memcpy(code, t, PROMPT_TEXT_COLOUR);
+                n = PROMPT_TEXT_COLOUR;
+            }
+            p += step;
+            continue;
+        }
+        p += lead(*t) ? 2u : 1u;
+    }
+    return n;
+}
+
+/* Bytes from to to of the text drawn at (x, y) through scratch, after the
+ * colour code in force at from, as the font call starts in its own; the
+ * pen where it ended. */
 static int piece(const PromptTextCalls *c, uint8_t *mem, uint32_t text, uint32_t scratch, uint32_t from,
                  uint32_t to, float x, float y, float *px, float *py)
 {
-    memcpy(mem + scratch, mem + text + from, to - from);
-    mem[scratch + (to - from)] = 0;
+    uint8_t code[PROMPT_TEXT_COLOUR];
+    const uint32_t n = from ? colour_at(mem, text, from, code) : 0u;
+    memcpy(mem + scratch, code, n);
+    memcpy(mem + scratch + n, mem + text + from, to - from);
+    mem[scratch + n + (to - from)] = 0;
     return c->draw(c->ctx, scratch, x, y, px, py);
 }
 

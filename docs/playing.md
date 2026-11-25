@@ -50,6 +50,13 @@ the letter is the style's picture of it, a little taller than the text, in
 every language the game has: the line to press B to go back in the pause
 menu's notebook and graffiti picker, Roboy's test run's line to press A to
 start, the save, load and memory messages, and the graffiti save screen's.
+The talks and the missions' messages, the tutorial's among them (Corn's
+lines, Gum's and the lessons on the screen), name the A, B, X and Y
+buttons, the triggers and the left thumbstick in words, in English and
+Japanese: a button's letter is the style's picture, the word button
+staying, and a trigger's or the stick's words are its picture, the quote
+marks and the colour round them staying the game's. As a talk types its
+line out, a name's picture comes in whole as the typing reaches it.
 The help line that scrolls along the top of the graffiti editor names the
 D-pad, the left stick and the triggers too, in words, and each name there
 is the style's picture, scrolling with the line: a pad's D-pad or left
