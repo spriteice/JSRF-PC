@@ -8266,9 +8266,9 @@ static void area_set_from_photo(uint32_t set[DRAW_SET_WORDS], uint32_t eye_at, u
 static uint32_t scene_number(void)
 {
     uint32_t gm = MEM32(GAME_MANAGER), scene;
-    if (gm < 0x10000u || gm + GM_ACTORS + SCENE_ACTOR * 4u + 4u >= (64u << 20)) return DRAW_SCENE_NONE;
+    if (gm < ADX_GUEST_LOW || gm + GM_ACTORS + SCENE_ACTOR * 4u + 4u >= ADX_GUEST_RAM) return DRAW_SCENE_NONE;
     scene = MEM32(gm + GM_ACTORS + SCENE_ACTOR * 4u);
-    if (scene < 0x10000u || scene + SCENE_NUMBER + 4u >= (64u << 20) || MEM32(scene) != SCENE_CLASS)
+    if (scene < ADX_GUEST_LOW || scene + SCENE_NUMBER + 4u >= ADX_GUEST_RAM || MEM32(scene) != SCENE_CLASS)
         return DRAW_SCENE_NONE;
     return MEM32(scene + SCENE_NUMBER);
 }

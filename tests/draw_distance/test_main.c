@@ -1103,10 +1103,10 @@ static void check_kibogaoka(void)
     /* From area 4 the game draws 115: its shadows stay. */
     made_sets(KIBO_MIDDLE, KIBO_AREAS, b, sh);
     CHECK(set_holds(sh, 115));
-    /* 96, 105 and 107: only from 9, 13 and 20 are they left out, and 80 past
-     * 96 with them; 71 past 9 stays. From 71 the game draws them, and 80 a
-     * crossing on; at All from 12 they are added, and 80, and from 13, where
-     * 80 lies past none of them, 80 is too. */
+    /* 96, 105 and 107: only from 7, 9, 13 and 20 are they left out, and 80
+     * past 96 with them; 71 past 9 stays. From 71 the game draws them, and 80
+     * a crossing on; at All from 12 they are added, and 80, and from 13,
+     * where 80 lies past none of them, 80 is too. */
     made_sets(KIBO_EAST, KIBO_AREAS, b, sh);
     CHECK(set_holds(b, KIBO_WEST) && !set_holds(b, KIBO_SIGHT) && !set_holds(sh, KIBO_SIGHT));
     CHECK(!set_holds(b, KIBO_WEST_FAR) && !set_holds(sh, KIBO_WEST_FAR));

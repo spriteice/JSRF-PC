@@ -226,17 +226,16 @@ int draw_set_whole_map(const DrawArea *areas, int n, uint32_t set[DRAW_SET_WORDS
  * bug 71); areas 96, on the bowl's west side, 105, far past it, and 107,
  * scenery the game draws only from there, while the game's set is that of
  * 7, 9, 13 or 20, at and past the map's middle's east edge, where 107 hung
- * in the air too (known bug 84); and the
- * shadows of 115 to 117, from every area, which lit patches on a walkway
- * (known bug 72). A rule can also hold only while one of the
- * game's scenes plays (draw_buildings_scene): on 99th Street (stage
- * 0x00030000, its 63 areas), no area at all, from any area, while scene 36
- * plays, the one the first time the player comes in, whose camera in the
- * street west of the plaza, area 8, showed thin lines across a close-up
- * (known bug 80); along the street the rest of the time Far buildings adds
- * as before. Each such rule is kept by hand, for one case seen and named;
- * the first call on the map logs each. Before any stage, DRAW_STAGE_NONE,
- * which no rule has. */
+ * in the air too (known bug 84); and the shadows of 115 to 117, from every
+ * area, which lit patches on a walkway (known bug 72). A rule can also hold
+ * only while one of the game's scenes plays (draw_buildings_scene): on 99th
+ * Street (stage 0x00030000, its 63 areas), no area at all, from any area,
+ * while scene 36 plays, the one the first time the player comes in, whose
+ * camera in the street west of the plaza, area 8, showed thin lines across a
+ * close-up (known bug 80); along the street the rest of the time Far
+ * buildings adds as before. Each such rule is kept by hand, for one case seen
+ * and named; the first call on the map logs each. Before any stage,
+ * DRAW_STAGE_NONE, which no rule has. */
 #define DRAW_STAGE_NONE 0xFFFFFFFFu
 void draw_buildings_stage(uint32_t stage);
 
