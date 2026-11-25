@@ -51,6 +51,7 @@
                               * includes bring in there) */
 #define SCRATCH 0x50000u     /* the pieces' text */
 #define MORE_AT 0x60000u     /* where a text goes on */
+#define FOUR_AT 0x70000u     /* a text of as many names as a match holds */
 
 static uint8_t *mem;
 
@@ -674,10 +675,18 @@ static void case_find(void)
     CHECK(!find_in("Press the ", "A button.", &m));
     CHECK(find_in("Hold the A button", "", &m) && found(&m, 0, 9, 1, PROMPT_TEXT_A));
 
-    /* Several: in order, the first PROMPT_TEXT_NAMES. */
+    /* Several: in order, the first PROMPT_TEXT_NAMES; PROMPT_TEXT_NAMES of
+     * them, at FOUR_AT, said nowhere, and one more, its text said once in
+     * the log (run.py), the first PROMPT_TEXT_NAMES the same, the rest
+     * words. */
+    put_text(FOUR_AT, "A button, B button$nleft trigger and Y button");
+    CHECK(prompt_text_find(prompt_text_names, prompt_text_nnames, mem, TOP, FOUR_AT, 0u, &m));
+    CHECK(m.n == PROMPT_TEXT_NAMES && found(&m, 0, 0, 1, PROMPT_TEXT_A) && found(&m, 1, 10, 1, PROMPT_TEXT_B)
+          && found(&m, 2, 20, 12, PROMPT_TEXT_LTRIGGER) && found(&m, 3, 37, 1, PROMPT_TEXT_Y));
     CHECK(find_in("A button, B button$nleft trigger and Y button or X button", NULL, &m));
     CHECK(m.n == PROMPT_TEXT_NAMES && found(&m, 0, 0, 1, PROMPT_TEXT_A) && found(&m, 1, 10, 1, PROMPT_TEXT_B)
           && found(&m, 2, 20, 12, PROMPT_TEXT_LTRIGGER) && found(&m, 3, 37, 1, PROMPT_TEXT_Y));
+    CHECK(find_in("A button, B button$nleft trigger and Y button or X button", NULL, &m) && m.n == PROMPT_TEXT_NAMES);
 
     /* None: no name, empty, outside guest memory; and default.xbe's own
      * strings, the table's, never searched, a name in them or not. */

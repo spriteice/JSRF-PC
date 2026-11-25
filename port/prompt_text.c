@@ -411,15 +411,16 @@ int prompt_text_find(const PromptTextName *names, int n, const uint8_t *mem, uin
                      uint32_t more, PromptTextMatch *m)
 {
     static Joined j;
+    static int told_over;
     uint32_t p, step;
     uint8_t last;
-    int k = 0, i, was_letter = 0;
+    int k = 0, i, was_letter = 0, over = 0;
     if (!in_guest(top, text, 1u) || !mem[text]) return 0;
     if (text >= PROMPT_TEXT_OWN_LOW && text < PROMPT_TEXT_OWN_HIGH) return 0;
     j.len = copy_in(j.b, mem, top, text);
     j.all = j.len + (more ? copy_in(j.b + j.len, mem, top, more) : 0u);
     j.b[j.all] = 0;
-    for (p = 0; p < j.len && k < PROMPT_TEXT_NAMES; p += step) {
+    for (p = 0; p < j.len && !over; p += step) {
         const uint8_t c = j.b[p];
         if (c == '$') {
             step = code_bytes(j.b + p, j.len - p);
@@ -432,6 +433,10 @@ int prompt_text_find(const PromptTextName *names, int n, const uint8_t *mem, uin
             const PromptTextName *nm = &names[i];
             if (nm->len > j.all - p || memcmp(j.b + p, nm->bytes, nm->len)) continue;
             if (nm->word && (was_letter || (p + nm->len < j.all && letter(j.b[p + nm->len])))) continue;
+            if (k == PROMPT_TEXT_NAMES) {   /* one more than a match holds: left as words */
+                over = 1;
+                break;
+            }
             m->name[k].at = p;
             m->name[k].bytes = nm->take < j.len - p ? nm->take : j.len - p;
             m->name[k].what = nm->what;
@@ -442,6 +447,11 @@ int prompt_text_find(const PromptTextName *names, int n, const uint8_t *mem, uin
             break;
         }
         was_letter = letter(last);
+    }
+    if (over && !told_over) {
+        told_over = 1;
+        fprintf(stderr, "[INPUT] button prompts: a text at %08X names more than %d controls: the first %d "
+                "shown as pictures, the rest left as words\n", (unsigned)text, PROMPT_TEXT_NAMES, PROMPT_TEXT_NAMES);
     }
     if (!k) return 0;
     m->line = PROMPT_TEXT_FOUND;

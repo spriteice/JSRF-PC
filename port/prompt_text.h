@@ -192,7 +192,9 @@ extern const int prompt_text_nnames;
  * default.xbe's own strings, names a control with one of names' n names:
  * 1 with *m filled in (its line PROMPT_TEXT_FOUND, its first
  * PROMPT_TEXT_NAMES names in the text's order, their pictures the
- * control's own in no art yet: prompt_text_show), 0 for no name. more, if
+ * control's own in no art yet: prompt_text_show), 0 for no name. A name
+ * after those is left as words, and the first text with one is said once
+ * in the log, by its address. more, if
  * not 0, is where the text goes on (the talk window's page not yet typed):
  * a name the text's end cuts is found through it, its bytes in the text
  * the picture's. */
