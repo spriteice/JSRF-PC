@@ -3883,9 +3883,9 @@ void sub_00052780(void)
  * whose op is 0xE2..0xF9 is returned and becomes a mode (0xE7 = open a talk).
  * Only op 0xF6 also asks the player (message 0x1AF). JSRF_TALK_LOG=1 dumps
  * the list and the trigger list (header+0x17C / +0x180) once, and logs every
- * entry this returns. Where it returns none, a skater preview the game has
- * no skip for may end here at a second press of A, with Skip cutscenes on
- * (preview_unskipped, with the other previews' skip below). */
+ * entry this returns. Where it returns none, a rival's preview may end
+ * here at a second press of A, with Skip cutscenes on (preview_skip,
+ * below). */
 static void jsrf_dump_entries(const char *what, uint32_t ents, uint32_t n)
 {
     const uint8_t *m = (const uint8_t *)g_xbox_mem_offset;
@@ -3911,7 +3911,7 @@ static void jsrf_dump_entries(const char *what, uint32_t ents, uint32_t n)
     fflush(stderr);
 }
 extern void sub_00057DE0_gen(void);
-static void preview_unskipped(uint32_t runner);  /* Skip cutscenes: a preview the game has no skip for */
+static void preview_skip(uint32_t runner);  /* Skip cutscenes: a rival's preview */
 void sub_00057DE0(void)
 {
     static uint32_t dumped;
@@ -3928,7 +3928,7 @@ void sub_00057DE0(void)
         }
     }
     sub_00057DE0_gen();
-    preview_unskipped(self);
+    preview_skip(self);
     if (on && (int32_t)g_eax >= 0) {
         uint32_t ents = *(const uint32_t *)(m + hdr + 0x18Cu);
         uint32_t cur = *(const uint32_t *)(m + self + 0xFB8u);
@@ -5680,227 +5680,150 @@ void sub_00023790(void)
         playback_anchor(was ? PLAYBACK_SCENE_END : PLAYBACK_SCENE, 0, game_random());
 }
 
-/* Skater previews (spriteice, 12:58 UTC on 16 November 2026: "skip
+/* Rival previews (spriteice, 12:58 UTC on 16 November 2026: "skip
  * cutscenes also cover skater previews (eg watching monster jam skate to
- * their location in stg10 0121)"). A preview isn't a scene object: the
- * mission plays it, and its events list holds a command 249 [bit, exit],
- * the game's own skip of a preview seen before. The events scan,
- * sub_00057DE0, reaches that entry only while its flags hold (the preview
- * playing), and there (0x57E82) asks the progress object (0x1EFFB0, in ecx)
- * through sub_0003A8C0 whether seen bit `bit` of its 512 at +0x34CC is set;
- * when it is and A or Start is pressed this frame (bit 0 or 2 of 0x251EE8),
- * it sets the entry's flags and takes exit `exit` (sub_00053FB0), as the
- * preview's own end goes on. sub_0003A8C0 has two callers: that one, and the
- * scene's own skip in sub_00023790.
+ * their location in stg10 0121)"; known bug 82, 8:30pm on 24 November 2026:
+ * "cant skip beats follow skater scenes in dogenzaka hill"). A preview isn't
+ * a scene object: its mission plays it, and waits on its rival's arrival.
+ * Its trigger 27 [slot] (the trigger scan's case at 0x5718B) holds when the
+ * game manager's actor in slot slot + RIVAL_SLOT_FIRST is there, its state
+ * (RIVAL_STATE) RIVAL_IDLE or RIVAL_ARRIVED and its RIVAL_LINK 0, and sets
+ * the arrival's flag; the mission's actions then remove the rival (77, at
+ * 0x596C9), take the bars away (207) and set the preview's seen bit (210),
+ * and its events play a scene where it has one (227) and end it (230). The
+ * rival (class RIVAL_CLASS, its update sub_000A76E0) replays its run in
+ * state RIVAL_ON_RUN (0xA8023): its records from the one at RIVAL_RECORD,
+ * the frames left of the current one at RIVAL_FRAMES_LEFT, RIVAL_STARTING
+ * set until its first frame loads the first record. When the last record's
+ * frames run out it sets RIVAL_ARRIVED (0xA8083), or in game modes 2 and 3
+ * removes itself (0xA806E). 22 missions play a preview this way; every one
+ * has one rival, in slot 1.
  *
- * With Skip cutscenes on, a preview not yet seen is skipped the same way: at
- * that call, each frame the scan asks, the presses go through the scenes'
- * two-press timing (cutscene_skip_frame, keyed by the entry, which the scan
- * holds in esi), and at the second press the answer is "seen", so the scan
- * takes the entry's exit at that press, as the game's own skip does. The
- * prompt is the scenes' prompt; it goes when the scan stops asking (the
- * preview over). A preview already seen takes the two presses too, as a
- * scene seen before does: with the option on, the answer is "not seen" but
- * at the second press, so the game's own skip at one press of A or Start
- * is left out (spriteice, 13:48 UTC: "a single rule with our option ticked
- * only, without is the games default").
+ * With Skip cutscenes on, after the events scan (sub_00057DE0) has found
+ * nothing and no scene is there, a rival the mission waits on
+ * (cutscene_skip_rivals, over its trigger list) that is still on its run
+ * (its first frame done) has the frame's A press counted
+ * (cutscene_skip_frame, keyed by the rival), and at the second press its
+ * run jumps to its last record (cutscene_skip_run_last) with one frame of
+ * it left: its next update ends the run its own way, and the mission plays
+ * the arrival its own way, as if the run had played out. That is every
+ * preview, whether the game has a skip of its own for it (command 249) or
+ * not: the 249's seen test (sub_0003A8C0, from the scan at 0x57E8B) is
+ * answered "not seen" while the option is on, so the game's one-press skip
+ * of a preview seen before is left out, as for scenes. The prompt goes when
+ * the run is over, the presses no longer counted. Nothing in these
+ * functions, the recompiler or the runtime is wrong: this reaches the end
+ * the rival's run already has, sooner.
  *
- * The game's skip is made for a preview seen before, whose own end has
- * already set what it sets; a first one hasn't. So at the second press the
- * preview's end is done first, as if it had played out: its seen bit set,
- * as its command 210 sets it (sub_0003A890), and the flags of each of the
- * mission's own ends (command 230 [exit], in the same events list) that
- * takes the same exit and whose conditions outside the mission's own bank
- * hold (each through sub_00039D40, as the scan tests them; the mission's
- * own, M, say how far the preview has played), set through sub_00039D80
- * as the scan sets them. In the 17 missions with a command 249 that is,
- * for example, 0121's C128=0, 0463's C19=1 and 3413's C10=1, which the
- * skip alone would leave unset; in the Stg20 ones, the same flags as
- * their 249's own. Then the scan takes the 249's exit. */
-#define PREVIEW_SEEN_RA  0x00057E90u  /* the events scan's call of sub_0003A8C0 for command 249 */
-#define RUNNER_SCRIPT    0x1040u      /* the stage script runner's (edi's) mission script */
-#define SCRIPT_EVENTS    0x18Cu       /* its events list, and the count after it */
-#define PROGRESS         0x001EFFB0u  /* the progress object */
-#define EVENTS_TEST_RA   0x00057E22u  /* the scan's own calls' returns: an entry's conditions, */
-#define EVENTS_SET_RA    0x00057ECDu  /* ... and an entry's flags */
-#define SEEN_SET_RA      0x0005B096u  /* command 210's setting of its seen bit */
-extern void sub_00039D40(void);
-extern void sub_00039D80(void);
-extern void sub_0003A890(void);
-static uint32_t progress_call(void (*fn)(void), uint32_t ra, int nargs, const uint32_t *args)
-{
-    const uint32_t sv_ecx = g_ecx;
-    uint32_t r;
-    g_ecx = PROGRESS;
-    r = guest_call_cdecl(fn, ra, nargs, args);
-    g_ecx = sv_ecx;
-    return r;
-}
-static int preview_holds(void *ctx, uint32_t condition_at)
-{
-    uint32_t a[2];
-    (void)ctx;
-    a[0] = condition_at;
-    a[1] = 1;
-    return progress_call(sub_00039D40, EVENTS_TEST_RA, 2, a) != 0;
-}
-/* The preview's own end, for the 249 whose words are at `at` (the entry's
- * +0x10, as the scan holds it) in runner's script: its seen bit, then the
- * flags of its own ends (cutscene_skip_preview_ends), all found before
- * any is set. The number of ends whose flags were set. */
-static int preview_own_end(uint32_t runner, uint32_t at, uint32_t bit)
-{
-    const uint32_t script = MEM32(runner + RUNNER_SCRIPT);
-    const uint32_t list = script ? MEM32(script + SCRIPT_EVENTS) : 0;
-    const uint32_t n = script ? MEM32(script + SCRIPT_EVENTS + 4u) : 0;
-    uint32_t a[2], ends[16];
-    int count, k;
-    a[0] = bit;
-    progress_call(sub_0003A890, SEEN_SET_RA, 1, a);
-    count = cutscene_skip_preview_ends((const uint8_t *)g_xbox_mem_offset, list, n,
-                                       MEM32(at + CUTSCENE_SKIP_SEEN_EXIT), preview_holds, NULL, ends, 16);
-    for (k = 0; k < count; k++) {
-        a[0] = MEM32(ends[k] + CUTSCENE_SKIP_EVENT_FLAGS);
-        a[1] = MEM32(ends[k] + CUTSCENE_SKIP_EVENT_FLAGS_MANY);
-        if (a[1] && a[1] <= CUTSCENE_SKIP_CONDITIONS) progress_call(sub_00039D80, EVENTS_SET_RA, 2, a);
-    }
-    return count;
-}
+ * Until known bug 82 a preview was known by its events list's shape (only
+ * ends and the game's own skips, at least one 249), which five previews
+ * don't have (0111, 0242, 0701, 0817, 0876), and was ended by a
+ * reconstruction of its end, which jumped over what the mission does at the
+ * arrival (known bug 68: the bars). Now the mission's own script does all
+ * of it. After a skip the log says when the rival has arrived, and a
+ * RECOMP_CHECK says once if it hasn't within ARRIVAL_WAIT seconds: trigger
+ * 27 would then not hold, and the preview would wait. */
+#define PREVIEW_SEEN_RA   0x00057E90u  /* the events scan's call of sub_0003A8C0 for command 249 */
+#define RUNNER_SCRIPT     0x1040u      /* the stage script runner's (ecx's) mission script */
+#define SCRIPT_TRIGGERS   0x17Cu       /* its trigger list, and the count after it */
+#define RIVAL_SLOT_FIRST  0x0Cu        /* a mission's rival n is the game manager's actor n + this */
+#define RIVAL_CLASS       0x001CD570u  /* the rival's class (its vtable) */
+#define RIVAL_STARTING    0x50u        /* set until its run's first frame */
+#define RIVAL_FRAMES_LEFT 0x54u        /* the frames left of its current record */
+#define RIVAL_RECORD      0x58u        /* its current record */
+#define RIVAL_LINK        0x8B0u       /* 0 for trigger 27 to hold (a link its update keeps; not read further) */
+#define RIVAL_STATE       0x8B4u
+#define RIVAL_IDLE        0u           /* ... which trigger 27 takes as arrived, */
+#define RIVAL_ON_RUN      1u           /* ... replaying its run, */
+#define RIVAL_ARRIVED     6u           /* ... and its run over */
+#define RIVAL_SLOTS       4            /* rivals one mission waits on, at most */
+#define ARRIVAL_WAIT      1.0          /* seconds a skipped rival has to arrive */
 extern void sub_0003A8C0_gen(void);
 void sub_0003A8C0(void)
 {
-    const uint32_t ra = MEM32(g_esp), bit = MEM32(g_esp + 4u), entry = g_esi, runner = g_edi;
-    static uint32_t s_preview_told;
-    uint32_t seen;
+    const uint32_t ra = MEM32(g_esp);
     sub_0003A8C0_gen();
-    if (!cutscene_skip_on()) return;
-    if (ra == SCENE_SEEN_RA) {
-        g_eax = 0;      /* the scene's own skip left out: sub_00023790's two presses instead */
-        return;
-    }
-    if (ra != PREVIEW_SEEN_RA) return;
-    seen = g_eax;
-    g_eax = 0;
-    if (entry != s_preview_told) {
-        s_preview_told = entry;
-        fprintf(stderr, "[SKIP] t=%.2f a preview plays (the mission's event 249 at %08X, seen bit %X %s): "
-                "two presses of A skip it\n", jsrf_now(), entry, bit, seen ? "set: seen before" : "not set");
-    }
-    if (cutscene_skip_frame(entry, (MEM8(PAD_PRESSED) & PAD_PRESSED_A) != 0, jsrf_now())) {
-        const int ends = preview_own_end(runner, entry, bit);
-        fprintf(stderr, "[SKIP] t=%.2f the preview ends: seen bit %X set, the flags of %d of its own ends "
-                "(command 230, exit %u) set, and its event 249's exit taken, as the game's own skip takes "
-                "it\n", jsrf_now(), bit, ends, MEM32(entry + CUTSCENE_SKIP_SEEN_EXIT));
-        g_eax = 1;
-    }
+    if (cutscene_skip_on() && (ra == SCENE_SEEN_RA || ra == PREVIEW_SEEN_RA))
+        g_eax = 0;      /* the game's own skip left out: the two presses instead */
 }
 
-/* A preview the game has no skip for. 0121's rounds (its first visits,
- * C123 to C126: the rivals skate to their places) have no command 249 that
- * holds; only its later visit (C31) has one, and spriteice's example is one
- * of the rounds. A preview's mission is all preview: its events list (the
- * one sub_00057DE0 scans) holds only its own ends (command 230 [exit]) and
- * the game's skips (249), and the mission ends at the first end whose flags
- * come, the mission's own (M) set as the preview plays out
- * (cutscene_skip_preview_list). So where no 249 holds, and no scene is
- * there (the scenes have their own skip; the Stg20 previews' missions play
- * one in their round with no preview, C420), the two presses go through
- * the scenes' timing, keyed by that end, and at the second the scan answers
- * with the end as if its flags had come: the end's entry in the runner's
- * +0xFB8 and its command returned, as the scan itself does at 0x57EFB, so
- * the runner's own handling (sub_00057F90, at 0x58026) sets the end's flags
- * and takes its exit. The end is the first of the list's ends whose
- * conditions outside the mission's own bank hold
- * (cutscene_skip_preview_ends, any exit), and only when every such end
- * takes the same exit; else the preview plays on, and the log says so.
- * Called from sub_00057DE0's wrapper (the stage's blocking-entry list),
- * after the scan, when it found nothing.
- *
- * Before the end, the letterbox bars are taken away, as the game's own
- * skip of a preview takes them away (preview_bars_off). The bars are an
- * object of their own (class 0x1CF338, the game manager's slot 0x1164,
- * under the HUD root, which outlives a change of mission in the stage):
- * a preview's script turns them on (its command 206, the screen command's
- * type 0) and its own playing turns them off (command 207) before its
- * end's flags come. A command 230 only sets the end's flags and takes its
- * exit (sub_00057F90, 0x58026), so ending the preview there, with nothing
- * else, left the bars on in play (known bug 68: Adri's run, 0121's round,
- * the bars still there in mssn0120 after it). The game's own skip, for a
- * preview with a command 249, gives the screen command {the bars, 1 frame}
- * off (sub_00107340 at 0x57EB3) before it sets the entry's flags and takes
- * its exit; this gives the same command, from the same place, so the bars
- * slide away over a frame and their object is removed, the game's way. */
-#define RUNNER_END_FOUND 0xFB8u  /* the end the scan found, for sub_00057F90 */
-#define SCREEN_COMMAND_RA 0x00057EB8u /* the events scan's own call of the screen command, for a 249 */
-#define SCREEN_BARS      0u      /* the screen command's type: the letterbox bars */
-#define SCREEN_OFF       0u      /* its second argument: 1 on, 0 off */
-#define SKIP_BARS_FRAMES 1u      /* the frames a 249 takes the bars away over */
-#define SCREEN_SCRATCH   16u     /* below the stack: the command's three words */
-extern void sub_00107340(void);
-/* The game's own preview skip's screen command, {SCREEN_BARS,
- * SKIP_BARS_FRAMES, 0} off (sub_00107340, cdecl: the command's address,
- * then 1 on or 0 off), as the events scan gives it at 0x57EB3. With no bars
- * there, it does nothing. */
-static void preview_bars_off(void)
-{
-    const uint32_t esp = g_esp;
-    uint32_t a[2];
-    g_esp -= SCREEN_SCRATCH;
-    MEM32(g_esp) = SCREEN_BARS;
-    MEM32(g_esp + 4u) = SKIP_BARS_FRAMES;
-    MEM32(g_esp + 8u) = 0;
-    a[0] = g_esp;
-    a[1] = SCREEN_OFF;
-    guest_call_cdecl(sub_00107340, SCREEN_COMMAND_RA, 2, a);
-    g_esp = esp;
-}
 static int scene_there(void)
 {
     uint32_t gm = MEM32(GAME_MANAGER);
     return gm && MEM32(gm + GM_ACTORS + SCENE_ACTOR * 4u) != 0;
 }
-static void preview_unskipped(uint32_t runner)
+/* The rival in a mission's slot, as the game's actor lookup (sub_000128C0)
+ * finds it, if it is one; else 0. */
+static uint32_t rival_actor(uint32_t slot)
 {
-    static uint32_t s_told, s_two_told;
-    uint32_t script, list, n, ends[16], exit;
+    const uint32_t gm = MEM32(GAME_MANAGER);
+    const uint32_t at = slot + RIVAL_SLOT_FIRST;
+    const uint32_t actor = gm && (int32_t)at >= 0 ? MEM32(gm + GM_ACTORS + at * 4u) : 0;
+    return actor && MEM32(actor) == RIVAL_CLASS ? actor : 0;
+}
+/* Trigger 27's test of a rival (0x5718B). */
+static int rival_arrived(uint32_t actor)
+{
+    const uint32_t state = MEM32(actor + RIVAL_STATE);
+    return (state == RIVAL_IDLE || state == RIVAL_ARRIVED) && MEM32(actor + RIVAL_LINK) == 0;
+}
+static void preview_skip(uint32_t runner)
+{
+    static uint32_t s_told, s_skipped, s_skipped_slot;
+    static double s_skipped_at;
+    uint32_t script, slots[RIVAL_SLOTS], slot = 0, actor = 0, record, last;
     int count, k;
-    double now;
+    const double now = jsrf_now();
+    if (s_skipped) {
+        const uint32_t there = rival_actor(s_skipped_slot);
+        if (there != s_skipped || rival_arrived(there)) {
+            fprintf(stderr, "[SKIP] t=%.2f the rival in slot %u has arrived, %.2f s after the skip: the "
+                    "mission plays its arrival\n", now, s_skipped_slot, now - s_skipped_at);
+            s_skipped = 0;
+        } else if (!RECOMP_CHECK(now - s_skipped_at < ARRIVAL_WAIT, "the rival in slot %u (%08X) hasn't "
+                                 "arrived %.2f s after its run was ended: state %u, link %08X",
+                                 s_skipped_slot, there, now - s_skipped_at, MEM32(there + RIVAL_STATE),
+                                 MEM32(there + RIVAL_LINK))) {
+            s_skipped = 0;
+        }
+    }
     if ((int32_t)g_eax >= 0 || !cutscene_skip_on() || scene_there()) return;
     script = MEM32(runner + RUNNER_SCRIPT);
-    list = script ? MEM32(script + SCRIPT_EVENTS) : 0;
-    n = script ? MEM32(script + SCRIPT_EVENTS + 4u) : 0;
-    if (cutscene_skip_preview_list((const uint8_t *)g_xbox_mem_offset, list, n, preview_holds, NULL)
-        != CUTSCENE_SKIP_LIST_PREVIEW)
-        return;
-    count = cutscene_skip_preview_ends((const uint8_t *)g_xbox_mem_offset, list, n,
-                                       CUTSCENE_SKIP_ANY_EXIT, preview_holds, NULL, ends, 16);
-    if (!count) return;
-    now = jsrf_now();
-    exit = MEM32(ends[0] + CUTSCENE_SKIP_EVENT_EXIT);
-    for (k = 1; k < count; k++) {
-        if (MEM32(ends[k] + CUTSCENE_SKIP_EVENT_EXIT) == exit) continue;
-        if (s_two_told != ends[0]) {
-            s_two_told = ends[0];
-            fprintf(stderr, "[SKIP] t=%.2f a preview with no skip of the game's own plays, but its ends "
-                    "at %08X and %08X take exits %u and %u: it plays on\n", now, ends[0], ends[k], exit,
-                    MEM32(ends[k] + CUTSCENE_SKIP_EVENT_EXIT));
+    if (!script) return;
+    count = cutscene_skip_rivals((const uint8_t *)g_xbox_mem_offset, MEM32(script + SCRIPT_TRIGGERS),
+                                 MEM32(script + SCRIPT_TRIGGERS + 4u), slots, RIVAL_SLOTS);
+    for (k = 0; k < count && !actor; k++) {
+        const uint32_t a = rival_actor(slots[k]);
+        if (a && MEM32(a + RIVAL_STATE) == RIVAL_ON_RUN && !MEM32(a + RIVAL_STARTING)) {
+            actor = a;
+            slot = slots[k];
         }
+    }
+    if (!actor) {
+        s_told = 0;     /* the next preview told, even at the same address */
         return;
     }
-    if (ends[0] != s_told) {
-        s_told = ends[0];
-        fprintf(stderr, "[SKIP] t=%.2f a preview plays with no skip of the game's own (its end: command "
-                "230 at %08X, exit %u, of %d): two presses of A skip it\n", now, ends[0], exit, count);
+    if (actor != s_told) {
+        s_told = actor;
+        fprintf(stderr, "[SKIP] t=%.2f a preview plays: the mission waits on its rival in slot %u (%08X), "
+                "on its run: two presses of A end it\n", now, slot, actor);
     }
-    if (cutscene_skip_frame(ends[0], (MEM8(PAD_PRESSED) & PAD_PRESSED_A) != 0, now)) {
-        preview_bars_off();
-        MEM32(runner + RUNNER_END_FOUND) = ends[0];
-        g_eax = CUTSCENE_SKIP_END;
-        fprintf(stderr, "[SKIP] t=%.2f the preview ends: the bars taken away first (the screen command "
-                "the game's own preview skip gives), then its own end (command 230 at %08X, exit %u) "
-                "found now, as when the preview plays out, for the mission to set its flags and take "
-                "its exit\n", now, ends[0], exit);
+    if (!cutscene_skip_frame(actor, (MEM8(PAD_PRESSED) & PAD_PRESSED_A) != 0, now)) return;
+    record = MEM32(actor + RIVAL_RECORD);
+    last = cutscene_skip_run_last((const uint8_t *)g_xbox_mem_offset, ADX_GUEST_RAM, record);
+    if (!last) {
+        fprintf(stderr, "[SKIP] t=%.2f the rival in slot %u has no last record from %08X: its preview "
+                "plays on\n", now, slot, record);
+        return;
     }
+    MEM32(actor + RIVAL_RECORD) = last;
+    MEM32(actor + RIVAL_FRAMES_LEFT) = 1;
+    s_skipped = actor;
+    s_skipped_slot = slot;
+    s_skipped_at = now;
+    fprintf(stderr, "[SKIP] t=%.2f the preview ends: the run of the rival in slot %u (%08X) jumps from its "
+            "record at %08X to its last, at %08X, with one frame left, for the rival to end it and the "
+            "mission to play the arrival\n", now, slot, actor, record, last);
 }
 /* Widths of the prompt's pieces at its own size, as the font last drew
  * them; before the first draw, a guess (the first frame is drawn clear).

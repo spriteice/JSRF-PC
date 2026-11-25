@@ -16,24 +16,23 @@
  * when it's off. Nothing in the story's flags or the mission is written:
  * the end is the game's.
  *
- * A skater's preview (the camera following a rival to their place) isn't a
- * scene: the mission plays it, and its events list holds the game's own skip
- * of a preview seen before, command 249, which takes the entry's exit at A
- * or Start once the preview's seen bit is set. With Skip cutscenes on, the
- * same two presses, with the same prompt, end a preview not yet seen: at
- * the second press, what the preview's own end would have set is set
- * first (its seen bit, as its command 210 sets it, and the flags of the
- * mission's own ends that take the same exit: cutscene_skip_preview_ends),
- * and "seen" is the answer to that command's test, so the game takes that
- * exit then (recomp_manual.c, sub_0003A8C0). A preview seen before takes
- * the same two presses, the game's own skip of it at one press of A or
- * Start left out while the option is on, as for scenes. A preview the
- * game has no skip for (no command 249 that holds: 0121's rounds) ends at
- * the second press through its mission's own end, the first of its command
- * 230s that the story's flags now lead to, found by the events scan as if
- * the preview had played out (recomp_manual.c, sub_00057DE0), with its
- * letterbox bars taken away first, as the game's own skip of a preview
- * takes them away (a 230 alone leaves them on).
+ * A rival's preview (the camera following a rival skater to their place, as
+ * Poison Jam's in Shibuya Terminal or Beat's in Dogenzaka Hill) isn't a
+ * scene: its mission plays it. The mission names the rival (its action 79),
+ * gives it a recorded run (76), puts the bars on (206) and waits on its
+ * arrival: its trigger 27 [slot] holds once the rival's run is over. The
+ * rival replays the run's records, pad input, one after another, and stops
+ * at the last one's end; the mission then plays the arrival its own way
+ * (the rival removed, the bars off, the preview's seen bit, a scene where it
+ * has one, then its end). With Skip cutscenes on, the same two presses, with
+ * the same prompt, end a preview while its rival is still on its run: at
+ * the second press the run jumps to its last record with one frame of it
+ * left, so the rival ends it its own way at its next update and the mission
+ * goes on from the arrival, as if the run had played out (recomp_manual.c,
+ * after the events scan). That is the one way out of every preview, one seen
+ * before too: the game's own skip of a preview seen before (its command 249,
+ * at one press of A or Start) is left out while the option is on, as for
+ * scenes, and is the game's again when it's off.
  *
  * The prompt is shown for CUTSCENE_SKIP_WINDOW seconds from the first press.
  * It fades in over CUTSCENE_SKIP_FADE while shrinking from
@@ -121,54 +120,27 @@ typedef struct {
 void cutscene_skip_place(float size, const float width[CUTSCENE_SKIP_PIECES],
                          CutsceneSkipPlace place[CUTSCENE_SKIP_PIECES]);
 
-/* A skater preview's own ends, for its skip (recomp_manual.c,
- * sub_0003A8C0). Of a mission's events list, n entries of
- * CUTSCENE_SKIP_EVENT bytes at list in mem (the guest's memory, addresses
- * as offsets into it), the entries with command CUTSCENE_SKIP_END that take
- * exit `exit` (their first word; any, for CUTSCENE_SKIP_ANY_EXIT) and
- * whose conditions outside the
- * mission's own bank (a condition's low 3 bits, CUTSCENE_SKIP_BANK_MISSION)
- * all hold, by holds(ctx, the condition's address). Their addresses go in
- * ends[], up to max; returns how many. An entry with more than
- * CUTSCENE_SKIP_CONDITIONS conditions is passed over, and at most
+/* The rivals a mission waits on, for a preview's skip (recomp_manual.c):
+ * of its trigger list, n entries of CUTSCENE_SKIP_EVENT bytes at list in mem
+ * (the guest's memory, addresses as offsets into it), the slots of its
+ * entries with command CUTSCENE_SKIP_ARRIVED (their first word), each once,
+ * in the list's order. Up to max go in slots[]; returns how many. At most
  * CUTSCENE_SKIP_EVENTS entries are looked at. */
 #define CUTSCENE_SKIP_EVENT          0x54u /* conditions and count, flags and count, command, its words */
-/* Where those are in an entry, a word each; the conditions' address is its
- * first word. */
-#define CUTSCENE_SKIP_EVENT_MANY       0x04u /* how many conditions */
-#define CUTSCENE_SKIP_EVENT_FLAGS      0x08u /* the address of the flags it sets */
-#define CUTSCENE_SKIP_EVENT_FLAGS_MANY 0x0Cu /* how many flags */
-#define CUTSCENE_SKIP_EVENT_COMMAND    0x10u /* its command */
-#define CUTSCENE_SKIP_EVENT_EXIT       0x14u /* the command's first word: an end's exit */
-/* From a skip's command, where the game's scan holds its entry (the entry's
- * CUTSCENE_SKIP_EVENT_COMMAND): its exit, the command's second word, after
- * its seen bit. */
-#define CUTSCENE_SKIP_SEEN_EXIT        0x08u
-#define CUTSCENE_SKIP_END            230u  /* the mission's own end, by exit [exit] */
-#define CUTSCENE_SKIP_SEEN           249u  /* the game's skip of a preview seen before [seen bit, exit] */
-#define CUTSCENE_SKIP_ANY_EXIT       0xFFFFFFFFu /* for exit: the ends by any exit */
-#define CUTSCENE_SKIP_BANK_MISSION   0u
-#define CUTSCENE_SKIP_CONDITIONS     32u
+#define CUTSCENE_SKIP_EVENT_COMMAND  0x10u /* where an entry's command is, a word */
+#define CUTSCENE_SKIP_EVENT_WORD     0x14u /* the command's first word */
+#define CUTSCENE_SKIP_ARRIVED        27u   /* the trigger "the rival in slot [slot] has arrived" */
 #define CUTSCENE_SKIP_EVENTS         1024u
-typedef int (*CutsceneSkipHolds)(void *ctx, uint32_t condition_at);
-int cutscene_skip_preview_ends(const uint8_t *mem, uint32_t list, uint32_t n, uint32_t exit,
-                               CutsceneSkipHolds holds, void *ctx, uint32_t *ends, int max);
+int cutscene_skip_rivals(const uint8_t *mem, uint32_t list, uint32_t n, uint32_t *slots, int max);
 
-/* Whether a mission's events list is a skater preview's, as above: a
- * preview's mission is all preview, and its list holds only its own ends
- * (CUTSCENE_SKIP_END) and at least one of the game's skips
- * (CUTSCENE_SKIP_SEEN). CUTSCENE_SKIP_LIST_OTHER for any other list (or one
- * of more than CUTSCENE_SKIP_EVENTS entries); CUTSCENE_SKIP_LIST_SEEN when
- * a skip's conditions all hold (by holds(ctx, the condition's address), in
- * every bank; one with more than CUTSCENE_SKIP_CONDITIONS never holds),
- * which is then the way the preview is skipped; else
- * CUTSCENE_SKIP_LIST_PREVIEW, a preview the game has no skip for. */
-enum {
-    CUTSCENE_SKIP_LIST_OTHER,
-    CUTSCENE_SKIP_LIST_PREVIEW,
-    CUTSCENE_SKIP_LIST_SEEN
-};
-int cutscene_skip_preview_list(const uint8_t *mem, uint32_t list, uint32_t n,
-                               CutsceneSkipHolds holds, void *ctx);
+/* A rival's run: its records, CUTSCENE_SKIP_RECORD bytes each, the first
+ * 16-bit word of each its frames, with CUTSCENE_SKIP_RECORD_LAST set on the
+ * run's last record. From the record at `record` on, in mem of size bytes,
+ * the address of the run's last record; 0 when none is found within
+ * CUTSCENE_SKIP_RECORDS records or mem, or record is 0. */
+#define CUTSCENE_SKIP_RECORD         8u
+#define CUTSCENE_SKIP_RECORD_LAST    0x8000u
+#define CUTSCENE_SKIP_RECORDS        0x10000u
+uint32_t cutscene_skip_run_last(const uint8_t *mem, uint32_t size, uint32_t record);
 
 #endif

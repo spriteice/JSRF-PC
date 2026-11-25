@@ -5,8 +5,9 @@
  * own settings code (taken from src/nv2a_gl/nv2a_gl.c by run.py). The menu's
  * xbox_MenuAdd is stood in for, to catch the row. The presses, the prompt's
  * fades and its places are driven with made-up times and scenes, and a try
- * of the prompt with no scene (JSRF_SKIP_PROMPT_AT's), and a skater
- * preview's own ends found on made-up events lists. Each case is
+ * of the prompt with no scene (JSRF_SKIP_PROMPT_AT's), and a rival's
+ * preview: the rivals a mission waits on, found on made-up trigger lists,
+ * and its run's last record, on made-up runs. Each case is
  * its own run, as the setting is read once; run.py writes the settings file
  * and checks the log and the file.
  */
@@ -175,141 +176,76 @@ static void places(void)
     }
 }
 
-/* A skater preview's own ends, on made-up events lists shaped as the
- * missions' are: 0121's (one end per chapter, the 249 in chapter C31's),
- * the Stg20 ones' (three ends in turn, a 249 for the first and the last)
- * and 0463's (one end on the mission's own flag alone). */
+/* A rival's preview: the rivals a mission waits on, found in made-up
+ * trigger lists shaped as the missions' are, and a run's last record found
+ * in made-up runs. */
 static uint8_t s_mem[0x2000];
-static int s_asked, s_asked_mission;
-static struct { uint32_t bank, id, value; } s_flags[8];
 static void put(uint32_t at, uint32_t v) { memcpy(s_mem + at, &v, sizeof v); }
-static uint32_t flag(uint32_t bank, uint32_t id, uint32_t value) { return bank | id << 3 | value << 19; }
-static int holds(void *ctx, uint32_t at)
+static void put16(uint32_t at, uint16_t v) { memcpy(s_mem + at, &v, sizeof v); }
+/* Entry i of the list at 0x100: its command and first word. */
+static void trigger(uint32_t i, uint32_t command, uint32_t word0)
 {
-    uint32_t c;
-    int i;
-    CHECK(ctx == s_mem);
-    memcpy(&c, s_mem + at, sizeof c);
-    s_asked++;
-    if ((c & 7u) == CUTSCENE_SKIP_BANK_MISSION) s_asked_mission++;
-    for (i = 0; i < 8; i++)
-        if (s_flags[i].bank == (c & 7u) && s_flags[i].id == ((c >> 3) & 0xFFFFu))
-            return s_flags[i].value == ((c >> 19) & 1u);
-    return ((c >> 19) & 1u) == 0;   /* a flag never set is 0 */
-}
-static void set_flags(uint32_t c1, uint32_t v1, uint32_t c2, uint32_t v2)
-{
-    memset(s_flags, 0, sizeof s_flags);
-    s_flags[0].bank = 1; s_flags[0].id = c1; s_flags[0].value = v1;
-    s_flags[1].bank = 1; s_flags[1].id = c2; s_flags[1].value = v2;
-}
-/* Entry i of the list at 0x100: command, words, and its conditions (up to
- * 2, kept at 0x1000 + i * 16). */
-static uint32_t event(uint32_t i, uint32_t command, uint32_t word0, uint32_t word1, int many,
-                      uint32_t c1, uint32_t c2)
-{
-    const uint32_t e = 0x100u + i * CUTSCENE_SKIP_EVENT, conditions = 0x1000u + i * 16u;
+    const uint32_t e = 0x100u + i * CUTSCENE_SKIP_EVENT;
     memset(s_mem + e, 0, CUTSCENE_SKIP_EVENT);
-    put(conditions, c1);
-    put(conditions + 4u, c2);
-    put(e, conditions);
-    put(e + 4u, (uint32_t)many);
-    put(e + 0x10u, command);
-    put(e + 0x14u, word0);
-    put(e + 0x18u, word1);
-    return e;
+    put(e + CUTSCENE_SKIP_EVENT_COMMAND, command);
+    put(e + CUTSCENE_SKIP_EVENT_WORD, word0);
 }
-static void preview_ends(void)
+static void rivals(void)
 {
-    uint32_t ends[8], e0, e1, e2;
-    int n;
-    /* 0121: ends by chapter, exit 1 for C31's (the preview's), 0 for the
-     * others; its 249 [134 1] if C31=1. */
-    e0 = event(0, 230, 1, 0, 2, flag(0, 203, 1), flag(1, 31, 1));
-    event(1, 230, 0, 0, 2, flag(0, 203, 1), flag(1, 123, 1));
-    event(2, 230, 0, 0, 2, flag(0, 203, 1), flag(1, 124, 1));
-    event(3, 249, 134, 1, 1, flag(1, 31, 1), 0);
-    set_flags(31, 1, 123, 0);
-    s_asked = s_asked_mission = 0;
-    n = cutscene_skip_preview_ends(s_mem, 0x100, 4, 1, holds, s_mem, ends, 8);
-    CHECK(n == 1 && ends[0] == e0);
-    CHECK(s_asked == 1 && s_asked_mission == 0);
-    n = cutscene_skip_preview_ends(s_mem, 0x100, 4, 0, holds, s_mem, ends, 8);
-    CHECK(n == 0);
-    CHECK(s_asked_mission == 0);
-    /* Another chapter's: its own end, not C31's. */
-    set_flags(31, 0, 123, 1);
-    n = cutscene_skip_preview_ends(s_mem, 0x100, 4, 0, holds, s_mem, ends, 8);
-    CHECK(n == 1 && ends[0] == 0x100u + CUTSCENE_SKIP_EVENT);
-    /* Stg20: 400, then 420, then 410, then 430; the 249s are for 400 (exit
-     * 0) and 410 (exit 1), and the end at 420 takes exit 1 too. */
-    e0 = event(0, 230, 0, 0, 2, flag(0, 200, 1), flag(1, 400, 1));
-    e1 = event(1, 230, 1, 0, 2, flag(0, 200, 1), flag(1, 420, 1));
-    e2 = event(2, 230, 1, 0, 2, flag(0, 200, 1), flag(1, 410, 1));
-    event(3, 249, 136, 0, 1, flag(1, 400, 1), 0);
-    event(4, 249, 137, 1, 1, flag(1, 410, 1), 0);
-    set_flags(400, 0, 410, 1);
-    n = cutscene_skip_preview_ends(s_mem, 0x100, 5, 1, holds, s_mem, ends, 8);
-    CHECK(n == 1 && ends[0] == e2);
-    set_flags(400, 1, 410, 0);
-    n = cutscene_skip_preview_ends(s_mem, 0x100, 5, 0, holds, s_mem, ends, 8);
-    CHECK(n == 1 && ends[0] == e0);
-    CHECK(s_asked_mission == 0);
-    (void)e1;
-    /* 0463: one end on the mission's own flag alone: no question asked. */
-    e0 = event(0, 230, 0, 0, 1, flag(0, 203, 1), 0);
-    event(1, 249, 140, 0, 0, 0, 0);
-    s_asked = 0;
-    n = cutscene_skip_preview_ends(s_mem, 0x100, 2, 0, holds, s_mem, ends, 8);
-    CHECK(n == 1 && ends[0] == e0 && s_asked == 0);
-    /* Too many conditions: passed over; ends[] kept to max; no list. */
-    put(e0 + 4u, CUTSCENE_SKIP_CONDITIONS + 1u);
-    CHECK(cutscene_skip_preview_ends(s_mem, 0x100, 2, 0, holds, s_mem, ends, 8) == 0);
-    event(0, 230, 0, 0, 0, 0, 0);
-    event(1, 230, 0, 0, 0, 0, 0);
-    CHECK(cutscene_skip_preview_ends(s_mem, 0x100, 2, 0, holds, s_mem, ends, 1) == 1);
-    CHECK(cutscene_skip_preview_ends(s_mem, 0, 2, 0, holds, s_mem, ends, 8) == 0);
+    uint32_t slots[4];
+    /* 0111's: player areas (1), the rival on its way (26) and arrived (27),
+     * then the list's other sensors and its -1 separators. */
+    trigger(0, 26, 1);
+    trigger(1, CUTSCENE_SKIP_ARRIVED, 1);
+    trigger(2, 1, 0);
+    trigger(3, 0xFFFFFFFFu, 0);
+    trigger(4, 16, 0);
+    memset(slots, 0xEE, sizeof slots);
+    CHECK(cutscene_skip_rivals(s_mem, 0x100, 5, slots, 4) == 1 && slots[0] == 1u);
+    /* A slot waited on twice is one rival; two slots, in the list's order. */
+    trigger(2, CUTSCENE_SKIP_ARRIVED, 1);
+    trigger(3, CUTSCENE_SKIP_ARRIVED, 2);
+    CHECK(cutscene_skip_rivals(s_mem, 0x100, 5, slots, 4) == 2 && slots[0] == 1u && slots[1] == 2u);
+    CHECK(cutscene_skip_rivals(s_mem, 0x100, 5, slots, 1) == 1 && slots[0] == 1u);
+    /* No 27: a mission with no preview (a race's rival is driven another
+     * way); no list; too many entries looked at no further. */
+    trigger(1, 1, 1);
+    trigger(2, 1, 2);
+    trigger(3, 1, 3);
+    CHECK(cutscene_skip_rivals(s_mem, 0x100, 5, slots, 4) == 0);
+    CHECK(cutscene_skip_rivals(s_mem, 0, 5, slots, 4) == 0);
+    trigger(1, CUTSCENE_SKIP_ARRIVED, 1);
+    CHECK(cutscene_skip_rivals(s_mem, 0x100, 1, slots, 4) == 0);
+    CHECK(cutscene_skip_rivals(s_mem, 0x100, 2, slots, 4) == 1);
 }
-
-/* Which lists are a preview's, and which of those the game has no skip
- * for: 0121's rounds (C123 to C126), whose end is then found by any exit;
- * its C31 visit, and 0463's 249 with no conditions, have the game's. */
-static void preview_lists(void)
+static void run_last(void)
 {
-    uint32_t ends[8], e1;
-    int n;
-    event(0, 230, 1, 0, 2, flag(0, 203, 1), flag(1, 31, 1));
-    e1 = event(1, 230, 0, 0, 2, flag(0, 203, 1), flag(1, 123, 1));
-    event(2, 230, 0, 0, 2, flag(0, 203, 1), flag(1, 124, 1));
-    event(3, 249, 134, 1, 1, flag(1, 31, 1), 0);
-    set_flags(31, 0, 123, 1);
-    CHECK(cutscene_skip_preview_list(s_mem, 0x100, 4, holds, s_mem) == CUTSCENE_SKIP_LIST_PREVIEW);
-    n = cutscene_skip_preview_ends(s_mem, 0x100, 4, CUTSCENE_SKIP_ANY_EXIT, holds, s_mem, ends, 8);
-    CHECK(n == 1 && ends[0] == e1);
-    /* The C31 visit: the 249 holds. */
-    set_flags(31, 1, 123, 0);
-    CHECK(cutscene_skip_preview_list(s_mem, 0x100, 4, holds, s_mem) == CUTSCENE_SKIP_LIST_SEEN);
-    n = cutscene_skip_preview_ends(s_mem, 0x100, 4, CUTSCENE_SKIP_ANY_EXIT, holds, s_mem, ends, 8);
-    CHECK(n == 1 && ends[0] == 0x100u);
-    /* Two ends by different exits, both on: both found, in order. */
-    set_flags(31, 1, 123, 1);
-    n = cutscene_skip_preview_ends(s_mem, 0x100, 4, CUTSCENE_SKIP_ANY_EXIT, holds, s_mem, ends, 8);
-    CHECK(n == 2 && ends[0] == 0x100u && ends[1] == e1);
-    /* No 249, or any other command: not a preview's list. */
-    CHECK(cutscene_skip_preview_list(s_mem, 0x100, 3, holds, s_mem) == CUTSCENE_SKIP_LIST_OTHER);
-    event(2, 227, 21, 0, 0, 0, 0);
-    CHECK(cutscene_skip_preview_list(s_mem, 0x100, 4, holds, s_mem) == CUTSCENE_SKIP_LIST_OTHER);
-    CHECK(cutscene_skip_preview_list(s_mem, 0, 4, holds, s_mem) == CUTSCENE_SKIP_LIST_OTHER);
-    CHECK(cutscene_skip_preview_list(s_mem, 0x100, 0, holds, s_mem) == CUTSCENE_SKIP_LIST_OTHER);
-    CHECK(cutscene_skip_preview_list(s_mem, 0x100, CUTSCENE_SKIP_EVENTS + 1u, holds, s_mem)
-          == CUTSCENE_SKIP_LIST_OTHER);
-    /* 0463: a 249 with no conditions always holds. */
-    event(0, 230, 0, 0, 1, flag(0, 203, 1), 0);
-    event(1, 249, 140, 0, 0, 0, 0);
-    CHECK(cutscene_skip_preview_list(s_mem, 0x100, 2, holds, s_mem) == CUTSCENE_SKIP_LIST_SEEN);
-    /* A 249 with too many conditions never holds. */
-    put(0x100u + CUTSCENE_SKIP_EVENT + 4u, CUTSCENE_SKIP_CONDITIONS + 1u);
-    CHECK(cutscene_skip_preview_list(s_mem, 0x100, 2, holds, s_mem) == CUTSCENE_SKIP_LIST_PREVIEW);
+    const uint32_t run = 0x1000u, size = (uint32_t)sizeof s_mem;
+    uint32_t k;
+    memset(s_mem, 0, sizeof s_mem);
+    /* A run of five records, frames 30, 1, 200, 7 and 12, the last marked. */
+    put16(run + 0u * CUTSCENE_SKIP_RECORD, 30);
+    put16(run + 1u * CUTSCENE_SKIP_RECORD, 1);
+    put16(run + 2u * CUTSCENE_SKIP_RECORD, 200);
+    put16(run + 3u * CUTSCENE_SKIP_RECORD, 7);
+    put16(run + 4u * CUTSCENE_SKIP_RECORD, 12 | CUTSCENE_SKIP_RECORD_LAST);
+    for (k = 0; k < 5; k++)
+        CHECK(cutscene_skip_run_last(s_mem, size, run + k * CUTSCENE_SKIP_RECORD)
+              == run + 4u * CUTSCENE_SKIP_RECORD);
+    /* The pad words after the frames don't count, only bit 15 of the
+     * first: a pad word with bit 15 set isn't an end. */
+    put16(run + 2u * CUTSCENE_SKIP_RECORD + 2u, 0x8000u);
+    put(run + 2u * CUTSCENE_SKIP_RECORD + 4u, 0x80008000u);
+    CHECK(cutscene_skip_run_last(s_mem, size, run) == run + 4u * CUTSCENE_SKIP_RECORD);
+    /* None to the memory's end, none at 0, and a record past the end. */
+    put16(run + 4u * CUTSCENE_SKIP_RECORD, 12);
+    CHECK(cutscene_skip_run_last(s_mem, size, run) == 0);
+    CHECK(cutscene_skip_run_last(s_mem, size, 0) == 0);
+    CHECK(cutscene_skip_run_last(s_mem, size, size - 4u) == 0);
+    CHECK(cutscene_skip_run_last(s_mem, 4u, 0x10u) == 0);
+    /* The last record is the memory's last bytes. */
+    put16(size - CUTSCENE_SKIP_RECORD, CUTSCENE_SKIP_RECORD_LAST);
+    CHECK(cutscene_skip_run_last(s_mem, size, run) == size - CUTSCENE_SKIP_RECORD);
 }
 
 int main(int argc, char **argv)
@@ -318,8 +254,8 @@ int main(int argc, char **argv)
     cutscene_skip_start();
     row();
     places();
-    preview_ends();
-    preview_lists();
+    rivals();
+    run_last();
     if (!strcmp(c, "off")) {
         CHECK(!cutscene_skip_on());
         off();

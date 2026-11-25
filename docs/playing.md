@@ -485,12 +485,14 @@ running while it is open, but your input goes to the menu.
   again to skip" fades in at the bottom right for 3 seconds, with the A
   button as the game's message boxes show it (its own green A, or the
   button prompts' style's, [Controller](#controller)); press A again while it
-  shows, and the scene ends as it does at its own end (a preview as if it
-  had played out), the story going on from there. With it ticked, that is
-  the one way for every scene and preview, those you've seen before too: the
-  game's own skip of a scene or preview seen before, at one press of A or
-  Start, is left out, and is back when it's off. Previews the game never
-  lets you skip, as in mission 0121's rounds, are covered too. Nothing shows
+  shows, and the scene ends as it does at its own end (a preview as when
+  the rival arrives, so a scene that follows the arrival still plays, and
+  two presses skip it too), the story going on from there. With it ticked,
+  that is the one way for every scene and preview, those you've seen before
+  too: the game's own skip of a scene or preview seen before, at one press
+  of A or Start, is left out, and is back when it's off. Previews the game
+  never lets you skip, as Poison Jam's rounds in Shibuya Terminal or Beat's
+  in Dogenzaka Hill, are covered too. Nothing shows
   until the first press. The prompt is drawn with the HUD, so Display >
   HUD's scale sizes it, and with Disable HUD it isn't shown, though two
   presses still end the scene. Off by default, so scenes play to their end

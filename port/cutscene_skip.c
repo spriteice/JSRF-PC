@@ -204,51 +204,31 @@ static uint32_t word_at(const uint8_t *mem, uint32_t at)
     memcpy(&v, mem + at, sizeof v);
     return v;
 }
-int cutscene_skip_preview_ends(const uint8_t *mem, uint32_t list, uint32_t n, uint32_t exit,
-                               CutsceneSkipHolds holds, void *ctx, uint32_t *ends, int max)
+int cutscene_skip_rivals(const uint8_t *mem, uint32_t list, uint32_t n, uint32_t *slots, int max)
 {
-    uint32_t i, k;
-    int count = 0;
+    uint32_t i;
+    int count = 0, k;
     for (i = 0; list && i < n && i < CUTSCENE_SKIP_EVENTS && count < max; i++) {
         const uint32_t e = list + i * CUTSCENE_SKIP_EVENT;
-        const uint32_t conditions = word_at(mem, e), many = word_at(mem, e + CUTSCENE_SKIP_EVENT_MANY);
-        int hold = many <= CUTSCENE_SKIP_CONDITIONS;
-        if (word_at(mem, e + CUTSCENE_SKIP_EVENT_COMMAND) != CUTSCENE_SKIP_END) continue;
-        if (exit != CUTSCENE_SKIP_ANY_EXIT && word_at(mem, e + CUTSCENE_SKIP_EVENT_EXIT) != exit) continue;
-        for (k = 0; hold && k < many; k++) {
-            const uint32_t at = conditions + 4u * k;
-            if ((word_at(mem, at) & 7u) != CUTSCENE_SKIP_BANK_MISSION) hold = holds(ctx, at);
-        }
-        if (hold) ends[count++] = e;
+        uint32_t slot;
+        if (word_at(mem, e + CUTSCENE_SKIP_EVENT_COMMAND) != CUTSCENE_SKIP_ARRIVED) continue;
+        slot = word_at(mem, e + CUTSCENE_SKIP_EVENT_WORD);
+        for (k = 0; k < count && slots[k] != slot; k++) {}
+        if (k == count) slots[count++] = slot;
     }
     return count;
 }
 
-int cutscene_skip_preview_list(const uint8_t *mem, uint32_t list, uint32_t n,
-                               CutsceneSkipHolds holds, void *ctx)
+uint32_t cutscene_skip_run_last(const uint8_t *mem, uint32_t size, uint32_t record)
 {
-    uint32_t i, k;
-    int skips = 0;
-    if (!list || !n || n > CUTSCENE_SKIP_EVENTS)
-        return CUTSCENE_SKIP_LIST_OTHER;
-    for (i = 0; i < n; i++) {
-        const uint32_t command = word_at(mem, list + i * CUTSCENE_SKIP_EVENT + CUTSCENE_SKIP_EVENT_COMMAND);
-        if (command == CUTSCENE_SKIP_SEEN)
-            skips++;
-        else if (command != CUTSCENE_SKIP_END)
-            return CUTSCENE_SKIP_LIST_OTHER;
+    uint32_t k;
+    uint16_t first;
+    for (k = 0; k < CUTSCENE_SKIP_RECORDS; k++, record += CUTSCENE_SKIP_RECORD) {
+        if (!record || size < CUTSCENE_SKIP_RECORD || record > size - CUTSCENE_SKIP_RECORD)
+            return 0;
+        memcpy(&first, mem + record, sizeof first);
+        if (first & CUTSCENE_SKIP_RECORD_LAST)
+            return record;
     }
-    if (!skips)
-        return CUTSCENE_SKIP_LIST_OTHER;
-    for (i = 0; i < n; i++) {
-        const uint32_t e = list + i * CUTSCENE_SKIP_EVENT;
-        const uint32_t conditions = word_at(mem, e), many = word_at(mem, e + CUTSCENE_SKIP_EVENT_MANY);
-        int hold = many <= CUTSCENE_SKIP_CONDITIONS;
-        if (word_at(mem, e + CUTSCENE_SKIP_EVENT_COMMAND) != CUTSCENE_SKIP_SEEN) continue;
-        for (k = 0; hold && k < many; k++)
-            hold = holds(ctx, conditions + 4u * k);
-        if (hold)
-            return CUTSCENE_SKIP_LIST_SEEN;
-    }
-    return CUTSCENE_SKIP_LIST_PREVIEW;
+    return 0;
 }
