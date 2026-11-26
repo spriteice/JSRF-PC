@@ -49,9 +49,16 @@
  * write depth where they are invisible on purpose; draws over the
  * finished picture, after a depth clear of a surface the frame has already
  * drawn to (the title's logo, menus, fades); and skinned meshes no outline
- * follows (the speed trail's copies of the skater, the crowd), which keep
- * their place before the shadows, so the shadow falls on them, and hide
- * what is drawn after them and behind them, as on the console.
+ * follows (the speed trail's copies of the skater, the crowd, the spray
+ * paint and its arrows while a wall is painted, the police's mesh
+ * barricade, cars' thin edges), which keep their place before the shadows,
+ * so the shadow falls on them, and hide what is drawn after them and behind
+ * them, as on the console. Over a faded character's see-through pixels,
+ * held back, such a mesh's depth would hide them at the pass's end, and the
+ * ground would show through it instead: there, marked as for an outline
+ * (for the run of such meshes, not one draw), it is drawn with no depth
+ * writes, so the character's pixels are drawn over it at the pass's end
+ * (NV2A_SEE_TWICE). Elsewhere it is drawn as the title draws it.
  *
  * The held-back list lives in a wrapper round the device (Nv2aGfx): every
  * call goes through, and the wrapper keeps what a held-back draw needs, and
@@ -112,14 +119,16 @@ enum {
                              * and no depth writes, between nv2a_seethru_hold_begin
                              * and _end */
     NV2A_SEE_HOLD,          /* all of it between nv2a_seethru_hold_begin and _end */
-    NV2A_SEE_MASK           /* an outline: in place, with nv2a_seethru_mask's stencil
+    NV2A_SEE_MASK,          /* an outline: in place, with nv2a_seethru_mask's stencil
                              * test, then nv2a_seethru_mask_end */
+    NV2A_SEE_TWICE          /* a skinned mesh over marked pieces: in place twice, with
+                             * nv2a_seethru_twice's state for 0, then for 1 */
 };
 
 /* The stencil bit the fix marks a faded mesh's see-through pixels with, for
- * the length of its outline's draw. The title keeps its shadow counts in the
- * stencil too: one would reach this bit only where 128 shadow volumes
- * overlap. */
+ * the length of its outline's draw, or of a run of skinned meshes drawn
+ * over it. The title keeps its shadow counts in the stencil too: one would
+ * reach this bit only where 128 shadow volumes overlap. */
 #define NV2A_SEE_MARK 0x80u
 
 /* Just before a draw is made with `rs`: what to do with it. Called for
@@ -144,6 +153,13 @@ void nv2a_seethru_mask(Nv2aRenderState *rs);
 /* After an NV2A_SEE_MASK outline's draw and its widescreen copies: the mark
  * cleared, and the device put back as the front half left it. */
 void nv2a_seethru_mask_end(void);
+
+/* A skinned mesh's state, for NV2A_SEE_TWICE, from the title's: `marked` 0,
+ * drawn only where NV2A_SEE_MARK is clear, as the title draws it; 1, only
+ * where it is set, with no depth writes. Its own stencil test (off, or
+ * ALWAYS) and writes otherwise as the title set them, but on the mark's
+ * bit. The mark is cleared at the next draw of another kind. */
+void nv2a_seethru_twice(Nv2aRenderState *rs, int marked);
 
 /* A clear of surface `surf`'s depth in frame `frame`, after the device's. */
 void nv2a_seethru_depth_clear(uint32_t surf, uint32_t frame);

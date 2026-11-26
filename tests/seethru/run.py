@@ -19,15 +19,18 @@ cc = shlex.split(os.environ.get("CC", "gcc"))
 # mode: (environment, lines the log must have, each once)
 modes = {
     "hold": ({}, ["what shows through see-through surfaces is drawn behind them",
-                  "a texture changed while a draw was held back: the rest of it drawn in place"]),
+                  "a texture changed while a draw was held back: the rest of it drawn in place",
+                  "[SEETHRU] the outline table is full, 2048 pieces learnt: one met from now on"
+                  " isn't learnt, and if skinned is kept whole, as on the console"]),
     "inplace": ({"RECOMP_GL_SEETHRU_HOLD": "0"},
                 ["drawn over them: their see-through pixels in place (RECOMP_GL_SEETHRU_HOLD=0)"]),
     "census": ({"RECOMP_GL_SEETHRU_LOG": "1"},
                ["census on: one whole frame in 600",
-                "[SEETHRU] frame 600: 7 draws, 5 see-through with depth writes: 3 split"
+                "[SEETHRU] frame 600: 8 draws, 6 see-through with depth writes: 3 split"
                 " (0 of them drawn in place, 2 using the stencil, 1 pieces an outline follows),"
                 " kept whole 0 for an outline, 1 outlines (1 of them kept off 1 marked pieces),"
-                " 1 skinned with no outline,",
+                " 1 of 2048 pieces learnt,"
+                " 2 skinned with no outline (1 of them over 1 marked pieces),",
                 " 0 for their depth function, 0 with the fix off;"
                 " 1 more held back whole; 1 held-back lists drawn (1 at a clear),"
                 " 4 draws drawn again,",
@@ -38,20 +41,23 @@ modes = {
                 "draws 5-5 (1): see-through with depth writes, stencil func 205 ref 01"
                 " masks FF FF ops 1E00 1E00 1E01, surface 00001000, programs 1, 3 verts,"
                 " 1 textured; blend 0302 0303, alpha test on, depth func 203, split",
-                "draws 6-6 (1): see-through with depth writes, stencil func 207 ref 01"
+                "draws 6-6 (1): see-through with depth writes, skinned, surface 00001000,"
+                " programs 1, 12 verts, 1 textured; blend 0302 0303, alpha test on,"
+                " depth func 203, kept whole: skinned, no outline\n",
+                "draws 7-7 (1): see-through with depth writes, stencil func 207 ref 01"
                 " masks FF FF ops 1E00 1E00 0000, surface 00001000, programs 1, 12 verts,"
                 " 1 textured; blend 0302 0303, alpha test on, depth func 203,"
                 " split, a piece an outline follows",
-                "draws 7-7 (1): see-through with depth writes, stencil func 207 ref 01"
+                "draws 8-8 (1): see-through with depth writes, stencil func 207 ref 01"
                 " masks FF FF ops 1E00 1E00 0000, surface 00001000, programs 1, 12 verts,"
                 " 0 textured; blend 0302 0303, alpha test on, depth func 203,"
                 " an outline, kept off its pieces' see-through pixels",
-                "draws 8-8 (1): see-through with depth writes, skinned, stencil func 207 ref 01"
+                "draws 9-9 (1): see-through with depth writes, skinned, stencil func 207 ref 01"
                 " masks FF FF ops 1E00 1E00 0000, surface 00001000, programs 1, 12 verts,"
                 " 1 textured; blend 0302 0303, alpha test on, depth func 203,"
-                " kept whole: skinned, no outline",
-                "at draw 8: 4 held back drawn, at a clear",
-                "at draw 8: depth clear, surface 00001000"]),
+                " kept whole: skinned, no outline; over held-back pieces, no depth writes",
+                "at draw 9: 4 held back drawn, at a clear",
+                "at draw 9: depth clear, surface 00001000"]),
 }
 
 with tempfile.TemporaryDirectory(prefix="seethru-") as directory:

@@ -11693,8 +11693,11 @@ static void do_draw_body(void)
          * depth writes, held back to the end of the pass. A draw after it
          * that writes no depth is held back whole. An outline after split
          * pieces is drawn only where the fix hasn't marked their see-through
-         * pixels, and the mark is cleared after it. The widescreen copies
-         * take each half's state from g_draw_rs, and its uniforms as set. */
+         * pixels, and the mark is cleared after it. A skinned mesh no outline
+         * follows, over such pieces, is drawn twice: where they aren't marked,
+         * as the title draws it; where they are, with no depth writes. The
+         * widescreen copies take each half's state from g_draw_rs, and its
+         * uniforms as set. */
         Nv2aRenderState keep = g_draw_rs;
         Nv2aSeeDraw see;
         int how, held = 0;
@@ -11723,6 +11726,17 @@ static void do_draw_body(void)
             nv2a_seethru_mask(&g_draw_rs);
             G->state(&g_draw_rs);
         }
+        if (how == NV2A_SEE_TWICE) {
+            nv2a_seethru_twice(&g_draw_rs, 0);
+            G->state(&g_draw_rs);
+            if (vc_vb && !vc_seq) G->draw_indexed(mode, out_n, vc_i32);
+            else                  G->draw(mode, out_n);
+            if (g_wide_copy) wide_fill_copies(mode, out_n, vc_vb && !vc_seq, vc_i32);
+            if (g_wide_slab) wide_slab_right(mode, out_n, vc_vb && !vc_seq, vc_i32);
+            g_draw_rs = keep;
+            nv2a_seethru_twice(&g_draw_rs, 1);
+            G->state(&g_draw_rs);
+        }
         if (how == NV2A_SEE_SPLIT || how == NV2A_SEE_HOLD) held = nv2a_seethru_hold_begin();
         if (vc_vb && !vc_seq) G->draw_indexed(mode, out_n, vc_i32);
         else                  G->draw(mode, out_n);
@@ -11730,7 +11744,7 @@ static void do_draw_body(void)
         if (g_wide_slab) wide_slab_right(mode, out_n, vc_vb && !vc_seq, vc_i32);
         if (held) nv2a_seethru_hold_end();
         if (how == NV2A_SEE_MASK) nv2a_seethru_mask_end();
-        if (how == NV2A_SEE_SPLIT || how == NV2A_SEE_MASK) {
+        if (how == NV2A_SEE_SPLIT || how == NV2A_SEE_MASK || how == NV2A_SEE_TWICE) {
             if (how == NV2A_SEE_SPLIT) G->uniform_i(NV2A_U_ALPHAFUNC, g_last.alpha_func);
             g_draw_rs = keep;
             G->state(&g_draw_rs);

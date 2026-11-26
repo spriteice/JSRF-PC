@@ -368,6 +368,14 @@ static int fh_draw(Spec s)
         nv2a_seethru_mask(&rs);
         G->state(&rs);
     }
+    if (how == NV2A_SEE_TWICE) {
+        nv2a_seethru_twice(&rs, 0);
+        G->state(&rs);
+        fh_draw_n(&rs, s.wide == 1);
+        rs = keep;
+        nv2a_seethru_twice(&rs, 1);
+        G->state(&rs);
+    }
     if (how == NV2A_SEE_SPLIT || how == NV2A_SEE_HOLD) held = nv2a_seethru_hold_begin();
     if (s.breaks) G->texture(1, 9, NULL);
     if (s.wide == 2) uni1f(NV2A_U_WIDEOFF, 1.0f);
@@ -375,7 +383,7 @@ static int fh_draw(Spec s)
     if (held) nv2a_seethru_hold_end();
     if (s.wide == 2) uni1f(NV2A_U_WIDEOFF, 0.0f);
     if (how == NV2A_SEE_MASK) nv2a_seethru_mask_end();
-    if (how == NV2A_SEE_SPLIT || how == NV2A_SEE_MASK) {
+    if (how == NV2A_SEE_SPLIT || how == NV2A_SEE_MASK || how == NV2A_SEE_TWICE) {
         if (how == NV2A_SEE_SPLIT) G->uniform_i(NV2A_U_ALPHAFUNC, s.af);
         G->state(&keep);
     }
@@ -417,7 +425,7 @@ static void expect_log(const char *name, const char *want)
 
 static void expect_how(const char *name, int got, int want)
 {
-    static const char *const k[] = { "keep", "split", "hold", "mask" };
+    static const char *const k[] = { "keep", "split", "hold", "mask", "twice" };
     if (got != want) {
         fprintf(stderr, "FAIL %s: %s, not %s\n", name, k[got], k[want]);
         g_fail = 1;
@@ -973,6 +981,139 @@ static void cases_hold(void)
     }
     dev.n = 0;
 
+    /* The trail over a faded skater (b2.2-hotfix row 5, test build trail2):
+     * the skater's piece split, its see-through half held back, its outline
+     * kept off it; then two of the trail's copies, kept whole, one with the
+     * characters' stencil state and one with none. The half marked alone,
+     * once for the two; each copy drawn where the mark is clear as the title
+     * draws it, then where it is set with no depth writes; the mark cleared
+     * before the next draw of another kind (here the HUD's); and at the clear
+     * the half drawn, over the copies, which no longer hide it. Kept whole
+     * everywhere, their depth hid it, and the ground showed through them. The
+     * first frame, the piece not yet known, kept whole and nothing marked. */
+    start("skinned: over a faded piece");
+    for (kept = 0; kept < 2; kept++) {
+        dev.n = 0;
+        g_frame++;
+        s = glass(1); s.pos = 0xB00; s.verts = 12; s.stencil = 3; s.skinned = 1;
+        expect_how("over a faded piece: the piece", fh_draw(s), kept ? NV2A_SEE_SPLIT : NV2A_SEE_KEEP);
+        s = glass(2); s.pos = 0xB10; s.verts = 12; s.textured = 0; s.stencil = 3; s.skinned = 1;
+        expect_how("over a faded piece: the outline", fh_draw(s), kept ? NV2A_SEE_MASK : NV2A_SEE_KEEP);
+        s = glass(3); s.pos = 0xB20; s.verts = 12; s.stencil = 3; s.skinned = 1;
+        expect_how("over a faded piece: a copy", fh_draw(s), kept ? NV2A_SEE_TWICE : NV2A_SEE_KEEP);
+        expect_device("over a faded piece: after a copy");
+        s = glass(4); s.pos = 0xB30; s.verts = 12; s.skinned = 1;
+        expect_how("over a faded piece: a copy, no stencil", fh_draw(s), kept ? NV2A_SEE_TWICE : NV2A_SEE_KEEP);
+        expect_how("over a faded piece: the HUD", fh_draw(hud(5)), kept ? NV2A_SEE_HOLD : NV2A_SEE_KEEP);
+        expect_device("over a faded piece: the HUD");
+        fh_clear(3);
+    }
+    expect_log("skinned: over a faded piece", "v1 p1 t0.5 a20/0 z1/203 b302 T5 s207,1,FF,FF,0"
+               " | v1 p1 t0.5 a36/0 z0/203 b0 T5 s207,80,FF,FF,1E01"
+               " | v2 p1 t0.5 a4/0 z1/203 b302 T5 s202,1,80,7F,0"
+               " | v1 p1 t0.5 a36/0 z0/207 b0 T5 s207,0,FF,80,0"
+               " | v1 p1 t0.5 a36/0 z0/203 b0 T5 s207,80,FF,80,1E01"
+               " | v3 p1 t0.5 a4/0 z1/203 b302 T5 s202,1,80,7F,0"
+               " | v3 p1 t0.5 a4/0 z0/203 b302 T5 s202,81,80,7F,0"
+               " | v4 p1 t0.5 a4/0 z1/203 b302 T5 s202,0,80,0,1E00"
+               " | v4 p1 t0.5 a4/0 z0/203 b302 T5 s202,80,80,0,1E00"
+               " | v1 p1 t0.5 a36/0 z0/207 b0 T5 s207,0,FF,80,0"
+               " | v1 p1 t0.5 a36/0 z0/203 b302 T5 s207,1,FF,0,0"
+               " | v5 p3 t1 a4/0 z0/203 b302 T7"
+               " | CLEAR 3");
+    expect_device("skinned: over a faded piece");
+
+    /* The other order: a copy before the piece is drawn as the title draws
+     * it, nothing held back under it; its depth hides the piece behind it,
+     * as on the console. */
+    start("skinned: before a faded piece");
+    g_frame++;
+    s = glass(3); s.pos = 0xB20; s.verts = 12; s.stencil = 3; s.skinned = 1;
+    expect_how("before a faded piece: the copy", fh_draw(s), NV2A_SEE_KEEP);
+    s = glass(1); s.pos = 0xB00; s.verts = 12; s.stencil = 3; s.skinned = 1;
+    expect_how("before a faded piece: the piece", fh_draw(s), NV2A_SEE_SPLIT);
+    s = glass(2); s.pos = 0xB10; s.verts = 12; s.textured = 0; s.stencil = 3; s.skinned = 1;
+    expect_how("before a faded piece: the outline", fh_draw(s), NV2A_SEE_MASK);
+    fh_clear(3);
+    expect_log("skinned: before a faded piece", "v3 p1 t0.5 a4/0 z1/203 b302 T5 s207,1,FF,FF,0"
+               " | v1 p1 t0.5 a20/0 z1/203 b302 T5 s207,1,FF,FF,0"
+               " | v1 p1 t0.5 a36/0 z0/203 b0 T5 s207,80,FF,FF,1E01"
+               " | v2 p1 t0.5 a4/0 z1/203 b302 T5 s202,1,80,7F,0"
+               " | v1 p1 t0.5 a36/0 z0/207 b0 T5 s207,0,FF,80,0"
+               " | v1 p1 t0.5 a36/0 z0/203 b302 T5 s207,1,FF,0,0"
+               " | CLEAR 3");
+    expect_device("skinned: before a faded piece");
+
+    /* Two characters, a copy after each: the first's mark for the copy
+     * cleared before the second's piece, so its outline's mark is its own;
+     * the second copy marked by both halves. */
+    start("skinned: between two characters");
+    for (kept = 0; kept < 2; kept++) {
+        dev.n = 0;
+        g_frame++;
+        s = glass(1); s.pos = 0xD00; s.verts = 12; s.stencil = 3; s.skinned = 1;
+        fh_draw(s);
+        s = glass(2); s.pos = 0xD10; s.verts = 12; s.textured = 0; s.stencil = 3; s.skinned = 1;
+        fh_draw(s);
+        s = glass(3); s.pos = 0xD20; s.verts = 12; s.stencil = 3; s.skinned = 1;
+        expect_how("between two characters: the first copy", fh_draw(s), kept ? NV2A_SEE_TWICE : NV2A_SEE_KEEP);
+        s = glass(5); s.pos = 0xE00; s.verts = 12; s.stencil = 3; s.skinned = 1;
+        expect_how("between two characters: the second piece", fh_draw(s), kept ? NV2A_SEE_SPLIT : NV2A_SEE_KEEP);
+        s = glass(6); s.pos = 0xE10; s.verts = 12; s.textured = 0; s.stencil = 3; s.skinned = 1;
+        expect_how("between two characters: the second outline", fh_draw(s), kept ? NV2A_SEE_MASK : NV2A_SEE_KEEP);
+        s = glass(7); s.pos = 0xE20; s.verts = 12; s.stencil = 3; s.skinned = 1;
+        expect_how("between two characters: the second copy", fh_draw(s), kept ? NV2A_SEE_TWICE : NV2A_SEE_KEEP);
+        fh_clear(3);
+    }
+    expect_log("skinned: between two characters", "v1 p1 t0.5 a20/0 z1/203 b302 T5 s207,1,FF,FF,0"
+               " | v1 p1 t0.5 a36/0 z0/203 b0 T5 s207,80,FF,FF,1E01"
+               " | v2 p1 t0.5 a4/0 z1/203 b302 T5 s202,1,80,7F,0"
+               " | v1 p1 t0.5 a36/0 z0/207 b0 T5 s207,0,FF,80,0"
+               " | v1 p1 t0.5 a36/0 z0/203 b0 T5 s207,80,FF,80,1E01"
+               " | v3 p1 t0.5 a4/0 z1/203 b302 T5 s202,1,80,7F,0"
+               " | v3 p1 t0.5 a4/0 z0/203 b302 T5 s202,81,80,7F,0"
+               " | v1 p1 t0.5 a36/0 z0/207 b0 T5 s207,0,FF,80,0"
+               " | v5 p1 t0.5 a20/0 z1/203 b302 T5 s207,1,FF,FF,0"
+               " | v5 p1 t0.5 a36/0 z0/203 b0 T5 s207,80,FF,FF,1E01"
+               " | v6 p1 t0.5 a4/0 z1/203 b302 T5 s202,1,80,7F,0"
+               " | v5 p1 t0.5 a36/0 z0/207 b0 T5 s207,0,FF,80,0"
+               " | v1 p1 t0.5 a36/0 z0/203 b0 T5 s207,80,FF,80,1E01"
+               " | v5 p1 t0.5 a36/0 z0/203 b0 T5 s207,80,FF,80,1E01"
+               " | v7 p1 t0.5 a4/0 z1/203 b302 T5 s202,1,80,7F,0"
+               " | v7 p1 t0.5 a4/0 z0/203 b302 T5 s202,81,80,7F,0"
+               " | v1 p1 t0.5 a36/0 z0/207 b0 T5 s207,0,FF,80,0"
+               " | v5 p1 t0.5 a36/0 z0/207 b0 T5 s207,0,FF,80,0"
+               " | v1 p1 t0.5 a36/0 z0/203 b302 T5 s207,1,FF,0,0"
+               " | v5 p1 t0.5 a36/0 z0/203 b302 T5 s207,1,FF,0,0"
+               " | CLEAR 3");
+    expect_device("skinned: between two characters");
+
+    /* Over a piece, a copy the mark can't be kept off (its stencil test
+     * NOTEQUAL), or with the fix off: as before, kept whole, nothing marked.
+     * Glass held back under a copy isn't marked either ("skinned" above). */
+    start("skinned: over a piece, not marked");
+    g_frame++;
+    s = glass(1); s.pos = 0xB00; s.verts = 12; s.stencil = 3; s.skinned = 1;
+    fh_draw(s);
+    s = glass(2); s.pos = 0xB10; s.verts = 12; s.textured = 0; s.stencil = 3; s.skinned = 1;
+    fh_draw(s);
+    s = glass(3); s.pos = 0xB20; s.verts = 12; s.stencil = 1; s.skinned = 1;
+    expect_how("not marked: NOTEQUAL", fh_draw(s), NV2A_SEE_KEEP);
+    nv2a_seethru_set(0);
+    s = glass(4); s.pos = 0xB30; s.verts = 12; s.stencil = 3; s.skinned = 1;
+    expect_how("not marked: the fix off", fh_draw(s), NV2A_SEE_KEEP);
+    nv2a_seethru_set(1);
+    fh_clear(3);
+    expect_log("skinned: over a piece, not marked", "v1 p1 t0.5 a20/0 z1/203 b302 T5 s207,1,FF,FF,0"
+               " | v1 p1 t0.5 a36/0 z0/203 b0 T5 s207,80,FF,FF,1E01"
+               " | v2 p1 t0.5 a4/0 z1/203 b302 T5 s202,1,80,7F,0"
+               " | v1 p1 t0.5 a36/0 z0/207 b0 T5 s207,0,FF,80,0"
+               " | v3 p1 t0.5 a4/0 z1/203 b302 T5 s"
+               " | v4 p1 t0.5 a4/0 z1/203 b302 T5 s207,1,FF,FF,0"
+               " | v1 p1 t0.5 a36/0 z0/203 b302 T5 s207,1,FF,0,0"
+               " | CLEAR 3");
+    expect_device("skinned: over a piece, not marked");
+
     /* A call that has no place in a held draw: the rest of it drawn in
      * place, said once. */
     start("break");
@@ -996,6 +1137,40 @@ static void cases_hold(void)
     expect_log("off", "v1 p1 t0.5 a4/0 z1/203 b302 T5"
                " | v3 p3 t1 a4/0 z0/203 b302 T7"
                " | CLEAR 3");
+
+    /* The outline table (the hotfix review's F1), last, as it fills it: it
+     * learns 2,048 pieces and forgets none, and the log says once when it is
+     * full (run.py). A skinned piece met after that is kept whole for good,
+     * its outline as the title draws it, as on the console; one learnt
+     * before is split as ever, and so is a piece that isn't skinned. */
+    start("outlines: the table full");
+    {
+        uint32_t k;
+        for (k = 0; k < 2100; k++) {
+            s = glass(1); s.pos = 0x100000 + 0x10 * k; s.verts = 12;
+            fh_draw(s);
+            s = glass(2); s.pos = 0x200000 + 0x10 * k; s.verts = 12; s.textured = 0;
+            fh_draw(s);
+            fh_clear(3);
+        }
+        for (kept = 0; kept < 2; kept++) {
+            g_frame++;
+            s = glass(1); s.pos = 0xF00; s.verts = 12; s.stencil = 3; s.skinned = 1;
+            expect_how("the table full: a skinned piece met after", fh_draw(s), NV2A_SEE_KEEP);
+            s = glass(2); s.pos = 0xF10; s.verts = 12; s.textured = 0; s.stencil = 3; s.skinned = 1;
+            expect_how("the table full: its outline", fh_draw(s), NV2A_SEE_KEEP);
+            s = glass(1); s.pos = 0xF20; s.verts = 12; s.stencil = 3;
+            expect_how("the table full: a piece not skinned", fh_draw(s), NV2A_SEE_SPLIT);
+            s = glass(2); s.pos = 0xF30; s.verts = 12; s.textured = 0; s.stencil = 3;
+            expect_how("the table full: its outline", fh_draw(s), NV2A_SEE_MASK);
+            s = glass(1); s.pos = 0xB00; s.verts = 12; s.stencil = 3; s.skinned = 1;
+            expect_how("the table full: a piece learnt before", fh_draw(s), NV2A_SEE_SPLIT);
+            s = glass(2); s.pos = 0xB10; s.verts = 12; s.textured = 0; s.stencil = 3; s.skinned = 1;
+            expect_how("the table full: its outline", fh_draw(s), NV2A_SEE_MASK);
+            fh_clear(3);
+        }
+        dev.n = 0;
+    }
 }
 
 /* RECOMP_GL_SEETHRU_HOLD=0: split, the colour drawn in place. */
@@ -1055,11 +1230,13 @@ static void cases_census(void)
     fh_draw(s);
     s = glass(4); s.stencil = 1;
     fh_draw(s);
+    s = glass(8); s.pos = 0x930; s.verts = 12; s.skinned = 1;    /* the crowd: no piece under it */
+    fh_draw(s);
     s = glass(5); s.pos = 0x900; s.verts = 12; s.stencil = 3;
     fh_draw(s);
     s = glass(6); s.pos = 0x910; s.verts = 12; s.textured = 0; s.stencil = 3;
     fh_draw(s);
-    s = glass(7); s.pos = 0x920; s.verts = 12; s.stencil = 3; s.skinned = 1;    /* the trail */
+    s = glass(7); s.pos = 0x920; s.verts = 12; s.stencil = 3; s.skinned = 1;    /* the trail, over it */
     fh_draw(s);
     fh_clear(3);
     g_frame = 601;
