@@ -6009,7 +6009,12 @@ static void disp_let_go_held(const char *where)
     fprintf(stderr, "[SKIP] t=%.2f the game's letting go of its display set, held while it loaded, done "
             "now (%s)\n", jsrf_now(), where);
 }
-/* sub_00025740(group, word): the holder lets a group go (table 0x1EC288). */
+/* sub_00025740(group, word): the holder lets a group go (table 0x1EC288).
+ * cdecl: it ends in a plain `ret`, and its callers take the group and word
+ * off. A letting go held back returns as the game's does, its return
+ * address taken off: without it, the flow's step that called it (0x0007C020,
+ * 0x0007C800, 0x0007D120, 0x0007D290) went back with the stack 4 bytes low
+ * and its esi popped from the word's slot (known bug 87). */
 void sub_00025740(void)
 {
     if (GARG(1) == DISP_GROUP && disp_loading(disp_holder())) {
@@ -6017,6 +6022,7 @@ void sub_00025740(void)
             fprintf(stderr, "[SKIP] t=%.2f the game lets its display set go while it loads for the prompt's "
                     "A (from %08X): held until it's loaded\n", jsrf_now(), GARG(0));
         s_let_go_held = 1;
+        g_esp += 4;   /* its `ret` */
         return;
     }
     sub_00025740_gen();
