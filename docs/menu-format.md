@@ -275,8 +275,8 @@ in a submenu of its own.
   Menus and HUD and Textures at 8x, Graffiti at 4x and Buttons off, Sharp,
   Strong, and both Cleanup ticks; Audio effects on; Keyboard moves on
   Camera, Stick shape Square, Button prompts' Style Auto, Camera's Default
-  cam fix alone ticked, and the free camera on; and Gameplay's Skip intro,
-  Skip cutscenes and Visual indicator on.
+  cam fix and Half pipe cam alone ticked, and the free camera on; and
+  Gameplay's Skip intro, Skip cutscenes and Visual indicator on.
   **Performance** has the heavy settings at their least: Draw distance,
   Far buildings and Far shadows at 1x, no anti-aliasing and no anisotropic
   filtering, and Upscaling's Textures and Graffiti off. Since b2.2 these

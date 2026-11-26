@@ -303,11 +303,11 @@ running while it is open, but your input goes to the menu.
   ticks, Audio effects on, Keyboard moves on Camera, Stick shape Square,
   Button prompts' Style Auto, Default cam fix and Half pipe cam on and the
   game's other two shots off, the free camera on, and Skip intro, Skip
-  cutscenes and Visual indicator on. Xbox and Modern each ask first, and restart the game. The
-  other three apply straight away, with no restart. Performance, which a
-  new install starts with, has the draw distance, Far buildings and Far
-  shadows at 1x, no anti-aliasing or anisotropic filtering, and Upscaling's
-  Textures and Graffiti off. Balanced
+  cutscenes and Visual indicator on. Xbox and Modern each ask first, and
+  restart the game. The other three apply straight away, with no restart.
+  Performance, which a new install starts with, has the draw distance, Far
+  buildings and Far shadows at 1x, no anti-aliasing or anisotropic
+  filtering, and Upscaling's Textures and Graffiti off. Balanced
   has the draw distance at 2x, Far buildings and Far shadows at 3x, MSAA at
   4x in place of SMAA, anisotropic filtering at 8x, and Upscaling at 4x but
   for Buttons. Quality has the draw distance, Far buildings and Far
@@ -412,7 +412,7 @@ running while it is open, but your input goes to the menu.
   outline then shows round the edge of each part, not across it. The
   copies of your skater that trail behind at speed are drawn as on the
   Xbox: in shadow they are shadowed, and they hide the dash's burst behind
-  them; over your skater faded, your skater still shows through them. So
+  them; your skater, when faded, still shows through them. So
   are the other moving models without a dark outline: the crowd, the spray
   paint and its arrows while you paint a wall, the police's mesh
   barricade, and the edges of cars. On by default; it changes at once, and
@@ -472,7 +472,7 @@ running while it is open, but your input goes to the menu.
   follow camera you would fly up out of view. With Half pipe cam unticked,
   the free camera can go through a half pipe's wall, riding it with the
   camera turned into it or coming down from a big jump: a known issue,
-  which Modern leaves ticked for. After a shot the free
+  which is why Modern leaves it ticked. After a shot the free
   camera glides back to where you had it ([Free camera](#free-camera),
   above). The camera that holds
   still as you skate out of a level's exit is no tick's: it is always as on
