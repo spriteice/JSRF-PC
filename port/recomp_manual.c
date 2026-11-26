@@ -7987,13 +7987,14 @@ void sub_000A6100(void)
 #define FLARE_HITS         0x00u       /* below the stack: the line test's hit record, */
 #define FLARE_ENDS         0x10u       /* then the line's two ends, */
 #define FLARE_SCRATCH      0x40u       /* in this much */
+#define FLARE_HOLDS        4           /* flares held at once: a camera each, up to 4 in split screen */
 extern void sub_00044E80_gen(void);
 void sub_00044E80(void)
 {
     uint8_t *m = (uint8_t *)g_xbox_mem_offset;
     const uint32_t flare = g_ecx;
     const int fix = sun_flare_fix_on(), log = sun_flare_log_on();
-    static SunFlareHold hold[4];    /* a flare each: one a camera, and split screen has up to 4 */
+    static SunFlareHold hold[FLARE_HOLDS]; /* a flare each */
     static unsigned next;           /* the slot a flare not in it takes, the oldest */
     SunFlareTest test;
     uint32_t scr, args[6];
@@ -8047,9 +8048,9 @@ void sub_00044E80(void)
     g_esp += FLARE_SCRATCH;
     if (fix) {
         SunFlareHold *h = NULL;
-        for (k = 0; k < 4 && !h; k++)
+        for (k = 0; k < FLARE_HOLDS && !h; k++)
             if (hold[k].flare == flare) h = &hold[k];
-        if (!h) h = &hold[next++ % 4];
+        if (!h) h = &hold[next++ % FLARE_HOLDS];
         test.shown = sun_flare_steady(h, flare, test.real >= 0);
     } else {
         test.shown = test.game >= 0;
