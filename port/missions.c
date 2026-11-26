@@ -54,6 +54,8 @@
 #include "kernel.h"
 #include "missions.h"
 
+#define MSN_GUEST_LOW       0x10000u /* below it, no guest address the game uses */
+
 /* ---- the game flow (sub_0007BDD0's object) ---- */
 #define MSN_FLOW_STATE      0x48u   /* its state, one of 64 at 0x20D2B8 */
 #define MSN_FLOW_TITLE      0x0Au   /* makes the title's scene task */
@@ -111,7 +113,9 @@
 #define HDR_STARTS          0xE4u   /* the start table: pointers to places */
 #define HDR_SCRIPT          0x174u  /* the script's records */
 #define ENTRANCE_SIZE       0x2Cu
-#define ENTRANCE_SPOT       0x08u   /* as a place's PLACE_SPOT, for kinds 0 and 2 */
+#define ENTRANCE_SPOT       0x08u   /* as a place's PLACE_SPOT, for the two kinds below */
+#define ENTRANCE_KIND_SPOT  0u      /* its kind, its first word: a spawn (0x58930) */
+#define ENTRANCE_KIND_SPOT2 2u      /* takes the spot of these two kinds */
 #define RECORD_SIZE         0x54u
 #define RECORD_OP           0x10u
 #define RECORD_SLOT         0x14u
@@ -558,7 +562,7 @@ static uint32_t *game_vars(uint8_t *mem, uint32_t size)
     uint32_t gm;
     if (MSN_GAME + 4u > size) return NULL;
     gm = *at(mem, MSN_GAME);
-    if (gm < 0x10000u || gm >= size || size - gm < MSN_GM_VARS + 4u * (GV_LAST + 1u)) return NULL;
+    if (gm < MSN_GUEST_LOW || gm >= size || size - gm < MSN_GM_VARS + 4u * (GV_LAST + 1u)) return NULL;
     return at(mem, gm + MSN_GM_VARS);
 }
 
@@ -656,7 +660,7 @@ static void progress_changes(uint8_t *mem, char *out, size_t n)
 void missions_flow(uint8_t *mem, uint32_t size, uint32_t flow, missions_title_fn title, double t)
 {
     uint32_t *v, *state;
-    if (!missions_starting() || flow < 0x10000u || flow >= size || size - flow < MSN_FLOW_STATE + 4u
+    if (!missions_starting() || flow < MSN_GUEST_LOW || flow >= size || size - flow < MSN_FLOW_STATE + 4u
         || size < MSN_PROGRESS + PRG_END)
         return;
     state = at(mem, flow + MSN_FLOW_STATE);
@@ -726,7 +730,7 @@ void missions_flow(uint8_t *mem, uint32_t size, uint32_t flow, missions_title_fn
 static uint32_t word(const uint8_t *mem, uint32_t size, uint32_t va)
 {
     uint32_t v;
-    if (va < 0x10000u || va >= size || size - va < 4u) return 0;
+    if (va < MSN_GUEST_LOW || va >= size || size - va < 4u) return 0;
     memcpy(&v, mem + va, 4u);
     return v;
 }
@@ -734,7 +738,7 @@ static uint32_t word(const uint8_t *mem, uint32_t size, uint32_t va)
 /* A spot (SPOT_WORDS words) at `va` in guest memory, or NULL outside it. */
 static uint32_t *spot_at(uint8_t *mem, uint32_t size, uint32_t va)
 {
-    if (va < 0x10000u || va >= size || size - va < 4u * SPOT_WORDS) return NULL;
+    if (va < MSN_GUEST_LOW || va >= size || size - va < 4u * SPOT_WORDS) return NULL;
     return at(mem, va);
 }
 
@@ -840,7 +844,7 @@ void missions_script(uint8_t *mem, uint32_t size, uint32_t runner, int when, dou
             say_spot("player 1's place already kept", p1, ": left alone", t);
             return;
         }
-        if (!spot || (kind != 0 && kind != 2)) {
+        if (!spot || (kind != ENTRANCE_KIND_SPOT && kind != ENTRANCE_KIND_SPOT2)) {
             fprintf(stderr, "[MISSION] t=%.2f %04d: its entrance 0 gives no position (%u entrances,"
                     " kind %u); player 1's place left empty\n", t, s.mission,
                     word(mem, size, header + HDR_ENTRANCES + 4u), kind);
