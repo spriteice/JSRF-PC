@@ -7949,6 +7949,130 @@ void sub_000A6100(void)
     cam_eye_note(cam, EYE_DCAMFIX, NULL);
 }
 
+/* ---- the sun's glare behind walls (known bug 86, port/sun_flare.h) ---------
+ *
+ * sub_00044E80 is the sun flare's test, from its update's second slot
+ * (sub_00046630, through sub_000464C0): 1 when something stands between the
+ * camera's eye and the sun, and the glare gives way to the blocked sprite.
+ * sub_00044C90 has cut the line from the eye to the sun's point into pieces
+ * and, for each, kept the piece's box and asked the collision world for the
+ * surfaces in it. This tests each piece that has any with the game's line
+ * test, sub_00018260, as the follow camera's wall test does. It isn't fixed
+ * where the pieces are made: the game's own test is the defect, testing each
+ * piece from its box's smallest corner to its largest, so the recompiled code
+ * matches its instructions, and no other function shows it.
+ * The fix's result is steadied (sun_flare_steady), counted over the last
+ * second: the glare hides only once nearly all of it was blocked, so a flip
+ * for a frame or two at an edge doesn't start the game's fade.
+ * With the fix off and its log off, the game's own test runs as it is. */
+#include "sun_flare.h"
+#define FLARE_STATE        0x048u      /* 1 in sight, 2 blocked, 4 going to blocked, 3 back, 0 off */
+#define FLARE_EYE          0x050u      /* the camera's eye: where the line starts */
+#define FLARE_SUN          0x084u      /* the sun's point: where it ends */
+#define FLARE_PIECES       0x934u      /* how many pieces the line is cut into (sub_00044C90) */
+#define FLARE_PIECE        0x13Cu      /* the first piece's record */
+#define FLARE_PIECE_SIZE   0x44u       /* and each one's size */
+#define PIECE_LO           0x08u       /* the piece's box: its smallest corner */
+#define PIECE_HI           0x14u       /* and its largest */
+#define PIECE_LIST         0x20u       /* the surfaces in it (sub_00016260): the line test's first argument */
+#define PIECE_SURFS_1      0x24u       /* how many in its two parts: with none in either, */
+#define PIECE_SURFS_2      0x34u       /* it isn't tested */
+#define FLARE_LINE_MASK    0xFFFFu     /* what the flare's line test stops at */
+#define FLARE_LINE_ANY     0xFFFFFFFFu /* its last argument, as sub_00044E80 passes it */
+#define FLARE_LINE_RET     0x00044ECEu /* where sub_00044E80's line test returns to */
+#define FLARE_HITS         0x00u       /* below the stack: the line test's hit record, */
+#define FLARE_ENDS         0x10u       /* then the line's two ends, */
+#define FLARE_SCRATCH      0x40u       /* in this much */
+extern void sub_00044E80_gen(void);
+void sub_00044E80(void)
+{
+    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
+    const uint32_t flare = g_ecx;
+    const int fix = sun_flare_fix_on(), log = sun_flare_log_on();
+    static SunFlareHold hold[4];    /* a flare each: one a camera, and split screen has up to 4 */
+    static unsigned next;           /* the slot a flare not in it takes, the oldest */
+    SunFlareTest test;
+    uint32_t scr, args[6];
+    float *ends;
+    int i, k;
+    if (!fix && !log) {
+        sub_00044E80_gen();
+        return;
+    }
+    memset(&test, 0, sizeof test);
+    test.t = pad_now();
+    test.flare = flare;
+    test.state = (int)*(uint32_t *)(m + flare + FLARE_STATE);
+    test.pieces = (int)*(int32_t *)(m + flare + FLARE_PIECES);
+    test.game = test.real = -1;
+    test.fix = fix;
+    for (k = 0; k < 3; k++) {
+        test.eye[k] = *(float *)(m + flare + FLARE_EYE + 4 * k);
+        test.dir[k] = *(float *)(m + flare + FLARE_SUN + 4 * k) - test.eye[k];
+    }
+    g_esp -= FLARE_SCRATCH;
+    scr = g_esp;
+    ends = (float *)(m + scr + FLARE_ENDS);
+    for (i = 0; i < test.pieces && i < SUN_FLARE_PIECES; i++) {
+        const uint32_t rec = flare + FLARE_PIECE + (uint32_t)i * FLARE_PIECE_SIZE;
+        const float *lo = (const float *)(m + rec + PIECE_LO), *hi = (const float *)(m + rec + PIECE_HI);
+        if (!*(uint32_t *)(m + rec + PIECE_SURFS_1) && !*(uint32_t *)(m + rec + PIECE_SURFS_2)) continue;
+        test.tested++;
+        args[0] = rec + PIECE_LIST;
+        args[1] = scr + FLARE_ENDS;
+        args[2] = scr + FLARE_ENDS + 3 * sizeof(float);
+        args[3] = scr + FLARE_HITS;
+        args[4] = FLARE_LINE_MASK;
+        args[5] = FLARE_LINE_ANY;
+        /* The game's line, from the box's smallest corner to its largest,
+         * for the log; the fix on alone doesn't need it. */
+        if (log && test.game < 0) {
+            memcpy(ends, lo, 3 * sizeof(float));
+            memcpy(ends + 3, hi, 3 * sizeof(float));
+            g_ecx = CAM_WORLD;
+            if (guest_call_cdecl(sub_00018260, FLARE_LINE_RET, 6, args)) test.game = i;
+        }
+        /* The real line, along the piece. */
+        if (test.real < 0) {
+            sun_flare_ends(lo, hi, test.dir, ends, ends + 3);
+            g_ecx = CAM_WORLD;
+            if (guest_call_cdecl(sub_00018260, FLARE_LINE_RET, 6, args)) test.real = i;
+        }
+        if (test.real >= 0 && (!log || test.game >= 0)) break;
+    }
+    g_esp += FLARE_SCRATCH;
+    if (fix) {
+        SunFlareHold *h = NULL;
+        for (k = 0; k < 4 && !h; k++)
+            if (hold[k].flare == flare) h = &hold[k];
+        if (!h) h = &hold[next++ % 4];
+        test.shown = sun_flare_steady(h, flare, test.real >= 0);
+    } else {
+        test.shown = test.game >= 0;
+    }
+    if (log) sun_flare_note(&test);
+    g_eax = (uint32_t)test.shown;
+    g_esp += 4;         /* thiscall with nothing on the stack: its return */
+}
+
+/* sub_00044F00 gives the flare's two sprites their colours for this frame,
+ * by its state and the sun's height: its first argument the glare's, the
+ * second the sprite the game draws in its place while the sun is blocked
+ * (+0xE8), each faded as the state changes (sub_00044BA0 counts the fade
+ * down). With the fix on, the second is nothing, so no sprite shows over
+ * what blocks the sun: its blend adds the colour, so nothing adds nothing.
+ * Not at the source: the game draws that sprite on purpose; the fix leaves
+ * it out. */
+#define FLARE_BLOCKED_COLOUR 2      /* the argument with the blocked sprite's colour */
+extern void sub_00044F00_gen(void);
+void sub_00044F00(void)
+{
+    const uint32_t blocked = GARG(FLARE_BLOCKED_COLOUR);
+    sub_00044F00_gen();
+    if (sun_flare_fix_on() && blocked)
+        *(uint32_t *)((uint8_t *)g_xbox_mem_offset + blocked) = 0;
+}
+
 /* ---- camera call counters (JSRF_CAM_LOG=1): which camera methods and mode
  * handlers actually run, printed every two seconds from the poser. */
 static unsigned long jsrf_camcnt[18];

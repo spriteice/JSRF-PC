@@ -48,14 +48,15 @@ void xbox_MenuAdd(const XBOX_MENU_ITEM *items, int count)
 }
 #endif
 
-/* Two of Logging's switches, and three of Engine switches': one that is set
- * to 1, one that is set to 0, and RECOMP_APU_MIX, set to a word, xemu. A
- * line each, "-" when it is not set. */
+/* Two of Logging's switches, three of Engine switches': one that is set to
+ * 1, one that is set to 0, and RECOMP_APU_MIX, set to a word, xemu; and
+ * Experimental's last, the last switch of all. A line each, "-" when it is
+ * not set. */
 static void show(const char *when)
 {
     static const char *const name[] = { "RECOMP_GL_PROFILE", "RECOMP_LOCK_WATCH",
                                         "RECOMP_GL_STENCILVIS", "RECOMP_GL_VCACHE",
-                                        "RECOMP_APU_MIX" };
+                                        "RECOMP_APU_MIX", "JSRF_SUN_FIX" };
     size_t i;
     for (i = 0; i < sizeof name / sizeof name[0]; i++) {
         const char *v = getenv(name[i]);

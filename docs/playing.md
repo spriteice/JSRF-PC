@@ -540,6 +540,11 @@ running while it is open, but your input goes to the menu.
     JSRF_FLOW_LOG logs a line each time a mission moves on a step, with the
     step's number and the mission's: asking for its files, its setup, play,
     and the hand-over to the next mission.
+    JSRF_SUN_LOG logs the sun flare's test, which hides the sun's glare
+    behind what stands in front of it: the game's line and the real line
+    from the camera to the sun, side by side, whether each is blocked, and
+    which way the glare shows. A line when either changes, and every 2
+    seconds while neither does.
     JSRF_TALK_LOG logs the story's events as they run: each talk started,
     with the code that started it, the mission script's entries and the
     triggers that fire, every story flag that changes, and the talk zones a
@@ -680,7 +685,8 @@ running while it is open, but your input goes to the menu.
     Lines starting `[PLAYBACK]` in the log say what it did, with a summary
     at the end.
   - **Experimental:** Changes to how the game runs, to try out, when there
-    are any. Random graffiti draws the designs you spray at random from
+    are any. Off by default, each to be checked over the next releases.
+    Random graffiti draws the designs you spray at random from
     the ones your save has unlocked, in place of the five chosen in the
     garage: each time an area loads, up to 13 designs of each size, and
     the spots take them in turn, so tags of one size differ from spot to
@@ -700,6 +706,15 @@ running while it is open, but your input goes to the menu.
     moment late the first time its spot comes into view. The log's
     `[GRAFFITI]` lines say what was drawn, at each area's load and at
     each soul, and what the first spots were dealt.
+    Sun flare fix hides the sun's glare and its lens ghosts behind a wall
+    or slope the game's own test misses: the game tests a mirrored copy of
+    the line to the sun for three in four of the sun's directions, and this
+    tests the line itself, with the game's own test. It hides the glare
+    only once the sun has been behind something for nearly all of the last
+    second, and shows it again once a quarter of that second sees it, so
+    the glare doesn't flick in and out as the line passes an edge, a pole
+    or a gap. It also hides the dim sprite the game draws in the glare's
+    place while the sun is blocked.
   - **Far buildings test:** Finds which area Far buildings adds draws
     something out of place, such as buildings floating in the sky. Stand
     where it shows, and press + on Leave out area: each press leaves out the

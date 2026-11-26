@@ -127,6 +127,7 @@ set(JSRF_SOURCES
     missions_menu.c
     photo_mode.c
     music_info.c
+    sun_flare.c
     soul_indicator.c
     random_graffiti.c
     playback_mark.c

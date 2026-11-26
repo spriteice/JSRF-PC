@@ -23,6 +23,7 @@
 #define _POSIX_C_SOURCE 200112L    /* setenv, unsetenv */
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <fcntl.h>
 #if defined(_WIN32)
@@ -80,6 +81,7 @@ static const DevSwitch k_logging[] = {
     { "JSRF_CAM_LOG", "1" },                /* the game's camera (port/recomp_manual.c) */
     { "JSRF_EVT_LOG", "0.2" },              /* where skaters are posed, every 0.2 s (port/recomp_manual.c) */
     { "JSRF_FLOW_LOG", "1" },               /* each step a mission's flow reaches (port/recomp_manual.c) */
+    { "JSRF_SUN_LOG", "1" },                /* the sun flare's line test, the game's and the real line's (port/sun_flare.h) */
     { "JSRF_TALK_LOG", "1" },               /* talks and the event manager's calls (port/recomp_manual.c) */
     { "RECOMP_APU_CHANNELS", "1" },
     { "RECOMP_APU_STATS", "1" },
@@ -124,6 +126,7 @@ static const DevSwitch k_perf[] = {
  * the end. With none, Experimental is not shown. */
 static const DevSwitch k_tries[] = {
     { "JSRF_RANDOM_GRAFFITI", "1" },        /* the sprayed designs drawn from the unlocked ones (port/random_graffiti.c) */
+    { "JSRF_SUN_FIX", "1" },                /* the sun flare's line tested along each piece (port/sun_flare.h) */
     { NULL, NULL },                         /* the end */
 };
 #define DEV_LOGGING  ((int)(sizeof k_logging / sizeof k_logging[0]))
@@ -132,7 +135,10 @@ static const DevSwitch k_tries[] = {
 #define DEV_TRIES    ((int)(sizeof k_tries / sizeof k_tries[0]) - 1)
 #define DEV_NAMED    (DEV_LOGGING + DEV_ENGINE)     /* the switches whose rows are their names */
 #define DEV_SWITCHES (DEV_NAMED + DEV_PERF + DEV_TRIES)
-_Static_assert(DEV_SWITCHES <= 31, "a bit of an int for each switch");
+/* A page's rows are a TOGGLES row's, a bit of an int each. */
+_Static_assert(DEV_LOGGING <= 31 && DEV_ENGINE <= 31 && DEV_PERF <= 31 && DEV_TRIES <= 31,
+               "a bit of an int for each of a page's rows");
+_Static_assert(DEV_SWITCHES <= 64, "a bit of s_on for each switch");
 
 /* What developer.cfg keeps for a switch ticked: 0 for one set to 0, and 1 for
  * the rest, whose value is 1 or a word. */
@@ -170,14 +176,15 @@ _Static_assert(sizeof k_perf_row / sizeof k_perf_row[0] == DEV_PERF, "a row for 
 /* Experimental's rows, one for each of k_tries. */
 static const char *const k_tries_row[] = {
     "Random graffiti (Restart)",
+    "Sun flare fix (Restart)",
     NULL,                                   /* the end */
 };
 _Static_assert(sizeof k_tries_row / sizeof k_tries_row[0] == DEV_TRIES + 1,
                "a row for each experiment");
 #endif
 
-static int s_on;        /* a bit for each switch ticked in developer.cfg */
-static int s_ours;      /* ... and for each this run put in the environment */
+static uint64_t s_on;   /* a bit for each switch ticked in developer.cfg */
+static uint64_t s_ours; /* ... and for each this run put in the environment */
 static int s_log = 1;
 static int s_out = -1, s_err = -1;     /* the log, kept while it is not written to */
 
@@ -228,15 +235,15 @@ static void switch_flip(int i)
     const DevSwitch *sw = dev_switch(i);
     int on = dev_cfg_on(sw->on), bare = !strcmp(sw->on, "1");
     int ticked;
-    s_on ^= 1 << i;
-    ticked = (s_on >> i) & 1;
+    s_on ^= (uint64_t)1 << i;
+    ticked = (int)((s_on >> i) & 1);
     nv_window_file_set(DEV_FILE, sw->name, ticked ? on : !on);
     fprintf(stderr, "[DEV] %s%s%s %s from the next start\n", sw->name, bare ? "" : "=",
             bare ? "" : sw->on, ticked ? "on" : "off");
 }
 /* A page's ticks, from its first switch's bit. A TOGGLES row's state and pick
  * take no context, so each page has its own pair. */
-static int  page_on(int first, int n) { return (s_on >> first) & ((1 << n) - 1); }
+static int  page_on(int first, int n) { return (int)((s_on >> first) & ((1u << n) - 1)); }
 static int  logging_on(void)    { return page_on(0, DEV_LOGGING); }
 static void logging_flip(int i) { switch_flip(i); }
 static int  engine_on(void)     { return page_on(DEV_LOGGING, DEV_ENGINE); }
@@ -261,10 +268,10 @@ void developer_start(void)
         int on = dev_cfg_on(sw->on);
         /* Ticked when developer.cfg gives it its value on (any but 0, for 1). */
         if ((nv_window_file_get(DEV_FILE, sw->name, !on) != 0) != on) continue;
-        s_on |= 1 << i;
+        s_on |= (uint64_t)1 << i;
         if (getenv(sw->name)) continue;
         set_env(sw->name, sw->on);
-        s_ours |= 1 << i;
+        s_ours |= (uint64_t)1 << i;
         fprintf(stderr, "[DEV] %s=%s from " DEV_FILE "\n", sw->name, sw->on);
     }
 #if defined(XBOXRECOMP_MENU)
@@ -329,7 +336,7 @@ void developer_restart(void)
 #if defined(NV2A_GL_USE_SDL)
     int i;
     for (i = 0; i < DEV_SWITCHES; i++)
-        if (s_ours & (1 << i)) set_env(dev_switch(i)->name, "");
+        if (s_ours & ((uint64_t)1 << i)) set_env(dev_switch(i)->name, "");
     log_output(1);
 #endif
 }

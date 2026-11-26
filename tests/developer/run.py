@@ -36,7 +36,7 @@ source = """
 # case: (settings file, developer.cfg, environment, lines the log must have,
 # lines it must not)
 switches = ("RECOMP_GL_PROFILE", "RECOMP_LOCK_WATCH", "RECOMP_GL_STENCILVIS",
-            "RECOMP_GL_VCACHE", "RECOMP_APU_MIX")
+            "RECOMP_GL_VCACHE", "RECOMP_APU_MIX", "JSRF_SUN_FIX")
 cases = {
     "none": (None, None, {},
              [f"{when}: {name}=-" for when in ("started", "restarting") for name in switches],
@@ -150,6 +150,15 @@ cases["adx_err_log"] = (None, "JSRF_ADX_ERR_LOG=1\n", {},
 cases["timeline"] = (None, "RECOMP_GL_TIMELINE=1\n", {},
                      ["[DEV] RECOMP_GL_TIMELINE=1 from developer.cfg", "started:"], [])
 
+# The sun flare's log, read by port/sun_flare.c, and the fix, Experimental's
+# last row: the last switch, past an int's bits on Linux (33 there), so
+# developer_restart taking it out checks s_on and s_ours have room for it.
+cases["sun_log"] = (None, "JSRF_SUN_LOG=1\n", {},
+                    ["[DEV] JSRF_SUN_LOG=1 from developer.cfg", "started:"], [])
+cases["sun_fix"] = (None, "JSRF_SUN_FIX=1\n", {},
+                    ["[DEV] JSRF_SUN_FIX=1 from developer.cfg", "started: JSRF_SUN_FIX=1",
+                     "restarting: JSRF_SUN_FIX=-"], [])
+
 # The audio effects were Experimental's, until they became Audio > Audio
 # effects, kept as audioeffects= in the settings file (port/audio.c,
 # tests/audio). A developer.cfg from then keeps RECOMP_APU_GPFX=1, which
@@ -185,7 +194,8 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
                if k not in (*switches, "RECOMP_CPU_PROFILE", "RECOMP_NV2A_QUEUE", "RECOMP_P_CORES",
                             "RECOMP_PACE_DISPLAY", "RECOMP_FENCE_WAIT", "RECOMP_GL_DXT",
                             "JSRF_CAM_LOG", "JSRF_EVT_LOG", "JSRF_FLOW_LOG", "JSRF_TALK_LOG",
-                            "JSRF_ADX_ERR_LOG", "RECOMP_APU_GPFX", "JSRF_RANDOM_GRAFFITI")}
+                            "JSRF_ADX_ERR_LOG", "RECOMP_APU_GPFX", "JSRF_RANDOM_GRAFFITI",
+                            "JSRF_SUN_LOG")}
         env.update(extra, JSRF_SETTINGS_FILE=str(folder / "settings.cfg"))
         log = folder / "last-run.log"
         with open(log, "w") as out:
@@ -247,7 +257,7 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
             or ticks["Experimental"]):
         raise SystemExit(f"menu: with nothing changed, the ticks are {ticks}")
     # Experimental's rows, each with a name of its own, unticked until asked for.
-    if pages["Experimental"] != ["Random graffiti (Restart)"]:
+    if pages["Experimental"] != ["Random graffiti (Restart)", "Sun flare fix (Restart)"]:
         raise SystemExit(f"menu: Experimental's rows are {pages['Experimental']}")
     queue = 1 << len(perf)
     pages, ticks = menu("RECOMP_NV2A_QUEUE=0\n")
@@ -260,7 +270,7 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
     if any(row not in pages["Logging"]
            for row in ("RECOMP_GL_TIMELINE (Restart)", "JSRF_ADX_ERR_LOG (Restart)",
                        "JSRF_EVT_LOG=0.2 (Restart)", "JSRF_FLOW_LOG (Restart)",
-                       "JSRF_TALK_LOG (Restart)")):
+                       "JSRF_TALK_LOG (Restart)", "JSRF_SUN_LOG (Restart)")):
         raise SystemExit(f"menu: Logging's rows are {pages['Logging']}")
     # Logging's and Engine switches' rows are in alphabetical order by name,
     # word by word: an underscore comes before any letter, as a space would.
@@ -273,9 +283,9 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
     # order puts it.
     ticked = {"Logging": ["JSRF_ADX_ERR_LOG (Restart)", "RECOMP_LOCK_WATCH (Restart)"],
               "Engine switches": ["RECOMP_GL_VCACHE=0 (Restart)"],
-              "Experimental": ["Random graffiti (Restart)"]}
+              "Experimental": ["Random graffiti (Restart)", "Sun flare fix (Restart)"]}
     pages, ticks = menu("JSRF_ADX_ERR_LOG=1\nRECOMP_LOCK_WATCH=1\nRECOMP_GL_VCACHE=0\n"
-                        "JSRF_RANDOM_GRAFFITI=1\n")
+                        "JSRF_RANDOM_GRAFFITI=1\nJSRF_SUN_FIX=1\n")
     for page, rows in ticked.items():
         want = sum(1 << pages[page].index(row) for row in rows)
         if ticks[page] != want:
