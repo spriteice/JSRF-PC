@@ -49,9 +49,10 @@ contains no game files.
 - **Remapping:** Any button, key, or mouse button on any of the game's
   controls, with two keys for each on the keyboard. Input > Controller layout
   and Input > Keyboard layout.
-- **Button prompts:** The game's button icons as your controller's, in Xbox,
-  PlayStation, or Nintendo style, or as keys, following your layouts. Auto
-  follows the controller or keyboard you last used. Input > Button prompts.
+- **Button prompts:** The game's button icons, and the controls its talks and
+  messages name, as your controller's, in Xbox, PlayStation, or Nintendo
+  style, or as keys, following your layouts. Auto follows the controller or
+  keyboard you last used. Input > Button prompts.
 - **Audio effects:** A targeted, discrete sound engine that mimics the original
   hardware's audio effects with minimal performance overhead: 3D audio and
   reverb.
@@ -90,6 +91,9 @@ in these features.
   at once can cause poor performance.
 - **Engine switches and Performance:** Parts of the engine turned off, or made
   to work another way, to compare.
+- **Experimental:** Changes to try out, each off by default: Random graffiti,
+  which sprays designs drawn at random from the ones you've unlocked, and Sun
+  flare fix, which hides the sun's glare behind walls it showed over.
 - **Far buildings test:** Finds which part of a map Far buildings draws out of
   place.
 - **Purge shaders:** Restarts the game and deletes the shader cache as it
@@ -97,14 +101,14 @@ in these features.
 
 ## Download
 
-The latest release is **b2.2**.
+The latest release is **b2.2-hotfix**.
 
 | Platform | File |
 |---|---|
-| Linux x86_64: SteamOS, Ubuntu 22.04+, and most modern distros. | [JSRF-PC-b2.2-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b2.2/JSRF-PC-b2.2-linux-x86_64.tar.gz) |
-| Windows 10 or 11, x86_64. | [JSRF-PC-b2.2-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b2.2/JSRF-PC-b2.2-windows-x86_64.zip) |
-| Linux tools, to build the engine without downloading (optional). | [JSRF-PC-tools-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b2.2/JSRF-PC-tools-linux-x86_64.tar.gz) |
-| Windows tools, to build the engine without downloading (optional). | [JSRF-PC-tools-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b2.2/JSRF-PC-tools-windows-x86_64.zip) |
+| Linux x86_64: SteamOS, Ubuntu 22.04+, and most modern distros. | [JSRF-PC-b2.2-hotfix-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b2.2-hotfix/JSRF-PC-b2.2-hotfix-linux-x86_64.tar.gz) |
+| Windows 10 or 11, x86_64. | [JSRF-PC-b2.2-hotfix-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b2.2-hotfix/JSRF-PC-b2.2-hotfix-windows-x86_64.zip) |
+| Linux tools, to build the engine without downloading (optional). | [JSRF-PC-tools-linux-x86_64.tar.gz](https://github.com/spriteice/JSRF-PC/releases/download/b2.2-hotfix/JSRF-PC-tools-linux-x86_64.tar.gz) |
+| Windows tools, to build the engine without downloading (optional). | [JSRF-PC-tools-windows-x86_64.zip](https://github.com/spriteice/JSRF-PC/releases/download/b2.2-hotfix/JSRF-PC-tools-windows-x86_64.zip) |
 
 See the [changelog](CHANGELOG-JSRF-PC.md) for what changed in each version,
 and the [releases](https://github.com/spriteice/JSRF-PC/releases) page for
@@ -184,9 +188,14 @@ still in beta.
   - Some elements half a pixel out of place.
   - Sounds cutting out when many play at once.
   - Chuo Street's tentacle boss disappearing while it hangs overhead.
-  - People floating over Kibogaoka Hill with Draw distance above 1×.
+  - Crowds and objects floating in the sky in a couple of places, with Draw
+    distance set high.
   - Short stutters with Upscaling's Textures at 4× or more on older graphics
     cards.
+  - The free camera going through a half pipe's wall, mostly with Half pipe
+    cam unticked.
+  - The sun's glare showing over walls the sun is behind.
+  - Some glass on buildings too light in shadow, with See through fix on.
   - Black screenshots on Windows.
 
 **Found a bug?** [Open an issue](https://github.com/spriteice/JSRF-PC/issues)

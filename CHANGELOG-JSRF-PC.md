@@ -4,6 +4,68 @@ What changed in each JSRF-PC version, newest first. Upstream JSRF Unleashed's
 own changes are in
 [its changelog](https://github.com/JuMatt/JetSetRadioFuture-Unleashed/blob/main/CHANGELOG.md).
 
+## b2.2-hotfix (beta) — 26 November 2026
+
+A hotfix to b2.2.
+
+### Added
+
+- **Random graffiti (experimental):** Developer > Experimental > Random
+  graffiti sprays designs drawn at random from the ones your save has
+  unlocked, up to 13 of each size and a different one at each spot, in place
+  of the five chosen in the garage. They are drawn again each time an area
+  loads, and at each graffiti soul you pick up. Off by default, and it needs a
+  restart.
+- **Sun flare fix (experimental):** Developer > Experimental > Sun flare fix
+  hides the sun's glare and rays behind walls and slopes they showed over,
+  where the game's own check misses them. The glare goes about a second after
+  the sun is hidden, and comes back a moment after it clears. Off by default,
+  and it needs a restart; Developer > Logging gains JSRF_SUN_LOG, which logs
+  the check.
+
+### Fixed
+
+- **Button prompts in the tutorial:** In every Input > Button prompts style
+  but Default, Corn's and Gum's lines and the tutorial's text on the screen
+  showed the Xbox's buttons. They now show the style's pictures, as every talk
+  and mission message that names a control does: a button's letter, a trigger,
+  and the left thumbstick, each coming in as the talk types it out.
+- **Skipping Beat's runs:** With Skip cutscenes on, Beat's three runs in
+  Dogenzaka Hill, where the camera follows him to his place, couldn't be
+  skipped. Every preview where the camera follows a rival now ends at a second
+  press of A, the way it ends when it plays out, so a scene after the rival
+  arrives still plays, and two presses skip it too.
+- **Pink lines in 99th Street's opening:** With Far buildings on, thin pink
+  lines crossed the close-up of the dragon in 99th Street's opening scene. Far
+  buildings now draws nothing extra while that scene plays, and the street
+  keeps its far buildings the rest of the time.
+- **Scenery in the air on Kibogaoka Hill:** With Far buildings at 3× or All, a
+  piece of the bowl's west side hung in the air, seen from the east of the
+  map. Far buildings now leaves three pieces of that side out from there.
+- **The speed trail with See through fix:** With See through fix on, b2.2 drew
+  the trail behind your skater pale and see-through. It is drawn as on the
+  Xbox again: shadowed where your skater is, and solid enough to hide the
+  dash's burst behind it, while your skater, faded when the camera is close,
+  still shows through it. The crowd, the spray paint and its arrows while you
+  paint a wall, the police's mesh barricade, and the edges of cars are drawn
+  as on the Xbox too; the crowd still shows through glass.
+- **A crash after a skipped scene:** With Skip cutscenes on, a scene that
+  ended just as "Press A again to skip" first showed could crash the game a
+  moment later, most likely in the garage's first scene after the tutorial. It
+  was found in the code before anyone met it, and is fixed.
+- **Mid-air starts from Developer > Missions:** A rival's preview started from
+  Developer > Missions dropped you in mid-air in the middle of the map once it
+  ended. You now start where the preview starts, by the rival, or else at the
+  level's start.
+
+### Changed
+
+- **Modern preset:** File > Presets > Modern now ticks Half pipe cam, so a
+  jump in a half pipe plays the game's own shot. With it unticked, the free
+  camera can go through a half pipe's wall, a known issue. If you chose Modern
+  in b2.2, it stays unticked until you tick Input > Behaviour > Camera > Half
+  pipe cam, or choose Modern again.
+
 ## b2.2 (beta) — 23 November 2026
 
 ### Added

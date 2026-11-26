@@ -114,10 +114,10 @@ draw distance, Far buildings and Far shadows at 3x, MSAA at 4x, anisotropic
 filtering at 16x, Upscaling's Menus and HUD and Textures at 8x, Graffiti at 4x
 and Buttons off, Sharp, Strong and both Cleanup ticks, Audio effects on,
 Keyboard moves on Camera, Stick shape Square, Button prompts' Style Auto,
-Default cam fix on and the game's three camera shots off, the free camera on,
-and Skip intro, Skip cutscenes, and Visual indicator on. Xbox and Modern each
-ask first, and restart the game; the other three apply straight away, with no
-restart.
+Default cam fix and Half pipe cam on and the game's other two camera shots
+off, the free camera on, and Skip intro, Skip cutscenes, and Visual indicator
+on. Xbox and Modern each ask first, and restart the game; the other three
+apply straight away, with no restart.
 
 Performance, which a new install starts with, has the draw distance, Far
 buildings and Far shadows at 1x, no anti-aliasing or anisotropic filtering,
@@ -170,9 +170,10 @@ in view where the game never shows it, such as the top of Dogenzaka Hill in
 the sky at its bottom. At any choice, a few areas of Dogenzaka Hill, Hikage
 Street, Kibogaoka Hill and Chuo Street aren't drawn from the places where they
 would hang in the sky or stand in the street's view, and come in as you reach
-them. It changes straight away, asks more of the computer the further it goes,
-and is remembered as farbuildingsahead= in the settings file (0 for Off to 4
-for All).
+them. In 99th Street's opening scene, the first time you come in, nothing more
+than the game's own is drawn. It changes straight away, asks more of the
+computer the further it goes, and is remembered as farbuildingsahead= in the
+settings file (0 for Off to 4 for All).
 
 Display > Building distance > Far shadows, below Far buildings, draws the
 shadows of the areas Far buildings adds too, as many areas ahead as its own
@@ -221,9 +222,12 @@ behind a shop's window. Faded characters, as your skater close to the camera,
 and the level's arrow as it fades in, let what is behind them show through
 too, tinted by them, their own far side as well: on the Xbox they hide what
 the game draws after them, such as other characters, glass and water. Their
-dark outline then shows round the edge of each part, not across it. On by
-default. It changes straight away, and is remembered as seethru= in the
-settings file (1 or 0).
+dark outline then shows round the edge of each part, not across it. The copies
+of your skater that trail behind at speed are drawn as on the Xbox: in shadow
+they are shadowed, and they hide the dash's burst behind them. So are the
+other moving models without a dark outline, such as the crowd, which still
+shows through glass. On by default. It changes straight away, and is
+remembered as seethru= in the settings file (1 or 0).
 
 Graphics > Anti-aliasing (MSAA) in the in-game menu smooths jagged edges:
 Off (the default), 2x, 4x, or 8x, as far as the graphics card goes. It changes
@@ -339,11 +343,15 @@ Developer > Engine switches turns parts of the engine off or changes how they
 work, to compare, Developer > Performance has what the engine does for speed,
 each on by default and ticked, to untick and compare: Use P cores (the game on
 the processor's fast cores), GPU queue, Display pacing, Sleep while waiting for
-the GPU, and Compressed textures direct, and Developer > Experimental, when
-there is anything in it, tries out changes to how the game runs. Each row
-stands for an environment variable, kept in developer.cfg beside the settings
-file as NAME=1 or NAME=0, and applies from the next start: File > Restart
-restarts the game, after asking.
+the GPU, and Compressed textures direct, and Developer > Experimental has
+changes to how the game runs, to try out, each off by default: Random
+graffiti, which sprays designs drawn at random from the ones your save has
+unlocked, a different one at each spot, in place of the five chosen in the
+garage, and Sun flare fix, which hides the sun's glare behind a wall or slope
+where the game's own check misses it. Each row stands for an environment
+variable, kept in developer.cfg beside the settings file as NAME=1 or NAME=0,
+and applies from the next start: File > Restart restarts the game, after
+asking.
 Developer > Purge shaders asks first, then restarts the game and deletes the
 shader cache as it starts: each shader is built again when the game first
 needs it.
@@ -419,10 +427,12 @@ the graffiti you spray), Half pipe cam (a jump in a half pipe), and Loop cam
 camera for them as on the Xbox, with the free camera on or off; unticked, they
 don't play and the camera keeps following you. With Half pipe cam unticked,
 the camera rises and falls with you through a half pipe's jump, the free
-camera too. The camera at a level's exit is always as on the Xbox. All three
-are ticked by default. Each tick changes straight away, and is remembered as
-dcamfix=, noskaterfade=, graffiti_cam=, half_pipe_cam= and loop_cam= in the
-settings file (0 or 1).
+camera too, and the free camera can go through a half pipe's wall, riding it
+with the camera turned into it or coming down from a big jump: a known issue,
+which is why Modern leaves it ticked. The camera at a level's exit is always
+as on the Xbox. All three are ticked by default. Each tick changes straight
+away, and is remembered as dcamfix=, noskaterfade=, graffiti_cam=,
+half_pipe_cam= and loop_cam= in the settings file (0 or 1).
 
 Input > Behaviour > Keyboard moves in the in-game menu sets how W A S D move
 the skater: from the way the camera faces (Camera, the default), or from the
@@ -457,12 +467,15 @@ Keyboard. Default is the game as the Xbox shows it. Auto follows the pad you
 last pressed, and shows keys while the keyboard or the mouse was the last
 thing you used; the others fix the look. In every style but Default, the icons
 follow both layouts, and the A and B in the game's text and beside its message
-boxes, the controls in the help line along the top of the graffiti editor, and
-the Start at a graffiti save point are the style's pictures. It changes
-straight away, and is remembered as button_prompts= in the settings file (0
-Auto, 1 Default, 2 Xbox, 3 PlayStation, 4 Nintendo, 5 Keyboard). The pads'
-pictures are Juliocacko's Free Input Prompts, and the keys' and the mouse's
-Xelu's Free Controller & Key Prompts, both free to use (CC0).
+boxes, the buttons, triggers and left thumbstick that the talks and the
+missions' messages name (the tutorial's among them, each picture coming in as
+a talk types it out), the controls in the help line along the top of the
+graffiti editor, and the Start at a graffiti save point are the style's
+pictures. It changes straight away, and is remembered as button_prompts= in
+the settings file (0 Auto, 1 Default, 2 Xbox, 3 PlayStation, 4 Nintendo, 5
+Keyboard). The pads' pictures are Juliocacko's Free Input Prompts, and the
+keys' and the mouse's Xelu's Free Controller & Key Prompts, both free to use
+(CC0).
 
 
 Where things are kept
