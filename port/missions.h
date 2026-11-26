@@ -103,6 +103,19 @@ typedef void (*missions_title_fn)(void);
  * (0x1C). */
 void missions_flow(uint8_t *mem, uint32_t size, uint32_t flow, missions_title_fn title, double t);
 
+/* The stage's script runner (sub_0005B3F0, its object at `runner`), before
+ * (MISSIONS_BEFORE) and after (MISSIONS_AFTER) each run of it. In the first
+ * mission a start plays, and only while player 1 has no place kept (the
+ * scene task's, which a start leaves empty where the game's own play keeps
+ * where they stood): the place is written as the mission's entrance 0, the
+ * level start, before its script first runs; and in a mission that doesn't
+ * spawn player 1, a scene, as where its script then gives another character
+ * its start (a rival's preview begins there). A mission whose exit names
+ * entrance -1, or a start line's e=-1, puts player 1 there. From the next
+ * mission on the game keeps the place itself. */
+enum { MISSIONS_BEFORE, MISSIONS_AFTER };
+void missions_script(uint8_t *mem, uint32_t size, uint32_t runner, int when, double t);
+
 /* Developer > Missions' rows (missions_menu.c), once the game's program is
  * in guest memory `mem` (`size` bytes) and the path layer is up: the story's
  * missions, read from the game's own mission files, by level, with the

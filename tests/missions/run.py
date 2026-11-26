@@ -41,6 +41,19 @@ variable, start-states.txt, with its own number or another line ending), 0
 for New Game's (no line, or a line that gives nothing), and its own for
 each other line.
 
+Player 1's place in the first mission a start plays (missions_script),
+driven as the hook on the stage's script runner (sub_0005B3F0) calls it,
+before and after each run, on a made-up scene task's places and mission
+headers (test_main.c): with no place kept, the level start (entrance 0's
+spot) before the script first runs; in a scene that doesn't spawn player 1,
+the rival's start once a run of its script has given it, and not where the
+rival goes after; in a mission that spawns player 1, the level start and
+no rival's; the level start kept, and said, when the scene gives no start;
+and from the next mission on, nothing. Left alone, and said: a place
+already kept, a place the game changes in between, no places yet, and an
+entrance 0 that gives no position. Nothing at all without a start, at Load
+Game, or when the start is refused.
+
 A start at Load Game (JSRF_START_LOAD=1): the title's part as for a mission,
 but Load Game chosen, the saves apart, no mission's file asked for, and nothing
 written; a mission, a state line and a skater given with it are taken out and
@@ -116,6 +129,14 @@ def started(entrance=LEFT, skater=YOYO, progress=AS_WRITTEN):
     return STARTED.format(entrance=entrance, skater=skater, progress=progress)
 
 
+PLACE_SAID = "[MISSION] t=12.50 0110: {}\n"
+PLACE_LEVEL = PLACE_SAID.format("player 1 has no place kept (a start keeps none): put at its level start,"
+                                " entrance 0, at (100.5, 20.0, 300.5)")
+PLACE_START = PLACE_SAID.format("its script gave slot 1 its start: player 1 put there, where the scene"
+                                " starts, at (800.5, -40.0, 50.5)")
+NEW_GAME_RUN = NO_STATE + SAVES + TITLE + PROGRESS.format(**NEW_GAME) + started()
+
+
 def refused(why, source="JSRF_START_STATE"):
     return f"[MISSION] {source} refused for 0110: {why}; starting normally\n"
 
@@ -150,6 +171,28 @@ cases = {
     "story_off": ("no_state", {"JSRF_START_MISSION": "0110", "JSRF_START_STATE": "story=0"}, None,
                   STARTING.format(skater="") + "JSRF_START_STATE: story=0\n" + SAVES + TITLE
                   + PROGRESS.format(**NEW_GAME) + started()),
+    # Player 1's place in the first mission a start plays (missions_script):
+    # a rival's preview, which doesn't spawn player 1, and the stage after it.
+    "place_scene": ("place_scene", {"JSRF_START_MISSION": "0110"}, None,
+                    NEW_GAME_RUN + PLACE_LEVEL + PLACE_START),
+    "place_stage": ("place_stage", {"JSRF_START_MISSION": "0110", "JSRF_START_STATE": "e=-1"}, None,
+                    STARTING.format(skater="") + "JSRF_START_STATE: e=-1\n" + SAVES + TITLE
+                    + PROGRESS.format(**NEW_GAME) + started(entrance="-1") + PLACE_LEVEL),
+    "place_no_start": ("place_no_start", {"JSRF_START_MISSION": "0110"}, None,
+                       NEW_GAME_RUN + PLACE_LEVEL + PLACE_SAID.format("its script gave slot 1 no start;"
+                                                                     " player 1 stays at the level start")),
+    "place_kept": ("place_kept", {"JSRF_START_MISSION": "0110"}, None,
+                   NEW_GAME_RUN + PLACE_SAID.format("player 1's place already kept at (1.0, 2.0, 3.0):"
+                                                    " left alone")),
+    "place_changed": ("place_changed", {"JSRF_START_MISSION": "0110"}, None,
+                      NEW_GAME_RUN + PLACE_LEVEL + PLACE_SAID.format("player 1's place changed by the game;"
+                                                                    " left to it")),
+    "place_none": ("place_none", {"JSRF_START_MISSION": "0110"}, None,
+                   NEW_GAME_RUN + PLACE_SAID.format("the scene task keeps no places yet; player 1's left to"
+                                                    " the game")),
+    "place_no_entrance": ("place_no_entrance", {"JSRF_START_MISSION": "0110"}, None,
+                          NEW_GAME_RUN + PLACE_SAID.format("its entrance 0 gives no position (2 entrances,"
+                                                           " kind 1); player 1's place left empty")),
     "no_file": ("no_file", {"JSRF_START_MISSION": "0110"}, None,
                 NO_STATE + "[MISSION] 0110 refused: the game's files have no"
                 " D:\\Media\\Mission\\mssn0110.bin; starting normally\n"),

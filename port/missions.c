@@ -37,7 +37,16 @@
  * Without JSRF_START_STATE, the mission's line is looked for in
  * start-states.txt beside the settings file (MISSIONS_LINES), which a test
  * build puts there: the game's own story, walked from its mission files, for
- * the test only, never in the repository or a package. */
+ * the test only, never in the repository or a package.
+ *
+ * What the start writes is the story's progress and player 1's entrance. The
+ * game also carries where each character stood from one mission to the next,
+ * outside the progress, in the scene task's places (task slot 0xB), which a
+ * start leaves empty: a stage entered with entrance -1, as after a rival's
+ * preview, would put player 1 at the map's origin, in the air (known bug
+ * 89). So in the first mission the start plays, player 1's empty place is
+ * written as that mission's level start, and in a scene with no player in it
+ * as where its script gives the rival its start (missions_script). */
 #define _POSIX_C_SOURCE 200112L    /* setenv, unsetenv */
 #include <stdio.h>
 #include <stdlib.h>
@@ -81,6 +90,35 @@
 #define PRG_SOULS_HELD      0x0118u
 #define PRG_TANKS           0x2A1Cu /* the Noise Tanks' count, a bit each */
 #define PRG_END             (PRG_TANKS + 4u * TANK_DWORDS)
+
+/* ---- where each character stands, kept from one mission to the next ----
+ * Task slot 0xB's object, which the scene task makes at state 0x1C
+ * (sub_000A82D0), zeroed: a place for each of 32 characters, slot 0 player
+ * 1's. A spawn (the stage's script record 0x48, 0x58930) puts a character at
+ * the mission's entrance that game variable 0x4D + its slot names, or with
+ * -1 where its place is kept (0x58B30); a start (record 0x4C, 0x59656) puts
+ * one at an entry of the mission's start table. The stage's script runner
+ * (sub_0005B3F0) has the mission's header at +0x1040. */
+#define MSN_GM_TASKS        0x98u   /* the game manager's task slots, 4 bytes each */
+#define TASK_PLACES         0x0Bu   /* the object holding each character's place */
+#define PLACES_AT           0x544u  /* its places, PLACE_SIZE each */
+#define PLACE_SIZE          0x34u
+#define PLACES              32u
+#define PLACE_SPOT          0x0Cu   /* x, y and z (floats), then the turn about each (ints) */
+#define SPOT_WORDS          6u      /* what a spawn at -1 keeps of the place */
+#define RUN_HEADER          0x1040u /* the runner's mission header */
+#define HDR_ENTRANCES       0x3Cu   /* the entrances: a pointer, then the count */
+#define HDR_STARTS          0xE4u   /* the start table: pointers to places */
+#define HDR_SCRIPT          0x174u  /* the script's records */
+#define ENTRANCE_SIZE       0x2Cu
+#define ENTRANCE_SPOT       0x08u   /* as a place's PLACE_SPOT, for kinds 0 and 2 */
+#define RECORD_SIZE         0x54u
+#define RECORD_OP           0x10u
+#define RECORD_SLOT         0x14u
+#define RECORD_ARG          0x18u   /* a start's entry in the start table */
+#define OP_SPAWN            0x48u
+#define OP_START            0x4Cu
+#define SCRIPT_MOST         4096u   /* more records than any mission's */
 #define FLAG_DWORDS         16u     /* a bank's 512 flags */
 #define SOUL_DWORDS         8u      /* 256 souls */
 #define TANK_DWORDS         32u     /* 1024 */
@@ -123,6 +161,14 @@ static struct {
     StartLine line;
     uint32_t progress;                  /* the line's fields hashed (progress_hash); 0 without one */
 } s;
+
+/* Player 1's place in the first mission a start plays (missions_script). */
+static struct {
+    int armed;                          /* from the mission's start until done with it */
+    uint32_t header;                    /* the first mission's header; 0 before its script runs */
+    uint32_t slot;                      /* the character whose start to take; 0 none */
+    uint32_t wrote[SPOT_WORDS];         /* the level start, as written to player 1's place */
+} s_place;
 
 /* Taking a variable out of the environment, as developer.c's set_env does
  * (Windows' _putenv_s also takes it out of what a restart's new process
@@ -668,9 +714,163 @@ void missions_flow(uint8_t *mem, uint32_t size, uint32_t flow, missions_title_fn
                 s.number, entrance, skater, changed[0] ? "changed since state 0x11: " : "as written at state 0x11",
                 changed);
         s.step = STEP_DONE;
+        s_place.armed = 1;
         return;
     }
     default:
         return;
+    }
+}
+
+/* A word of guest memory, 0 outside it. */
+static uint32_t word(const uint8_t *mem, uint32_t size, uint32_t va)
+{
+    uint32_t v;
+    if (va < 0x10000u || va >= size || size - va < 4u) return 0;
+    memcpy(&v, mem + va, 4u);
+    return v;
+}
+
+/* A spot (SPOT_WORDS words) at `va` in guest memory, or NULL outside it. */
+static uint32_t *spot_at(uint8_t *mem, uint32_t size, uint32_t va)
+{
+    if (va < 0x10000u || va >= size || size - va < 4u * SPOT_WORDS) return NULL;
+    return at(mem, va);
+}
+
+/* Player 1's place, or another slot's, in the scene task's object: NULL
+ * while it isn't there. */
+static uint32_t *place_spot(uint8_t *mem, uint32_t size, uint32_t slot)
+{
+    const uint32_t gm = word(mem, size, MSN_GAME);
+    const uint32_t places = gm ? word(mem, size, gm + MSN_GM_TASKS + 4u * TASK_PLACES) : 0;
+    return places ? spot_at(mem, size, places + PLACES_AT + slot * PLACE_SIZE + PLACE_SPOT) : NULL;
+}
+
+static void say_spot(const char *what, const uint32_t *spot, const char *then, double t)
+{
+    float xyz[3];
+    memcpy(xyz, spot, sizeof xyz);
+    fprintf(stderr, "[MISSION] t=%.2f %04d: %s at (%.1f, %.1f, %.1f)%s\n", t, s.mission, what,
+            xyz[0], xyz[1], xyz[2], then);
+}
+
+/* The slot a record 0x4C of the script gives a start, the lowest but player
+ * 1's; 0 for none. */
+static uint32_t start_slot(const uint8_t *mem, uint32_t size, uint32_t header)
+{
+    const uint32_t records = word(mem, size, header + HDR_SCRIPT);
+    const uint32_t n = word(mem, size, header + HDR_SCRIPT + 4u);
+    uint32_t i, best = 0;
+    for (i = 0; i < n && i < SCRIPT_MOST; i++) {
+        const uint32_t r = records + i * RECORD_SIZE, slot = word(mem, size, r + RECORD_SLOT);
+        if (word(mem, size, r + RECORD_OP) == OP_START && slot > 0 && slot < PLACES && (!best || slot < best))
+            best = slot;
+    }
+    return best;
+}
+
+/* Whether the script spawns player 1 (a record 0x48 for slot 0). */
+static int spawns_player(const uint8_t *mem, uint32_t size, uint32_t header)
+{
+    const uint32_t records = word(mem, size, header + HDR_SCRIPT);
+    const uint32_t n = word(mem, size, header + HDR_SCRIPT + 4u);
+    uint32_t i;
+    for (i = 0; i < n && i < SCRIPT_MOST; i++) {
+        const uint32_t r = records + i * RECORD_SIZE;
+        if (word(mem, size, r + RECORD_OP) == OP_SPAWN && word(mem, size, r + RECORD_SLOT) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+/* The start a record 0x4C has given `slot`: its entry of the start table
+ * whose spot the slot's place now holds, or NULL. */
+static const uint32_t *start_given(uint8_t *mem, uint32_t size, uint32_t header, uint32_t slot)
+{
+    const uint32_t records = word(mem, size, header + HDR_SCRIPT);
+    const uint32_t n = word(mem, size, header + HDR_SCRIPT + 4u);
+    const uint32_t table = word(mem, size, header + HDR_STARTS);
+    const uint32_t entries = word(mem, size, header + HDR_STARTS + 4u);
+    const uint32_t *place = place_spot(mem, size, slot), *start;
+    uint32_t i, k;
+    if (!place) return NULL;
+    for (i = 0; i < n && i < SCRIPT_MOST; i++) {
+        const uint32_t r = records + i * RECORD_SIZE;
+        if (word(mem, size, r + RECORD_OP) != OP_START || word(mem, size, r + RECORD_SLOT) != slot) continue;
+        k = word(mem, size, r + RECORD_ARG);
+        if (k >= entries) continue;
+        start = spot_at(mem, size, word(mem, size, table + 4u * k) + PLACE_SPOT);
+        /* A start at the map's origin would be no better than none. */
+        if (start && (start[0] | start[1] | start[2]) && !memcmp(start, place, 4u * SPOT_WORDS))
+            return start;
+    }
+    return NULL;
+}
+
+void missions_script(uint8_t *mem, uint32_t size, uint32_t runner, int when, double t)
+{
+    uint32_t header, *p1;
+    if (!s_place.armed) return;
+    header = word(mem, size, runner + RUN_HEADER);
+    if (!header) return;
+    if (s_place.header && header != s_place.header) {
+        /* The first mission is over: from here the game keeps the place. */
+        if (s_place.slot)
+            fprintf(stderr, "[MISSION] t=%.2f %04d: its script gave slot %u no start;"
+                    " player 1 stays at the level start\n", t, s.mission, s_place.slot);
+        s_place.armed = 0;
+        return;
+    }
+    p1 = place_spot(mem, size, 0);
+    if (!s_place.header) {
+        const uint32_t entrance = word(mem, size, header + HDR_ENTRANCES);
+        const uint32_t *spot = word(mem, size, header + HDR_ENTRANCES + 4u)
+                             ? spot_at(mem, size, entrance + ENTRANCE_SPOT) : NULL;
+        const uint32_t kind = word(mem, size, entrance);
+        if (when != MISSIONS_BEFORE) return;
+        s_place.header = header;
+        s_place.armed = 0;
+        if (!p1) {
+            fprintf(stderr, "[MISSION] t=%.2f %04d: the scene task keeps no places yet;"
+                    " player 1's left to the game\n", t, s.mission);
+            return;
+        }
+        if (p1[0] | p1[1] | p1[2]) {
+            say_spot("player 1's place already kept", p1, ": left alone", t);
+            return;
+        }
+        if (!spot || (kind != 0 && kind != 2)) {
+            fprintf(stderr, "[MISSION] t=%.2f %04d: its entrance 0 gives no position (%u entrances,"
+                    " kind %u); player 1's place left empty\n", t, s.mission,
+                    word(mem, size, header + HDR_ENTRANCES + 4u), kind);
+            return;
+        }
+        /* A start keeps no place for player 1, where the game's own play
+         * keeps where they stood: the level start in its stead. */
+        memcpy(p1, spot, 4u * SPOT_WORDS);
+        memcpy(s_place.wrote, spot, sizeof s_place.wrote);
+        say_spot("player 1 has no place kept (a start keeps none): put at its level start,"
+                 " entrance 0,", p1, "", t);
+        if (!spawns_player(mem, size, header) && (s_place.slot = start_slot(mem, size, header)) != 0)
+            s_place.armed = 1;      /* a scene with no player in it: where it starts, once its script says */
+        return;
+    }
+    if (when != MISSIONS_AFTER) return;
+    if (!p1 || memcmp(p1, s_place.wrote, sizeof s_place.wrote)) {
+        fprintf(stderr, "[MISSION] t=%.2f %04d: player 1's place changed by the game; left to it\n",
+                t, s.mission);
+        s_place.armed = 0;
+        return;
+    }
+    {
+        const uint32_t *start = start_given(mem, size, header, s_place.slot);
+        char what[128];
+        if (!start) return;
+        memcpy(p1, start, 4u * SPOT_WORDS);
+        snprintf(what, sizeof what, "its script gave slot %u its start: player 1 put there, where the"
+                 " scene starts,", s_place.slot);
+        say_spot(what, p1, "", t);
+        s_place.armed = 0;
     }
 }

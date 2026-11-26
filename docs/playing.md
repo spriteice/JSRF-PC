@@ -596,7 +596,9 @@ running while it is open, but your input goes to the menu.
     left out, and a new game starts there, with a new game's progress. With
     a test build's `start-states.txt` beside the settings file, which is
     made from the game's files and is never in a package, it starts with
-    the story up to that mission done instead. A run started here keeps its saves in `mission-saves` in the save folder,
+    the story up to that mission done instead. Where the story would put
+    you back where you stood, as after a rival's preview, you start where
+    the preview starts, by the rival, or else at the level's start. A run started here keeps its saves in `mission-saves` in the save folder,
     apart from your own, which it never opens. File > Restart afterwards
     starts the game as usual. Character is kept in `developer.cfg`; Photo
     mode and Record are kept from pick to pick, but not after File > Restart

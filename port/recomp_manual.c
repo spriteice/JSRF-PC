@@ -3696,7 +3696,11 @@ void sub_0005B3F0(void)
             fflush(stderr);
         }
     }
+    /* Developer > Missions: player 1's place in the first mission a start
+     * plays, as the game's own play would have kept it (missions.h). */
+    missions_script((uint8_t *)g_xbox_mem_offset, lim, self, MISSIONS_BEFORE, pad_now());
     sub_0005B3F0_gen();
+    missions_script((uint8_t *)g_xbox_mem_offset, lim, self, MISSIONS_AFTER, pad_now());
     if (on) {
         after = *(const uint32_t *)(m + self + 0x2B0u);
         if (after != before) {
