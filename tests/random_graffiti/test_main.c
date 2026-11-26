@@ -80,7 +80,7 @@ static int tm_make(uint32_t id)
     uint32_t node, at = RG_TEXTURES + RG_TM_BUCKETS + (id & 0xFFu) * 4u;
     uint32_t place = 0;
     if (random_graffiti_texture(s_ram, id) >= 0) return random_graffiti_texture(s_ram, id);
-    node = NODES + s_nodes++ * 0x18u;
+    node = NODES + s_nodes++ * RG_NODE_BYTES;
     while (place < RG_TM_PLACE_COUNT && get(RG_TEXTURES + RG_TM_PLACES + place * 4u)) place++;
     while (get(at)) at = get(at) + RG_NODE_NEXT;
     put(at, node);
@@ -202,7 +202,7 @@ static void spot_layers(uint32_t n, uint32_t part, uint32_t old_shown, uint32_t 
 }
 static void spot_make(uint32_t n, uint32_t parts)
 {
-    uint32_t record = RECORDS + n * 0x108u, list = RG_SPOT_LISTS + (spot_id(n) & 0xFFu) * 4u, part;
+    uint32_t record = RECORDS + n * RG_RECORD_BYTES, list = RG_SPOT_LISTS + (spot_id(n) & 0xFFu) * 4u, part;
     put(record + RG_RECORD_PARTS, parts);
     put(record + RG_RECORD_ID, spot_id(n));
     put(record + RG_RECORD_NEXT, get(list));
@@ -701,7 +701,7 @@ int main(int argc, char **argv)
            && random_graffiti_texture(s_ram, RG_OWN_TEXTURE + 2) == 1
            && random_graffiti_texture(s_ram, RG_TEXTURE) == 0
            && random_graffiti_texture(s_ram, RG_OWN_TEXTURE + 4) == -1);
-        put(NODES + 0x18u + RG_NODE_NEXT, NODES);
+        put(NODES + RG_NODE_BYTES + RG_NODE_NEXT, NODES);
         check("a list that never ends is given up on", random_graffiti_texture(s_ram, 0x202) == -1);
     } else if (!strcmp(test, "starts")) {
         /* Every build draws again: over many builds every unlocked design

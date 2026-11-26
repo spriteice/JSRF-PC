@@ -108,6 +108,7 @@
 #define RG_DESIGNS        28u           /* the game's designs of one size: a design is size * 28 + n */
 #define RG_PROGRESS       0x001EFFB0u   /* the progress object (port/missions.c's MSN_PROGRESS) */
 #define RG_SOULS_GOT      0x00F8u       /* its graffiti souls got, a bit a design (its PRG_SOULS_GOT) */
+#define RG_GUEST_LOW      0x10000u      /* below it, no object: a null, or a small number (ADX_GUEST_LOW) */
 #define RG_GUEST_RAM      (64u << 20)   /* the guest's memory, which mem names */
 
 /* The sets of sheets built at once: the game's own, and three more. */
@@ -138,6 +139,7 @@
 #define RG_NODE_ID          0x00u
 #define RG_NODE_PLACE       0x08u
 #define RG_NODE_NEXT        0x10u
+#define RG_NODE_BYTES       0x18u       /* a node, whole */
 
 /* The graffiti spots' records (the manager at 0x2314B0: sub_0003F9E0 finds
  * a spot's by its id), and a spot's mesh's layers, which that draw writes
@@ -148,9 +150,11 @@
 #define RG_RECORD_PARTS     0x98u       /* a record's parts: RG_PARTS at most */
 #define RG_RECORD_ID        0x9Cu       /* ... its spot's id */
 #define RG_RECORD_NEXT      0x104u      /* ... and the next of its list */
+#define RG_RECORD_BYTES     0x108u      /* a record, whole: its next is its last word */
 #define RG_PARTS            10u
 #define RG_MESH_SHOWN       0x0Cu       /* part b's two words at + 8 * b: how much of each layer shows, 0 for none */
 #define RG_MESH_ROW         0x64u       /* ... and their rows, floats: 0 is the player's */
+#define RG_SPOT_SPAN        0xC0u       /* read of a spot (to its mesh, +0x94) or its mesh (to its layers, +0xB4) */
 #define RG_ROW_NONE         0x3FE00000u /* 1.75, the row the game writes for no tag */
 
 /* The sheet's two textures' ids, 0x102 and 0x103 (the table at 0x20CC40 the

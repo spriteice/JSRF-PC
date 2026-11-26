@@ -191,7 +191,7 @@ int random_graffiti_texture(const uint8_t *mem, uint32_t id)
 {
     uint32_t node = word(mem, RG_TEXTURES + RG_TM_BUCKETS + (id & 0xFFu) * 4u), steps;
 
-    for (steps = 0; steps < RG_TM_NODES && node >= 0x10000u && node <= RG_GUEST_RAM - 0x18u; steps++) {
+    for (steps = 0; steps < RG_TM_NODES && node >= RG_GUEST_LOW && node <= RG_GUEST_RAM - RG_NODE_BYTES; steps++) {
         if (word(mem, node + RG_NODE_ID) == id)
             return (int)word(mem, node + RG_NODE_PLACE);
         node = word(mem, node + RG_NODE_NEXT);
@@ -475,7 +475,7 @@ static uint32_t spot_parts(const uint8_t *mem, uint32_t spot)
 {
     uint32_t record = word(mem, RG_SPOT_LISTS + (spot & 0xFFu) * 4u), steps;
 
-    for (steps = 0; steps < RG_RECORDS && record >= 0x10000u && record <= RG_GUEST_RAM - 0x108u; steps++) {
+    for (steps = 0; steps < RG_RECORDS && record >= RG_GUEST_LOW && record <= RG_GUEST_RAM - RG_RECORD_BYTES; steps++) {
         if (word(mem, record + RG_RECORD_ID) == spot)
             return word(mem, record + RG_RECORD_PARTS);
         record = word(mem, record + RG_RECORD_NEXT);
@@ -537,7 +537,7 @@ uint32_t random_graffiti_spot(const uint8_t *mem, uint32_t spot, uint32_t id, ui
     draw->passes = 0;
     if (sheet >= RG_SHEETS || s_picks < 2 || !random_graffiti_on())
         return 0;
-    if (mesh < 0x10000u || mesh > RG_GUEST_RAM - (RG_MESH_ROW + 8u * RG_PARTS))
+    if (mesh < RG_GUEST_LOW || mesh > RG_GUEST_RAM - (RG_MESH_ROW + 8u * RG_PARTS))
         return 0;
     parts = spot_parts(mem, spot);
     if (!parts || parts > RG_PARTS)

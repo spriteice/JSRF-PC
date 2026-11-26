@@ -4388,8 +4388,8 @@ void sub_00042EE0(void)
         RANDOM_GRAFFITI_DRAW draw;
         const uint32_t spot = g_esi;
         uint32_t tex = 0, id = 0, passes = 0, was[RG_PARTS][4], pass, b;
-        if (random_graffiti_on() && GARG(0) == GRF_SPOT_DRAW_RA && spot >= 0x10000u
-         && spot + 0xC0u < lim && mesh >= 0x10000u && mesh + 0xC0u < lim
+        if (random_graffiti_on() && GARG(0) == GRF_SPOT_DRAW_RA && spot >= ADX_GUEST_LOW
+         && spot + RG_SPOT_SPAN < lim && mesh >= ADX_GUEST_LOW && mesh + RG_SPOT_SPAN < lim
          && MEM32(spot + GRF_SPOT_MESH) == mesh)
             tex = adx_word(mesh + GRF_MESH_TEXTURES);
         if (tex && adx_word(tex)) {
