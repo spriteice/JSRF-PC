@@ -1305,6 +1305,7 @@ void sub_0017CAB0(void)
 #include "photo_mode.h"
 #include "playback.h"
 #include "playback_mark.h"
+#include "random_graffiti.h"
 #include "soul_indicator.h"
 #include "sound_keep.h"
 
@@ -2641,11 +2642,14 @@ void sub_0002DA70(void)
     sub_0002DA70_gen();
     resource_load_graffiti_release((uint8_t *)g_xbox_mem_offset, mgr, xbox_HeapIsFreeSpace);
 }
-/* Sheet 0 written. */
+/* Sheet 0 written: first, for random graffiti, a texture of its own made of
+ * it where the build is one of the other sets' (rg_sheet, below). */
+static void rg_sheet(uint32_t sheet);
 void sub_0002D8D0(void)
 {
     uint32_t mgr = g_ecx;
     resource_load_graffiti_sheet(0, pad_now());
+    rg_sheet(0);
     sub_0002D8D0_gen();
     resource_load_graffiti_release((uint8_t *)g_xbox_mem_offset, mgr, xbox_HeapIsFreeSpace);
 }
@@ -2654,6 +2658,7 @@ void sub_0002D950(void)
 {
     uint32_t mgr = g_ecx;
     resource_load_graffiti_sheet(1, pad_now());
+    rg_sheet(1);
     sub_0002D950_gen();
     resource_load_graffiti_release((uint8_t *)g_xbox_mem_offset, mgr, xbox_HeapIsFreeSpace);
 }
@@ -4335,7 +4340,37 @@ static void wide_haze_corners(const char *who)
  * mesh's texture (+8: count, id) on stages 0-3, c0 = (256, 1, 0, 0.5), and per
  * part pair c12+ the fades (+0xC/+0x10 per part, 8 apart) and c22+ the design
  * offsets (+0x64/+0x68), then [0x1F90C4]->+0x58(dev, [0x1F90C8], +0, +4).
- * JSRF_GRF_LOG=1 prints what it drew with, at most once a second per mesh. */
+ * JSRF_GRF_LOG=1 prints what it drew with, at most once a second per mesh.
+ *
+ * Its one caller is the spot's own draw (sub_0003F9E0, the call at
+ * 0x0003FB7D), with the spot still in esi, which has just written the
+ * mesh's layers from the spot's record. With random graffiti on, the mesh's
+ * texture id and its layers' words are, for this draw, the ones the spot's
+ * design takes (random_graffiti_spot), and the game's own again after it:
+ * the game's code looks the id up and binds what it finds, as it does its
+ * own. Where the spot has another tagger's layer too, the game's function
+ * is run twice, once for each sheet, the first with the depth test the
+ * draw gives (random_graffiti.h, RG_Z_LESS), set on the game's device as
+ * the game sets it and put back after. The game's function sets no depth
+ * test of its own (none of its calls is the device's slot 0x134), so the
+ * spot's draw's own holds for the second. */
+#define GRF_SPOT_DRAW_RA  0x0003FB82u  /* the spot's draw's call's return */
+#define GRF_SPOT_ID       0x58u        /* the spot's id */
+#define GRF_SPOT_MESH     0x90u        /* the spot's mesh */
+#define GRF_MESH_TEXTURES 0x08u        /* the mesh's textures: a count, then the ids */
+#define GRF_DEVICE        0x00251D6Cu  /* -> the game's device (vtable 0x1E0F00), as the prompts' GAME_DEVICE */
+#define GRF_DEV_Z_FUNC    0x134u       /* its slot (device, D3D's ZFUNC), as DEV_Z_FUNC */
+#define GRF_RS_ZFUNC      0x0019E1C4u  /* D3D's ZFUNC as the device has it now, as RS_ZFUNC */
+static int prompt_device(uint32_t dev, uint32_t slot, uint32_t ra, int nargs, const uint32_t *args);
+/* The game's device's depth test set to func for a spot's draw: 0 when it
+ * isn't the game's code to call. */
+static int grf_depth_test(uint32_t func)
+{
+    const uint32_t dev = MEM32(GRF_DEVICE);
+    uint32_t a[2];
+    a[0] = dev; a[1] = func;
+    return dev && prompt_device(dev, GRF_DEV_Z_FUNC, GRF_SPOT_DRAW_RA, 2, a);
+}
 extern void sub_00042EE0_gen(void);
 void sub_00042EE0(void)
 {
@@ -4349,7 +4384,55 @@ void sub_00042EE0(void)
     if (skip < 0) skip = getenv("JSRF_GRF_SKIP") != NULL;
     if (skip) { g_esp += 4; return; }   /* A/B: which NV2A draw is the graffiti
                                          * (the callee's `ret` pops the return address) */
-    sub_00042EE0_gen();
+    {
+        RANDOM_GRAFFITI_DRAW draw;
+        const uint32_t spot = g_esi;
+        uint32_t tex = 0, id = 0, passes = 0, was[RG_PARTS][4], pass, b;
+        if (random_graffiti_on() && GARG(0) == GRF_SPOT_DRAW_RA && spot >= 0x10000u
+         && spot + 0xC0u < lim && mesh >= 0x10000u && mesh + 0xC0u < lim
+         && MEM32(spot + GRF_SPOT_MESH) == mesh)
+            tex = adx_word(mesh + GRF_MESH_TEXTURES);
+        if (tex && adx_word(tex)) {
+            id = adx_word(tex + 4);
+            passes = random_graffiti_spot(m, MEM32(spot + GRF_SPOT_ID), id, mesh, pad_now(), &draw);
+        }
+        if (!passes) {
+            sub_00042EE0_gen();
+        } else {
+            for (b = 0; b < draw.parts; b++) {
+                was[b][0] = MEM32(mesh + RG_MESH_SHOWN + 8u * b);
+                was[b][1] = MEM32(mesh + RG_MESH_SHOWN + 8u * b + 4u);
+                was[b][2] = MEM32(mesh + RG_MESH_ROW + 8u * b);
+                was[b][3] = MEM32(mesh + RG_MESH_ROW + 8u * b + 4u);
+            }
+            for (pass = 0; pass < passes; pass++) {
+                const uint32_t zfunc = MEM32(GRF_RS_ZFUNC);
+                int set = 0;
+                for (b = 0; b < draw.parts; b++) {
+                    MEM32(mesh + RG_MESH_SHOWN + 8u * b) = draw.layer[pass][b][0];
+                    MEM32(mesh + RG_MESH_SHOWN + 8u * b + 4u) = draw.layer[pass][b][1];
+                    MEM32(mesh + RG_MESH_ROW + 8u * b) = draw.layer[pass][b][2];
+                    MEM32(mesh + RG_MESH_ROW + 8u * b + 4u) = draw.layer[pass][b][3];
+                }
+                MEM32(tex + 4) = draw.texture[pass];
+                if (draw.depth_test[pass] && draw.depth_test[pass] != zfunc)
+                    set = grf_depth_test(draw.depth_test[pass]);
+                if (pass + 1u < passes)     /* a draw before the last: the game's function, called again */
+                    guest_call_cdecl(sub_00042EE0_gen, GRF_SPOT_DRAW_RA, 0, NULL);
+                else
+                    sub_00042EE0_gen();
+                if (set)                    /* the game's own test back */
+                    grf_depth_test(zfunc);
+            }
+            for (b = 0; b < draw.parts; b++) {
+                MEM32(mesh + RG_MESH_SHOWN + 8u * b) = was[b][0];
+                MEM32(mesh + RG_MESH_SHOWN + 8u * b + 4u) = was[b][1];
+                MEM32(mesh + RG_MESH_ROW + 8u * b) = was[b][2];
+                MEM32(mesh + RG_MESH_ROW + 8u * b + 4u) = was[b][3];
+            }
+            MEM32(tex + 4) = id;
+        }
+    }
     if (!on || mesh < 0x10000u || mesh + 0xC0u >= lim) return;
     {
         const uint32_t *w = (const uint32_t *)(m + mesh);
@@ -6239,6 +6322,241 @@ static void prompt_draw(void)
     wide_hud_end(WIDE_HUD_SKIP, marked);
     g_esp = esp;
 }
+/* ---- random graffiti (random_graffiti.h) ------------------------------------
+ * The graffiti sheet's builder (resource 0x19) starts at sub_0002D240 (ecx =
+ * the holder, one argument: the build's mode), and asks the progress object
+ * (ecx = 0x1EFFB0) which design fills a row's place for a size with
+ * sub_0003A820(row, size, set), and whether that choice is one of the
+ * player's own with sub_0003A870(row, size, set). Developer > Experimental >
+ * Random graffiti answers the builder's calls from the designs it draws: for
+ * the player's row in a build of the game's own sheet, and for every row in
+ * a build of another set's, whose sheet is all the player's. Every other
+ * call, the garage's menu's among them, runs the game's function.
+ *
+ * The game builds the sheet at Load Game and around the garage only. For new
+ * designs at each area's load, the mission flow's step that asks for the
+ * sheet's textures (sub_0004AC00, ecx = the flow: state 5 of its table at
+ * 0x1F9888) is held while the feature lets the sheet and its textures go and
+ * asks the holder for the build, with the game's own calls, as its scene
+ * task does on the way to the garage (0x0004F143 to 0x0004F190); the step
+ * then finds no textures and asks for the new ones, as it does after a
+ * garage visit.
+ *
+ * For a design for each spot the step is held through a build for each set
+ * drawn, the game's own sheet's last. The builder has one sheet in memory at
+ * a time (the megabyte at [0x230DBC]: 1024 x 1024, DXT) and writes it to its
+ * file (sub_0002D8D0, sub_0002D950: the overrides are known bug 24's, above).
+ * Where the build is one of the other sets', the sheet is first made a
+ * texture of its own (rg_sheet), with the game's own call for making a
+ * sheet's texture, sub_0006E660(ecx = the texture manager; which of the two,
+ * the sheet's bytes): it takes the id from a table of the two (0x20CC40),
+ * which holds the feature's id for the length of the call. The game lets the
+ * sheet's two textures go in sub_0002D040 (resource 0x1A's letting go, ecx =
+ * the holder, one argument), and the others go there too, by the manager's
+ * own sub_0006E7B0(id). A spot's draw is told which to use in sub_00042EE0's
+ * override, above.
+ *
+ * A graffiti soul's design is marked as got by sub_00039E80(design) (ecx =
+ * the progress object), which the soul's own end calls (sub_00042A30, the
+ * call at 0x00042A67) as the pickup's animation ends. After it the sheets
+ * are built again in play, from the holder's update (sub_00025310, ecx = the
+ * holder: a step of the command it serves, if any), which is where the
+ * holder is found free: a build is asked for there and the update's own
+ * function run until the build is done, so that the holder is never busy
+ * when the game's flows next ask it (24 of their 40 asks don't look whether
+ * the ask was taken). Each sheet is made a texture again in its place by the
+ * same call, sub_0006E660, which makes the texture in the place the id has
+ * (the device's own call lets the place's old texture go first).
+ *
+ * Nothing is wrong in these functions, and nothing in the recompiler, the
+ * runtime or the device models is being made up for: the recompiled code is
+ * the game's own, and runs whenever the feature has no answer. This is a
+ * feature in the game's own logic: the builder's two questions are where a
+ * row's design is decided, the flow's step is where the game itself loads a
+ * newly built sheet, the builder's write is where a sheet is whole, and the
+ * textures' letting go is where the game is done with them, so that is where
+ * each is hooked (docs/project-rules.md, Where code goes 6). */
+#define RG_FLOW_FILE      0x1040u      /* the flow's mission's file */
+#define RG_FILE_SHEETS    0x1Cu        /* its word the flow asks for the sheet's textures with */
+#define RG_HOLDER_STAGES  0x1C4u       /* the holder's loaded stages, a list (sub_000360B0 walks it) */
+#define RG_LOADED_RA      0x0004AC14u  /* the flow's own "are the textures loaded" call's return */
+#define RG_LET_GO_RA      0x0004F14Cu  /* the scene task's own letting go's return (its call at 0x0004F147) */
+#define RG_ASK_RA         0x0004F195u  /* ... and its ask's (its call at 0x0004F190) */
+#define RG_BUILT_SHEET    0x00230DBCu  /* -> the sheet the builder is on */
+#define RG_SHEET_IDS      0x0020CC40u  /* the two ids sub_0006E660 makes a sheet's texture under */
+#define RG_MAKE_RA        0x0002D10Du  /* the game's own making of the first sheet's texture's return */
+#define RG_MAKE_RA_XL     0x0002D1A9u  /* ... and of the second's */
+#define RG_FREE_RA        0x0002D059u  /* the game's own letting go of a sheet's texture's return */
+#define RG_DEVICE_TEXTURES 0x00264F68u /* -> the device's textures, a pointer for each place */
+#define RG_SOUL_RA        0x00042A6Cu  /* the soul's end's marking of its design's return */
+#define RG_UPDATE_RA      0x00025310u  /* for the holder's update run from here: its own address, as the game
+                                        * calls it by its table (0x001C4F6C) and has no call to copy */
+/* The game's texture memory: kernel.h's XBOX_CONTIG_SIZE less its
+ * XBOX_GPU_INSTANCE_DEFAULT, which the runtime keeps off the top. */
+#define RG_TEXTURE_MEMORY ((64u << 20) - (128u << 10))
+extern uint32_t xbox_ContiguousAllocatedBytes(void);    /* how far into it anything was ever handed out */
+extern void sub_00025310_gen(void);
+extern void sub_0002D040_gen(void);
+extern void sub_0002D240_gen(void);
+extern void sub_00039E80_gen(void);
+extern void sub_0003A820_gen(void);
+extern void sub_0003A870_gen(void);
+extern void sub_0004AC00_gen(void);
+extern void sub_0006E660(void);
+extern void sub_0006E7B0(void);
+/* The builder's start: its mode says whose sheet it builds. */
+void sub_0002D240(void)
+{
+    random_graffiti_build(GARG(1));
+    sub_0002D240_gen();
+}
+/* Which design: the drawn one, to the builder. In another set's sheet a
+ * size with none unlocked has the garage's design in every row: the game's
+ * own answer for the player's row. */
+void sub_0003A820(void)
+{
+    int design = random_graffiti_design((const uint8_t *)g_xbox_mem_offset, GARG(0), GARG(1),
+                                        GARG(2), GARG(3), pad_now());
+    if (design == RG_AS_ROW_0) GARG(1) = 0;
+    if (design < 0) { sub_0003A820_gen(); return; }
+    g_eax = (uint32_t)design;
+    g_esp += 16;        /* ret 0xC: the return address and the three arguments */
+}
+/* Whether the choice is one of the player's own: a drawn design never is. */
+void sub_0003A870(void)
+{
+    int design = random_graffiti_design((const uint8_t *)g_xbox_mem_offset, GARG(0), GARG(1),
+                                        GARG(2), GARG(3), pad_now());
+    if (design == RG_AS_ROW_0) GARG(1) = 0;
+    if (design < 0) { sub_0003A870_gen(); return; }
+    g_eax = 0;
+    g_esp += 16;        /* ret 0xC: the return address and the three arguments */
+}
+/* The texture manager lets a texture go, by its own call. */
+static void rg_free(uint32_t id)
+{
+    const uint32_t sv_ecx = g_ecx, a[1] = { id };
+    g_ecx = RG_TEXTURES;
+    guest_call_cdecl(sub_0006E7B0, RG_FREE_RA, 1, a);
+    g_ecx = sv_ecx;
+}
+/* The builder is about to write the sheet it has built: for a build that is
+ * one of the other sets', a texture of its own is made of it first, and for
+ * any build in play the sheet's texture is made again in its place. The
+ * game's call takes a node of the manager's and a place without asking
+ * whether there is one, so that is asked here; and it doesn't say whether the
+ * device made the texture, so the device's own table is read after it, and
+ * the place given back where it made none (but for the game's own two, which
+ * are the game's to let go). */
+static void rg_sheet(uint32_t sheet)
+{
+    const uint8_t *m = (const uint8_t *)g_xbox_mem_offset;
+    const uint32_t id = random_graffiti_sheet(m, sheet);
+    uint32_t bytes, sv_ecx, was, a[2];
+    int place;
+
+    if (!id) return;
+    bytes = adx_word(RG_BUILT_SHEET);
+    if (bytes < ADX_GUEST_LOW || bytes > ADX_GUEST_RAM - RG_SHEET_BYTES) {
+        random_graffiti_made(id, RG_NO_SHEET, pad_now());
+        return;
+    }
+    if (random_graffiti_texture(m, id) < 0 && !random_graffiti_places(m)) {
+        random_graffiti_made(id, RG_NO_PLACE, pad_now());
+        return;
+    }
+    sv_ecx = g_ecx;
+    was = MEM32(RG_SHEET_IDS + sheet * 4u);
+    MEM32(RG_SHEET_IDS + sheet * 4u) = id;
+    a[0] = sheet;
+    a[1] = bytes;
+    g_ecx = RG_TEXTURES;
+    guest_call_cdecl(sub_0006E660, sheet ? RG_MAKE_RA_XL : RG_MAKE_RA, 2, a);
+    g_ecx = sv_ecx;
+    MEM32(RG_SHEET_IDS + sheet * 4u) = was;
+    place = random_graffiti_texture(m, id);
+    if (place >= 0 && ((uint32_t)place >= RG_TM_PLACE_COUNT
+                       || !adx_word(adx_word(RG_DEVICE_TEXTURES) + (uint32_t)place * 4u))) {
+        if (id >= RG_OWN_TEXTURE) rg_free(id);
+        place = RG_NOT_MADE;
+    }
+    random_graffiti_made(id, place < 0 ? RG_NOT_MADE : place, pad_now());
+}
+/* The sheet's two textures let go: the other sets' go with them. */
+void sub_0002D040(void)
+{
+    sub_0002D040_gen();
+    if (random_graffiti_on()) {
+        uint32_t n;
+        for (n = RG_SHEETS; n < RG_SETS * RG_SHEETS; n++)
+            if (random_graffiti_texture((const uint8_t *)g_xbox_mem_offset, RG_OWN_TEXTURE + n) >= 0)
+                rg_free(RG_OWN_TEXTURE + n);
+        random_graffiti_let_go();
+    }
+}
+/* The holder, as an area's load asks it: with the game's own calls. */
+static int rg_busy(void)
+{
+    const uint32_t holder = disp_holder();
+    return holder && MEM32(holder + DISP_BUSY);
+}
+static void rg_let_go(uint32_t resource, uint32_t word)
+{
+    const uint32_t a[2] = { resource, word };
+    guest_call_cdecl(sub_00025740, RG_LET_GO_RA, 2, a);
+}
+static int rg_ask(uint32_t resource, uint32_t word)
+{
+    const uint32_t a[2] = { resource, word };
+    return guest_call_cdecl(sub_000256A0, RG_ASK_RA, 2, a) != 0;
+}
+static uint32_t rg_unused(void)
+{
+    const uint32_t used = xbox_ContiguousAllocatedBytes();
+    return used < RG_TEXTURE_MEMORY ? RG_TEXTURE_MEMORY - used : 0;
+}
+static void rg_step(void)
+{
+    const uint32_t sv_ecx = g_ecx;
+    g_ecx = disp_holder();
+    guest_call_cdecl(sub_00025310_gen, RG_UPDATE_RA, 0, NULL);
+    g_ecx = sv_ecx;
+}
+static const RANDOM_GRAFFITI_GAME k_rg_game = { rg_busy, rg_let_go, rg_ask, rg_unused, rg_step };
+/* A graffiti soul's design marked as got: by the soul's own end, and not by
+ * the game's loops that mark many at once (0x0011ABAC and on). */
+void sub_00039E80(void)
+{
+    const uint32_t from = GARG(0), design = GARG(1);
+    sub_00039E80_gen();
+    if (from == RG_SOUL_RA) random_graffiti_soul(design, pad_now());
+}
+/* The holder's update: after it, a soul's builds in play. */
+void sub_00025310(void)
+{
+    const uint32_t holder = g_ecx;
+    sub_00025310_gen();
+    if (random_graffiti_on() && holder && holder == disp_holder())
+        random_graffiti_play(&k_rg_game, (const uint8_t *)g_xbox_mem_offset, pad_now());
+}
+/* The flow's step that asks for the sheet's textures. */
+void sub_0004AC00(void)
+{
+    const uint32_t flow = g_ecx, holder = disp_holder();
+    const uint32_t file = MEM32(flow + RG_FLOW_FILE);
+
+    if (random_graffiti_on() && holder && file) {
+        const uint32_t a[2] = { RG_SHEET_TEXTURES, MEM32(file + RG_FILE_SHEETS) };
+        int loaded = guest_call_cdecl(sub_000256C0, RG_LOADED_RA, 2, a) != 0;
+        if (!random_graffiti_area(&k_rg_game, (const uint8_t *)g_xbox_mem_offset, loaded,
+                                  MEM32(holder + RG_HOLDER_STAGES) != 0, pad_now())) {
+            g_esp += 4;     /* ret: the step is held this pass */
+            return;
+        }
+    }
+    sub_0004AC00_gen();
+}
+
 /* ---- The game's lines naming the A or B button (prompt_text.h) --------------
  * sub_0003D610, the font's call that draws at once (x, y, depth, colour,
  * x scale, y scale, text; cdecl), wrapped: a text that is one of the

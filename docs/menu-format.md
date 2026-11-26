@@ -78,8 +78,7 @@ in a submenu of its own.
   "RECOMP_GL_VCACHE=0 (Restart)" to 0, for a switch that turns something
   off, and "RECOMP_APU_MIX=xemu (Restart)" to the word the engine reads.
   Developer > Performance's and Developer > Experimental's rows have plain
-  names, as "Use P cores (Restart)" and "Game runs ahead of the GPU
-  (Restart)" (b1.1's experiment).
+  names, as "Use P cores (Restart)" and "Random graffiti (Restart)".
 - No keyboard shortcuts in a label: "Free camera", not "Free camera (F8)".
   docs/playing.md and the packages' README.txt list the keys.
 - A box's message is a whole sentence, ending in a full stop. It must be as
@@ -446,6 +445,8 @@ Dear ImGui
 - A new experiment, an environment variable that tries out a change that may
   become the default later, also gets a row, but under Developer >
   Experimental (`k_tries`), with a name of its own in `k_tries_row`.
+  Random graffiti (JSRF_RANDOM_GRAFFITI, `port/random_graffiti.c`) is one.
+  Experimental is the menu's last row, and is shown only while it has one.
 - A switch that works on some platforms only has a row on those alone, as
   RECOMP_CPU_PROFILE (Linux and Windows) and Use P cores (Linux) do. A
   variable that takes a value, such as an address, is not a switch and has

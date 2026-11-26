@@ -128,6 +128,7 @@ set(JSRF_SOURCES
     photo_mode.c
     music_info.c
     soul_indicator.c
+    random_graffiti.c
     playback_mark.c
     sound_keep.c
     draw_distance.c

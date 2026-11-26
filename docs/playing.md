@@ -680,7 +680,26 @@ running while it is open, but your input goes to the menu.
     Lines starting `[PLAYBACK]` in the log say what it did, with a summary
     at the end.
   - **Experimental:** Changes to how the game runs, to try out, when there
-    are any.
+    are any. Random graffiti draws the designs you spray at random from
+    the ones your save has unlocked, in place of the five chosen in the
+    garage: each time an area loads, up to 13 designs of each size, and
+    the spots take them in turn, so tags of one size differ from spot to
+    spot, and the first 13 you spray or pass are all different. A spot
+    keeps its design until the next area loads, when all are drawn
+    again, the ones already on walls included. Picking up a graffiti
+    soul draws them again at once, the soul's own design among them: the
+    tags around you change, with a short hitch as the game builds its
+    graffiti sheets again. With fewer than 13 unlocked in a size, the
+    spots share what there is. Other taggers' tags are as they were. The
+    garage's choices are kept, and are back with it unticked. A new
+    game's first area shows the game's own designs, and a size with
+    nothing unlocked keeps the garage's design. It needs room for three
+    more copies of the game's graffiti sheet, and draws fewer designs
+    where the game has less to spare; with Graphics > Upscaling >
+    Graffiti on, each copy has its own upscaled one, which may show a
+    moment late the first time its spot comes into view. The log's
+    `[GRAFFITI]` lines say what was drawn, at each area's load and at
+    each soul, and what the first spots were dealt.
   - **Far buildings test:** Finds which area Far buildings adds draws
     something out of place, such as buildings floating in the sky. Stand
     where it shows, and press + on Leave out area: each press leaves out the
