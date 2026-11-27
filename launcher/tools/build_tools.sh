@@ -24,6 +24,7 @@ shift 3
 rm -rf "$obj"; mkdir -p "$obj"
 
 srcs=("$repo/launcher/tools/jsrf_save.c" "$repo/launcher/tools/save_sources.c" "$repo/launcher/tools/save_import.c"
+      "$repo/launcher/tools/save_store.c"
       "$repo/launcher/tools/xbox_disk.c" "$repo/launcher/tools/file_dialog.c" "$repo/launcher/tools/mission_walk.c"
       "$repo/launcher/setup/setup_core.c" "$repo/port/xiso.c" "$repo/port/xbe_check.c"
       "$repo/launcher/tools/graffiti_fit.c" "$repo/launcher/tools/graffiti_save.c" "$repo/launcher/tools/graffiti_image.c")

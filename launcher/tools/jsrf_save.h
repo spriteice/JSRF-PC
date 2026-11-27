@@ -172,6 +172,11 @@ int jsrf_title_file_write(const char *title, const jsrf_file *f, char *why, size
  * (what was made is removed). */
 int jsrf_backup(const char *title, const char *backups, char *made, size_t mn, char *why, size_t n);
 
+/* A folder copied whole, its folders in it too, to to, which isn't there
+ * yet (its parent is). 0, or -1, and then what was made is left for the
+ * caller to remove. */
+int jsrf_copy_tree(const char *from, const char *to);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1,5 +1,5 @@
 /*
- * JSRF-PC Tools: the shell (tools_main.cpp) and its pages. The saves page
+ * JSRF-PC Tools: the shell (tools_main.cpp) and its pages. The save manager
  * (tools_saves.cpp, b3 row 36), the graffiti page (b3 row 35) and the
  * missions page (tools_missions.cpp, b3 row 38) each draw into the shell's
  * window, which finds the game, keeps the window's scale,
@@ -31,7 +31,7 @@ struct tools_page {
     void (*dropped)(tools_ctx *t, const char *path);    /* a file or folder dropped while it shows */
 };
 
-/* The saves page (tools_saves.cpp). */
+/* The save manager (tools_saves.cpp). */
 extern const tools_page tools_saves_page;
 
 /* The graffiti page (graffiti_page.cpp). */
@@ -49,7 +49,47 @@ bool tools_flow_button(const char *label, bool first);
 
 /* The shell's warning before anything is written: a modal with text, and
  * go and Cancel. Open it with ImGui::OpenPopup(id); true the frame go is
- * pressed. */
+ * pressed. id is its title, asked as a question ("Delete 2 designs?"). */
 bool tools_warning(const char *id, const char *text, const char *go);
+
+/* The same with a name to type, into buf (what it holds to start with is
+ * shown): true the frame go is pressed, or Enter. */
+bool tools_name_prompt(const char *id, const char *text, const char *go, char *buf, size_t n);
+
+/* The tool's own settings, key=value lines in tools.cfg in JSRF-PC's
+ * settings folder (tools_ctx's settings). 1 found. */
+int tools_setting(const tools_ctx *t, const char *key, char *out, size_t n);
+/* One set, the rest of the file kept. */
+void tools_set_setting(const tools_ctx *t, const char *key, const char *value);
+
+/* A picture to draw with ImGui::Image: rgba (w by h) put into tex, a
+ * texture made the first time (tex 0). Its id; 0 when there's no OpenGL to
+ * make one. Freed with tools_texture_drop. */
+unsigned tools_texture_put(unsigned tex, const unsigned char *rgba, int w, int h);
+void tools_texture_drop(unsigned *tex);
+
+/* ---- the shared look (cxbx-save-import/ui-style.md) ------------------------------ */
+
+/* A section's heading: a line across the page with its name in the menu's
+ * green, half a line of room above it unless it is the page's first. */
+void tools_heading(const char *text);
+
+/* One line of help under a heading, in grey, wrapped. */
+void tools_hint(const char *fmt, ...);
+
+/* A "(?)" on the same line as what is before it, whose tooltip is text:
+ * for what a page needs to say but not to show. */
+void tools_help_marker(const char *text);
+
+/* label, then path's last two parts ("...\portable\saves"), the whole path
+ * on hover; "not found" in grey when path is empty. */
+void tools_path(const char *label, const char *path);
+
+/* One line saying how an action went: TOOLS_OK in green, TOOLS_WARN in
+ * amber, TOOLS_ERROR in red. */
+#define TOOLS_OK    0
+#define TOOLS_WARN  1
+#define TOOLS_ERROR 2
+void tools_status(int kind, const char *fmt, ...);
 
 #endif

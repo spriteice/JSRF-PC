@@ -17,28 +17,52 @@ its text follows your display's scale. Each page has its own tab. Files and
 folders can be dropped on the window, and go to the page that shows.
 
 Nothing is written until you press a page's own button. A warning then says
-what will be written and where, and a dated backup of what was there is made
-first, in a folder named by the date and time, such as `2026-11-26 21.30.00`.
+what will be written, and a dated backup of what was there is made first, in a
+folder named by the date and time, such as `2026-11-26 21.30.00`.
 
-## Saves
+The tool's own settings, such as the emulators' folders you picked, are kept
+in `tools.cfg`, beside JSRF-PC's settings file.
 
-Brings saves in from other emulators, and sends JSRF-PC's saves out to them.
+## Save manager
 
-- **Import into JSRF-PC:** From Cxbx-Reloaded, xemu or xbased, found where each
-  keeps its saves, or from any folder or disk image, such as saves copied off
-  an Xbox. Drop it on the window, or press its button. The list shows each save
-  with what will happen to it; untick any you don't want. Each save is signed
-  again for JSRF-PC as it is written. JSRF keeps one game save, so an imported
-  game save replaces yours; the warning names it. A graffiti design that
-  clashes with one already here goes into a free slot.
-- **Export from JSRF-PC:** To xbased, or to Cxbx-Reloaded, signed so each loads
-  them. Cxbx-Reloaded's signature comes from the game's own `default.xbe`,
-  read from the game JSRF-PC was given. xemu and a real Xbox need the console's
-  own keys, which the tool never asks for, so they aren't offered.
+Keeps JSRF-PC's saves: the designs in them, your own save slots, the backups,
+and saves brought in from other emulators or sent out to them. Anything that
+changes JSRF-PC's saves makes a backup of them first, so it can be undone from
+**Backups**. Close JSRF-PC before changing its saves, so it doesn't save over
+them.
 
-The backup is of the saves where they go, in `Save backups` beside JSRF-PC's
-saves: straight in it for an import, and in a folder named for the emulator
-for an export.
+- **JSRF-PC's saves:** What the game loads now: the game save, with when it
+  was last saved, and each graffiti design, with its preview, its place in the
+  garage (page, row and column) and its size. Tick designs and press
+  **Delete** to take them out.
+- **Save slots:** Eight slots, each holding a copy of all of JSRF-PC's saves,
+  the game save and every design. Pick a slot, then **Save here** (naming it
+  if you like), **Load** (it becomes JSRF-PC's saves), **Rename** or
+  **Clear**. They're kept in `Save slots`, beside JSRF-PC's saves.
+- **Backups:** Every backup, newest first, each with its date and what it
+  holds. The ones the tool makes say what they came before, such as "Before
+  loading slot 3". Pick one, then **Restore** (it becomes JSRF-PC's saves),
+  **Rename** (its date stays) or **Delete**. They're kept in `Save backups`.
+- **Other emulators:** With **Show their folders and saves here** ticked,
+  Cxbx-Reloaded, xemu and xbased are listed with where each keeps its saves
+  and what's there. A folder the tool doesn't find in its usual place, or
+  another one you want, is picked with **Pick...** or **Change...**, and is
+  remembered. Pick an emulator, then:
+  - **Import:** brings its saves into JSRF-PC. The list shows each save with
+    what will happen to it; untick any you don't want. Each save is signed
+    again for JSRF-PC as it's written. JSRF keeps one game save, so an
+    imported game save replaces yours; the warning names it. A design whose
+    place in the garage is taken goes into a free one.
+  - **Export:** sends JSRF-PC's saves to xbased or Cxbx-Reloaded, signed so
+    each loads them. Cxbx-Reloaded's signature comes from the game's own
+    `default.xbe`, read from the game JSRF-PC was given. xemu and a real Xbox
+    need the console's own keys, which the tool never asks for, so they can't
+    be exported to.
+
+  **Import a folder...** and **Import a disk image...** bring saves in from
+  anywhere else, such as saves copied off an Xbox; dropping a folder or image
+  on the window does the same. An export's backup is of the emulator's saves,
+  in a folder named after it inside `Save backups`.
 
 ## Graffiti
 
@@ -90,9 +114,9 @@ Missions). Without it, each mission starts with a new game's progress.
   chapter's opening, and Developer > Missions marks them as off the story's
   way. The file, `start-states.txt`, is written beside JSRF-PC's settings
   file. If the one there is the same, byte for byte, nothing is written.
-- **Pick the game's folder:** The same, from another copy of the game. A game
+- **Pick game...:** The same, from another copy of the game. A game
   folder dropped on the window does it too.
-- **Remove start states:** Removes `start-states.txt`, so missions start with a
+- **Remove:** Removes `start-states.txt`, so missions start with a
   new game's progress again.
 
 The backup of the `start-states.txt` there before is in `Start states backups`

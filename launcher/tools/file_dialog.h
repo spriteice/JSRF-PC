@@ -28,6 +28,13 @@ int jsrf_pick_folder(const char *title, char *out, size_t n);
 int jsrf_pick_files(const char *title, const char *kind, const char *const *patterns, int multi,
                     void (*each)(void *ctx, const char *path), void *ctx);
 
+/* The same, each dialog opening in start: a folder, or a file, whose folder
+ * it opens in (or the nearest folder above it that is there). NULL or ""
+ * for the system's own choice. */
+int jsrf_pick_folder_in(const char *title, const char *start, char *out, size_t n);
+int jsrf_pick_files_in(const char *title, const char *start, const char *kind, const char *const *patterns,
+                       int multi, void (*each)(void *ctx, const char *path), void *ctx);
+
 #ifdef __cplusplus
 }
 #endif

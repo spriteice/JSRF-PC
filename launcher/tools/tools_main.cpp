@@ -21,6 +21,7 @@
  */
 #define SDL_MAIN_HANDLED   /* the entry point is the tool's own (below), with UTF-8 arguments */
 #include <SDL.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,16 +42,18 @@
 #include <shellapi.h>
 #define T_GLAPI __stdcall
 #define LAUNCHER_NAME "JSRF-PC.exe"
+#define TOOLS_SEP "\\"
 #else
 #define T_GLAPI
 #define LAUNCHER_NAME "jsrf-pc"
+#define TOOLS_SEP "/"
 #endif
 typedef void (T_GLAPI *gl_viewport_fn)(int, int, int, int);
 typedef void (T_GLAPI *gl_clear_color_fn)(float, float, float, float);
 typedef void (T_GLAPI *gl_clear_fn)(unsigned);
 #define T_GL_COLOR_BUFFER_BIT 0x00004000u
 
-/* The smallest the window goes, at a scale of 1: the saves page's table
+/* The smallest the window goes, at a scale of 1: the save manager's tables
  * and its row of buttons, two lines of them, with nothing cut off. */
 #define MIN_W 560
 #define MIN_H 400
@@ -91,6 +94,232 @@ bool tools_warning(const char *id, const char *text, const char *go)
         ImGui::EndPopup();
     }
     return pressed;
+}
+
+bool tools_name_prompt(const char *id, const char *text, const char *go, char *buf, size_t n)
+{
+    bool pressed = false;
+    ImGuiIO &io = ImGui::GetIO();
+    ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x * 0.8f, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always,
+                            ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal(id, NULL, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings)) {
+        bool enter;
+        if (text && text[0]) ImGui::TextWrapped("%s", text);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        enter = ImGui::InputTextWithHint("##name", "Name (or leave it empty)", buf, n,
+                                         ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.5f));
+        if (ImGui::Button(go) || enter) { pressed = true; ImGui::CloseCurrentPopup(); }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+    return pressed;
+}
+
+/* ---- the tool's settings --------------------------------------------------------------- */
+
+static void settings_file(const tools_ctx *t, char *out, size_t n)
+{
+    js_path(out, n, t->settings, "tools.cfg");
+}
+
+int tools_setting(const tools_ctx *t, const char *key, char *out, size_t n)
+{
+    char p[JSRF_PATH_MAX];
+    if (n) out[0] = 0;
+    if (!t->settings[0]) return 0;
+    settings_file(t, p, sizeof p);
+    return js_read_kv(p, key, out, n);
+}
+
+void tools_set_setting(const tools_ctx *t, const char *key, const char *value)
+{
+    char p[JSRF_PATH_MAX];
+    unsigned char *old = NULL;
+    size_t size = 0, kl = strlen(key);
+    ImGuiTextBuffer out;
+    if (!t->settings[0]) return;
+    settings_file(t, p, sizeof p);
+    if (js_read_file(p, 1u << 20, &old, &size) == 0 && old) {
+        /* Every other line kept as it is. */
+        const char *at = (const char *)old, *end = at + size;
+        while (at < end) {
+            const char *nl = (const char *)memchr(at, '\n', (size_t)(end - at));
+            const char *next = nl ? nl + 1 : end;
+            if (!((size_t)(next - at) > kl && !strncmp(at, key, kl) && at[kl] == '=')) out.append(at, next);
+            if (!nl && next > at) out.append("\n");
+            at = next;
+        }
+    }
+    free(old);
+    out.appendf("%s=", key);
+    for (const char *v = value; *v; v++) {
+        char c[2] = { *v == '\n' || *v == '\r' ? ' ' : *v, 0 };
+        out.append(c);
+    }
+    out.append("\n");
+    js_mkdirs(t->settings);
+    js_write_file(p, out.c_str(), (size_t)out.size());
+}
+
+/* ---- pictures, for the pages ------------------------------------------------------------- */
+
+typedef void (T_GLAPI *gen_textures_fn)(int, unsigned *);
+typedef void (T_GLAPI *delete_textures_fn)(int, const unsigned *);
+typedef void (T_GLAPI *bind_texture_fn)(unsigned, unsigned);
+typedef void (T_GLAPI *tex_parameteri_fn)(unsigned, unsigned, int);
+typedef void (T_GLAPI *tex_image_2d_fn)(unsigned, int, int, int, int, int, unsigned, unsigned, const void *);
+typedef void (T_GLAPI *pixel_storei_fn)(unsigned, int);
+
+static struct {
+    int tried, ok;
+    gen_textures_fn gen;
+    delete_textures_fn del;
+    bind_texture_fn bind;
+    tex_parameteri_fn param;
+    tex_image_2d_fn image;
+    pixel_storei_fn store;
+} g_gl;
+
+static int gl_load(void)
+{
+    if (!g_gl.tried) {
+        g_gl.tried = 1;
+        g_gl.gen = (gen_textures_fn)SDL_GL_GetProcAddress("glGenTextures");
+        g_gl.del = (delete_textures_fn)SDL_GL_GetProcAddress("glDeleteTextures");
+        g_gl.bind = (bind_texture_fn)SDL_GL_GetProcAddress("glBindTexture");
+        g_gl.param = (tex_parameteri_fn)SDL_GL_GetProcAddress("glTexParameteri");
+        g_gl.image = (tex_image_2d_fn)SDL_GL_GetProcAddress("glTexImage2D");
+        g_gl.store = (pixel_storei_fn)SDL_GL_GetProcAddress("glPixelStorei");
+        g_gl.ok = g_gl.gen && g_gl.del && g_gl.bind && g_gl.param && g_gl.image && g_gl.store;
+    }
+    return g_gl.ok;
+}
+
+unsigned tools_texture_put(unsigned tex, const unsigned char *rgba, int w, int h)
+{
+    if (!gl_load() || !rgba) return tex;
+    if (!tex) g_gl.gen(1, &tex);
+    g_gl.bind(0x0DE1u, tex);                               /* GL_TEXTURE_2D */
+    g_gl.param(0x0DE1u, 0x2801u, 0x2600);                  /* MIN_FILTER: NEAREST, the design's own pixels */
+    g_gl.param(0x0DE1u, 0x2800u, 0x2600);                  /* MAG_FILTER */
+    g_gl.param(0x0DE1u, 0x2802u, 0x812F);                  /* WRAP_S: CLAMP_TO_EDGE */
+    g_gl.param(0x0DE1u, 0x2803u, 0x812F);                  /* WRAP_T */
+    g_gl.store(0x0CF5u, 4);                                /* UNPACK_ALIGNMENT */
+    g_gl.store(0x0CF2u, 0);                                /* UNPACK_ROW_LENGTH */
+    g_gl.image(0x0DE1u, 0, 0x1908, w, h, 0, 0x1908u, 0x1401u, rgba);   /* RGBA, UNSIGNED_BYTE */
+    g_gl.bind(0x0DE1u, 0);
+    return tex;
+}
+
+void tools_texture_drop(unsigned *tex)
+{
+    if (*tex && gl_load()) g_gl.del(1, tex);
+    *tex = 0;
+}
+
+/* ---- the shared look ------------------------------------------------------------------ */
+
+void tools_heading(const char *text)
+{
+    if (ImGui::GetCursorPosY() > ImGui::GetStyle().WindowPadding.y + 1)
+        ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.5f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_CheckMark));
+    ImGui::SeparatorText(text);
+    ImGui::PopStyleColor();
+}
+
+/* Where the last hint's last line ends, for a help marker after it. */
+static struct { ImVec2 end; ImVec2 item_max; int frame; } g_hint;
+
+void tools_hint(const char *fmt, ...)
+{
+    char buf[2048];
+    const char *line, *end;
+    float wrap = ImGui::GetContentRegionAvail().x;
+    ImVec2 at = ImGui::GetCursorScreenPos();
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof buf, fmt, ap);
+    va_end(ap);
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    ImGui::TextWrapped("%s", buf);
+    ImGui::PopStyleColor();
+    /* The last line, as TextWrapped broke it. */
+    end = buf + strlen(buf);
+    line = buf;
+    for (int guard = 0; guard < 200; guard++) {
+        const char *next = ImGui::GetFont()->CalcWordWrapPosition(ImGui::GetFontSize(), line, end, wrap);
+        if (next >= end || next <= line) break;
+        line = next;
+        while (line < end && (*line == ' ' || *line == '\n')) line++;
+    }
+    g_hint.end = ImVec2(at.x + ImGui::CalcTextSize(line, end).x, ImGui::GetItemRectMax().y - ImGui::GetTextLineHeight());
+    g_hint.item_max = ImGui::GetItemRectMax();
+    g_hint.frame = ImGui::GetFrameCount();
+}
+
+void tools_help_marker(const char *text)
+{
+    float w = ImGui::CalcTextSize("(?)").x, gap = ImGui::GetStyle().ItemSpacing.x;
+    float edge = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
+    ImVec2 after = ImGui::GetItemRectMax();
+    if (g_hint.frame == ImGui::GetFrameCount() && after.x == g_hint.item_max.x && after.y == g_hint.item_max.y) {
+        /* After a hint: at the end of its last line, or under it. */
+        if (g_hint.end.x + gap + w <= edge) {
+            ImGui::SameLine();
+            ImGui::SetCursorScreenPos(ImVec2(g_hint.end.x + gap, g_hint.end.y));
+        }
+    } else if (after.x + gap + w <= edge) {
+        ImGui::SameLine();
+    }
+    ImGui::TextDisabled("(?)");
+    if (ImGui::BeginItemTooltip()) {
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30);
+        ImGui::TextUnformatted(text);
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+}
+
+void tools_path(const char *label, const char *path)
+{
+    const char *cut = path, *p;
+    int seps = 0;
+    char shown[JSRF_PATH_MAX + 8];
+    if (label && label[0]) {
+        ImGui::TextUnformatted(label);
+        ImGui::SameLine();
+    }
+    if (!path || !path[0]) {
+        ImGui::TextDisabled("not found");
+        return;
+    }
+    /* Its last two parts. */
+    for (p = path + strlen(path); p > path; p--)
+        if ((p[-1] == '/' || p[-1] == '\\') && ++seps == 2) { cut = p; break; }
+    snprintf(shown, sizeof shown, "%s%s", cut != path ? "..." TOOLS_SEP : "", cut);
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    ImGui::TextUnformatted(shown);
+    ImGui::PopStyleColor();
+    ImGui::SetItemTooltip("%s", path);
+}
+
+void tools_status(int kind, const char *fmt, ...)
+{
+    char buf[2048];
+    va_list ap;
+    ImVec4 c = kind == TOOLS_OK ? ImVec4(0.55f, 0.85f, 0.35f, 1) : kind == TOOLS_WARN ? ImVec4(0.95f, 0.75f, 0.3f, 1)
+                                                                                    : ImVec4(0.95f, 0.4f, 0.35f, 1);
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof buf, fmt, ap);
+    va_end(ap);
+    ImGui::PushStyleColor(ImGuiCol_Text, c);
+    ImGui::TextWrapped("%s", buf);
+    ImGui::PopStyleColor();
 }
 
 /* ---- finding the game ---------------------------------------------------------------- */
@@ -174,7 +403,7 @@ static int tools_main(int argc, char **argv)
 
     memset(&t, 0, sizeof t);
     /* Graffiti saves re-signed and moved by the graffiti page's code, for
-     * the saves page too. */
+     * the save manager too. */
     jsrf_graffiti_resigner = jsrf_graffiti_resign;
     jsrf_graffiti_reslotter = jsrf_graffiti_reslot;
     SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, "0");
@@ -230,6 +459,14 @@ static int tools_main(int argc, char **argv)
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.Fonts->AddFontDefaultVector();
     menu_style_apply(&ImGui::GetStyle());
+    {
+        /* The menu's tabs, with the ones not showing plainer, so the page
+         * that is showing stands out. */
+        ImVec4 *c = ImGui::GetStyle().Colors;
+        c[ImGuiCol_Tab] = c[ImGuiCol_TabDimmed] = c[ImGuiCol_FrameBg];
+        c[ImGuiCol_TabDimmedSelected] = c[ImGuiCol_TabSelected];
+        c[ImGuiCol_TabDimmedSelectedOverline] = c[ImGuiCol_TabSelectedOverline];
+    }
     base = ImGui::GetStyle();
     ImGui_ImplSDL2_InitForOpenGL(win, gl);
     ImGui_ImplOpenGL3_Init(NULL);
@@ -279,11 +516,12 @@ static int tools_main(int argc, char **argv)
         ImGui::SetNextWindowSize(io.DisplaySize);
         ImGui::Begin("JSRF-PC Tools", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                                             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
+        ImGui::PushFont(NULL, ImGui::GetStyle().FontSizeBase * 1.3f);
         ImGui::TextUnformatted("JSRF-PC Tools");
+        ImGui::PopFont();
         if (found) {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-            ImGui::TextWrapped("JSRF-PC's saves: %s", t.title);
-            ImGui::PopStyleColor();
+            tools_path("JSRF-PC:", t.game);
+            ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.25f));
             if (ImGui::BeginTabBar("pages")) {
                 for (int i = 0; i < NPAGES; i++) {
                     if (ImGui::BeginTabItem(g_pages[i]->name)) {
@@ -297,17 +535,12 @@ static int tools_main(int argc, char **argv)
                 ImGui::EndTabBar();
             }
         } else {
-            ImGui::Separator();
-            ImGui::Dummy(ImVec2(0, ImGui::GetFontSize()));
-            ImGui::TextWrapped("Where is JSRF-PC? Pick the folder its launcher (%s) is in, or drop the "
-                               "folder on this window. Start JSRF-PC Tools from that folder to skip this.",
-                               LAUNCHER_NAME);
-            if (note[0]) {
-                ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.5f));
-                ImGui::TextWrapped("%s", note);
-            }
-            ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.5f));
-            if (ImGui::Button("Pick JSRF-PC's folder")) {
+            tools_heading("Where is JSRF-PC?");
+            tools_hint("Pick the folder with %s in it, or drop it on this window.", LAUNCHER_NAME);
+            tools_help_marker("Start JSRF-PC Tools from JSRF-PC's own folder and it finds everything by itself.");
+            if (note[0]) tools_status(TOOLS_WARN, "%s", note);
+            ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.25f));
+            if (ImGui::Button("Pick folder...")) {
                 char dir[JSRF_PATH_MAX];
                 int r = jsrf_pick_folder("Where is JSRF-PC? Pick the folder its launcher is in", dir, sizeof dir);
                 if (r == JSRF_NO_DIALOG)

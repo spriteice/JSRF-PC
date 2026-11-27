@@ -1,5 +1,5 @@
 /*
- * Moving saves from one place to another, as the saves page does it -- see
+ * Moving saves from one place to another, as the save manager does it -- see
  * save_import.c. An import brings saves into JSRF-PC; an export sends
  * JSRF-PC's to xbased or Cxbx-Reloaded. Both are a plan first, which the
  * page shows (and the warning names what it replaces), then the run: a

@@ -4,7 +4,8 @@
  * Windows: IFileOpenDialog, FOS_ALLOWMULTISELECT for several files; where
  * there is none (an old Wine), SHBrowseForFolderW and GetOpenFileNameW, as
  * the launcher falls back to. Linux: zenity, else kdialog, run with no
- * shell, their answer read from their output, one path a line.
+ * shell, their answer read from their output, one path a line. Each can
+ * open in a folder given (the old Wine's folder browser excepted).
  */
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -32,7 +33,37 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int is_dir(const char *path);
+
+/* The folder a dialog opens in, for start: start when it is a folder, else
+ * the nearest folder above it that is there. 0 when there is none. */
+static int start_dir(const char *start, char *out, size_t n)
+{
+    size_t l;
+    if (!start || !start[0] || strlen(start) >= n) return 0;
+    snprintf(out, n, "%s", start);
+    for (;;) {
+        if (is_dir(out)) return 1;
+        l = strlen(out);
+        while (l && out[l - 1] != '/' && out[l - 1] != '\\') l--;
+        if (!l) return 0;
+        while (l > 1 && (out[l - 1] == '/' || out[l - 1] == '\\')) l--;
+        if (l == 2 && out[1] == ':') l = 3;     /* C:\ */
+        if (l >= strlen(out)) return 0;
+        out[l] = 0;
+    }
+}
+
 #ifdef _WIN32
+
+static int is_dir(const char *path)
+{
+    wchar_t w[4096];
+    DWORD a;
+    if (!MultiByteToWideChar(CP_UTF8, 0, path, -1, w, 4096)) return 0;
+    a = GetFileAttributesW(w);
+    return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
+}
 
 static wchar_t *wide(const char *s)
 {
@@ -49,7 +80,26 @@ static void narrow(const wchar_t *w, char *out, size_t n)
     if (!WideCharToMultiByte(CP_UTF8, 0, w, -1, out, (int)n, NULL, NULL) && n) out[0] = 0;
 }
 
+/* The dialog opened in start's folder. */
+static void open_in(IFileOpenDialog *dlg, const char *start)
+{
+    char dir[4096];
+    wchar_t *w;
+    IShellItem *item = NULL;
+    if (!start_dir(start, dir, sizeof dir) || !(w = wide(dir))) return;
+    if (SUCCEEDED(SHCreateItemFromParsingName(w, NULL, &IID_IShellItem, (void **)&item))) {
+        IFileOpenDialog_SetFolder(dlg, item);
+        IShellItem_Release(item);
+    }
+    free(w);
+}
+
 int jsrf_pick_folder(const char *title, char *out, size_t n)
+{
+    return jsrf_pick_folder_in(title, NULL, out, n);
+}
+
+int jsrf_pick_folder_in(const char *title, const char *start, char *out, size_t n)
 {
     IFileOpenDialog *dlg = NULL;
     IShellItem *item = NULL;
@@ -64,6 +114,7 @@ int jsrf_pick_folder(const char *title, char *out, size_t n)
         IFileOpenDialog_GetOptions(dlg, &opts);
         IFileOpenDialog_SetOptions(dlg, opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST);
         if (wt) IFileOpenDialog_SetTitle(dlg, wt);
+        open_in(dlg, start);
         if (SUCCEEDED(IFileOpenDialog_Show(dlg, NULL)) && SUCCEEDED(IFileOpenDialog_GetResult(dlg, &item)) &&
             SUCCEEDED(IShellItem_GetDisplayName(item, SIGDN_FILESYSPATH, &path))) {
             narrow(path, out, n);
@@ -105,6 +156,12 @@ static wchar_t *pattern_list(const char *const *patterns)
 int jsrf_pick_files(const char *title, const char *kind, const char *const *patterns, int multi,
                     void (*each)(void *ctx, const char *path), void *ctx)
 {
+    return jsrf_pick_files_in(title, NULL, kind, patterns, multi, each, ctx);
+}
+
+int jsrf_pick_files_in(const char *title, const char *start, const char *kind, const char *const *patterns,
+                       int multi, void (*each)(void *ctx, const char *path), void *ctx)
+{
     IFileOpenDialog *dlg = NULL;
     IShellItemArray *items = NULL;
     DWORD opts = 0, count = 0, i;
@@ -125,6 +182,7 @@ int jsrf_pick_files(const char *title, const char *kind, const char *const *patt
                                         (multi ? FOS_ALLOWMULTISELECT : 0));
         IFileOpenDialog_SetFileTypes(dlg, 2, spec);
         if (wt) IFileOpenDialog_SetTitle(dlg, wt);
+        open_in(dlg, start);
         if (SUCCEEDED(IFileOpenDialog_Show(dlg, NULL)) && SUCCEEDED(IFileOpenDialog_GetResults(dlg, &items))) {
             IShellItemArray_GetCount(items, &count);
             for (i = 0; i < count; i++) {
@@ -145,7 +203,8 @@ int jsrf_pick_files(const char *title, const char *kind, const char *const *patt
         /* An old Wine: the classic open dialog, its several answers a
          * folder and then each name, NUL after each, two to end. */
         static wchar_t buf[32768];
-        wchar_t filter[1200];
+        wchar_t filter[1200], *wd = NULL;
+        char dir[4096];
         OPENFILENAMEW of;
         size_t kl = wcslen(wk), pl = wcslen(wp);
         if (kl + pl + 4 < 1200) {
@@ -164,6 +223,7 @@ int jsrf_pick_files(const char *title, const char *kind, const char *const *patt
         of.lpstrFile = buf;
         of.nMaxFile = 32768;
         of.lpstrTitle = wt;
+        if (start_dir(start, dir, sizeof dir)) of.lpstrInitialDir = wd = wide(dir);
         of.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER | (multi ? OFN_ALLOWMULTISELECT : 0);
         if (GetOpenFileNameW(&of)) {
             wchar_t *name = buf + wcslen(buf) + 1, full[4096];
@@ -178,6 +238,7 @@ int jsrf_pick_files(const char *title, const char *kind, const char *const *patt
                 if (path[0]) { each(ctx, path); r = JSRF_PICKED; }
             }
         }
+        free(wd);
     }
     free(wt);
     free(wk);
@@ -187,6 +248,12 @@ int jsrf_pick_files(const char *title, const char *kind, const char *const *patt
 }
 
 #else
+
+static int is_dir(const char *path)
+{
+    struct stat st;
+    return stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+}
 
 /* A program on PATH, as the launcher finds zenity and kdialog. */
 static int on_path(const char *name, char *out, size_t n)
@@ -271,23 +338,36 @@ static void keep_one(void *ctx, const char *path)
     if (!o->out[0]) snprintf(o->out, o->n, "%s", path);
 }
 
+/* Where a dialog opens: start's folder, else the home folder. zenity's
+ * --filename wants a folder's name ended by a /. */
+static void where(const char *start, char *dir, size_t n, char *zen, size_t zn)
+{
+    const char *home = getenv("HOME");
+    if (!start_dir(start, dir, n)) snprintf(dir, n, "%s", home && home[0] ? home : "/");
+    snprintf(zen, zn, "--filename=%s%s", dir, dir[0] && dir[strlen(dir) - 1] == '/' ? "" : "/");
+}
+
 int jsrf_pick_folder(const char *title, char *out, size_t n)
 {
-    char prog[4096], t[1024];
+    return jsrf_pick_folder_in(title, NULL, out, n);
+}
+
+int jsrf_pick_folder_in(const char *title, const char *start, char *out, size_t n)
+{
+    char prog[4096], t[1024], dir[4096], zen[4200];
     one o;
-    const char *home = getenv("HOME");
     o.out = out;
     o.n = n;
     out[0] = 0;
     if (!gui()) return JSRF_NO_DIALOG;
+    where(start, dir, sizeof dir, zen, sizeof zen);
     if (on_path("zenity", prog, sizeof prog)) {
-        char *a[] = { prog, (char *)"--file-selection", (char *)"--directory", t, NULL };
+        char *a[] = { prog, (char *)"--file-selection", (char *)"--directory", t, zen, NULL };
         snprintf(t, sizeof t, "--title=%s", title);
         return ask(a, keep_one, &o);
     }
     if (on_path("kdialog", prog, sizeof prog)) {
-        char *a[] = { prog, (char *)"--getexistingdirectory", (char *)(home ? home : "/"),
-                      (char *)"--title", (char *)title, NULL };
+        char *a[] = { prog, (char *)"--getexistingdirectory", dir, (char *)"--title", (char *)title, NULL };
         return ask(a, keep_one, &o);
     }
     return JSRF_NO_DIALOG;
@@ -296,14 +376,20 @@ int jsrf_pick_folder(const char *title, char *out, size_t n)
 int jsrf_pick_files(const char *title, const char *kind, const char *const *patterns, int multi,
                     void (*each)(void *ctx, const char *path), void *ctx)
 {
-    char prog[4096], t[1024], filter[1200], kfilter[1200], joined[1024] = "";
-    const char *home = getenv("HOME");
+    return jsrf_pick_files_in(title, NULL, kind, patterns, multi, each, ctx);
+}
+
+int jsrf_pick_files_in(const char *title, const char *start, const char *kind, const char *const *patterns,
+                       int multi, void (*each)(void *ctx, const char *path), void *ctx)
+{
+    char prog[4096], t[1024], filter[1200], kfilter[1200], joined[1024] = "", dir[4096], zen[4200];
     size_t i, at = 0;
     if (!gui()) return JSRF_NO_DIALOG;
+    where(start, dir, sizeof dir, zen, sizeof zen);
     for (i = 0; patterns && patterns[i]; i++)
         at += (size_t)snprintf(joined + at, sizeof joined - at, "%s%s", i ? " " : "", patterns[i]);
     if (on_path("zenity", prog, sizeof prog)) {
-        char *a[8];
+        char *a[9];
         int k = 0;
         snprintf(t, sizeof t, "--title=%s", title);
         snprintf(filter, sizeof filter, "--file-filter=%s | %s", kind ? kind : "Files", joined[0] ? joined : "*");
@@ -311,6 +397,7 @@ int jsrf_pick_files(const char *title, const char *kind, const char *const *patt
         a[k++] = (char *)"--file-selection";
         a[k++] = t;
         a[k++] = filter;
+        a[k++] = zen;
         if (multi) { a[k++] = (char *)"--multiple"; a[k++] = (char *)"--separator=\n"; }
         a[k] = NULL;
         return ask(a, each, ctx);
@@ -321,7 +408,7 @@ int jsrf_pick_files(const char *title, const char *kind, const char *const *patt
         snprintf(kfilter, sizeof kfilter, "%s (%s)", kind ? kind : "Files", joined[0] ? joined : "*");
         a[k++] = prog;
         a[k++] = (char *)"--getopenfilename";
-        a[k++] = (char *)(home ? home : "/");
+        a[k++] = dir;
         a[k++] = kfilter;
         if (multi) { a[k++] = (char *)"--multiple"; a[k++] = (char *)"--separate-output"; }
         a[k++] = (char *)"--title";

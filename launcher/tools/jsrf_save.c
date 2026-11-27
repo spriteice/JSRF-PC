@@ -447,6 +447,11 @@ static int copy_tree(const char *from, const char *to, int depth)
     return c.bad ? -1 : 0;
 }
 
+int jsrf_copy_tree(const char *from, const char *to)
+{
+    return copy_tree(from, to, 0);
+}
+
 int jsrf_backup(const char *title, const char *backups, char *made, size_t mn, char *why, size_t n)
 {
     char stamp[64], dir[4200], into[4300];
@@ -462,7 +467,7 @@ int jsrf_backup(const char *title, const char *backups, char *made, size_t mn, c
 #endif
     strftime(stamp, sizeof stamp, "%Y-%m-%d %H.%M.%S", &tm);
     if (js_mkdirs(backups) != 0) {
-        say(why, n, "%s couldn't be made, so nothing was imported.", backups, NULL);
+        say(why, n, "%s couldn't be made, so nothing was changed.", backups, NULL);
         return JSRF_FAILED;
     }
     for (i = 1; i < 100 && r == 1; i++) {
@@ -473,13 +478,13 @@ int jsrf_backup(const char *title, const char *backups, char *made, size_t mn, c
         r = js_mkdir_new(dir);
     }
     if (r != 0) {
-        say(why, n, "No backup folder could be made in %s, so nothing was imported.", backups, NULL);
+        say(why, n, "No backup folder could be made in %s, so nothing was changed.", backups, NULL);
         return JSRF_FAILED;
     }
     js_path(into, sizeof into, dir, JSRF_TITLE_ID);
     if (copy_tree(title, into, 0) != 0) {
         js_rmtree(dir);
-        say(why, n, "The saves in %s couldn't be backed up, so nothing was imported.", title, NULL);
+        say(why, n, "The saves in %s couldn't be backed up, so nothing was changed.", title, NULL);
         return JSRF_FAILED;
     }
     if (made && mn) snprintf(made, mn, "%s", dir);
