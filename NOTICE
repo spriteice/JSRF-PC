@@ -17,7 +17,8 @@ and stay under it.
 The code listed below keeps its own licence, with its copyright intact: the
 code JSRF-PC is built on, under MIT, and third-party code, under MIT and
 LGPL-2.1-or-later; and so do the button prompts' pictures, under CC0,
-their packs' dedication. It is other people's work and is credited as such.
+their packs' dedication. The app icon's letters are set in a free font, also
+credited below. It is other people's work and is credited as such.
 
 
 Additional permission for the generated code
@@ -170,6 +171,20 @@ CC0 1.0 — Juliocacko's Free Input Prompts and Xelu's Free Controller & Key Pro
   in LICENSES/CC0-1.0.txt, and the packages carry it as
   licences/CC0-1.0.txt. The pictures of the consoles' buttons name and show
   their owners' trademarks only to say which pad a picture is for.
+
+
+Free to use — the Nise JSRF font, in the app icon
+-------------------------------------------------
+
+  https://www.dafont.com/nisejsrf.font (Yoyo)
+
+    launcher/icon/jsrf-pc.png,  the app icon: JSRF in white on green, its
+    launcher/windows/jsrf.ico   letters set in the Nise JSRF font by
+                                launcher/icon/make_icon.py
+
+  Its author publishes the font as free to use ("100% Free" on dafont.com).
+  Only the icon set with it is in this repository and the packages, not the
+  font itself. Its author has a credit here, with thanks.
 
 
 MIT — SMAA, the reference implementation
