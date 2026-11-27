@@ -156,21 +156,25 @@ static struct {
     int   pbad, rbad, bbad, sbad;    /* a write failed (a full disk): no more appends this run */
 } C;
 
+/* FNV-1a, 64 bits: its offset basis, where every hash here starts, and its
+ * prime, by the names src/kernel/xbox_heap.c gives them. */
+#define FNV64_OFFSET 0xCBF29CE484222325ull
+#define FNV64_PRIME  0x00000100000001B3ull
 static uint64_t fnv64(uint64_t h, const void *p, size_t n)
 {
     const unsigned char *b = (const unsigned char *)p;
-    while (n--) { h ^= *b++; h *= 0x100000001B3ull; }
+    while (n--) { h ^= *b++; h *= FNV64_PRIME; }
     return h;
 }
 static uint64_t text_hash(const char *s)
 {
-    return fnv64(0xCBF29CE484222325ull, s, strlen(s));
+    return fnv64(FNV64_OFFSET, s, strlen(s));
 }
 
 uint64_t nv2a_sc_key(const char *vsrc, const char *fsrc)
 {
     uint64_t v = text_hash(vsrc ? vsrc : ""), f = text_hash(fsrc ? fsrc : "");
-    uint64_t k = fnv64(0xCBF29CE484222325ull, &v, sizeof v);
+    uint64_t k = fnv64(FNV64_OFFSET, &v, sizeof v);
     k = fnv64(k, &f, sizeof f);
     return k ? k : 1;
 }
@@ -306,7 +310,7 @@ static long load_binaries(FILE *f)
 
 static uint64_t state_hash(uint32_t layout, uint32_t kind, const void *data, uint32_t len)
 {
-    uint64_t h = fnv64(0xCBF29CE484222325ull, &layout, sizeof layout);
+    uint64_t h = fnv64(FNV64_OFFSET, &layout, sizeof layout);
     h = fnv64(h, &kind, sizeof kind);
     return fnv64(h, data, len);
 }
@@ -639,7 +643,7 @@ void *nv2a_sc_bin_get(uint64_t key, uint32_t *len, uint32_t *format)
             FILE *f = sc_fopen(C.bfile, "rb");
             if (f && !fseek(f, C.bin[i].off, SEEK_SET) && (data = malloc(C.bin[i].len)) != NULL &&
                 fread(data, 1, C.bin[i].len, f) == C.bin[i].len &&
-                fnv64(0xCBF29CE484222325ull, data, C.bin[i].len) == C.bin[i].hash) {
+                fnv64(FNV64_OFFSET, data, C.bin[i].len) == C.bin[i].hash) {
                 *len = C.bin[i].len; *format = C.bin[i].format;
             } else {
                 free(data); data = NULL;
@@ -657,7 +661,7 @@ void nv2a_sc_bin_put(uint64_t key, const void *data, uint32_t len, uint32_t form
     uint64_t hash;
     long off;
     if (!C.bin_open || !data || !len || len > MAX_BLOB) return;
-    hash = fnv64(0xCBF29CE484222325ull, data, len);
+    hash = fnv64(FNV64_OFFSET, data, len);
     lock();
     if (C.bbad || C.bsize + (long)len + 28 > MAX_BINARIES_FILE ||
         !grow((void **)&C.bin, &C.capbin, C.nbin, sizeof *C.bin)) { unlock(); return; }

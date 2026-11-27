@@ -1125,6 +1125,9 @@ static uint32_t g_frame_chars_prev;  /* ... and in the frame just finished */
  * the camera does.
  */
 #define TEX_CACHE 4096
+/* A texture's first slot: its place, size and format times xxHash32's second
+ * prime. The bind loop and prompts_stage both look from there. */
+#define TEX_CACHE_HASH 2246822519u
 static struct {
     uint32_t offset, format, w, h, pitch, hash;
     uint32_t levels;        /* of the title's mipmap chain uploaded (tex_title_levels) */
@@ -1386,11 +1389,20 @@ static const uint8_t *guest(uint32_t va)
     return (const uint8_t *)xbox_GetMemoryOffset() + va;
 }
 
+/* FNV-1a, 32 bits: its offset basis and its prime. The prime also joins one
+ * hash to the next in the programs' keys and the viewport line's. */
+#define FNV32_OFFSET 2166136261u
+#define FNV32_PRIME  16777619u
+/* Knuth's multiplicative hash: the prime nearest 2^32 over the golden ratio,
+ * which spreads a small value over all 32 bits (a texture sample's start, and
+ * the depth, viewport and character lines' keys). */
+#define KNUTH_HASH   2654435761u
+
 static uint32_t fnv(const void *p, size_t n)
 {
     const uint8_t *b = (const uint8_t *)p;
-    uint32_t h = 2166136261u;
-    while (n--) { h ^= *b++; h *= 16777619u; }
+    uint32_t h = FNV32_OFFSET;
+    while (n--) { h ^= *b++; h *= FNV32_PRIME; }
     return h;
 }
 
@@ -3973,8 +3985,8 @@ static int ff_program_for_current(void)
      * a translated program's microcode hash, and the two are not
      * interchangeable. */
     hash = 0xF1EDF1EDu;   /* a namespace of its own */
-    hash = hash * 16777619u + fnv(&f, sizeof f);
-    hash = hash * 16777619u + psh_hash();
+    hash = hash * FNV32_PRIME + fnv(&f, sizeof f);
+    hash = hash * FNV32_PRIME + psh_hash();
     { int hit = pcache_find(hash);
       if (hit >= 0) return hit; }
     slot = pcache_alloc(hash);
@@ -4090,7 +4102,7 @@ static int program_for_current(void)
       /* One key for both halves: a title reuses a vertex program with
        * several combiner setups and vice versa, and caching on either alone
        * hands back a shader that is half right. */
-      hash = m_hash * 16777619u + psh_hash();
+      hash = m_hash * FNV32_PRIME + psh_hash();
       { int hit = pcache_find(hash);
         if (hit >= 0) return hit; }
       if (!decoded)
@@ -4867,6 +4879,9 @@ static uint32_t tex_bytes(uint32_t color, uint32_t w, uint32_t h)
          ? ((w + 3) / 4) * ((h + 3) / 4) * d3d8_format_dxt_block_bytes(color)
          : w * h * (fmt_is_swz(color) ? linear_bpp(swz_to_linear(color)) : linear_bpp(color));
 }
+/* 2^32 over the golden ratio, xored into the sample of a texture uploaded as
+ * a bump source (g_upload_bias_bg), so it differs from the plain upload's. */
+#define TEX_SAMPLE_BIAS 0x9E3779B9u
 /* The sparse sample a lookup compares: 64 of the bytes, cheap enough for
  * every lookup, and it catches a title that reuses one address for many
  * textures -- the case that matters most. */
@@ -4878,11 +4893,11 @@ static uint32_t tex_sample(uint32_t color, const uint8_t *src, uint32_t bytes, i
     { static int full = -1;
       if (full < 0) full = getenv("RECOMP_GL_TEXHASH_FULL") ? 1 : 0;
       if (full) step = 1; }
-    hash = color * 2654435761u;
+    hash = color * KNUTH_HASH;
     for (i = 0; i < bytes && step; i += step)
         hash = hash * 31u + src[i];
     hash = hash * 31u + bytes;
-    if (bias) hash ^= 0x9E3779B9u;   /* a different upload */
+    if (bias) hash ^= TEX_SAMPLE_BIAS;   /* a different upload */
     return hash;
 }
 /* Every byte a texture's decode reads -- row by row at the pitch for a linear
@@ -6117,7 +6132,7 @@ static uint32_t upload_texture_inner(const TexStage *t)
      * entry for each. */
     bytes = tex_bytes(t->color, w, h);
     hash = tex_sample(t->color, src, bytes, g_upload_bias_bg);
-    key = (t->offset ^ (w << 16) ^ (h << 4) ^ t->color) * 2246822519u;
+    key = (t->offset ^ (w << 16) ^ (h << 4) ^ t->color) * TEX_CACHE_HASH;
     for (i = 0; i < TEX_CACHE; i++) {
         uint32_t k = (key + i) % TEX_CACHE;
         if (g_tcache[k].used && g_tcache[k].offset == t->offset
@@ -7368,10 +7383,14 @@ static uint64_t vc_hash(const void *data, size_t n, uint64_t seed)
     return h;
 }
 
+/* One more value into a hash: Boost's hash_combine, with 2^64 over the golden
+ * ratio, then times xxHash64's second prime (vc_hash's P2). */
+#define VC_MIX_GOLDEN 0x9E3779B97F4A7C15ull
+#define VC_MIX_PRIME  0xC2B2AE3D27D4EB4Full
 static uint64_t vc_mix(uint64_t h, uint64_t v)
 {
-    h ^= v + 0x9E3779B97F4A7C15ull + (h << 6) + (h >> 2);
-    return h * 0xC2B2AE3D27D4EB4Full;
+    h ^= v + VC_MIX_GOLDEN + (h << 6) + (h >> 2);
+    return h * VC_MIX_PRIME;
 }
 
 /* The debugging switches that read a draw's converted vertices back. All
@@ -8225,7 +8244,7 @@ static int prompts_stage(int st)
         any = nv2a_prompt_textures[p].format == t->color
            && nv2a_prompt_textures[p].w == w && nv2a_prompt_textures[p].h == h;
     if (!any) return -1;
-    key = (t->offset ^ (w << 16) ^ (h << 4) ^ t->color) * 2246822519u;
+    key = (t->offset ^ (w << 16) ^ (h << 4) ^ t->color) * TEX_CACHE_HASH;
     for (i = 0; i < TEX_CACHE; i++) {
         uint32_t k = (key + i) % TEX_CACHE;
         if (!g_tcache[k].used) break;
@@ -9764,7 +9783,7 @@ static void do_draw_body(void)
     { static uint32_t seenz[24]; static int nseenz;
       uint32_t kz = fnv(&S.u.z_clip[0], sizeof S.u.z_clip)
                   ^ (uint32_t)(S.u.vp_scale[2] * 7.0f)
-                  ^ ((uint32_t)(S.u.vp_off[2] * 13.0f) * 2654435761u);
+                  ^ ((uint32_t)(S.u.vp_off[2] * 13.0f) * KNUTH_HASH);
       int iz, freshz = 1;
       for (iz = 0; iz < nseenz; iz++) if (seenz[iz] == kz) { freshz = 0; break; }
       if (freshz && nseenz < 24) {
@@ -9780,8 +9799,8 @@ static void do_draw_body(void)
       } }
     { static uint32_t seen[16]; static int nseen;
       uint32_t k = fnv(&S.u.vp_scale[0], sizeof S.u.vp_scale)
-                 ^ (fnv(&S.u.vp_off[0], sizeof S.u.vp_off) * 16777619u)
-                 ^ (uint32_t)(S.xf_mode * 2654435761u);
+                 ^ (fnv(&S.u.vp_off[0], sizeof S.u.vp_off) * FNV32_PRIME)
+                 ^ (uint32_t)(S.xf_mode * KNUTH_HASH);
       int i, fresh = 1;
       for (i = 0; i < nseen; i++) if (seen[i] == k) { fresh = 0; break; }
       if (fresh && nseen < 16) {
@@ -12361,7 +12380,7 @@ static void do_draw_body(void)
           && g_pcache[slot].uses_a0 && out_n >= 30 && !vc_vb) {
           uint32_t ph = psh_hash(), key, i;
           int q, found = 0, k;
-          key = S.prog_start * 2654435761u ^ ph;
+          key = S.prog_start * KNUTH_HASH ^ ph;
           for (i = 0; i < 4; i++) key = key * 31u + (S.psh.tex_bound[i] ? S.tex[i].offset : 0u);
           for (q = 0; q < nseen; q++) if (seen[q] == key) { found = 1; break; }
           if (!found) {

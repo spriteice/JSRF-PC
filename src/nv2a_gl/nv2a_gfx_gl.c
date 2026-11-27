@@ -1306,13 +1306,17 @@ static void glx_state(const Nv2aRenderState *rs)
 
 /* ---- vertices and draws -------------------------------------------------- */
 
+/* A layout's hash starts with its stride times Knuth's multiplicative hash:
+ * the prime nearest 2^32 over the golden ratio. */
+#define LAYOUT_HASH 2654435761u
+
 /* The layout of a vertex: the stride and where each array-fed attribute
  * sits. The offsets and stride are a property of the layout, not of the
  * buffer, so a vertex array's pointers are re-specified only when it
  * changes. */
 static uint32_t layout_of(uint32_t stride_floats, const int attr_at[16])
 {
-    uint32_t k = stride_floats * 2654435761u, i;
+    uint32_t k = stride_floats * LAYOUT_HASH, i;
     for (i = 0; i < 16; i++)
         k = k * 17u + (uint32_t)(attr_at[i] + 1);
     return k;
