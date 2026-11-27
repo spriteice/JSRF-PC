@@ -7,7 +7,7 @@
  * (nv2a_gl.c for the window's) and the menu holds no copy of it. Nor does
  * the menu touch the settings file: the owner saves what it changes, as its
  * hotkey does, through the engine's one settings file (nv2a_gl.c's, which
- * portable mode moves beside the game).
+ * the launchers keep in their data folder).
  *
  * The menu is built where the window can show it (NV2A_GL_MENU, in
  * src/nv2a_gl/CMakeLists.txt); linking xbox_menu then defines

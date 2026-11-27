@@ -44,11 +44,14 @@ bin/
 port/recomp/
 
 # The game's files, saves, and logs, wherever a run puts them (either
-# launcher's portable/ folder holds all three)
+# launcher's data/ folder holds all three, as portable/ did before it; data/
+# at the root only, as tools/recomp/data/ is the repository's)
 [Mm][Ee][Dd][Ii][Aa]/
 [Uu][Dd][Aa][Tt][Aa]/
 [Tt][Dd][Aa][Tt][Aa]/
 portable/
+/data/
+/data.new/
 Partition*.img
 *.log
 *.dump

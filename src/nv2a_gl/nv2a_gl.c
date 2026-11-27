@@ -1630,8 +1630,8 @@ static void sdl_cfg_path(char *buf, size_t n)
     const char *f = getenv("JSRF_SETTINGS_FILE"), *x = getenv("XDG_CONFIG_HOME"),
                *h = getenv("HOME");
 #if defined(_WIN32)
-    /* %LOCALAPPDATA%\JSRF-PC\settings: the launcher's, which also
-     * passes it as JSRF_SETTINGS_FILE. */
+    /* %LOCALAPPDATA%\JSRF-PC\settings, b2.2's, when run without the
+     * launcher, which passes its own (data\settings.cfg) as JSRF_SETTINGS_FILE. */
     const char *ad = getenv("LOCALAPPDATA");
     if (!(f && *f) && ad && *ad) { snprintf(buf, n, "%s/JSRF-PC/settings", ad); return; }
 #endif

@@ -619,8 +619,8 @@ running while it is open, but your input goes to the menu.
     eases its angle back from the game's view, with no glide in or out,
     and one made while it glided into the graffiti shot glides in as it
     did. Each recording is a folder
-    in `recordings` beside the settings file (`portable/recordings` in
-    portable mode), named by when it started, in UTC, as
+    in `recordings` beside the settings file (`data/recordings` beside
+    the launcher), named by when it started, in UTC, as
     `2026-11-19-091500`. Play (Restart) lists the recordings there were
     when the game started, newest first; picking one asks first, then
     restarts the game and plays it. Press anything on a controller or the
@@ -672,7 +672,7 @@ running while it is open, but your input goes to the menu.
     line is checked before anything is played, and a row that isn't there
     stops it. With `--play`, the folder can hold `profile/` too: a settings
     file (`settings.cfg`), `developer.cfg`, `start-states.txt`, `saves/`
-    and `cache/`, as a portable folder has them. Each play then runs on a
+    and `cache/`, as the data folder has them. Each play then runs on a
     copy of it, in the folder's `plays/<date>-<time>/` with its
     screenshots, so your own settings and saves are never opened, and
     `steps.txt`'s `setting mute=1` and `developer RECOMP_GL_PROFILE=1`

@@ -3,7 +3,7 @@
  * Where a title's saves go. XAPI keeps them in E:\UDATA and E:\TDATA -- it
  * links U: and T: there -- and E: is Partition1, the game dir, so they land
  * among the game's files. A launcher can give the player's own folder for
- * them instead (JSRF_USER_DIR, the Linux launcher's portable mode). Given one,
+ * them instead (JSRF_USER_DIR, both launchers' data folder). Given one,
  * the saves go there and nothing else moves; without one, nothing moves. A
  * run started at a mission gives another after the init
  * (xbox_path_set_user_dir), and its saves go there instead.

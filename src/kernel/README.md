@@ -138,8 +138,8 @@ Z:\                → <save_dir>/Cache/
 ```
 
 A title's saves, `E:\UDATA` and `E:\TDATA`, go to the user folder when
-there is one: the folder `JSRF_USER_DIR` gives (the launchers' portable
-mode), or, after `xbox_path_init`, the one `xbox_path_set_user_dir` gives,
+there is one: the folder `JSRF_USER_DIR` gives (the launchers' data
+folder's `saves`), or, after `xbox_path_init`, the one `xbox_path_set_user_dir` gives,
 made if need be. A run that must not touch the player's saves gives its
 own: one started at a mission (`port/missions.c`) gives `mission-saves` in
 the save folder. Without a user folder, they stay among the game's files,

@@ -25,9 +25,11 @@
  *                                  and close at its end
  *   JSRF-PC.exe --version          which version this is
  *
- * Settings, saves, logs, and unpacked disc images live in
- * %LOCALAPPDATA%\JSRF-PC -- or, with a folder named "portable" beside
- * the launcher, in that folder, as on Linux. In game: F1 the in-game menu,
+ * Settings, saves, logs, and unpacked disc images live in a folder named
+ * "data" beside the launcher, as on Linux, and nothing in %LOCALAPPDATA%. A
+ * "portable" folder from before is renamed to it, and what an earlier
+ * version kept in %LOCALAPPDATA%\JSRF-PC is copied into it the first time
+ * (launcher/common/user_files.h). In game: F1 the in-game menu,
  * F11 (or Alt+Enter) full screen, F10 4:3 or your screen's shape (the
  * others in Display > Aspect ratio), F9 resolution, and F8 the free camera.
  */
@@ -59,15 +61,13 @@
 
 static wchar_t g_here[MAX_PATH];       /* the launcher's folder */
 static js_files g_files;               /* where things are kept (launcher/common/user_files.h) */
-static wchar_t g_portable[MAX_PATH];   /* its "portable" folder, or "" when there is none */
-static wchar_t g_base[MAX_PATH];       /* %LOCALAPPDATA%\JSRF-PC (portable\games):
-                                        * disc images are unpacked here */
-static wchar_t g_cfg[MAX_PATH];        /* ...\settings (portable\settings.cfg), shared with the engine */
-static wchar_t g_save[MAX_PATH];       /* the engine's cache: ...\save (portable\cache) */
-static wchar_t g_log[MAX_PATH];        /* ...\last-run.log (portable\logs\last-run.log) */
-static wchar_t g_logs[MAX_PATH];       /* the logs before it: ...\logs (portable\logs) */
+static wchar_t g_base[MAX_PATH];       /* data\games: disc images are unpacked here */
+static wchar_t g_cfg[MAX_PATH];        /* data\settings.cfg, shared with the engine */
+static wchar_t g_save[MAX_PATH];       /* the engine's cache: data\cache */
+static wchar_t g_log[MAX_PATH];        /* data\logs\last-run.log */
+static wchar_t g_logs[MAX_PATH];       /* the logs before it: data\logs */
 static wchar_t g_play[MAX_PATH * 2];   /* --play's recording, its whole path; "" for none */
-static wchar_t g_saves[MAX_PATH];      /* portable\saves: the game's saves, in portable mode */
+static wchar_t g_saves[MAX_PATH];      /* data\saves: the game's saves */
 
 /* ---- small helpers -------------------------------------------------------- */
 
@@ -365,8 +365,7 @@ static int unpack(const wchar_t *iso, const wchar_t *dest)
     return 0;
 }
 
-/* An image is unpacked into %LOCALAPPDATA%\JSRF-PC\<its name> (in
- * portable mode, portable\games\<its name>), once. */
+/* An image is unpacked into data\games\<its name>, once. */
 static int game_from_image(const wchar_t *iso, wchar_t *game, size_t n)
 {
     wchar_t name[MAX_PATH], *dot, msg[1024];
@@ -473,45 +472,6 @@ static int other_release(const wchar_t *game)
     return 1;
 }
 
-/* ---- portable: the saves the game kept in its own folder ----------------------
- *
- * UDATA and TDATA are copied into portable\saves the first time, so the
- * game's progress carries over. Copied, not moved: the originals stay where
- * they were. Returns 0, or 1 when a copy failed (what it made is removed). */
-static int copy_saves(const wchar_t *game)
-{
-    static const wchar_t *const dirs[] = { L"UDATA", L"TDATA" };
-    wchar_t from[MAX_PATH * 2 + 1], to[MAX_PATH * 2 + 1], into[MAX_PATH + 1], msg[2048];
-    SHFILEOPSTRUCTW op;
-    size_t i;
-
-    for (i = 0; i < sizeof dirs / sizeof dirs[0]; i++) {
-        join(from, MAX_PATH * 2, game, dirs[i]);
-        join(to, MAX_PATH * 2, g_saves, dirs[i]);
-        if (!is_dir(from) || GetFileAttributesW(to) != INVALID_FILE_ATTRIBUTES) continue;
-        /* SHFileOperationW takes lists that end with two NULs. */
-        from[wcslen(from) + 1] = 0;
-        to[wcslen(to) + 1] = 0;
-        wcscpy(into, g_saves);
-        into[wcslen(into) + 1] = 0;
-        ZeroMemory(&op, sizeof op);
-        op.wFunc = FO_COPY;
-        op.pFrom = from;
-        op.pTo = into;
-        op.fFlags = FOF_NO_UI;
-        if (SHFileOperationW(&op) == 0 && !op.fAnyOperationsAborted) continue;
-        op.wFunc = FO_DELETE;
-        op.pFrom = to;
-        op.pTo = NULL;
-        SHFileOperationW(&op);
-        _snwprintf(msg, 2048, L"The saves in\n%ls\ncould not be copied into\n%ls\nso the game "
-                              L"was not started. The originals are untouched.", from, g_saves);
-        msg[2047] = 0;
-        return fail(msg);
-    }
-    return 0;
-}
-
 /* ---- the run ---------------------------------------------------------------- */
 
 static int run(const wchar_t *game, int fullscreen, int minimized)
@@ -540,9 +500,9 @@ static int run(const wchar_t *game, int fullscreen, int minimized)
     SetEnvironmentVariableW(L"JSRF_GAME_DIR", game);
     SetEnvironmentVariableW(L"JSRF_SAVE_DIR", g_save);
     SetEnvironmentVariableW(L"JSRF_SETTINGS_FILE", g_cfg);
-    /* Portable: the game's saves go to portable\saves, not the game folder
-     * (the engine's path layer, src/kernel/kernel_path.c). */
-    if (g_portable[0]) SetEnvironmentVariableW(L"JSRF_USER_DIR", g_saves);
+    /* The game's saves go to data\saves, not the game folder (the engine's
+     * path layer, src/kernel/kernel_path.c). */
+    SetEnvironmentVariableW(L"JSRF_USER_DIR", g_saves);
 
     ZeroMemory(&sa, sizeof sa);
     sa.nLength = sizeof sa;
@@ -560,9 +520,8 @@ static int run(const wchar_t *game, int fullscreen, int minimized)
     _snwprintf(cmd, MAX_PATH * 6, L"\"%ls\" \"%ls\"", engine, game);
     cmd[MAX_PATH * 6 - 1] = 0;
     /* What the engine writes by a relative name (xbox_kernel.log, the icall
-     * dumps) goes to the game folder, or to the logs in portable mode. */
-    if (!CreateProcessW(engine, cmd, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL,
-                        g_portable[0] ? g_logs : game, &si, &pi)) {
+     * dumps) goes to the logs. */
+    if (!CreateProcessW(engine, cmd, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, g_logs, &si, &pi)) {
         if (out != INVALID_HANDLE_VALUE) CloseHandle(out);
         _snwprintf(msg, 2048, L"Could not start the engine (error %lu).", GetLastError());
         msg[2047] = 0;
@@ -662,27 +621,27 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
 
     GetModuleFileNameW(NULL, g_here, MAX_PATH);
     if ((slash = wcsrchr(g_here, L'\\')) != NULL) *slash = 0;
-    /* Looked for first, before anything is read or made: in portable mode
-     * nothing outside this folder is touched but the game's own files. A
-     * portable folder that cannot be written stops here rather than falling
-     * back to %LOCALAPPDATA%, which would split the saves between two places
-     * (launcher/common/user_files.h). */
+    /* The data folder, first, before anything is read or made: a portable
+     * folder renamed to it, or what an earlier version kept in
+     * %LOCALAPPDATA%\JSRF-PC copied into a new one. Nothing outside this
+     * folder is touched but the game's own files. A folder that cannot be
+     * written stops here rather than falling back to %LOCALAPPDATA%, which
+     * would split the saves between two places (launcher/common/user_files.h). */
     {
-        char here[JS_FILES_PATH], why[JS_FILES_PATH + 256];
-        wchar_t msg[JS_FILES_PATH + 256];
+        char here[JS_FILES_PATH], why[JS_FILES_PATH * 3];
+        static wchar_t msg[JS_FILES_PATH * 3];
         to_utf8(g_here, here, sizeof here);
         js_files_find(here, &g_files);
-        from_utf8(g_files.root, g_portable, MAX_PATH);
+        if (js_files_prepare(&g_files, why, sizeof why)) {
+            from_utf8(why, msg, JS_FILES_PATH * 3);
+            return fail(msg);
+        }
         from_utf8(g_files.games, g_base, MAX_PATH);
         from_utf8(g_files.settings, g_cfg, MAX_PATH);
         from_utf8(g_files.cache, g_save, MAX_PATH);
         from_utf8(g_files.log, g_log, MAX_PATH);
         from_utf8(g_files.logs, g_logs, MAX_PATH);
         from_utf8(g_files.saves, g_saves, MAX_PATH);
-        if (js_files_prepare(&g_files, why, sizeof why)) {
-            from_utf8(why, msg, JS_FILES_PATH + 256);
-            return fail(msg);
-        }
     }
 
     for (i = 1; i < argc; i++) {
@@ -765,8 +724,8 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
         DWORD n = GetFullPathNameW(arg, MAX_PATH * 2, game, NULL);
         if (!n || n >= MAX_PATH * 2) return fail(L"That path is too long.");
     } else if (!choose && cfg_get("game_dir", u8, sizeof u8)) {
-        /* Portable: a game folder inside this one is remembered relative to
-         * it (below), so the whole folder can move -- to another drive letter,
+        /* A game folder inside this one is remembered relative to it
+         * (below), so the whole folder can move -- to another drive letter,
          * a USB stick -- and still find it. */
         char whole[JS_FILES_PATH];
         js_files_game(&g_files, u8, whole, sizeof whole);
@@ -807,6 +766,17 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
         js_files_keep(&g_files, whole, u8, sizeof u8);
     }
     cfg_set("game_dir", u8);
-    if (g_portable[0] && copy_saves(game)) return 1;
+    /* The saves the game kept in its own folder (UDATA, TDATA) are copied
+     * into data\saves the first time, so its progress carries over. Copied,
+     * not moved: the originals stay where they were. */
+    {
+        char whole[JS_FILES_PATH], why[JS_FILES_PATH * 3];
+        static wchar_t msg[JS_FILES_PATH * 3];
+        to_utf8(game, whole, sizeof whole);
+        if (js_files_saves_in(&g_files, whole, why, sizeof why)) {
+            from_utf8(why, msg, JS_FILES_PATH * 3);
+            return fail(msg);
+        }
+    }
     return run(game, fullscreen, minimized);
 }

@@ -21,8 +21,11 @@
  *   ./jsrf-pc --version        which version this is
  *
  * A disc image (.iso) is unpacked once, by the game itself: nothing else to install.
- * Portable: with a folder named "portable" beside the launcher, the settings,
- * saves, and logs are kept in it, and nothing in your home folder.
+ * The settings, saves and logs are kept in a folder named "data" beside the
+ * launcher, and nothing in your home folder but the menu entry --install
+ * adds. A "portable" folder from before is renamed to it, and what an
+ * earlier version kept in your home folder is copied into it the first time
+ * (launcher/common/user_files.h).
  * In game: F1 the in-game menu, F11 (or Alt+Return) full screen, F10 4:3 or your
  * screen's shape (the others in Display > Aspect ratio), F9 resolution, and F8
  * the free camera.
@@ -79,15 +82,16 @@ static const char HELP[] =
     "  ./jsrf-pc --version        which version this is\n"
     "\n"
     "A disc image (.iso) is unpacked once, by the game itself: nothing else to install.\n"
-    "Portable: with a folder named \"portable\" beside this launcher, the settings,\n"
-    "saves, and logs are kept in it, and nothing in your home folder.\n"
+    "The settings, saves and logs are kept in a folder named \"data\" beside this\n"
+    "launcher, and nothing in your home folder but the menu entry --install adds.\n"
+    "A \"portable\" folder from before is renamed to it, and what an earlier version\n"
+    "kept in your home folder is copied into it the first time.\n"
     "In game: F1 the in-game menu, F11 (or Alt+Return) full screen, F10 4:3 or your\n"
     "screen's shape (the others in Display > Aspect ratio), F9 resolution, and F8\n"
     "the free camera.\n";
 
 static char g_here[PATH_MAX];
 static js_files g_files;            /* where things are kept (launcher/common/user_files.h) */
-static char g_portable[PATH_MAX];   /* "" when not portable */
 static char g_cfg[PATH_MAX + 64], g_data[PATH_MAX + 64], g_save[PATH_MAX + 64];
 static char g_state[PATH_MAX + 64], g_logs[PATH_MAX + 64];
 static char g_engine[PATH_MAX + 32], g_libpath[PATH_MAX * 2];
@@ -361,12 +365,11 @@ static int relay_line(const char *line, int zfd, const char *name, FILE *answer)
     return 1;
 }
 
-/* Unpacked once into ~/.local/share/jsrf-pc/<name> (in portable mode,
- * portable/games/<name>), by the engine (--unpack-iso: the unpacker the other
- * apps use, port/xiso.c), so nothing else has to be installed. Checked first,
- * so a zip, another game's disc or another build of the game is named before
- * anything is unpacked. The game folder in out; "" if unpacking was
- * cancelled. */
+/* Unpacked once into data/games/<name>, by the engine (--unpack-iso: the
+ * unpacker the other apps use, port/xiso.c), so nothing else has to be
+ * installed. Checked first, so a zip, another game's disc or another build of
+ * the game is named before anything is unpacked. The game folder in out; ""
+ * if unpacking was cancelled. */
 static void from_iso(const char *iso, char *out, size_t n)
 {
     char name[NAME_MAX + 1], dest[PATH_MAX * 2], why[4096], ans_path[PATH_MAX + 32], zen[PATH_MAX];
@@ -534,9 +537,8 @@ static int ask_game(char *out, size_t n)
     return out[0] != 0;
 }
 
-/* The game remembered: in portable mode, one inside this folder is kept
- * relative to it, so the whole folder can move (another path, an SD card)
- * and still find it. */
+/* The game remembered: one inside this folder is kept relative to it, so
+ * the whole folder can move (another path, an SD card) and still find it. */
 static void last_game(char *out, size_t n)
 {
     char v[PATH_MAX];
@@ -580,10 +582,8 @@ static void install_desktop(void)
     char apps[PATH_MAX + 64], file[PATH_MAX + 96];
     const char *x = getenv("XDG_DATA_HOME"), *h = getenv("HOME");
     FILE *f;
-    /* The menu is in the home folder, which portable mode leaves alone. */
-    if (g_portable[0])
-        failf("JSRF-PC is in portable mode (it has a \"portable\" folder), so it does not add itself to the "
-              "applications menu, which is kept in your home folder.");
+    /* The menu is in the home folder: the one thing written there, and only
+     * when asked. It points at this folder, so a folder moved needs it again. */
     if (x && *x) fmt(apps, sizeof apps, "%s/applications", x);
     else fmt(apps, sizeof apps, "%s/.local/share/applications", h ? h : "");
     js_mkdirs(apps);
@@ -646,54 +646,6 @@ static void keep_logs(const char *log)
     free(all);
 }
 
-/* cp -R: a folder and what is in it, the files' modes kept. */
-static int copy_tree(const char *from, const char *to)
-{
-    struct stat st;
-    if (lstat(from, &st)) return -1;
-    if (S_ISDIR(st.st_mode)) {
-        DIR *d;
-        struct dirent *e;
-        int bad = 0;
-        if (mkdir(to, st.st_mode & 07777) && errno != EEXIST) return -1;
-        d = opendir(from);
-        if (!d) return -1;
-        while (!bad && (e = readdir(d)) != NULL) {
-            char a[PATH_MAX], b[PATH_MAX];
-            if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
-            if ((size_t)snprintf(a, sizeof a, "%s/%s", from, e->d_name) >= sizeof a ||
-                (size_t)snprintf(b, sizeof b, "%s/%s", to, e->d_name) >= sizeof b) { bad = 1; break; }
-            bad = copy_tree(a, b) != 0;
-        }
-        closedir(d);
-        return bad ? -1 : 0;
-    }
-    if (S_ISLNK(st.st_mode)) {
-        char target[PATH_MAX];
-        ssize_t l = readlink(from, target, sizeof target - 1);
-        if (l < 0) return -1;
-        target[l] = 0;
-        return symlink(target, to);
-    }
-    if (S_ISREG(st.st_mode)) {
-        char buf[1 << 16];
-        int in = open(from, O_RDONLY), out;
-        ssize_t got;
-        int bad = 0;
-        if (in < 0) return -1;
-        out = open(to, O_WRONLY | O_CREAT | O_TRUNC, st.st_mode & 07777);
-        if (out < 0) { close(in); return -1; }
-        while ((got = read(in, buf, sizeof buf)) != 0) {
-            if (got < 0) { if (errno == EINTR) continue; bad = 1; break; }
-            if (write(out, buf, (size_t)got) != got) { bad = 1; break; }
-        }
-        close(in);
-        if (close(out)) bad = 1;
-        return bad ? -1 : 0;
-    }
-    return 0;   /* a device or a pipe: nothing an Xbox save holds */
-}
-
 /* ---- the start ---------------------------------------------------------------- */
 
 /* --resolution's names, as the settings file keeps them (nv2a_scale_key):
@@ -728,20 +680,20 @@ int main(int argc, char **argv)
      * dialogs don't use it). */
     engine_env();
 
-    /* Looked for first, before anything is read or made: in portable mode
-     * nothing outside this folder is touched but the game's own files. A
-     * portable folder that cannot be written stops here rather than falling
-     * back to the home folder, which would split the saves between two
-     * places (launcher/common/user_files.h). */
+    /* The data folder, first, before anything is read or made: a portable
+     * folder renamed to it, or what an earlier version kept in the home
+     * folder copied into a new one. Nothing outside this folder is touched
+     * but the game's own files. A folder that cannot be written stops here
+     * rather than falling back to the home folder, which would split the
+     * saves between two places (launcher/common/user_files.h). */
     js_files_find(g_here, &g_files);
-    fmt(g_portable, sizeof g_portable, "%s", g_files.root);
+    if (js_files_prepare(&g_files, why, sizeof why)) failf("%s", why);
     fmt(g_cfg, sizeof g_cfg, "%s", g_files.settings);
     fmt(g_data, sizeof g_data, "%s", g_files.games);
     fmt(g_save, sizeof g_save, "%s", g_files.cache);
     fmt(g_state, sizeof g_state, "%s", g_files.log);   /* the folder last-run.log is in */
     *strrchr(g_state, '/') = 0;
     fmt(g_logs, sizeof g_logs, "%s", g_files.logs);
-    if (js_files_prepare(&g_files, why, sizeof why)) failf("%s", why);
 
     for (i = 1; i < argc; i++) {
         const char *a = argv[i];
@@ -849,24 +801,10 @@ int main(int argc, char **argv)
         cfg_set("game_dir", keep);
     }
 
-    /* Portable: the saves the game kept in its own folder (UDATA, TDATA) are
-     * copied into portable/saves the first time, so its progress carries
-     * over. Copied, not moved: the originals stay where they were. */
-    if (g_portable[0]) {
-        static const char *const dirs[] = { "UDATA", "TDATA" };
-        for (i = 0; i < 2; i++) {
-            char from[PATH_MAX * 2 + 8], to[PATH_MAX + 80];
-            struct stat st;
-            fmt(from, sizeof from, "%s/%s", game, dirs[i]);
-            fmt(to, sizeof to, "%s/%s", g_files.saves, dirs[i]);
-            if (!js_is_dir(from) || !lstat(to, &st)) continue;
-            if (copy_tree(from, to)) {
-                js_rmtree(to);
-                failf("The saves in\n%s\ncould not be copied into\n%s\nso the game was not started. The originals "
-                      "are untouched.", from, g_files.saves);
-            }
-        }
-    }
+    /* The saves the game kept in its own folder (UDATA, TDATA) are copied
+     * into data/saves the first time, so its progress carries over. Copied,
+     * not moved: the originals stay where they were. */
+    if (js_files_saves_in(&g_files, game, why, sizeof why)) failf("%s", why);
 
     fmt(log, sizeof log, "%s/last-run.log", g_state);
     keep_logs(log);
@@ -883,12 +821,12 @@ int main(int argc, char **argv)
     setenv("JSRF_GAME_DIR", game, 1);
     setenv("JSRF_SAVE_DIR", g_save, 1);
     setenv("JSRF_SETTINGS_FILE", g_cfg, 1);
-    /* Portable: the game's saves go to portable/saves, not the game folder
-     * (the engine's path layer, src/kernel/kernel_path.c). */
-    if (g_portable[0]) setenv("JSRF_USER_DIR", g_files.saves, 1);
+    /* The game's saves go to data/saves, not the game folder (the engine's
+     * path layer, src/kernel/kernel_path.c). */
+    setenv("JSRF_USER_DIR", g_files.saves, 1);
 
     /* What the engine writes by a relative name (xbox_kernel.log, the icall
-     * dumps) goes to the game folder, or to the logs in portable mode. */
+     * dumps) goes to the logs. */
     {
         int out = open(log, O_WRONLY | O_CREAT | O_TRUNC, 0644);
         char *e[] = { g_engine, game, NULL };
@@ -899,7 +837,7 @@ int main(int argc, char **argv)
             dup2(out, 1);
             dup2(out, 2);
             close(out);
-            if (chdir(g_portable[0] ? g_logs : game)) _exit(1);
+            if (chdir(g_logs)) _exit(1);
             signal(SIGPIPE, SIG_DFL);
             execv(g_engine, e);
             _exit(127);

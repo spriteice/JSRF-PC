@@ -1125,7 +1125,7 @@ static char *trimmed(char *s)
 }
 
 /* --play's run with a profile/ (the settings file, developer.cfg,
- * start-states.txt, saves/ and cache/, as a portable folder has them): a
+ * start-states.txt, saves/ and cache/, as the data folder has them): a
  * copy of it in a folder of this play's own (plays/<date>-<time>/), with
  * steps.txt's setting and developer lines written into it, and the
  * settings file, the engine's save folder and the game's saves pointed at

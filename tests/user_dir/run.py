@@ -30,5 +30,5 @@ with tempfile.TemporaryDirectory(prefix="user-dir-") as directory:
     else:
         command += ["src/platform/win32_compat.c", "-lm", "-lpthread"]
     subprocess.run(command, cwd=root, check=True)
-    subprocess.run([exe, str(work / "game"), str(work / "save"), str(work / "portable" / "saves")],
+    subprocess.run([exe, str(work / "game"), str(work / "save"), str(work / "data" / "saves")],
                    check=True, timeout=30)

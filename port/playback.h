@@ -87,7 +87,7 @@
  * before the ticks, plays the shots as the builds before them did.
  *
  * The recording is a folder, `recordings/<date>-<time>/` beside the settings
- * file (`portable/recordings/` in portable mode), holding recording.txt: one
+ * file (the launchers' `data/recordings/`), holding recording.txt: one
  * line each, so a run can be written by hand.
  *
  * A run's folder, as --play takes it, can hold two more beside it:
@@ -100,7 +100,7 @@
  *     idle <n>: screenshot      the picture shown, as shot-<line>.bmp
  *     frame <n>: ...            menu, mark or screenshot, at a recorded frame
  *   profile/    settings.cfg, developer.cfg, start-states.txt, saves/ and
- *               cache/, as a portable folder has them
+ *               cache/, as the data folder has them
  *
  * An idle moment's steps run once playback has reached it (the skater put
  * back, or not), and hold the recording there, the pad still, until they
@@ -217,7 +217,7 @@
 #define PLAYBACK_ANCHOR_AHEAD 4              /* recorded anchors an early one may skip */
 #define PLAYBACK_STEPS        "steps.txt"    /* a run's steps, beside its recording */
 #define PLAYBACK_PROFILE      "profile"      /* the settings and saves a run starts from */
-#define PLAYBACK_PROFILE_SETTINGS "settings.cfg" /* its settings file, as a portable folder has it */
+#define PLAYBACK_PROFILE_SETTINGS "settings.cfg" /* its settings file, as the data folder has it */
 #define PLAYBACK_PLAYS        "plays"        /* a folder for each play: its copy, its screenshots */
 #define PLAYBACK_STEP_SETTLE  5u             /* flips after a menu row before the next step */
 #define PLAYBACK_STEP_WAIT    600u           /* frames steps may hold the recording: ten seconds */

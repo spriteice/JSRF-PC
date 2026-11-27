@@ -743,11 +743,12 @@ checked against SHA256SUMS.txt after every copy:
   the same way, attached to my message.
 - **Windows:** the package stays on the PC, extracted in
   `Building\<folder>\`, and I run it from there. Before I test, my
-  portable folder in `Building\` is copied next to its JSRF-PC.exe,
-  without its logs. In that copy's developer.cfg the switches TESTING.md
-  names are set, and every other one goes back to its default, so a
-  switch left on from an earlier test can't change this one. The build
-  then starts in portable mode, with my settings and saves, ready to
+  portable folder in `Building\` is copied next to its JSRF-PC.exe as
+  `data\` (as `portable\` for a build from before the data folder,
+  docs/portable-mode.md), without its logs. In that copy's developer.cfg
+  the switches TESTING.md names are set, and every other one goes back to
+  its default, so a switch left on from an earlier test can't change this
+  one. The build then starts with my settings and saves, ready to
   test. Progress I make there stays in that build's copy. Its test list
   goes to `Testing\` (Test list, below). A package made in the cloud is
   copied there from `test-builds/` once the PC is free, then set up the
@@ -808,10 +809,11 @@ test-lists/README.md has its path.
   docs/release-checklist.md has the rest of a release's steps.
 - **What to send back:** the test list's results, the full last-run.log
   from each run, and screenshots of anything visual. The package's
-  README.txt says where the log is kept ("Where things are kept", and
+  README.txt says where the log is kept: `data/logs/` beside the launcher
+  (in a build from before the data folder, "Where things are kept", and
   `portable/logs/` in portable mode). Linux logs come attached to my
   message in the thread. Windows logs are read on the PC, in the build's
-  own `portable\logs\`, so I don't need to send them.
+  own `data\logs\` (`portable\logs\` before), so I don't need to send them.
 
 ## The smoke set
 
