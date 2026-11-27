@@ -51,12 +51,14 @@
 
 #include "xiso.h"
 #include "xbe_check.h"
+#include "../common/user_files.h"
 #include "../setup/setup.h"
 #include "../../src/nv2a_gl/nv2a_scale.h"
 
 #define APP L"JSRF-PC"
 
 static wchar_t g_here[MAX_PATH];       /* the launcher's folder */
+static js_files g_files;               /* where things are kept (launcher/common/user_files.h) */
 static wchar_t g_portable[MAX_PATH];   /* its "portable" folder, or "" when there is none */
 static wchar_t g_base[MAX_PATH];       /* %LOCALAPPDATA%\JSRF-PC (portable\games):
                                         * disc images are unpacked here */
@@ -614,12 +616,9 @@ static int setup_find_game(void *vctx, char *path, size_t n)
         DWORD k = GetFullPathNameW(c->arg, MAX_PATH * 2, game, NULL);
         if (!k || k >= MAX_PATH * 2) return 0;
     } else if (!c->choose && cfg_get("game_dir", u8, sizeof u8)) {
-        from_utf8(u8, game, MAX_PATH * 2);
-        if (g_portable[0] && game[0] && game[0] != L'\\' && game[0] != L'/' && game[1] != L':') {
-            wchar_t rel[MAX_PATH * 2];
-            wcscpy(rel, game);
-            join(game, MAX_PATH * 2, g_here, rel);
-        }
+        char whole[JS_FILES_PATH];
+        js_files_game(&g_files, u8, whole, sizeof whole);
+        from_utf8(whole, game, MAX_PATH * 2);
         if (!is_game(game)) game[0] = 0;
     }
     if (!game[0] && !pick_folder(game, MAX_PATH * 2)) return 0;
@@ -664,44 +663,26 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
     GetModuleFileNameW(NULL, g_here, MAX_PATH);
     if ((slash = wcsrchr(g_here, L'\\')) != NULL) *slash = 0;
     /* Looked for first, before anything is read or made: in portable mode
-     * nothing outside this folder is touched but the game's own files. */
-    join(g_portable, MAX_PATH, g_here, L"portable");
-    if (is_dir(g_portable)) {
-        wchar_t probe[MAX_PATH], msg[1024];
-        join(g_base, MAX_PATH, g_portable, L"games");
-        join(g_cfg, MAX_PATH, g_portable, L"settings.cfg");
-        join(g_save, MAX_PATH, g_portable, L"cache");
-        join(g_logs, MAX_PATH, g_portable, L"logs");
-        join(g_log, MAX_PATH, g_logs, L"last-run.log");
-        join(g_saves, MAX_PATH, g_portable, L"saves");
-        SHCreateDirectoryExW(NULL, g_logs, NULL);
-        SHCreateDirectoryExW(NULL, g_saves, NULL);
-        /* A portable folder that cannot be written stops here rather than
-         * falling back to %LOCALAPPDATA%, which would split the saves between
-         * two places. */
-        if (!GetTempFileNameW(g_portable, L"jsr", 0, probe)) {
-            _snwprintf(msg, 1024, L"The portable folder can't be written to:\n\n%ls\n\n"
-                                  L"Make it writable, or remove it to keep the settings, saves "
-                                  L"and logs in %%LOCALAPPDATA%%\\JSRF-PC instead.", g_portable);
-            msg[1023] = 0;
+     * nothing outside this folder is touched but the game's own files. A
+     * portable folder that cannot be written stops here rather than falling
+     * back to %LOCALAPPDATA%, which would split the saves between two places
+     * (launcher/common/user_files.h). */
+    {
+        char here[JS_FILES_PATH], why[JS_FILES_PATH + 256];
+        wchar_t msg[JS_FILES_PATH + 256];
+        to_utf8(g_here, here, sizeof here);
+        js_files_find(here, &g_files);
+        from_utf8(g_files.root, g_portable, MAX_PATH);
+        from_utf8(g_files.games, g_base, MAX_PATH);
+        from_utf8(g_files.settings, g_cfg, MAX_PATH);
+        from_utf8(g_files.cache, g_save, MAX_PATH);
+        from_utf8(g_files.log, g_log, MAX_PATH);
+        from_utf8(g_files.logs, g_logs, MAX_PATH);
+        from_utf8(g_files.saves, g_saves, MAX_PATH);
+        if (js_files_prepare(&g_files, why, sizeof why)) {
+            from_utf8(why, msg, JS_FILES_PATH + 256);
             return fail(msg);
         }
-        DeleteFileW(probe);
-    } else {
-        PWSTR la = NULL;
-        g_portable[0] = 0;
-        if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, NULL, &la)) && la) {
-            join(g_base, MAX_PATH, la, L"JSRF-PC");
-            CoTaskMemFree(la);
-        } else {
-            const wchar_t *e = _wgetenv(L"LOCALAPPDATA");
-            join(g_base, MAX_PATH, e ? e : g_here, L"JSRF-PC");
-        }
-        SHCreateDirectoryExW(NULL, g_base, NULL);
-        join(g_cfg, MAX_PATH, g_base, L"settings");
-        join(g_save, MAX_PATH, g_base, L"save");
-        join(g_log, MAX_PATH, g_base, L"last-run.log");
-        join(g_logs, MAX_PATH, g_base, L"logs");
     }
 
     for (i = 1; i < argc; i++) {
@@ -784,15 +765,12 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
         DWORD n = GetFullPathNameW(arg, MAX_PATH * 2, game, NULL);
         if (!n || n >= MAX_PATH * 2) return fail(L"That path is too long.");
     } else if (!choose && cfg_get("game_dir", u8, sizeof u8)) {
-        from_utf8(u8, game, MAX_PATH * 2);
         /* Portable: a game folder inside this one is remembered relative to
          * it (below), so the whole folder can move -- to another drive letter,
          * a USB stick -- and still find it. */
-        if (g_portable[0] && game[0] && game[0] != L'\\' && game[0] != L'/' && game[1] != L':') {
-            wchar_t rel[MAX_PATH * 2];
-            wcscpy(rel, game);
-            join(game, MAX_PATH * 2, g_here, rel);
-        }
+        char whole[JS_FILES_PATH];
+        js_files_game(&g_files, u8, whole, sizeof whole);
+        from_utf8(whole, game, MAX_PATH * 2);
         if (!is_game(game)) game[0] = 0;
     }
     if (!game[0] && !pick_folder(game, MAX_PATH * 2))
@@ -824,11 +802,9 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE prev, PWSTR cmdline, int show)
         return 1;
     }
     {
-        size_t lh = wcslen(g_here);
-        const wchar_t *keep = game;
-        if (g_portable[0] && !_wcsnicmp(game, g_here, lh) && game[lh] == L'\\')
-            keep = game + lh + 1;
-        to_utf8(keep, u8, sizeof u8);
+        char whole[JS_FILES_PATH];
+        to_utf8(game, whole, sizeof whole);
+        js_files_keep(&g_files, whole, u8, sizeof u8);
     }
     cfg_set("game_dir", u8);
     if (g_portable[0] && copy_saves(game)) return 1;

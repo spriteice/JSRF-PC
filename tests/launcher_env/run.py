@@ -125,7 +125,8 @@ def build(out):
     stub = out / "stub_ui.c"
     stub.write_text(STUB_UI)
     exe = out / "jsrf-pc"
-    srcs = [root / "launcher/linux/jsrf_launcher.c", root / "launcher/setup/setup_core.c",
+    srcs = [root / "launcher/linux/jsrf_launcher.c", root / "launcher/common/user_files.c",
+            root / "launcher/setup/setup_core.c",
             root / "port/xiso.c", root / "port/xbe_check.c", root / "src/nv2a_gl/nv2a_scale.c", stub]
     objs = []
     for s in srcs:

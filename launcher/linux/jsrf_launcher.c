@@ -52,6 +52,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "../common/user_files.h"
 #include "../setup/setup.h"
 #include "../../src/nv2a_gl/nv2a_scale.h"
 
@@ -85,6 +86,7 @@ static const char HELP[] =
     "the free camera.\n";
 
 static char g_here[PATH_MAX];
+static js_files g_files;            /* where things are kept (launcher/common/user_files.h) */
 static char g_portable[PATH_MAX];   /* "" when not portable */
 static char g_cfg[PATH_MAX + 64], g_data[PATH_MAX + 64], g_save[PATH_MAX + 64];
 static char g_state[PATH_MAX + 64], g_logs[PATH_MAX + 64];
@@ -540,8 +542,7 @@ static void last_game(char *out, size_t n)
     char v[PATH_MAX];
     out[0] = 0;
     if (!cfg_get("game_dir", v, sizeof v) || !v[0]) return;
-    if (g_portable[0] && v[0] != '/') fmt(out, n, "%s/%s", g_here, v);
-    else fmt(out, n, "%s", v);
+    js_files_game(&g_files, v, out, n);
 }
 
 /* ---- the setup ------------------------------------------------------------------ */
@@ -728,44 +729,19 @@ int main(int argc, char **argv)
     engine_env();
 
     /* Looked for first, before anything is read or made: in portable mode
-     * nothing outside this folder is touched but the game's own files. */
-    fmt(p, sizeof p, "%s/portable", g_here);
-    if (js_is_dir(p)) {
-        fmt(g_portable, sizeof g_portable, "%s", p);
-        fmt(g_cfg, sizeof g_cfg, "%s/settings.cfg", g_portable);
-        fmt(g_data, sizeof g_data, "%s/games", g_portable);
-        fmt(g_save, sizeof g_save, "%s/cache", g_portable);
-        fmt(g_state, sizeof g_state, "%s/logs", g_portable);
-        fmt(g_logs, sizeof g_logs, "%s", g_state);
-    } else {
-        const char *h = getenv("HOME"), *x;
-        if (!h) h = "";
-        x = getenv("XDG_CONFIG_HOME");
-        if (x && *x) fmt(g_cfg, sizeof g_cfg, "%s/jsrf-pc/settings", x);
-        else fmt(g_cfg, sizeof g_cfg, "%s/.config/jsrf-pc/settings", h);
-        x = getenv("XDG_DATA_HOME");
-        if (x && *x) fmt(g_data, sizeof g_data, "%s/jsrf-pc", x);
-        else fmt(g_data, sizeof g_data, "%s/.local/share/jsrf-pc", h);
-        fmt(g_save, sizeof g_save, "%s/save", g_data);
-        x = getenv("XDG_STATE_HOME");
-        if (x && *x) fmt(g_state, sizeof g_state, "%s/jsrf-pc", x);
-        else fmt(g_state, sizeof g_state, "%s/.local/state/jsrf-pc", h);
-        fmt(g_logs, sizeof g_logs, "%s/logs", g_state);
-    }
-    fmt(p, sizeof p, "%s", g_cfg);
-    *strrchr(p, '/') = 0;
-    js_mkdirs(p);
-    js_mkdirs(g_save);
-    js_mkdirs(g_logs);
-    if (g_portable[0]) {
-        fmt(p, sizeof p, "%s/saves", g_portable);
-        js_mkdirs(p);
-    }
-    /* A portable folder that cannot be written stops here rather than falling
-     * back to the home folder, which would split the saves between two places. */
-    if (g_portable[0] && access(g_portable, W_OK))
-        failf("The portable folder can't be written to:\n\n%s\n\nMake it writable, or remove it to keep the "
-              "settings, saves and logs in your home folder instead.", g_portable);
+     * nothing outside this folder is touched but the game's own files. A
+     * portable folder that cannot be written stops here rather than falling
+     * back to the home folder, which would split the saves between two
+     * places (launcher/common/user_files.h). */
+    js_files_find(g_here, &g_files);
+    fmt(g_portable, sizeof g_portable, "%s", g_files.root);
+    fmt(g_cfg, sizeof g_cfg, "%s", g_files.settings);
+    fmt(g_data, sizeof g_data, "%s", g_files.games);
+    fmt(g_save, sizeof g_save, "%s", g_files.cache);
+    fmt(g_state, sizeof g_state, "%s", g_files.log);   /* the folder last-run.log is in */
+    *strrchr(g_state, '/') = 0;
+    fmt(g_logs, sizeof g_logs, "%s", g_files.logs);
+    if (js_files_prepare(&g_files, why, sizeof why)) failf("%s", why);
 
     for (i = 1; i < argc; i++) {
         const char *a = argv[i];
@@ -868,9 +844,8 @@ int main(int argc, char **argv)
     status = engine_check("--check-game", game, why, sizeof why);
     if (status == 2 || status == 3) refuse(why);
     {
-        size_t hl = strlen(g_here);
-        const char *keep = game;
-        if (g_portable[0] && !strncmp(game, g_here, hl) && game[hl] == '/') keep = game + hl + 1;
+        char keep[PATH_MAX * 2];
+        js_files_keep(&g_files, game, keep, sizeof keep);
         cfg_set("game_dir", keep);
     }
 
@@ -883,14 +858,12 @@ int main(int argc, char **argv)
             char from[PATH_MAX * 2 + 8], to[PATH_MAX + 80];
             struct stat st;
             fmt(from, sizeof from, "%s/%s", game, dirs[i]);
-            fmt(to, sizeof to, "%s/saves/%s", g_portable, dirs[i]);
+            fmt(to, sizeof to, "%s/%s", g_files.saves, dirs[i]);
             if (!js_is_dir(from) || !lstat(to, &st)) continue;
             if (copy_tree(from, to)) {
-                char saves[PATH_MAX + 16];
                 js_rmtree(to);
-                fmt(saves, sizeof saves, "%s/saves", g_portable);
                 failf("The saves in\n%s\ncould not be copied into\n%s\nso the game was not started. The originals "
-                      "are untouched.", from, saves);
+                      "are untouched.", from, g_files.saves);
             }
         }
     }
@@ -912,10 +885,7 @@ int main(int argc, char **argv)
     setenv("JSRF_SETTINGS_FILE", g_cfg, 1);
     /* Portable: the game's saves go to portable/saves, not the game folder
      * (the engine's path layer, src/kernel/kernel_path.c). */
-    if (g_portable[0]) {
-        fmt(p, sizeof p, "%s/saves", g_portable);
-        setenv("JSRF_USER_DIR", p, 1);
-    }
+    if (g_portable[0]) setenv("JSRF_USER_DIR", g_files.saves, 1);
 
     /* What the engine writes by a relative name (xbox_kernel.log, the icall
      * dumps) goes to the game folder, or to the logs in portable mode. */
