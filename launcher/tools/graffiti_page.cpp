@@ -18,7 +18,7 @@
  *     the folder's order, or one chosen by hand; below
  *     JSRF_GRAFFITI_SLOTS_SAFE, as the saves page keeps them, until a
  *     design past it has been seen in the game.
- *   Writing: only from "Import to save", after the shell's warning, then a
+ *   Writing: only from Import, after the shell's warning, then a
  *     dated backup (jsrf_backup). A design only ever goes into a free slot.
  *
  * A picture keeps its working copy (at most WORK_SIDE pixels a side) only
@@ -26,6 +26,7 @@
  * again when one is changed.
  */
 #include <SDL.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -167,16 +168,23 @@ struct page_state {
     unsigned show_tex;          /* the chosen picture, for its crop box */
     const pic *show_of;
     int show_w, show_h;
-    char note[JSRF_PATH_MAX + 600];
+    char note[JSRF_PATH_MAX + 600];     /* the page's one outcome (say), shown where it happened */
+    int note_at, note_kind;     /* AT_*; TOOLS_OK, TOOLS_WARN or TOOLS_ERROR */
     ImGuiTextBuffer unread;     /* the files that couldn't be read, a line each */
     int nunread;
     ImGuiTextBuffer warning;
+    char warning_id[80];        /* the warning's question, and its id */
     int ran;                    /* the import ran: the folder says how each went */
-    char backup[JSRF_PATH_MAX + 100];   /* where the backup went, after an import */
-    int slot_edit;              /* the slot field's value, 1 based */
-    int slot_shown;             /* the chosen design's slot when the field last took it */
-    char slot_note[200];
+    char backup[JSRF_PATH_MAX]; /* where the backup went, after an import; empty when none was needed */
+    int place_edit[3];          /* the place fields: page, row and column, 1 based */
+    int slot_shown;             /* the chosen design's slot when the fields last took it */
+    float import_h;             /* the Import section's height, last frame */
 };
+
+/* Where an outcome is shown: under the section it came from. */
+#define AT_PICTURES 0
+#define AT_DESIGN   1
+#define AT_IMPORT   2
 static page_state g;   /* zeroed as a static: no picture chosen is set on the first draw */
 static bool g_started;
 
@@ -194,6 +202,28 @@ static const char *base_name(const char *path)
     for (const char *c = path; *c; c++)
         if (*c == '/' || *c == '\\') b = c + 1;
     return b;
+}
+
+/* The page's outcome, one at a time: it replaces the last, and stays until
+ * the next. */
+static void say(int at, int kind, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(g.note, sizeof g.note, fmt, ap);
+    va_end(ap);
+    g.note_at = at;
+    g.note_kind = kind;
+}
+
+static void unsay(int at)
+{
+    if (g.note_at == at) g.note[0] = 0;
+}
+
+static void show_note(int at)
+{
+    if (g.note[0] && g.note_at == at) tools_status(g.note_kind, "%s", g.note);
 }
 
 /* How much of a picture's edge is white: 0 to 1. */
@@ -325,8 +355,8 @@ static void choose(int i)
         old->work = NULL;
     }
     g.selected = i;
-    g.slot_note[0] = 0;
-    g.slot_shown = -2;   /* the field takes the design's slot when it's drawn */
+    unsay(AT_DESIGN);
+    g.slot_shown = -2;   /* the fields take the design's place when it's drawn */
 }
 
 static void remove_pic(int i)
@@ -366,8 +396,8 @@ static void queue(const char *path)
 {
     if (known(path)) return;
     if (g.pics.Size + g.pending.Size >= MAX_PICS) {
-        snprintf(g.note, sizeof g.note, "The folder holds %d pictures at most, as many as the garage has slots.",
-                 MAX_PICS);
+        say(AT_PICTURES, TOOLS_WARN, "There's room for %d designs at most, one for each place in the garage.",
+            MAX_PICS);
         return;
     }
     size_t n = strlen(path) + 1;
@@ -407,7 +437,7 @@ static void queue_folder(const char *dir, int depth)
     walk w;
     snprintf(w.dir, sizeof w.dir, "%s", dir);
     if (js_list_dir(dir, walk_each, &w) < 0) {
-        snprintf(g.note, sizeof g.note, "%s couldn't be read.", dir);
+        say(AT_PICTURES, TOOLS_ERROR, "The folder %s couldn't be read.", base_name(dir));
         return;
     }
     if (w.names.Size) qsort(w.names.Data, (size_t)w.names.Size, sizeof w.names[0], by_name);
@@ -525,23 +555,19 @@ static int free_slots(void)
     return n;
 }
 
-/* A slot in a sentence: "slot 12 (page 1, row 2, column 5)". */
-static void slot_words(int slot, char *out, size_t n)
+/* A slot as the player sees it, the garage's page, row and column from 1:
+ * "page 1, row 2, column 5", or with a capital for a line of its own. */
+static void place_words(int slot, int capital, char *out, size_t n)
 {
     int page, row, column;
     graffiti_slot_place((unsigned)slot, &page, &row, &column);
-    snprintf(out, n, "slot %d (page %d, row %d, column %d)", slot + 1, page + 1, row + 1, column + 1);
+    snprintf(out, n, "%cage %d, row %d, column %d", capital ? 'P' : 'p', page + 1, row + 1, column + 1);
 }
 
-static void slot_text(const pic *p, char *out, size_t n)
+static void place_text(const pic *p, char *out, size_t n)
 {
-    int page, row, column;
-    if (p->slot < 0) {
-        snprintf(out, n, "No free slot");
-        return;
-    }
-    graffiti_slot_place((unsigned)p->slot, &page, &row, &column);
-    snprintf(out, n, "Slot %d: page %d, row %d, column %d", p->slot + 1, page + 1, row + 1, column + 1);
+    if (p->slot < 0) snprintf(out, n, "No free place");
+    else place_words(p->slot, 1, out, n);
 }
 
 /* ---- import ------------------------------------------------------------------------------- */
@@ -556,8 +582,10 @@ static int to_write(void)
 static void warning_text(tools_ctx *t)
 {
     int n = to_write(), idx[MAX_PICS], m = order(idx), shown = 0;
+    snprintf(g.warning_id, sizeof g.warning_id, "Import %d design%s?###graffiti-import", n, n == 1 ? "" : "s");
     g.warning.clear();
-    g.warning.appendf("%d design%s will be written into\n%s\n\n", n, n == 1 ? "" : "s", t->title);
+    g.warning.appendf("%s go%s into JSRF-PC's saves, each in the garage's own designs:\n\n", n == 1 ? "It" : "They",
+                      n == 1 ? "es" : "");
     for (int k = 0; k < m; k++) {
         const pic *p = g.pics[idx[k]];
         char where[100];
@@ -566,11 +594,11 @@ static void warning_text(tools_ctx *t)
             g.warning.appendf("  and %d more\n", n - 12);
             break;
         }
-        slot_text(p, where, sizeof where);
+        place_words(p->slot, 0, where, sizeof where);
         g.warning.appendf("  %s, %s: %s\n", p->name, graffiti_size_name(p->size), where);
     }
-    g.warning.appendf("\nEach goes into a free slot, so none replaces a design. First, every save there is "
-                      "copied into a dated backup in\n%s\n\nClose JSRF-PC before going on.", t->backups);
+    g.warning.appendf("\nEach goes into a free place, so none replaces a design. First, every save is copied into "
+                      "a dated backup in the %s folder.\n\nClose JSRF-PC before going on.", base_name(t->backups));
 }
 
 static void import(tools_ctx *t)
@@ -584,11 +612,11 @@ static void import(tools_ctx *t)
     g.backup[0] = 0;
     int r = jsrf_backup(t->title, t->backups, made, sizeof made, why, sizeof why);
     if (r == JSRF_FAILED) {
-        snprintf(g.note, sizeof g.note, "Nothing was written: the backup couldn't be made. %s", why);
+        g.ran = 0;
+        say(AT_IMPORT, TOOLS_ERROR, "Nothing was written, because the backup couldn't be made. %s", why);
         return;
     }
-    if (r == JSRF_WROTE) snprintf(g.backup, sizeof g.backup, "The saves that were there are backed up in %s", made);
-    else snprintf(g.backup, sizeof g.backup, "There were no saves there yet, so nothing needed backing up.");
+    if (r == JSRF_WROTE) snprintf(g.backup, sizeof g.backup, "%s", made);
     look_at_slots(t, 1);
     give_slots();
     /* The icons the game's own designs carry, when its files are a folder. */
@@ -601,12 +629,12 @@ static void import(tools_ctx *t)
         if (p->state == PIC_WROTE) continue;
         if (p->slot < 0) {
             p->state = PIC_FAILED;
-            snprintf(p->why, sizeof p->why, "Not written: there was no free slot for it.");
+            snprintf(p->why, sizeof p->why, "Not written: there was no free place for it.");
             failed++;
             continue;
         }
         if (p->dirty || !p->design) refit(p);
-        slot_words(p->slot, where, sizeof where);
+        place_words(p->slot, 0, where, sizeof where);
         if (!p->design ||
             graffiti_save_make(&s, p->design, p->size, (unsigned)p->slot, icon[p->size], icon_n[p->size],
                                jsrf_signature_key) != 0) {
@@ -624,7 +652,7 @@ static void import(tools_ctx *t)
             wrote++;
         } else {
             p->state = PIC_FAILED;
-            if (r == JSRF_EXISTS) snprintf(p->why, sizeof p->why, "Not written: %s has a design now.", where);
+            if (r == JSRF_EXISTS) snprintf(p->why, sizeof p->why, "Not written: %s holds a design now.", where);
             else snprintf(p->why, sizeof p->why, "Not written: %s", why);
             failed++;
         }
@@ -632,11 +660,13 @@ static void import(tools_ctx *t)
     for (int s = 0; s < GRAFFITI_SIZES; s++) free(icon[s]);
     look_at_slots(t, 1);
     if (!failed)
-        snprintf(g.note, sizeof g.note, "Imported %d design%s. They're in the garage, under your own designs.",
-                 wrote, wrote == 1 ? "" : "s");
+        say(AT_IMPORT, TOOLS_OK, "Imported %d design%s. %s in the garage, under your own designs.", wrote,
+            wrote == 1 ? "" : "s", wrote == 1 ? "It's" : "They're");
+    else if (wrote)
+        say(AT_IMPORT, TOOLS_WARN, "Imported %d design%s. %d %s written; choose %s to see why.", wrote,
+            wrote == 1 ? "" : "s", failed, failed == 1 ? "wasn't" : "weren't", failed == 1 ? "it" : "one");
     else
-        snprintf(g.note, sizeof g.note, "Imported %d design%s; %d weren't written, and say why.", wrote,
-                 wrote == 1 ? "" : "s", failed);
+        say(AT_IMPORT, TOOLS_ERROR, "Nothing was imported; choose a design to see why.");
 }
 
 /* ---- drawing ------------------------------------------------------------------------------ */
@@ -693,18 +723,6 @@ static void text_fit(const char *text, float width)
     ImGui::TextUnformatted(buf);
 }
 
-/* Where a slot is, short, for under a design. */
-static void place_text(const pic *p, char *out, size_t n)
-{
-    int page, row, column;
-    if (p->slot < 0) {
-        snprintf(out, n, "No free slot");
-        return;
-    }
-    graffiti_slot_place((unsigned)p->slot, &page, &row, &column);
-    snprintf(out, n, "Page %d, row %d, col %d", page + 1, row + 1, column + 1);
-}
-
 static const char *const MODE_NAMES[] = { "Whole, clear margins", "Cropped", "Stretched" };
 
 /* The folder of designs, grouped by size. */
@@ -728,7 +746,8 @@ static void draw_folder(float em)
             tw = room > em * 4 ? room : em * 4;
             th = tw / aspect;
         }
-        float cell = tw > em * 11.5f ? tw : em * 11.5f;   /* room for the words under a small one */
+        float words = ImGui::CalcTextSize("Page 10, row 4, column 7").x;
+        float cell = tw > words ? tw : words;   /* room for the words under a small one */
         bool first = true;
         for (int i = 0; i < g.pics.Size; i++) {
             pic *p = g.pics[i];
@@ -757,7 +776,7 @@ static void draw_folder(float em)
             }
             ImGui::PopStyleColor();
             ImGui::EndGroup();
-            slot_text(p, where, sizeof where);
+            place_text(p, where, sizeof where);
             ImGui::SetItemTooltip("%s\n%s, %s\n%s%s%s", p->path, graffiti_size_name(p->size), MODE_NAMES[p->mode], where,
                                   p->why[0] ? "\n" : "", p->why);
         }
@@ -872,7 +891,7 @@ static void draw_details(float width, float em)
     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
     ImGui::Text("%s, %d x %d", graffiti_image_kind_name(p->kind), p->src_w, p->src_h);
     ImGui::PopStyleColor();
-    if (p->why[0] && p->state != PIC_WROTE) ImGui::TextWrapped("%s", p->why);
+    if (p->why[0]) ImGui::TextWrapped("%s", p->why);
     ImGui::PopTextWrapPos();
     ImGui::BeginDisabled(p->state == PIC_WROTE);
 
@@ -934,21 +953,44 @@ static void draw_details(float width, float em)
         ImGui::Unindent();
     }
 
-    slot_text(p, where, sizeof where);
-    ImGui::TextUnformatted(where);
-    if (p->slot != g.slot_shown) {   /* the slot moved (another design's size changed, say) */
-        g.slot_edit = p->slot + 1;
+    /* Its place in the garage: the first free one, or one given by hand. */
+    place_text(p, where, sizeof where);
+    ImGui::Text("In the garage: %s", where);
+    tools_help_marker(p->slot_hand ? "Given by hand. Reset puts it back in the first free place."
+                                   : "The first free place, in the designs' order. Give it another below.");
+    if (p->slot != g.slot_shown) {   /* the place moved (another design's size changed, say) */
+        int page = 0, row = 0, column = 0;
+        if (p->slot >= 0) graffiti_slot_place((unsigned)p->slot, &page, &row, &column);
+        g.place_edit[0] = page + 1;
+        g.place_edit[1] = row + 1;
+        g.place_edit[2] = column + 1;
         g.slot_shown = p->slot;
     }
-    ImGui::SetNextItemWidth(em * 7);
-    ImGui::InputInt("##slot", &g.slot_edit, 1, 7);
-    if (tools_flow_button("Use this slot", false)) {
-        int s = g.slot_edit - 1;
-        g.slot_note[0] = 0;
-        if (s < 0 || s >= SLOTS_USED) {
-            snprintf(g.slot_note, sizeof g.slot_note, "Slots 1 to %d are used for now.", SLOTS_USED);
+    static const char *const PLACE_NAMES[3] = { "Page", "Row", "Column" };
+    static const int PLACE_MOST[3] = { GRAFFITI_SLOTS / 28, 4, 7 };
+    for (int k = 0; k < 3; k++) {
+        char id[16];
+        snprintf(id, sizeof id, "##place%d", k);
+        if (k) ImGui::SameLine(0, em);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(PLACE_NAMES[k]);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(em * 6);
+        if (ImGui::InputInt(id, &g.place_edit[k], 1, 1)) {
+            if (g.place_edit[k] < 1) g.place_edit[k] = 1;
+            if (g.place_edit[k] > PLACE_MOST[k]) g.place_edit[k] = PLACE_MOST[k];
+        }
+    }
+    if (tools_flow_button("Move", true)) {
+        int s = ((g.place_edit[0] - 1) * 4 + g.place_edit[1] - 1) * 7 + g.place_edit[2] - 1;
+        char asked[100];
+        place_words(s, 1, asked, sizeof asked);
+        unsay(AT_DESIGN);
+        if (s >= SLOTS_USED) {
+            place_words(SLOTS_USED - 1, 0, where, sizeof where);
+            say(AT_DESIGN, TOOLS_WARN, "Only the places up to %s are used for now.", where);
         } else if (g.taken[s]) {
-            snprintf(g.slot_note, sizeof g.slot_note, "Slot %d has a design already.", s + 1);
+            say(AT_DESIGN, TOOLS_WARN, "%s holds a design already.", asked);
         } else {
             for (int i = 0; i < g.pics.Size; i++)
                 if (g.pics[i] != p && g.pics[i]->state != PIC_WROTE && g.pics[i]->slot == s) g.pics[i]->slot_hand = 0;
@@ -956,16 +998,17 @@ static void draw_details(float width, float em)
             p->slot_hand = 1;
         }
     }
-    if (p->slot_hand) {
-        if (tools_flow_button("First free", false)) {
-            p->slot_hand = 0;
-            g.slot_note[0] = 0;
-        }
+    ImGui::BeginDisabled(!p->slot_hand);
+    if (tools_flow_button("Reset", false)) {
+        p->slot_hand = 0;
+        unsay(AT_DESIGN);
     }
-    if (g.slot_note[0]) ImGui::TextWrapped("%s", g.slot_note);
+    ImGui::EndDisabled();
+    show_note(AT_DESIGN);
     ImGui::EndDisabled();
     ImGui::Dummy(ImVec2(0, em * 0.25f));
-    if (ImGui::Button("Take it out of the folder")) remove_pic(g.selected);
+    if (ImGui::Button("Remove")) remove_pic(g.selected);
+    ImGui::SetItemTooltip("Take this design out of the list. Its picture file stays as it is.");
 }
 
 static void draw(tools_ctx *t)
@@ -984,94 +1027,122 @@ static void draw(tools_ctx *t)
         if (g.pics[i]->dirty) refit(g.pics[i]);
     give_slots();
 
-    /* Said while the folder is empty; after, the room goes to the designs. */
-    if (!g.pics.Size && !g.pending.Size)
-        ImGui::TextWrapped("Make your own pictures into graffiti, in the garage's own designs. Drop pictures, or a "
-                           "folder of them, on the window (JPEG, PNG, WebP, AVIF, SVG or TIFF), or:");
+    /* Pictures: adding them. */
+    tools_heading("Pictures");
+    tools_hint("Drop pictures or folders of them on this window, or add them here.");
+    tools_help_marker("JPEG, PNG, WebP, AVIF, SVG and TIFF are read, each by what it holds, not by its name. A folder "
+                      "is looked through up to four folders deep. An SVG draws its shapes, paths and gradients, but "
+                      "not text, reused symbols or style sheets.");
+    ImGui::Dummy(ImVec2(0, em * 0.25f));
     if (tools_flow_button("Add pictures...", true)) {
         static const char *const pats[] = { "*.jpg", "*.jpeg", "*.jpe", "*.jfif", "*.png", "*.webp", "*.avif",
                                             "*.svg", "*.tif", "*.tiff", NULL };
+        unsay(AT_PICTURES);
         int r = jsrf_pick_files("Pick pictures to make into graffiti", "Pictures", pats, 1, add_picked, NULL);
         if (r == JSRF_NO_DIALOG)
-            snprintf(g.note, sizeof g.note, "There's no file dialog here (zenity or kdialog): drop the pictures "
-                                            "on this window instead.");
+            say(AT_PICTURES, TOOLS_WARN, "There's no file dialog here (zenity or kdialog). Drop the pictures on this "
+                                         "window instead.");
     }
-    if (tools_flow_button("Add a folder...", false)) {
+    if (tools_flow_button("Add folder...", false)) {
         char picked[JSRF_PATH_MAX] = "";
+        unsay(AT_PICTURES);
         int r = jsrf_pick_folder("Pick a folder of pictures to make into graffiti", picked, sizeof picked);
         if (r == JSRF_PICKED) add_path(picked);
         if (r == JSRF_NO_DIALOG)
-            snprintf(g.note, sizeof g.note, "There's no folder dialog here: drop the folder on this window.");
+            say(AT_PICTURES, TOOLS_WARN, "There's no folder dialog here (zenity or kdialog). Drop the folder on this "
+                                         "window instead.");
     }
-    if (g.pics.Size || g.pending.Size) {
-        if (tools_flow_button("Empty the folder", false)) clear_all();
-    }
-    ImGui::Checkbox("Make white backgrounds clear, for pictures added", &g.white_default);
+    ImGui::BeginDisabled(!g.pics.Size && !g.pending.Size);
+    if (tools_flow_button("Remove all", false)) clear_all();
+    ImGui::EndDisabled();
+    ImGui::Checkbox("Make white backgrounds clear", &g.white_default);
+    ImGui::SetItemTooltip("For pictures added from now on with no clear pixels and a mostly white edge: the white "
+                          "joined to the edge becomes clear. Each design can change it.");
     if (g.pending.Size) {
         int done = g.pending_total - g.pending.Size;
-        ImGui::Text("Reading %d of %d: %s", done + 1, g.pending_total, base_name(g.pending[0]));
+        ImGui::TextDisabled("Reading %d of %d: %s", done + 1, g.pending_total, base_name(g.pending[0]));
     }
-    if (g.note[0]) ImGui::TextWrapped("%s", g.note);
+    show_note(AT_PICTURES);
     if (g.nunread) {
         char head[80];
         snprintf(head, sizeof head, "%d file%s couldn't be read###unread", g.nunread, g.nunread == 1 ? "" : "s");
         if (ImGui::TreeNode(head)) {
             ImGui::TextWrapped("%s", g.unread.c_str());
-            if (ImGui::SmallButton("Clear this list")) {
+            if (ImGui::SmallButton("Clear")) {
                 g.unread.clear();
                 g.nunread = 0;
             }
             ImGui::TreePop();
         }
     }
-    if (!g.pics.Size) return;
 
-    ImGui::Separator();
-    /* The folder, and beside it the chosen picture; in a narrow window, one
-     * or the other. The button row below. */
-    float below = ImGui::GetFrameHeightWithSpacing() + (g.ran && g.backup[0] ? em * 2.5f : 0);
-    ImVec2 room = ImGui::GetContentRegionAvail();
-    float h = room.y - below;
-    if (h < em * 6) h = em * 6;
-    bool side = room.x >= em * 44, chosen = g.selected >= 0 && g.selected < g.pics.Size;
-    float detail_w = room.x * 0.4f > em * 20 ? room.x * 0.4f : em * 20;
-    if (side || !chosen) {
-        ImGui::BeginChild("folder", ImVec2(side && chosen ? room.x - detail_w - ImGui::GetStyle().ItemSpacing.x : room.x, h),
-                          ImGuiChildFlags_Borders);
-        draw_folder(em);
-        ImGui::EndChild();
-    }
-    if (chosen) {
-        if (side) ImGui::SameLine();
-        ImGui::BeginChild("details", ImVec2(side ? detail_w : room.x, h), ImGuiChildFlags_Borders);
-        bool back = !side && ImGui::Button("Back to the folder");
-        if (back) choose(-1);
-        else draw_details(ImGui::GetContentRegionAvail().x, em);
-        ImGui::EndChild();
-    }
-
-    int n = to_write(), wait = 0;
-    for (int i = 0; i < g.pics.Size; i++) wait += g.pics[i]->state != PIC_WROTE && g.pics[i]->slot < 0;
-    if (g.ran) {
-        if (g.backup[0]) ImGui::TextWrapped("%s", g.backup);
-        if (ImGui::Button("Done")) {
-            for (int i = g.pics.Size - 1; i >= 0; i--)
-                if (g.pics[i]->state == PIC_WROTE) remove_pic(i);
-            g.ran = 0;
-            g.note[0] = 0;
+    /* Designs: the folder of them, and beside it the chosen one; in a narrow
+     * window, one or the other. They take the room the Import section left
+     * last frame. */
+    tools_heading("Designs");
+    if (!g.pics.Size) {
+        ImGui::TextDisabled(g.pending.Size ? "Reading the pictures." : "No designs yet. Add pictures to make some.");
+    } else {
+        tools_hint("Choose a design to change its size, its fit or its place in the garage.");
+        ImVec2 room = ImGui::GetContentRegionAvail();
+        float h = room.y - g.import_h;
+        if (h < em * 6) h = em * 6;
+        bool side = room.x >= em * 44, chosen = g.selected >= 0 && g.selected < g.pics.Size;
+        float detail_w = room.x * 0.4f > em * 20 ? room.x * 0.4f : em * 20;
+        if (side || !chosen) {
+            ImGui::BeginChild("folder",
+                              ImVec2(side && chosen ? room.x - detail_w - ImGui::GetStyle().ItemSpacing.x : room.x, h),
+                              ImGuiChildFlags_Borders);
+            draw_folder(em);
+            ImGui::EndChild();
         }
-        ImGui::SameLine();
+        if (chosen) {
+            if (side) ImGui::SameLine();
+            ImGui::BeginChild("details", ImVec2(side ? detail_w : room.x, h), ImGuiChildFlags_Borders);
+            bool back = !side && ImGui::Button("Back");
+            if (back) choose(-1);
+            else draw_details(ImGui::GetContentRegionAvail().x, em);
+            ImGui::EndChild();
+        }
+    }
+
+    /* Import: the only thing that writes, after the warning and a backup. */
+    float import_y = ImGui::GetCursorPosY();
+    tools_heading("Import");
+    tools_hint("Adds the designs to JSRF-PC's saves, after a backup.");
+    tools_help_marker("Each design is saved as the game saves one, in a save of its own, and never over a design. "
+                      "The garage's first 228 places are used (pages 1 to 8, and page 9's first four) until a "
+                      "design past them has been checked in the game. Each size's icon is copied from your own "
+                      "game files when they are a folder; with a disc image, the saves have none.");
+    ImGui::Dummy(ImVec2(0, em * 0.25f));
+    int n = to_write(), wait = 0, wrote = 0;
+    for (int i = 0; i < g.pics.Size; i++) {
+        wait += g.pics[i]->state != PIC_WROTE && g.pics[i]->slot < 0;
+        wrote += g.pics[i]->state == PIC_WROTE;
     }
     ImGui::BeginDisabled(!n || g.pending.Size > 0);
-    if (ImGui::Button("Import to save")) {
+    if (tools_flow_button("Import", true)) {
+        unsay(AT_IMPORT);
         warning_text(t);
-        ImGui::OpenPopup("Before anything is written");
+        ImGui::OpenPopup(g.warning_id);
     }
     ImGui::EndDisabled();
-    ImGui::SameLine();
-    ImGui::TextDisabled("%d to import; %d free slot%s of %d%s", n, free_slots(), free_slots() == 1 ? "" : "s",
-                        SLOTS_USED, wait ? "; the rest wait for a free slot" : "");
-    if (tools_warning("Before anything is written", g.warning.c_str(), "Back up, then import")) import(t);
+    ImGui::BeginDisabled(!wrote);
+    if (tools_flow_button("Clear imported", false)) {
+        for (int i = g.pics.Size - 1; i >= 0; i--)
+            if (g.pics[i]->state == PIC_WROTE) remove_pic(i);
+        g.ran = 0;
+        g.backup[0] = 0;
+        unsay(AT_IMPORT);
+    }
+    ImGui::EndDisabled();
+    ImGui::TextDisabled("%d to import. The garage has %d free place%s of %d.%s", n, free_slots(),
+                        free_slots() == 1 ? "" : "s", SLOTS_USED, wait ? " The rest wait for one." : "");
+    show_note(AT_IMPORT);
+    if (g.ran && g.backup[0]) tools_path("Backup:", g.backup);
+    else if (g.ran) ImGui::TextDisabled("There were no saves yet, so nothing needed a backup.");
+    if (g.warning_id[0] && tools_warning(g.warning_id, g.warning.c_str(), "Import")) import(t);
+    g.import_h = ImGui::GetCursorPosY() - import_y;
 }
 
 static void dropped(tools_ctx *t, const char *path)

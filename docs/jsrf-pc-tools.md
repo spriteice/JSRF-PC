@@ -68,37 +68,49 @@ them.
 
 Makes your own pictures into graffiti designs. The game lists them on the
 garage's own-designs tab, as if you had painted them in its editor: you can
-pick them, spray them and change them in the editor.
+pick them, spray them and change them in the editor. The page has three
+sections.
 
-- **Add pictures... and Add a folder...:** JPEG, PNG, WebP, AVIF, SVG and
+**Pictures**
+
+- **Add pictures... and Add folder...:** JPEG, PNG, WebP, AVIF, SVG and
   TIFF, picked several at a time, or dropped on the window. A folder is
   looked through for them, four folders deep, and anything else is left out.
   An SVG is drawn as far as its shapes, paths and gradients go: text, reused
-  symbols and style sheets aren't drawn.
-- **The folder:** each picture as the design the game will have, grouped by
-  size, with the slot it will take: its page, row and column on the
-  own-designs tab. Pick one to change it.
+  symbols and style sheets aren't drawn. Remove all empties the list.
+- **Make white backgrounds clear:** the game draws a pixel solid or clear,
+  so one half clear or more is clear. While this is ticked, as it starts, a
+  solid picture with a mostly white edge comes in with the white joined to
+  its edge made clear.
+
+**Designs**
+
+Each picture as the design the game will have, grouped by size, with its
+place: its page, row and column on the own-designs tab. Choose one to change
+it.
+
 - **Size:** Auto gives a picture the size nearest its shape: S for a square
   or tall one, M for 3:2, L for 2:1 and XL for 4:1. Any size can be picked
   by hand, SS among them.
 - **Fit:** the whole picture with clear margins, as it starts; a crop box,
   dragged, and sized with the mouse wheel or its slider; or stretched.
-- **Clear:** the game draws a pixel solid or clear, so one half clear or
-  more is clear. While Make white backgrounds clear is ticked, as it starts,
-  a solid picture with a mostly white edge comes in with the white joined to
-  its edge made clear. Untick it on that design to keep the white, or tick
-  White inside it too for all of it.
-- **Slot:** the first free ones, in the folder's order, or one given by
-  hand. A design never goes into a slot that holds one. The page uses the
-  first 228 of the game's 280 slots, 8 pages and four of the 9th, until a
-  design past them has been checked in the game.
-- **Import to save:** The warning lists each design with its slot. Each is
-  written as a new save, `GRAFFITI001` to `GRAFFITI228`, signed as JSRF-PC
-  signs saves, with the size's icon from the game's own files when JSRF-PC
-  was given them as a folder; from a disc image, the saves go without one.
+- **Make the white background clear:** untick it to keep a design's white,
+  or tick White inside it too for all of it.
+- **In the garage:** the first free place, in the list's order, or a page,
+  row and column given by hand with Move; Reset gives it the first free one
+  again. A design never goes into a place that holds one. The page uses the
+  garage's first 228 places of 280, pages 1 to 8 and the first four of page
+  9, until a design past them has been checked in the game.
+- **Remove:** takes the design out of the list. Its picture file stays.
 
-The backup is of every save there, in `Save backups` beside JSRF-PC's
-saves, before anything is written.
+**Import**
+
+Import asks first, listing each design with its place. Then every save
+there is backed up, in `Save backups` beside JSRF-PC's saves, and each
+design is written as a new save, `GRAFFITI001` to `GRAFFITI228`, signed as
+JSRF-PC signs saves, with the size's icon from the game's own files when
+JSRF-PC was given them as a folder; from a disc image, the saves go without
+one. Clear imported takes the imported designs out of the list.
 
 ## Missions
 
