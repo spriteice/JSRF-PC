@@ -15,10 +15,11 @@ The releases up to and including b1.4 were published under the MIT licence,
 and stay under it.
 
 The code listed below keeps its own licence, with its copyright intact: the
-code JSRF-PC is built on, under MIT, and third-party code, under MIT and
-LGPL-2.1-or-later; and so do the button prompts' pictures, under CC0,
-their packs' dedication. The app icon's letters are set in a free font, also
-credited below. It is other people's work and is credited as such.
+code JSRF-PC is built on, under MIT, and third-party code, under MIT, BSD,
+zlib, LibTIFF's and LGPL-2.1-or-later; and so do the button prompts'
+pictures, under CC0, their packs' dedication. The app icon's letters are set
+in a free font, also credited below. It is other people's work and is
+credited as such.
 
 
 Additional permission for the generated code
@@ -120,9 +121,59 @@ MIT — miniz
 
   The launchers' setup (launcher/setup) unpacks the tools' Python, a
   .tar.gz, with it, and the engine decodes the button prompts' pictures
-  with it (src/input/prompt_art.c). Licensed under the MIT licence; the full text is in
-  third_party/miniz/LICENSE, and the packages carry it as
-  licences/miniz-MIT.txt.
+  with it (src/input/prompt_art.c), and JSRF-PC Tools reads deflated TIFF
+  pictures with it (launcher/tools/libconfig/tiff/zlib.h). Licensed under
+  the MIT licence; the full text is in third_party/miniz/LICENSE, and the
+  packages carry it as licences/miniz-MIT.txt.
+
+
+The picture libraries of JSRF-PC Tools' graffiti page
+------------------------------------------------------
+
+  JSRF-PC Tools reads a player's pictures with these, to make graffiti
+  designs of them (launcher/tools/graffiti_image.c). Each is in
+  third_party, unmodified, with its licence and a README.md that says
+  which version and which of its files are taken.
+
+    third_party/stb/      stb_image.h v2.34 and stb_dxt.h v1.13
+                          https://github.com/nothings/stb
+                          (c) 2017 Sean Barrett; public domain or the
+                          MIT licence, taken under MIT (LICENSE)
+
+    third_party/nanosvg/  NanoSVG, commit 239e102
+                          https://github.com/memononen/nanosvg
+                          (c) 2013-14 Mikko Mononen; the zlib licence
+                          (LICENSE.txt)
+
+    third_party/libwebp/  libwebp v1.6.0, its decoder
+                          https://chromium.googlesource.com/webm/libwebp
+                          (c) 2010 Google Inc.; a BSD licence (COPYING),
+                          with Google's patent grant (PATENTS)
+
+    third_party/libtiff/  LibTIFF v4.7.2
+                          https://gitlab.com/libtiff/libtiff
+                          (c) 1988-1997 Sam Leffler; 1991-1997 Silicon
+                          Graphics, Inc.; the LibTIFF licence (LICENSE.md)
+                          Its LZW codec (tif_lzw.c) is derived from
+                          software developed by the University of
+                          California, Berkeley, (c) 1985, 1986 The Regents
+                          of the University of California, under the
+                          licence in the same file.
+
+    third_party/libavif/  libavif v1.4.2, its reader
+                          https://github.com/AOMediaCodec/libavif
+                          (c) 2019 Joe Drago; src/obu.c (c) 2018-2019
+                          VideoLAN and dav1d authors; a BSD licence
+                          (LICENSE)
+
+    third_party/dav1d/    dav1d 1.5.4, the AV1 decoder libavif reads with
+                          https://code.videolan.org/videolan/dav1d
+                          (c) 2018-2025 VideoLAN and dav1d authors; a BSD
+                          licence (COPYING)
+
+  All of them fit the GPL that covers the rest of JSRF-PC. What they ask is
+  that their notices stay with the source, and go with a program built
+  from it.
 
 
 The tools the player's PC builds the engine with
