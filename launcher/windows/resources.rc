@@ -1,5 +1,7 @@
-/* Icon, manifest and version information for the launcher and the engine.
- * Built twice: -DJSRF_ENGINE for engine\jsrf_recomp.exe. jsrf_version.h is
+/* Icon, manifest and version information for the launcher, the engine and
+ * JSRF-PC Tools. Built three times: -DJSRF_ENGINE for engine\jsrf_recomp.exe,
+ * -DJSRF_TOOLS for JSRF-PC-Tools.exe (launcher/tools/build_tools.sh), and
+ * with neither for the launcher. jsrf_version.h is
  * written by the build (JSRF_VER_NUM, four comma-separated numbers, and
  * JSRF_VER_STR): a string passed with -D does not survive the resource
  * compiler's command line. */
@@ -12,6 +14,10 @@
 1 24 "engine.manifest"
 #define JSRF_DESC "JSRF-PC engine"
 #define JSRF_FILE "jsrf_recomp.exe"
+#elif defined(JSRF_TOOLS)
+1 24 "tools.manifest"
+#define JSRF_DESC "JSRF-PC Tools"
+#define JSRF_FILE "JSRF-PC-Tools.exe"
 #else
 1 24 "launcher.manifest"
 #define JSRF_DESC "JSRF-PC"

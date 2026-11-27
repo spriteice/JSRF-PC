@@ -1,9 +1,11 @@
 #!/bin/bash
 #
 # The player packages without the engine (b2 row 4b), and the tools archives:
-# the launcher with the setup inside (launcher/setup), the kit
-# (launcher/kit/make_kit.sh), and what the engine runs with, but no engine:
-# the player's PC builds it at the first start, from their own game.
+# the launcher with the setup inside (launcher/setup), JSRF-PC Tools beside it
+# (launcher/tools), the kit (launcher/kit/make_kit.sh), and what the engine
+# runs with, but no engine: the player's PC builds it at the first start, from
+# their own game. (The tools archives are the setup's build tools, not JSRF-PC
+# Tools.)
 #
 #   launcher/firststart/package.sh linux   <work dir> <version> <kit dir> <tools dir> <out dir>
 #   launcher/firststart/package.sh windows <work dir> <version> <kit dir> <tools dir> <out dir>
@@ -58,6 +60,8 @@ linux)
     mkdir -p "$dir/bin" "$dir/lib" "$dir/share" "$dir/licences"
     CC=clang CXX=clang++ "$repo/launcher/build_launcher.sh" linux "$dir/jsrf-pc" "$work/lobj" \
         "$sdl/lib/libSDL2-2.0.so.0" "$sdl/include/SDL2"
+    CC=clang CXX=clang++ "$repo/launcher/tools/build_tools.sh" linux "$dir/jsrf-pc-tools" "$work/ltobj" \
+        "$sdl/lib/libSDL2-2.0.so.0" "$sdl/include/SDL2"
     python3 "$here/readme.py" linux "$repo/launcher/linux/README.txt" > "$dir/README.txt"
     install -m 644 "$sdl/lib/libSDL2-2.0.so.0" "$dir/lib/libSDL2-2.0.so.0"
     strip --strip-unneeded "$dir/lib/libSDL2-2.0.so.0" 2>/dev/null || true
@@ -67,7 +71,8 @@ linux)
     [ -f "$work/SDL2-2.30.12.tar.gz" ] && tar -xzOf "$work/SDL2-2.30.12.tar.gz" SDL2-2.30.12/LICENSE.txt > "$dir/licences/SDL2-LICENSE.txt"
     kit_in "$dir/kit"
     echo "launcher needs:"; objdump -p "$dir/jsrf-pc" | sed -n 's/^ *NEEDED */  /p'
-    echo "newest glibc symbol: $(objdump -T "$dir/jsrf-pc" | grep -o 'GLIBC_[0-9.]*' | sort -t. -k2,2n -k3,3n | uniq | tail -n 1)"
+    echo "tools need:"; objdump -p "$dir/jsrf-pc-tools" | sed -n 's/^ *NEEDED */  /p'
+    echo "newest glibc symbol: $(objdump -T "$dir/jsrf-pc" "$dir/jsrf-pc-tools" | grep -o 'GLIBC_[0-9.]*' | sort -t. -k2,2n -k3,3n | uniq | tail -n 1)"
     tar -C "$stage" -czf "$out/$name.tar.gz" "$name"
     echo "packaged: $out/$name.tar.gz ($(du -h "$out/$name.tar.gz" | cut -f1))"
 
@@ -92,6 +97,7 @@ windows)
     tc="$work/llvm-mingw"
     mkdir -p "$dir/engine" "$dir/licences"
     "$repo/launcher/build_launcher.sh" windows "$dir/JSRF-PC.exe" "$work/wobj" "$tc" "$work/deps" "$version"
+    "$repo/launcher/tools/build_tools.sh" windows "$dir/JSRF-PC-Tools.exe" "$work/wtobj" "$tc" "$work/deps" "$version"
     install -m 644 "$work/deps/bin/SDL2.dll" "$work/deps/bin/libepoxy-0.dll" "$dir/engine/"
     install -m 644 "$tc/x86_64-w64-mingw32/bin/libwinpthread-1.dll" "$dir/engine/"
     "$tc/bin/llvm-strip" --strip-debug "$dir/engine/libepoxy-0.dll" "$dir/engine/libwinpthread-1.dll"
@@ -106,6 +112,7 @@ windows)
     done
     kit_in "$dir/kit"
     echo "launcher needs:"; "$tc/bin/llvm-objdump" -p "$dir/JSRF-PC.exe" | sed -n 's/^ *DLL Name: */  /p' | grep -v '^  api-ms-win-crt' | tr '\n' ' '; echo
+    echo "tools need:"; "$tc/bin/llvm-objdump" -p "$dir/JSRF-PC-Tools.exe" | sed -n 's/^ *DLL Name: */  /p' | grep -v '^  api-ms-win-crt' | tr '\n' ' '; echo
     python3 - "$stage" "$name" "$out/$name.zip" <<'PY'
 import os, sys, zipfile
 stage, name, dest = sys.argv[1:4]

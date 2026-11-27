@@ -1,7 +1,8 @@
 #!/bin/bash
 #
 # Package the Windows build: "JSRF-PC.exe" (the launcher, built here
-# with the same MinGW toolchain) beside engine\jsrf_recomp.exe and the DLLs
+# with the same MinGW toolchain) and "JSRF-PC-Tools.exe" (JSRF-PC Tools,
+# launcher/tools/build_tools.sh) beside engine\jsrf_recomp.exe and the DLLs
 # it needs, zipped.
 #
 #   launcher/windows/package.sh <jsrf_recomp.exe> <llvm-mingw dir> <deps dir> <version> [out dir]
@@ -33,8 +34,9 @@ trap 'rm -rf "$stage"' EXIT
 mkdir -p "$dir/engine" "$dir/licences"
 
 # The launcher, with the setup inside, the icon, the manifest and the
-# version information.
+# version information; JSRF-PC Tools beside it, with its own.
 "$repo/launcher/build_launcher.sh" windows "$dir/JSRF-PC.exe" "$stage/obj" "$tc" "$deps" "$version"
+"$repo/launcher/tools/build_tools.sh" windows "$dir/JSRF-PC-Tools.exe" "$stage/tools-obj" "$tc" "$deps" "$version"
 
 # The engine and what it loads.
 install -m 755 "$engine" "$dir/engine/jsrf_recomp.exe"
@@ -61,6 +63,7 @@ fi
 
 echo "launcher needs:"; "$tc/bin/llvm-objdump" -p "$dir/JSRF-PC.exe" | sed -n 's/^ *DLL Name: */  /p' | grep -v '^  api-ms-win-crt' | tr '\n' ' '; echo
 echo "engine needs:";   "$tc/bin/llvm-objdump" -p "$dir/engine/jsrf_recomp.exe" | sed -n 's/^ *DLL Name: */  /p' | grep -v '^  api-ms-win-crt' | tr '\n' ' '; echo
+echo "tools need:";     "$tc/bin/llvm-objdump" -p "$dir/JSRF-PC-Tools.exe" | sed -n 's/^ *DLL Name: */  /p' | grep -v '^  api-ms-win-crt' | tr '\n' ' '; echo
 
 python3 - "$stage" "$name" "$out/$name.zip" <<'PY'
 import os, sys, zipfile

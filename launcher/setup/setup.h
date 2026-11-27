@@ -75,6 +75,22 @@ int js_rmtree(const char *path);
 int js_write_text(const char *path, const char *text);
 int js_read_kv(const char *path, const char *key, char *val, size_t n);
 uint64_t js_tree_size(const char *path);
+/* One folder made, its parent being there: 0 made now, 1 already there (a
+ * file or folder of that name), -1 failed. */
+int js_mkdir_new(const char *path);
+/* A file or folder renamed, never over anything: 0, 1 when to is there
+ * already (nothing is moved), -1 failed. */
+int js_rename_new(const char *from, const char *to);
+/* A folder's entries, "." and ".." left out, each handed to each() with
+ * whether it is a folder. 0 when all were handed over, each()'s value when
+ * it returned nonzero (which stops the listing), -1 when it can't be read. */
+int js_list_dir(const char *path, int (*each)(void *ctx, const char *name, int is_dir), void *ctx);
+/* A whole file into *data (malloc'ed, the caller frees it; NULL for an empty
+ * file), its length in *size. 0, or -1 when it can't be read or is longer
+ * than max bytes. */
+int js_read_file(const char *path, size_t max, unsigned char **data, size_t *size);
+/* A whole file written. 0, or -1, with what was written removed. */
+int js_write_file(const char *path, const void *data, size_t n);
 
 
 /* A .tar.gz unpacked into dest. */

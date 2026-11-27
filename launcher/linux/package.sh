@@ -1,13 +1,14 @@
 #!/bin/bash
 #
-# Package the Linux build: a folder with the engine, the launcher, a portable
-# SDL2 and the licences, as JSRF-PC-linux-x86_64.tar.gz.
+# Package the Linux build: a folder with the engine, the launcher, JSRF-PC
+# Tools, a portable SDL2 and the licences, as JSRF-PC-linux-x86_64.tar.gz.
 #
 #   launcher/linux/package.sh <jsrf_recomp> <libSDL2-2.0.so.0> [out dir]
 #
-# The launcher, jsrf-pc, is built here (launcher/build_launcher.sh) with CC
-# and CXX, against SDL's headers: those beside the library given (an SDL
-# built by sdl.sh), else the system's (pkg-config sdl2).
+# The launcher, jsrf-pc, and JSRF-PC Tools, jsrf-pc-tools, are built here
+# (launcher/build_launcher.sh, launcher/tools/build_tools.sh) with CC and CXX,
+# against SDL's headers: those beside the library given (an SDL built by
+# sdl.sh), else the system's (pkg-config sdl2).
 #
 # The release build, from the repository at the release tag, is
 # launcher/linux/build.sh, in the build image launcher/image.sh makes (Ubuntu
@@ -32,6 +33,7 @@ mkdir -p "$dir/bin" "$dir/lib" "$dir/share" "$dir/licences"
 inc="$(cd "$(dirname "$sdl")/.." && pwd)/include/SDL2"
 [ -f "$inc/SDL.h" ] || inc="$(pkg-config --variable=includedir sdl2)/SDL2"
 "$repo/launcher/build_launcher.sh" linux "$dir/jsrf-pc" "$stage/obj" "$sdl" "$inc"
+"$repo/launcher/tools/build_tools.sh" linux "$dir/jsrf-pc-tools" "$stage/tools-obj" "$sdl" "$inc"
 install -m 644 "$here/README.txt" "$dir/README.txt"
 install -m 755 "$engine" "$dir/bin/jsrf_recomp"
 # The version is the engine's own (port/CMakeLists.txt builds it in from the
@@ -52,10 +54,11 @@ tr -d '\r' < "$repo/third_party/miniz/LICENSE" > "$dir/licences/miniz-MIT.txt"
 chmod 644 "$dir/licences/miniz-MIT.txt"
 [ -n "${SDL_LICENSE:-}" ] && install -m 644 "$SDL_LICENSE" "$dir/licences/SDL2-LICENSE.txt"
 
-# What the engine and the launcher need from the system, said once at
-# packaging time.
+# What the engine, the launcher and the tools need from the system, said
+# once at packaging time.
 echo "engine needs:"; objdump -p "$dir/bin/jsrf_recomp" | sed -n 's/^ *NEEDED */  /p'
 echo "launcher needs:"; objdump -p "$dir/jsrf-pc" | sed -n 's/^ *NEEDED */  /p'
+echo "tools need:"; objdump -p "$dir/jsrf-pc-tools" | sed -n 's/^ *NEEDED */  /p'
 echo "newest glibc symbol:"; objdump -T "$dir/bin/jsrf_recomp" | grep -o 'GLIBC_[0-9.]*' | sort -t. -k2,2n -k3,3n | uniq | tail -n 1 | sed 's/^/  /'
 
 tar -C "$stage" -czf "$out/$name.tar.gz" "$name"

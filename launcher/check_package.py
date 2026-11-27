@@ -36,6 +36,7 @@ import zipfile
 #   data    anything else
 LINUX = ("JSRF-PC-linux-x86_64", {
     "jsrf-pc": "elf exec",
+    "jsrf-pc-tools": "elf exec",
     "README.txt": "text",
     "VERSION": "text",
     "bin/jsrf_recomp": "elf exec",
@@ -52,6 +53,7 @@ LINUX = ("JSRF-PC-linux-x86_64", {
 })
 WINDOWS = ("JSRF-PC-windows-x86_64", {
     "JSRF-PC.exe": "pe",
+    "JSRF-PC-Tools.exe": "pe",
     "README.txt": "text",
     "VERSION": "text",
     "engine/jsrf_recomp.exe": "pe",
@@ -85,19 +87,21 @@ KIT_EXPECTED = ("gen_sha256", "engine_sha256", "tools")
 
 # Linux: the libraries each binary may need from the system, as package.sh
 # says, and the oldest glibc it must run on (the package's README.txt). The
-# launcher opens OpenGL itself, with the setup's window.
+# launcher opens OpenGL itself, with the setup's window, and JSRF-PC Tools
+# (jsrf-pc-tools) the same way.
 LINUX_NEEDS = {
     "bin/jsrf_recomp": {"libc.so.6", "libm.so.6", "libGL.so.1", "libSDL2-2.0.so.0"},
     "lib/libSDL2-2.0.so.0": {"libc.so.6", "libm.so.6"},
     "jsrf-pc": {"libc.so.6", "libm.so.6", "libSDL2-2.0.so.0"},
+    "jsrf-pc-tools": {"libc.so.6", "libm.so.6", "libSDL2-2.0.so.0"},
 }
 GLIBC_FLOOR = (2, 34)
 
 # Windows: the DLLs a binary may import besides those bundled beside it.
 # These are part of Windows 10 and 11, as is the Universal C Runtime's
-# api-ms-win-crt-*.dll.
+# api-ms-win-crt-*.dll. comdlg32.dll is JSRF-PC Tools' file picker's.
 WINDOWS_DLLS = {
-    "advapi32.dll", "comctl32.dll", "gdi32.dll", "imm32.dll", "kernel32.dll",
+    "advapi32.dll", "comctl32.dll", "comdlg32.dll", "gdi32.dll", "imm32.dll", "kernel32.dll",
     "msvcrt.dll", "ole32.dll", "oleaut32.dll", "setupapi.dll", "shell32.dll",
     "user32.dll", "version.dll", "winhttp.dll", "winmm.dll",
 }

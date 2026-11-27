@@ -692,8 +692,9 @@ up:
 ### Linux and Windows: package contents
 
 check_package.py checks that each package holds exactly the files it lists:
-the launcher, the engine and its bundled libraries, README.txt, VERSION, and
-`licences/` with a licence for each of them, plus the icon on Linux. So no
+the launcher, JSRF-PC Tools, the engine and its bundled libraries,
+README.txt, VERSION, and `licences/` with a licence for each of them, plus
+the icon on Linux. So no
 game files, logs, source, or anything left over from debugging. A file added
 to a package goes on that list in the same commit. It also checks that text
 files have the platform's line endings once: LF on Linux, CRLF on Windows,

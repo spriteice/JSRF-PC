@@ -16,6 +16,7 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <dirent.h>
 #include <ftw.h>
 #include <signal.h>
 #include <sys/stat.h>
@@ -297,6 +298,124 @@ uint64_t js_tree_size(const char *path)
     if (js_is_dir(path)) nftw(path, sum_one, 32, FTW_PHYS);
     return g_tree_sum;
 #endif
+}
+
+int js_mkdir_new(const char *path)
+{
+#ifdef _WIN32
+    wchar_t *w = wide(path);
+    BOOL made;
+    DWORD why;
+    if (!w) return -1;
+    made = CreateDirectoryW(w, NULL);
+    why = GetLastError();
+    free(w);
+    if (made) return 0;
+    return why == ERROR_ALREADY_EXISTS ? 1 : -1;
+#else
+    if (mkdir(path, 0755) == 0) return 0;
+    return errno == EEXIST ? 1 : -1;
+#endif
+}
+
+int js_rename_new(const char *from, const char *to)
+{
+#ifdef _WIN32
+    wchar_t *wf = wide(from), *wt = wide(to);
+    BOOL moved = wf && wt && MoveFileExW(wf, wt, 0);     /* no MOVEFILE_REPLACE_EXISTING */
+    DWORD why = GetLastError();
+    free(wf);
+    free(wt);
+    if (moved) return 0;
+    return why == ERROR_ALREADY_EXISTS || why == ERROR_FILE_EXISTS ? 1 : -1;
+#else
+    struct stat st;
+    if (lstat(to, &st) == 0) return 1;
+    return rename(from, to) == 0 ? 0 : -1;
+#endif
+}
+
+int js_list_dir(const char *path, int (*each)(void *ctx, const char *name, int is_dir), void *ctx)
+{
+    int r = 0;
+#ifdef _WIN32
+    char pat[4200], name[1024];
+    wchar_t *w;
+    WIN32_FIND_DATAW fd;
+    HANDLE h;
+    js_path(pat, sizeof pat, path, "*");
+    w = wide(pat);
+    h = w ? FindFirstFileW(w, &fd) : INVALID_HANDLE_VALUE;
+    free(w);
+    if (h == INVALID_HANDLE_VALUE) return -1;
+    do {
+        if (!wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L"..")) continue;
+        narrow(fd.cFileName, name, sizeof name);
+        if (name[0]) r = each(ctx, name, (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0);
+    } while (!r && FindNextFileW(h, &fd));
+    FindClose(h);
+#else
+    char p[4200];
+    DIR *d = opendir(path);
+    struct dirent *e;
+    if (!d) return -1;
+    while (!r && (e = readdir(d))) {
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+        js_path(p, sizeof p, path, e->d_name);
+        r = each(ctx, e->d_name, js_is_dir(p));
+    }
+    closedir(d);
+#endif
+    return r;
+}
+
+int js_read_file(const char *path, size_t max, unsigned char **data, size_t *size)
+{
+    FILE *f = js_fopen(path, "rb");
+    unsigned char *buf = NULL, *grown;
+    size_t have = 0, cap = 0, got;
+    *data = NULL;
+    *size = 0;
+    if (!f) return -1;
+    for (;;) {
+        if (have == cap) {
+            cap = cap ? cap * 2 : 65536;
+            if (cap > max + 1) cap = max + 1;     /* one past max shows it is too large */
+            if (cap <= have || !(grown = (unsigned char *)realloc(buf, cap))) break;
+            buf = grown;
+        }
+        got = fread(buf + have, 1, cap - have, f);
+        have += got;
+        if (got == 0) break;
+    }
+    if (ferror(f) || have > max || !feof(f)) {
+        fclose(f);
+        free(buf);
+        return -1;
+    }
+    fclose(f);
+    *data = buf;
+    *size = have;
+    return 0;
+}
+
+int js_write_file(const char *path, const void *data, size_t n)
+{
+    FILE *f = js_fopen(path, "wb");
+    int bad;
+    if (!f) return -1;
+    bad = n && fwrite(data, 1, n, f) != n;
+    bad |= fclose(f) != 0;
+    if (bad) {
+#ifdef _WIN32
+        wchar_t *w = wide(path);
+        if (w) { _wremove(w); free(w); }
+#else
+        remove(path);
+#endif
+        return -1;
+    }
+    return 0;
 }
 
 int js_write_text(const char *path, const char *text)
