@@ -1,9 +1,9 @@
 /*
  * JSRF-PC Tools: the shell (tools_main.cpp) and its pages. The save manager
- * (tools_saves.cpp, b3 row 36), the graffiti page (b3 row 35) and the
- * missions page (tools_missions.cpp, b3 row 38) each draw into the shell's
- * window, which finds the game, keeps the window's scale,
- * and hands each page what is dropped on the window.
+ * (tools_saves.cpp, b3 row 36), the graffiti page (b3 row 35), the missions
+ * page (tools_missions.cpp, b3 row 38) and the build page (tools_build.cpp)
+ * each draw into the shell's window, which finds the game, keeps the
+ * window's scale, and hands each page what is dropped on the window.
  *
  * C++, as Dear ImGui is. Paths are UTF-8.
  */
@@ -19,10 +19,13 @@ struct tools_ctx {
     char  backups[JSRF_PATH_MAX];   /* where the dated backups go: <saves>\Save backups */
     char  game_files[JSRF_PATH_MAX];/* the game's own files (default.xbe's folder, or the disc image), "" unknown */
     char  settings[JSRF_PATH_MAX];  /* the folder JSRF-PC's settings file is in */
-    float scale;                    /* the display's, for sizes a page sets itself */
+    float scale;                    /* the window's (its Scale), for sizes a page sets itself */
     int   busy;                     /* set by a page, each frame, while it needs frames to keep
                                        coming (work on another thread, or one step a frame);
                                        otherwise the window draws only when something happens */
+    int   wait_ms;                  /* with busy: how long the window may wait for something to
+                                       happen before the next frame (a progress bar's pace); 0,
+                                       not at all. Set each frame, as busy is */
 };
 
 struct tools_page {
@@ -39,6 +42,12 @@ extern const tools_page tools_graffiti_page;
 
 /* The missions page (tools_missions.cpp). */
 extern const tools_page tools_missions_page;
+
+/* The build page (tools_build.cpp). It needs only JSRF-PC's folder, not its
+ * saves, so it shows before the launcher has been given the game; and
+ * tools_build_closing, as the window closes, stops what it's doing. */
+extern const tools_page tools_build_page;
+void tools_build_closing(void);
 
 /* ---- for the pages: the shell's helpers ----------------------------------------- */
 
@@ -81,7 +90,7 @@ void tools_hint(const char *fmt, ...);
  * for what a page needs to say but not to show. */
 void tools_help_marker(const char *text);
 
-/* label, then path's last two parts ("...\portable\saves"), the whole path
+/* label, then path's last two parts ("...\data\saves"), the whole path
  * on hover; "not found" in grey when path is empty. */
 void tools_path(const char *label, const char *path);
 
@@ -91,5 +100,29 @@ void tools_path(const char *label, const char *path);
 #define TOOLS_WARN  1
 #define TOOLS_ERROR 2
 void tools_status(int kind, const char *fmt, ...);
+
+/* ---- the script mode (tools_script.cpp) ---------------------------------------- */
+
+/* jsrf-pc-tools [folder] --script <steps> [--out <folder>]: steps played on
+ * the window, each logged to <out>/script.log; the exit code is the number
+ * that failed. The shell calls these: start, with the window made; each
+ * frame, input (after the backend's frame, settled once the window is
+ * fitted and shown), frame_begin and frame_end around the window, and
+ * drawn before it's shown; ignores for each event; take_drop and
+ * wants_close after them. tools_heading calls heading. */
+int  tools_script_start(const char *script, const char *out);
+bool tools_scripting(void);
+int  tools_script_failures(void);
+void tools_script_input(tools_ctx *t, bool settled);
+void tools_script_frame_begin(void);
+void tools_script_frame_end(void);
+void tools_script_drawn(int w, int h);
+bool tools_script_ignores(const union SDL_Event *ev);
+int  tools_script_take_drop(char *out, size_t n);
+int  tools_script_wants_close(void);
+void tools_script_heading(const char *text);
+/* A label for an item ImGui gives none (a combo's), so a script can find
+ * it: id, ImGui::GetID of its own label, just after it. */
+void tools_script_name(unsigned id, const char *label);
 
 #endif

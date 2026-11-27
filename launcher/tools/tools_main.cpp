@@ -4,23 +4,31 @@
  * setup window is.
  *
  *   Finding the game: started in JSRF-PC's folder (beside the launcher), it
- *     knows where the game's saves are; started anywhere else, it asks.
+ *     knows where the game's saves are; started anywhere else, it asks. A
+ *     JSRF-PC that hasn't been given the game yet has no saves: the pages
+ *     that need them say so, and the build page works all the same.
  *   Adding files: dropped on the window, or picked with the system's own
  *     dialog (file_dialog.c), handed to the page that shows.
  *   Writing: only from a page's own button, after the shell's warning
  *     (tools_warning), and after a dated backup.
  *   Size: the window resizes freely, down to a size where nothing is cut
- *     off; the layout reflows, and text and controls follow the display's
- *     scale, not the window's size.
+ *     off; the layout reflows, and text and controls follow the scale, not
+ *     the window's size. The scale is the system's (auto_scale), or the one
+ *     picked at the top right (Scale, or Ctrl and + or -), remembered in
+ *     tools.cfg: for a screen where the system's comes out wrong.
  *   Idle: the window draws while something happens (input, and a moment
  *     after it for the interface to settle) or a page is busy (tools_ctx's
  *     busy), and otherwise once a second, so an open window costs nearly
  *     nothing (a Steam Deck's battery among others).
  *
- *   jsrf-pc-tools [JSRF-PC's folder]
+ *   Scripts: with --script, the steps in a file are played on the window
+ *     (tools_script.cpp), for a test run with nobody at the machine.
+ *
+ *   jsrf-pc-tools [JSRF-PC's folder] [--script <steps> [--out <folder>]]
  */
 #define SDL_MAIN_HANDLED   /* the entry point is the tool's own (below), with UTF-8 arguments */
 #include <SDL.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,6 +44,7 @@
 #include "setup.h"
 #include "setup_job.h"
 #include "tools.h"
+#include "../common/user_files.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -59,10 +68,37 @@ typedef void (T_GLAPI *gl_clear_fn)(unsigned);
 #define MIN_H 400
 
 #define SETTLE_MS 400   /* frames kept coming after input, for hovers and popups to settle */
-#define IDLE_MS   1000  /* the longest the window waits to draw again when idle */
 
-static const tools_page *const g_pages[] = { &tools_saves_page, &tools_graffiti_page, &tools_missions_page };
+#define TITLE_SIZE    1.45f   /* the window's title, over the font's size */
+#define HEADING_SIZE  1.25f   /* a section's heading (tools_heading) */
+#define TAB_SIZE      1.15f   /* the pages' tabs */
+#define TAB_PADDING   1.5f    /* and the room around their names, over a button's */
+
+/* The size the window opens at, at a scale of 1, before it is made tall
+ * enough for the page it opens on (FIT_FRAMES); then kept within the
+ * screen. */
+#define START_W 900
+#define START_H 620
+#define FIT_FRAMES 4
+
+/* The scales that can be picked (Scale, at the top right), over the tool's
+ * own size; Auto is the system's. Kept in tools.cfg as "scale", in percent
+ * or "auto". */
+static const float SCALES[] = { 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f, 3.0f };
+#define NSCALES (int)(sizeof SCALES / sizeof SCALES[0])
+#define SCALE_KEY "scale"
+#define IDLE_MS   1000  /* the longest the window waits to draw again when idle */
+#define SCRIPT_FRAME_MS 16  /* a frame's time while a script plays */
+
+static const tools_page *const g_pages[] = { &tools_saves_page, &tools_graffiti_page, &tools_missions_page,
+                                              &tools_build_page };
 #define NPAGES (int)(sizeof g_pages / sizeof g_pages[0])
+
+/* Every page but the build page works on the game's saves. */
+static int needs_saves(const tools_page *p)
+{
+    return p != &tools_build_page;
+}
 
 /* ---- the shell's helpers ------------------------------------------------------------- */
 
@@ -225,11 +261,32 @@ void tools_texture_drop(unsigned *tex)
 
 void tools_heading(const char *text)
 {
-    if (ImGui::GetCursorPosY() > ImGui::GetStyle().WindowPadding.y + 1)
+    const ImGuiStyle &st = ImGui::GetStyle();
+    if (ImGui::GetCursorPosY() > st.WindowPadding.y + 1)
         ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.5f));
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_CheckMark));
-    ImGui::SeparatorText(text);
-    ImGui::PopStyleColor();
+    /* As ImGui's SeparatorText lays it out, larger, and bold: the default
+     * font has no bold of its own, so the text is drawn twice, a pixel or
+     * two apart. */
+    tools_script_heading(text);
+    ImGui::PushFont(NULL, st.FontSizeBase * HEADING_SIZE);
+    {
+        ImDrawList *dl = ImGui::GetWindowDrawList();
+        ImVec2 at = ImGui::GetCursorScreenPos(), ts = ImGui::CalcTextSize(text, NULL, true);
+        float w = ImGui::GetContentRegionAvail().x, fs = ImGui::GetFontSize();
+        float bold = floorf(fs / 14.0f), h = ts.y + st.SeparatorTextPadding.y * 2;
+        float tx = floorf(at.x + st.SeparatorTextPadding.x), ty = floorf(at.y + st.SeparatorTextPadding.y);
+        float y = floorf(at.y + h * 0.5f + 0.99999f), thick = st.SeparatorTextBorderSize;
+        ImU32 green = ImGui::GetColorU32(ImGuiCol_CheckMark), line = ImGui::GetColorU32(ImGuiCol_Separator);
+        if (bold < 1) bold = 1;
+        if (thick > 0 && tx - st.ItemSpacing.x > at.x)
+            dl->AddLine(ImVec2(at.x, y), ImVec2(tx - st.ItemSpacing.x, y), line, thick);
+        dl->AddText(ImVec2(tx, ty), green, text);
+        dl->AddText(ImVec2(tx + bold, ty), green, text);
+        if (thick > 0 && tx + ts.x + bold + st.ItemSpacing.x < at.x + w)
+            dl->AddLine(ImVec2(tx + ts.x + bold + st.ItemSpacing.x, y), ImVec2(at.x + w, y), line, thick);
+        ImGui::Dummy(ImVec2(w > 0 ? w : 1, h));
+    }
+    ImGui::PopFont();
 }
 
 /* Where the last hint's last line ends, for a help marker after it. */
@@ -332,45 +389,30 @@ static int has_launcher(const char *dir)
 }
 
 /* Where JSRF-PC keeps the game's saves and its settings, from the
- * launcher's folder: its portable folder (portable\saves, beside
- * portable\settings.cfg), or, without one, the folder of the game it
- * remembers (game_dir, in %LOCALAPPDATA%\JSRF-PC\settings or
- * ~/.config/jsrf-pc/settings), where the engine keeps UDATA. Read only.
- *
- * For now the launchers' own rules, as b2.2 has them; the thread "Make
- * portable mode the default for b3" is moving them into one shared unit
- * (launcher/common/user_files.c), whose read-only find() this becomes, and
- * which adds b3's data\ folder. 1 found; 0 when the launcher has never been
- * given the game. */
+ * launcher's folder, as the launchers find them (launcher/common/user_files.c,
+ * whose js_files_find only looks): its data folder (data\saves, beside
+ * data\settings.cfg), b2.2's portable folder not yet renamed to it, or,
+ * with neither, the folder of the game it remembers (game_dir, in
+ * %LOCALAPPDATA%\JSRF-PC\settings or ~/.config/jsrf-pc/settings), where the
+ * engine keeps UDATA. t->settings is the folder the settings file is in,
+ * where the engine keeps its other files and this tool its tools.cfg. With
+ * both a data and a portable folder, the launchers stop until one is moved
+ * away; this reads the data folder, as js_files_find does. 1 found; 0 when
+ * the launcher has never been given the game. */
 static int find_saves(tools_ctx *t)
 {
-    char p[JSRF_PATH_MAX], cfg[JSRF_PATH_MAX], v[JSRF_PATH_MAX];
-    int portable;
+    static js_files f;   /* nine whole paths, kept off the stack */
+    char p[JSRF_PATH_MAX], *sep;
     t->saves[0] = t->game_files[0] = t->settings[0] = 0;
-    js_path(p, sizeof p, t->game, "portable");
-    portable = js_is_dir(p);
-    if (portable) {
-        js_path(t->saves, sizeof t->saves, p, "saves");
-        js_path(cfg, sizeof cfg, p, "settings.cfg");
-    } else {
-        char base[JSRF_PATH_MAX];
+    js_files_find(t->game, &f);
+    snprintf(t->settings, sizeof t->settings, "%s", f.settings);
+    sep = strrchr(t->settings, '/');
 #ifdef _WIN32
-        if (!jsrf_env("LOCALAPPDATA", base, sizeof base)) return 0;
-        js_path(p, sizeof p, base, "JSRF-PC");
-#else
-        if (jsrf_env("XDG_CONFIG_HOME", base, sizeof base)) js_path(p, sizeof p, base, "jsrf-pc");
-        else if (jsrf_env("HOME", base, sizeof base)) js_path(p, sizeof p, base, ".config/jsrf-pc");
-        else return 0;
+    if (strrchr(t->settings, '\\') > sep) sep = strrchr(t->settings, '\\');
 #endif
-        js_path(cfg, sizeof cfg, p, "settings");
-    }
-    snprintf(t->settings, sizeof t->settings, "%s", p);
-    if (js_read_kv(cfg, "game_dir", v, sizeof v) && v[0]) {
-        /* In portable mode a game inside the folder is kept relative to it. */
-        if (v[0] != '/' && v[0] != '\\' && !(v[0] && v[1] == ':')) js_path(t->game_files, sizeof t->game_files, t->game, v);
-        else snprintf(t->game_files, sizeof t->game_files, "%s", v);
-        if (!portable) snprintf(t->saves, sizeof t->saves, "%s", t->game_files);
-    }
+    if (sep) *sep = 0;
+    snprintf(t->game_files, sizeof t->game_files, "%s", f.game);
+    snprintf(t->saves, sizeof t->saves, "%s", f.saves[0] ? f.saves : f.game);
     if (!t->saves[0]) return 0;
     js_path(p, sizeof p, t->saves, "UDATA");
     js_path(t->title, sizeof t->title, p, JSRF_TITLE_ID);
@@ -380,14 +422,190 @@ static int find_saves(tools_ctx *t)
 
 /* ---- the window ---------------------------------------------------------------------- */
 
-/* The display's scale: its DPI over 96, in quarters, from 1 to 3. */
-static float display_scale(SDL_Window *w)
+#ifndef _WIN32
+/* The desktop's scale, as Linux desktops hand it to X11 programs: Xft.dpi
+ * over 96 (Plasma and GNOME set it from their own scale setting); 0 where
+ * it isn't set. SDL2 doesn't pass it on: with XRandR its DPI is the
+ * screen's own, from its size in millimetres, which on a handheld's small
+ * screen (the Ally X's 7 inches at 1080p: about 315) is three times a
+ * desktop monitor's. Read once, over a connection of its own. */
+static float xft_scale(void)
 {
-    float dpi = 0, s;
+    typedef void *(*open_display_fn)(const char *);
+    typedef char *(*get_default_fn)(void *, const char *, const char *);
+    typedef int (*close_display_fn)(void *);
+    static int done;
+    static float s;
+    void *lib, *dpy;
+    if (done) return s;
+    done = 1;
+    lib = SDL_LoadObject("libX11.so.6");     /* SDL's own, already loaded; left so */
+    if (!lib) return 0;
+    open_display_fn open_display = (open_display_fn)SDL_LoadFunction(lib, "XOpenDisplay");
+    get_default_fn get_default = (get_default_fn)SDL_LoadFunction(lib, "XGetDefault");
+    close_display_fn close_display = (close_display_fn)SDL_LoadFunction(lib, "XCloseDisplay");
+    if (open_display && get_default && close_display && (dpy = open_display(NULL)) != NULL) {
+        const char *v = get_default(dpy, "Xft", "dpi");
+        double dpi = v ? atof(v) : 0;
+        if (dpi >= 48 && dpi <= 960) s = (float)(dpi / 96.0);
+        close_display(dpy);
+    }
+    return s;
+}
+#endif
+
+/* The scale the system asks for (Scale's Auto), in quarters, from 1 to 3.
+ * Windows: the display's own scale setting (its DPI over 96, as a
+ * per-monitor DPI-aware program is told it). Linux under X11: the
+ * desktop's (xft_scale), else 1. Under Wayland: 1, as the desktop scales
+ * the window itself (SDL's high-DPI drawable, which ImGui draws its text
+ * to at full resolution). */
+static float auto_scale(SDL_Window *w)
+{
+    float s = 1;
+#ifdef _WIN32
+    float dpi = 0;
     int d = SDL_GetWindowDisplayIndex(w);
-    if (d < 0 || SDL_GetDisplayDPI(d, &dpi, NULL, NULL) != 0 || dpi <= 0) return 1;
-    s = (float)(int)(dpi / 96.0f * 4.0f + 0.5f) / 4.0f;
+    if (d >= 0 && SDL_GetDisplayDPI(d, &dpi, NULL, NULL) == 0 && dpi > 0) s = dpi / 96.0f;
+#else
+    const char *driver = SDL_GetCurrentVideoDriver();
+    (void)w;
+    if (driver && !strcmp(driver, "x11") && xft_scale() > 0) s = xft_scale();
+#endif
+    s = (float)(int)(s * 4.0f + 0.5f) / 4.0f;
     return s < 1 ? 1 : s > 3 ? 3 : s;
+}
+
+static int percent(float s)
+{
+    return (int)(s * 100.0f + 0.5f);
+}
+
+/* The scale picked, from tools.cfg: an index into SCALES, the nearest to
+ * the percent kept; -1 for Auto. */
+static int scale_setting(const tools_ctx *t)
+{
+    char v[32];
+    int pct, best = -1;
+    if (!tools_setting(t, SCALE_KEY, v, sizeof v) || !v[0] || !strcmp(v, "auto")) return -1;
+    pct = atoi(v);
+    if (pct <= 0) return -1;
+    for (int i = 0; i < NSCALES; i++)
+        if (best < 0 || abs(percent(SCALES[i]) - pct) < abs(percent(SCALES[best]) - pct)) best = i;
+    return best;
+}
+
+/* The next scale up (dir 1) or down (-1) from the one showing. */
+static int scale_step(float now, int dir)
+{
+    if (dir > 0) {
+        for (int i = 0; i < NSCALES; i++)
+            if (SCALES[i] > now + 0.01f) return i;
+        return NSCALES - 1;
+    }
+    for (int i = NSCALES - 1; i >= 0; i--)
+        if (SCALES[i] < now - 0.01f) return i;
+    return 0;
+}
+
+/* Scale, at the right of the title's line (under it when the window is too
+ * narrow), and its keys: Ctrl and + or - a step, Ctrl and 0 Auto. Returns
+ * the scale picked: an index into SCALES, or -1 for Auto. */
+static int scale_picker(int chosen, float now, float auto_sc, float line_y, float line_h)
+{
+    const ImGuiStyle &st = ImGui::GetStyle();
+    ImGuiIO &io = ImGui::GetIO();
+    char shown[32], item[32];
+    int pick = chosen;
+    float cw = ImGui::CalcTextSize("Auto (300%)").x + ImGui::GetFrameHeight() + st.FramePadding.x * 2;
+    float lw = ImGui::CalcTextSize("Scale").x;
+    float x = ImGui::GetWindowContentRegionMax().x - cw - st.ItemSpacing.x - lw;
+    float after = ImGui::GetItemRectMax().x - ImGui::GetWindowPos().x + st.ItemSpacing.x;
+    if (x >= after) {
+        ImGui::SameLine();
+        ImGui::SetCursorPos(ImVec2(x, line_y + (line_h - ImGui::GetFrameHeight()) * 0.5f));
+    }
+    if (chosen < 0) snprintf(shown, sizeof shown, "Auto (%d%%)", percent(auto_sc));
+    else snprintf(shown, sizeof shown, "%d%%", percent(SCALES[chosen]));
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Scale");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(cw);
+    bool open = ImGui::BeginCombo("##scale", shown, ImGuiComboFlags_HeightLargest);
+    tools_script_name(ImGui::GetID("##scale"), "Scale");
+    if (open) {
+        snprintf(item, sizeof item, "Auto (%d%%)", percent(auto_sc));
+        if (ImGui::Selectable(item, chosen < 0)) pick = -1;
+        for (int i = 0; i < NSCALES; i++) {
+            snprintf(item, sizeof item, "%d%%", percent(SCALES[i]));
+            if (ImGui::Selectable(item, chosen == i)) pick = i;
+        }
+        ImGui::EndCombo();
+    } else {
+        ImGui::SetItemTooltip("How big the text and buttons are. Auto follows the system's scale; pick another if "
+                              "that's too big or too small for this screen. Ctrl and + or - change it a step, and "
+                              "Ctrl and 0 goes back to Auto.");
+    }
+    if (io.KeyCtrl && !io.KeyAlt && !io.WantTextInput) {
+        if (ImGui::IsKeyPressed(ImGuiKey_Equal, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadAdd, false))
+            pick = scale_step(now, 1);
+        else if (ImGui::IsKeyPressed(ImGuiKey_Minus, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadSubtract, false))
+            pick = scale_step(now, -1);
+        else if (ImGui::IsKeyPressed(ImGuiKey_0, false) || ImGui::IsKeyPressed(ImGuiKey_Keypad0, false))
+            pick = -1;
+    }
+    return pick;
+}
+
+/* The room the window has on its display: the display less the taskbar
+ * and the window's own frame. */
+static void room_for(SDL_Window *w, float sc, int *mw, int *mh, int *x0, int *y0)
+{
+    SDL_Rect r;
+    int top = 0, left = 0, bottom = 0, right = 0, d = SDL_GetWindowDisplayIndex(w);
+    if (d < 0 || SDL_GetDisplayUsableBounds(d, &r) != 0) { r.x = r.y = 0; r.w = 1280; r.h = 720; }
+    if (SDL_GetWindowBordersSize(w, &top, &left, &bottom, &right) != 0 || top <= 0) {
+        top = (int)(32 * sc);                   /* not known until it is shown, on some desktops */
+        left = right = bottom = (int)(8 * sc);
+    }
+    *mw = r.w - left - right;
+    *mh = r.h - top - bottom;
+    *x0 = r.x + left;
+    *y0 = r.y + top;
+}
+
+/* The smallest the window goes at a scale, within the room it has. */
+static void min_size(SDL_Window *w, float sc, int *mw, int *mh)
+{
+    int rw, rh, x0, y0;
+    room_for(w, sc, &rw, &rh, &x0, &y0);
+    *mw = (int)(MIN_W * sc);
+    *mh = (int)(MIN_H * sc);
+    if (*mw > rw) *mw = rw;
+    if (*mh > rh) *mh = rh;
+}
+
+/* An argument meant as an option: one starting with a hyphen, or with a
+ * dash or minus sign that a hyphen can turn into on the way (autocorrect,
+ * or copied from formatted text), or --script or --out with nothing after
+ * it. Never taken for JSRF-PC's folder. */
+static int looks_like_option(const char *a)
+{
+    const unsigned char *u = (const unsigned char *)a;
+    if (u[0] == '-') return 1;
+    if (u[0] == 0xE2 && u[1] == 0x80 && u[2] >= 0x90 && u[2] <= 0x95) return 1;   /* U+2010 to U+2015 */
+    return u[0] == 0xE2 && u[1] == 0x88 && u[2] == 0x92;                          /* U+2212 */
+}
+
+/* The window at w by h, within the room it has, in the middle of it. */
+static void place_window(SDL_Window *win, float sc, int w, int h)
+{
+    int mw, mh, x0, y0;
+    room_for(win, sc, &mw, &mh, &x0, &y0);
+    if (w > mw) w = mw;
+    if (h > mh) h = mh;
+    SDL_SetWindowSize(win, w, h);
+    SDL_SetWindowPosition(win, x0 + (mw - w) / 2, y0 + (mh - h) / 2);
 }
 
 static int tools_main(int argc, char **argv)
@@ -396,10 +614,11 @@ static int tools_main(int argc, char **argv)
     SDL_Window *win;
     SDL_GLContext gl;
     ImGuiStyle base;
-    float scale = 0;
-    int page = 0, found = 0, quit = 0;
+    float scale = 0, overflow = 0, auto_sc = 1;
+    int page = 0, launcher = 0, found = 0, quit = 0, fit_left = FIT_FRAMES, chosen = -1, refit = 0;
     Uint32 last_input = 0;
     char *here, note[JSRF_PATH_MAX + 400] = "";
+    const char *folder = NULL, *script = NULL, *script_out = NULL, *unknown = NULL;
 
     memset(&t, 0, sizeof t);
     /* Graffiti saves re-signed and moved by the graffiti page's code, for
@@ -412,15 +631,38 @@ static int tools_main(int argc, char **argv)
         fprintf(stderr, "jsrf-pc-tools: no window (%s)\n", SDL_GetError());
         return 1;
     }
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "--script") && i + 1 < argc) script = argv[++i];
+        else if (!strcmp(argv[i], "--out") && i + 1 < argc) script_out = argv[++i];
+        else if (looks_like_option(argv[i])) { if (!unknown) unknown = argv[i]; }
+        else if (!folder) folder = argv[i];
+    }
     /* JSRF-PC's folder: the one given, else the tool's own. */
     here = SDL_GetBasePath();
-    snprintf(t.game, sizeof t.game, "%s", argc > 1 ? argv[1] : here ? here : ".");
+    snprintf(t.game, sizeof t.game, "%s", folder ? folder : here ? here : ".");
     SDL_free(here);
     {
         size_t l = strlen(t.game);
         while (l > 1 && (t.game[l - 1] == '/' || t.game[l - 1] == '\\')) t.game[--l] = 0;
     }
-    found = has_launcher(t.game) && find_saves(&t);
+    launcher = has_launcher(t.game);
+    found = launcher && find_saves(&t);
+    /* Why it asks, on the page that asks: a script's path given without
+     * --script before it is otherwise taken for the folder, silently. */
+    if (unknown && (!strcmp(unknown, "--script") || !strcmp(unknown, "--out")))
+        snprintf(note, sizeof note, "%s needs a path after it.", unknown);
+    else if (unknown && unknown[0] != '-')   /* a dash, which the window's font may not even show */
+        snprintf(note, sizeof note, "An option starts with a dash where two hyphens should be, as when it is "
+                                    "copied from formatted text. Type --script and --out with two hyphens.");
+    else if (unknown)
+        snprintf(note, sizeof note, "%s isn't an option this knows. To play a script: --script <steps> "
+                                    "--out <folder>.", unknown);
+    else if (!launcher && folder && !js_is_dir(folder))
+        snprintf(note, sizeof note, "%s isn't a folder.%s", folder,
+                 js_is_file(folder) ? " To play it as a script, put --script before it." : "");
+    else if (!launcher)
+        snprintf(note, sizeof note, "%s has no %s in it.", t.game, LAUNCHER_NAME);
+    chosen = scale_setting(&t);
 
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
@@ -470,64 +712,153 @@ static int tools_main(int argc, char **argv)
     base = ImGui::GetStyle();
     ImGui_ImplSDL2_InitForOpenGL(win, gl);
     ImGui_ImplOpenGL3_Init(NULL);
-    SDL_ShowWindow(win);
+    /* Its size at its scale; shown once it is tall enough for the page it
+     * opens on (below). */
+    {
+        float sc = chosen >= 0 ? SCALES[chosen] : auto_scale(win);
+        place_window(win, sc, (int)(START_W * sc), (int)(START_H * sc));
+    }
+    if (script && tools_script_start(script, script_out) != 0) quit = 2;
+    /* A script's frames don't wait for the screen: under XWayland a window
+     * the screen isn't showing (turned off, or covered) may get a frame a
+     * second. They're paced at about 60 a second instead. */
+    if (tools_scripting()) SDL_GL_SetSwapInterval(0);
 
     while (!quit) {
         SDL_Event ev;
-        /* Idle: wait for something to happen, or a second. */
-        if (!t.busy && SDL_GetTicks() - last_input > SETTLE_MS) SDL_WaitEventTimeout(NULL, IDLE_MS);
+        /* Idle: wait for something to happen, or a second; busy, as long as
+         * the page said it may. */
+        if (tools_scripting()) {
+            static Uint32 frame_at;
+            Uint32 now = SDL_GetTicks();
+            if (now - frame_at < SCRIPT_FRAME_MS) SDL_Delay(SCRIPT_FRAME_MS - (now - frame_at));
+            frame_at = SDL_GetTicks();
+        } else if (fit_left > 0) {
+            /* still being fitted: no waiting */
+        } else if (!t.busy && SDL_GetTicks() - last_input > SETTLE_MS) {
+            SDL_WaitEventTimeout(NULL, IDLE_MS);
+        } else if (t.busy && t.wait_ms > 0) {
+            SDL_WaitEventTimeout(NULL, t.wait_ms);
+        }
         while (SDL_PollEvent(&ev)) {
+            if (tools_script_ignores(&ev)) continue;     /* nobody's input during a script */
             last_input = SDL_GetTicks();
             ImGui_ImplSDL2_ProcessEvent(&ev);
             if (ev.type == SDL_QUIT ||
                 (ev.type == SDL_WINDOWEVENT && ev.window.event == SDL_WINDOWEVENT_CLOSE)) quit = 1;
             /* The smallest size, kept where the desktop doesn't keep it. */
             if (ev.type == SDL_WINDOWEVENT && ev.window.event == SDL_WINDOWEVENT_SIZE_CHANGED && scale > 0) {
-                int w = ev.window.data1, h = ev.window.data2, mw = (int)(MIN_W * scale), mh = (int)(MIN_H * scale);
+                int w = ev.window.data1, h = ev.window.data2, mw, mh;
+                min_size(win, scale, &mw, &mh);
                 if (w < mw || h < mh) SDL_SetWindowSize(win, w < mw ? mw : w, h < mh ? mh : h);
             }
             if (ev.type == SDL_DROPFILE) {
-                if (found && g_pages[page]->dropped) g_pages[page]->dropped(&t, ev.drop.file);
-                else if (!found && js_is_dir(ev.drop.file)) {
+                if (launcher && (found || !needs_saves(g_pages[page])) && g_pages[page]->dropped)
+                    g_pages[page]->dropped(&t, ev.drop.file);
+                else if (!launcher && js_is_dir(ev.drop.file)) {
                     snprintf(t.game, sizeof t.game, "%s", ev.drop.file);
-                    found = has_launcher(t.game) && find_saves(&t);
+                    launcher = has_launcher(t.game);
+                    found = launcher && find_saves(&t);
                 }
                 SDL_free(ev.drop.file);
             }
         }
-        /* The scale follows the display the window is on. */
         {
-            float sc = display_scale(win);
+            /* A script's drop, as a drop on the window. */
+            char dropped[JSRF_PATH_MAX];
+            if (tools_script_take_drop(dropped, sizeof dropped) && launcher && (found || !needs_saves(g_pages[page])) &&
+                g_pages[page]->dropped)
+                g_pages[page]->dropped(&t, dropped);
+            if (tools_script_wants_close()) quit = 1;
+        }
+        /* The scale picked, or the system's, which follows the display the
+         * window is on. Picked anew, the window is made again as it opens
+         * at that scale (unless it fills the screen). */
+        auto_sc = auto_scale(win);
+        {
+            float sc = chosen >= 0 ? SCALES[chosen] : auto_sc;
             if (sc != scale) {
                 ImGuiStyle &st = ImGui::GetStyle();
+                int mw, mh;
                 st = base;
                 st.ScaleAllSizes(sc);
                 st.FontScaleMain = sc * 1.2f;
                 scale = sc;
                 t.scale = sc;
-                SDL_SetWindowMinimumSize(win, (int)(MIN_W * sc), (int)(MIN_H * sc));
+                min_size(win, sc, &mw, &mh);
+                SDL_SetWindowMinimumSize(win, mw, mh);
+                if (refit && !(SDL_GetWindowFlags(win) & (SDL_WINDOW_MAXIMIZED | SDL_WINDOW_FULLSCREEN))) {
+                    place_window(win, sc, (int)(START_W * sc), (int)(START_H * sc));
+                    fit_left = FIT_FRAMES;
+                    overflow = 0;
+                }
             }
+            refit = 0;
         }
-        t.busy = 0;     /* a page sets it again while it draws, if it's still busy */
+        t.busy = t.wait_ms = 0;     /* a page sets them again while it draws, if it's still busy */
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplSDL2_NewFrame();
+        tools_script_input(&t, fit_left == 0);
         ImGui::NewFrame();
         ImGui::SetNextWindowPos(ImVec2(0, 0));
         ImGui::SetNextWindowSize(io.DisplaySize);
         ImGui::Begin("JSRF-PC Tools", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                                             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
-        ImGui::PushFont(NULL, ImGui::GetStyle().FontSizeBase * 1.3f);
-        ImGui::TextUnformatted("JSRF-PC Tools");
-        ImGui::PopFont();
-        if (found) {
+        tools_script_frame_begin();
+        {
+            float y = ImGui::GetCursorPosY();
+            int pick;
+            ImGui::PushFont(NULL, ImGui::GetStyle().FontSizeBase * TITLE_SIZE);
+            ImGui::TextUnformatted("JSRF-PC Tools");
+            ImGui::PopFont();
+            pick = scale_picker(chosen, scale, auto_sc, y, ImGui::GetItemRectSize().y);
+            if (pick != chosen) {
+                char v[16];
+                chosen = pick;
+                refit = 1;
+                if (pick < 0) snprintf(v, sizeof v, "auto");
+                else snprintf(v, sizeof v, "%d", percent(SCALES[pick]));
+                tools_set_setting(&t, SCALE_KEY, v);
+            }
+        }
+        if (launcher) {
             tools_path("JSRF-PC:", t.game);
             ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.25f));
-            if (ImGui::BeginTabBar("pages")) {
+            /* The tabs, larger than the text under them: the font and the
+             * room around it, for the bar as for each tab. */
+            ImVec2 tab_pad(ImGui::GetStyle().FramePadding.x * TAB_PADDING, ImGui::GetStyle().FramePadding.y * TAB_PADDING);
+            ImGui::PushFont(NULL, ImGui::GetStyle().FontSizeBase * TAB_SIZE);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, tab_pad);
+            bool bar = ImGui::BeginTabBar("pages");
+            ImGui::PopStyleVar();
+            ImGui::PopFont();
+            if (bar) {
                 for (int i = 0; i < NPAGES; i++) {
-                    if (ImGui::BeginTabItem(g_pages[i]->name)) {
+                    ImGui::PushFont(NULL, ImGui::GetStyle().FontSizeBase * TAB_SIZE);
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, tab_pad);
+                    bool open = ImGui::BeginTabItem(g_pages[i]->name);
+                    ImGui::PopStyleVar();
+                    ImGui::PopFont();
+                    if (open) {
                         page = i;
                         ImGui::BeginChild("page", ImVec2(0, 0), ImGuiChildFlags_None);
-                        g_pages[i]->draw(&t);
+                        if (found || !needs_saves(g_pages[i])) {
+                            g_pages[i]->draw(&t);
+                        } else {
+                            /* Its saves are where the game is, which the launcher is told at its first start. */
+                            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+                            ImGui::TextWrapped("JSRF-PC hasn't been given the game yet, so it has no saves. Play "
+                                               "it once, then come back.");
+                            ImGui::PopStyleColor();
+                            if (ImGui::Button("Look again")) found = find_saves(&t);
+                        }
+                        /* How far the page goes past the window, while it
+                         * is fitted to it. */
+                        if (fit_left > 0) {
+                            float below = ImGui::GetCursorPosY() - ImGui::GetStyle().ItemSpacing.y -
+                                          ImGui::GetWindowHeight();
+                            if (below > overflow) overflow = below;
+                        }
                         ImGui::EndChild();
                         ImGui::EndTabItem();
                     }
@@ -548,14 +879,14 @@ static int tools_main(int argc, char **argv)
                                                 "folder on this window instead.");
                 if (r == JSRF_PICKED) {
                     snprintf(t.game, sizeof t.game, "%s", dir);
-                    if (!has_launcher(t.game))
+                    if (!(launcher = has_launcher(t.game)))
                         snprintf(note, sizeof note, "%s has no %s in it.", dir, LAUNCHER_NAME);
-                    else if (!(found = find_saves(&t)))
-                        snprintf(note, sizeof note, "JSRF-PC in %s hasn't been given the game yet: play it "
-                                                    "once, then come back.", dir);
+                    else
+                        found = find_saves(&t);
                 }
             }
         }
+        tools_script_frame_end();
         ImGui::End();
         ImGui::Render();
         if (gl_viewport && gl_clear_color && gl_clear) {
@@ -566,15 +897,34 @@ static int tools_main(int argc, char **argv)
             gl_clear(T_GL_COLOR_BUFFER_BIT);
         }
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        if (tools_scripting()) {
+            int dw, dh;
+            SDL_GL_GetDrawableSize(win, &dw, &dh);
+            tools_script_drawn(dw, dh);
+        }
         SDL_GL_SwapWindow(win);
+        /* The window made tall enough for the page it opens on, over its
+         * first frames (a table settles in two), then shown. */
+        if (fit_left > 0) {
+            if (overflow > 0) {
+                int w, h;
+                SDL_GetWindowSize(win, &w, &h);
+                place_window(win, scale > 0 ? scale : 1, w, h + (int)(overflow + 0.99f) + (int)(4 * (scale > 0 ? scale : 1)));
+                overflow = 0;
+            }
+            if (--fit_left == 0) SDL_ShowWindow(win);
+        }
     }
+    tools_build_closing();
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();
     SDL_GL_DeleteContext(gl);
     SDL_DestroyWindow(win);
     SDL_Quit();
-    return 0;
+    /* A script's result: how many of its steps failed. */
+    if (quit == 2) return 100;
+    return tools_scripting() ? (tools_script_failures() > 99 ? 99 : tools_script_failures()) : 0;
 }
 
 #ifdef _WIN32

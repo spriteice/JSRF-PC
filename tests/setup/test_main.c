@@ -4,14 +4,19 @@
  * setup must run, the tools folder's mark, unpacking the tools' Python (and
  * refusing what would land outside its folder), a download that fails (tried
  * again after a wait, which closing the window stops), the bar (never back,
- * each step taking its part of the rest), what Delete takes, running a
- * program with only the environment given, and the whole first start the
- * console's way, with a stand-in for the tools' Python.
+ * each step taking its part of the rest), what Delete takes (and each of its
+ * halves), the generated code's hash, the engine's check against the
+ * release's, running a program with only the environment given, the whole
+ * first start the console's way, with a stand-in for the tools' Python, and
+ * the Build page's tasks (only generating, a build taking the generated
+ * code, the engine's --version) with the same stand-in.
  *
  *   test <work dir>
  *
- * run.py makes the work folder: the archives in tar/, and, on Linux, the
- * stand-in Python. Every check is printed; the exit status is 1 if any failed.
+ * run.py makes the work folder: the archives in tar/, a folder of made-up
+ * generated code with its hash as build_engine.py gives it (genhash/), and,
+ * on Linux, the stand-in Python. Every check is printed; the exit status is
+ * 1 if any failed.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -144,9 +149,19 @@ static void test_ready(void)
     js_mkdirs(root);
     check(!jsrf_setup_engine_ready(root) && !jsrf_setup_needed(root), "no kit, no engine: no setup");
 
+    {
+        char got[65] = "x";
+        check(js_engine_check(root, got) == JS_ENGINE_NONE && !got[0], "the engine's check: none");
+    }
+
     at(root, sizeof root, "ready/engine-only");
     engine_at("ready/engine-only", "engine A\n");
     check(!jsrf_setup_needed(root), "no kit (a package with the engine built in): no setup");
+    {
+        char got[65];
+        check(js_engine_check(root, got) == JS_ENGINE_BUILT_IN && !strcmp(got, sha),
+              "the engine's check: built in (no kit), with its SHA-256");
+    }
 
     at(root, sizeof root, "ready/kit");
     write_at("ready/kit/kit/kit.json", "{}\n");
@@ -155,8 +170,16 @@ static void test_ready(void)
     check(jsrf_setup_needed(root), "a kit and no engine: the setup");
     engine_at("ready/kit", "engine A\n");
     check(jsrf_setup_engine_ready(root) && !jsrf_setup_needed(root), "a kit and its engine: ready");
+    {
+        char got[65];
+        check(js_engine_check(root, got) == JS_ENGINE_RELEASE, "the engine's check: the release's");
+    }
     engine_at("ready/kit", "engine B\n");
     check(jsrf_setup_needed(root), "a kit and another engine: the setup");
+    {
+        char got[65];
+        check(js_engine_check(root, got) == JS_ENGINE_OTHER, "the engine's check: another");
+    }
     snprintf(t, sizeof t, "engine_sha256=%s\n", sha);
     js_sha256_hex("engine B\n", 9, sha);
     snprintf(t, sizeof t, "engine_sha256=%s\n", sha);
@@ -165,6 +188,10 @@ static void test_ready(void)
     snprintf(t, sizeof t, "engine_sha256=%s\naccepted=%s\n", sha, sha);
     write_at("ready/kit/build/engine.sha256", t);
     check(jsrf_setup_engine_ready(root), "another engine the player said to play: ready");
+    {
+        char got[65];
+        check(js_engine_check(root, got) == JS_ENGINE_ACCEPTED, "the engine's check: another, accepted");
+    }
     engine_at("ready/kit", "engine C\n");
     check(jsrf_setup_needed(root), "an engine changed after it was accepted: the setup");
 
@@ -178,6 +205,10 @@ static void test_ready(void)
     snprintf(t, sizeof t, "engine_sha256=%s\n", sha);
     write_at("ready/unknown/build/engine.sha256", t);
     check(jsrf_setup_engine_ready(root), "a kit without the engine's hash, the engine built here: ready");
+    {
+        char got[65];
+        check(js_engine_check(root, got) == JS_ENGINE_BUILT, "the engine's check: the one built here");
+    }
 }
 
 /* ---- the tools folder ---- */
@@ -423,6 +454,8 @@ static void test_delete(void)
     engine_at("del", "engine\n");
     at(root, sizeof root, "del");
     check(js_tools_size(root) == 25, "Delete's size: the tools, the generated code, its objects and default.xbe");
+    check(js_tools_folder_size(root) == 5 && js_generated_size(root) == 20,
+          "  in two: the tools folder's, and what was made from the game");
     check(js_delete_tools(root) == 0, "Delete: done");
     check(!exists("del/tools") && !exists("del/build/generated") && !exists("del/build/work") &&
           !exists("del/build/obj") && !exists("del/build/tmp") && !exists("del/build/default.xbe"),
@@ -434,6 +467,35 @@ static void test_delete(void)
     check(exists("del/bin/jsrf_recomp") && exists("del/build/build.log") && exists("del/build/engine.sha256"),
           "Delete: the engine, the log and the stamp kept");
 #endif
+
+    /* Each half on its own (the Build page's two buttons). */
+    for (i = 0; i < sizeof made / sizeof made[0]; i++) write_at(made[i] + 1, "12345");   /* "el/...": another root */
+    at(root, sizeof root, "el");
+    check(js_delete_generated(root) == 0 && exists("el/tools/python/x") && !exists("el/build/generated") &&
+          !exists("el/build/work") && !exists("el/build/obj") && !exists("el/build/tmp") &&
+          !exists("el/build/default.xbe"), "Delete the generated code: the tools stay");
+    for (i = 0; i < sizeof made / sizeof made[0]; i++) write_at(made[i] + 1, "12345");
+    check(js_delete_tools_folder(root) == 0 && !exists("el/tools") && exists("el/build/generated/a.c") &&
+          exists("el/build/default.xbe"), "Delete the tools: the generated code stays");
+}
+
+/* ---- the generated code's hash ---- */
+
+static void test_gen_hash(void)
+{
+    char gen[4096], p[4096], want[80] = "", got[65];
+    FILE *f;
+    at(gen, sizeof gen, "genhash/gen");
+    at(p, sizeof p, "genhash/sha256.txt");
+    if ((f = fopen(p, "rb")) != NULL) {
+        if (!fgets(want, sizeof want, f)) want[0] = 0;
+        fclose(f);
+    }
+    want[strcspn(want, "\r\n")] = 0;
+    check(strlen(want) == 64 && js_gen_hash(gen, got) == 0 && !strcmp(got, want),
+          "the generated code's hash: build_engine.py's (each file and name, in byte order; folders left out)");
+    at(gen, sizeof gen, "genhash/none");
+    check(js_gen_hash(gen, got) != 0, "  and none for a folder that isn't there");
 }
 
 #ifndef _WIN32
@@ -628,6 +690,75 @@ static void test_console(void)
         check(jsrf_setup_run_console(&s) == JSRF_SETUP_CLOSED, "console: no tools folder: the download's question, and No");
     }
 }
+
+/* ---- the Build page's tasks (JSRF-PC Tools), with the same stand-in ---- */
+
+static void quiet(void *ctx, double at_, double end, double secs, double left, const char *text, const char *log)
+{
+    (void)ctx; (void)at_; (void)end; (void)secs; (void)left; (void)text; (void)log;
+}
+
+static int task(const char *rel, int what, int reuse, js_job *j)
+{
+    static jsrf_setup s;
+    static volatile int cancel;
+    char root[4096], p[4096];
+    int rc;
+    at(root, sizeof root, rel);
+    js_path(p, sizeof p, root, "mode.txt");
+    js_write_text(p, "match");
+    memset(&s, 0, sizeof s);
+    s.root = root;
+    at(s.game, sizeof s.game, "game");
+    memset(j, 0, sizeof *j);
+    j->s = &s;
+    j->task = what;
+    j->reuse_generated = reuse;
+    j->prog.update = quiet;
+    j->prog.cancel = &cancel;
+    rc = js_job_run(j);
+    if (j->log) { fclose(j->log); j->log = NULL; }
+    return rc;
+}
+
+static void test_tasks(void)
+{
+    static js_job j;
+    char want[65], root[4096], v[256];
+    int rc;
+    js_sha256_hex("the stand-in engine\n", 20, want);
+    at(v, sizeof v, "gen");
+    setenv("JSRF_SETUP_TEST_GEN", v, 1);
+
+    package("t-gen", want);
+    rc = task("t-gen", JS_TASK_GENERATE, 0, &j);
+    check(rc == 0 && !strcmp(j.gen_check, "match") && strlen(j.gen_sha) == 64 && !j.engine_sha[0] &&
+          !exists("t-gen/bin/jsrf_recomp") && !exists("t-gen/build/engine.sha256") &&
+          file_has("t-gen/build/py-args.txt", " --generate-only --test-gen "),
+          "Generate code: build_engine.py --generate-only, its hash taken, no engine, nothing noted for one");
+
+    rc = task("t-gen", JS_TASK_BUILD, 1, &j);
+    at(root, sizeof root, "t-gen");
+    check(rc == 0 && !strcmp(j.engine_check, "match") && jsrf_setup_engine_ready(root) &&
+          file_has("t-gen/build/py-args.txt", " --reuse-generated --test-gen "),
+          "Build, after it: build_engine.py --reuse-generated, the engine ready");
+
+    rc = task("t-gen", JS_TASK_BUILD, 0, &j);
+    check(rc == 0 && !file_has("t-gen/build/py-args.txt", "--reuse-generated") &&
+          !file_has("t-gen/build/py-args.txt", "--generate-only"), "the setup's build: neither");
+    unsetenv("JSRF_SETUP_TEST_GEN");
+
+    /* --version: what the engine prints, its first line. */
+    write_at("t-ver/bin/jsrf_recomp", "#!/bin/sh\n[ \"$1\" = --version ] && { echo; echo 'b3-test'; echo more; exit 0; }\nexit 9\n");
+    at(root, sizeof root, "t-ver/bin/jsrf_recomp");
+    chmod(root, 0755);
+    at(root, sizeof root, "t-ver");
+    check(js_engine_version(root, v, sizeof v) == 0 && !strcmp(v, "b3-test"), "the engine's version: its --version");
+    write_at("t-ver/bin/jsrf_recomp", "#!/bin/sh\nexit 3\n");
+    check(js_engine_version(root, v, sizeof v) != 0 && strstr(v, "didn't say"), "  an engine that doesn't say: why");
+    at(root, sizeof root, "t-none");
+    check(js_engine_version(root, v, sizeof v) != 0 && strstr(v, "no engine"), "  no engine: why");
+}
 #endif
 
 int main(int argc, char **argv)
@@ -643,9 +774,11 @@ int main(int argc, char **argv)
     test_bar();
     test_untar();
     test_delete();
+    test_gen_hash();
 #ifndef _WIN32
     test_run();
     test_console();
+    test_tasks();
 #endif
     printf("setup: %d passed, %d failed\n", passed, failed);
     return failed ? 1 : 0;

@@ -165,11 +165,17 @@ int jsrf_save_write(const char *title, const jsrf_save *s, int replace, char *wh
  * written into title only if it has none of that name. */
 int jsrf_title_file_write(const char *title, const jsrf_file *f, char *why, size_t n);
 
+/* Where JSRF-PC's saves came from (save_store.h's jsrf_origin), kept in
+ * the folder its UDATA and Save backups are in. */
+#define JSRF_ORIGIN_FILE    "Save origin.txt"
+
 /* A dated copy of title made under backups: backups\<YYYY-MM-DD HH.MM.SS>\
  * 5345000a, the time the local one, " (2)" and on added when that is taken.
- * Never over anything. The folder made, in made. JSRF_WROTE, JSRF_EXISTS
- * when there is no title folder yet (nothing to back up), or JSRF_FAILED
- * (what was made is removed). */
+ * Never over anything. The folder made, in made. When the folder backups is
+ * in has a JSRF_ORIGIN_FILE (JSRF-PC's saves' origin), it goes with them,
+ * as the backup's about.txt. JSRF_WROTE, JSRF_EXISTS when there is no title
+ * folder yet (nothing to back up), or JSRF_FAILED (what was made is
+ * removed). */
 int jsrf_backup(const char *title, const char *backups, char *made, size_t mn, char *why, size_t n);
 
 /* A folder copied whole, its folders in it too, to to, which isn't there

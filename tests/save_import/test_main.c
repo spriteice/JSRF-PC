@@ -9,8 +9,6 @@
 #include "save_import.h"
 #include "setup.h"
 #include "setup_job.h"
-#include "xbox_disk.h"
-#include "disk_build.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -391,7 +389,7 @@ static void put_save(const char *title, const char *folder, const char *name, in
 
 static void test_sources(void)
 {
-    char root[4096], title[4096], p[4096], dir[4096], data[4096];
+    char root[4096], title[4096], p[4096], dir[4096];
     uint8_t meta[600];
     size_t mn;
     jsrf_found f;
@@ -471,7 +469,6 @@ static void test_sources(void)
         CHECK(r == 1 && !strcmp(dir, title), "an export to xbased's folder goes to %s", dir);
 #endif
         CHECK(jsrf_export_title(JSRF_SRC_CXBX, p, dir, sizeof dir) == 0, "xbased's folder is taken for Cxbx's");
-        CHECK(jsrf_export_title(JSRF_SRC_XEMU, p, dir, sizeof dir) == 0, "an export to xemu is offered");
     }
 
     /* A save with too many files, and one with a file too large. */
@@ -496,61 +493,11 @@ static void test_sources(void)
         CHECK(f.saves[i].kind == JSRF_KIND_OTHER && f.saves[i].why[0], "an odd save, %s, is taken", f.saves[i].from);
     jsrf_found_free(&f);
 
-    /* xemu.toml */
-    {
-        static const char t1[] = "[general]\nhdd_path = '/not/this'\n[sys.files]\nbootrom_path = 'b'\n"
-                                 "hdd_path = 'C:\\Users\\me\\xbox_hdd.qcow2'\n";
-        static const char t2[] = "[ sys.files ]\n  hdd_path=\"C:\\\\Users\\\\Ren\\u00e9e\\\\hdd.qcow2\"\n";
-        static const char t3[] = "[sys.files]\nhdd_path = 'hdd/xbox_hdd.qcow2'\n";
-        static const char t4[] = "[sys.files]\nhdd_paths = 'x'\nhdd_path = ''\n";
-        char out[4096], want[4096];
-        CHECK(jsrf_xemu_hdd_path(t1, strlen(t1), "/d", out, sizeof out) == 1 &&
-              !strcmp(out, "C:\\Users\\me\\xbox_hdd.qcow2"), "xemu.toml's literal path: %s", out);
-        CHECK(jsrf_xemu_hdd_path(t2, strlen(t2), "/d", out, sizeof out) == 1 &&
-              !strcmp(out, "C:\\Users\\Ren\xC3\xA9" "e\\hdd.qcow2"), "xemu.toml's quoted path: %s", out);
-        js_path(want, sizeof want, "/d", "hdd/xbox_hdd.qcow2");
-        CHECK(jsrf_xemu_hdd_path(t3, strlen(t3), "/d", out, sizeof out) == 1 && !strcmp(out, want),
-              "xemu.toml's relative path: %s", out);
-        CHECK(jsrf_xemu_hdd_path(t4, strlen(t4), "/d", out, sizeof out) == 0, "an empty hdd_path is taken");
-        CHECK(jsrf_xemu_hdd_path(t1, 30, "/d", out, sizeof out) == 0, "hdd_path outside [sys.files] is taken");
-    }
-
-    /* xemu's disk: a qcow2 image of a retail-sized disk, the partition at
-     * E:'s place (tests/xbox_disk's builder). */
-    {
-        part pt = build(XBOX_DISK_E_LENGTH, 32);
-        qopts o = { 3, 0, 0, 0, -1 };
-        qimg q = qcow2_of(&pt, XBOX_DISK_E_OFFSET, XBOX_DISK_E_OFFSET + XBOX_DISK_E_LENGTH, o);
-        char image[4096], toml[4096], text[4300];
-        path(image, g_dir, "xbox_hdd.qcow2");
-        CHECK(js_write_file(image, q.b, q.n) == 0, "the image couldn't be made");
-        free(q.b);
-        snprintf(text, sizeof text, "[sys.files]\nhdd_path = '%s'\n", image);
-        path(data, g_dir, "xemu");
-        js_mkdirs(data);
-        path(toml, data, "xemu.toml");
-        js_write_text(toml, text);
-        r = jsrf_read_source(toml, &f);
-        CHECK(r == 0, "the image wasn't read through xemu.toml: %s", f.why);
-        CHECK(f.nsaves == 1 && !strcmp(f.saves[0].from, BUILT_SAVE) && f.saves[0].nfiles == 3,
-              "the image gave %d saves", f.nsaves);
-        if (f.nsaves == 1) {
-            jsrf_file *g = jsrf_save_file(&f.saves[0], JSRF_GAME_FILE);
-            CHECK(g && g->size == SAVE_SIZE && matches(g->data, 3, SAVE_SIZE), "the image's save isn't its bytes");
-            /* The built save's SaveMeta.xbx is a pattern, not a name. */
-            CHECK(f.saves[0].kind == JSRF_KIND_OTHER && strstr(f.saves[0].why, "name"),
-                  "a save with no name in its SaveMeta.xbx is taken");
-        }
-        CHECK(f.ntitle == 1 && f.title[0].size == TITLE_SIZE && matches(f.title[0].data, 2, TITLE_SIZE),
-              "the image's TitleMeta.xbx: %d", f.ntitle);
-        jsrf_found_free(&f);
-        free(pt.bytes);
-        path(p, g_dir, "not_an_image.bin");
-        js_write_text(p, "hello");
-        CHECK(jsrf_read_source(p, &f) == -1 && f.why[0], "a file that isn't an image was read");
-        jsrf_found_free(&f);
-        js_rmtree(image);
-    }
+    /* Something that isn't a folder is turned down, with why. */
+    path(p, g_dir, "not_a_folder.bin");
+    js_write_text(p, "hello");
+    CHECK(jsrf_read_source(p, &f) == -1 && strstr(f.why, "isn't a folder"), "a file was read as saves: %s", f.why);
+    jsrf_found_free(&f);
 }
 
 

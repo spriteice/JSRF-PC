@@ -35,6 +35,11 @@ int jsrf_pick_folder_in(const char *title, const char *start, char *out, size_t 
 int jsrf_pick_files_in(const char *title, const char *start, const char *kind, const char *const *patterns,
                        int multi, void (*each)(void *ctx, const char *path), void *ctx);
 
+/* For JSRF-PC Tools' script mode (tools_script.cpp): when set, each dialog
+ * is answered by it instead of shown. It fills out with the folder, or the
+ * files a line each, and returns 1; or returns 0, as if cancelled. */
+extern int (*jsrf_dialog_answer)(char *out, size_t n);
+
 #ifdef __cplusplus
 }
 #endif

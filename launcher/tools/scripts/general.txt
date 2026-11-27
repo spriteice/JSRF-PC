@@ -1,0 +1,175 @@
+# JSRF-PC Tools: its general functionality, played by the script mode.
+#
+#   jsrf-pc-tools [JSRF-PC's folder] --script general.txt --out <folder>
+#
+# Run it only on a copy of a JSRF-PC folder (its data/saves): it saves,
+# loads, clears, imports and deletes there. Beside this file: pictures/ (the
+# Graffiti page's pictures) and import-source/ (a folder of saves to import
+# from, such as a copy of a data/saves). Each step goes to script.log in
+# the out folder, with the screenshots; the exit code is how many failed.
+
+note ---- The window and its pages
+expect-text JSRF-PC Tools
+expect-text Scale
+expect-text JSRF-PC's saves
+expect-text Save slots
+expect-text Backups
+expect-text Other emulators
+shot 01-save-manager
+tab Graffiti
+expect-text Pictures
+expect-text Designs
+expect-text Import
+shot 02-graffiti
+tab Missions
+expect-text Start states
+expect-enabled Make start states
+shot 03-missions
+tab Build
+expect-text Engine
+shot 04-build
+
+note ---- Graffiti: pictures in, and imported as designs
+tab Graffiti
+answer $HERE/pictures
+click Pictures > Add folder...
+wait
+expect-text star-badge.png
+expect-text 1 file couldn't be read
+click ~couldn't be read
+expect-text not-a-picture.png
+shot 05-graffiti-pictures
+click Designs > ~##tile@1
+wait
+click Cropped
+click Stretched
+click Whole, clear margins
+shot 06-graffiti-design
+click Import > Import
+expect-text Import
+click Import
+wait 120
+expect-text Imported
+shot 07-graffiti-imported
+click Clear imported
+wait
+
+note ---- Save slots: save, rename, hover, load, clear
+tab Save manager
+wait
+expect-text Before adding 6 designs
+click Save slots > 8
+click Save slots > Save here
+key ctrl+a
+type Script test
+key enter
+wait
+expect-text Saved into slot 8.
+expect-text Script test
+expect-file $SAVES/Save slots/8/about.txt
+click Save slots > Rename
+key ctrl+a
+type Script test renamed
+key enter
+wait
+expect-text Script test renamed
+hover Save slots > 8
+expect-text Saved from JSRF-PC's saves
+shot 08-slot-hover
+click Save slots > Load
+click Load
+wait
+expect-text Loaded slot 8.
+expect-text loaded from slot 8
+expect-text Before loading slot 8
+shot 09-slot-loaded
+click Save slots > Clear
+click Clear
+wait
+expect-text Slot 8 cleared.
+expect-no-file $SAVES/Save slots/8/about.txt
+
+note ---- Designs: delete one, then restore its backup
+click JSRF-PC's saves > ~##d@1
+click JSRF-PC's saves > ~###del
+expect-text Delete 1 design?
+click Delete
+wait
+expect-text Before deleting 1 design
+shot 10-design-deleted
+click Backups > ~20@1
+click Backups > Restore
+click Restore
+wait
+expect-text restored from the backup
+shot 11-restored
+
+note ---- Backups: rename, copy to a slot, delete
+click Backups > Rename
+key ctrl+a
+type Script backup
+key enter
+wait
+expect-text Script backup
+click Backups > Copy to slot...
+expect-text Copy this backup to a slot
+click Slot
+click ~Slot 7:
+click Copy
+wait
+expect-text Copied into slot 7.
+hover Save slots > 7
+expect-text Copied from
+shot 12-backup-copied
+click Backups > Delete
+expect-text can't be undone
+click Delete
+wait
+expect-no-text Script backup (
+
+note ---- Import a folder: into JSRF-PC's saves, then into a slot
+answer $HERE/import-source
+click Other emulators > Import a folder...
+wait
+expect-text Import from a folder
+shot 13-import-review
+click ~###go
+click Import
+wait
+expect-text Imported.
+shot 14-imported
+click Done
+wait
+expect-text imported from a folder
+answer $HERE/import-source
+click Other emulators > Import a folder...
+wait
+click Import into a slot...
+expect-text Import into a slot
+click Slot
+click ~Slot 6:
+click ~##name
+key ctrl+a
+type Script import
+click Import
+wait
+expect-text Imported into slot 6.
+shot 15-imported-into-slot
+click Done
+wait
+expect-text Script import
+hover Save slots > 6
+expect-text Imported from a folder
+
+note ---- Scale
+click Scale
+click 150%
+pause 1
+shot 16-scale-150
+key ctrl+minus
+expect-text 125%
+key ctrl+0
+expect-text Auto (
+
+note ---- Closing
+close

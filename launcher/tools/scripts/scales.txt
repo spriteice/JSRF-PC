@@ -1,0 +1,60 @@
+# JSRF-PC Tools: each scale picked from Scale, a screenshot of each (its
+# note in script.log gives the window's size and the screen's room), then
+# Ctrl and - and Ctrl and 0. Ends at 150%, which tools.cfg keeps, for
+# reopen.txt to find when the tool is opened again.
+#
+#   jsrf-pc-tools [JSRF-PC's folder] --script scales.txt --out <folder>
+
+note ---- As it opens
+expect-text Auto (
+shot s-auto
+note ---- Each scale from the list
+click Scale
+click 75%
+pause 1
+expect-text 75%
+shot s-075
+click Scale
+click 100%
+pause 1
+shot s-100
+click Scale
+click 125%
+pause 1
+shot s-125
+click Scale
+click 150%
+pause 1
+shot s-150
+click Scale
+click 175%
+pause 1
+shot s-175
+click Scale
+click 200%
+pause 1
+shot s-200
+click Scale
+click 250%
+pause 1
+shot s-250
+click Scale
+click 300%
+pause 1
+expect-text 300%
+shot s-300
+note ---- The keys
+key ctrl+minus
+expect-text 250%
+key ctrl+minus
+expect-text 200%
+key ctrl+0
+expect-text Auto (
+pause 1
+shot s-auto-again
+note ---- Left at 150%, for the next start
+click Scale
+click 150%
+pause 1
+expect-text 150%
+close

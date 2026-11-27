@@ -487,6 +487,24 @@ int jsrf_backup(const char *title, const char *backups, char *made, size_t mn, c
         say(why, n, "The saves in %s couldn't be backed up, so nothing was changed.", title, NULL);
         return JSRF_FAILED;
     }
+    {
+        /* Where the saves came from, beside backups, goes with them. */
+        char parent[4200], origin[4300], about[4300];
+        unsigned char *text = NULL;
+        size_t l = strlen(backups), got = 0;
+        while (l > 1 && (backups[l - 1] == '/' || backups[l - 1] == '\\')) l--;
+        while (l && backups[l - 1] != '/' && backups[l - 1] != '\\') l--;
+        if (l > 1 && l < sizeof parent) {
+            memcpy(parent, backups, l - 1);
+            parent[l - 1] = 0;
+            js_path(origin, sizeof origin, parent, JSRF_ORIGIN_FILE);
+            if (js_read_file(origin, 1u << 16, &text, &got) == 0 && text) {
+                js_path(about, sizeof about, dir, "about.txt");
+                js_write_file(about, text, got);
+                free(text);
+            }
+        }
+    }
     if (made && mn) snprintf(made, mn, "%s", dir);
     return JSRF_WROTE;
 }

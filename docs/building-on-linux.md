@@ -159,7 +159,12 @@ are made in the build images, as the packages above are:
 
 The engine's build itself is
 [`launcher/kit/build_engine.py`](../launcher/kit/build_engine.py), which the
-setup runs with the tools' own Python, never the system's.
+setup runs with the tools' own Python, never the system's. JSRF-PC Tools'
+Build page ([jsrf-pc-tools.md](jsrf-pc-tools.md#build)) runs the same steps
+one at a time: the tools' download alone, only the generated code
+(`--generate-only`), and a build that compiles the code generated before as
+it is when `build/generated/about.txt` says it's from the same `default.xbe`
+and kit (`--reuse-generated`).
 
 ## The version
 

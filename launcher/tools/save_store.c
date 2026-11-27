@@ -90,6 +90,14 @@ void jsrf_store_count_text(const jsrf_held_count *c, char *out, size_t n)
     else snprintf(out, n, "%s", c->others ? "Other saves only" : "Nothing");
 }
 
+void jsrf_store_holds_text(const jsrf_held_count *c, const char *first, char *out, size_t n)
+{
+    char d[40] = "";
+    if (!c->game || !first || !first[0]) { jsrf_store_count_text(c, out, n); return; }
+    if (c->designs) snprintf(d, sizeof d, ", %d design%s", c->designs, c->designs == 1 ? "" : "s");
+    snprintf(out, n, "Game save from %s%s", first, d);
+}
+
 /* ---- dates ------------------------------------------------------------------------ */
 
 static int parse_when(const char *s, int v[6])
@@ -201,12 +209,46 @@ static void clean_name(const char *name, char *out, size_t n)
     if (i) memmove(out, out + i, strlen(out + i) + 1);
 }
 
-static int write_about(const char *dir, const char *name, const char *saved)
+/* A field of about.txt, or Save origin.txt: one line, its control
+ * characters spaces. */
+static void put_kv(char *text, size_t n, const char *key, const char *v)
 {
-    char p[JSRF_PATH_MAX], text[JSRF_STORE_NAME + 80];
+    size_t l = strlen(text);
+    char clean[JSRF_STORE_NAME + 128];
+    if (!v || !v[0]) return;
+    clean_name(v, clean, sizeof clean);
+    if (clean[0] && l < n) snprintf(text + l, n - l, "%s=%s\n", key, clean);
+}
+
+static void origin_text_of(const jsrf_origin *o, char *text, size_t n)
+{
+    put_kv(text, n, "how", o->how);
+    put_kv(text, n, "what", o->what);
+    put_kv(text, n, "at", o->at);
+    put_kv(text, n, "first", o->first);
+    put_kv(text, n, "game", o->game);
+}
+
+int jsrf_origin_read(const char *file, jsrf_origin *o)
+{
+    char v[1024];
+    int t[6];
+    memset(o, 0, sizeof *o);
+    if (js_read_kv(file, "how", v, sizeof v)) clean_name(v, o->how, sizeof o->how);
+    if (js_read_kv(file, "what", v, sizeof v)) clean_name(v, o->what, sizeof o->what);
+    if (js_read_kv(file, "at", v, sizeof v) && parse_when(v, t)) snprintf(o->at, sizeof o->at, "%.19s", v);
+    if (js_read_kv(file, "first", v, sizeof v)) clean_name(v, o->first, sizeof o->first);
+    if (js_read_kv(file, "game", v, sizeof v) && parse_when(v, t)) snprintf(o->game, sizeof o->game, "%.19s", v);
+    return o->how[0] || o->first[0];
+}
+
+static int write_about(const char *dir, const char *name, const char *saved, const jsrf_origin *o)
+{
+    char p[JSRF_PATH_MAX], text[2048] = "";
     js_path(p, sizeof p, dir, JSRF_STORE_ABOUT);
-    snprintf(text, sizeof text, "name=%s\n%s%s%s", name, saved && saved[0] ? "saved=" : "", saved ? saved : "",
-             saved && saved[0] ? "\n" : "");
+    snprintf(text, sizeof text, "name=%s\n", name ? name : "");
+    put_kv(text, sizeof text, "saved", saved);
+    if (o) origin_text_of(o, text, sizeof text);
     return js_write_text(p, text) == 0 ? 0 : -1;
 }
 
@@ -218,16 +260,56 @@ static void read_about(jsrf_held *h)
     h->name[0] = 0;
     if (js_read_kv(p, "name", v, sizeof v)) clean_name(v, h->name, sizeof h->name);
     if (js_read_kv(p, "saved", v, sizeof v) && parse_when(v, t)) snprintf(h->when, sizeof h->when, "%.19s", v);
+    jsrf_origin_read(p, &h->origin);
 }
 
 int jsrf_store_rename(const char *dir, const char *name)
 {
     char p[JSRF_PATH_MAX], saved[1024] = "", clean[JSRF_STORE_NAME];
+    jsrf_origin o;
     if (!js_is_dir(dir)) return -1;
     js_path(p, sizeof p, dir, JSRF_STORE_ABOUT);
     js_read_kv(p, "saved", saved, sizeof saved);
+    jsrf_origin_read(p, &o);
     clean_name(name, clean, sizeof clean);
-    return write_about(dir, clean, saved);
+    return write_about(dir, clean, saved, &o);
+}
+
+int jsrf_origin_note(const char *file, const char *title, const char *how, const char *what, const char *first)
+{
+    jsrf_origin o;
+    char g[JSRF_PATH_MAX], text[2048] = "";
+    memset(&o, 0, sizeof o);
+    snprintf(o.how, sizeof o.how, "%s", how ? how : "");
+    snprintf(o.what, sizeof o.what, "%s", what ? what : "");
+    snprintf(o.first, sizeof o.first, "%s", first ? first : "");
+    jsrf_store_now(o.at);
+    if (jsrf_store_game_file(title, g, sizeof g)) jsrf_store_file_when(g, o.game);
+    origin_text_of(&o, text, sizeof text);
+    return js_write_text(file, text) == 0 ? 0 : -1;
+}
+
+void jsrf_origin_text(const jsrf_origin *o, char *out, size_t n)
+{
+    static const char *const hows[][2] = {
+        { JSRF_HOW_LOADED, "Loaded from" }, { JSRF_HOW_RESTORED, "Restored from" },
+        { JSRF_HOW_IMPORTED, "Imported from" }, { JSRF_HOW_SAVED, "Saved from" }, { JSRF_HOW_COPIED, "Copied from" },
+    };
+    const char *verb = NULL;
+    char when[64] = "";
+    size_t i, l;
+    if (n) out[0] = 0;
+    for (i = 0; i < sizeof hows / sizeof hows[0]; i++)
+        if (!strcmp(o->how, hows[i][0])) verb = hows[i][1];
+    if (verb && o->what[0]) {
+        if (o->at[0]) jsrf_store_when_text(o->at, when, sizeof when);
+        snprintf(out, n, "%s %s%s%s.", verb, o->what, when[0] ? " on " : "", when);
+    }
+    /* Where it was first brought in from, unless that's what was just said. */
+    if (o->first[0] && !(!strcmp(o->how, JSRF_HOW_IMPORTED) && !strcmp(o->what, o->first))) {
+        l = strlen(out);
+        if (l < n) snprintf(out + l, n - l, "%sFirst from %s.", l ? " " : "", o->first);
+    }
 }
 
 /* ---- listing --------------------------------------------------------------------- */
@@ -345,27 +427,45 @@ static void sibling(char *out, size_t n, const char *path, const char *ext)
 
 /* ---- slots ------------------------------------------------------------------------- */
 
-int jsrf_store_save_slot(const char *title, const char *slots, int i, const char *name, char *why, size_t n)
+static void slot_paths(const char *slots, int i, char *final, char *made, char *old)
 {
-    char final[JSRF_PATH_MAX], made[JSRF_PATH_MAX + 8], old[JSRF_PATH_MAX + 8], into[JSRF_PATH_MAX + 20];
-    char num[8], now[32], clean[JSRF_STORE_NAME];
-    if (i < 0 || i >= JSRF_STORE_SLOTS) { say(why, n, "%s", "There's no such slot."); return JSRF_FAILED; }
-    if (!js_is_dir(title)) {
-        say(why, n, "%s", "JSRF-PC has no saves yet: play it once, then save them here.");
-        return JSRF_FAILED;
-    }
-    if (js_mkdirs(slots) != 0) { say(why, n, "%s couldn't be made.", slots); return JSRF_FAILED; }
+    char num[16];
     snprintf(num, sizeof num, "%d", i + 1);
-    js_path(final, sizeof final, slots, num);
-    sibling(made, sizeof made, final, ".new");
-    sibling(old, sizeof old, final, ".old");
+    js_path(final, JSRF_PATH_MAX, slots, num);
+    sibling(made, JSRF_PATH_MAX + 8, final, ".new");
+    sibling(old, JSRF_PATH_MAX + 8, final, ".old");
+}
+
+int jsrf_store_slot_begin(const char *slots, int i, char *title, size_t tn, char *why, size_t n)
+{
+    char final[JSRF_PATH_MAX], made[JSRF_PATH_MAX + 8], old[JSRF_PATH_MAX + 8];
+    if (i < 0 || i >= JSRF_STORE_SLOTS) { say(why, n, "%s", "There's no such slot."); return -1; }
+    if (js_mkdirs(slots) != 0) { say(why, n, "%s couldn't be made.", slots); return -1; }
+    slot_paths(slots, i, final, made, old);
     tidy(final, made, old);
-    js_path(into, sizeof into, made, JSRF_TITLE_ID);
+    if (js_mkdir_new(made) != 0) { say(why, n, "%s couldn't be made.", made); return -1; }
+    js_path(title, tn, made, JSRF_TITLE_ID);
+    return 0;
+}
+
+void jsrf_store_slot_drop(const char *slots, int i)
+{
+    char final[JSRF_PATH_MAX], made[JSRF_PATH_MAX + 8], old[JSRF_PATH_MAX + 8];
+    if (i < 0 || i >= JSRF_STORE_SLOTS) return;
+    slot_paths(slots, i, final, made, old);
+    if (there(made)) js_rmtree(made);
+}
+
+int jsrf_store_slot_finish(const char *slots, int i, const char *name, const jsrf_origin *o, char *why, size_t n)
+{
+    char final[JSRF_PATH_MAX], made[JSRF_PATH_MAX + 8], old[JSRF_PATH_MAX + 8], now[32], clean[JSRF_STORE_NAME];
+    if (i < 0 || i >= JSRF_STORE_SLOTS) { say(why, n, "%s", "There's no such slot."); return JSRF_FAILED; }
+    slot_paths(slots, i, final, made, old);
     jsrf_store_now(now);
     clean_name(name, clean, sizeof clean);
-    if (js_mkdir_new(made) != 0 || jsrf_copy_tree(title, into) != 0 || write_about(made, clean, now) != 0) {
+    if (!js_is_dir(made) || write_about(made, clean, now, o) != 0) {
         js_rmtree(made);
-        say(why, n, "JSRF-PC's saves couldn't be copied into %s, so the slot is as it was.", slots);
+        say(why, n, "The slot's name couldn't be written into %s, so the slot is as it was.", slots);
         return JSRF_FAILED;
     }
     if (swap_in(final, made, old) != 0) {
@@ -373,6 +473,20 @@ int jsrf_store_save_slot(const char *title, const char *slots, int i, const char
         return JSRF_FAILED;
     }
     return JSRF_WROTE;
+}
+
+int jsrf_store_save_slot(const char *from, const char *slots, int i, const char *name, const jsrf_origin *o,
+                         char *why, size_t n)
+{
+    char into[JSRF_PATH_MAX];
+    if (!js_is_dir(from)) { say(why, n, "%s", "There are no saves there to put in a slot."); return JSRF_FAILED; }
+    if (jsrf_store_slot_begin(slots, i, into, sizeof into, why, n) != 0) return JSRF_FAILED;
+    if (jsrf_copy_tree(from, into) != 0) {
+        jsrf_store_slot_drop(slots, i);
+        say(why, n, "The saves couldn't be copied into %s, so the slot is as it was.", slots);
+        return JSRF_FAILED;
+    }
+    return jsrf_store_slot_finish(slots, i, name, o, why, n);
 }
 
 int jsrf_store_load(const char *from, const char *title, const char *backups, const char *label,

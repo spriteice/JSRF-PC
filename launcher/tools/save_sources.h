@@ -3,9 +3,9 @@
  * save_sources.c.
  *
  * Cxbx-Reloaded and xbased keep the console's E: drive as host folders
- * (EmuDisk\Partition1 and hdd\Partition1); xemu keeps the whole disk as one
- * image (xbox_disk.c reads it); a real Xbox's saves come as a folder copied
- * off it. Every source is read only, and nothing in it is trusted.
+ * (EmuDisk\Partition1 and hdd\Partition1); a real Xbox's saves come as a
+ * folder copied off it. Every source is read only, and nothing in it is
+ * trusted.
  *
  * Paths are UTF-8.
  */
@@ -20,14 +20,13 @@ extern "C" {
 
 #define JSRF_SRC_CXBX     1
 #define JSRF_SRC_XBASED   2
-#define JSRF_SRC_XEMU     3
 
 #define JSRF_PATH_MAX     4096
 #define JSRF_TITLE_FILES  4            /* TitleMeta.xbx, TitleImage.xbx, SaveImage.xbx */
 
 /* The saves read out of one place. */
 typedef struct jsrf_found {
-    char       where[JSRF_PATH_MAX];   /* the title folder, or the image */
+    char       where[JSRF_PATH_MAX];   /* the title folder, or the save's own folder */
     int        nsaves;
     jsrf_save *saves;                  /* malloc'ed; each checked (jsrf_save_check) */
     int        ntitle;
@@ -42,15 +41,10 @@ void jsrf_found_free(jsrf_found *f);
 int jsrf_env(const char *name, char *out, size_t n);
 
 /* The places source usually keeps JSRF's saves that are there on this
- * computer, into paths: the title folder (5345000a) for Cxbx-Reloaded and
- * xbased, the disk image xemu.toml names for xemu. Their count. A source
- * kept somewhere else (a portable copy, a folder of its own) is picked by
- * the player instead. */
+ * computer, into paths: Cxbx-Reloaded's or xbased's title folder
+ * (5345000a). Their count. A source kept somewhere else (a portable copy, a
+ * folder of its own) is picked by the player instead. */
 int jsrf_usual_places(int source, char (*paths)[JSRF_PATH_MAX], int max);
-
-/* xemu.toml's hdd_path, in its [sys.files] table, into out: a path given
- * relative is taken from dir, xemu.toml's folder. 1 found, 0 not. */
-int jsrf_xemu_hdd_path(const char *toml, size_t n, const char *dir, char *out, size_t on);
 
 /* In a folder the player picked: JSRF's title folder, the folder itself or
  * where the usual layouts put it under it (5345000a; UDATA\5345000a; a
@@ -66,13 +60,8 @@ int jsrf_read_title_dir(const char *dir, jsrf_found *out);
 /* One save's own folder. */
 int jsrf_read_save_dir(const char *dir, jsrf_found *out);
 
-/* Every save in an Xbox disk image (xemu's qcow2, or raw), its E: drive's
- * UDATA\5345000a. */
-int jsrf_read_image(const char *image, jsrf_found *out);
-
-/* What the player picked or dropped, whatever it is: a folder (as
- * jsrf_find_title_dir finds in it), a disk image, or an xemu.toml (the
- * image it names). */
+/* What the player picked or dropped: a folder, as jsrf_find_title_dir
+ * finds the saves in it. Anything else is turned down, with why. */
 int jsrf_read_source(const char *path, jsrf_found *out);
 
 /* Where an export to source (Cxbx-Reloaded or xbased) goes, from the

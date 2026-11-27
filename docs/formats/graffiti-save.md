@@ -16,8 +16,8 @@ does are given here; nothing of the game's is in the repository.
   `XboxSignatureKey`, which is 16 zero bytes in JSRF-PC.
 - The folder's name is XAPI's hash of the save's name, with no key in it.
 - Before the game draws a design, it checks the header's signature and the
-  wall texture's, then the `JSRF` tag. A design signed under another key, a
-  console's or xemu's, is left out until it is signed again.
+  wall texture's, then the `JSRF` tag. A design signed under another key,
+  such as a console's, is left out until it is signed again.
 
 ## The signatures
 

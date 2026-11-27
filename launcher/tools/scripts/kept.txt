@@ -1,0 +1,53 @@
+# JSRF-PC Tools: the kept graffiti tags (kept-graffiti.txt, in the game
+# save's own folder) carried by a slot, Load, Restore, the backups, a
+# folder import and an export to xbased. Run on a copy whose game save holds
+# a kept-graffiti.txt; the runner compares every copy of it afterwards.
+#
+#   jsrf-pc-tools [JSRF-PC's folder] --script kept.txt --out <folder>
+
+note ---- Into slot 8, and loaded back
+click Save slots > 8
+click Save slots > Save here
+key ctrl+a
+type Kept tags
+key enter
+wait
+expect-text Saved into slot 8.
+expect-file $SAVES/Save slots/8/5345000a/132AFEB47888/kept-graffiti.txt
+click Save slots > Load
+click Load
+wait
+expect-text Loaded slot 8.
+expect-file $SAVES/UDATA/5345000a/132AFEB47888/kept-graffiti.txt
+note ---- The backup made before loading, restored
+click Backups > ~20@1
+click Backups > Restore
+click Restore
+wait
+expect-text restored from the backup
+expect-file $SAVES/UDATA/5345000a/132AFEB47888/kept-graffiti.txt
+note ---- Exported to xbased
+click Other emulators > xbased
+click Other emulators > Export
+wait
+expect-text Export
+shot k1-export-review
+click ~###go
+click Export
+wait
+expect-text Exported.
+shot k2-exported
+click Done
+wait
+note ---- Imported from a folder holding it
+answer $HERE/import-source
+click Other emulators > Import a folder...
+wait
+click ~###go
+click Import
+wait
+expect-text Imported.
+click Done
+wait
+expect-file $SAVES/UDATA/5345000a/132AFEB47888/kept-graffiti.txt
+close

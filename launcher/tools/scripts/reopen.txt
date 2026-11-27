@@ -1,0 +1,12 @@
+# JSRF-PC Tools opened again after scales.txt: it should open at the scale
+# picked there (150%). Then back to Auto, which tools.cfg keeps.
+#
+#   jsrf-pc-tools [JSRF-PC's folder] --script reopen.txt --out <folder>
+
+expect-text 150%
+shot reopened-150
+key ctrl+0
+expect-text Auto (
+pause 1
+shot reopened-auto
+close

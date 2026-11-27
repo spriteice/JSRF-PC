@@ -5,8 +5,10 @@ holds, dates in words, the 8 save slots (saved into, named, listed, loaded
 back, cleared), the backups (listed newest first, named, restored,
 deleted), a load or delete always after a backup, names kept to one line and
 cut at a whole character, saves deleted only by a save folder's name, the
-.new and .old a stopped run leaves, and a design's preview. No game data:
-the saves are made up.
+.new and .old a stopped run leaves, a design's preview, and where saves
+came from (JSRF-PC's record, carried by its backups, a slot saved from it, a
+backup copied into a slot, a slot filled by an import). No game data: the
+saves are made up.
 Requires GCC on PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
 """

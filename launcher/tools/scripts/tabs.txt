@@ -1,0 +1,16 @@
+# JSRF-PC Tools: every tab visited, then a long pause, in which whoever
+# started it closes the window from outside as its cross does (the Ally X
+# batch's close-window.py). Played to the end, it closes itself.
+#
+#   jsrf-pc-tools [JSRF-PC's folder] --script tabs.txt --out <folder>
+
+tab Graffiti
+expect-text Pictures
+tab Missions
+expect-text Start states
+tab Build
+expect-text Engine
+tab Save manager
+expect-text Save slots
+note ---- Waiting to be closed from outside
+pause 120

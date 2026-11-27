@@ -24,17 +24,21 @@ shift 3
 rm -rf "$obj"; mkdir -p "$obj"
 
 srcs=("$repo/launcher/tools/jsrf_save.c" "$repo/launcher/tools/save_sources.c" "$repo/launcher/tools/save_import.c"
+      "$repo/launcher/common/user_files.c"
       "$repo/launcher/tools/save_store.c"
-      "$repo/launcher/tools/xbox_disk.c" "$repo/launcher/tools/file_dialog.c" "$repo/launcher/tools/mission_walk.c"
+      "$repo/launcher/tools/file_dialog.c" "$repo/launcher/tools/mission_walk.c"
       "$repo/launcher/setup/setup_core.c" "$repo/port/xiso.c" "$repo/port/xbe_check.c"
       "$repo/launcher/tools/graffiti_fit.c" "$repo/launcher/tools/graffiti_save.c" "$repo/launcher/tools/graffiti_image.c")
 kernel=("$repo/launcher/tools/kernel_crypto_host.c" "$repo/src/kernel/kernel_crypto.c")
 cxx_srcs=("$repo/launcher/tools/tools_main.cpp" "$repo/launcher/tools/tools_saves.cpp" "$repo/launcher/tools/graffiti_page.cpp"
-          "$repo/launcher/tools/tools_missions.cpp" "$repo/src/menu/menu_style.cpp")
+          "$repo/launcher/tools/tools_missions.cpp" "$repo/launcher/tools/tools_build.cpp"
+          "$repo/launcher/tools/tools_script.cpp" "$repo/src/menu/menu_style.cpp")
 imgui=("$repo/third_party/imgui/imgui.cpp" "$repo/third_party/imgui/imgui_draw.cpp"
        "$repo/third_party/imgui/imgui_tables.cpp" "$repo/third_party/imgui/imgui_widgets.cpp"
        "$repo/third_party/imgui/backends/imgui_impl_sdl2.cpp" "$repo/third_party/imgui/backends/imgui_impl_opengl3.cpp")
-cxxflags=(-std=c++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -O2)
+# Dear ImGui's item hooks, for the script mode (tools_script.cpp): the same
+# for every C++ file, as they change ImGui's own structures.
+cxxflags=(-std=c++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics -O2 -DIMGUI_ENABLE_TEST_ENGINE)
 inc_tools=(-I "$repo/launcher/tools" -I "$repo/launcher/setup" -I "$repo/port")
 # The headers graffiti_image.c reads the picture libraries through.
 inc_pictures=(-I "$repo/third_party/stb" -I "$repo/third_party/nanosvg" -I "$repo/third_party/libwebp/src"

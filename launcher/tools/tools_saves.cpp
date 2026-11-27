@@ -1,22 +1,23 @@
 /*
  * JSRF-PC Tools' save manager (tools.h; b3 row 36).
  *
- *   JSRF-PC's saves: what the game loads, and the designs in them, which
- *     the player can delete.
+ *   JSRF-PC's saves: what the game loads, where its game save came from,
+ *     and the designs in them, which the player can delete.
  *   Save slots: 8 copies of all of JSRF-PC's saves that the player keeps,
- *     each named: saved into, loaded back, renamed, cleared.
+ *     each named: saved into (from JSRF-PC's saves, a backup, or an
+ *     import), loaded back, renamed, cleared.
  *   Backups: the dated copies made before anything replaces or deletes
- *     JSRF-PC's saves: restored, renamed, deleted.
- *   Other emulators: Cxbx-Reloaded, xemu and xbased, their folders and the
- *     saves in them shown when the player wants (tools.cfg's
- *     show_emulators), each folder found in its usual place or picked (and
- *     then remembered). Saves imported from them, or from any folder or
- *     disk image (a real Xbox's saves copied off it among them), are
- *     re-signed with JSRF-PC's key. Exports go to xbased (whose key is
- *     JSRF-PC's) or Cxbx-Reloaded (whose key comes from the player's own
- *     default.xbe, as Cxbx makes it without keys). No console's keys are
- *     asked for or read, so xemu and a real Xbox aren't offered for export
- *     (spriteice, 7:46pm on 2026-11-26).
+ *     JSRF-PC's saves: restored, copied into a slot, renamed, deleted.
+ *   Other emulators: Cxbx-Reloaded and xbased, their folders and the saves
+ *     in them shown when the player wants (tools.cfg's show_emulators), each
+ *     folder found in its usual place or picked (and then remembered). Saves
+ *     imported from them, or from any folder (a real Xbox's saves copied off
+ *     it among them), into JSRF-PC's saves or a slot, are re-signed with
+ *     JSRF-PC's key. Exports go to xbased (whose key is JSRF-PC's) or
+ *     Cxbx-Reloaded (whose key comes from the player's own default.xbe, as
+ *     Cxbx makes it without keys). No console's keys are asked for or read
+ *     (spriteice, 7:46pm on 2026-11-26); xemu isn't offered (spriteice,
+ *     10:55am on 2026-11-27).
  *
  * Nothing is written until the page's own button, then the shell's warning,
  * and anything that changes JSRF-PC's saves backs them up first
@@ -47,10 +48,16 @@
 
 #define REREAD_S     3.0           /* how often what's on disk is read again while the page shows */
 
-static const char *const SOURCE_NAMES[] = { "", "Cxbx-Reloaded", "xbased", "xemu" };
-static const char *const SOURCE_KEYS[] = { "", "cxbx_folder", "xbased_folder", "xemu_disk" };
-static const int EMU_ORDER[] = { JSRF_SRC_CXBX, JSRF_SRC_XEMU, JSRF_SRC_XBASED };
+#define NEMUS        2
+static const char *const SOURCE_NAMES[] = { "", "Cxbx-Reloaded", "xbased" };
+static const char *const SOURCE_KEYS[] = { "", "cxbx_folder", "xbased_folder" };
+static const int EMU_ORDER[NEMUS] = { JSRF_SRC_CXBX, JSRF_SRC_XBASED };
 static const char *const SIZE_NAMES[] = { "SS", "S", "M", "L", "XL" };
+
+/* The page's own types, kept to this file: each page has a page_state, and
+ * without this the linker keeps one page's destructor for all of them, which
+ * then frees another page's text as pointers when the tool closes. */
+namespace {
 
 struct design_row {
     unsigned slot;
@@ -61,7 +68,7 @@ struct design_row {
 };
 
 struct emu_row {
-    char where[JSRF_PATH_MAX];     /* its folder, or xemu's disk; "" not found */
+    char where[JSRF_PATH_MAX];     /* its folder; "" not found */
     int  picked;                   /* where is the player's pick (tools.cfg), not the usual place */
     int  ok;                       /* JSRF saves were read there */
     char what[400];                /* what's there, or why nothing */
@@ -73,6 +80,7 @@ struct page_state {
     double     read_at;
     jsrf_held_count mine;
     char       game_when[32];
+    jsrf_origin origin;            /* where JSRF-PC's game save came from */
     ImVector<design_row> designs;
     jsrf_held  slots[JSRF_STORE_SLOTS];
     int        slot_sel;
@@ -80,7 +88,7 @@ struct page_state {
     int        nbackups, backup_sel;
     char       backup_sel_dir[JSRF_PATH_MAX];
     int        show_emus;
-    emu_row    emus[4];            /* by source */
+    emu_row    emus[NEMUS + 1];    /* by source */
     int        emu_sel;            /* a source, 0 none */
     int        st_section, st_kind;
     char       st[JSRF_PATH_MAX + 800];
@@ -99,7 +107,13 @@ struct page_state {
     uint8_t    key[JSRF_KEY_BYTES];
     jsrf_plan  plan;
     int        planned, ran;
+    int        into_slot;          /* an import into a slot: its number, 1 to 8; 0 into JSRF-PC's saves */
+
+    /* a slot picked to copy or import into */
+    int        pick_slot;
 };
+}  /* namespace */
+
 static page_state g;
 
 static void status(int section, int kind, const char *fmt, ...) IM_FMTARGS(3);
@@ -113,6 +127,21 @@ static void status(int section, int kind, const char *fmt, ...)
     g.st_kind = kind;
 }
 
+/* A date column: as wide as the widest date, so a narrow window wraps the
+ * other columns instead of cutting a date short. */
+static float date_width(void)
+{
+    return ImGui::CalcTextSize("28 Nov 2026, 12:59pm").x + ImGui::GetStyle().CellPadding.x * 2;
+}
+
+/* A cell's text, wrapped to the cell. */
+static void cell_text(const char *text, bool grey)
+{
+    if (grey) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    ImGui::TextWrapped("%s", text);
+    if (grey) ImGui::PopStyleColor();
+}
+
 static void show_status(int section)
 {
     if (g.st_section == section && g.st[0]) tools_status(g.st_kind, "%s", g.st);
@@ -121,6 +150,99 @@ static void show_status(int section)
 static void slots_dir(const tools_ctx *t, char *out, size_t n)
 {
     js_path(out, n, t->saves, "Save slots");
+}
+
+static void origin_file(const tools_ctx *t, char *out, size_t n)
+{
+    js_path(out, n, t->saves, JSRF_ORIGIN_FILE);
+}
+
+/* A slot as the origin names it: slot 2 ("Test"). */
+static void slot_what(int i, char *out, size_t n)
+{
+    if (g.slots[i].name[0]) snprintf(out, n, "slot %d (\"%s\")", i + 1, g.slots[i].name);
+    else snprintf(out, n, "slot %d", i + 1);
+}
+
+/* A backup as the origin names it: the backup "Before loading slot 1", or
+ * the backup of 27 Nov 2026, 10:57am. */
+static void backup_what(const jsrf_held *h, char *out, size_t n)
+{
+    char when[64];
+    if (h->name[0]) { snprintf(out, n, "the backup \"%s\"", h->name); return; }
+    jsrf_store_when_text(h->when[0] ? h->when : h->dir, when, sizeof when);
+    snprintf(out, n, "the backup of %s", when);
+}
+
+/* The slot offered first: the first empty one, so nothing is replaced
+ * unless the player picks it; else the one picked above; else slot 1. */
+static int slot_to_offer(void)
+{
+    for (int i = 0; i < JSRF_STORE_SLOTS; i++)
+        if (!g.slots[i].used) return i;
+    return g.slot_sel >= 0 ? g.slot_sel : 0;
+}
+
+/* A slot in the slot prompt's list: "Slot 2: Test (Game save from xbased)". */
+static void slot_label(int i, char *out, size_t n)
+{
+    jsrf_held *h = &g.slots[i];
+    char what[100];
+    if (!h->used) { snprintf(out, n, "Slot %d: empty", i + 1); return; }
+    jsrf_store_holds_text(&h->count, h->origin.first, what, sizeof what);
+    snprintf(out, n, "Slot %d: %s (%s)", i + 1, h->name[0] ? h->name : "no name", what);
+}
+
+/* Which slot to put saves into, and its name: a modal like the shell's
+ * name prompt, with the 8 slots to pick from (*slot, 0 to 7). True the
+ * frame go is pressed, or Enter. */
+static bool slot_prompt(const char *id, const char *text, const char *go, int *slot, char *name, size_t n)
+{
+    bool pressed = false;
+    ImGuiIO &io = ImGui::GetIO();
+    ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x * 0.8f, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always,
+                            ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal(id, NULL, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings)) {
+        char label[JSRF_STORE_NAME + 140];
+        float at = ImGui::GetCursorPosX() + ImGui::CalcTextSize("Name:").x + ImGui::GetStyle().ItemSpacing.x * 2;
+        bool enter;
+        if (*slot < 0 || *slot >= JSRF_STORE_SLOTS) *slot = 0;
+        if (text && text[0]) ImGui::TextWrapped("%s", text);
+        ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.25f));
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Slot:");
+        ImGui::SameLine(at);
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        slot_label(*slot, label, sizeof label);
+        bool open = ImGui::BeginCombo("##slot", label);
+        tools_script_name(ImGui::GetID("##slot"), "Slot");
+        if (open) {
+            for (int i = 0; i < JSRF_STORE_SLOTS; i++) {
+                slot_label(i, label, sizeof label);
+                ImGui::PushID(i);
+                if (ImGui::Selectable(label, i == *slot)) *slot = i;
+                if (i == *slot) ImGui::SetItemDefaultFocus();
+                ImGui::PopID();
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Name:");
+        ImGui::SameLine(at);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        enter = ImGui::InputTextWithHint("##name", "Name (or leave it empty)", name, n,
+                                         ImGuiInputTextFlags_EnterReturnsTrue);
+        if (g.slots[*slot].used)
+            tools_status(TOOLS_WARN, "Slot %d's saves now are replaced, and aren't backed up.", *slot + 1);
+        ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.5f));
+        if (ImGui::Button(go) || enter) { pressed = true; ImGui::CloseCurrentPopup(); }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+    return pressed;
 }
 
 /* ---- reading what's on disk ------------------------------------------------------------ */
@@ -191,7 +313,7 @@ static void find_emu(const tools_ctx *t, int source)
     if (tools_setting(t, SOURCE_KEYS[source], v, sizeof v) && v[0] && (js_is_dir(v) || js_is_file(v))) {
         snprintf(e->where, sizeof e->where, "%s", v);
         e->picked = 1;
-    } else if (source != JSRF_SRC_XEMU && jsrf_usual_export(source, v, sizeof v)) {
+    } else if (jsrf_usual_export(source, v, sizeof v)) {
         snprintf(e->where, sizeof e->where, "%s", v);
     } else if (jsrf_usual_places(source, places, 4) >= 1) {
         snprintf(e->where, sizeof e->where, "%s", places[0]);
@@ -215,7 +337,7 @@ static void read_emu(const tools_ctx *t, int source)
     find_emu(t, source);
     e->ok = 0;
     if (!e->where[0]) {
-        snprintf(e->what, sizeof e->what, "Not in its usual place: pick its %s.", source == JSRF_SRC_XEMU ? "disk" : "folder");
+        snprintf(e->what, sizeof e->what, "Not in its usual place: pick its folder.");
         return;
     }
     memset(&f, 0, sizeof f);
@@ -238,12 +360,14 @@ static void reread(tools_ctx *t, int fresh)
     jsrf_store_count(t->title, &g.mine);
     g.game_when[0] = 0;
     if (jsrf_store_game_file(t->title, p, sizeof p)) jsrf_store_file_when(p, g.game_when);
+    origin_file(t, p, sizeof p);
+    jsrf_origin_read(p, &g.origin);
     read_designs(t, fresh);
     slots_dir(t, s, sizeof s);
     jsrf_store_slots(s, g.slots);
     read_backups(t);
     if (fresh && g.show_emus)
-        for (int i = 0; i < 3; i++) read_emu(t, EMU_ORDER[i]);
+        for (int i = 0; i < NEMUS; i++) read_emu(t, EMU_ORDER[i]);
     g.read_at = ImGui::GetTime();
 }
 
@@ -350,7 +474,8 @@ static void draw_designs(tools_ctx *t)
 
 static void draw_mine(tools_ctx *t)
 {
-    char what[100], when[64];
+    char what[100], when[64], from[400];
+    ImGui::PushID("mine");
     tools_heading("JSRF-PC's saves");
     tools_hint("What the game loads. Anything here that changes them makes a backup first.");
     tools_help_marker("Close JSRF-PC before changing its saves here, so it doesn't save over what you did.");
@@ -365,30 +490,42 @@ static void draw_mine(tools_ctx *t)
         } else {
             ImGui::Text("%s.", what);
         }
+        /* Where its game save came from, and whether the game has saved
+         * over it since. */
+        jsrf_origin_text(&g.origin, from, sizeof from);
+        if (g.mine.game && from[0]) {
+            size_t l = strlen(from);
+            if (g.origin.game[0] && g.game_when[0] && strcmp(g.origin.game, g.game_when) && l < sizeof from)
+                snprintf(from + l, sizeof from - l, " The game has saved since.");
+            ImGui::TextWrapped("Game save: %c%s", from[0] - 'A' + 'a', from + 1);
+        }
     }
     ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.25f));
     draw_designs(t);
     show_status(SEC_MINE);
+    ImGui::PopID();
 }
 
 /* ---- save slots ------------------------------------------------------------------------ */
 
 static void draw_slots(tools_ctx *t)
 {
-    char s[JSRF_PATH_MAX], when[64], what[100], id[80], why[600];
+    char s[JSRF_PATH_MAX], when[64], what[400], id[80], why[600];
     jsrf_held *sel = g.slot_sel >= 0 ? &g.slots[g.slot_sel] : NULL;
     int has_saves = g.mine.game || g.mine.designs || g.mine.others;
     slots_dir(t, s, sizeof s);
+    ImGui::PushID("slots");
     tools_heading("Save slots");
     tools_hint("Keep up to 8 sets of saves of your own, and load one back whenever you like.");
-    tools_help_marker("A slot holds a copy of all of JSRF-PC's saves: the game save and every design. Loading one "
-                      "makes them JSRF-PC's saves again, after a backup of the ones there now. Slots are kept in "
-                      "Save slots, beside Save backups.");
+    tools_help_marker("A slot holds a whole set of saves: the game save and every design. Save JSRF-PC's into one "
+                      "here, copy a backup into one under Backups, or import another emulator's straight into one. "
+                      "Loading a slot makes its saves JSRF-PC's, after a backup of the ones there now. Slots are "
+                      "kept in Save slots, beside Save backups.");
     if (ImGui::BeginTable("slots", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
         ImGui::TableSetupColumn("Slot", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 2.5f);
         ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 3);
-        ImGui::TableSetupColumn("Saved", ImGuiTableColumnFlags_WidthStretch, 2.2f);
-        ImGui::TableSetupColumn("Holds", ImGuiTableColumnFlags_WidthStretch, 2);
+        ImGui::TableSetupColumn("Saved", ImGuiTableColumnFlags_WidthFixed, date_width());
+        ImGui::TableSetupColumn("Holds", ImGuiTableColumnFlags_WidthStretch, 2.4f);
         ImGui::TableHeadersRow();
         for (int i = 0; i < JSRF_STORE_SLOTS; i++) {
             jsrf_held *h = &g.slots[i];
@@ -399,18 +536,22 @@ static void draw_slots(tools_ctx *t)
             ImGui::PushID(i);
             if (ImGui::Selectable(label, g.slot_sel == i, ImGuiSelectableFlags_SpanAllColumns))
                 g.slot_sel = g.slot_sel == i ? -1 : i;
+            if (h->used) {
+                jsrf_origin_text(&h->origin, what, sizeof what);
+                if (what[0]) ImGui::SetItemTooltip("%s", what);
+            }
             ImGui::PopID();
             ImGui::TableNextColumn();
             if (!h->used) ImGui::TextDisabled("Empty");
-            else if (h->name[0]) ImGui::TextUnformatted(h->name);
+            else if (h->name[0]) cell_text(h->name, false);
             else ImGui::TextDisabled("No name");
             ImGui::TableNextColumn();
             if (h->used) {
                 jsrf_store_when_text(h->when, when, sizeof when);
                 ImGui::TextUnformatted(when);
                 ImGui::TableNextColumn();
-                jsrf_store_count_text(&h->count, what, sizeof what);
-                ImGui::TextUnformatted(what);
+                jsrf_store_holds_text(&h->count, h->origin.first, what, sizeof what);
+                cell_text(what, false);
             } else {
                 ImGui::TableNextColumn();
             }
@@ -453,7 +594,13 @@ static void draw_slots(tools_ctx *t)
 
     snprintf(id, sizeof id, "Save into slot %d?###saveslot", g.slot_sel + 1);
     if (tools_name_prompt(id, g.text.c_str(), "Save", g.name, sizeof g.name) && sel) {
-        if (jsrf_store_save_slot(t->title, s, g.slot_sel, g.name, why, sizeof why) == JSRF_WROTE)
+        jsrf_origin o;
+        memset(&o, 0, sizeof o);
+        snprintf(o.how, sizeof o.how, "%s", JSRF_HOW_SAVED);
+        snprintf(o.what, sizeof o.what, "JSRF-PC's saves");
+        jsrf_store_now(o.at);
+        snprintf(o.first, sizeof o.first, "%s", g.origin.first);
+        if (jsrf_store_save_slot(t->title, s, g.slot_sel, g.name, &o, why, sizeof why) == JSRF_WROTE)
             status(SEC_SLOTS, TOOLS_OK, "Saved into slot %d.", g.slot_sel + 1);
         else
             status(SEC_SLOTS, TOOLS_ERROR, "%s", why);
@@ -461,13 +608,17 @@ static void draw_slots(tools_ctx *t)
     }
     snprintf(id, sizeof id, "Load slot %d?###loadslot", g.slot_sel + 1);
     if (tools_warning(id, g.text.c_str(), "Load") && sel) {
-        char label[60], made[JSRF_PATH_MAX];
+        char label[60], made[JSRF_PATH_MAX], rec[JSRF_PATH_MAX], from[JSRF_STORE_NAME + 40];
         snprintf(label, sizeof label, "Before loading slot %d", g.slot_sel + 1);
-        if (jsrf_store_load(sel->dir, t->title, t->backups, label, made, sizeof made, why, sizeof why) == JSRF_WROTE)
+        slot_what(g.slot_sel, from, sizeof from);
+        if (jsrf_store_load(sel->dir, t->title, t->backups, label, made, sizeof made, why, sizeof why) == JSRF_WROTE) {
+            origin_file(t, rec, sizeof rec);
+            jsrf_origin_note(rec, t->title, JSRF_HOW_LOADED, from, sel->origin.first);
             status(SEC_SLOTS, TOOLS_OK, "Loaded slot %d.%s", g.slot_sel + 1,
                    made[0] ? " The saves from before are the newest backup." : "");
-        else
+        } else {
             status(SEC_SLOTS, TOOLS_ERROR, "%s", why);
+        }
         reread(t, 1);
     }
     snprintf(id, sizeof id, "Rename slot %d###renameslot", g.slot_sel + 1);
@@ -483,22 +634,25 @@ static void draw_slots(tools_ctx *t)
         reread(t, 0);
     }
     show_status(SEC_SLOTS);
+    ImGui::PopID();
 }
 
 /* ---- backups --------------------------------------------------------------------------- */
 
 static void draw_backups(tools_ctx *t)
 {
-    char when[64], what[100], why[600];
+    char when[64], what[400], why[600], id[80];
     jsrf_held *sel = g.backup_sel >= 0 && g.backup_sel < g.nbackups ? &g.backups[g.backup_sel] : NULL;
+    ImGui::PushID("backups");
     tools_heading("Backups");
     tools_hint("Made before anything replaces or deletes JSRF-PC's saves, newest first.");
     tools_help_marker("Restoring one makes it JSRF-PC's saves again, after a backup of the ones there now, so a "
-                      "restore can be undone too. A renamed backup keeps its date. They're kept in Save backups, "
-                      "beside JSRF-PC's saves.");
+                      "restore can be undone too. Copy to slot... keeps one in a save slot. A renamed backup keeps "
+                      "its date. They're kept in Save backups, beside JSRF-PC's saves.");
     if (!g.nbackups) {
         ImGui::TextDisabled("No backups yet.");
         show_status(SEC_BACKUPS);
+        ImGui::PopID();
         return;
     }
     {
@@ -508,9 +662,9 @@ static void draw_backups(tools_ctx *t)
         if (ImGui::BeginTable("backups", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
                                                 (g.nbackups > 5 ? ImGuiTableFlags_ScrollY : 0), size)) {
             ImGui::TableSetupScrollFreeze(0, 1);
-            ImGui::TableSetupColumn("Made", ImGuiTableColumnFlags_WidthStretch, 2.2f);
+            ImGui::TableSetupColumn("Made", ImGuiTableColumnFlags_WidthFixed, date_width());
             ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 3);
-            ImGui::TableSetupColumn("Holds", ImGuiTableColumnFlags_WidthStretch, 2);
+            ImGui::TableSetupColumn("Holds", ImGuiTableColumnFlags_WidthStretch, 2.4f);
             ImGui::TableHeadersRow();
             ImGuiListClipper clip;
             clip.Begin(g.nbackups);
@@ -528,14 +682,16 @@ static void draw_backups(tools_ctx *t)
                         g.backup_sel = g.backup_sel == i ? -1 : i;
                         snprintf(g.backup_sel_dir, sizeof g.backup_sel_dir, "%s", g.backup_sel >= 0 ? h->dir : "");
                     }
-                    ImGui::SetItemTooltip("%s", h->dir);
+                    jsrf_origin_text(&h->origin, what, sizeof what);
+                    if (what[0]) ImGui::SetItemTooltip("Its game save: %c%s\n%s", what[0] - 'A' + 'a', what + 1, h->dir);
+                    else ImGui::SetItemTooltip("%s", h->dir);
                     ImGui::PopID();
                     ImGui::TableNextColumn();
-                    if (h->name[0]) ImGui::TextUnformatted(h->name);
+                    if (h->name[0]) cell_text(h->name, false);
                     else ImGui::TextDisabled("No name");
                     ImGui::TableNextColumn();
-                    jsrf_store_count_text(&h->count, what, sizeof what);
-                    ImGui::TextUnformatted(what);
+                    jsrf_store_holds_text(&h->count, h->origin.first, what, sizeof what);
+                    cell_text(what, false);
                 }
             }
             ImGui::EndTable();
@@ -552,6 +708,17 @@ static void draw_backups(tools_ctx *t)
         ImGui::OpenPopup("Restore this backup?");
     }
     ImGui::SameLine();
+    if (ImGui::Button("Copy to slot...")) {
+        if (sel->name[0]) snprintf(g.name, sizeof g.name, "%s", sel->name);
+        else snprintf(g.name, sizeof g.name, "Backup of %s", when);
+        g.pick_slot = slot_to_offer();
+        g.text.clear();
+        g.text.appendf("The backup from %s%s%s%s goes into the slot you pick, to load whenever you like. JSRF-PC's "
+                       "own saves aren't touched.", when, sel->name[0] ? " (\"" : "", sel->name,
+                       sel->name[0] ? "\")" : "");
+        ImGui::OpenPopup("Copy this backup to a slot");
+    }
+    ImGui::SameLine();
     if (ImGui::Button("Rename")) {
         snprintf(g.name, sizeof g.name, "%s", sel->name);
         ImGui::OpenPopup("Rename this backup");
@@ -565,14 +732,38 @@ static void draw_backups(tools_ctx *t)
     }
     ImGui::EndDisabled();
     if (tools_warning("Restore this backup?", g.text.c_str(), "Restore") && sel) {
-        char label[120], made[JSRF_PATH_MAX];
+        char label[120], made[JSRF_PATH_MAX], rec[JSRF_PATH_MAX], from[JSRF_STORE_NAME + 80];
+        jsrf_held was = *sel;
         snprintf(label, sizeof label, "Before restoring %s", when);
-        if (jsrf_store_load(sel->dir, t->title, t->backups, label, made, sizeof made, why, sizeof why) == JSRF_WROTE)
+        backup_what(&was, from, sizeof from);
+        if (jsrf_store_load(was.dir, t->title, t->backups, label, made, sizeof made, why, sizeof why) == JSRF_WROTE) {
+            origin_file(t, rec, sizeof rec);
+            jsrf_origin_note(rec, t->title, JSRF_HOW_RESTORED, from, was.origin.first);
             status(SEC_BACKUPS, TOOLS_OK, "Restored.%s", made[0] ? " The saves from before are the newest backup." : "");
-        else
+        } else {
             status(SEC_BACKUPS, TOOLS_ERROR, "%s", why);
+        }
         reread(t, 1);
     }
+    if (slot_prompt("Copy this backup to a slot", g.text.c_str(), "Copy", &g.pick_slot, g.name, sizeof g.name) && sel) {
+        char slots[JSRF_PATH_MAX], from[JSRF_PATH_MAX];
+        jsrf_origin o;
+        memset(&o, 0, sizeof o);
+        snprintf(o.how, sizeof o.how, "%s", JSRF_HOW_COPIED);
+        backup_what(sel, o.what, sizeof o.what);
+        jsrf_store_now(o.at);
+        snprintf(o.first, sizeof o.first, "%s", sel->origin.first);
+        slots_dir(t, slots, sizeof slots);
+        js_path(from, sizeof from, sel->dir, JSRF_TITLE_ID);
+        if (jsrf_store_save_slot(from, slots, g.pick_slot, g.name, &o, why, sizeof why) == JSRF_WROTE) {
+            status(SEC_BACKUPS, TOOLS_OK, "Copied into slot %d.", g.pick_slot + 1);
+            g.slot_sel = g.pick_slot;
+        } else {
+            status(SEC_BACKUPS, TOOLS_ERROR, "%s", why);
+        }
+        reread(t, 0);
+    }
+    (void)id;
     if (tools_name_prompt("Rename this backup", NULL, "Rename", g.name, sizeof g.name) && sel) {
         if (jsrf_store_rename(sel->dir, g.name) == 0) status(SEC_BACKUPS, TOOLS_OK, "Renamed.");
         else status(SEC_BACKUPS, TOOLS_ERROR, "The backup couldn't be renamed.");
@@ -585,6 +776,7 @@ static void draw_backups(tools_ctx *t)
         reread(t, 0);
     }
     show_status(SEC_BACKUPS);
+    ImGui::PopID();
 }
 
 /* ---- the review: an import or export ----------------------------------------------------- */
@@ -593,7 +785,7 @@ static void forget(void)
 {
     if (g.planned) jsrf_plan_free(&g.plan);
     if (g.have) jsrf_found_free(&g.found);
-    g.have = g.planned = g.ran = g.reviewing = 0;
+    g.have = g.planned = g.ran = g.reviewing = g.into_slot = 0;
     g.from[0] = g.to[0] = 0;
 }
 
@@ -644,8 +836,8 @@ static void pick_one(void *ctx, const char *path)
 
 static void no_dialog(void)
 {
-    status(SEC_EMUS, TOOLS_WARN, "There's no file dialog here (zenity or kdialog): drop the folder or file on this "
-                                 "window instead.");
+    status(SEC_EMUS, TOOLS_WARN, "There's no folder dialog here (zenity or kdialog): drop the folder on this window "
+                                 "instead.");
 }
 
 /* Where an emulator is, picked with the system's dialog, opening where it
@@ -656,15 +848,9 @@ static int pick_emu(tools_ctx *t, int source)
     emu_row *e = &g.emus[source];
     int r;
     if (!e->where[0]) find_emu(t, source);
-    if (source == JSRF_SRC_XEMU) {
-        static const char *const pats[] = { "*.qcow2", "*.img", "*.toml", NULL };
-        r = jsrf_pick_files_in("Where is xemu's hard disk? Pick its image (xbox_hdd.qcow2) or its xemu.toml",
-                               e->where, "xemu's hard disk", pats, 0, pick_one, picked);
-    } else {
-        snprintf(q, sizeof q, "Where is %s? Pick its folder (the one with %s in it)", SOURCE_NAMES[source],
-                 source == JSRF_SRC_CXBX ? "EmuDisk" : "hdd");
-        r = jsrf_pick_folder_in(q, e->where, picked, sizeof picked);
-    }
+    snprintf(q, sizeof q, "Where is %s? Pick its folder (the one with %s in it)", SOURCE_NAMES[source],
+             source == JSRF_SRC_CXBX ? "EmuDisk" : "hdd");
+    r = jsrf_pick_folder_in(q, e->where, picked, sizeof picked);
     if (r == JSRF_NO_DIALOG) { no_dialog(); return 0; }
     if (r != JSRF_PICKED) return 0;
     tools_set_setting(t, SOURCE_KEYS[source], picked);
@@ -750,21 +936,83 @@ static const char *action_name(int action)
     }
 }
 
+/* The saves ticked that can be written. */
+static int ticked_saves(void)
+{
+    int n = 0;
+    for (int i = 0; i < g.found.nsaves && i < (int)(sizeof g.chosen / sizeof g.chosen[0]); i++)
+        n += g.chosen[i] && g.found.saves[i].kind != JSRF_KIND_OTHER;
+    return n;
+}
+
+/* Whether the run wrote a game save. */
+static int wrote_game(void)
+{
+    for (int k = 0; k < g.plan.n; k++) {
+        const jsrf_plan_item *it = &g.plan.items[k];
+        if (g.found.saves[it->save].kind == JSRF_KIND_GAME && it->action != JSRF_DO_SKIP &&
+            (it->result == JSRF_WROTE || it->result == JSRF_REPLACED)) return 1;
+    }
+    return 0;
+}
+
+/* The ticked saves imported into slot i (0 to 7), named name, in place of
+ * what it holds; only once every one is written. */
+static void import_into_slot(tools_ctx *t, int i, const char *name)
+{
+    char slots[JSRF_PATH_MAX], into[JSRF_PATH_MAX], why[600];
+    jsrf_origin o;
+    slots_dir(t, slots, sizeof slots);
+    if (jsrf_store_slot_begin(slots, i, into, sizeof into, why, sizeof why) != 0) {
+        status(SEC_EMUS, TOOLS_ERROR, "%s", why);
+        return;
+    }
+    snprintf(g.to, sizeof g.to, "%s", into);
+    g.into_slot = i + 1;
+    replan();
+    if (!g.planned || !g.plan.writes) {
+        jsrf_store_slot_drop(slots, i);
+        status(SEC_EMUS, TOOLS_WARN, "Nothing ticked can go into a slot.");
+        g.into_slot = 0;
+        return;
+    }
+    g.ran = 1;
+    if (jsrf_plan_run(&g.found, &g.plan, g.to, "", g.key) != 0) {
+        jsrf_store_slot_drop(slots, i);
+        status(SEC_EMUS, TOOLS_ERROR, "Not every save could be written, so slot %d is as it was: the list says what.",
+               i + 1);
+        return;
+    }
+    memset(&o, 0, sizeof o);
+    snprintf(o.how, sizeof o.how, "%s", JSRF_HOW_IMPORTED);
+    snprintf(o.what, sizeof o.what, "%s", g.source_name);
+    jsrf_store_now(o.at);
+    if (wrote_game()) snprintf(o.first, sizeof o.first, "%s", g.source_name);
+    if (jsrf_store_slot_finish(slots, i, name, &o, why, sizeof why) != JSRF_WROTE) {
+        status(SEC_EMUS, TOOLS_ERROR, "%s", why);
+        return;
+    }
+    g.slot_sel = i;
+    status(SEC_EMUS, TOOLS_OK, "Imported into slot %d. Load it from Save slots to play it.", i + 1);
+}
+
 static void draw_review(tools_ctx *t)
 {
     float em = ImGui::GetFontSize();
     char head[120], go[60];
+    ImGui::PushID("review");
     if (g.mode == MODE_IMPORT) snprintf(head, sizeof head, "Import from %s", g.source_name);
     else snprintf(head, sizeof head, "Export to %s", g.source_name);
     tools_heading(head);
-    tools_hint(g.mode == MODE_IMPORT ? "Tick the saves to bring into JSRF-PC. Each is re-signed for it."
+    tools_hint(g.mode == MODE_IMPORT ? "Tick the saves to bring in, to JSRF-PC's saves or a slot. Each is re-signed for JSRF-PC."
                                      : "Tick the saves to send. Each is signed so the emulator loads it.");
     {
         char from[80], to[80];
         snprintf(from, sizeof from, "From %s:", g.mode == MODE_IMPORT ? g.source_name : "JSRF-PC");
         snprintf(to, sizeof to, "To %s:", g.mode == MODE_IMPORT ? "JSRF-PC" : g.source_name);
         tools_path(from, g.from);
-        tools_path(to, g.to);
+        if (g.into_slot) ImGui::Text("To slot %d.", g.into_slot);
+        else tools_path(to, g.to);
     }
     {
         /* The table takes what the window has left, above the button row. */
@@ -814,6 +1062,7 @@ static void draw_review(tools_ctx *t)
         if (g.plan.backup[0]) tools_path("Backup:", g.plan.backup);
         if (g.plan.why[0]) tools_status(TOOLS_ERROR, "%s", g.plan.why);
         if (ImGui::Button("Done")) { forget(); g.st[0] = 0; reread(t, 1); }
+        ImGui::PopID();
         return;
     }
     snprintf(go, sizeof go, "%s %d save%s###go", g.mode == MODE_IMPORT ? "Import" : "Export",
@@ -843,8 +1092,26 @@ static void draw_review(tools_ctx *t)
         ImGui::OpenPopup(g.mode == MODE_IMPORT ? "Import these saves?###run" : "Export these saves?###run");
     }
     ImGui::EndDisabled();
+    if (g.mode == MODE_IMPORT) {
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!ticked_saves());
+        if (ImGui::Button("Import into a slot...")) {
+            g.pick_slot = slot_to_offer();
+            snprintf(g.name, sizeof g.name, "From %s", g.source_name);
+            ImGui::OpenPopup("Import into a slot###runslot");
+        }
+        ImGui::EndDisabled();
+    }
     ImGui::SameLine();
-    if (ImGui::Button("Back")) { forget(); reread(t, 1); return; }
+    if (ImGui::Button("Back")) { forget(); reread(t, 1); ImGui::PopID(); return; }
+    {
+        char text[300];
+        int n = ticked_saves();
+        snprintf(text, sizeof text, "The %d ticked save%s go%s into the slot you pick, re-signed for JSRF-PC, "
+                 "ready to load. JSRF-PC's own saves aren't touched.", n, n == 1 ? "" : "s", n == 1 ? "es" : "");
+        if (slot_prompt("Import into a slot###runslot", text, "Import", &g.pick_slot, g.name, sizeof g.name))
+            import_into_slot(t, g.pick_slot, g.name);
+    }
     if (tools_warning(g.mode == MODE_IMPORT ? "Import these saves?###run" : "Export these saves?###run",
                       g.text.c_str(), g.mode == MODE_IMPORT ? "Import" : "Export")) {
         int r = jsrf_plan_run(&g.found, &g.plan, g.to, g.backups_to, g.key);
@@ -854,9 +1121,15 @@ static void draw_review(tools_ctx *t)
             snprintf(label, sizeof label, "Before importing from %s", g.source_name);
             jsrf_store_rename(g.plan.backup, label);
         }
+        if (g.mode == MODE_IMPORT && wrote_game()) {
+            char rec[JSRF_PATH_MAX];
+            origin_file(t, rec, sizeof rec);
+            jsrf_origin_note(rec, t->title, JSRF_HOW_IMPORTED, g.source_name, g.source_name);
+        }
         if (r == 0) status(SEC_EMUS, TOOLS_OK, "%s.", g.mode == MODE_IMPORT ? "Imported" : "Exported");
         else status(SEC_EMUS, TOOLS_ERROR, "Not everything was written: the list says what.");
     }
+    ImGui::PopID();
 }
 
 /* ---- other emulators -------------------------------------------------------------------- */
@@ -866,24 +1139,27 @@ static void draw_emus(tools_ctx *t)
     bool show = g.show_emus != 0;
     int sel = g.emu_sel;
     emu_row *e = sel ? &g.emus[sel] : NULL;
+    ImGui::PushID("emus");
     tools_heading("Other emulators");
-    tools_hint("Bring saves in from Cxbx-Reloaded, xemu or xbased, or send JSRF-PC's to Cxbx-Reloaded or xbased.");
-    tools_help_marker("Saves brought in are re-signed for JSRF-PC, and a design whose spot in the garage is taken "
-                      "goes to a free one. Sending saves to Cxbx-Reloaded needs the game's default.xbe, to sign "
-                      "them as Cxbx does. xemu and a real Xbox sign saves with the console's own keys, which JSRF-PC "
-                      "Tools never asks for, so it can't send saves to them.");
+    tools_hint("Bring saves in from Cxbx-Reloaded or xbased, into JSRF-PC's saves or a slot, or send JSRF-PC's to them.");
+    tools_help_marker("Import shows the saves there to tick, then puts them in JSRF-PC's saves or, with Import into "
+                      "a slot..., in a save slot. Saves brought in are re-signed for JSRF-PC, and a design whose "
+                      "spot in the garage is taken goes to a free one. Sending saves to Cxbx-Reloaded needs the "
+                      "game's default.xbe, to sign them as Cxbx does. A real Xbox signs saves with the console's own "
+                      "keys, which JSRF-PC Tools never asks for, so it can't send saves to one.");
     if (ImGui::Checkbox("Show their folders and saves here", &show)) {
         g.show_emus = show;
         tools_set_setting(t, "show_emulators", show ? "1" : "0");
-        if (show) for (int i = 0; i < 3; i++) read_emu(t, EMU_ORDER[i]);
+        if (show) for (int i = 0; i < NEMUS; i++) read_emu(t, EMU_ORDER[i]);
     }
     if (g.show_emus) {
         if (ImGui::BeginTable("emus", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
-            ImGui::TableSetupColumn("Emulator", ImGuiTableColumnFlags_WidthStretch, 1.6f);
+            ImGui::TableSetupColumn("Emulator", ImGuiTableColumnFlags_WidthFixed,
+                                    ImGui::CalcTextSize("Cxbx-Reloaded").x + ImGui::GetStyle().CellPadding.x * 2);
             ImGui::TableSetupColumn("Where", ImGuiTableColumnFlags_WidthStretch, 2.4f);
             ImGui::TableSetupColumn("Saves there", ImGuiTableColumnFlags_WidthStretch, 3.4f);
             ImGui::TableHeadersRow();
-            for (int i = 0; i < 3; i++) {
+            for (int i = 0; i < NEMUS; i++) {
                 int s = EMU_ORDER[i];
                 emu_row *r = &g.emus[s];
                 ImGui::TableNextRow();
@@ -895,8 +1171,7 @@ static void draw_emus(tools_ctx *t)
                 ImGui::TableNextColumn();
                 tools_path("", r->where);
                 ImGui::TableNextColumn();
-                if (r->ok) ImGui::TextWrapped("%s", r->what);
-                else ImGui::TextDisabled("%s", r->what);
+                cell_text(r->what, !r->ok);
                 if (!r->ok && r->what[0]) ImGui::SetItemTooltip("%s", r->what);
             }
             ImGui::EndTable();
@@ -906,10 +1181,7 @@ static void draw_emus(tools_ctx *t)
         ImGui::BeginDisabled(!e);
         if (ImGui::Button("Import")) import_emu(t, sel);
         ImGui::SameLine();
-        ImGui::BeginDisabled(sel == JSRF_SRC_XEMU);
         if (ImGui::Button("Export")) export_emu(t, sel);
-        ImGui::EndDisabled();
-        if (sel == JSRF_SRC_XEMU) ImGui::SetItemTooltip("xemu signs saves with the console's own keys.");
         ImGui::SameLine();
         if (ImGui::Button(e && e->where[0] ? "Change...###where" : "Pick...###where")) pick_emu(t, sel);
         ImGui::EndDisabled();
@@ -921,15 +1193,8 @@ static void draw_emus(tools_ctx *t)
         if (r == JSRF_PICKED) import_from(t, picked, "a folder");
         if (r == JSRF_NO_DIALOG) no_dialog();
     }
-    if (tools_flow_button("Import a disk image...", false)) {
-        static const char *const pats[] = { "*.qcow2", "*.img", "*.bin", "*.toml", NULL };
-        char picked[JSRF_PATH_MAX] = "";
-        int r = jsrf_pick_files("Pick an Xbox hard disk image (xemu's xbox_hdd.qcow2, or a raw image)",
-                                "Xbox hard disk images", pats, 0, pick_one, picked);
-        if (r == JSRF_PICKED) import_from(t, picked, "a disk image");
-        if (r == JSRF_NO_DIALOG) no_dialog();
-    }
     show_status(SEC_EMUS);
+    ImGui::PopID();
 }
 
 /* ---- the page ------------------------------------------------------------------------------ */
@@ -960,7 +1225,11 @@ static void draw(tools_ctx *t)
 static void dropped(tools_ctx *t, const char *path)
 {
     if (g.reviewing && g.ran) return;
-    import_from(t, path, js_is_dir(path) ? "a folder" : "a disk image");
+    if (!js_is_dir(path)) {
+        status(SEC_EMUS, TOOLS_WARN, "Drop the folder the saves are in, not a file.");
+        return;
+    }
+    import_from(t, path, "a folder");
 }
 
 extern const tools_page tools_saves_page = { "Save manager", draw, dropped };

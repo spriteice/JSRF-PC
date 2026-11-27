@@ -168,13 +168,13 @@ static void test_slots(void)
     path(slots, root, "Save slots");
     path(backups, root, "Save backups");
 
-    r = jsrf_store_save_slot(title, slots, 0, "x", why, sizeof why);
+    r = jsrf_store_save_slot(title, slots, 0, "x", NULL, why, sizeof why);
     CHECK(r == JSRF_FAILED && why[0], "a slot was saved with no saves to save (%d)", r);
     jsrf_store_slots(slots, s);
     for (i = 0; i < JSRF_STORE_SLOTS; i++) CHECK(!s[i].used && s[i].dir[0], "slot %d is used, or has no folder", i + 1);
 
     made_up_title(title, 1, 2);
-    r = jsrf_store_save_slot(title, slots, 1, "  Before chapter 3\r\nfor real\t", why, sizeof why);
+    r = jsrf_store_save_slot(title, slots, 1, "  Before chapter 3\r\nfor real\t", NULL, why, sizeof why);
     CHECK(r == JSRF_WROTE, "saving into slot 2 gave %d: %s", r, why);
     jsrf_store_slots(slots, s);
     CHECK(!s[0].used && s[1].used, "slot 2 isn't the one used");
@@ -190,7 +190,7 @@ static void test_slots(void)
     path(p, slots, "2.new");
     put_file(p, "junk", "j", 1);
     made_up_title(title, 2, 1);
-    r = jsrf_store_save_slot(title, slots, 1, "Again", why, sizeof why);
+    r = jsrf_store_save_slot(title, slots, 1, "Again", NULL, why, sizeof why);
     CHECK(r == JSRF_WROTE, "saving over slot 2 gave %d: %s", r, why);
     jsrf_store_slots(slots, s);
     path(p, s[1].dir, JSRF_TITLE_ID);
@@ -204,7 +204,7 @@ static void test_slots(void)
         path(t, p, JSRF_TITLE_ID);
         made_up_title(t, 5, 0);
     }
-    r = jsrf_store_save_slot(title, slots, 4, "Five", why, sizeof why);
+    r = jsrf_store_save_slot(title, slots, 4, "Five", NULL, why, sizeof why);
     CHECK(r == JSRF_WROTE && !there(p), "slot 5 gave %d, its .old %s", r, there(p) ? "left" : "gone");
 
     /* Renamed: the date stays; the name is kept to its room, cut at a whole
@@ -393,6 +393,143 @@ static void test_preview(void)
     CHECK(jsrf_design_preview(p, rgba, &w, &h) == -1, "no file gave a preview");
 }
 
+/* Where saves came from: JSRF-PC's own record, a backup made with it, a
+ * slot saved from it or filled by an import, and the words for each. */
+static void test_origins(void)
+{
+    char root[4096], title[4096], slots[4096], backups[4096], record[4096], p[4096], why[400], made[4096];
+    char text[600], into[4096];
+    jsrf_origin o;
+    jsrf_held s[JSRF_STORE_SLOTS], *b = NULL;
+    jsrf_held_count c;
+    int r, nb;
+    path(root, g_dir, "origins");
+    path(p, root, "UDATA");
+    path(title, p, JSRF_TITLE_ID);
+    path(slots, root, "Save slots");
+    path(backups, root, "Save backups");
+    path(record, root, JSRF_ORIGIN_FILE);
+    made_up_title(title, 3, 1);
+
+    /* None yet. */
+    CHECK(jsrf_origin_read(record, &o) == 0 && !o.how[0] && !o.first[0], "an origin was read where there's none");
+    jsrf_origin_text(&o, text, sizeof text);
+    CHECK(!text[0], "no origin in words is \"%s\"", text);
+
+    /* Noted after an import: the game save's own time kept with it. */
+    CHECK(jsrf_origin_note(record, title, JSRF_HOW_IMPORTED, "xbased", "xbased") == 0, "the origin wasn't written");
+    CHECK(jsrf_origin_read(record, &o) == 1 && !strcmp(o.how, JSRF_HOW_IMPORTED) && !strcmp(o.what, "xbased") &&
+          !strcmp(o.first, "xbased") && strlen(o.at) == 19 && strlen(o.game) == 19,
+          "the origin read back is %s/%s/%s/%s/%s", o.how, o.what, o.first, o.at, o.game);
+    jsrf_origin_text(&o, text, sizeof text);
+    CHECK(!strncmp(text, "Imported from xbased on ", 24) && !strstr(text, "First from"),
+          "an import in words is \"%s\"", text);
+
+    /* In words, for each step; "first" said when it isn't what was just said. */
+    memset(&o, 0, sizeof o);
+    snprintf(o.how, sizeof o.how, "%s", JSRF_HOW_LOADED);
+    snprintf(o.what, sizeof o.what, "slot 2 (\"Test\")");
+    snprintf(o.at, sizeof o.at, "2026-11-27 10.59.00");
+    snprintf(o.first, sizeof o.first, "xbased");
+    jsrf_origin_text(&o, text, sizeof text);
+    CHECK(!strcmp(text, "Loaded from slot 2 (\"Test\") on 27 Nov 2026, 10:59am. First from xbased."),
+          "a load in words is \"%s\"", text);
+    o.how[0] = 0;
+    jsrf_origin_text(&o, text, sizeof text);
+    CHECK(!strcmp(text, "First from xbased."), "only where it was first from, in words, is \"%s\"", text);
+    snprintf(o.how, sizeof o.how, "made up");
+    o.first[0] = 0;
+    jsrf_origin_text(&o, text, sizeof text);
+    CHECK(!text[0], "a step not known became \"%s\"", text);
+
+    /* What a set holds, with where its game save came from. */
+    memset(&c, 0, sizeof c);
+    c.game = 1;
+    c.designs = 3;
+    jsrf_store_holds_text(&c, "xbased", text, sizeof text);
+    CHECK(!strcmp(text, "Game save from xbased, 3 designs"), "holds in words is \"%s\"", text);
+    jsrf_store_holds_text(&c, "", text, sizeof text);
+    CHECK(!strcmp(text, "Game save, 3 designs"), "holds, not known from where, is \"%s\"", text);
+    c.game = 0;
+    jsrf_store_holds_text(&c, "xbased", text, sizeof text);
+    CHECK(!strcmp(text, "3 designs"), "designs only, with a first, is \"%s\"", text);
+
+    /* A backup takes JSRF-PC's origin with it, and keeps it when renamed. */
+    jsrf_origin_note(record, title, JSRF_HOW_IMPORTED, "Cxbx-Reloaded", "Cxbx-Reloaded");
+    r = jsrf_backup(title, backups, made, sizeof made, why, sizeof why);
+    CHECK(r == JSRF_WROTE, "the backup gave %d: %s", r, why);
+    jsrf_store_rename(made, "Before something");
+    nb = jsrf_store_backups(backups, &b);
+    CHECK(nb == 1 && !strcmp(b[0].name, "Before something") && !strcmp(b[0].origin.first, "Cxbx-Reloaded") &&
+          !strcmp(b[0].origin.how, JSRF_HOW_IMPORTED), "the backup's origin is %s/%s (%d)",
+          nb > 0 ? b[0].origin.how : "", nb > 0 ? b[0].origin.first : "", nb);
+    free(b);
+    b = NULL;
+    /* An export's backups, a folder further down, aren't JSRF-PC's: none. */
+    path(p, backups, "xbased");
+    r = jsrf_backup(title, p, made, sizeof made, why, sizeof why);
+    path(p, made, JSRF_STORE_ABOUT);
+    CHECK(r == JSRF_WROTE && !there(p), "an export's backup was given JSRF-PC's origin");
+
+    /* Saved into a slot with an origin: listed with it. */
+    memset(&o, 0, sizeof o);
+    snprintf(o.how, sizeof o.how, "%s", JSRF_HOW_SAVED);
+    snprintf(o.what, sizeof o.what, "JSRF-PC's saves");
+    jsrf_store_now(o.at);
+    snprintf(o.first, sizeof o.first, "Cxbx-Reloaded");
+    r = jsrf_store_save_slot(title, slots, 2, "Mine", &o, why, sizeof why);
+    jsrf_store_slots(slots, s);
+    CHECK(r == JSRF_WROTE && !strcmp(s[2].name, "Mine") && !strcmp(s[2].origin.how, JSRF_HOW_SAVED) &&
+          !strcmp(s[2].origin.first, "Cxbx-Reloaded"), "slot 3's origin is %s/%s (%d: %s)", s[2].origin.how,
+          s[2].origin.first, r, why);
+    CHECK(jsrf_store_rename(s[2].dir, "Mine too") == 0, "slot 3 couldn't be renamed");
+    jsrf_store_slots(slots, s);
+    CHECK(!strcmp(s[2].name, "Mine too") && !strcmp(s[2].origin.first, "Cxbx-Reloaded"), "a rename lost the origin");
+
+    /* A backup copied into a slot. */
+    nb = jsrf_store_backups(backups, &b);
+    if (nb >= 1) {
+        path(p, b[0].dir, JSRF_TITLE_ID);
+        r = jsrf_store_save_slot(p, slots, 3, "From the backup", &b[0].origin, why, sizeof why);
+        jsrf_store_slots(slots, s);
+        path(into, s[3].dir, JSRF_TITLE_ID);
+        CHECK(r == JSRF_WROTE && same_tree(p, into) && !strcmp(s[3].origin.first, "Cxbx-Reloaded"),
+              "the backup wasn't copied into slot 4 (%d: %s)", r, why);
+    }
+    free(b);
+    b = NULL;
+    path(p, root, "nothing here");
+    CHECK(jsrf_store_save_slot(p, slots, 3, "x", NULL, why, sizeof why) == JSRF_FAILED && why[0],
+          "a slot was filled from a folder that isn't there");
+
+    /* Filled by an import: begin, write, finish; or begin, then drop, and
+     * the slot is as it was. */
+    r = jsrf_store_slot_begin(slots, 3, into, sizeof into, why, sizeof why);
+    CHECK(r == 0 && strstr(into, "4.new") && !there(into), "begin gave %d, %s", r, into);
+    made_up_title(into, 7, 0);
+    memset(&o, 0, sizeof o);
+    snprintf(o.how, sizeof o.how, "%s", JSRF_HOW_IMPORTED);
+    snprintf(o.what, sizeof o.what, "xbased");
+    snprintf(o.first, sizeof o.first, "xbased");
+    r = jsrf_store_slot_finish(slots, 3, "From xbased", &o, why, sizeof why);
+    jsrf_store_slots(slots, s);
+    CHECK(r == JSRF_WROTE && s[3].used && !strcmp(s[3].name, "From xbased") && s[3].count.designs == 0 &&
+          !strcmp(s[3].origin.first, "xbased") && strlen(s[3].when) == 19,
+          "the import into slot 4 gave %d (%s), named \"%s\"", r, why, s[3].name);
+    CHECK(entries(slots) == 2, "the slots folder holds %d, not 2 (a .new or .old left?)", entries(slots));
+    r = jsrf_store_slot_begin(slots, 3, into, sizeof into, why, sizeof why);
+    made_up_title(into, 8, 2);
+    jsrf_store_slot_drop(slots, 3);
+    jsrf_store_slots(slots, s);
+    CHECK(r == 0 && !strcmp(s[3].name, "From xbased") && s[3].count.designs == 0 && entries(slots) == 2,
+          "a dropped fill changed slot 4, or was left");
+    CHECK(jsrf_store_slot_begin(slots, 8, into, sizeof into, why, sizeof why) == -1, "slot 9 was begun");
+    CHECK(jsrf_store_slot_finish(slots, 3, "x", NULL, why, sizeof why) == JSRF_FAILED,
+          "a fill that wasn't begun was finished");
+    jsrf_store_slots(slots, s);
+    CHECK(!strcmp(s[3].name, "From xbased"), "a fill that wasn't begun changed slot 4");
+}
+
 int main(int argc, char **argv)
 {
     char work[4096];
@@ -408,6 +545,7 @@ int main(int argc, char **argv)
     test_backups();
     test_delete_saves();
     test_preview();
+    test_origins();
     if (failures) {
         printf("save_store: %d failures\n", failures);
         return 1;

@@ -99,7 +99,7 @@ int jsrf_pick_folder(const char *title, char *out, size_t n)
     return jsrf_pick_folder_in(title, NULL, out, n);
 }
 
-int jsrf_pick_folder_in(const char *title, const char *start, char *out, size_t n)
+static int pick_folder_in(const char *title, const char *start, char *out, size_t n)
 {
     IFileOpenDialog *dlg = NULL;
     IShellItem *item = NULL;
@@ -159,8 +159,8 @@ int jsrf_pick_files(const char *title, const char *kind, const char *const *patt
     return jsrf_pick_files_in(title, NULL, kind, patterns, multi, each, ctx);
 }
 
-int jsrf_pick_files_in(const char *title, const char *start, const char *kind, const char *const *patterns,
-                       int multi, void (*each)(void *ctx, const char *path), void *ctx)
+static int pick_files_in(const char *title, const char *start, const char *kind, const char *const *patterns,
+                         int multi, void (*each)(void *ctx, const char *path), void *ctx)
 {
     IFileOpenDialog *dlg = NULL;
     IShellItemArray *items = NULL;
@@ -352,7 +352,7 @@ int jsrf_pick_folder(const char *title, char *out, size_t n)
     return jsrf_pick_folder_in(title, NULL, out, n);
 }
 
-int jsrf_pick_folder_in(const char *title, const char *start, char *out, size_t n)
+static int pick_folder_in(const char *title, const char *start, char *out, size_t n)
 {
     char prog[4096], t[1024], dir[4096], zen[4200];
     one o;
@@ -379,8 +379,8 @@ int jsrf_pick_files(const char *title, const char *kind, const char *const *patt
     return jsrf_pick_files_in(title, NULL, kind, patterns, multi, each, ctx);
 }
 
-int jsrf_pick_files_in(const char *title, const char *start, const char *kind, const char *const *patterns,
-                       int multi, void (*each)(void *ctx, const char *path), void *ctx)
+static int pick_files_in(const char *title, const char *start, const char *kind, const char *const *patterns,
+                         int multi, void (*each)(void *ctx, const char *path), void *ctx)
 {
     char prog[4096], t[1024], filter[1200], kfilter[1200], joined[1024] = "", dir[4096], zen[4200];
     size_t i, at = 0;
@@ -420,3 +420,38 @@ int jsrf_pick_files_in(const char *title, const char *start, const char *kind, c
 }
 
 #endif
+
+/* ---- both: the dialogs, or the script mode's answers ----------------------------------- */
+
+int (*jsrf_dialog_answer)(char *out, size_t n) = NULL;
+
+int jsrf_pick_folder_in(const char *title, const char *start, char *out, size_t n)
+{
+    if (jsrf_dialog_answer) {
+        char *nl;
+        if (!jsrf_dialog_answer(out, n)) { if (n) out[0] = 0; return JSRF_CANCELLED; }
+        if ((nl = strchr(out, '\n')) != NULL) *nl = 0;
+        return out[0] ? JSRF_PICKED : JSRF_CANCELLED;
+    }
+    return pick_folder_in(title, start, out, n);
+}
+
+int jsrf_pick_files_in(const char *title, const char *start, const char *kind, const char *const *patterns,
+                       int multi, void (*each)(void *ctx, const char *path), void *ctx)
+{
+    if (jsrf_dialog_answer) {
+        static char buf[16384];
+        char *line, *next;
+        int any = 0;
+        if (!jsrf_dialog_answer(buf, sizeof buf)) return JSRF_CANCELLED;
+        for (line = buf; *line; line = next) {
+            next = strchr(line, '\n');
+            if (next) *next++ = 0;
+            else next = line + strlen(line);
+            if (*line) { each(ctx, line); any = 1; }
+            if (any && !multi) break;
+        }
+        return any ? JSRF_PICKED : JSRF_CANCELLED;
+    }
+    return pick_files_in(title, start, kind, patterns, multi, each, ctx);
+}

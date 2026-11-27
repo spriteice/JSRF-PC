@@ -33,6 +33,11 @@ extern "C" {
 
 #define BACKUPS_NAME "Start states backups"   /* beside the settings file */
 
+/* The page's own types, kept to this file: each page has a page_state, and
+ * without this the linker keeps one page's destructor for all of them, which
+ * then frees another page's text as pointers when the tool closes. */
+namespace {
+
 struct page_state {
     char          game[JSRF_PATH_MAX];      /* the game read: the shell's, or one dropped or picked */
     SDL_Thread   *thread;
@@ -46,6 +51,8 @@ struct page_state {
     char          backups[JSRF_PATH_MAX];
     ImGuiTextBuffer warning;
 };
+}  /* namespace */
+
 static page_state g;
 
 /* ---- the walk, on its own thread ------------------------------------------------------- */

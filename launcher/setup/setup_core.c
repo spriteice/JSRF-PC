@@ -1210,21 +1210,72 @@ int js_tools_ready(const char *root)
     return js_is_file(p);
 }
 
-int jsrf_setup_engine_ready(const char *root)
+int js_engine_check(const char *root, char sha[65])
 {
-    char engine[4096], p[4096], have[65], want[128];
+    char engine[4096], p[4096], want[128];
     js_engine_path(root, engine, sizeof engine);
-    if (!js_is_file(engine) || js_sha256_file(engine, have)) return 0;
+    if (!js_is_file(engine) || js_sha256_file(engine, sha)) { sha[0] = 0; return JS_ENGINE_NONE; }
     js_path(p, sizeof p, root, "kit/expected.txt");
-    if (js_read_kv(p, "engine_sha256", want, sizeof want) && want[0] && !strcmp(have, want)) return 1;
+    if (js_read_kv(p, "engine_sha256", want, sizeof want) && want[0] && !strcmp(sha, want)) return JS_ENGINE_RELEASE;
     /* Not known when the release was made: the one built here, as it said. */
     if (!want[0]) {
         js_path(p, sizeof p, root, "build/engine.sha256");
-        if (js_read_kv(p, "engine_sha256", want, sizeof want) && !strcmp(have, want)) return 1;
+        if (js_read_kv(p, "engine_sha256", want, sizeof want) && !strcmp(sha, want)) return JS_ENGINE_BUILT;
     }
     /* Another engine, which the player said to play anyway. */
     js_path(p, sizeof p, root, "build/engine.sha256");
-    if (js_read_kv(p, "accepted", want, sizeof want) && !strcmp(have, want)) return 1;
+    if (js_read_kv(p, "accepted", want, sizeof want) && !strcmp(sha, want)) return JS_ENGINE_ACCEPTED;
+    js_path(p, sizeof p, root, "kit/kit.json");
+    return js_is_file(p) ? JS_ENGINE_OTHER : JS_ENGINE_BUILT_IN;
+}
+
+int jsrf_setup_engine_ready(const char *root)
+{
+    char sha[65];
+    int c = js_engine_check(root, sha);
+    return c == JS_ENGINE_RELEASE || c == JS_ENGINE_BUILT || c == JS_ENGINE_ACCEPTED;
+}
+
+/* The engine's line for --version (port/main.c). */
+struct version_out { char *out; size_t n; int got; };
+
+static void version_line(void *ctx, const char *text)
+{
+    struct version_out *v = (struct version_out *)ctx;
+    if (!v->got && text[0]) { sfmt(v->out, v->n, "%s", text); v->got = 1; }
+}
+
+int js_engine_version(const char *root, char *out, size_t n)
+{
+    char engine[4096], err[512] = "", env[4][4200];
+    const char *argv[3], *envp[5];
+    struct version_out v;
+    int rc, ne = 0;
+    js_engine_path(root, engine, sizeof engine);
+    if (!js_is_file(engine)) { sfmt(out, n, "there's no engine"); return -1; }
+    /* Only what a program needs to start: it answers before it reads anything. */
+#ifdef _WIN32
+    {
+        wchar_t sr[MAX_PATH] = L"C:\\Windows";
+        char sru[MAX_PATH * 3];
+        GetEnvironmentVariableW(L"SystemRoot", sr, MAX_PATH);
+        narrow(sr, sru, sizeof sru);
+        sfmt(env[ne++], 4200, "SystemRoot=%s", sru);
+        sfmt(env[ne++], 4200, "windir=%s", sru);
+        sfmt(env[ne++], 4200, "PATH=%s\\System32", sru);
+    }
+#else
+    sfmt(env[ne++], 4200, "PATH=/nonexistent");
+    sfmt(env[ne++], 4200, "LC_ALL=C");
+#endif
+    for (int i = 0; i < ne; i++) envp[i] = env[i];
+    envp[ne] = NULL;
+    argv[0] = engine; argv[1] = "--version"; argv[2] = NULL;
+    v.out = out; v.n = n; v.got = 0;
+    if (n) out[0] = 0;
+    rc = js_run(argv, envp, root, version_line, &v, NULL, err, sizeof err);
+    if (rc < 0) { sfmt(out, n, "%s", err[0] ? err : "the engine couldn't be started"); return -1; }
+    if (rc != 0 || !v.got) { sfmt(out, n, "the engine didn't say (exit %d)", rc); return -1; }
     return 0;
 }
 
@@ -1289,6 +1340,8 @@ static void job_line(void *ctx, const char *text)
     }
     if (!strncmp(text, "done ", 5)) {
         sscanf(text + 5, "%64s %15s %64s %15s", j->engine_sha, j->engine_check, j->gen_sha, j->gen_check);
+    } else if (!strncmp(text, "generated ", 10)) {
+        sscanf(text + 10, "%64s %15s", j->gen_sha, j->gen_check);
     } else if (!strncmp(text, "error: ", 7)) {
         sfmt(j->err, sizeof j->err, "%s", text + 7);
     }
@@ -1411,6 +1464,7 @@ static int job_xbe(js_job *j, char *xbe, size_t n)
 int js_job_run(js_job *j)
 {
     char p[4096], tools[4096], dl[4096], xbe[4096];
+    double share;
     size_t i;
     js_path(p, sizeof p, j->s->root, "build");
     js_mkdirs(p);
@@ -1418,11 +1472,14 @@ int js_job_run(js_job *j)
     j->log = js_fopen(p, "wb");
     sfmt(j->log_path, sizeof j->log_path, "%s", p);
     js_path(tools, sizeof tools, j->s->root, "tools");
-    j->base = j->download ? JS_DOWNLOAD_SHARE : 0.0;
+    /* Only the tools: their download is the whole bar. */
+    if (j->task == JS_TASK_TOOLS) j->download = 1;
+    share = j->task == JS_TASK_TOOLS ? 1.0 : JS_DOWNLOAD_SHARE;
+    j->base = j->download ? share : 0.0;
 
     if (j->download) {
         uint64_t total = 0, at = 0;
-        const double share_dl = JS_DOWNLOAD_SHARE * 0.85;   /* the rest: unpacking */
+        const double share_dl = share * 0.85;   /* the rest: unpacking */
         const char *wheels[8];
         int nw = 0, rc;
         static char wpaths[JS_NDOWNLOADS][4096];
@@ -1443,7 +1500,7 @@ int js_job_run(js_job *j)
             }
             at += s;
         }
-        j->prog.update(j->prog.ctx, share_dl, JS_DOWNLOAD_SHARE, 15, 15, "Unpacking the tools", NULL);
+        j->prog.update(j->prog.ctx, share_dl, share, 15, 15, "Unpacking the tools", NULL);
         if (js_untar_gz(wpaths[0], tools, j->err, sizeof j->err)) return fail_job(j, "%s", j->err);
         for (i = 1; i < JS_NDOWNLOADS; i++) { wheels[nw++] = "--install-wheel"; wheels[nw++] = wpaths[i]; }
         wheels[nw++] = "--install-only";
@@ -1460,6 +1517,10 @@ int js_job_run(js_job *j)
         job_log(j, "the tools are ready");
     }
     if (!js_tools_ready(j->s->root)) return fail_job(j, "the tools folder isn't whole: %s", tools);
+    if (j->task == JS_TASK_TOOLS) {
+        j->prog.update(j->prog.ctx, 1.0, -1, 0, 0, "The tools are ready", NULL);
+        return 0;
+    }
 
     j->prog.update(j->prog.ctx, j->base, -1, 0, 0, "Reading the game", NULL);
     {
@@ -1467,7 +1528,14 @@ int js_job_run(js_job *j)
          * code instead, which the build takes in place of translating;
          * nothing else changes. */
         const char *test_gen = getenv("JSRF_SETUP_TEST_GEN");
-        const char *args[] = { "--xbe", xbe, test_gen ? "--test-gen" : NULL, test_gen, NULL };
+        const char *args[8];
+        int na = 0;
+        args[na++] = "--xbe";
+        args[na++] = xbe;
+        if (j->task == JS_TASK_GENERATE) args[na++] = "--generate-only";
+        else if (j->reuse_generated) args[na++] = "--reuse-generated";
+        if (test_gen) { args[na++] = "--test-gen"; args[na++] = test_gen; }
+        args[na] = NULL;
         if (test_gen) {
             js_path(xbe, sizeof xbe, j->s->root, "build/default.xbe");
             js_write_text(xbe, "not a game: the setup's test\n");
@@ -1477,10 +1545,14 @@ int js_job_run(js_job *j)
         }
         int rc = run_python(j, args);
         if (j->prog.cancel && *j->prog.cancel) return fail_job(j, "cancelled");
-        if (rc != 0 || !j->engine_sha[0]) {
+        if (rc != 0 || !(j->task == JS_TASK_GENERATE ? j->gen_sha[0] : j->engine_sha[0])) {
             if (!j->err[0]) fail_job(j, "the build stopped (exit %d)", rc);
             return -1;
         }
+    }
+    if (j->task == JS_TASK_GENERATE) {
+        j->prog.update(j->prog.ctx, 1.0, -1, 0, 0, "The code is generated", NULL);
+        return 0;
     }
     js_path(p, sizeof p, j->s->root, "build/engine.sha256");
     {
@@ -1503,23 +1575,44 @@ void js_accept_engine(const char *root, const char *sha)
 
 /* What "Delete" takes: the tools and everything made from the game, but
  * never the engine (and the build's log and stamp, which are small). */
-int js_delete_tools(const char *root)
+static const char *const g_made[] = { "build/generated", "build/work", "build/obj", "build/tmp", "build/default.xbe" };
+
+int js_delete_tools_folder(const char *root)
 {
-    static const char *const what[] = { "tools", "build/generated", "build/work", "build/obj", "build/tmp",
-                                        "build/default.xbe" };
+    char p[4096];
+    js_path(p, sizeof p, root, "tools");
+    return js_rmtree(p) != 0 ? -1 : 0;
+}
+
+int js_delete_generated(const char *root)
+{
     char p[4096];
     size_t i;
     int bad = 0;
-    for (i = 0; i < sizeof what / sizeof what[0]; i++) {
-        js_path(p, sizeof p, root, what[i]);
+    for (i = 0; i < sizeof g_made / sizeof g_made[0]; i++) {
+        js_path(p, sizeof p, root, g_made[i]);
         bad |= js_rmtree(p) != 0;
     }
     return bad ? -1 : 0;
 }
 
-uint64_t js_tools_size(const char *root)
+int js_delete_tools(const char *root)
 {
-    static const char *const what[] = { "tools", "build/generated", "build/work", "build/obj" };
+    int a = js_delete_tools_folder(root), b = js_delete_generated(root);
+    return a || b ? -1 : 0;
+}
+
+uint64_t js_tools_folder_size(const char *root)
+{
+    char p[4096];
+    js_path(p, sizeof p, root, "tools");
+    return js_tree_size(p);
+}
+
+/* The build's own scratch (build/tmp), gone once a build ends, isn't counted. */
+uint64_t js_generated_size(const char *root)
+{
+    static const char *const what[] = { "build/generated", "build/work", "build/obj" };
     char p[4096];
     size_t i;
     uint64_t s = 0;
@@ -1533,6 +1626,62 @@ uint64_t js_tools_size(const char *root)
         if (f) { fseek(f, 0, SEEK_END); s += (uint64_t)ftell(f); fclose(f); }
     }
     return s;
+}
+
+uint64_t js_tools_size(const char *root)
+{
+    return js_tools_folder_size(root) + js_generated_size(root);
+}
+
+/* ---- the generated code's hash --------------------------------------------------- */
+
+struct gen_list { char **v; size_t n, cap; int bad; };
+
+static int gen_each(void *ctx, const char *name, int is_dir)
+{
+    struct gen_list *l = (struct gen_list *)ctx;
+    size_t len = strlen(name);
+    if (is_dir) return 0;
+    if (l->n == l->cap) {
+        size_t cap = l->cap ? l->cap * 2 : 64;
+        char **v = (char **)realloc(l->v, cap * sizeof *v);
+        if (!v) { l->bad = 1; return 1; }
+        l->v = v;
+        l->cap = cap;
+    }
+    if (!(l->v[l->n] = (char *)malloc(len + 1))) { l->bad = 1; return 1; }
+    memcpy(l->v[l->n++], name, len + 1);
+    return 0;
+}
+
+static int name_order(const void *a, const void *b)
+{
+    return strcmp(*(char *const *)a, *(char *const *)b);   /* byte order: strcmp compares unsigned */
+}
+
+int js_gen_hash(const char *gen, char hex[65])
+{
+    struct gen_list l;
+    sha256_ctx c;
+    char p[4096], h[65], line[4096 + 80];
+    size_t i;
+    int bad;
+    memset(&l, 0, sizeof l);
+    hex[0] = 0;
+    bad = js_list_dir(gen, gen_each, &l) != 0 || l.bad;
+    if (!bad) qsort(l.v, l.n, sizeof *l.v, name_order);
+    sha256_init(&c);
+    for (i = 0; !bad && i < l.n; i++) {
+        js_path(p, sizeof p, gen, l.v[i]);
+        if (js_sha256_file(p, h)) { bad = 1; break; }
+        snprintf(line, sizeof line, "%s  ./%s\n", h, l.v[i]);
+        sha256_update(&c, line, strlen(line));
+    }
+    for (i = 0; i < l.n; i++) free(l.v[i]);
+    free(l.v);
+    if (bad) return -1;
+    sha256_final(&c, hex);
+    return 0;
 }
 
 /* ---- the console's way ---------------------------------------------------------------- */

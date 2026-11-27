@@ -46,6 +46,9 @@ if mode == "error":
 os.makedirs(os.path.join(build, "generated"), exist_ok=True)
 with open(os.path.join(build, "generated", "x.c"), "w") as f:
     f.write("/* made up */\n")
+if "--generate-only" in args:
+    print("generated %%s match" %% ("1" * 64))
+    sys.exit(0)
 print("step 2 2 Compiling")
 os.makedirs(os.path.join(root, "bin"), exist_ok=True)
 engine = b"the stand-in engine\n"
@@ -112,6 +115,23 @@ def make_archives(work):
     (tar / "cut.tar.gz").write_bytes(good[:len(good) // 2])
 
 
+def make_gen_hash(work):
+    """genhash/gen: made-up generated code (a folder in it, left out, and names
+    whose byte order isn't their case-blind one), with its hash as
+    build_engine.py's gen_hash gives it in genhash/sha256.txt."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("kit_build_engine", root / "launcher/kit/build_engine.py")
+    be = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(be)
+    gen = work / "genhash/gen"
+    (gen / "sub").mkdir(parents=True)
+    (gen / "sub/left-out.c").write_bytes(b"not counted\n")
+    for name, data in (("recomp_0000.c", b"int a;\n"), ("B.h", b"#pragma once\n"), ("a b.c", b"spaced\n"),
+                       ("recomp_types.h", b"/* t */\n"), ("\u00e9t\u00e9.c", b"utf-8\n")):
+        (gen / name).write_bytes(data)
+    (work / "genhash/sha256.txt").write_text(be.gen_hash(str(gen)) + "\n")
+
+
 def make_stand_in(work):
     py = work / "stand-in/tools/python/bin/python3"
     py.parent.mkdir(parents=True)
@@ -141,6 +161,7 @@ with tempfile.TemporaryDirectory(prefix="setup-") as directory:
     subprocess.run(cc + objs + ["-o", exe] + libs, cwd=root, check=True)
 
     make_archives(work)
+    make_gen_hash(work)
     if sys.platform != "win32":
         make_stand_in(work)
     env = dict(os.environ)

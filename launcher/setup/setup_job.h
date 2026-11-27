@@ -1,4 +1,5 @@
-/* The setup's steps, shared by its window and its console (setup_core.c). */
+/* The setup's steps, shared by its window, its console (setup_core.c) and
+ * JSRF-PC Tools' Build page (launcher/tools/tools_build.cpp). */
 #ifndef JSRF_SETUP_JOB_H
 #define JSRF_SETUP_JOB_H
 
@@ -47,9 +48,17 @@ typedef struct js_progress {
     void *ctx;
 } js_progress;
 
+/* What a job does (js_job's task). */
+#define JS_TASK_BUILD     0   /* the engine built from the game (the setup's) */
+#define JS_TASK_TOOLS     1   /* only the tools downloaded (download is taken as 1) */
+#define JS_TASK_GENERATE  2   /* only the code generated from the game: nothing compiled */
+
 typedef struct js_job {
     jsrf_setup *s;
     int download;                 /* the tools first, from their sites */
+    int task;                     /* JS_TASK_*: 0, the setup's, unless set */
+    int reuse_generated;          /* a build compiles the code generated before as it is, when
+                                     it is this game's and this kit's (build_engine.py) */
     struct {
         js_update_fn update;
         volatile int *cancel;
@@ -64,10 +73,40 @@ typedef struct js_job {
     double base;
 } js_job;
 
-int js_job_run(js_job *j);                       /* 0 when the engine was built */
+int js_job_run(js_job *j);                       /* 0 when the engine was built (or its task done) */
 void js_accept_engine(const char *root, const char *sha);
+/* Delete's two halves, and both: the tools folder; and what was made from
+ * the game (the generated code, the build's work and objects, its copy of
+ * default.xbe). Never the engine, the build's log or its stamps. 0, or -1
+ * when something stayed. Each one's size, in bytes, as it is now. */
+int js_delete_tools_folder(const char *root);
+int js_delete_generated(const char *root);
 int js_delete_tools(const char *root);
+uint64_t js_tools_folder_size(const char *root);
+uint64_t js_generated_size(const char *root);
 uint64_t js_tools_size(const char *root);
+/* Where the build keeps the generated code (build/generated/recomp/gen),
+ * and what it was made from (build/generated/about.txt, build_engine.py's). */
+#define JS_GEN_DIR   "build/generated/recomp/gen"
+#define JS_GEN_ABOUT "build/generated/about.txt"
+/* The generated code's hash, as build_engine.py's gen_hash and
+ * kit/expected.txt's gen_sha256 give it: each file's SHA-256 and name, in
+ * the names' byte order, hashed. 0, or -1 when gen can't be read. */
+int js_gen_hash(const char *gen, char hex[65]);
+
+/* The engine's SHA-256 against this release's, as jsrf_setup_engine_ready
+ * checks it (which is ready for the first three): */
+#define JS_ENGINE_RELEASE   0   /* the one this release builds (kit/expected.txt) */
+#define JS_ENGINE_BUILT     1   /* the release's isn't known: the one built here */
+#define JS_ENGINE_ACCEPTED  2   /* another, which the player said to play anyway */
+#define JS_ENGINE_OTHER     3   /* another, not accepted: the setup runs again */
+#define JS_ENGINE_BUILT_IN  4   /* the package came with it (no kit): nothing to check it against */
+#define JS_ENGINE_NONE      5   /* there is none, or it can't be read */
+/* Which, with the engine's SHA-256 into sha ("" for none). */
+int js_engine_check(const char *root, char sha[65]);
+/* What the engine says it is (its --version: the release it was built as),
+ * into out. 0, or -1 with why in out. */
+int js_engine_version(const char *root, char *out, size_t n);
 int js_tools_ready(const char *root);
 void js_engine_path(const char *root, char *out, size_t n);
 void js_path(char *out, size_t n, const char *a, const char *b);

@@ -11,11 +11,6 @@
  *                  %APPDATA%\xbased, or on Linux $XDG_DATA_HOME/xbased
  *                  (~/.local/share/xbased); its own folder when it is kept
  *                  portable (picked)
- *   xemu           the disk image xemu.toml's [sys.files] hdd_path names;
- *                  xemu.toml is in %APPDATA%\xemu\xemu, or on Linux
- *                  $XDG_DATA_HOME/xemu/xemu (and Flathub's
- *                  ~/.var/app/app.xemu.xemu/data/xemu/xemu), or beside
- *                  xemu.exe in its portable mode (picked)
  *
  * The emulators' own code isn't used: the places are from their
  * documentation and settings, and every file is read as data.
@@ -30,7 +25,6 @@
 #include "save_sources.h"
 #include "setup.h"
 #include "setup_job.h"
-#include "xbox_disk.h"
 #include "xiso.h"
 
 #include <stdio.h>
@@ -271,203 +265,24 @@ int jsrf_find_title_dir(const char *picked, char *dir, size_t n)
     return 0;
 }
 
-/* ---- xemu's disk image ---------------------------------------------------------- */
-
-int jsrf_read_image(const char *image, jsrf_found *out)
-{
-    char err[256];
-    FILE *fp;
-    xbox_disk *d = NULL;
-    fatx *fx = NULL;
-    fatx_entry title, *saves = NULL, *files = NULL;
-    int ns, i, j, nf, r = -1;
-
-    memset(out, 0, sizeof *out);
-    snprintf(out->where, sizeof out->where, "%s", image);
-    fp = js_fopen(image, "rb");
-    if (!fp) { set_why(out, "%s couldn't be opened.", image); return -1; }
-    d = xbox_disk_open(fp, err, sizeof err);
-    if (!d) { set_why(out, "%s", err); goto done; }
-    fx = fatx_open(d, XBOX_DISK_E_OFFSET, XBOX_DISK_E_LENGTH, err, sizeof err);
-    if (!fx) { set_why(out, "The image has no E: drive where an Xbox keeps one: %s", err); goto done; }
-    j = fatx_find(fx, "UDATA/" JSRF_TITLE_ID, &title);
-    if (j != 1 || !(title.attr & FATX_ATTR_DIR)) {
-        set_why(out, "%s", j < 0 ? "The image's E: drive is damaged on the way to UDATA\\5345000a."
-                                 : "The image has no JSRF saves (no UDATA\\5345000a on its E: drive).");
-        goto done;
-    }
-    ns = fatx_list(fx, &title, &saves);
-    if (ns < 0) { set_why(out, "%s", "The image's UDATA\\5345000a is damaged."); goto done; }
-    for (i = 0; i < ns; i++) {
-        if (!(saves[i].attr & FATX_ATTR_DIR)) {
-            uint8_t *data = NULL;
-            if (is_title_file(saves[i].name) && saves[i].size <= (1u << 20) &&
-                fatx_read(fx, &saves[i], &data) == 0)
-                keep_title_file(out, saves[i].name, data, saves[i].size);
-            continue;
-        }
-        {
-            jsrf_save *s = new_save(out, saves[i].name);
-            int too_many = 0, too_large = 0;
-            if (!s) { set_why(out, "%s", "Out of memory reading the image."); goto done; }
-            nf = fatx_list(fx, &saves[i], &files);
-            if (nf < 0) too_large = 1;
-            for (j = 0; j < nf; j++) {
-                uint8_t *data = NULL;
-                if (files[j].attr & FATX_ATTR_DIR) continue;
-                if (s->nfiles >= JSRF_SAVE_FILES) { too_many = 1; continue; }
-                if (files[j].size > JSRF_FILE_MAX || fatx_read(fx, &files[j], &data) != 0) { too_large = 1; continue; }
-                jsrf_save_add(s, files[j].name, data, files[j].size);
-            }
-            free(files);
-            files = NULL;
-            finish(s, too_many, too_large);
-        }
-    }
-    sort_saves(out);
-    if (!out->nsaves) { set_why(out, "%s", "The image's UDATA\\5345000a has no saves in it."); goto done; }
-    r = 0;
-done:
-    free(saves);
-    free(files);
-    if (fx) fatx_close(fx);
-    if (d) xbox_disk_close(d);
-    fclose(fp);
-    return r;
-}
-
-/* ---- xemu.toml ---------------------------------------------------------------------- */
-
-/* A drive letter's path counts as whole on Linux too: xemu.toml under Wine. */
-static int is_absolute(const char *p)
-{
-    return (((p[0] | 32) >= 'a' && (p[0] | 32) <= 'z') && p[1] == ':') || p[0] == '/' || p[0] == '\\';
-}
-
-/* One TOML string, '...' (as it is) or "..." (with its escapes), at p:
- * into out as UTF-8. 1, or 0 when it isn't one. */
-static int toml_string(const char *p, const char *end, char *out, size_t n)
-{
-    size_t o = 0;
-    char q = *p++;
-    if (q != '\'' && q != '"') return 0;
-    while (p < end && *p != q && *p != '\n') {
-        unsigned long c = (unsigned char)*p++;
-        if (q == '"' && c == '\\' && p < end) {
-            char e = *p++;
-            int digits = e == 'u' ? 4 : e == 'U' ? 8 : 0, k;
-            if (digits) {
-                c = 0;
-                for (k = 0; k < digits && p < end; k++, p++) {
-                    char h = *p;
-                    c = c * 16 + (unsigned long)(h >= '0' && h <= '9' ? h - '0' : h >= 'a' && h <= 'f' ? h - 'a' + 10 :
-                                                 h >= 'A' && h <= 'F' ? h - 'A' + 10 : 0);
-                }
-                if (c >= 0x80) {             /* as UTF-8 */
-                    unsigned char b[4];
-                    size_t nb = c < 0x800 ? 2 : c < 0x10000 ? 3 : 4, i;
-                    if (nb == 2) { b[0] = (unsigned char)(0xC0 | (c >> 6)); b[1] = (unsigned char)(0x80 | (c & 63)); }
-                    else if (nb == 3) { b[0] = (unsigned char)(0xE0 | (c >> 12)); b[1] = (unsigned char)(0x80 | ((c >> 6) & 63));
-                                        b[2] = (unsigned char)(0x80 | (c & 63)); }
-                    else { b[0] = (unsigned char)(0xF0 | (c >> 18)); b[1] = (unsigned char)(0x80 | ((c >> 12) & 63));
-                           b[2] = (unsigned char)(0x80 | ((c >> 6) & 63)); b[3] = (unsigned char)(0x80 | (c & 63)); }
-                    for (i = 0; i < nb && o + 1 < n; i++) out[o++] = (char)b[i];
-                    continue;
-                }
-            } else {
-                c = (unsigned long)(e == 'n' ? '\n' : e == 't' ? '\t' : e == 'r' ? '\r' : e == 'b' ? '\b' :
-                                    e == 'f' ? '\f' : e);
-            }
-        }
-        if (o + 1 < n) out[o++] = (char)c;
-    }
-    if (p >= end || *p != q) return 0;
-    out[o] = 0;
-    return 1;
-}
-
-int jsrf_xemu_hdd_path(const char *toml, size_t n, const char *dir, char *out, size_t on)
-{
-    const char *p = toml, *end = toml + n;
-    char table[128] = "", value[JSRF_PATH_MAX];
-    while (p < end) {
-        const char *line = p, *eol = memchr(p, '\n', (size_t)(end - p));
-        if (!eol) eol = end;
-        p = eol < end ? eol + 1 : end;
-        while (line < eol && (*line == ' ' || *line == '\t')) line++;
-        if (line < eol && *line == '[') {
-            const char *close = memchr(line, ']', (size_t)(eol - line));
-            size_t l;
-            if (!close) continue;
-            line++;
-            while (line < close && *line == ' ') line++;
-            l = (size_t)(close - line);
-            while (l && line[l - 1] == ' ') l--;
-            if (l >= sizeof table) l = sizeof table - 1;
-            memcpy(table, line, l);
-            table[l] = 0;
-            continue;
-        }
-        if (strcmp(table, "sys.files") || (size_t)(eol - line) < 8 || strncmp(line, "hdd_path", 8)) continue;
-        line += 8;
-        while (line < eol && (*line == ' ' || *line == '\t')) line++;
-        if (line >= eol || *line != '=') continue;
-        line++;
-        while (line < eol && (*line == ' ' || *line == '\t')) line++;
-        if (line >= eol || !toml_string(line, eol, value, sizeof value) || !value[0]) continue;
-        if (is_absolute(value) || !dir || !dir[0]) snprintf(out, on, "%s", value);
-        else js_path(out, on, dir, value);
-        return 1;
-    }
-    return 0;
-}
-
 /* ---- what the player picked --------------------------------------------------------- */
-
-static int ends_with(const char *s, const char *tail)
-{
-    size_t a = strlen(s), b = strlen(tail);
-    return a >= b && same_name(s + a - b, tail);
-}
-
-static void parent_of(const char *path, char *out, size_t n)
-{
-    const char *b = base_name(path);
-    size_t l = (size_t)(b - path);
-    while (l > 1 && (path[l - 1] == '/' || path[l - 1] == '\\')) l--;
-    if (l >= n) l = n - 1;
-    memcpy(out, path, l);
-    out[l] = 0;
-}
 
 int jsrf_read_source(const char *path, jsrf_found *out)
 {
     char dir[JSRF_PATH_MAX];
     int r;
-    if (js_is_dir(path)) {
-        r = jsrf_find_title_dir(path, dir, sizeof dir);
-        if (r == 2) return jsrf_read_save_dir(dir, out);
-        if (r == 1) return jsrf_read_title_dir(dir, out);
-        memset(out, 0, sizeof *out);
-        snprintf(out->where, sizeof out->where, "%s", path);
-        set_why(out, "%s has no JSRF saves in it, or in the folders an Xbox, Cxbx-Reloaded or xbased "
-                     "keeps them in under it.", path);
+    memset(out, 0, sizeof *out);
+    snprintf(out->where, sizeof out->where, "%s", path);
+    if (!js_is_dir(path)) {
+        set_why(out, "%s isn't a folder: pick the folder the saves are in.", path);
         return -1;
     }
-    if (ends_with(path, ".toml")) {
-        unsigned char *text;
-        size_t n;
-        char image[JSRF_PATH_MAX];
-        memset(out, 0, sizeof *out);
-        snprintf(out->where, sizeof out->where, "%s", path);
-        if (js_read_file(path, 1u << 20, &text, &n) != 0) { set_why(out, "%s couldn't be read.", path); return -1; }
-        parent_of(path, dir, sizeof dir);
-        r = jsrf_xemu_hdd_path((const char *)text, n, dir, image, sizeof image);
-        free(text);
-        if (!r) { set_why(out, "%s names no hard disk image (hdd_path).", path); return -1; }
-        return jsrf_read_image(image, out);
-    }
-    return jsrf_read_image(path, out);
+    r = jsrf_find_title_dir(path, dir, sizeof dir);
+    if (r == 2) return jsrf_read_save_dir(dir, out);
+    if (r == 1) return jsrf_read_title_dir(dir, out);
+    set_why(out, "%s has no JSRF saves in it, or in the folders an Xbox, Cxbx-Reloaded or xbased "
+                 "keeps them in under it.", path);
+    return -1;
 }
 
 /* ---- the usual places ------------------------------------------------------------------ */
@@ -510,19 +325,6 @@ static int add_title_under(char (*paths)[JSRF_PATH_MAX], int have, int max, cons
     return have;
 }
 
-static int add_xemu_toml(char (*paths)[JSRF_PATH_MAX], int have, int max, const char *dir)
-{
-    char toml[JSRF_PATH_MAX], image[JSRF_PATH_MAX];
-    unsigned char *text;
-    size_t n;
-    js_path(toml, sizeof toml, dir, "xemu.toml");
-    if (js_read_file(toml, 1u << 20, &text, &n) != 0) return have;
-    if (jsrf_xemu_hdd_path((const char *)text, n, dir, image, sizeof image) && js_is_file(image))
-        have = add_place(paths, have, max, image);
-    free(text);
-    return have;
-}
-
 #ifndef _WIN32
 typedef struct wine_users { char (*paths)[JSRF_PATH_MAX]; int have, max; const char *users; } wine_users;
 
@@ -554,9 +356,6 @@ int jsrf_usual_places(int source, char (*paths)[JSRF_PATH_MAX], int max)
     } else if (source == JSRF_SRC_XBASED) {
         js_path(p, sizeof p, base, "xbased");
         have = add_title_under(paths, have, max, p);
-    } else if (source == JSRF_SRC_XEMU) {
-        js_path(p, sizeof p, base, "xemu\\xemu");
-        have = add_xemu_toml(paths, have, max, p);
     }
 #else
     char home[JSRF_PATH_MAX], data[JSRF_PATH_MAX];
@@ -575,11 +374,6 @@ int jsrf_usual_places(int source, char (*paths)[JSRF_PATH_MAX], int max)
     } else if (source == JSRF_SRC_XBASED) {
         js_path(p, sizeof p, data, "xbased");
         have = add_title_under(paths, have, max, p);
-    } else if (source == JSRF_SRC_XEMU) {
-        js_path(p, sizeof p, data, "xemu/xemu");
-        have = add_xemu_toml(paths, have, max, p);
-        js_path(p, sizeof p, home, ".var/app/app.xemu.xemu/data/xemu/xemu");
-        have = add_xemu_toml(paths, have, max, p);
     }
     (void)base;
 #endif

@@ -37,6 +37,7 @@
 #include "graffiti_fit.h"
 #include "graffiti_image.h"
 #include "graffiti_save.h"
+#include "save_store.h"   /* jsrf_store_rename */
 #include "setup.h"
 #include "setup_job.h"   /* js_path */
 #include "tools.h"
@@ -610,13 +611,20 @@ static void import(tools_ctx *t)
 
     g.ran = 1;
     g.backup[0] = 0;
+    int adding = to_write();
     int r = jsrf_backup(t->title, t->backups, made, sizeof made, why, sizeof why);
     if (r == JSRF_FAILED) {
         g.ran = 0;
         say(AT_IMPORT, TOOLS_ERROR, "Nothing was written, because the backup couldn't be made. %s", why);
         return;
     }
-    if (r == JSRF_WROTE) snprintf(g.backup, sizeof g.backup, "%s", made);
+    if (r == JSRF_WROTE) {
+        /* Named for what it's from, as the Save manager names its backups. */
+        char label[80];
+        snprintf(label, sizeof label, "Before adding %d design%s", adding, adding == 1 ? "" : "s");
+        jsrf_store_rename(made, label);
+        snprintf(g.backup, sizeof g.backup, "%s", made);
+    }
     look_at_slots(t, 1);
     give_slots();
     /* The icons the game's own designs carry, when its files are a folder. */
