@@ -22,10 +22,10 @@ shift 3
 rm -rf "$obj"; mkdir -p "$obj"
 
 srcs=("$repo/launcher/tools/jsrf_save.c" "$repo/launcher/tools/save_sources.c" "$repo/launcher/tools/save_import.c"
-      "$repo/launcher/tools/xbox_disk.c" "$repo/launcher/tools/file_dialog.c"
+      "$repo/launcher/tools/xbox_disk.c" "$repo/launcher/tools/file_dialog.c" "$repo/launcher/tools/mission_walk.c"
       "$repo/launcher/setup/setup_core.c" "$repo/port/xiso.c" "$repo/port/xbe_check.c")
 kernel=("$repo/launcher/tools/kernel_crypto_host.c" "$repo/src/kernel/kernel_crypto.c")
-cxx_srcs=("$repo/launcher/tools/tools_main.cpp" "$repo/launcher/tools/tools_saves.cpp"
+cxx_srcs=("$repo/launcher/tools/tools_main.cpp" "$repo/launcher/tools/tools_saves.cpp" "$repo/launcher/tools/tools_missions.cpp"
           "$repo/src/menu/menu_style.cpp")
 imgui=("$repo/third_party/imgui/imgui.cpp" "$repo/third_party/imgui/imgui_draw.cpp"
        "$repo/third_party/imgui/imgui_tables.cpp" "$repo/third_party/imgui/imgui_widgets.cpp"

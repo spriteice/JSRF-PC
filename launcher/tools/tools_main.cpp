@@ -57,7 +57,7 @@ typedef void (T_GLAPI *gl_clear_fn)(unsigned);
 #define SETTLE_MS 400   /* frames kept coming after input, for hovers and popups to settle */
 #define IDLE_MS   1000  /* the longest the window waits to draw again when idle */
 
-static const tools_page *const g_pages[] = { &tools_saves_page };
+static const tools_page *const g_pages[] = { &tools_saves_page, &tools_missions_page };
 #define NPAGES (int)(sizeof g_pages / sizeof g_pages[0])
 
 /* ---- the shell's helpers ------------------------------------------------------------- */

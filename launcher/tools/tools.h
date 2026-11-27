@@ -1,7 +1,8 @@
 /*
  * JSRF-PC Tools: the shell (tools_main.cpp) and its pages. The saves page
- * (tools_saves.cpp, b3 row 36) and the graffiti page (b3 row 35) each draw
- * into the shell's window, which finds the game, keeps the window's scale,
+ * (tools_saves.cpp, b3 row 36), the graffiti page (b3 row 35) and the
+ * missions page (tools_missions.cpp, b3 row 38) each draw into the shell's
+ * window, which finds the game, keeps the window's scale,
  * and hands each page what is dropped on the window.
  *
  * C++, as Dear ImGui is. Paths are UTF-8.
@@ -32,6 +33,9 @@ struct tools_page {
 
 /* The saves page (tools_saves.cpp). */
 extern const tools_page tools_saves_page;
+
+/* The missions page (tools_missions.cpp). */
+extern const tools_page tools_missions_page;
 
 /* ---- for the pages: the shell's helpers ----------------------------------------- */
 

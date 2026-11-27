@@ -1,0 +1,16 @@
+story 61 4 0.8 0.4 0
+reached 0101 S=1,2,6
+reached 0139 e=0 S=1,2,6
+reached 0157 e=7 G=2 S=1,2,6
+reached 0229 e=1 C=1 S=1,2,6
+reached 0296 e=7 G=2 S=1,2,6
+searched 0100 1
+searched 0101 0
+searched 0139 4
+searched 0157 5
+searched 0296 6
+searched 0229 1
+searched 0249 1
+searched 0289 1
+searched 0396 6
+no clear 2

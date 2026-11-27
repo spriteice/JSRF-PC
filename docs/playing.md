@@ -594,9 +594,9 @@ running while it is open, but your input goes to the menu.
     foot. Picking one asks first, as anything since your last save is lost,
     then restarts the game at that mission: the intro and the title are
     left out, and a new game starts there, with a new game's progress. With
-    a test build's `start-states.txt` beside the settings file, which is
-    made from the game's files and is never in a package, it starts with
-    the story up to that mission done instead. Where the story would put
+    `start-states.txt` beside the settings file, which
+    [JSRF-PC Tools](jsrf-pc-tools.md#missions) makes from your own game,
+    it starts with the story up to that mission done instead. Where the story would put
     you back where you stood, as after a rival's preview, you start where
     the preview starts, by the rival, or else at the level's start. A run started here keeps its saves in `mission-saves` in the save folder,
     apart from your own, which it never opens. File > Restart afterwards
@@ -682,7 +682,7 @@ running while it is open, but your input goes to the menu.
     the mission, the character and Photo mode it started with, and the
     story's progress it started from: playing it starts the game at that
     mission again, as the pick did, and stops at once if the mission
-    doesn't start there with the same progress (from the same test build's
+    doesn't start there with the same progress (from the same
     `start-states.txt`), and the log says why.
     Lines starting `[PLAYBACK]` in the log say what it did, with a summary
     at the end.

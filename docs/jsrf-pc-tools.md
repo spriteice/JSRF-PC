@@ -39,3 +39,30 @@ Brings saves in from other emulators, and sends JSRF-PC's saves out to them.
 The backup is of the saves where they go, in `Save backups` beside JSRF-PC's
 saves: straight in it for an import, and in a folder named for the emulator
 for an export.
+
+## Missions
+
+Makes the file that lets the game's Developer > Missions start a story mission
+with the story up to it done ([playing.md](playing.md#in-game-menu),
+Missions). Without it, each mission starts with a new game's progress.
+
+- **Make start states:** Reads the mission files of the game JSRF-PC was given
+  (`Media/Mission`), checks it is the standalone US disc's, and walks the
+  story through them from New Game, chapter by chapter, to the start of each
+  story mission. That takes a moment. The warning then says how many of
+  the story's missions the walk reached; those no exit leads to start at their
+  chapter's opening, and Developer > Missions marks them as off the story's
+  way. The file, `start-states.txt`, is written beside JSRF-PC's settings
+  file. If the one there is the same, byte for byte, nothing is written.
+- **Pick the game's folder:** The same, from another copy of the game. A game
+  folder dropped on the window does it too.
+- **Remove start states:** Removes `start-states.txt`, so missions start with a
+  new game's progress again.
+
+The backup of the `start-states.txt` there before is in `Start states backups`
+beside it. JSRF-PC reads the file when it starts, so restart it if it's
+running.
+
+The file is made from your own copy of the game, so it is never in a package:
+everyone makes their own. Every copy of the standalone US disc gives the same
+file.

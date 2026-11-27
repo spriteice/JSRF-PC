@@ -1,0 +1,54 @@
+story 1052 9 0.5 0.3 0
+reached 0101 S=1,2,6
+reached 0128 e=1 G=2 S=1,2,6 tanks=5
+reached 0135 e=0 C=3 G=2 S=1,2,6 tanks=5
+reached 0179 e=-1 C=3 G=2 S=1,2,6 tanks=5
+reached 0262 e=0 G=2 R=1,2 S=1,2,6 tanks=5
+reached 0296 e=-1 G=2 S=1,2,6 tanks=5
+reached 0383 e=0 C=1 G=2 R=1,2 S=1,2,6 tanks=5
+reached 0396 e=0 G=2 R=1,2 S=1,2,6 tanks=5
+reached 0411 e=1 G=0,2 R=1,2 S=1,2,6 tanks=5
+reached 0457 e=0 G=0,2 R=1,2 S=1,2,6 tanks=5
+reached 0496 e=0 G=2 R=1,2 S=1,2,6 tanks=5
+reached 0521 e=-1 G=0,2,3 R=1,2 S=1,2,6 tanks=5
+reached 0526 e=0 G=0,2,3 R=1,2 S=1,2,6 tanks=5
+reached 0543 e=-1 G=0,2,3 R=1,2 S=1,2,6 tanks=5
+reached 0580 e=-1 G=0,2,3 R=1,2 S=1,2,6 tanks=10
+reached 0596 e=0 G=0,2,3 R=1,2 S=1,2,6 tanks=5
+reached 0621 e=0 G=0,1,2,3 R=1 S=1,2,6 tanks=25
+reached 0625 e=7 G=0,2,3 R=1,2 S=1,2,6 tanks=38
+reached 0636 e=2 C=2 G=0,1,2,3 R=1,2 S=1,2,6 tanks=40
+reached 0696 G=0,2,3 R=1,2 S=1,2,6 tanks=25
+reached 0697 G=0,2,3 R=1,2 S=1,2,6 tanks=25
+searched 0101 0
+searched 0127 1
+searched 0128 1
+searched 0135 2
+searched 0179 3
+searched 0296 4
+searched 0226 1
+searched 0252 1
+searched 0262 1
+searched 0396 6
+searched 0306 1
+searched 0337 1
+searched 0383 4
+searched 0496 5
+searched 0411 1
+searched 0457 6
+searched 0596 7
+searched 0500 1
+searched 0521 4
+searched 0526 5
+searched 0543 1
+searched 0580 2
+searched 0582 1
+searched 0584 1
+searched 0696 6
+searched 0621 1
+searched 0625 1
+searched 0636 2
+searched 0682 8
+searched 0697 0
+searched 0796 8
+no clear 6

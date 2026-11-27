@@ -1,0 +1,53 @@
+story 1006 9 0.5 0.3 0
+reached 0101 S=1,2,6
+reached 0137 e=2 S=1,2,6
+reached 0164 e=0 R=0,2 S=1,2,6
+reached 0269 e=0 G=1,2 R=0,2 S=1,2,6 souls=25
+reached 0272 e=1 C=0 G=1,2 R=0,2 S=1,2,6 souls=25
+reached 0276 e=-1 G=1,2 R=0,2 S=1,2,6 souls=25
+reached 0296 G=2 R=0,2 S=1,2,6 souls=25
+reached 0297 G=1,2 R=0,2 S=1,2,6 souls=25
+reached 0337 e=1 G=1,2 R=0 S=1,2,6 souls=25 tanks=40
+reached 0343 e=7 G=1,2 R=0 S=1,2,6 souls=37 tanks=40
+reached 0396 e=-1 G=1,2 R=0 S=1,2,6 souls=25 tanks=40
+reached 0429 e=2 G=2,3 R=0,2 S=1,2,6 souls=37 tanks=40
+reached 0436 e=-1 G=2,3 R=0,2 S=1,2,6 souls=37 tanks=40
+reached 0455 e=1 G=2,3 R=0,1,2 S=1,2,6 souls=37 tanks=40
+reached 0461 e=2 C=2 G=2,3 R=0,1,2 S=1,2,6 souls=37 tanks=40
+reached 0496 e=7 G=1,2,3 R=0 S=1,2,6 souls=37 tanks=40
+reached 0552 e=-1 G=2,3 R=0,1,2 S=1,2,6 souls=37 tanks=40
+reached 0596 e=2 G=2,3 R=0,1,2 S=1,2,6 souls=37 tanks=40
+reached 0603 e=-1 G=2,3 R=0,1 S=1,2,6 souls=37 tanks=40
+reached 0610 e=0 C=0 G=2,3 R=0,1 S=1,2,6 souls=37 tanks=40
+reached 0654 e=-1 C=0 G=2,3 R=0,1 S=2,6 souls=37 tanks=40
+reached 0696 e=-1 G=2,3 R=0,1 S=1,2,6 souls=37 tanks=40
+searched 0101 0
+searched 0137 1
+searched 0152 1
+searched 0164 2
+searched 0296 7
+searched 0269 1
+searched 0272 2
+searched 0276 1
+searched 0297 0
+searched 0396 2
+searched 0337 1
+searched 0343 1
+searched 0496 2
+searched 0429 1
+searched 0436 5
+searched 0455 6
+searched 0461 7
+searched 0596 13
+searched 0531 1
+searched 0552 0
+searched 0561 1
+searched 0696 4
+searched 0603 1
+searched 0610 7
+searched 0630 1
+searched 0644 1
+searched 0654 8
+searched 0672 57
+searched 0796 57
+no clear 6

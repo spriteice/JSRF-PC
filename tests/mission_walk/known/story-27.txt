@@ -1,0 +1,126 @@
+story 27 9 1.0 0 0
+reached 0101 S=1,2,6
+reached 0158 e=-1 S=1,2,6
+reached 0176 e=1 S=1,2,6 souls=25
+reached 0178 e=1 G=2 S=1,2,6 souls=25
+reached 0224 e=1 G=1,2 R=2 S=1,2 souls=25 tanks=40
+reached 0296 e=1 G=1,2 S=1,2 souls=25 tanks=40
+reached 0346 e=0 G=1,2 R=0,2 S=1,2 souls=25 tanks=40
+reached 0357 e=0 G=1,2 R=0,2 S=1,2 souls=25 tanks=40
+reached 0370 e=1 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40
+reached 0381 e=-1 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40
+reached 0396 G=1,2 R=0,2 S=1,2 souls=25 tanks=40
+reached 0397 G=1,2 R=0,2 S=1,2 souls=25 tanks=40
+reached 0413 e=2 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40
+reached 0438 e=1 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40
+reached 0464 e=2 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40
+reached 0480 e=2 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40
+reached 0496 e=-1 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40
+reached 0556 e=0 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40
+reached 0596 e=2 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40
+reached 0627 e=2 G=0,1,2 R=0,1,2 S=1,2 souls=40 tanks=40
+reached 0696 G=1,2 R=0,1,2 S=1,2 souls=40 tanks=40
+reached 0697 G=0,1,2 R=0,1,2 S=1,2 souls=40 tanks=40
+reached 0718 e=-1 G=0,2 R=0,1,2 S=1,2 souls=40 tanks=40
+reached 0721 e=-1 G=0,2 R=0,1,2 S=1,2 souls=40 tanks=40
+reached 0761 e=0 G=0,2 R=0,1,2 S=1,2 souls=40 tanks=40
+reached 0783 e=-1 G=0,2 R=0,1,2 S=1,2 souls=40 tanks=40
+reached 0796 e=2 G=0,2 R=0,1,2 S=1,2 souls=40 tanks=40
+reached 0814 e=0 G=0,1,2 R=0,1,2 S=1,2 souls=40 tanks=40
+reached 0896 e=-1 G=0,1,2 R=0,1,2 S=1,2 souls=40 tanks=40
+reached 0906 e=1 G=0,1,2 R=0,1,2 S=1,2 souls=40 tanks=40
+reached 0920 e=1 G=0,1,2 R=0,1,2 S=1,2 souls=40 tanks=40
+reached 0938 e=1 G=0,2 R=0,1,2 S=1,2 souls=40 tanks=40
+reached 0976 e=1 G=0,2 R=0,1,2 S=1,2 souls=40 tanks=40
+reached 0996 e=0 G=0,1,2 R=0,1,2 S=1,2 souls=40 tanks=40
+searched 0101 0
+searched 0158 1
+searched 0176 2
+searched 0178 3
+searched 0296 4
+searched 0224 1
+searched 0287 1
+searched 0396 2
+searched 0346 1
+searched 0357 2
+searched 0370 3
+searched 0381 4
+searched 0386 1
+searched 0397 0
+searched 0496 5
+searched 0400 1
+searched 0413 1
+searched 0438 2
+searched 0455 1
+searched 0464 3
+searched 0480 4
+searched 0596 5
+searched 0517 1
+searched 0556 1
+searched 0562 1
+searched 0696 2
+searched 0627 1
+searched 0658 1
+searched 0697 0
+searched 0796 2
+searched 0701 1
+searched 0718 1
+searched 0721 2
+searched 0737 1
+searched 0761 3
+searched 0783 4
+searched 0896 5
+searched 0807 1
+searched 0814 1
+searched 0996 2
+searched 0906 1
+searched 0920 2
+searched 0933 1
+searched 0938 3
+searched 0976 4
+file
+0101 S=1,2,6
+0158 e=-1 S=1,2,6
+0176 e=1 S=1,2,6 souls=25
+0178 e=1 G=2 S=1,2,6 souls=25
+0224 e=1 G=1,2 R=2 S=1,2 souls=25 tanks=40
+0287 G=1,2 S=1,2 souls=25 tanks=40 story=0
+0296 e=1 G=1,2 S=1,2 souls=25 tanks=40
+0346 e=0 G=1,2 R=0,2 S=1,2 souls=25 tanks=40
+0357 e=0 G=1,2 R=0,2 S=1,2 souls=25 tanks=40
+0370 e=1 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40
+0381 e=-1 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40
+0386 G=1,2 R=0,2 S=1,2 souls=25 tanks=40 story=0
+0396 G=1,2 R=0,2 S=1,2 souls=25 tanks=40
+0397 G=1,2 R=0,2 S=1,2 souls=25 tanks=40
+0400 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40 story=0
+0413 e=2 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40
+0438 e=1 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40
+0455 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40 story=0
+0464 e=2 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40
+0480 e=2 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40
+0496 e=-1 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40
+0517 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40 story=0
+0556 e=0 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40
+0562 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40 story=0
+0596 e=2 G=1,2 R=0,1,2 S=1,2 souls=25 tanks=40
+0627 e=2 G=0,1,2 R=0,1,2 S=1,2 souls=40 tanks=40
+0658 G=1,2 R=0,1,2 S=1,2 souls=40 tanks=40 story=0
+0696 G=1,2 R=0,1,2 S=1,2 souls=40 tanks=40
+0697 G=0,1,2 R=0,1,2 S=1,2 souls=40 tanks=40
+0701 G=0,2 R=0,1,2 S=1,2 souls=40 tanks=40 story=0
+0718 e=-1 G=0,2 R=0,1,2 S=1,2 souls=40 tanks=40
+0721 e=-1 G=0,2 R=0,1,2 S=1,2 souls=40 tanks=40
+0737 G=0,2 R=0,1,2 S=1,2 souls=40 tanks=40 story=0
+0761 e=0 G=0,2 R=0,1,2 S=1,2 souls=40 tanks=40
+0783 e=-1 G=0,2 R=0,1,2 S=1,2 souls=40 tanks=40
+0796 e=2 G=0,2 R=0,1,2 S=1,2 souls=40 tanks=40
+0807 G=0,1,2 R=0,1,2 S=1,2 souls=40 tanks=40 story=0
+0814 e=0 G=0,1,2 R=0,1,2 S=1,2 souls=40 tanks=40
+0896 e=-1 G=0,1,2 R=0,1,2 S=1,2 souls=40 tanks=40
+0906 e=1 G=0,1,2 R=0,1,2 S=1,2 souls=40 tanks=40
+0920 e=1 G=0,1,2 R=0,1,2 S=1,2 souls=40 tanks=40
+0933 G=0,1,2 R=0,1,2 S=1,2 souls=40 tanks=40 story=0
+0938 e=1 G=0,2 R=0,1,2 S=1,2 souls=40 tanks=40
+0976 e=1 G=0,2 R=0,1,2 S=1,2 souls=40 tanks=40
+0996 e=0 G=0,1,2 R=0,1,2 S=1,2 souls=40 tanks=40

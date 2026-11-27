@@ -1,0 +1,35 @@
+story 1004 9 0.5 0.3 0
+reached 0101 S=1,2,6
+reached 0106 e=2 S=1,2,6
+reached 0121 e=1 G=2 R=0 S=2,6
+reached 0148 e=2 G=2 R=0 S=2,6
+reached 0248 e=1 G=0,2 R=0,2 S=2,6 souls=25
+reached 0296 e=2 G=2 R=0,2 S=2,6 souls=25
+reached 0325 e=2 C=3 G=0,2 R=0,1,2 S=2,6 souls=25 tanks=5
+reached 0359 e=7 G=0,2 R=0,2 S=2,6 souls=25 tanks=5
+reached 0370 e=0 G=0,2 R=0,2 S=2,6 souls=25 tanks=5
+reached 0396 G=0,2 R=0,2 S=2,6 souls=25 tanks=5
+reached 0397 G=0,2 R=0,2 S=2,6 souls=25 tanks=5
+reached 0461 e=-1 G=0,2 R=0,2 S=2,6 souls=25 tanks=5
+reached 0496 e=0 G=0,2 R=0,2 S=2,6 souls=25 tanks=5
+searched 0101 0
+searched 0106 1
+searched 0121 2
+searched 0148 3
+searched 0180 1
+searched 0296 4
+searched 0200 1
+searched 0248 1
+searched 0265 1
+searched 0396 2
+searched 0325 1
+searched 0357 1
+searched 0359 1
+searched 0370 2
+searched 0397 0
+searched 0496 7
+searched 0413 1
+searched 0461 1
+searched 0477 9
+searched 0596 9
+no clear 4

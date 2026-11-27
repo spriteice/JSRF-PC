@@ -1,0 +1,8 @@
+case skip
+reached 0101 S=1,2,6
+reached 0102 e=0 S=1,2,6
+reached 0103 e=5 S=1,2,6
+searched 0101 0
+searched 0102 1
+searched 0103 1
+no clear 1

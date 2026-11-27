@@ -1,0 +1,76 @@
+story 150 9 1.0 0.6 0
+reached 0101 S=1,2,6
+reached 0166 e=7 S=1,2,6 souls=32
+reached 0224 e=-1 G=1,2 R=2 S=1,2,6 souls=32 tanks=5
+reached 0279 e=1 G=1,2 R=2 S=1,2,6 souls=40 tanks=5
+reached 0296 e=7 G=1,2 R=2 S=1,2,6 souls=32 tanks=5
+reached 0302 e=1 G=1,2 R=2 S=1,2,6 souls=40 tanks=5
+reached 0313 e=2 G=1,2 R=2 S=1,2,6 souls=40 tanks=5
+reached 0319 e=1 G=2 R=2 S=1,2,6 souls=40 tanks=5
+reached 0396 e=1 G=1,2 R=2 S=1,2,6 souls=40 tanks=5
+reached 0424 e=7 G=1,2 R=2 S=1,2,6 souls=40 tanks=34
+reached 0462 e=0 C=3 G=1,2 R=2 S=1,2,6 souls=40 tanks=40
+reached 0496 e=1 G=1,2 R=2 S=1,2,6 souls=40 tanks=5
+reached 0501 e=1 G=1,2 R=2 S=1,2,6 souls=40 tanks=40
+reached 0515 e=0 G=1,2 R=2 S=1,2,6 souls=40 tanks=40
+reached 0564 e=1 G=1,2 R=2 S=1,2,6 souls=40 tanks=40
+reached 0566 e=-1 G=1,2 R=2 S=1,2,6 souls=40 tanks=40
+reached 0596 e=0 G=1,2 R=2 S=1,2,6 souls=40 tanks=40
+reached 0626 e=2 G=1,2 R=2 S=1,2,6 souls=40 tanks=40
+reached 0633 e=2 G=1,2 R=2 S=1,2,6 souls=40 tanks=40
+reached 0634 e=-1 G=1,2 R=2 S=1,2,6 souls=40 tanks=40
+reached 0647 e=1 G=1,2 R=2 S=1,2,6 souls=40 tanks=40
+reached 0696 e=-1 G=1,2 R=2 S=1,2,6 souls=40 tanks=40
+reached 0725 e=1 G=0,1,2 R=2 S=1,2,6 souls=40 tanks=40
+reached 0738 e=-1 G=0,1,2 R=2 S=1,2,6 souls=40 tanks=40
+reached 0747 e=-1 G=0,1,2 R=2 S=1,2,6 souls=40 tanks=40
+reached 0782 e=-1 G=0,1,2 R=2 S=1,2,6 souls=40 tanks=40
+reached 0796 G=0,1,2 R=2 S=1,2,6 souls=40 tanks=40
+reached 0797 G=0,1,2 R=2 S=1,2,6 souls=40 tanks=40
+reached 0804 e=-1 G=0,1,2 R=0,2 S=1,2,6 souls=40 tanks=40
+reached 0836 e=1 G=0,1,2 R=0,2 S=1,2 souls=40 tanks=40
+reached 0896 e=-1 G=0,1,2 R=0,2 S=1,2,6 souls=40 tanks=40
+searched 0101 0
+searched 0166 1
+searched 0178 1
+searched 0296 2
+searched 0224 1
+searched 0258 1
+searched 0279 2
+searched 0396 6
+searched 0300 1
+searched 0302 6
+searched 0309 1
+searched 0313 7
+searched 0319 8
+searched 0496 12
+searched 0424 1
+searched 0462 2
+searched 0596 3
+searched 0501 7
+searched 0515 11
+searched 0529 1
+searched 0564 19
+searched 0566 1
+searched 0588 1
+searched 0696 7
+searched 0626 1
+searched 0633 11
+searched 0634 17
+searched 0647 21
+searched 0796 27
+searched 0700 1
+searched 0725 5
+searched 0738 1
+searched 0747 7
+searched 0782 6
+searched 0797 0
+searched 0896 12
+searched 0804 1
+searched 0836 2
+searched 0841 1
+searched 0864 8
+searched 0882 1
+searched 0884 8
+searched 0996 8
+no clear 8

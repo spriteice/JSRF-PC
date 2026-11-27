@@ -1,0 +1,149 @@
+story 301 9 1.0 0.5 1
+reached 0101 S=1,2,6
+reached 0127 e=2 G=0,1 S=1,2,6
+reached 0202 e=1 G=0,1 R=1 S=1,2,6 souls=25 tanks=40
+reached 0289 e=-1 C=2 G=0,1 R=0,1 S=1,2,6 souls=25 tanks=40
+reached 0296 e=2 G=0,1 S=1,2,6 tanks=40
+reached 0333 e=2 G=0,1,2 R=0,1 S=2,6 souls=25 tanks=40
+reached 0396 G=0,1 R=0,1 S=2,6 souls=25 tanks=40
+reached 0397 G=0,1,2 R=0,1 S=2,6 souls=25 tanks=40
+reached 0401 e=-1 G=0,1,2 R=0,1 S=6 souls=25 tanks=40
+reached 0414 e=2 G=0,1,2 R=0,1 S=6 souls=25 tanks=40
+reached 0468 e=2 G=0,1,2 R=0,1,2 S=6 souls=25 tanks=40
+reached 0496 e=2 G=0,1,2 R=0,1 S=2,6 souls=25 tanks=40
+reached 0506 e=0 G=0,1,2 R=0,1,2 S=6 souls=25 tanks=40
+reached 0508 e=2 C=2 G=0,1,2 R=0,1 S=6 souls=25 tanks=40
+reached 0596 e=2 G=0,1,2 R=0,1,2 S=6 souls=25 tanks=40
+searched 0100 1
+searched 0101 0
+searched 0103 1
+searched 0106 1
+searched 0110 1
+searched 0115 1
+searched 0118 1
+searched 0122 1
+searched 0124 1
+searched 0126 1
+searched 0127 16
+searched 0129 1
+searched 0130 1
+searched 0135 1
+searched 0137 1
+searched 0138 1
+searched 0143 1
+searched 0149 1
+searched 0151 1
+searched 0152 1
+searched 0154 1
+searched 0156 1
+searched 0163 1
+searched 0164 1
+searched 0175 1
+searched 0180 1
+searched 0181 1
+searched 0184 1
+searched 0185 1
+searched 0296 28
+searched 0202 16
+searched 0204 1
+searched 0206 1
+searched 0207 1
+searched 0209 1
+searched 0212 1
+searched 0214 1
+searched 0230 1
+searched 0232 1
+searched 0238 1
+searched 0246 1
+searched 0247 1
+searched 0256 1
+searched 0257 1
+searched 0261 1
+searched 0275 1
+searched 0276 1
+searched 0280 1
+searched 0285 1
+searched 0289 28
+searched 0396 31
+searched 0301 1
+searched 0303 1
+searched 0319 1
+searched 0320 1
+searched 0325 1
+searched 0326 1
+searched 0327 1
+searched 0330 1
+searched 0333 4
+searched 0337 1
+searched 0339 1
+searched 0340 1
+searched 0350 1
+searched 0355 1
+searched 0360 1
+searched 0372 1
+searched 0374 1
+searched 0375 1
+searched 0376 1
+searched 0378 1
+searched 0382 1
+searched 0383 1
+searched 0384 1
+searched 0388 1
+searched 0397 0
+searched 0496 16
+searched 0401 5
+searched 0403 1
+searched 0408 1
+searched 0414 17
+searched 0416 1
+searched 0418 1
+searched 0419 1
+searched 0420 1
+searched 0421 1
+searched 0424 1
+searched 0428 1
+searched 0429 1
+searched 0435 1
+searched 0437 1
+searched 0438 1
+searched 0442 1
+searched 0447 1
+searched 0451 1
+searched 0458 1
+searched 0459 1
+searched 0464 1
+searched 0465 1
+searched 0468 18
+searched 0470 1
+searched 0480 1
+searched 0481 1
+searched 0484 1
+searched 0596 23
+searched 0504 1
+searched 0505 1
+searched 0506 5
+searched 0508 6
+searched 0510 1
+searched 0517 1
+searched 0521 1
+searched 0522 1
+searched 0524 1
+searched 0529 1
+searched 0532 1
+searched 0534 1
+searched 0544 1
+searched 0547 1
+searched 0550 1
+searched 0555 1
+searched 0557 1
+searched 0558 1
+searched 0563 1
+searched 0565 1
+searched 0567 1
+searched 0572 1
+searched 0575 1
+searched 0580 1
+searched 0581 1
+searched 0588 1
+searched 0696 20001
+no clear 5
