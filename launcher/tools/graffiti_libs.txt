@@ -1,5 +1,5 @@
 # The picture libraries JSRF-PC Tools' graffiti page is built with (b3 row
-# 35), read by tests/graffiti/run.py, as the tool's build will read it, so
+# 35), read by launcher/tools/build_tools.sh and tests/graffiti/run.py, so
 # the tool and its test build the same files. Each is the library's own
 # code, built with its own warnings (-w) and the flags its group gives:
 #

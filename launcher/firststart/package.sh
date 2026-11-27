@@ -38,6 +38,14 @@ licences() {   # dir
     # Windows package turns them all to CR LF).
     tr -d '\r' < "$repo/third_party/miniz/LICENSE" > "$1/miniz-MIT.txt"
     chmod 644 "$1/miniz-MIT.txt"
+    # JSRF-PC Tools' picture libraries (NOTICE); nanosvg's licence has CR LF.
+    local f
+    for f in stb/LICENSE:stb-MIT.txt nanosvg/LICENSE.txt:nanosvg-zlib.txt libwebp/COPYING:libwebp-BSD.txt \
+             libwebp/PATENTS:libwebp-PATENTS.txt libtiff/LICENSE.md:libtiff-LibTIFF.txt \
+             libavif/LICENSE:libavif-BSD.txt dav1d/COPYING:dav1d-BSD.txt; do
+        tr -d '\r' < "$repo/third_party/${f%%:*}" > "$1/${f#*:}"
+        chmod 644 "$1/${f#*:}"
+    done
 }
 
 kit_in() {   # dir

@@ -34,6 +34,9 @@ struct tools_page {
 /* The saves page (tools_saves.cpp). */
 extern const tools_page tools_saves_page;
 
+/* The graffiti page (graffiti_page.cpp). */
+extern const tools_page tools_graffiti_page;
+
 /* The missions page (tools_missions.cpp). */
 extern const tools_page tools_missions_page;
 

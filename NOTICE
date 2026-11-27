@@ -173,7 +173,9 @@ The picture libraries of JSRF-PC Tools' graffiti page
 
   All of them fit the GPL that covers the rest of JSRF-PC. What they ask is
   that their notices stay with the source, and go with a program built
-  from it.
+  from it: the packages carry them in licences/ as stb-MIT.txt,
+  nanosvg-zlib.txt, libwebp-BSD.txt and libwebp-PATENTS.txt,
+  libtiff-LibTIFF.txt, libavif-BSD.txt and dav1d-BSD.txt.
 
 
 The tools the player's PC builds the engine with

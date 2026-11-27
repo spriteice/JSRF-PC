@@ -55,6 +55,12 @@ crlf "$repo/LICENSES/LGPL-2.1.txt" "$dir/licences/LGPL-2.1.txt"
 crlf "$repo/LICENSES/imgui-MIT.txt" "$dir/licences/imgui-MIT.txt"
 crlf "$repo/LICENSES/CC0-1.0.txt" "$dir/licences/CC0-1.0.txt"
 crlf "$repo/third_party/miniz/LICENSE" "$dir/licences/miniz-MIT.txt"
+# JSRF-PC Tools' picture libraries (NOTICE).
+for f in stb/LICENSE:stb-MIT.txt nanosvg/LICENSE.txt:nanosvg-zlib.txt libwebp/COPYING:libwebp-BSD.txt \
+         libwebp/PATENTS:libwebp-PATENTS.txt libtiff/LICENSE.md:libtiff-LibTIFF.txt \
+         libavif/LICENSE:libavif-BSD.txt dav1d/COPYING:dav1d-BSD.txt; do
+    crlf "$repo/third_party/${f%%:*}" "$dir/licences/${f#*:}"
+done
 if [ -n "${LICENCES_DIR:-}" ]; then
     for f in SDL2-COPYING.txt libepoxy-COPYING.txt winpthreads-COPYING.txt; do
         [ -f "$LICENCES_DIR/$f" ] && crlf "$LICENCES_DIR/$f" "$dir/licences/$f"

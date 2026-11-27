@@ -31,6 +31,7 @@
 
 #include "menu_style.h"
 #include "file_dialog.h"
+#include "graffiti_save.h"
 #include "setup.h"
 #include "setup_job.h"
 #include "tools.h"
@@ -57,7 +58,7 @@ typedef void (T_GLAPI *gl_clear_fn)(unsigned);
 #define SETTLE_MS 400   /* frames kept coming after input, for hovers and popups to settle */
 #define IDLE_MS   1000  /* the longest the window waits to draw again when idle */
 
-static const tools_page *const g_pages[] = { &tools_saves_page, &tools_missions_page };
+static const tools_page *const g_pages[] = { &tools_saves_page, &tools_graffiti_page, &tools_missions_page };
 #define NPAGES (int)(sizeof g_pages / sizeof g_pages[0])
 
 /* ---- the shell's helpers ------------------------------------------------------------- */
@@ -172,6 +173,10 @@ static int tools_main(int argc, char **argv)
     char *here, note[JSRF_PATH_MAX + 400] = "";
 
     memset(&t, 0, sizeof t);
+    /* Graffiti saves re-signed and moved by the graffiti page's code, for
+     * the saves page too. */
+    jsrf_graffiti_resigner = jsrf_graffiti_resign;
+    jsrf_graffiti_reslotter = jsrf_graffiti_reslot;
     SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, "0");
     SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2");
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {

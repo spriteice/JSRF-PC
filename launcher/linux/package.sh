@@ -52,6 +52,13 @@ install -m 644 "$repo/LICENSES/CC0-1.0.txt" "$dir/licences/CC0-1.0.txt"
 # miniz (the launcher's) ships its licence with CR LF: LF here, as the rest.
 tr -d '\r' < "$repo/third_party/miniz/LICENSE" > "$dir/licences/miniz-MIT.txt"
 chmod 644 "$dir/licences/miniz-MIT.txt"
+# JSRF-PC Tools' picture libraries (NOTICE); nanosvg's licence has CR LF.
+for f in stb/LICENSE:stb-MIT.txt nanosvg/LICENSE.txt:nanosvg-zlib.txt libwebp/COPYING:libwebp-BSD.txt \
+         libwebp/PATENTS:libwebp-PATENTS.txt libtiff/LICENSE.md:libtiff-LibTIFF.txt \
+         libavif/LICENSE:libavif-BSD.txt dav1d/COPYING:dav1d-BSD.txt; do
+    tr -d '\r' < "$repo/third_party/${f%%:*}" > "$dir/licences/${f#*:}"
+    chmod 644 "$dir/licences/${f#*:}"
+done
 [ -n "${SDL_LICENSE:-}" ] && install -m 644 "$SDL_LICENSE" "$dir/licences/SDL2-LICENSE.txt"
 
 # What the engine, the launcher and the tools need from the system, said
