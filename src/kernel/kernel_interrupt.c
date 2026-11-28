@@ -20,6 +20,7 @@
 #include "xbox_memory_layout.h"
 #include "kernel_bridge.h"
 #include "platform/recomp_check.h"
+#include "platform/host_info.h"
 
 /* -- KeInsertQueueDpc (ordinal 119) ------------------------
  * BOOLEAN KeInsertQueueDpc(PKDPC Dpc, PVOID SystemArgument1,
@@ -180,11 +181,16 @@ void bridge_KeRemoveQueueDpc(void)
  * first frame on some Windows starts.
  */
 #define XBOX_MAX_PENDING_DPC 64
-typedef struct { uint32_t dpc, arg1, arg2; } PendingDpc;
+typedef struct { uint32_t dpc, arg1, arg2; long long queued_us; } PendingDpc;
 static PendingDpc g_dpc_queue[XBOX_MAX_PENDING_DPC];
 static LONG g_dpc_head, g_dpc_tail;
 /* For the freeze report: queued minus run is what is waiting. */
 static unsigned long g_dpc_queued, g_dpc_run;
+/* For the [LOCK] report (kernel_dpc_waits): the longest a DPC waited from
+ * queued to run since the last report, and how many ran. Written by the
+ * one reader, the timer thread. */
+static long long g_dpc_wait_max_us;
+static unsigned long g_dpc_waits;
 
 void bridge_KeInsertQueueDpc(void)
 {
@@ -206,6 +212,7 @@ void bridge_KeInsertQueueDpc(void)
     g_dpc_queue[tail].dpc  = dpc;
     g_dpc_queue[tail].arg1 = arg1;
     g_dpc_queue[tail].arg2 = arg2;
+    g_dpc_queue[tail].queued_us = host_info_us();
     __atomic_add_fetch(&g_dpc_queued, 1, __ATOMIC_RELAXED);
     __atomic_store_n(&g_dpc_tail, next, __ATOMIC_RELEASE);
     g_eax = 1;
@@ -221,10 +228,45 @@ void bridge_KeInsertQueueDpc(void)
  * Returns what the routine returned -- an ISR that does not recognise the
  * interrupt returns FALSE, and that is worth seeing rather than assuming.
  */
+/* For the [LOCK] report: each vector's raises, and how long the raise waited
+ * for the guest lock before its routine could run, the longest and how many
+ * over a millisecond, since the last report. The console's interrupt runs
+ * between two instructions of whatever thread is running; here it waits for
+ * the thread that holds the lock to give it up, and that wait is its
+ * latency. */
+#define LATENCY_VECTORS 8
+#define LATENCY_LATE_US 1000
+static unsigned long g_irq_raises[LATENCY_VECTORS];
+static unsigned long g_irq_late[LATENCY_VECTORS];
+static long long     g_irq_wait_max_us[LATENCY_VECTORS];
+
+void kernel_interrupt_latency_note(uint32_t vector, long long waited_us)
+{
+    if (vector >= LATENCY_VECTORS) return;
+    __atomic_add_fetch(&g_irq_raises[vector], 1, __ATOMIC_RELAXED);
+    if (waited_us > LATENCY_LATE_US)
+        __atomic_add_fetch(&g_irq_late[vector], 1, __ATOMIC_RELAXED);
+    if (waited_us > __atomic_load_n(&g_irq_wait_max_us[vector], __ATOMIC_RELAXED))
+        __atomic_store_n(&g_irq_wait_max_us[vector], waited_us, __ATOMIC_RELAXED);
+}
+
+void kernel_interrupt_latency(uint32_t vector, unsigned long *raises,
+                              unsigned long *over_1ms, long long *longest_us)
+{
+    *raises = *over_1ms = 0;
+    *longest_us = 0;
+    if (vector >= LATENCY_VECTORS) return;
+    *raises = __atomic_exchange_n(&g_irq_raises[vector], 0, __ATOMIC_RELAXED);
+    *over_1ms = __atomic_exchange_n(&g_irq_late[vector], 0, __ATOMIC_RELAXED);
+    *longest_us = __atomic_exchange_n(&g_irq_wait_max_us[vector], 0, __ATOMIC_RELAXED);
+}
+
 int kernel_raise_interrupt(uint32_t vector)
 {
     int r;
+    long long t0 = host_info_us();
     xbox_guest_lock_acquire();
+    kernel_interrupt_latency_note(vector, host_info_us() - t0);
     r = kernel_raise_interrupt_locked(vector);
     xbox_guest_lock_release();
     return r;
@@ -274,8 +316,20 @@ void kernel_drain_dpcs(void)
         __atomic_store_n(&g_dpc_head, (head + 1) % XBOX_MAX_PENDING_DPC,
                          __ATOMIC_RELEASE);
         __atomic_add_fetch(&g_dpc_run, 1, __ATOMIC_RELAXED);
+        {   long long waited = host_info_us() - d.queued_us;
+            if (waited > __atomic_load_n(&g_dpc_wait_max_us, __ATOMIC_RELAXED))
+                __atomic_store_n(&g_dpc_wait_max_us, waited, __ATOMIC_RELAXED);
+            __atomic_add_fetch(&g_dpc_waits, 1, __ATOMIC_RELAXED); }
         kernel_run_dpc(d.dpc, d.arg1, d.arg2);
     }
+}
+
+/* The DPCs run since the last call, and the longest any waited from queued
+ * to run, in microseconds; both start again. For the [LOCK] report. */
+void kernel_dpc_waits(unsigned long *run, long long *longest_us)
+{
+    *run = __atomic_exchange_n(&g_dpc_waits, 0, __ATOMIC_RELAXED);
+    *longest_us = __atomic_exchange_n(&g_dpc_wait_max_us, 0, __ATOMIC_RELAXED);
 }
 
 /* DPCs queued, run, and waiting now, for the freeze report. */

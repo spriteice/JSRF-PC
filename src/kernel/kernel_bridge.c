@@ -30,6 +30,7 @@
 #include "xbox_memory_layout.h"
 #include "kernel_bridge.h"
 #include "recomp_icall_feedback.h"
+#include "platform/host_info.h"
 #include <stdio.h>
 /* stdlib.h is load-bearing, not tidiness. Without it C89 implicit declaration
  * makes malloc return `int`, so bridge_spawn_thread truncated its heap pointer
@@ -315,6 +316,8 @@ ULONG g_slot_ordinals[XBOX_KERNEL_THUNK_TABLE_SIZE];
 /* Calls per ordinal, for the ranking in the periodic summary. 378 counters
  * is smaller than one of the strings this file prints. */
 static unsigned long long g_ordinal_calls[XBOX_KERNEL_THUNK_TABLE_SIZE];
+/* Each ordinal's first call said in the log (kernel_thunk_dispatch). */
+static unsigned char g_ordinal_seen[XBOX_KERNEL_THUNK_TABLE_SIZE];
 static int g_kernel_call_count = 0;
 
 /* How many kernel calls get logged before the log goes quiet.
@@ -2190,9 +2193,13 @@ void kernel_apu_tick(void)
     /* Looked at again once this thread holds the lock: the line is level-
      * triggered, and the thread that held the lock may have taken it on
      * itself in the meantime (xbox_GuestCpuPreempt). */
-    xbox_guest_lock_acquire();
-    claimed = forced || mcpx_apu_irq_pending_global()
-            ? kernel_raise_interrupt_locked(APU_VECTOR) : -2;
+    {   long long t0 = host_info_us(), waited;
+        xbox_guest_lock_acquire();
+        waited = host_info_us() - t0;
+        claimed = forced || mcpx_apu_irq_pending_global()
+                ? kernel_raise_interrupt_locked(APU_VECTOR) : -2;
+        /* Its wait for the lock, for the [LOCK] report's latency. */
+        if (claimed != -2) kernel_interrupt_latency_note(APU_VECTOR, waited); }
     xbox_guest_lock_release();
     if (claimed == -2) return;
     raised++;
@@ -5338,6 +5345,33 @@ static long long     g_lock_hold_ms[LOCK_SLOTS];
 static unsigned long g_lock_takes[LOCK_SLOTS];
 static unsigned long g_lock_tid[LOCK_SLOTS];
 static RECOMP_TLS int t_lock_slot = -1;
+/* For the [LOCK] report, under RECOMP_LOCK_WATCH: time queued while nobody
+ * held the lock, from its last release to the take of a thread that was
+ * already queueing then (the wake's cost, which the console's scheduler
+ * hasn't); and the changes of hands by priority, the last holder's against
+ * the taker's (row 18's step 0). */
+static long long     g_lock_freed_us;
+static long long     g_lock_idle_us, g_lock_idle_max_us;
+static unsigned long g_lock_idle_takes;
+static int           g_lock_last_prio;
+#define LOCK_PAIRS 16
+static struct { int from, to; unsigned long takes; } g_lock_pairs[LOCK_PAIRS];
+static unsigned long g_lock_pairs_other;
+/* Under the lock: a change of hands from a thread at priority from to one at
+ * priority to. */
+static void lock_pair_note(int from, int to)
+{
+    int i;
+    for (i = 0; i < LOCK_PAIRS; i++) {
+        if (g_lock_pairs[i].takes && (g_lock_pairs[i].from != from || g_lock_pairs[i].to != to))
+            continue;
+        g_lock_pairs[i].from = from;
+        g_lock_pairs[i].to = to;
+        g_lock_pairs[i].takes++;
+        return;
+    }
+    g_lock_pairs_other++;
+}
 static int lock_watch(void)
 {
     static int on = -1;
@@ -5441,9 +5475,9 @@ void xbox_guest_lock_acquire(void)
      * long time once" are different problems with the same profile, and only
      * the total wait separates them. Two clock reads on a path that is about
      * to take a contended mutex are not the expensive part of it. */
-    { long long t0 = 0;
+    { long long t0 = 0, t0_us = 0;
       int watch = lock_watch();
-      if (watch) t0 = (long long)GetTickCount64();
+      if (watch) { t0 = (long long)GetTickCount64(); t0_us = host_info_us(); }
       __atomic_add_fetch(&g_xbox_guest_cpu_preempt, 1, __ATOMIC_RELAXED);
       EnterCriticalSection(&g_guest_lock);
       __atomic_sub_fetch(&g_xbox_guest_cpu_preempt, 1, __ATOMIC_RELAXED);
@@ -5454,12 +5488,25 @@ void xbox_guest_lock_acquire(void)
           g_lock_wait_ms[slot] += w;
           g_lock_takes[slot]++;
           g_lock_tid[slot] = GetCurrentThreadId();
+          /* Freed after this thread began to queue: it waited from then
+           * on with nobody holding the lock. */
+          if (g_lock_freed_us > t0_us) {
+              long long idle = host_info_us() - g_lock_freed_us;
+              g_lock_idle_us += idle;
+              if (idle > g_lock_idle_max_us) g_lock_idle_max_us = idle;
+              g_lock_idle_takes++;
+          }
       } }
     t_guest_holds = 1;
     t_guest_since = (long long)GetTickCount64();
     g_lock_owner = GetCurrentThreadId();
     g_lock_owner_edge = 0;
     if (g_slice_owner != g_lock_owner) {
+        if (lock_watch()) {
+            int prio = xbox_thread_guest_priority(GetCurrentThread());
+            if (g_slice_owner) lock_pair_note(g_lock_last_prio, prio);
+            g_lock_last_prio = prio;
+        }
         g_slice_owner = g_lock_owner;
         g_slice_since = t_guest_since;
         if (g_lock_handover_fn)
@@ -5539,7 +5586,7 @@ void xbox_guest_lock_stats(void)
     now = (long long)GetTickCount64();
     if (last && now - last < 5000) return;
     if (!last) { last = now; return; }
-    fprintf(stderr, "  [LOCK] in the last %lld ms:\n", now - last);
+    fprintf(stderr, "  [LOCK] t=%.1fs, in the last %lld ms:\n", host_info_seconds(), now - last);
     last = now;
     for (i = 0; i < LOCK_SLOTS; i++) {
         if (!g_lock_takes[i]) continue;
@@ -5557,6 +5604,57 @@ void xbox_guest_lock_stats(void)
                     "it the lock (%lu taken over by nobody within RECOMP_HANDOFF_US)\n",
             g_resume_handoffs, g_resume_handoff_timeouts);
     kernel_call_lock_report();
+    /* The baseline's figures (b3's row 22): what rows 13, 15, 18 and 9d are
+     * held to. Each since the last report, but for the counts said to be
+     * since the start. */
+    fprintf(stderr, "        queued while nobody held it: %lld us in %lu takes (the "
+                    "longest %lld us)\n",
+            g_lock_idle_us, g_lock_idle_takes, g_lock_idle_max_us);
+    g_lock_idle_us = g_lock_idle_max_us = 0;
+    g_lock_idle_takes = 0;
+    {   char line[640];
+        int len = snprintf(line, sizeof line, "        changes of hands by priority "
+                           "(the last holder's to the taker's):");
+        for (i = 0; i < LOCK_PAIRS && len < (int)sizeof line; i++) {
+            if (!g_lock_pairs[i].takes) continue;
+            len += snprintf(line + len, sizeof line - len, " %d>%d %lu", g_lock_pairs[i].from,
+                            g_lock_pairs[i].to, g_lock_pairs[i].takes);
+            g_lock_pairs[i].takes = 0;
+        }
+        if (g_lock_pairs_other && len < (int)sizeof line)
+            snprintf(line + len, sizeof line - len, ", %lu more", g_lock_pairs_other);
+        g_lock_pairs_other = 0;
+        fprintf(stderr, "%s\n", line);
+    }
+    {   unsigned long raises, late, dpcs, passes, vraised, vclaimed, vdeclined, queued, run;
+        long long longest, dpc_longest, gap, timer_late;
+        long waiting;
+        uint32_t enabled;
+        kernel_interrupt_latency(kernel_vblank_vector(), &raises, &late, &longest);
+        fprintf(stderr, "        interrupts: the display's %lu raised, %lu over 1 ms for the "
+                        "lock (the longest %lld us)", raises, late, longest);
+        kernel_interrupt_latency(APU_VECTOR, &raises, &late, &longest);
+        fprintf(stderr, "; the APU's %lu, %lu over 1 ms (the longest %lld us)\n",
+                raises, late, longest);
+        kernel_vblank_counts(&vraised, &vclaimed, &vdeclined, &enabled);
+        kernel_dpc_counts(&queued, &run, &waiting);
+        fprintf(stderr, "        since the start: the display's %lu raised, %lu claimed; the "
+                        "APU's %u raised, %u claimed, %lu taken on a spinning thread; DPCs "
+                        "%lu queued, %lu run\n",
+                vraised, vclaimed, g_apu_raised, g_apu_claimed, g_spin_isrs, queued, run);
+        kernel_dpc_waits(&dpcs, &dpc_longest);
+        kernel_timer_lateness(&passes, &gap, &timer_late);
+        fprintf(stderr, "        DPCs: %lu run, the longest wait from queued to run %lld us; "
+                        "the timer thread: %lu passes, the longest gap %lld us, a timer at most "
+                        "%lld ms late, the vblank at most %lld ms late\n",
+                dpcs, dpc_longest, passes, gap, timer_late, kernel_vblank_lateness());
+    }
+    fprintf(stderr, "        since the start: %lu critical section releases slept 20 us for a "
+                    "waiter (%lu with none)", g_cs_handoffs, g_cs_free_releases);
+#if !defined(_WIN32)
+    fprintf(stderr, "; the polling wait's 1 ms laps %lu", win32_compat_wait_laps());
+#endif
+    fputc('\n', stderr);
     g_slice_handoffs = 0;
     g_slice_handoff_timeouts = 0;
     g_resume_handoffs = 0;
@@ -5595,9 +5693,11 @@ static DWORD WINAPI kernel_report_thread(LPVOID unused)
 void xbox_guest_lock_release(void)
 {
     if (!guest_lock_on() || !t_guest_holds) return;
-    if (lock_watch())
+    if (lock_watch()) {
         g_lock_hold_ms[lock_slot()] +=
             (long long)GetTickCount64() - t_guest_since;
+        g_lock_freed_us = host_info_us();
+    }
     t_guest_holds = 0;
     g_lock_owner = 0;
     LeaveCriticalSection(&g_guest_lock);
@@ -6596,8 +6696,19 @@ static void kernel_thunk_dispatch(void)
     bridge = g_slot_bridges[slot];
 
     g_kernel_call_count++;
-    if (ordinal < XBOX_KERNEL_THUNK_TABLE_SIZE)
+    if (ordinal < XBOX_KERNEL_THUNK_TABLE_SIZE) {
         g_ordinal_calls[ordinal]++;
+        /* A line for each ordinal's first call, always on: at most one an
+         * ordinal the title imports, and it answers "does the game ever call
+         * this" in every log, a killed run's too, as a count printed at exit
+         * can't. By number: the names come with row 10's one table. */
+        if (!__atomic_load_n(&g_ordinal_seen[ordinal], __ATOMIC_RELAXED)
+         && !__atomic_exchange_n(&g_ordinal_seen[ordinal], 1, __ATOMIC_RELAXED)) {
+            fprintf(stderr, "  [KERNEL] first call of ordinal %lu (slot %d), from guest "
+                            "0x%08X, at t=%.1fs\n", (unsigned long)ordinal, slot,
+                    g_esp ? BRIDGE_MEM32(g_esp) : 0u, host_info_seconds());
+        }
+    }
     {
         KThreadState *k = kthread_slot();
         k->ordinal = (uint32_t)ordinal;

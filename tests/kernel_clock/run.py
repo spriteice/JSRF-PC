@@ -5,7 +5,8 @@ set with KeSetTimer must fire its DPC once, and a timer at guest address 0
 is turned away with a [CHECK] line. Run again with no worker stack for the
 timer thread, and then with no TIB, the thread must not start, and say so
 once. On Linux the thread is src/platform/win32_compat.c's, on Windows the
-system's. Requires GCC on PATH, including MinGW on Windows.
+system's; the clock the timer's lateness figures read is
+src/platform/host_info.c's. Requires GCC on PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
 """
 import os
@@ -17,7 +18,8 @@ import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
 cc = shlex.split(os.environ.get("CC", "gcc"))
-sources = ["tests/kernel_clock/test_main.c", "src/kernel/kernel_timer.c"]
+sources = ["tests/kernel_clock/test_main.c", "src/kernel/kernel_timer.c",
+           "src/platform/host_info.c"]
 if os.name == "nt":
     flags = []
 else:

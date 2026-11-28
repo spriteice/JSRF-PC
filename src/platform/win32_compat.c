@@ -558,7 +558,16 @@ DWORD WaitForSingleObjectEx(HANDLE h, DWORD ms, BOOL alertable)
 /*
  * WaitForMultipleObjects: polling implementation. Adequate for the light
  * multi-object waits the Xbox kernel HLE issues; not a high-throughput path.
+ * Its laps, each a 1 ms sleep, are counted for the [LOCK] report
+ * (win32_compat_wait_laps), as row 9d's review of the timing work-arounds
+ * needs the number.
  */
+static unsigned long g_wait_laps;
+unsigned long win32_compat_wait_laps(void)
+{
+    return __atomic_exchange_n(&g_wait_laps, 0, __ATOMIC_RELAXED);
+}
+
 DWORD WaitForMultipleObjects(DWORD count, const HANDLE *handles, BOOL waitAll, DWORD ms)
 {
     return WaitForMultipleObjectsEx(count, handles, waitAll, ms, FALSE);
@@ -593,6 +602,7 @@ DWORD WaitForMultipleObjectsEx(DWORD count, const HANDLE *handles, BOOL waitAll,
                 (now.tv_sec == ts.tv_sec && now.tv_nsec >= ts.tv_nsec))
                 return WAIT_TIMEOUT;
         }
+        __atomic_add_fetch(&g_wait_laps, 1, __ATOMIC_RELAXED);
         usleep(1000);
     }
 }

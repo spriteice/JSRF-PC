@@ -195,6 +195,8 @@ unsigned long g_vblank_count;
  * so a run of declines with PMC_INTR_EN_0 at 0 is a routine waiting for a DPC.
  * Only the timer thread writes these. */
 static unsigned long g_vblank_claimed, g_vblank_declined_since_claim;
+/* The latest the tick fired after its due tick since the last [LOCK] report. */
+static long long g_vblank_late_max_ms;
 
 void kernel_vblank_tick(void)
 {
@@ -231,6 +233,10 @@ void kernel_vblank_tick(void)
         now = (long long)GetTickCount64();
         if (now < next_ms)
             return;
+        /* How late against its due tick, for the [LOCK] report
+         * (kernel_vblank_lateness). */
+        if (next_ms && now - next_ms > __atomic_load_n(&g_vblank_late_max_ms, __ATOMIC_RELAXED))
+            __atomic_store_n(&g_vblank_late_max_ms, now - next_ms, __ATOMIC_RELAXED);
         /* Catch up rather than drift: a late tick should not push the next one
          * a full period further out. */
         next_ms = (next_ms && now - next_ms < period * 4) ? next_ms + period
@@ -259,6 +265,20 @@ void kernel_vblank_tick(void)
             fflush(stderr);
         }
     }
+}
+
+/* The display's vector, for the [LOCK] report's kernel_interrupt_latency
+ * (a getter, so a test that builds this file alone needn't link that). */
+uint32_t kernel_vblank_vector(void)
+{
+    return NV2A_VECTOR;
+}
+
+/* The latest the vblank tick fired after its due tick since the last call,
+ * in milliseconds on the tick's own clock, for the [LOCK] report. */
+long long kernel_vblank_lateness(void)
+{
+    return __atomic_exchange_n(&g_vblank_late_max_ms, 0, __ATOMIC_RELAXED);
 }
 
 /* The display interrupt's counts and PMC_INTR_EN_0 now, for the freeze

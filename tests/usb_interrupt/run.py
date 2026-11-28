@@ -7,8 +7,9 @@ HalGetInterruptVector gives are the levels the device models raise;
 KeSynchronizeExecution runs its routine once and answers what it returned;
 and a routine not in dispatch is never called, a DPC's and
 KeSynchronizeExecution's each said in one line. On Linux the threads are
-src/platform/win32_compat.c's, on Windows the system's. Requires GCC on
-PATH, including MinGW on Windows.
+src/platform/win32_compat.c's, on Windows the system's; the clock the
+interrupts' waits are timed by is src/platform/host_info.c's. Requires GCC
+on PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
 """
 import os
@@ -20,7 +21,8 @@ import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
 cc = shlex.split(os.environ.get("CC", "gcc"))
-sources = ["tests/usb_interrupt/test_main.c", "src/usb/ohci.c", "src/kernel/kernel_interrupt.c"]
+sources = ["tests/usb_interrupt/test_main.c", "src/usb/ohci.c", "src/kernel/kernel_interrupt.c",
+           "src/platform/host_info.c"]
 flags = []
 if os.name != "nt":
     sources.append("src/platform/win32_compat.c")

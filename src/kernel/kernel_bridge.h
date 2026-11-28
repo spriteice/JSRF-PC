@@ -82,6 +82,23 @@ int  kernel_run_dpc(uint32_t dpc_va, uint32_t arg1, uint32_t arg2);
 void kernel_drain_dpcs(void);
 /* DPCs queued, run, and waiting now. */
 void kernel_dpc_counts(unsigned long *queued, unsigned long *run, long *waiting);
+/* The DPCs run since the last call and the longest wait from queued to run,
+ * in microseconds (kernel_interrupt.c), for the [LOCK] report. */
+void kernel_dpc_waits(unsigned long *run, long long *longest_us);
+/* An interrupt's raise and its wait for the guest lock, and each vector's
+ * since the last call: raises, how many waited over 1 ms, the longest
+ * (kernel_interrupt.c), for the [LOCK] report. */
+void kernel_interrupt_latency_note(uint32_t vector, long long waited_us);
+void kernel_interrupt_latency(uint32_t vector, unsigned long *raises,
+                              unsigned long *over_1ms, long long *longest_us);
+/* The timer thread's passes since the last call, the longest gap between
+ * two, and the latest a timer fired after its due tick (kernel_timer.c);
+ * and the latest the vblank tick fired after its due tick (nv2a_intr.c). */
+void kernel_timer_lateness(unsigned long *passes, long long *gap_max_us,
+                           long long *timer_late_ms);
+long long kernel_vblank_lateness(void);
+/* The display's interrupt vector, for kernel_interrupt_latency (nv2a_intr.c). */
+uint32_t kernel_vblank_vector(void);
 
 /* Bridges, for the ordinal table. */
 void bridge_HalGetInterruptVector(void);

@@ -210,6 +210,35 @@ Full implementations of:
 | RtlEnterCriticalSection | EnterCriticalSection |
 | RtlLeaveCriticalSection | LeaveCriticalSection |
 
+### What the log says about them
+
+Always on: a `[KERNEL] first call of ordinal N` line for each ordinal's first
+call, at most one an ordinal the title imports, with the slot, the guest
+caller and the seconds since the start, so every log says which kernel calls
+the game made (by number; the names come with one table of the exports).
+
+Under Developer > Logging's `RECOMP_LOCK_WATCH`, the `[LOCK]` report every
+5 s, headed with the seconds since the start, gives each thread's takes of
+the guest lock, held and queued, the hand-overs, and the figures b3's rows
+are held to:
+
+- **queued while nobody held it:** the time from the lock's release to the
+  take of a thread that was already queueing then, the wake's cost;
+- **changes of hands by priority:** the last holder's priority to the
+  taker's, with a count for each pair;
+- **interrupts:** the display's and the APU's raises since the last report,
+  how many waited over 1 ms for the lock before their routine could run,
+  and the longest wait (`kernel_interrupt.c`, `nv2a_intr.c`);
+- **since the start:** the display's and the APU's interrupts raised and
+  claimed, the APU's taken on a spinning thread, and the DPCs queued and run;
+- **DPCs and the timer thread:** the longest wait of a DPC from queued to
+  run; the timer thread's passes, the longest gap between two, and the
+  latest a timer and the vblank fired after their due tick, in milliseconds
+  on the tick's own clock (`kernel_timer.c`, `nv2a_intr.c`);
+- **the timing work-arounds:** the critical section's releases that slept
+  20 us for a waiter, and on Linux the polling wait's 1 ms laps
+  (`src/platform/win32_compat.c`).
+
 ## NTSTATUS Codes
 
 ```c

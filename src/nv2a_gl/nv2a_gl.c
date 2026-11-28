@@ -16053,6 +16053,23 @@ void nv2a_gl_report(void)
 #endif
         fputc('\n', stderr);
     }
+    /* The vblanks the game has been given (nv2a_intr.c), in all and a second
+     * since the last report: the rate as the game sees it, on both systems,
+     * which row 13's clock is held to. A line of its own, so the [PACE] line
+     * above reads as it always has. */
+    if (&g_vblank_count) {
+        static unsigned long vprev;
+        static double tprev;
+        unsigned long v = g_vblank_count;
+        double now = mono_now();
+        if (tprev > 0.0 && now > tprev)
+            fprintf(stderr, "  [PACE] %lu vblanks, %.2f a second in the last %.1f s\n",
+                    v, (double)(v - vprev) / (now - tprev), now - tprev);
+        else
+            fprintf(stderr, "  [PACE] %lu vblanks\n", v);
+        vprev = v;
+        tprev = now;
+    }
 #if defined(NV2A_DISPLAY_CLOCK)
     if (g_pace_st.frames) nv2a_dclock_report();
 #endif

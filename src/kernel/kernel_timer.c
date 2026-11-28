@@ -22,6 +22,7 @@
 #include "xbox_memory_layout.h"
 #include "kernel_bridge.h"
 #include "platform/recomp_check.h"
+#include "platform/host_info.h"
 
 /* ── KeInitializeTimerEx (ordinal 113) ────────────────────
  * VOID KeInitializeTimerEx(PKTIMER Timer, TIMER_TYPE Type)
@@ -81,6 +82,21 @@ static int g_timer_started;
 /* The thread's guest stack and TIB, which kernel_timer_start takes for it. */
 static uint32_t g_timer_esp, g_timer_tib;
 
+/* For the [LOCK] report (kernel_timer_lateness): how well the 1 ms loop
+ * keeps time. Its passes since the last report, the longest gap between two,
+ * and the latest a timer fired after its due tick. Written by this thread. */
+static unsigned long g_timer_passes;
+static long long     g_timer_gap_max_us;
+static long long     g_timer_late_max_ms;
+
+void kernel_timer_lateness(unsigned long *passes, long long *gap_max_us,
+                           long long *timer_late_ms)
+{
+    *passes = __atomic_exchange_n(&g_timer_passes, 0, __ATOMIC_RELAXED);
+    *gap_max_us = __atomic_exchange_n(&g_timer_gap_max_us, 0, __ATOMIC_RELAXED);
+    *timer_late_ms = __atomic_exchange_n(&g_timer_late_max_ms, 0, __ATOMIC_RELAXED);
+}
+
 static DWORD WINAPI kernel_timer_thread(LPVOID unused)
 {
     (void)unused;
@@ -88,10 +104,16 @@ static DWORD WINAPI kernel_timer_thread(LPVOID unused)
     g_fs_base = g_timer_tib;
 
     for (;;) {
+        static long long last_us;
         long long now;
         int i;
 
         Sleep(1);
+        {   long long t = host_info_us();
+            if (last_us && t - last_us > __atomic_load_n(&g_timer_gap_max_us, __ATOMIC_RELAXED))
+                __atomic_store_n(&g_timer_gap_max_us, t - last_us, __ATOMIC_RELAXED);
+            last_us = t;
+            __atomic_add_fetch(&g_timer_passes, 1, __ATOMIC_RELAXED); }
         /* KeTickCount, the console's millisecond clock, which the XDK's
          * GetTickCount reads. The console's clock interrupt moves it every
          * millisecond whatever else is running, so this thread does, first
@@ -190,6 +212,8 @@ static DWORD WINAPI kernel_timer_thread(LPVOID unused)
             }
             dpc = g_timers[i].dpc_va;
             timer_va_fired = g_timers[i].timer_va;
+            if (now - g_timers[i].due_ms > __atomic_load_n(&g_timer_late_max_ms, __ATOMIC_RELAXED))
+                __atomic_store_n(&g_timer_late_max_ms, now - g_timers[i].due_ms, __ATOMIC_RELAXED);
             if (g_timers[i].period_ms > 0)
                 g_timers[i].due_ms = now + g_timers[i].period_ms;
             else
