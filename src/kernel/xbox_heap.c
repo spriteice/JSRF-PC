@@ -393,6 +393,25 @@ static void guard_say_release(const char *lead, const HeapRelease *r)
 
 static void heap_release(int i);
 
+/* Each call's live bytes and blocks, and its peak, for the minute's [MEM]
+ * line (xbox_heap_usage): which of the console's pools the game's memory is
+ * in, as row 16's memory manager is sized from it. Under the heap's lock. */
+static uint64_t g_heap_live[XBOX_HEAP_CALLS], g_heap_peak[XBOX_HEAP_CALLS];
+static uint32_t g_heap_live_blocks[XBOX_HEAP_CALLS];
+static void heap_count_live(XboxHeapCall call, uint32_t size)
+{
+    if ((unsigned)call >= XBOX_HEAP_CALLS) return;
+    g_heap_live[call] += size;
+    g_heap_live_blocks[call]++;
+    if (g_heap_live[call] > g_heap_peak[call]) g_heap_peak[call] = g_heap_live[call];
+}
+static void heap_count_gone(XboxHeapCall call, uint32_t size)
+{
+    if ((unsigned)call >= XBOX_HEAP_CALLS) return;
+    g_heap_live[call] -= size < g_heap_live[call] ? size : g_heap_live[call];
+    if (g_heap_live_blocks[call]) g_heap_live_blocks[call]--;
+}
+
 /* Let a held block go, by its release's record: its pages back, its edges
  * checked, and free space as any released block is. */
 static void guard_let_go(HeapRelease *r)
@@ -755,6 +774,7 @@ static uint32_t heap_alloc(uint32_t size, uint32_t alignment, XboxHeapCall call)
             g_heap_blocks[idx].addr = start;
             g_heap_blocks[idx].state = HEAP_LIVE;
             g_heap_blocks[idx].call = (uint8_t)call;
+            heap_count_live(call, g_heap_blocks[idx].size);
             result = start;
             memset((void *)((uintptr_t)result + g_xbox_mem_offset), 0, g_heap_blocks[idx].size);
             heap_check("alloc-reuse");
@@ -861,6 +881,7 @@ static uint32_t heap_alloc(uint32_t size, uint32_t alignment, XboxHeapCall call)
         g_heap_blocks[g_heap_block_count].size = size;
         g_heap_blocks[g_heap_block_count].state = HEAP_LIVE;
         g_heap_blocks[g_heap_block_count].call = (uint8_t)call;
+        heap_count_live(call, size);
         g_heap_block_count++;
     }
 
@@ -878,6 +899,29 @@ static uint32_t heap_alloc(uint32_t size, uint32_t alignment, XboxHeapCall call)
     return result;
 }
 
+/* RECOMP_MMTRACE (Developer > Logging): a [MMTRACE] line for each block the
+ * heap hands out or takes back, with its call, size, address and the game's
+ * code that asked, for row 16's memory manager; kernel_bridge.c writes the
+ * contiguous window's the same way. Off, a load and a branch. The time and
+ * the caller come from the engine (src/platform/host_info.h, kernel_bridge.c),
+ * weakly, so a test of the heap alone links without them. */
+extern double host_info_seconds(void) __attribute__((weak));
+extern uint32_t kernel_guest_caller(void) __attribute__((weak));
+int xbox_mmtrace_on(void)
+{
+    static int on = -1;
+    if (on < 0) on = getenv("RECOMP_MMTRACE") ? 1 : 0;
+    return on;
+}
+void xbox_mmtrace(const char *what, uint32_t size, uint32_t alignment, uint32_t va)
+{
+    fprintf(stderr, "  [MMTRACE] t=%.3fs %s %u bytes", host_info_seconds ? host_info_seconds() : 0.0,
+            what, size);
+    if (alignment) fprintf(stderr, " (aligned to %u)", alignment);
+    fprintf(stderr, " at 0x%08X, from guest 0x%08X\n", va,
+            kernel_guest_caller ? kernel_guest_caller() : 0u);
+}
+
 uint32_t xbox_HeapAlloc(uint32_t size, uint32_t alignment, XboxHeapCall call)
 {
     uint32_t va;
@@ -886,7 +930,43 @@ uint32_t xbox_HeapAlloc(uint32_t size, uint32_t alignment, XboxHeapCall call)
     va = heap_alloc(size, alignment, call);
     LeaveCriticalSection(&g_heap_lock);
     guard_flush();
+    if (xbox_mmtrace_on() && (unsigned)call < XBOX_HEAP_CALLS)
+        xbox_mmtrace(k_alloc_name[call], size, alignment, va);
     return va;
+}
+
+/* Each call's live and peak bytes, and its live blocks, for the minute's
+ * [MEM] line (kernel_bridge.c): "pool 123 KB (peak 456) in 7, ..." for each
+ * call that has held any. Read without the heap's lock, as a log line's
+ * figures (a moment apart at worst): the report thread that asks must never
+ * wait on a thread that has stopped holding it. */
+void xbox_heap_usage(char *out, size_t n)
+{
+    static const char *const k_short[XBOX_HEAP_CALLS] = {
+        "the runtime", "pool", "virtual", "system", "kernel stacks", "io space", "devices",
+        "contiguous (heap)"
+    };
+    size_t len = 0;
+    int c, held = 0;
+    if (!n) return;
+    out[0] = '\0';
+    for (c = 0; c < XBOX_HEAP_CALLS; c++) {
+        char one[96];
+        int k;
+        if (!g_heap_peak[c]) continue;
+        held = 1;
+        k = snprintf(one, sizeof one, "%s%s %llu KB (peak %llu) in %u", len ? ", " : "",
+                     k_short[c], (unsigned long long)(g_heap_live[c] / 1024),
+                     (unsigned long long)(g_heap_peak[c] / 1024), g_heap_live_blocks[c]);
+        if (k < 0) continue;
+        if (len + (size_t)k + 1 > n) {   /* whole calls only, and "..." for the rest */
+            snprintf(out + len, n - len, "%s...", len ? " " : "");
+            return;
+        }
+        memcpy(out + len, one, (size_t)k + 1);
+        len += (size_t)k;
+    }
+    if (!held) snprintf(out, n, "nothing yet");
 }
 
 /* How big is the block at this guest address?
@@ -1029,6 +1109,7 @@ static void heap_free(uint32_t xbox_va, XboxHeapCall call)
                 frees, matched, g_heap_block_count);
         fflush(stderr);
     }
+    heap_count_gone((XboxHeapCall)g_heap_blocks[i].call, g_heap_blocks[i].size);
     if (g_guard_ring)
         guard_hold(i, call);
     else
@@ -1037,10 +1118,18 @@ static void heap_free(uint32_t xbox_va, XboxHeapCall call)
 
 void xbox_HeapFree(uint32_t xbox_va, XboxHeapCall call)
 {
+    uint32_t size = 0;
     EnterCriticalSection(&g_heap_lock);
+    if (xbox_mmtrace_on()) {
+        int i = heap_find(xbox_va);
+        if (i >= 0 && g_heap_blocks[i].addr == xbox_va && g_heap_blocks[i].state == HEAP_LIVE)
+            size = g_heap_blocks[i].size;
+    }
     heap_free(xbox_va, call);
     LeaveCriticalSection(&g_heap_lock);
     guard_flush();
+    if (xbox_mmtrace_on() && xbox_va && (unsigned)call < XBOX_HEAP_CALLS)
+        xbox_mmtrace(k_free_name[call], size, 0, xbox_va);
 }
 
 /* A fault at a native address (port/main.c's handlers): 1 when it was the

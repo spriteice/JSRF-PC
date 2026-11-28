@@ -2448,6 +2448,11 @@ uint32_t xbox_AllocThreadTib(void)
     #undef TIB_VA
 }
 
+uint32_t xbox_ThreadStackSize(void)
+{
+    return XBOX_THREAD_STACK_SIZE;
+}
+
 uint32_t xbox_AllocThreadStack(void)
 {
     uint32_t base;
@@ -2539,6 +2544,7 @@ static int      g_contig_block_count = 0;
 static uint32_t g_contig_next = XBOX_CONTIG_BASE;   /* bump pointer          */
 static uint32_t g_contig_high = XBOX_CONTIG_BASE;   /* never moves back down */
 static uint32_t g_contig_live = 0;                  /* bytes handed out now  */
+static uint32_t g_contig_peak = 0;                  /* the most live at once */
 static uint32_t g_contig_nalloc, g_contig_nfree, g_contig_nreuse;
 
 static void contig_insert(int idx, uint32_t addr, uint32_t size, int is_free)
@@ -2631,6 +2637,7 @@ uint32_t xbox_ContiguousAlloc(uint32_t size, uint32_t alignment)
         g_contig_blocks[idx].free = 0;
         g_contig_blocks[idx].serial = ++g_contig_serial;
         g_contig_live += size;
+        if (g_contig_live > g_contig_peak) g_contig_peak = g_contig_live;
         g_contig_nalloc++; g_contig_nreuse++;
         memset((void *)((uintptr_t)start + g_memory_offset), 0, size);
         contig_log("alloc (reused)", start, size);
@@ -2663,6 +2670,7 @@ uint32_t xbox_ContiguousAlloc(uint32_t size, uint32_t alignment)
     g_contig_next = result + size;
     if (g_contig_next > g_contig_high) g_contig_high = g_contig_next;
     g_contig_live += size;
+    if (g_contig_live > g_contig_peak) g_contig_peak = g_contig_live;
     g_contig_nalloc++;
     memset((void *)((uintptr_t)result + g_memory_offset), 0, size);
     contig_log("alloc", result, size);
@@ -2710,6 +2718,18 @@ int xbox_ContiguousFree(uint32_t va)
     }
     contig_log("free", va, size);
     return 1;
+}
+
+/* For the minute's [MEM] line (kernel_bridge.c): the bytes live now, the
+ * most live at once, how far into the window anything has gone, and the
+ * blocks live. Read without a lock, as a log line's figures: a moment apart
+ * at worst, and the allocator is never stopped for them. */
+void xbox_ContiguousUsage(uint32_t *live, uint32_t *peak, uint32_t *high, uint32_t *blocks)
+{
+    *live = g_contig_live;
+    *peak = g_contig_peak;
+    *high = g_contig_high - XBOX_CONTIG_BASE;
+    *blocks = g_contig_nalloc - g_contig_nfree;
 }
 
 /* Which allocation the address belongs to right now: a number no other

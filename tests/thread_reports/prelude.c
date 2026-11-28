@@ -13,6 +13,8 @@
 #include "xbox_winnt.h"
 #include "kernel/kernel.h"
 #include "kernel_bridge.h"
+#include "xbox_memory_layout.h"
+#include "platform/host_info.h"
 
 /* The guest lock's own reports, on the report thread: each says nothing
  * here, and none of them takes the guest lock in the bridge either. */
@@ -21,6 +23,16 @@ void xbox_guest_lock_stats(void) {}
 void xbox_guest_cs_report(void) {}
 void recomp_fp_report(void);
 void recomp_fp_report(void) {}
+
+/* What the minute's [MEM] lines read (kernel_memory_minute, on the report
+ * thread): nothing held, as no case runs a minute. */
+double host_info_seconds(void) { return 0.0; }
+void xbox_heap_usage(char *out, size_t n) { snprintf(out, n, "nothing yet"); }
+void xbox_ContiguousUsage(uint32_t *live, uint32_t *peak, uint32_t *high, uint32_t *blocks)
+{
+    *live = 0; *peak = 0; *high = 0; *blocks = 0;
+}
+uint32_t xbox_ThreadStackSize(void) { return 512u * 1024u; }
 
 /* The counts the freeze report prints. */
 static unsigned g_apu_raised, g_apu_claimed;

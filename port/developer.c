@@ -99,6 +99,7 @@ static const DevSwitch k_logging[] = {
     { "RECOMP_INPUT_LATENCY", "1" },        /* each press's way to the screen (src/nv2a_gl/nv2a_latency.h) */
     { "RECOMP_KERNEL_IO", "1" },
     { "RECOMP_LOCK_WATCH", "1" },
+    { "RECOMP_MMTRACE", "1" },              /* each block the heap and the contiguous window hand out and take back (src/kernel/xbox_heap.c) */
     { "RECOMP_USB_TRACE", "1" },
     { "RECOMP_WAITLOG", "1" },
 };

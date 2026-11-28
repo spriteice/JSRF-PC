@@ -678,6 +678,7 @@ static void bridge_MmAllocateContiguousMemory(void)
     uint32_t xbox_va = xbox_ContiguousAlloc(size, 4096);
 
     contig_trace("alloc", xbox_va, size);
+    if (xbox_mmtrace_on()) xbox_mmtrace("MmAllocateContiguousMemory", size, 4096, xbox_va);
     if (KERNEL_LOG_ON_HALF()) {
         fprintf(stderr, "  [KERNEL] MmAllocateContiguousMemory: size=%u → Xbox VA 0x%08X\n",
                 size, xbox_va);
@@ -762,6 +763,8 @@ static void bridge_MmAllocateContiguousMemoryEx(void)
          * backing view happened to contain shows up later as structures that
          * are "allocated" but full of garbage. */
         memset((void *)((uintptr_t)xbox_va + g_xbox_mem_offset), 0, size);
+        if (xbox_mmtrace_on())
+            xbox_mmtrace("MmAllocateContiguousMemoryEx (a fixed address)", size, 0, xbox_va);
 
         if (KERNEL_LOG_ON_HALF()) {
             fprintf(stderr, "  [KERNEL] MmAllocateContiguousMemoryEx: size=%u "
@@ -776,6 +779,7 @@ static void bridge_MmAllocateContiguousMemoryEx(void)
     if (align < 4096) align = 4096;
     xbox_va = xbox_ContiguousAlloc(size, align);
     contig_trace("allocEx", xbox_va, size);
+    if (xbox_mmtrace_on()) xbox_mmtrace("MmAllocateContiguousMemoryEx", size, align, xbox_va);
 
     if (KERNEL_LOG_ON_HALF()) {
         fprintf(stderr, "  [KERNEL] MmAllocateContiguousMemoryEx: size=%u align=%u → Xbox VA 0x%08X\n",
@@ -792,13 +796,16 @@ static void bridge_MmAllocateContiguousMemoryEx(void)
 static void bridge_MmFreeContiguousMemory(void)
 {
     uint32_t addr = STACK_ARG(0);
-    contig_trace("free", addr, xbox_ContiguousBlockSize(addr));
+    uint32_t size = xbox_ContiguousBlockSize(addr);
+    contig_trace("free", addr, size);
     /* Contiguous blocks go back to the contiguous allocator. This used to call
      * the general heap's free, which does not know these addresses and
      * silently kept every one of them: JSRF's D3D frees its textures here on
      * every stage change, and after the tutorial the window was full. */
     if (!xbox_ContiguousFree(addr))
-        xbox_HeapFree(addr, XBOX_HEAP_CONTIGUOUS);
+        xbox_HeapFree(addr, XBOX_HEAP_CONTIGUOUS);   /* its own [MMTRACE] line */
+    else if (xbox_mmtrace_on())
+        xbox_mmtrace("MmFreeContiguousMemory", size, 0, addr);
     g_eax = 0;
 }
 
@@ -5677,11 +5684,13 @@ void xbox_guest_lock_stats(void)
 #define KERNEL_REPORT_MS 20
 void recomp_fp_report(void);
 static void kernel_freeze_watch(void);
+static void kernel_memory_minute(void);
 static DWORD WINAPI kernel_report_thread(LPVOID unused)
 {
     (void)unused;
     for (;;) {
         Sleep(KERNEL_REPORT_MS);
+        kernel_memory_minute();
         xbox_guest_lock_report();
         xbox_guest_lock_stats();
         xbox_guest_cs_report();
@@ -6288,6 +6297,11 @@ typedef struct {
      * title's threads can share one start routine (JSRF's four CRI threads
      * all start at 0x00147EBB), and the context says which one it is. */
     volatile uint32_t start_ctx;
+    /* The deepest its stack has been at a kernel call, and that stack's top,
+     * for the minute's [MEM] line: a floor on what it uses, as a call is
+     * where its esp is seen. */
+    volatile uint32_t low_esp;
+    volatile uint32_t stack_top;
 } KThreadState;
 static KThreadState g_kthreads[KTHREAD_SLOTS];
 static volatile long g_kthread_n;
@@ -6296,6 +6310,11 @@ static RECOMP_TLS KThreadState *t_kthread;
 static uint32_t gcs_caller(void)
 {
     return t_kthread ? t_kthread->caller : 0u;
+}
+/* The same, for the heap's [MMTRACE] lines (xbox_heap.c). */
+uint32_t kernel_guest_caller(void)
+{
+    return gcs_caller();
 }
 
 /* Taken at once, as threads starting take theirs without the guest lock. */
@@ -6441,6 +6460,49 @@ static void kthread_report(void)
                     k->left_ms ? "idle for" : "INSIDE for", age,
                     (unsigned long long)k->calls);
     }
+    fflush(stderr);
+}
+
+/* The game's memory, once a minute and always on (row 16's memory manager is
+ * sized from these, and a killed run never reaches anything said at exit):
+ *
+ *   [MEM] t=60.0s: the heap by call: pool 1234 KB (peak 1300) in 210, ...
+ *   [MEM] contiguous: 20480 KB live (peak 22528) in 96, 30720 KB of the window reached
+ *   [MEM] stacks, the deepest at a kernel call: tid 4242 37 of 8192 KB, ...
+ *
+ * On the report thread, which takes no lock for them: the figures are read as
+ * they stand, a moment apart at worst. */
+static void kernel_memory_minute(void)
+{
+    static long long next_ms;
+    long long now = (long long)GetTickCount64();
+    char line[2048];
+    size_t len = 0;
+    uint32_t live, peak, high, blocks;
+    long i, n;
+
+    if (!next_ms) next_ms = now + 60000;
+    if (now < next_ms) return;
+    next_ms += 60000;
+    if (next_ms <= now) next_ms = now + 60000;   /* a stall: no catching up */
+
+    xbox_heap_usage(line, sizeof line);
+    fprintf(stderr, "  [MEM] t=%.1fs: the heap by call: %s\n", host_info_seconds(), line);
+    xbox_ContiguousUsage(&live, &peak, &high, &blocks);
+    fprintf(stderr, "  [MEM] contiguous: %u KB live (peak %u) in %u, %u KB of the window "
+                    "reached\n", live / 1024, peak / 1024, blocks, high / 1024);
+    n = __atomic_load_n(&g_kthread_n, __ATOMIC_ACQUIRE);
+    line[0] = '\0';
+    for (i = 0; i < n && i < KTHREAD_SLOTS && len + 1 < sizeof line; i++) {
+        const KThreadState *k = &g_kthreads[i];
+        uint32_t top = k->stack_top, low = k->low_esp;
+        uint32_t size = top == XBOX_STACK_TOP ? XBOX_STACK_SIZE : xbox_ThreadStackSize();
+        if (!top || !low || low > top) continue;
+        len += (size_t)snprintf(line + len, sizeof line - len, "%stid %llu %u of %u KB",
+                                len ? ", " : "", k->tid, (top - low) / 1024, size / 1024);
+    }
+    fprintf(stderr, "  [MEM] stacks, the deepest at a kernel call: %s\n",
+            len ? line : "no calls yet");
     fflush(stderr);
 }
 
@@ -6716,6 +6778,13 @@ static void kernel_thunk_dispatch(void)
         k->entered_ms = (long long)GetTickCount64();
         k->left_ms = 0;
         k->calls++;
+        {   /* The main thread's stack, or the one it was spawned on. */
+            uint32_t top = g_thread_stack_top ? g_thread_stack_top : XBOX_STACK_TOP;
+            if (g_esp && g_esp <= top) {
+                if (k->stack_top != top) { k->stack_top = top; k->low_esp = g_esp; }
+                else if (g_esp < k->low_esp) k->low_esp = g_esp;
+            }
+        }
         if (!t_in_callback && lock_watch())
             t_guest_thread = 1;
         if (guest_lock_on() && !t_guest_holds)

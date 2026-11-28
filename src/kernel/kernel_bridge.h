@@ -99,6 +99,9 @@ void kernel_timer_lateness(unsigned long *passes, long long *gap_max_us,
 long long kernel_vblank_lateness(void);
 /* The display's interrupt vector, for kernel_interrupt_latency (nv2a_intr.c). */
 uint32_t kernel_vblank_vector(void);
+/* The guest return address of the calling thread's kernel call in progress,
+ * or 0: the caller on the heap's [MMTRACE] lines. */
+uint32_t kernel_guest_caller(void);
 
 /* Bridges, for the ordinal table. */
 void bridge_HalGetInterruptVector(void);

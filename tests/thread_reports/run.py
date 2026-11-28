@@ -4,8 +4,9 @@ report, and stop the picture (test_main.c).
 Cut by text from src/kernel/kernel_bridge.c, unchanged: kernel_report_thread,
 which carries the guest lock's reports and the freeze watch,
 kernel_freeze_watch, and the table of what each guest thread is doing with
-kthread_report. Built with src/platform/win32_compat.c's threads, against
-stubs for the guest lock's reports and the counts the freeze report prints.
+kthread_report, and the minute's [MEM] lines (kernel_memory_minute). Built
+with src/platform/win32_compat.c's threads, against stubs for the guest
+lock's reports, the counts the freeze report prints and the memory figures.
 POSIX only (win32_compat.c is the Linux side); requires GCC on PATH.
 CC, when set, is the compiler instead of gcc.
 """

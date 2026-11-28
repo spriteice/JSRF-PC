@@ -191,6 +191,9 @@ int xbox_ContiguousFree(uint32_t xbox_va);
 uint32_t xbox_ContiguousBlockSize(uint32_t xbox_va);
 /* A number unique to the allocation holding the address, 0 if none. */
 uint32_t xbox_ContiguousBlockSerial(uint32_t xbox_va);
+/* For the minute's [MEM] line: bytes live now, the most live at once, how
+ * far into the window anything has gone, and the blocks live. */
+void xbox_ContiguousUsage(uint32_t *live, uint32_t *peak, uint32_t *high, uint32_t *blocks);
 /* Wake the NV2A acknowledgement thread now (D3D KickOff). */
 void xbox_nv2a_kick(void);
 void xbox_nv2a_hurry(int on);
@@ -486,6 +489,20 @@ uint32_t xbox_HeapAlloc(uint32_t size, uint32_t alignment, XboxHeapCall call);
 void xbox_HeapFree(uint32_t xbox_va, XboxHeapCall call);
 
 /**
+ * For the minute's [MEM] line: each call's live and peak bytes and live
+ * blocks, "pool 123 KB (peak 456) in 7, ...", or "nothing yet".
+ */
+void xbox_heap_usage(char *out, size_t n);
+
+/**
+ * RECOMP_MMTRACE: nonzero when it is set, and its [MMTRACE] line for a block
+ * handed out or taken back by the call named `what` (the alignment said when
+ * not 0), with the guest code that made the call.
+ */
+int xbox_mmtrace_on(void);
+void xbox_mmtrace(const char *what, uint32_t size, uint32_t alignment, uint32_t va);
+
+/**
  * Nonzero when RECOMP_HEAP_GUARD was set at xbox_HeapInit.
  */
 int xbox_HeapGuardOn(void);
@@ -533,6 +550,8 @@ HANDLE xbox_GetMappingHandle(void);
 /* Carve a simulated stack for a spawned thread. Returns the Xbox VA of the
  * stack top, or 0 when the pool is exhausted. */
 uint32_t xbox_AllocThreadStack(void);
+/* The size of each stack xbox_AllocThreadStack hands out, for the [MEM] line. */
+uint32_t xbox_ThreadStackSize(void);
 
 /* A TIB and TLS block for a newly spawned guest thread, copied from the
  * template the loader built. Returns the new TIB's Xbox VA, or 0. */

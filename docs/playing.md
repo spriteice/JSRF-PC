@@ -606,6 +606,10 @@ running while it is open, but your input goes to the menu.
     it can be seen. For a key, also how long before the read the window took
     it in. Every 10 s, each of those steps' median and worst. What the
     compositor and the screen add after that isn't in it.
+    RECOMP_MMTRACE logs each block of memory the game asks for and gives
+    back, a line each: the call it used, the size, the address, and where in
+    the game's code it asked. Without it, the log says once a minute how
+    much each kind of memory holds, and the most it has held.
   - **Engine switches:** Turn parts of the engine off, or change how they
     work, to compare.
   - **Performance:** What the engine does for speed, each on by default

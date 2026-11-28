@@ -239,6 +239,20 @@ are held to:
   20 us for a waiter, and on Linux the polling wait's 1 ms laps
   (`src/platform/win32_compat.c`).
 
+Always on, once a minute from the report thread, three `[MEM]` lines: the
+heap's bytes by call (the pool, virtual memory, system memory and the rest),
+each live now and at its peak, with its live blocks (`xbox_heap.c`); the
+contiguous window's live bytes, peak, blocks and how far into the window
+anything has gone (`xbox_memory_layout.c`); and each guest thread's deepest
+stack at a kernel call, of its stack's size. The figures are read without a
+lock, a moment apart at worst, so the report thread never waits on a thread
+that has stopped.
+
+Under Developer > Logging's `RECOMP_MMTRACE`, a `[MMTRACE]` line for each
+block the heap or the contiguous window hands out or takes back: the
+seconds since the start, the call, the size and alignment, the address, and
+the guest return address of the kernel call that asked.
+
 ## NTSTATUS Codes
 
 ```c
