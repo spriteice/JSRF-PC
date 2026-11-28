@@ -56,7 +56,7 @@ if f'#define DRAW_UNDER     "{group.group(1)}"' not in draw:
 labels = re.findall(r'\.label = ("[^"]+"|\w+)', display)
 if labels != ['"Fullscreen"', '"Resolution"', '"Aspect ratio"', "SDL_HUD_GROUP",
               '"HUD scale"', '"Disable HUD"', "XBOX_GROUP_ENHANCEMENTS", "XBOX_GROUP_SKIPS",
-              "XBOX_GROUP_SOULS"]:
+              "XBOX_GROUP_GRAFFITI", "XBOX_GROUP_SOULS"]:
     sys.exit(f"hud_scale: Display's rows are {labels}")
 adds = re.findall(r"xbox_MenuAdd\((&?\w+)", display)
 if adds != ["&fullscreen", "&res", "rows", "groups"]:

@@ -129,6 +129,9 @@ ERRORS = (
     ("A model's tree or bones corrupt", r"^\[TREE\] bad node |^\[BONE\] .* corrupt"),
     ("Vertices that differ", r"^\[ZYX\] .* BAD |^\[VCVERIFY\] (?!\d+ draws checked, 0 differed)"),
     ("A record not written", r"^\[SNAP\] cannot write |^\[icall-feedback\] cannot write "),
+    ("Random graffiti's kept tags not written", r"^\[GRAFFITI\] .*its kept tags couldn't be written"),
+    ("An own design the builder couldn't read (random graffiti)",
+     r"^\[GRAFFITI\] .*the player's own design in slot \d+ .*couldn't be read"),
     ("A callee-saved register changed", r"^\[ABI\] "),
     ("A protected page written", r"^\[PROTECT\] write via "),
     ("The program not loaded", r"^Cannot open XBE|^Failed to (?:load|initialize) "),
@@ -149,6 +152,8 @@ NOT_ERRORS = (
     ("A buffer too small, which the call reports as asked", r"^\[KERNEL\] NtQuerySymbolicLinkObject: .* cannot hold "),
     ("A vertex check's detail", r"^batch uses source indices "),
     ("[ADXT]'s register named err", r"^\[ADXT\] .* err\["),
+    ("Random graffiti's count of own designs left out, each said when it happened",
+     r"^\[GRAFFITI\] .*the player's own designs: .* left out as the builder couldn't read them"),
 )
 
 _ERRORS = tuple((name, re.compile(p)) for name, p in ERRORS)

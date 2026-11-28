@@ -318,16 +318,18 @@ running while it is open, but your input goes to the menu.
   in its sky. All but Xbox have the resolution and aspect ratio at Match
   screen, Music info in pause and See through fix on, and Upscaling's Menus
   and HUD at 4x or more. A preset sets every setting but Developer's,
-  Input's two layouts, the free camera's own settings, Mute, Shader cache
-  and, but for Xbox and Modern, Audio effects: each one also puts the game
-  full screen and the HUD shown, at its own size but in Modern.
+  Input's two layouts, the free camera's own settings, Mute, Shader cache,
+  Gameplay > Graffiti's options and, but for Xbox and Modern, Audio
+  effects: each one also puts the game full screen and the HUD shown, at
+  its own size but in Modern.
   Input, Gameplay, and Upscaling's Sharpness, Edge strength and Cleanup are
   yours: only Xbox and Modern change them. Xbox sets Keyboard moves to
   Camera, Stick shape to Square and Button prompts' Style to Default, turns
   the free camera, Default cam fix and No skater fade off, ticks the game's
   three shots, puts Sharpness and Edge strength at Normal with no Cleanup,
-  and turns Skip intro, Skip cutscenes and Visual indicator off. The other
-  three leave all of them as they are. The one ticked is the
+  and turns Skip intro, Skip cutscenes, Visual indicator and Random graffiti
+  off. Modern leaves Random graffiti as it is, and the other three leave all
+  of them as they are. The one ticked is the
   one your settings match, if any. Below them, after a line, Reset (Restart)
   puts every setting back to how a new install has it, once you say yes,
   and restarts the game: Developer's switches and both layouts too. It
@@ -497,8 +499,9 @@ running while it is open, but your input goes to the menu.
   and is kept as `stick_shape=` (0 Square, 1 Round) in the settings file. A
   recording holds the sticks as the game got them, so it plays back the
   same whichever shape is set.
-- **Gameplay:** Two submenus: Skips, with Skip intro and Skip cutscenes,
-  then Graffiti souls, with Visual indicator. Skip intro leaves out the
+- **Gameplay:** Three submenus: Skips, with Skip intro and Skip cutscenes,
+  then Graffiti, with Random graffiti and its options, then Graffiti souls,
+  with Visual indicator. Skip intro leaves out the
   logos and the graffiti disclaimer the game opens with, and starts at the
   title screen's loading. Off by default, so the intro plays as on the Xbox.
   It is kept as `skipintro=` in the settings file. Skip cutscenes lets you
@@ -531,6 +534,48 @@ running while it is open, but your input goes to the menu.
   Disable HUD size it and hide it with the rest of the HUD. Off by default;
   it changes at once, and is kept as `soulindicator=` (1 or 0) in the
   settings file.
+  Graffiti's first row is Random graffiti (Restart). It draws the designs
+  you spray at random from the ones your save has unlocked, in place of the
+  five chosen in the garage: each time an area loads, up to 13 designs of
+  each size, and the spots take them in turn, so tags of one size differ
+  from spot to spot, and the first 13 you spray or pass are all different.
+  Without Keep sprayed tags, a spot keeps its design until the next area
+  loads, when all are drawn again, the ones already on walls included.
+  Picking up a graffiti soul draws them again at once, the soul's own design
+  among them: the tags around you that aren't kept change, with a short
+  hitch as the game builds its graffiti sheets again. With fewer than 13
+  unlocked in a size, the spots share what there is. Other taggers' tags are
+  as they were. The garage's choices are kept, and are back with it
+  unticked. A new game's first area shows the game's own designs, and a size
+  with nothing unlocked keeps the garage's design. It needs room for three
+  more copies of the game's graffiti sheet, and draws fewer designs where
+  the game has less to spare; with Graphics > Upscaling > Graffiti on, each
+  copy has its own upscaled one, which may show a moment late the first time
+  its spot comes into view. The log's `[GRAFFITI]` lines say what was drawn,
+  at each area's load and at each soul, and what the first spots were dealt.
+  It is off by default, kept as `random_graffiti=` (1 or 0) in the settings
+  file, and applies from the next start: its row asks first and restarts the
+  game, as Audio effects does. A `developer.cfg` from before b3, with
+  Developer > Experimental's Random graffiti ticked, turns it on once.
+  File > Presets > Xbox turns it off; the other presets leave it.
+  Its options are the rows under it, shown whether it is on or not, each
+  taken at the next area's load and left alone by every preset. Keep sprayed
+  tags keeps the design of each tag you spray until the tag is gone, covered
+  by another tagger's or not in the save you load, across areas, souls and
+  runs. The kept tags go with your save: each of its three slots has its
+  own, in `kept-graffiti.txt` in the save's own folder, so a backup or a
+  copy of the save takes them along. Loading a slot brings its tags back,
+  and saving to a slot keeps the ones you have then, as the save keeps the
+  tags themselves; a new game has none, so a new playthrough starts with new
+  designs. Off, each shuffle forgets them. Designs picks what is drawn from:
+  the unlocked designs, your own (the ones you made or imported in the
+  garage, where a size has any), or both. Your own are looked for at the
+  first area's load that needs them and again after the garage. Shuffle
+  picks when the designs for new tags are drawn again: at each area's load,
+  at each graffiti soul, both or neither; the game's own builds of its
+  sheet, at Load Game and after the garage, still draw them again. An own
+  design the game can't read is left out until the game is closed, with no
+  notice from the game.
 - **Developer:** Settings for testing and bug reports.
   - **Log to file:** Stops or starts writing to `last-run.log` at once.
   - **Logging:** The engine's diagnostic logs, for bug reports.
@@ -688,26 +733,6 @@ running while it is open, but your input goes to the menu.
     at the end.
   - **Experimental:** Changes to how the game runs, to try out, when there
     are any. Off by default, each to be checked over the next releases.
-    Random graffiti draws the designs you spray at random from
-    the ones your save has unlocked, in place of the five chosen in the
-    garage: each time an area loads, up to 13 designs of each size, and
-    the spots take them in turn, so tags of one size differ from spot to
-    spot, and the first 13 you spray or pass are all different. A spot
-    keeps its design until the next area loads, when all are drawn
-    again, the ones already on walls included. Picking up a graffiti
-    soul draws them again at once, the soul's own design among them: the
-    tags around you change, with a short hitch as the game builds its
-    graffiti sheets again. With fewer than 13 unlocked in a size, the
-    spots share what there is. Other taggers' tags are as they were. The
-    garage's choices are kept, and are back with it unticked. A new
-    game's first area shows the game's own designs, and a size with
-    nothing unlocked keeps the garage's design. It needs room for three
-    more copies of the game's graffiti sheet, and draws fewer designs
-    where the game has less to spare; with Graphics > Upscaling >
-    Graffiti on, each copy has its own upscaled one, which may show a
-    moment late the first time its spot comes into view. The log's
-    `[GRAFFITI]` lines say what was drawn, at each area's load and at
-    each soul, and what the first spots were dealt.
     Sun flare fix hides the sun's glare and its lens ghosts behind a wall
     or slope the game's own test misses: the game tests a mirrored copy of
     the line to the sun for three in four of the sun's directions, and this

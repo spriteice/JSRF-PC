@@ -151,8 +151,9 @@ cases["timeline"] = (None, "RECOMP_GL_TIMELINE=1\n", {},
                      ["[DEV] RECOMP_GL_TIMELINE=1 from developer.cfg", "started:"], [])
 
 # The sun flare's log, read by port/sun_flare.c, and the fix, Experimental's
-# last row: the last switch, past an int's bits on Linux (33 there), so
-# developer_restart taking it out checks s_on and s_ours have room for it.
+# last row: the last switch, at an int's last bit on Linux (the 32nd there,
+# since Random graffiti left for Gameplay), so developer_restart taking it
+# out checks s_on and s_ours have room for it.
 cases["sun_log"] = (None, "JSRF_SUN_LOG=1\n", {},
                     ["[DEV] JSRF_SUN_LOG=1 from developer.cfg", "started:"], [])
 cases["sun_fix"] = (None, "JSRF_SUN_FIX=1\n", {},
@@ -165,10 +166,12 @@ cases["sun_fix"] = (None, "JSRF_SUN_FIX=1\n", {},
 # no longer goes into the environment.
 cases["audio_effects_moved"] = (None, "RECOMP_APU_GPFX=1\n", {}, ["started:"], ["[DEV]"])
 
-# Random graffiti, Experimental's, off unless its switch asks for it
-# (tests/random_graffiti tests the feature).
-cases["random_graffiti"] = (None, "JSRF_RANDOM_GRAFFITI=1\n", {},
-                            ["[DEV] JSRF_RANDOM_GRAFFITI=1 from developer.cfg", "started:"], [])
+# Random graffiti was Experimental's, until it became Gameplay > Graffiti >
+# Random graffiti, kept as random_graffiti= in the settings file
+# (port/random_graffiti_menu.c, which takes a developer.cfg's
+# JSRF_RANDOM_GRAFFITI=1 from then once). It no longer goes into the
+# environment from here.
+cases["random_graffiti_moved"] = (None, "JSRF_RANDOM_GRAFFITI=1\n", {}, ["started:"], ["[DEV]"])
 
 with tempfile.TemporaryDirectory(prefix="developer-") as directory:
     work = pathlib.Path(directory)
@@ -257,7 +260,7 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
             or ticks["Experimental"]):
         raise SystemExit(f"menu: with nothing changed, the ticks are {ticks}")
     # Experimental's rows, each with a name of its own, unticked until asked for.
-    if pages["Experimental"] != ["Random graffiti (Restart)", "Sun flare fix (Restart)"]:
+    if pages["Experimental"] != ["Sun flare fix (Restart)"]:
         raise SystemExit(f"menu: Experimental's rows are {pages['Experimental']}")
     queue = 1 << len(perf)
     pages, ticks = menu("RECOMP_NV2A_QUEUE=0\n")
@@ -283,9 +286,9 @@ with tempfile.TemporaryDirectory(prefix="developer-") as directory:
     # order puts it.
     ticked = {"Logging": ["JSRF_ADX_ERR_LOG (Restart)", "RECOMP_LOCK_WATCH (Restart)"],
               "Engine switches": ["RECOMP_GL_VCACHE=0 (Restart)"],
-              "Experimental": ["Random graffiti (Restart)", "Sun flare fix (Restart)"]}
+              "Experimental": ["Sun flare fix (Restart)"]}
     pages, ticks = menu("JSRF_ADX_ERR_LOG=1\nRECOMP_LOCK_WATCH=1\nRECOMP_GL_VCACHE=0\n"
-                        "JSRF_RANDOM_GRAFFITI=1\nJSRF_SUN_FIX=1\n")
+                        "JSRF_SUN_FIX=1\n")
     for page, rows in ticked.items():
         want = sum(1 << pages[page].index(row) for row in rows)
         if ticks[page] != want:

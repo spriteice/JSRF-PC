@@ -58,9 +58,16 @@ one before it in its menu adds nothing (`group` in
 `menu.h`). A new input setting goes in one of them, or in a submenu of its
 own. Gameplay, after Input, is submenus too, and nothing else, for how the
 game plays: Skips, for the parts of the game a player can leave out (Skip
-intro, then Skip cutscenes), then Graffiti souls, for help with the graffiti
-soul challenges (Visual indicator). The window adds them (`nv2a_gl.c`), in
-their order, so they keep it whichever module adds its rows first. A new skip
+intro, then Skip cutscenes), then Graffiti, above Graffiti souls (spriteice,
+28 November 2026), for random graffiti: Random graffiti (Restart), then its
+options, Keep sprayed tags first (spriteice, 27 November 2026), Designs and
+Shuffle, all shown whether it is on or not, "less confusing that way"
+(`port/random_graffiti_menu.c`). The switch is `random_graffiti` in the
+settings file; the options apply at the next area's load (Graffiti soul at
+the next soul) and are kept as `graffiti_keep`, `graffiti_designs`,
+`graffiti_shuffle_load` and `graffiti_shuffle_soul`. The window adds the
+three submenus (`nv2a_gl.c`), in their order, so they keep it whichever
+module adds its rows first. A new skip
 goes in Skips, and a new gameplay setting in one of Gameplay's submenus, or
 in a submenu of its own.
 
@@ -302,13 +309,15 @@ in a submenu of its own.
   would, and saves it as the row does. They set no (Restart) row, so none
   restarts the game: Shader cache and Audio effects are left to the
   player, as Mute is (spriteice's card, 02:00 UTC on 2026-11-21).
-- **Xbox and Modern each set one (Restart) row, Audio effects, on**, so
+- **Xbox and Modern each set a (Restart) row, Audio effects, on**, and
+  Xbox another, Gameplay > Graffiti > Random graffiti, off (spriteice's
+  card, 3:35pm on 27 November 2026: "Xbox off, the rest leave it"), so
   each row is a (Restart) row, "Xbox (Restart)" and "Modern (Restart)"
   ((Restart), above): each asks first ("Apply Xbox and restart, losing
   unsaved progress?", and the same with Modern), and OK sets every row as
-  the others do, keeps Audio effects for the next start (the row's `keep`)
-  and restarts the game once, as any (Restart) row's OK does, even with
-  Audio effects already on (spriteice, 23 November 2026). Asking first,
+  the others do, keeps each (Restart) row's value for the next start (the
+  row's `keep`) and restarts the game once, as any (Restart) row's OK does,
+  even with Audio effects already on (spriteice, 23 November 2026). Asking first,
   neither can be chosen by its path (input playback's), as Reset can't.
 - **A preset sets every setting but Developer's, and the rows that say a
   preset leaves them alone** (`XBOX_PRESETS_LEFT` in `menu.h`): a player's
@@ -341,9 +350,12 @@ in a submenu of its own.
   Default, Input > Behaviour > Camera's Default cam fix and No skater fade
   off and the game's three shots ticked, Input > Free camera's Enable free
   camera off, Sharpness and Edge strength to Normal with no Cleanup ticks,
-  and Gameplay's Skip intro, Skip cutscenes and Visual indicator off;
-  Modern sets each as above; the others leave each as the player has it,
-  each with its own way back. A row every preset leaves is told once in
+  and Gameplay's Skip intro, Skip cutscenes, Visual indicator and Random
+  graffiti off; Modern sets each as above but Random graffiti, which it
+  leaves; the others leave each as the player has it, each with its own way
+  back. Gameplay > Graffiti's options, Keep sprayed tags, Designs and
+  Shuffle, are left by every preset (`XBOX_PRESETS_LEFT`): the player's
+  own, which do nothing with Random graffiti off. A row every preset leaves is told once in
   the log and left alone.
 - The tests of the modules that add rows check their values, and that a
   value a preset takes from a default is what a start with no settings
@@ -445,8 +457,10 @@ Dear ImGui
 - A new experiment, an environment variable that tries out a change that may
   become the default later, also gets a row, but under Developer >
   Experimental (`k_tries`), with a name of its own in `k_tries_row`.
-  Random graffiti (JSRF_RANDOM_GRAFFITI, `port/random_graffiti.c`) is one.
-  Experimental is the menu's last row, and is shown only while it has one.
+  Sun flare fix (JSRF_SUN_FIX, `port/sun_flare.h`) is one. One that
+  becomes a setting leaves for its own menu, as random graffiti left for
+  Gameplay > Graffiti in b3. Experimental is the menu's last row, and is
+  shown only while it has one.
 - A switch that works on some platforms only has a row on those alone, as
   RECOMP_CPU_PROFILE (Linux and Windows) and Use P cores (Linux) do. A
   variable that takes a value, such as an address, is not a switch and has

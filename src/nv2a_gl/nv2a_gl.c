@@ -2427,12 +2427,16 @@ static void sdl_menu_display(void)
      * rows from elsewhere too, added here so they keep their order
      * whichever module adds its rows first: Skips, at the top (spriteice,
      * 11:52 UTC on 2026-11-15: "The "Skips" sub menu from display will also
-     * move here, to go at the top"), then Graffiti souls. */
+     * move here, to go at the top"), then Graffiti, for
+     * port/random_graffiti_menu.c's rows (spriteice, 28 November 2026:
+     * "order graffiti above graffiti souls"), then Graffiti souls. */
     static const XBOX_MENU_ITEM groups[] = {
         { .menu = XBOX_MENU_DISPLAY, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_ENHANCEMENTS, .last = 1,
           .hint = "Improves the game beyond the original Xbox version." },
         { .menu = XBOX_MENU_GAMEPLAY, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_SKIPS,
           .hint = "Time-saving skips." },
+        { .menu = XBOX_MENU_GAMEPLAY, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_GRAFFITI,
+          .hint = "Sets random graffiti, its designs and when they change." },
         { .menu = XBOX_MENU_GAMEPLAY, .kind = XBOX_ITEM_GROUP, .label = XBOX_GROUP_SOULS,
           .hint = "Helps with the graffiti soul challenges." },
     };

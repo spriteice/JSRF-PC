@@ -11,13 +11,18 @@
  * that counts what it is asked, makes the textures the builder's write
  * would, asks for spots' draws as the hook on sub_00042EE0 does, and tells
  * of a soul and runs the holder's update as the hooks on sub_00039E80 and
- * sub_00025310 do. It prints a "check" line for each check; run.py reads
- * those and the module's own log lines, and sets the switch for the case's
- * run, as it is read once. The argument picks the case.
+ * sub_00025310 do. The player's own designs are made-up headers and
+ * lengths, answered as the hooks' reader answers (rg_own_header), a save's
+ * stage table and spots' tags are where the game keeps them, and the kept
+ * tags' file is written in a folder of the case's own. It prints a "check"
+ * line for each check; run.py reads those and the module's own log lines,
+ * and sets the switch for the case's run, as it is read once. The first
+ * argument picks the case, the second is the case's own folder.
  */
 #include <stdio.h>
 #include <string.h>
 #include "random_graffiti.h"
+#include "random_graffiti_kept.h"
 
 #define RAM       0x400000u     /* the made-up guest memory: the texture manager is at 0x252790 */
 #define NODES     0x300000u     /* ... and its nodes are made here, 0x18 bytes each */
@@ -35,6 +40,8 @@
 #define HALF      0x3F000000u   /* 0.5: a tag half on */
 #define OLD       0x3FC00000u   /* 1.5: what the game writes for a tag fading out */
 #define T         12.5
+#define CODE      0x00020003u   /* a stage code: its digits 2 and 3 */
+#define STAGE     3u            /* ... which the made-up stage table numbers 3 in the save */
 
 static const uint32_t k_row[RG_ROWS] = { 0x00000000u, 0x3E800000u, 0x3F000000u, 0x3F400000u };
 
@@ -171,11 +178,41 @@ static void holder_step(void)
     s_steps++;
     if (s_busy && !s_slow) build_ends(0);
 }
+/* The player's own designs, as the builder's reader opens them: a slot's
+ * header's size, or -1 for no design there, and its file's length. */
+static int s_own_head[RG_OWN_SLOTS];
+static uint32_t s_own_bytes[RG_OWN_SLOTS];
+static unsigned s_own_asks;
+static int own_header(uint32_t slot, uint32_t *length)
+{
+    s_own_asks++;
+    *length = slot < RG_OWN_SLOTS ? s_own_bytes[slot] : 0;
+    return slot < RG_OWN_SLOTS ? s_own_head[slot] : -1;
+}
+/* An own design's file's length for a size, as the reader wants it: the
+ * game's table's four words, made up here, and its own extra. */
+static uint32_t own_length(uint32_t size) { return RG_OWN_EXTRA + 0x40u + 0x100u * size; }
+static void own_lengths(void)
+{
+    uint32_t size;
+    for (size = 0; size < RG_SIZES; size++) {
+        put(RG_OWN_LENGTHS + size * 16u, 0x40u);
+        put(RG_OWN_LENGTHS + size * 16u + 4u, 0x100u * size);
+    }
+}
+static void own_make(uint32_t slot, int size)
+{
+    s_own_head[slot] = size;
+    s_own_bytes[slot] = own_length((uint32_t)size);
+}
 static const RANDOM_GRAFFITI_GAME k_holder = { holder_busy, holder_let_go, holder_ask, holder_unused,
-                                               holder_step };
+                                               holder_step, own_header };
+/* An area's load step, of the stage code s_code: 0, which the made-up
+ * stage table numbers none, unless a case sets it. */
+static uint32_t s_code;
 static int area(int textures, int stage)
 {
-    return random_graffiti_area(&k_holder, s_ram, textures, stage, T);
+    return random_graffiti_area(&k_holder, s_ram, textures, stage, s_code, T);
 }
 static void play(void) { random_graffiti_play(&k_holder, s_ram, T); }
 /* The game loads its own sheet's two textures. */
@@ -222,7 +259,40 @@ static void spot_sprayed(uint32_t n, uint32_t parts)
 static RANDOM_GRAFFITI_DRAW s_draw;
 static uint32_t spot_draw(uint32_t n, uint32_t id)
 {
-    return random_graffiti_spot(s_ram, spot_id(n), id, spot_mesh(n), T, &s_draw);
+    return random_graffiti_spot(s_ram, spot_id(n), id, spot_mesh(n), RG_NO_KEY, RG_NO_KEY, RG_NO_KEY, T,
+                                &s_draw);
+}
+/* A spot's draw as the hook asks with its key: on stage CODE, this number,
+ * and this size. */
+static uint32_t spot_keyed(uint32_t n, uint32_t id, uint32_t number, uint32_t size)
+{
+    return random_graffiti_spot(s_ram, spot_id(n), id, spot_mesh(n), CODE, number, size, T, &s_draw);
+}
+/* The save's tags of a spot on STAGE: none of the player's, in either
+ * layer, as after another tagger's tag or a New Game. */
+static void save_gone(uint32_t number)
+{
+    uint32_t which;
+    for (which = 0; which < 2u; which++)
+        put(RG_PROGRESS + RG_SPOT_TAGS + ((STAGE * RG_KEPT_SPOTS + number) * 2u + which) * 4u, 0x3FFFFFFFu);
+}
+/* The kept tags' file read into text: whether it is want, or has it. */
+static void file_read(const char *path, char *text, size_t room)
+{
+    FILE *f = fopen(path, "rb");
+    size_t got = f ? fread(text, 1, room - 1, f) : 0;
+    if (f) fclose(f);
+    text[got] = 0;
+}
+static int file_is(const char *path, char *text, size_t room, const char *want)
+{
+    file_read(path, text, room);
+    return !strcmp(text, want);
+}
+static int file_has(const char *path, char *text, size_t room, const char *want)
+{
+    file_read(path, text, room);
+    return strstr(text, want) != NULL;
 }
 /* The design the draw just asked for shows the player's tag as, by its
  * place among the size's: 0 for the game's own draw. layer says which of
@@ -244,6 +314,27 @@ static int layers_are(uint32_t pass, uint32_t part, uint32_t old_shown, uint32_t
 {
     const uint32_t *layer = s_draw.layer[pass][part];
     return layer[0] == old_shown && layer[1] == shown && layer[2] == old_row && layer[3] == row;
+}
+
+/* Whether a size's 13 designs in the builds are the ones in had, in any
+ * order. */
+static int same_designs(const int *had, uint32_t size)
+{
+    uint32_t k, n;
+    for (k = 0; k < RG_PICKS; k++) {
+        for (n = 0; n < RG_PICKS && s_built[n][size] != had[k]; n++)
+            ;
+        if (n == RG_PICKS) return 0;
+    }
+    return 1;
+}
+/* Whether a design is among a size's first picks places in the builds. */
+static int placed(int design, uint32_t size, uint32_t picks)
+{
+    uint32_t k;
+    for (k = 0; k < picks; k++)
+        if (s_built[k][size] == design) return 1;
+    return 0;
 }
 
 /* SS: 3 unlocked; S: 1; M: none; L: all 28; XL: its first and last. */
@@ -305,6 +396,9 @@ int main(int argc, char **argv)
     some_unlocked();
     tm_reset(0, 1);
     random_graffiti_seed(1);
+    for (n = 0; n < RG_OWN_SLOTS; n++) s_own_head[n] = -1;
+    own_lengths();
+    put(RG_STAGE_TABLE + 23u * 4u, STAGE);     /* CODE's digits, 2 and 3 */
     if (!strcmp(test, "off") || !strcmp(test, "zero")) {
         /* Not set, or set to 0: the game's own answer to everything. */
         check("the switch is off", !random_graffiti_on());
@@ -502,7 +596,8 @@ int main(int argc, char **argv)
               drawn(spot_draw(61, RG_TEXTURE), 1) == had[40 % RG_PICKS]);
         check("a spot with no record, or a mesh that is no address, is the game's own draw",
               spot_draw(79, RG_TEXTURE) == 0
-           && random_graffiti_spot(s_ram, spot_id(0), RG_TEXTURE, 0x20u, T, &s_draw) == 0);
+           && random_graffiti_spot(s_ram, spot_id(0), RG_TEXTURE, 0x20u, RG_NO_KEY, RG_NO_KEY,
+                                   RG_NO_KEY, T, &s_draw) == 0);
         /* Another tagger's tag in another part: two draws, the game's own
          * sheet's first with the player's part hidden, then the design's
          * with the other tagger's hidden. (Two spots alike: one of two in
@@ -725,6 +820,252 @@ int main(int argc, char **argv)
         check("each of SS's three comes up", seen_ss == ((1u << 2) | (1u << 9) | (1u << 27)));
         check("each of L's 28 comes up", seen_l == (1u << RG_DESIGNS) - 1);
         check("each of XL's two comes up", seen_xl == ((1u << 0) | (1u << 27)));
+    } else if (!strcmp(test, "own")) {
+        /* The player's own designs: two SS, an L and an XL, and two files
+         * that aren't a design's, a header of M with another length and one
+         * of a size there is none of. */
+        int first_ss, left, ok;
+        own_make(0, 0); own_make(1, 0); own_make(2, 3); own_make(5, 4);
+        own_make(7, 2); s_own_bytes[7] += 1;
+        s_own_head[9] = 7; s_own_bytes[9] = own_length(0);
+        s_unused = 28u * MB;
+        random_graffiti_option(RG_OPT_DESIGNS, RG_DESIGNS_OWN);
+        random_graffiti_build(RG_BUILD_LOAD_GAME);
+        textures_load();
+        /* My own: each size's own, the unlocked ones where it has none. The
+         * fullest size has two: two sets. */
+        check("My own, two in the fullest size: two sets", load_runs() == 2);
+        check("each slot is asked once at the load", s_own_asks == RG_OWN_SLOTS);
+        check("SS draws from its two own designs only",
+              ((s_built[0][0] == (int)RG_OWN && s_built[1][0] == (int)RG_OWN + 1)
+               || (s_built[0][0] == (int)RG_OWN + 1 && s_built[1][0] == (int)RG_OWN)));
+        check("S, with none of its own, from its unlocked one", s_built[0][1] == 33 && s_built[1][1] == 33);
+        check("M, with neither, keeps the garage's", s_built[0][2] == -1);
+        check("L and XL from their one own each", s_built[0][3] == (int)RG_OWN + 2 && s_built[1][3] == (int)RG_OWN + 2
+              && s_built[0][4] == (int)RG_OWN + 5);
+        /* A failed read of a place drawn here: the stand-in's write and
+         * the own flag's are held back, the notice put down; of the
+         * garage's own choice, the game's. */
+        first_ss = s_built[0][0];
+        left = first_ss == (int)RG_OWN ? (int)RG_OWN + 1 : (int)RG_OWN;
+        check("another call's write is the game's", random_graffiti_unread(0x00012345u, 0, 0, 0, 0, T) == RG_UNREAD_GAME);
+        check("the game's own sheet's own design that failed: its write held back, with no notice",
+              random_graffiti_unread(RG_UNREAD_DESIGN, 0, 0, 0, 0, T) == RG_UNREAD_HELD);
+        check("... and the own flag's after it", random_graffiti_unread(RG_UNREAD_OWN, 0, 0, 0, 1, T) == RG_UNREAD_HELD);
+        check("... once", random_graffiti_unread(RG_UNREAD_OWN, 0, 0, 0, 1, T) == RG_UNREAD_GAME);
+        check("the place shows the stand-in", ask(BUILDER, 0, 0, STORY) == 0);
+        check("another tagger's row that failed is the game's",
+              random_graffiti_unread(RG_UNREAD_DESIGN_XL, 1, 4, 0, 113, T) == RG_UNREAD_GAME);
+        check("after it, a place of the feature's holds back its writes but keeps the notice",
+              random_graffiti_unread(RG_UNREAD_DESIGN, 0, 3, 0, 84, T) == RG_UNREAD_NOTICE);
+        check("a stand-in not of its size is the game's", random_graffiti_unread(RG_UNREAD_DESIGN_XL, 0, 4, 0, 5, T)
+              == RG_UNREAD_GAME);
+        /* The next load leaves the two out: SS draws from the one left, L
+         * from its unlocked ones (13: four sets). */
+        s_own_asks = 0;
+        check("the next load, L's own left out: four sets, and no slot asked again", load_runs() == 4
+              && s_own_asks == 0);
+        ok = 1;
+        for (n = 0; n < RG_PICKS; n++) ok &= s_built[n][0] == left && in_set(s_built[n][3], 3);
+        check("the slots that failed are left out", ok);
+        /* The garage builds its sheet (its editor may have changed one):
+         * the next load asks each slot again. Both: SS's two unlocked and
+         * own one together, all among the 13. */
+        random_graffiti_build(RG_BUILD_GARAGE);
+        random_graffiti_option(RG_OPT_DESIGNS, RG_DESIGNS_BOTH);
+        load_runs();
+        check("after the garage's build, each slot is asked again", s_own_asks == RG_OWN_SLOTS);
+        check("Both: SS has its unlocked ones and its own", placed(left, 0, RG_PICKS) && placed(2, 0, RG_PICKS)
+              && placed(9, 0, RG_PICKS) && placed(27, 0, RG_PICKS));
+        /* Unlocked: none of the player's own, and nothing asked. */
+        random_graffiti_option(RG_OPT_DESIGNS, RG_DESIGNS_UNLOCKED);
+        s_own_asks = 0;
+        load_runs();
+        ok = !s_own_asks;
+        for (n = 0; n < RG_PICKS; n++) ok &= in_set(s_built[n][0], 0) && in_set(s_built[n][4], 4);
+        check("Unlocked: only unlocked designs, and no own design asked for", ok);
+    } else if (!strcmp(test, "kept")) {
+        /* Kept tags, on the save's stage 3, with room for four sets. */
+        uint32_t had[RG_PICKS], asks;
+        int design[12], before[RG_PICKS], ok;
+        const RG_KEPT *tag;
+
+        s_code = CODE;
+        s_unused = 28u * MB;
+        random_graffiti_option(RG_OPT_KEEP, 1);
+        random_graffiti_build(RG_BUILD_LOAD_GAME);
+        textures_load();
+        check("an area's load on stage 3: four sets", load_runs() == 4);
+        /* Six L spots sprayed: each kept, with the design it shows. */
+        ok = 1;
+        for (n = 0; n < 6; n++) {
+            spot_sprayed(n, 1);
+            had[n] = drawn(spot_keyed(n, RG_TEXTURE, n, 3), 1);
+            design[n] = s_built[had[n]][3];
+            tag = rg_kept_get(STAGE, n);
+            ok &= tag && tag->size == 3 && tag->parts == 1 && tag->design == design[n];
+        }
+        check("a spot shown with the player's tag is kept, with the design it shows", ok && rg_kept_count(STAGE) == 6);
+        /* None kept for a spot the save doesn't keep, a size its sheet
+         * hasn't, or no key. */
+        spot_sprayed(6, 1); spot_sprayed(7, 1); spot_sprayed(8, 1);
+        spot_keyed(6, RG_TEXTURE, RG_KEPT_SPOTS, 3);
+        spot_keyed(7, RG_TEXTURE, 7, 4);
+        spot_draw(8, RG_TEXTURE);
+        check("no tag kept for a number the save hasn't, a size not of its sheet, or no key",
+              rg_kept_count(RG_KEPT_STAGES) == 6 && !rg_kept_get(STAGE, 7));
+        /* The next load: the kept designs in the first places, each kept
+         * spot showing its own, and a new spot one of the others. */
+        check("the next load: four sets", load_runs() == 4);
+        ok = 1;
+        for (n = 0; n < 6; n++)
+            ok &= s_built[n][3] == design[n] && s_built[drawn(spot_keyed(n, RG_TEXTURE, n, 3), 1)][3] == design[n];
+        check("a kept spot shows its design after a shuffle", ok);
+        spot_sprayed(10, 1);
+        design[10] = s_built[drawn(spot_keyed(10, RG_TEXTURE, 10, 3), 1)][3];
+        ok = 1;
+        for (n = 0; n < 6; n++) ok &= design[10] != design[n];
+        check("a new tag is dealt a design that isn't a kept one", ok && rg_kept_get(STAGE, 10)
+              && rg_kept_get(STAGE, 10)->design == design[10]);
+        /* Another tagger's tag over a kept one: the player's is gone. */
+        spot_layers(2, 0, 0, RG_ROW_NONE, ONE, k_row[2]);
+        check("a spot with only another tagger's tag has its tag ended", spot_keyed(2, RG_TEXTURE, 2, 3) == 0
+              && !rg_kept_get(STAGE, 2) && rg_kept_count(STAGE) == 6);
+        /* A soul: the kept ones stay. */
+        asks = s_asks;
+        random_graffiti_soul(91, T);
+        for (n = 0; n < RG_SETS + 1u; n++) play();
+        ok = s_asks == asks + RG_SETS;
+        for (n = 0; n < 6; n++)
+            if (n != 2) ok &= s_built[drawn(spot_keyed(n, RG_TEXTURE, n, 3), 1)][3] == design[n];
+        check("after a soul a kept spot shows its design", ok
+              && s_built[drawn(spot_keyed(10, RG_TEXTURE, 10, 3), 1)][3] == design[10]);
+        /* A Load Game: at the stage's next load its tags are checked
+         * against the save, once. */
+        save_gone(0);
+        save_gone(1);
+        random_graffiti_build(RG_BUILD_LOAD_GAME);
+        load_runs();
+        check("after Load Game, the tags the save hasn't are ended", rg_kept_count(STAGE) == 4
+              && !rg_kept_get(STAGE, 0) && !rg_kept_get(STAGE, 1) && rg_kept_get(STAGE, 3));
+        save_gone(3);
+        load_runs();
+        check("... and only at the stage's first load", rg_kept_count(STAGE) == 4);
+        /* Shuffle at Graffiti soul off: a soul draws nothing. */
+        random_graffiti_option(RG_OPT_SOUL, 0);
+        asks = s_asks;
+        random_graffiti_soul(91, T);
+        for (n = 0; n < RG_SETS + 1u; n++) play();
+        check("Graffiti soul off: a soul asks nothing", s_asks == asks);
+        /* Both shuffles off: a load holds the designs. */
+        random_graffiti_option(RG_OPT_AREA, 0);
+        for (n = 0; n < RG_PICKS; n++) before[n] = s_built[n][3];
+        load_runs();
+        check("Area load off: a load keeps the size's 13 designs", same_designs(before, 3));
+        ok = 1;
+        for (n = 3; n < 6; n++) ok &= s_built[drawn(spot_keyed(n, RG_TEXTURE, n, 3), 1)][3] == design[n];
+        check("... and the kept spots theirs", ok);
+        /* Keep off: a tag is kept in memory, and the next shuffle ends it. */
+        random_graffiti_option(RG_OPT_KEEP, 0);
+        load_runs();
+        check("Keep off, held: the tags stay", rg_kept_count(STAGE) == 4);
+        random_graffiti_option(RG_OPT_AREA, 1);
+        load_runs();
+        check("Keep off, a shuffle: every tag ended", rg_kept_count(RG_KEPT_STAGES) == 0);
+        spot_sprayed(20, 1);
+        spot_keyed(20, RG_TEXTURE, 20, 3);
+        check("... and kept again in memory till the next", rg_kept_count(STAGE) == 1);
+        /* With one design a size, the game's own draw keeps its tags too. */
+        s_unused = 0;
+        random_graffiti_option(RG_OPT_KEEP, 1);
+        load_runs();
+        spot_sprayed(21, 1);
+        check("one design a size: the game's own draw, the tag kept with its design",
+              spot_keyed(21, RG_TEXTURE, 21, 3) == 0 && rg_kept_get(STAGE, 21)
+              && rg_kept_get(STAGE, 21)->design == ask(BUILDER, 0, 3, STORY));
+    } else if (!strcmp(test, "file")) {
+        /* The kept tags' file, in the case's own folder for the save's. */
+        char path[600], text[700];
+        int bad;
+        FILE *f;
+        const RG_KEPT *tag;
+        static const char k_one[] = "jsrf-pc kept graffiti 2\n1 3 0 1 3 g89\n1 3 79 10 4 o12\n1 15 7 2 0 g2\n";
+        static const char k_two[] = "jsrf-pc kept graffiti 2\n0 3 5 1 3 g90\n"
+                                    "1 3 0 1 3 g89\n1 3 79 10 4 o12\n1 15 7 2 0 g2\n";
+
+        snprintf(path, sizeof path, "%s/%s", argc > 2 ? argv[2] : ".", RG_KEPT_FILE);
+        rg_kept_set(3, 0, 3, 1, 89);
+        check("no file: nothing saved", rg_kept_save(0, &bad) == -1 && rg_kept_count(RG_KEPT_STAGES) == 1);
+        rg_kept_file(path);
+        check("no file yet: a slot's load has none", rg_kept_load(0, &bad) == -1 && !rg_kept_count(RG_KEPT_STAGES));
+        rg_kept_set(3, 0, 3, 1, 89);
+        rg_kept_set(3, 79, 4, 10, (int)RG_OWN + 12);
+        rg_kept_set(15, 7, 0, 2, 2);
+        rg_kept_set(RG_KEPT_STAGES, 0, 0, 1, 2);
+        rg_kept_set(3, RG_KEPT_SPOTS, 0, 1, 2);
+        rg_kept_set(3, 1, 1, 1, 84);
+        check("three kept: none out of the table, or of a design not of its size",
+              rg_kept_count(RG_KEPT_STAGES) == 3 && rg_kept_count(3) == 2);
+        check("saved to slot 1, with no file yet", rg_kept_save(1, &bad) == 1 && !bad);
+        check("the file is slot 1's tags, a line each", file_is(path, text, sizeof text, k_one));
+        snprintf(text, sizeof text, "%s.tmp", path);
+        f = fopen(text, "rb");
+        check("no file left beside it", !f);
+        if (f) fclose(f);
+        /* Another slot's save keeps slot 1's lines. */
+        rg_kept_clear();
+        rg_kept_set(3, 5, 3, 1, 90);
+        check("saved to slot 0", rg_kept_save(0, &bad) == 1 && file_is(path, text, sizeof text, k_two));
+        check("slot 1 loaded: its own three", rg_kept_load(1, &bad) == 3 && !bad && (tag = rg_kept_get(3, 79))
+              && tag->size == 4 && tag->parts == 10 && tag->design == (int)RG_OWN + 12
+              && rg_kept_get(15, 7)->design == 2 && rg_kept_get(3, 0)->design == 89 && !rg_kept_get(3, 5));
+        check("slot 0 loaded: its one", rg_kept_load(0, &bad) == 1 && rg_kept_get(3, 5)->design == 90
+              && !rg_kept_get(3, 0));
+        check("slot 2 loaded: none", rg_kept_load(2, &bad) == 0 && !rg_kept_count(RG_KEPT_STAGES));
+        /* Lines that can't be read are left out and counted. */
+        f = fopen(path, "ab");
+        if (f) {
+            fputs("1 3 2 0 3 g90\n# a note\n\nnonsense\n1 3 3 1 3 x5\n1 3 4 1 3 g200\n1 3 5 1 3 g90 more\n"
+                  "3 3 6 1 3 g90\n", f);
+            fclose(f);
+        }
+        check("six bad lines left out", rg_kept_load(1, &bad) == 3 && bad == 6);
+        f = fopen(path, "wb");
+        if (f) { fputs("another file\n1 3 0 1 3 g89\n", f); fclose(f); }
+        check("another file is not read", rg_kept_load(1, &bad) == -1 && !rg_kept_count(RG_KEPT_STAGES));
+        /* Through the game: a slot's load takes its tags, those the save
+         * hasn't ended; the area's draw puts them first; a save keeps the
+         * play's, ending those the save hasn't first. */
+        f = fopen(path, "wb");
+        if (f) { fputs("jsrf-pc kept graffiti 2\n2 3 0 1 3 g89\n2 3 1 1 3 g88\n", f); fclose(f); }
+        save_gone(1);
+        random_graffiti_slot(s_ram, 2, 0, path, T);
+        check("slot 2's load: its tag the save has, not the one it hasn't", rg_kept_count(STAGE) == 1
+              && rg_kept_get(STAGE, 0) && rg_kept_get(STAGE, 0)->design == 89);
+        s_code = CODE;
+        s_unused = 28u * MB;
+        random_graffiti_option(RG_OPT_KEEP, 1);
+        random_graffiti_build(RG_BUILD_LOAD_GAME);
+        textures_load();
+        load_runs();
+        check("the area's load: its tag's design in the first place", s_built[0][3] == 89);
+        spot_sprayed(5, 1);
+        spot_keyed(5, RG_TEXTURE, 5, 3);
+        random_graffiti_slot(s_ram, 0, 1, path, T);
+        check("saved to slot 0: the play's two, slot 2's lines as they were",
+              file_has(path, text, sizeof text, "\n0 3 0 1 3 g89\n") && file_has(path, text, sizeof text, "\n0 3 5 1 3 g")
+              && file_has(path, text, sizeof text, "\n2 3 1 1 3 g88\n"));
+        save_gone(5);
+        random_graffiti_slot(s_ram, 2, 1, path, T);
+        check("saved to slot 2: the one the save hasn't ended first", rg_kept_count(STAGE) == 1
+              && file_has(path, text, sizeof text, "\n2 3 0 1 3 g89\n")
+              && !file_has(path, text, sizeof text, "\n2 3 1 ") && !file_has(path, text, sizeof text, "\n2 3 5 "));
+        random_graffiti_slot(s_ram, 1, 1, "", T);
+        check("a save with no folder: the play's stay", rg_kept_count(STAGE) == 1
+              && !file_has(path, text, sizeof text, "\n1 "));
+        random_graffiti_build(RG_BUILD_NEW_GAME);
+        check("a New Game: none in play", !rg_kept_count(RG_KEPT_STAGES)
+              && file_has(path, text, sizeof text, "\n2 3 0 1 3 g89\n"));
     } else {
         printf("unknown case %s\n", test);
         return 2;

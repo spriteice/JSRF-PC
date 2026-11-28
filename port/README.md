@@ -22,7 +22,10 @@ Future* and nothing else, and these two files are its core.
   graffiti soul indicator and random graffiti. Each hook calls its
   feature's own file in this folder (`intro.c`, `music_info.c`,
   `soul_indicator.c`, `random_graffiti.c`), which holds the feature's
-  setting and logic in plain C that a test links.
+  setting and logic in plain C that a test links. Random graffiti's kept
+  tags and their file in the game save's folder are
+  `random_graffiti_kept.c`, and Gameplay > Graffiti's rows and settings
+  `random_graffiti_menu.c`.
 
 The other files here are the port's own features, each with a comment at
 its top saying what it does and where it reaches the game. `pad.c` is the

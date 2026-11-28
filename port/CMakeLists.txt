@@ -130,6 +130,8 @@ set(JSRF_SOURCES
     sun_flare.c
     soul_indicator.c
     random_graffiti.c
+    random_graffiti_kept.c
+    random_graffiti_menu.c
     playback_mark.c
     sound_keep.c
     draw_distance.c

@@ -924,6 +924,9 @@ static int host_main(void)
         /* Developer > Missions' rows, from the game's mission files and the
          * names in its program, now in guest memory (port/missions_menu.c). */
         missions_menu_start((const uint8_t *)(uintptr_t)g_xbox_mem_offset, (uint32_t)g_xbox_total_ram);
+        /* Gameplay > Graffiti: random graffiti's switch, for the run, and
+         * its options, before the game runs (port/random_graffiti_menu.c). */
+        { extern void random_graffiti_start(void); random_graffiti_start(); }
     }
 
     /* Step 5: Initialize kernel bridge (thunk table in Xbox memory) */

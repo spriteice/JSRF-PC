@@ -125,7 +125,6 @@ static const DevSwitch k_perf[] = {
 /* Experimental's, each with its row in k_tries_row. A new one goes before
  * the end. With none, Experimental is not shown. */
 static const DevSwitch k_tries[] = {
-    { "JSRF_RANDOM_GRAFFITI", "1" },        /* the sprayed designs drawn from the unlocked ones (port/random_graffiti.c) */
     { "JSRF_SUN_FIX", "1" },                /* the sun flare's line tested along each piece (port/sun_flare.h) */
     { NULL, NULL },                         /* the end */
 };
@@ -175,7 +174,6 @@ static const char *const k_perf_row[] = {
 _Static_assert(sizeof k_perf_row / sizeof k_perf_row[0] == DEV_PERF, "a row for each of Performance's");
 /* Experimental's rows, one for each of k_tries. */
 static const char *const k_tries_row[] = {
-    "Random graffiti (Restart)",
     "Sun flare fix (Restart)",
     NULL,                                   /* the end */
 };

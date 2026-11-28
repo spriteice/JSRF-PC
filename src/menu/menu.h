@@ -230,10 +230,12 @@ typedef struct XBOX_MENU_ITEM {
 
 /* Gameplay's submenus, in its order (nv2a_gl.c adds them, so they keep it
  * whichever module adds its rows first): Skips, for the parts of the game
- * a player can leave out, then Graffiti souls, for help with the graffiti
- * soul challenges. */
+ * a player can leave out, then Graffiti, random graffiti and its options
+ * (port/random_graffiti_menu.c), then Graffiti souls, for help with the
+ * graffiti soul challenges. */
 #define XBOX_GROUP_SKIPS        "Skips"
 #define XBOX_GROUP_SOULS        "Graffiti souls"
+#define XBOX_GROUP_GRAFFITI     "Graffiti"
 
 /* Graphics' submenu, at its foot (nv2a_gl.c adds it): Upscaling, for the
  * rows that draw the game from sharper copies -- Menus and HUD, Buttons,

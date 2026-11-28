@@ -1306,6 +1306,7 @@ void sub_0017CAB0(void)
 #include "playback.h"
 #include "playback_mark.h"
 #include "random_graffiti.h"
+#include "random_graffiti_kept.h"
 #include "soul_indicator.h"
 #include "sound_keep.h"
 
@@ -4357,9 +4358,18 @@ static void wide_haze_corners(const char *who)
  * draw gives (random_graffiti.h, RG_Z_LESS), set on the game's device as
  * the game sets it and put back after. The game's function sets no depth
  * test of its own (none of its calls is the device's slot 0x134), so the
- * spot's draw's own holds for the second. */
+ * spot's draw's own holds for the second.
+ *
+ * The spot's key in the save, its stage code and its number on the stage
+ * (as its constructor writes them, 0x0003F53E and 0x0003F551), and its size,
+ * its shape's type (the word the loader picks the spot's sheet by, 0x000309BE
+ * on), go with it, for its kept tag. */
 #define GRF_SPOT_DRAW_RA  0x0003FB82u  /* the spot's draw's call's return */
+#define GRF_SPOT_STAGE    0x48u        /* the spot's stage code */
 #define GRF_SPOT_ID       0x58u        /* the spot's id */
+#define GRF_SPOT_NUMBER   0x5Cu        /* the spot's number on its stage */
+#define GRF_SPOT_SHAPE    0x8Cu        /* -> the spot's shape: a copy of its shape file's record */
+#define GRF_SHAPE_SIZE    0x08u        /* the shape's type: 0 SS to 4 XL, 5 a picture of its own */
 #define GRF_SPOT_MESH     0x90u        /* the spot's mesh */
 #define GRF_MESH_TEXTURES 0x08u        /* the mesh's textures: a count, then the ids */
 #define GRF_DEVICE        0x00251D6Cu  /* -> the game's device (vtable 0x1E0F00), as the prompts' GAME_DEVICE */
@@ -4397,8 +4407,12 @@ void sub_00042EE0(void)
          && MEM32(spot + GRF_SPOT_MESH) == mesh)
             tex = adx_word(mesh + GRF_MESH_TEXTURES);
         if (tex && adx_word(tex)) {
+            const uint32_t shape = MEM32(spot + GRF_SPOT_SHAPE);
+            const uint32_t size = shape >= ADX_GUEST_LOW && shape + GRF_SHAPE_SIZE + 4u <= lim
+                                ? MEM32(shape + GRF_SHAPE_SIZE) : RG_NO_KEY;
             id = adx_word(tex + 4);
-            passes = random_graffiti_spot(m, MEM32(spot + GRF_SPOT_ID), id, mesh, pad_now(), &draw);
+            passes = random_graffiti_spot(m, MEM32(spot + GRF_SPOT_ID), id, mesh, MEM32(spot + GRF_SPOT_STAGE),
+                                          MEM32(spot + GRF_SPOT_NUMBER), size, pad_now(), &draw);
         }
         if (!passes) {
             sub_00042EE0_gen();
@@ -6331,11 +6345,23 @@ static void prompt_draw(void)
  * the holder, one argument: the build's mode), and asks the progress object
  * (ecx = 0x1EFFB0) which design fills a row's place for a size with
  * sub_0003A820(row, size, set), and whether that choice is one of the
- * player's own with sub_0003A870(row, size, set). Developer > Experimental >
+ * player's own with sub_0003A870(row, size, set). Gameplay > Graffiti >
  * Random graffiti answers the builder's calls from the designs it draws: for
  * the player's row in a build of the game's own sheet, and for every row in
  * a build of another set's, whose sheet is all the player's. Every other
- * call, the garage's menu's among them, runs the game's function.
+ * call, the garage's menu's among them, runs the game's function. A drawn
+ * design that is one of the player's own is answered as the game answers
+ * the garage's choice of one: its slot, and 1 (Gameplay > Graffiti >
+ * Designs). The builder reads it from its save itself (sub_0002D570), and
+ * the player's own are found at the first area's load that wants them, and
+ * again after the garage's builds, by that reader's own first steps
+ * (rg_own_header). Where the read fails, the builder writes a stand-in
+ * design over the progress object's choice, sub_0003A7F0(row, size, value,
+ * set) and the own flag after it, sub_0003A840, and raises its notice
+ * (builder +0x18A4, read at 0x0002E110). For a place the feature answered,
+ * the garage's choice is not the builder's to change: both writes are held
+ * back and the notice put down, unless a read of the game's own choice
+ * failed in the build as well (random_graffiti_unread).
  *
  * The game builds the sheet at Load Game and around the garage only. For new
  * designs at each area's load, the mission flow's step that asks for the
@@ -6372,14 +6398,30 @@ static void prompt_draw(void)
  * same call, sub_0006E660, which makes the texture in the place the id has
  * (the device's own call lets the place's old texture go first).
  *
+ * The kept tags go with the save's three slots of progress, in a file in the
+ * save's own folder (port/random_graffiti_kept.h). The save menu (ecx = its
+ * object; the save buffer at +0x678 holds a header and the three slots, a
+ * pointer to each at +0x67C) loads a slot into the progress object with
+ * sub_00067940(slot), which gives 0 when it could (sub_0003A920's 0 after
+ * the whole copy; at 0x00067FA9 the save menu goes on to its state 7 with 0,
+ * and with 1 shows a notice and goes back to state 3) and 1 when it
+ * couldn't, and saves to one with sub_000678D0(slot) and then writes the
+ * file with sub_000678B0(), which gives 1 when it could (sub_00046E20's 1,
+ * after the write) and 0 when it couldn't (its one call of each, 0x00067FA4,
+ * 0x00067F15 and 0x00067F1C): the load, and the write after a save to a
+ * slot, tell random_graffiti_slot, with the kept tags' file's path in the
+ * save's folder, found as the save menu's own read finds it (rg_kept_path).
+ *
  * Nothing is wrong in these functions, and nothing in the recompiler, the
  * runtime or the device models is being made up for: the recompiled code is
  * the game's own, and runs whenever the feature has no answer. This is a
  * feature in the game's own logic: the builder's two questions are where a
  * row's design is decided, the flow's step is where the game itself loads a
  * newly built sheet, the builder's write is where a sheet is whole, and the
- * textures' letting go is where the game is done with them, so that is where
- * each is hooked (docs/project-rules.md, Where code goes 6). */
+ * textures' letting go is where the game is done with them, and the save
+ * menu's load of a slot and its write of the file are where a slot's
+ * progress becomes the play's and the play's is kept, so that is where each
+ * is hooked (docs/project-rules.md, Where code goes 6). */
 #define RG_FLOW_FILE      0x1040u      /* the flow's mission's file */
 #define RG_FILE_SHEETS    0x1Cu        /* its word the flow asks for the sheet's textures with */
 #define RG_HOLDER_STAGES  0x1C4u       /* the holder's loaded stages, a list (sub_000360B0 walks it) */
@@ -6395,6 +6437,22 @@ static void prompt_draw(void)
 #define RG_SOUL_RA        0x00042A6Cu  /* the soul's end's marking of its design's return */
 #define RG_UPDATE_RA      0x00025310u  /* for the holder's update run from here: its own address, as the game
                                         * calls it by its table (0x001C4F6C) and has no call to copy */
+#define RG_NOTICE         0x18A4u      /* the builder's: a read failed, its notice to be raised */
+#define RG_SAVE_NAME      0x00230D9Cu  /* the save's name, as the reader's name writer leaves it */
+#define RG_SAVE_FILE      0x001EE530u  /* -> the save's file's name, which the reader adds to the save's path */
+#define RG_NAME_RA        0x0002D593u  /* the reader's own calls' returns: the save's name written, */
+#define RG_OPEN_SAVE_RA   0x0002D5B6u  /* ... the save opened as existing (XCreateSaveGame, OPEN_EXISTING), */
+#define RG_OPEN_FILE_RA   0x0002D614u  /* ... its file opened, */
+#define RG_FILE_SIZE_RA   0x0002D62Au  /* ... its length, */
+#define RG_READ_RA        0x0002D66Au  /* ... its header read */
+#define RG_CLOSE_RA       0x0002D7A4u  /* ... and the file closed */
+#define RG_PATH_BYTES     0x104u       /* the save's path, as the reader asks for it */
+#define RG_HEADER_BYTES   0x10u        /* an own design's header: its first byte the size */
+#define RG_OWN_SCRATCH    0x140u       /* the root, the path with the file's name, the length's high word,
+                                        * the bytes read and the header, on the guest's stack */
+#define RG_GAME_SAVE      0x001F9678u  /* the game's own save's name, as the save menu opens it (0x00046A8A) */
+#define RG_GAME_OPEN_RA   0x00046AA5u  /* ... its own open of it's return (XCreateSaveGame, at 0x00046AA0) */
+#define RG_KEPT_SCRATCH   0x120u       /* the root and the save's path, on the guest's stack */
 /* The game's texture memory: kernel.h's XBOX_CONTIG_SIZE less its
  * XBOX_GPU_INSTANCE_DEFAULT, which the runtime keeps off the top. */
 #define RG_TEXTURE_MEMORY ((64u << 20) - (128u << 10))
@@ -6408,6 +6466,17 @@ extern void sub_0003A870_gen(void);
 extern void sub_0004AC00_gen(void);
 extern void sub_0006E660(void);
 extern void sub_0006E7B0(void);
+extern void sub_0003A7F0_gen(void);
+extern void sub_0003A840_gen(void);
+extern void sub_00067940_gen(void);
+extern void sub_000678D0_gen(void);
+extern void sub_000678B0_gen(void);
+extern void sub_0002D480(void);
+extern void sub_00145585(void);
+extern void sub_001455A3(void);
+extern void sub_00145F8B(void);
+extern void sub_001463C6(void);
+extern void sub_00146FA7(void);
 /* The builder's start: its mode says whose sheet it builds. */
 void sub_0002D240(void)
 {
@@ -6423,18 +6492,157 @@ void sub_0003A820(void)
                                         GARG(2), GARG(3), pad_now());
     if (design == RG_AS_ROW_0) GARG(1) = 0;
     if (design < 0) { sub_0003A820_gen(); return; }
-    g_eax = (uint32_t)design;
+    g_eax = RG_IS_OWN(design) ? (uint32_t)design - RG_OWN : (uint32_t)design;
     g_esp += 16;        /* ret 0xC: the return address and the three arguments */
 }
-/* Whether the choice is one of the player's own: a drawn design never is. */
+/* Whether the choice is one of the player's own: 1 for a drawn design that
+ * is. */
 void sub_0003A870(void)
 {
     int design = random_graffiti_design((const uint8_t *)g_xbox_mem_offset, GARG(0), GARG(1),
                                         GARG(2), GARG(3), pad_now());
     if (design == RG_AS_ROW_0) GARG(1) = 0;
     if (design < 0) { sub_0003A870_gen(); return; }
-    g_eax = 0;
+    g_eax = RG_IS_OWN(design) ? 1u : 0u;
     g_esp += 16;        /* ret 0xC: the return address and the three arguments */
+}
+/* The builder's stand-in for a design it couldn't read, written over the
+ * progress object's choice, and the own flag after it: held back for a
+ * place the feature answered, with the notice the builder has just raised
+ * for it put down unless it stands for a read of the game's own as well.
+ * The builder is in esi at both of its calls. */
+void sub_0003A7F0(void)
+{
+    const int done = random_graffiti_unread(GARG(0), GARG(1), GARG(2), GARG(4), GARG(3), pad_now());
+    if (done == RG_UNREAD_GAME) { sub_0003A7F0_gen(); return; }
+    if (done == RG_UNREAD_HELD && g_esi >= ADX_GUEST_LOW && g_esi + RG_NOTICE + 4u <= ADX_GUEST_RAM)
+        MEM32(g_esi + RG_NOTICE) = 0;
+    g_esp += 20;        /* ret 0x10: the return address and the four arguments */
+}
+void sub_0003A840(void)
+{
+    if (random_graffiti_unread(GARG(0), GARG(1), GARG(2), GARG(4), GARG(3), pad_now()) == RG_UNREAD_GAME) {
+        sub_0003A840_gen();
+        return;
+    }
+    g_esp += 20;        /* ret 0x10: the return address and the four arguments */
+}
+/* The player's own design in a slot, as the builder's reader opens it, with
+ * its own calls: the save's name, the save opened as existing (nothing is
+ * made where there is none), the file's name added to its path as the
+ * reader adds it, the file opened, its length, its header. The header's
+ * first byte, with *length the file's, or -1 where any step fails. */
+static int rg_own_header(uint32_t slot, uint32_t *length)
+{
+    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
+    const uint32_t esp = g_esp, file = adx_word(RG_SAVE_FILE);
+    uint32_t root, path, high, got, header, handle, low, n, k, a[7];
+    int size = -1;
+
+    *length = 0;
+    if (file < ADX_GUEST_LOW || file + 32u > ADX_GUEST_RAM)
+        return -1;
+    g_esp -= RG_OWN_SCRATCH;
+    root = g_esp;
+    path = root + 4u;
+    high = path + RG_PATH_BYTES + 32u;
+    got = high + 4u;
+    header = got + 4u;
+    memcpy(m + root, "U:\\", 4);
+    a[0] = slot;
+    guest_call_cdecl(sub_0002D480, RG_NAME_RA, 1, a);
+    a[0] = root; a[1] = RG_SAVE_NAME; a[2] = 3; a[3] = 0; a[4] = path; a[5] = RG_PATH_BYTES;
+    m[path] = 0;
+    if (guest_call_cdecl(sub_00146FA7, RG_OPEN_SAVE_RA, 6, a) != 0) {
+        g_esp = esp;
+        return -1;
+    }
+    for (n = 0; n < RG_PATH_BYTES && m[path + n]; n++)
+        ;
+    for (k = 0; k < 31u && m[file + k]; k++)
+        m[path + n + k] = m[file + k];
+    m[path + n + k] = 0;
+    a[0] = path; a[1] = 0x80000000u; a[2] = 1; a[3] = 0; a[4] = 3; a[5] = 0x80; a[6] = 0;
+    handle = guest_call_cdecl(sub_001455A3, RG_OPEN_FILE_RA, 7, a);
+    if (handle == 0xFFFFFFFFu) {
+        g_esp = esp;
+        return -1;
+    }
+    MEM32(high) = 0;
+    a[0] = handle; a[1] = high;
+    low = guest_call_cdecl(sub_001463C6, RG_FILE_SIZE_RA, 2, a);
+    if (!MEM32(high) && low >= RG_HEADER_BYTES) {
+        MEM32(got) = 0;
+        a[0] = handle; a[1] = header; a[2] = RG_HEADER_BYTES; a[3] = got; a[4] = 0;
+        if (guest_call_cdecl(sub_00145F8B, RG_READ_RA, 5, a) && MEM32(got) == RG_HEADER_BYTES) {
+            size = m[header];
+            *length = low;
+        }
+    }
+    a[0] = handle;
+    guest_call_cdecl(sub_00145585, RG_CLOSE_RA, 1, a);
+    g_esp = esp;
+    return size;
+}
+/* The kept tags' file in the game's own save's folder, its path on the
+ * host: the save opened as existing, as the save menu opens it to read it
+ * (sub_00046A60; nothing is made where there is none), and the file's name
+ * added to the folder's path it gives. "" where there is no save yet. */
+static void rg_kept_path(char *out, size_t n)
+{
+    uint8_t *m = (uint8_t *)g_xbox_mem_offset;
+    const uint32_t esp = g_esp;
+    uint32_t root, path, k, a[6];
+    char guest[RG_PATH_BYTES + sizeof RG_KEPT_FILE + 2];
+
+    out[0] = 0;
+    g_esp -= RG_KEPT_SCRATCH;
+    root = g_esp;
+    path = root + 4u;
+    memcpy(m + root, "U:\\", 4);
+    m[path] = 0;
+    a[0] = root; a[1] = RG_GAME_SAVE; a[2] = 3; a[3] = 0; a[4] = path; a[5] = RG_PATH_BYTES;
+    if (guest_call_cdecl(sub_00146FA7, RG_GAME_OPEN_RA, 6, a) == 0) {
+        for (k = 0; k < RG_PATH_BYTES - 1u && m[path + k]; k++)
+            guest[k] = (char)m[path + k];
+        if (k && guest[k - 1] != '\\')
+            guest[k++] = '\\';
+        memcpy(guest + k, RG_KEPT_FILE, sizeof RG_KEPT_FILE);
+        if (!random_graffiti_host_path(guest, out, (uint32_t)n))
+            out[0] = 0;
+    }
+    g_esp = esp;
+}
+/* The save menu loads a slot into the progress object: its kept tags too,
+ * where it could (0, as the game has it; 1 is the slot refused). */
+void sub_00067940(void)
+{
+    const uint32_t slot = GARG(1);
+    char file[1024];
+
+    sub_00067940_gen();
+    if (g_eax != 0 || !random_graffiti_on()) return;
+    rg_kept_path(file, sizeof file);
+    random_graffiti_slot((const uint8_t *)g_xbox_mem_offset, slot, 0, file, pad_now());
+}
+/* The save menu saves the progress object to a slot, and then writes the
+ * file: the play's kept tags are the slot's once the file is written. */
+static int s_rg_saving = -1;
+void sub_000678D0(void)
+{
+    s_rg_saving = (int)GARG(1);
+    sub_000678D0_gen();
+}
+void sub_000678B0(void)
+{
+    const int slot = s_rg_saving;
+    char file[1024];
+
+    s_rg_saving = -1;
+    sub_000678B0_gen();
+    if (g_eax == 0 || slot < 0 || !random_graffiti_on()) return;    /* 1 is written */
+    rg_kept_path(file, sizeof file);
+    random_graffiti_slot((const uint8_t *)g_xbox_mem_offset, (uint32_t)slot, 1, file, pad_now());
 }
 /* The texture manager lets a texture go, by its own call. */
 static void rg_free(uint32_t id)
@@ -6526,7 +6734,8 @@ static void rg_step(void)
     guest_call_cdecl(sub_00025310_gen, RG_UPDATE_RA, 0, NULL);
     g_ecx = sv_ecx;
 }
-static const RANDOM_GRAFFITI_GAME k_rg_game = { rg_busy, rg_let_go, rg_ask, rg_unused, rg_step };
+static const RANDOM_GRAFFITI_GAME k_rg_game = { rg_busy, rg_let_go, rg_ask, rg_unused, rg_step,
+                                                rg_own_header };
 /* A graffiti soul's design marked as got: by the soul's own end, and not by
  * the game's loops that mark many at once (0x0011ABAC and on). */
 void sub_00039E80(void)
@@ -6553,7 +6762,7 @@ void sub_0004AC00(void)
         const uint32_t a[2] = { RG_SHEET_TEXTURES, MEM32(file + RG_FILE_SHEETS) };
         int loaded = guest_call_cdecl(sub_000256C0, RG_LOADED_RA, 2, a) != 0;
         if (!random_graffiti_area(&k_rg_game, (const uint8_t *)g_xbox_mem_offset, loaded,
-                                  MEM32(holder + RG_HOLDER_STAGES) != 0, pad_now())) {
+                                  MEM32(holder + RG_HOLDER_STAGES) != 0, MEM32(file), pad_now())) {
             g_esp += 4;     /* ret: the step is held this pass */
             return;
         }

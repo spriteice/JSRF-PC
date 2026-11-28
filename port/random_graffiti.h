@@ -1,8 +1,12 @@
 /* Random graffiti: the designs the player sprays, drawn at random from the
  * ones the save has unlocked, a design for each spot.
  *
- * Developer > Experimental > Random graffiti, the switch
- * JSRF_RANDOM_GRAFFITI=1 (port/developer.c), read once, off unless set.
+ * Gameplay > Graffiti > Random graffiti (Restart), random_graffiti= in the
+ * settings file (port/random_graffiti_menu.c), taken once, at start, off
+ * unless set; JSRF_RANDOM_GRAFFITI=1 in the environment, for a test, is
+ * over it. It was Developer > Experimental's until b3 row 43 (spriteice,
+ * 27 November 2026: "move the feature out of experimental, and into
+ * gameplay").
  *
  * The game never picks a design at a spray. A spray writes who sprayed into
  * the spot, and the picture comes from a row of one shared texture, the
@@ -88,9 +92,59 @@
  * its own, never the game's, whose draws input playback counts
  * (port/playback.h).
  *
- * The hooks are in recomp_manual.c: the builder's start hands its mode to
+ * Gameplay > Graffiti's other rows (b3 row 43, port/random_graffiti_menu.c)
+ * add three things, taken at each area's load:
+ *
+ * Designs: the unlocked ones, the player's own, or both. An own design is
+ * one painted in the garage's editor or imported by JSRF-PC Tools, a save
+ * of its own for each of the garage's 280 slots. The builder reads one itself wherever its two
+ * questions say so (the slot, and that it is one of the player's own), in
+ * any row of any sheet, and copies it to the same place as one of the
+ * game's. Its reader takes only a design of the size being built, so a
+ * size's pool has only that size's own designs. They are found at the
+ * first area's load that wants them, and again after the garage builds its
+ * sheet (its editor is where one is made or changed), with the game's own
+ * calls, the reader's first ones (RANDOM_GRAFFITI_GAME's own_header): some
+ * 0.2 s for the 280 slots, at every load in the first test build
+ * (spriteice's log on the PC, 27 November 2026). A size with no own design draws from
+ * the unlocked ones. A read that fails (a damaged design) has the builder
+ * write a stand-in, one of the game's, as the garage's choice in the
+ * progress object, and raise a notice at the build's end: for a design
+ * drawn here both are held back (random_graffiti_unread), the place shows
+ * the stand-in, and the design is left out until the game is closed.
+ *
+ * Keep sprayed tags: a tag the player sprays keeps the design it was first
+ * drawn with until the tag is gone (spriteice's card, 1:40pm on 2026-11-27):
+ * random_graffiti_kept.h keeps it, by the stage and spot number the game's
+ * save keeps the spot's tags under (spot +0x48 and +0x5C), and a spot's size
+ * is its shape's type (the word at +8 of what spot +0x8C points to, 0 to 4,
+ * by which the game picks the spot's sheet). At each draw, an area's kept
+ * designs are put in places first, most kept first, and the rest drawn
+ * around them; a kept spot shows the place holding its design. A spot shown
+ * with nothing of the player's, another tagger's tag over it, ends its tag;
+ * so does the save, where the progress object has no part of the player's
+ * on the spot: at a stage's first load after a New Game or Load Game, and
+ * for every stage as the game loads a slot or saves to one. A New Game
+ * starts with none. The tags go with
+ * the save's slots, a table a slot in the save's own folder
+ * (random_graffiti_kept.h): the game's loading a slot takes its table, and
+ * its saving to one, the file written, keeps the play's there
+ * (random_graffiti_slot). Off, every shuffle ends them, and a save keeps
+ * only those sprayed since.
+ *
+ * Shuffle: at an area's load, at a graffiti soul, both or neither. With
+ * neither, the designs are drawn again only when the game builds its own
+ * sheet (Load Game, New Game, the garage), and kept in between.
+ *
+ * With Designs on Unlocked, Keep off and both shuffles, it is b2.2-hotfix's
+ * random graffiti, and those are the module's own until the menu sets them.
+ *
+ * The hooks are in recomp_manual.c: the save menu's loading of a slot and
+ * its writing of the file after a save to one tell random_graffiti_slot,
+ * the builder's start hands its mode to
  * random_graffiti_build, the two functions the builder asks hand each call
- * to random_graffiti_design, its two sheets' writes ask random_graffiti_sheet
+ * to random_graffiti_design, its two writes of a stand-in after a failed read
+ * ask random_graffiti_unread, its two sheets' writes ask random_graffiti_sheet
  * for the id to make a texture under, the mission flow's step asks
  * random_graffiti_area whether it runs this pass, the sheet's textures'
  * letting go tells random_graffiti_let_go, a spot's mesh's draw asks
@@ -110,6 +164,28 @@
 #define RG_SOULS_GOT      0x00F8u       /* its graffiti souls got, a bit a design (its PRG_SOULS_GOT) */
 #define RG_GUEST_LOW      0x10000u      /* below it, no object: a null, or a small number (ADX_GUEST_LOW) */
 #define RG_GUEST_RAM      (64u << 20)   /* the guest's memory, which mem names */
+
+/* The player's own designs: the garage's 280 slots (its own-designs tab, 10
+ * pages of 7 by 4), each a save of its own. A design here is RG_OWN plus
+ * the slot; the builder is answered the slot. */
+#define RG_OWN_SLOTS      280u
+#define RG_OWN            0x100u
+#define RG_IS_OWN(d)      ((d) >= (int)RG_OWN)
+/* An own design's file in its save is as long as the four words for its size
+ * here add up to, and RG_OWN_EXTRA more: the reader's own test (sub_0002D570,
+ * 0x0002D672 to 0x0002D6A3). Its header's first byte is its size. */
+#define RG_OWN_LENGTHS    0x001EE538u   /* four words a size: its blocks' lengths */
+#define RG_OWN_EXTRA      0x37Cu        /* the header and the seven signatures, and the rest */
+
+/* Where the game's save keeps a spot's tags (sub_0003A340): the progress
+ * object's words at RG_SPOT_TAGS + ((stage * 80 + spot) * 2 + which) * 4,
+ * which 0 the tag and 1 the one fading out, 3 bits a part, 0 the player's
+ * and 7 none; stage is the save's number for the stage code, the game's
+ * table at RG_STAGE_TABLE by its two digits: ((code >> 16) % 10) * 10 +
+ * (code & 0xFFFF) % 10, giving 1 to 15, and 0 for no stage. */
+#define RG_SPOT_TAGS      0x0178u
+#define RG_STAGE_TABLE    0x001EFC88u
+#define RG_NO_KEY         0xFFFFFFFFu   /* a spot's number or size not known */
 
 /* The sets of sheets built at once: the game's own, and three more. */
 #define RG_SETS           4u
@@ -170,8 +246,13 @@
 #define RG_BUILD_GARAGE     2u          /* ... around the garage, and at an area's load here */
 #define RG_BUILD_MENU       4u          /* ... after a change in the garage's graffiti menu */
 
-/* Whether JSRF_RANDOM_GRAFFITI is set, to anything but 0: read once. */
+/* Whether the switch is on for this run: as random_graffiti_switch set it,
+ * or, until then, whether JSRF_RANDOM_GRAFFITI is set, to anything but 0. */
 int random_graffiti_on(void);
+
+/* The switch, for this run: at start, before the game runs
+ * (port/random_graffiti_menu.c). */
+void random_graffiti_switch(int on);
 
 /* The builder starts a build, in this mode. One an area's load or a soul
  * asked for here answers from the set it was asked for. Any other is the
@@ -186,7 +267,37 @@ typedef struct {
     int  (*ask)(uint32_t resource, uint32_t word);      /* sub_000256A0: 0 when it isn't taken */
     uint32_t (*unused)(void);                       /* the bytes of the game's texture memory never yet handed out */
     void (*step)(void);                             /* its update, once more (sub_00025310): a step of what it serves */
+    /* The own design in a slot, as the builder's reader opens it: its
+     * header's first byte, the size, with *length the file's, or -1 for no
+     * design there. NULL: no own designs. */
+    int  (*own_header)(uint32_t slot, uint32_t *length);
 } RANDOM_GRAFFITI_GAME;
+
+/* Gameplay > Graffiti's options (port/random_graffiti_menu.c), set on the
+ * window's thread and taken at the next area's load (Graffiti soul at the
+ * soul). Until set, b2.2-hotfix's. */
+enum { RG_OPT_DESIGNS, RG_OPT_KEEP, RG_OPT_AREA, RG_OPT_SOUL, RG_OPTS };
+enum { RG_DESIGNS_UNLOCKED, RG_DESIGNS_OWN, RG_DESIGNS_BOTH };
+void random_graffiti_option(int which, int value);
+int random_graffiti_option_now(int which);
+
+/* The switch and the options read from the settings file, and Gameplay >
+ * Graffiti's rows added: at start (port/random_graffiti_menu.c). */
+void random_graffiti_start(void);
+
+/* The game has loaded its save's slot slot (0 to 2) into the progress
+ * object (saved 0), or saved the progress object to it and written the
+ * save's file (saved 1), at t seconds. file is the kept tags' file in the
+ * save's own folder (random_graffiti_kept.h), or "" where it isn't known.
+ * At a load the slot's kept tags become the play's, and at a save the
+ * play's become the slot's, written to the file; each time, those the save
+ * has no part of the player's on are ended first (at a load, once read). */
+void random_graffiti_slot(const uint8_t *mem, uint32_t slot, int saved, const char *file, double t);
+
+/* The host's path, UTF-8, of the file at an Xbox path, by the kernel's own
+ * path layer (port/random_graffiti_menu.c): 0 where it has none, or it is
+ * longer than n. */
+int random_graffiti_host_path(const char *xbox_path, char *out, uint32_t n);
 
 /* The mission flow's step that asks for the sheet's textures is about to
  * run, at t seconds: 1 when the game's step is to run this pass, 0 when it
@@ -201,9 +312,33 @@ typedef struct {
  * then finds no textures and asks for the new ones itself. Where the
  * textures aren't loaded, the game has just built the sheet itself: with
  * one set there is nothing to add, and with more the builds are asked for
- * all the same. */
+ * all the same, and so they are where the area has tags kept, for its own
+ * sheet to have them. code is the stage the flow asks for (the first word
+ * of its mission's file), whose kept tags are put in places first: at its
+ * first load since a New Game or Load Game, those the save no longer has a
+ * part of the player's on are ended first. The options are taken, and the
+ * player's own designs found where they haven't been since the garage, once
+ * the holder is free. */
 int random_graffiti_area(const RANDOM_GRAFFITI_GAME *game, const uint8_t *mem, int textures,
-                         int stage, double t);
+                         int stage, uint32_t code, double t);
+
+/* The builder is about to write a stand-in for a design it couldn't read
+ * (sub_0003A7F0, the call returning to RG_UNREAD_DESIGN or its second
+ * sheet's), with value the stand-in, or to clear the place's own flag
+ * (sub_0003A840, RG_UNREAD_OWN or its second's), for (row, size, set), at t
+ * seconds. RG_UNREAD_GAME: the game's write, for a design the garage chose.
+ * Otherwise the design was one drawn here: the write is held back, the
+ * place shows the stand-in from now on, and the slot is left out until the
+ * game is closed. RG_UNREAD_HELD: and the builder's notice for it is held
+ * back too; RG_UNREAD_NOTICE: the notice stays, for a design of the game's
+ * own choice that failed earlier in the build. */
+#define RG_UNREAD_DESIGN    0x0002DDA8u
+#define RG_UNREAD_DESIGN_XL 0x0002DFBFu
+#define RG_UNREAD_OWN       0x0002DDC8u
+#define RG_UNREAD_OWN_XL    0x0002DFE0u
+enum { RG_UNREAD_GAME, RG_UNREAD_HELD, RG_UNREAD_NOTICE };
+int random_graffiti_unread(uint32_t from, uint32_t row, uint32_t size, uint32_t set, uint32_t value,
+                           double t);
 
 /* A call of sub_0003A820 or sub_0003A870 for (row, size, set), returning to
  * from: the design to answer with, or -1 for the game's own answer. A
@@ -212,8 +347,9 @@ int random_graffiti_area(const RANDOM_GRAFFITI_GAME *game, const uint8_t *mem, i
  * the game's own sheet, and for every row in a build of another set's. The
  * first such call of a build of the game's own draws its designs from mem,
  * the guest's memory, and says so in the log, at t seconds. An answered
- * design is never one of the player's own, so sub_0003A870's answer for it
- * is 0. RG_AS_ROW_0: another set's sheet, a size with none unlocked: the
+ * design that is one of the player's own is RG_OWN plus its slot: the hooks
+ * answer sub_0003A820 with the slot and sub_0003A870 with 1, and 0 for any
+ * other. RG_AS_ROW_0: another set's sheet, a size with none unlocked: the
  * game's own answer for row 0, the garage's design, in every row. */
 #define RG_AS_ROW_0   (-2)
 int random_graffiti_design(const uint8_t *mem, uint32_t from, uint32_t row, uint32_t size,
@@ -252,6 +388,13 @@ void random_graffiti_let_go(void);
  * log has each deal's first spots, its first spots drawn twice, and how
  * many spots the deal before it had.
  *
+ * code, number and size are the spot's key in the save and its size
+ * (RG_NO_KEY where not known): a spot with a tag kept shows the place
+ * holding its design, and one shown with the player's tag and none kept
+ * has its tag kept from now on, with the design it is shown with; one shown
+ * with only another tagger's tag has its tag ended. Kept tags are made with
+ * one design a size too, where the draw is the game's own.
+ *
  * Of two draws, the first, the one underneath, is made with a strict depth
  * test (RG_Z_LESS), the second with the game's own. The game's one draw
  * mixes a part's two layers before anything is written, so the layer on
@@ -272,8 +415,11 @@ typedef struct {
     uint32_t depth_test[2];             /* ... its depth test (D3D's ZFUNC), or 0 for the game's own */
     uint32_t layer[2][RG_PARTS][4];     /* ... and each part's words: RG_MESH_SHOWN's two, then RG_MESH_ROW's two */
 } RANDOM_GRAFFITI_DRAW;
-uint32_t random_graffiti_spot(const uint8_t *mem, uint32_t spot, uint32_t id, uint32_t mesh, double t,
-                              RANDOM_GRAFFITI_DRAW *draw);
+uint32_t random_graffiti_spot(const uint8_t *mem, uint32_t spot, uint32_t id, uint32_t mesh, uint32_t code,
+                              uint32_t number, uint32_t size, double t, RANDOM_GRAFFITI_DRAW *draw);
+
+/* The save's number for a stage code (RG_STAGE_TABLE): 1 to 15, 0 for none. */
+uint32_t random_graffiti_stage(const uint8_t *mem, uint32_t code);
 
 /* The game marks a graffiti soul's design as got, at t seconds: where the
  * sheets are this load's, built here, they are to be built again in play,
