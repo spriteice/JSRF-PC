@@ -461,13 +461,24 @@ int nv2a_wide_fill_fits(const float ext[4], int textured, int samples_surface);
  * squeeze s (the frame's shape's, nv2a_wide_squeeze_of): the 4:3 screen's
  * columns, *x0 to *x1 (the far one exclusive), which every partly covered
  * column at its edges is left out of; and the column copied across each
- * side, *src_l, one title pixel (pw x s / 640 of the raster's, at least one)
- * inside the left edge, across 0 to *src_l, and *src_r as far inside the
- * right edge, across *src_r + 1 to pw: the fill covers the columns between
- * each source and its edge too, and leaves *src_l to *src_r as they are.
- * Returns 0, with nothing to fill and the outputs untouched, at s 1 (4:3),
- * for an s that isn't between 0 and 1, and for a raster too narrow to have
- * sides. */
+ * side, *src_l across 0 to *src_l, and *src_r across *src_r + 1 to pw: the
+ * fill covers the columns between each source and its edge too, and leaves
+ * *src_l to *src_r as they are. Each source is the column that holds the
+ * middle of the second title pixel in from its edge (NV2A_WIDE_FILL_SOURCE
+ * title pixels in; a title pixel is pw x s / 640 of the raster's), one
+ * that's on a column's edge going inward, among the 4:3 screen's whole
+ * columns: so the source's centre is always inside that second title
+ * pixel, never on the edge of the outermost one, which some art leaves
+ * empty or dark (the options menu's right edge, the graffiti menu's yellow
+ * panel). One title pixel in, rounded to whole raster pixels, put the right
+ * source's centre exactly on that edge at 16:10 on a raster of 720, 1200,
+ * 2160 lines and the like, a title pixel a whole number of raster pixels
+ * and a half, and GL counts a pixel there as outside a shape's right edge:
+ * the graffiti menu's right side was filled black at 1920x1200 (spriteice,
+ * 27 November 2026, 3:22pm UTC+8). Returns 0, with nothing to fill and the
+ * outputs untouched, at s 1 (4:3), for an s that isn't between 0 and 1,
+ * and for a raster too narrow to have sides. */
+#define NV2A_WIDE_FILL_SOURCE 1.5
 int nv2a_wide_fill_cols(uint32_t pw, float s, uint32_t *x0, uint32_t *x1,
                         uint32_t *src_l, uint32_t *src_r);
 

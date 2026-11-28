@@ -301,8 +301,8 @@ int nv2a_wide_fill_fits(const float ext[4], int textured, int samples_surface)
 int nv2a_wide_fill_cols(uint32_t pw, float s, uint32_t *x0, uint32_t *x1,
                         uint32_t *src_l, uint32_t *src_r)
 {
-    double c = 0.5 * (double)pw, a, b, in;
-    uint32_t l, r, inset;
+    double c = 0.5 * (double)pw, a, b, in, sl, sr;
+    uint32_t l, r;
     if (!(s > 0.0f) || !(s < 1.0f) || pw < 4u) return 0;
     /* The first column wholly inside, and one past the last, with a
      * thousandth of a pixel's slack for s's rounding: 16:10's edge at 2x is
@@ -311,12 +311,18 @@ int nv2a_wide_fill_cols(uint32_t pw, float s, uint32_t *x0, uint32_t *x1,
     b = floor(c + (double)s * c + 1e-3);
     if (!(a >= 1.0) || !(b <= (double)pw - 1.0) || !(b > a)) return 0;
     l = (uint32_t)a; r = (uint32_t)b;
-    in = floor((double)pw * (double)s / (double)NV2A_SCALE_FRAME_W + 0.5);
-    inset = in >= 1.0 ? (uint32_t)in : 1u;
-    if (r - l <= 2u * inset) return 0;
+    /* The sources: the columns that hold the middle of the second title
+     * pixel in from each edge, a point on a column's edge (to a thousandth)
+     * taken inward, and among the 4:3 screen's whole columns. */
+    in = NV2A_WIDE_FILL_SOURCE * (double)pw * (double)s / (double)NV2A_SCALE_FRAME_W;
+    sl = floor(c - (double)s * c + in + 1e-3);
+    sr = ceil(c + (double)s * c - in - 1e-3) - 1.0;
+    if (sl < (double)l) sl = (double)l;
+    if (sr > (double)r - 1.0) sr = (double)r - 1.0;
+    if (!(sr > sl)) return 0;
     *x0 = l; *x1 = r;
-    *src_l = l + inset;
-    *src_r = r - 1u - inset;
+    *src_l = (uint32_t)sl;
+    *src_r = (uint32_t)sr;
     return 1;
 }
 

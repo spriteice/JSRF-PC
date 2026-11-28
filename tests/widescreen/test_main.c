@@ -75,12 +75,16 @@
  *      an untextured layer and a copy of the frame stay full width. Its
  *      columns: the 4:3 screen's whole columns are kept, 214 to 1493 of
  *      1707 at 2x and 16:9 (its edges at 213.375 and 1493.625), and the
- *      column a title pixel inside each edge, 216 and 1490, is copied out;
- *      16:10's edge at 2x, column 128 itself, is kept. At every wide shape
- *      and scale the kept columns hold the 4:3 screen's whole columns and
- *      no more, both sides are filled, the two sources sit as far inside
- *      their edges, and inside the kept columns. Nothing is filled at 4:3,
- *      for an s that isn't between 0 and 1, or on a raster too narrow.
+ *      column holding the middle of the second title pixel in from each
+ *      edge, 216 and 1490, is copied out; 16:10's edge at 2x, column 128
+ *      itself, is kept. At 1920x1200 (16:10) the sources are 163 and 1756,
+ *      not 162 and 1757, whose centres sat on the outermost title pixel's
+ *      edge (the graffiti menu's black right side). At every wide shape and
+ *      every line count from 480 to 2880 the kept columns hold the 4:3
+ *      screen's whole columns and no more, both sides are filled, and each
+ *      source's centre is inside the second title pixel in from its edge.
+ *      Nothing is filled at 4:3, for an s that isn't between 0 and 1, or on
+ *      a raster too narrow.
  */
 #include <math.h>
 #include <stdio.h>
@@ -912,24 +916,40 @@ static void fill(void)
     CHECK(nv2a_wide_fill_fits(small, 1, 1));
     fill_is(1707, 0.75f, 214, 1493, 216, 1490);     /* 2x, 16:9 */
     fill_is(853, 0.75f, 107, 746, 108, 744);        /* 1x */
-    fill_is(1536, (4.0f / 3.0f) / 1.6f, 128, 1408, 130, 1405);   /* 2x, 16:10 */
+    fill_is(1536, (4.0f / 3.0f) / 1.6f, 128, 1408, 131, 1404);   /* 2x, 16:10 */
     fill_is(2276, 0.5625f, 498, 1778, 500, 1775);   /* 2x, 21:9 */
+    fill_is(1920, 0.75f, 240, 1680, 243, 1676);     /* 1920x1080, 16:9 */
+    /* 1920x1200, 16:10, 2.5 raster pixels a title pixel: the sources'
+     * centres at title x 1.4 and 638.6. One title pixel in, rounded, gave 162
+     * and 1757, centred exactly on the edge of the outermost title pixel
+     * (1.0 and 639.0), and the graffiti menu's panel, which ends there, left
+     * the right side black (spriteice, 27 November 2026). */
+    fill_is(1920, nv2a_wide_squeeze_of(1.6f), 160, 1760, 163, 1756);
     for (i = 0; i < sizeof shapes / sizeof shapes[0]; i++)
-        for (sc = 1; sc <= 8; sc++) {
+        for (sc = NV2A_SCALE_FRAME_H; sc <= 6u * NV2A_SCALE_FRAME_H; sc++) {
             float s = nv2a_wide_squeeze_of(shapes[i]);
             uint32_t pw, ph, x0, x1, l, r;
             float shape;
-            double e0, e1, in;
-            nv2a_wide_raster(640, 480, 480u * sc, shapes[i], &pw, &ph, &shape);
+            double e0, e1, tp, tl, tr;
+            nv2a_wide_raster(640, 480, sc, shapes[i], &pw, &ph, &shape);
             CHECK(nv2a_wide_fill_cols(pw, s, &x0, &x1, &l, &r));
             e0 = 0.5 * pw * (1.0 - s); e1 = 0.5 * pw * (1.0 + s);   /* the 4:3 edges */
             CHECK(x0 >= e0 - 1e-3 && x0 < e0 + 1.0);   /* the first whole column */
             CHECK(x1 <= e1 + 1e-3 && x1 > e1 - 1.0);   /* one past the last */
             CHECK(x0 > 0 && x1 < pw);                   /* both sides filled */
-            in = floor(pw * (double)s / 640.0 + 0.5);
-            CHECK(l - x0 == (uint32_t)(in < 1.0 ? 1.0 : in));
-            CHECK(x1 - 1u - r == l - x0);
-            CHECK(l < r && r < x1);
+            CHECK(x0 <= l && l < r && r < x1);
+            /* Each source's centre, in title pixels from the 4:3 screen's
+             * left edge: inside the second title pixel in from its edge,
+             * never on the outermost one's edge, at every line count from
+             * 480 to 2880 (720, 1200 and 2160 among them). */
+            tp = pw * (double)s / 640.0;
+            tl = ((double)l + 0.5 - e0) / tp;
+            tr = ((double)r + 0.5 - e0) / tp;
+            if (!(tl > 1.0 + 1e-6 && tl <= 2.0 + 1e-6 && tr < 639.0 - 1e-6 && tr >= 638.0 - 1e-6)) {
+                printf("widescreen: the fill's sources at %u lines, %.3f:1, %ux%u: %u and %u, "
+                       "at title x %.4f and %.4f\n", sc, (double)shapes[i], pw, ph, l, r, tl, tr);
+                CHECK(0);
+            }
         }
     CHECK(!nv2a_wide_fill_cols(1280, 1.0f, &a, &b, &c, &d));      /* 4:3 */
     CHECK(!nv2a_wide_fill_cols(1707, 0.0f, &a, &b, &c, &d));
