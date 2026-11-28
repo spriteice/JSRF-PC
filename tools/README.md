@@ -546,3 +546,39 @@ function's text and each diff to a folder. It needs only Python's standard
 library and objdump (the `linux tests` image has it, and it reads Windows'
 objects too), and its test, `tools/test_compare_engines.py`, compiles
 made-up files with GCC and with clang for Windows.
+
+## Whether every override does its `ret`: override_ret
+
+`tools/override_ret.py` checks the hand-written overrides in `port/` (Where
+code goes 6 in docs/project-rules.md): that every path out of each one
+leaves the guest stack as the game's own function would, its `ret` done
+once.
+
+```bash
+python3 tools/override_ret.py [FILE ...] [--list]
+```
+
+An override takes the place of the game's whole function, and is called
+with its return address on the guest stack, which the recompiled caller
+leaves for the callee to take off. So each path out of it has to run the
+game's body (`sub_X_gen()`), call into another of the game's functions that
+does the `ret` in its place, or pop by hand (`g_esp += 4`, `4 + 8` for a
+function that pops two arguments, or `g_esp = esp + 4` from where it was
+kept). Known bug 87 was a path that did none of them, and nothing showed it
+in a build. The check follows each override's paths, through the functions
+of the files read that it calls (with the body passed to them, the esp
+they give back, and their value where it's a number), adding up how far
+`g_esp` has moved, and lists each path that ends with no `ret`, two, a move
+that isn't one, or a move it can't follow, with its line, and an override
+whose paths pop different amounts by hand. The overrides are those
+`tools/recomp/manual_scan.py` finds, by its own rule for `#if 0`, with
+those a macro defines among them. Without FILE it reads every `port/*.c`.
+`--list` also prints how each override's paths do the `ret`. Its exit
+status is 0 when every path does it, 1 when something is listed, and 2 when
+it can't run. It needs only Python's standard library. Its test,
+`tools/test_override_ret.py`, is how CI runs it, in the GCC job's tool
+tests: on `port/` as it is, with known bug 87's held path put back as it
+was before its fix as the negative control, and on made-up overrides. It
+names what the check can't follow in `port/` today, each read by eye (a
+`ret` on a loop's last pass, in random graffiti's draw), and the
+amounts the XDK's pad functions pop.
