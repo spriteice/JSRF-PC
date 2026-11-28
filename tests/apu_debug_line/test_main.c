@@ -5,7 +5,8 @@
  * src/apu/apu_core.c's mcpx_apu_debug_print after each prefix given on the
  * command line, which run.py takes from the three reports in
  * src/kernel/kernel_bridge.c. run.py checks each line is there whole. The
- * first line says what the largest counter is.
+ * first line says what the largest counter is; the music watchdog's count
+ * is given as its widest, -32768.
  */
 #include <limits.h>
 #include <stdint.h>
@@ -13,6 +14,7 @@
 #include "apu_state.h"
 
 void mcpx_apu_debug_print(FILE *f, const char *prefix);
+void mcpx_apu_music_watchdog(int count);
 
 /* apu_core.c's sound output, apu_sdl.c, which needs SDL: none here. */
 int xa2_init(void) { return 0; }
@@ -45,6 +47,7 @@ int main(int argc, char **argv)
     g_apu_fe_on = g_apu_fe_off = g_apu_fe_total = UINT_MAX;
     g_apu_seg_done = g_apu_notify_ssl = g_apu_notify_persist = ULONG_MAX;
     g_apu_voices_seen = g_apu_stream_voices = g_apu_voices_paused = ULONG_MAX;
+    mcpx_apu_music_watchdog(-32768);   /* the watchdog's count, an int16, at its widest */
 
     printf("max %lu %u\n", ULONG_MAX, UINT_MAX);
     mcpx_apu_debug_print(stdout, "no state: ");

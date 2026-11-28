@@ -531,10 +531,16 @@ void sub_001402F0(void)
 
 /* ---- sub_0013D300: ADXT trap/watchdog check -- print the handle's counters */
 extern void sub_0013D300_gen(void);
+extern void mcpx_apu_music_watchdog(int count);
 void sub_0013D300(void)
 {
     uint32_t h = GARG(1);
     uint8_t *m = (uint8_t *)g_xbox_mem_offset;
+    /* The watchdog's count at +0x68, for the always-on [APU] line's highest
+     * in the last ten seconds (src/apu/apu_core.c), for the whole run: the
+     * [ADXT] lines below stop at 2000. */
+    if (h && h + 0x80 < (64u << 20))
+        mcpx_apu_music_watchdog(*(int16_t *)(m + h + 0x68));
     /* Print a handle's line when any of its fields change (and every 5 s),
      * for the whole run -- the old first-60 cap spent itself on the title
      * and said nothing about the tutorial's stream. On a new stream handle,

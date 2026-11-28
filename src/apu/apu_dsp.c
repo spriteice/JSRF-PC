@@ -84,9 +84,44 @@ static void dsp_ack_init(void)
                 s_dsp_ack_count, s_dsp_ack[0]);
 }
 
+/* G3's comparison (row 12b): whether the device could find the doorbell
+ * itself, as the first page of the GP's scratch memory plus 0x810, read from
+ * the table GPSADDR points at, in place of port/'s hook on sub_001A1769. On
+ * Wreckless the doorbell, 0x014F8810, is in no block the four registers
+ * name (above), but GPSADDR names a table of pages, not a block. Said once
+ * for each address the title registers, from the frame thread, once GPSADDR
+ * is set, or ten seconds on if it isn't. */
+static uint32_t s_g3_addr;      /* registered, not compared yet; atomic */
+static unsigned s_g3_frames;
+
+static void g3_compare(MCPXAPUState *d)
+{
+    uint32_t addr = __atomic_load_n(&s_g3_addr, __ATOMIC_RELAXED), table, first;
+    if (!addr) return;
+    table = qatomic_read(&d->regs[NV_PAPU_GPSADDR]);
+    if (!table && ++s_g3_frames < 15000) return;   /* 1,500 frames a second */
+    __atomic_store_n(&s_g3_addr, 0, __ATOMIC_RELAXED);
+    s_g3_frames = 0;
+    if (!table) {
+        fprintf(stderr, "[APU] DSP doorbell against the GP's scratch table: GPSADDR still 0 "
+                "about ten seconds after the title's 0x%08X\n", addr);
+    } else if (!d->ram_ptr || table > APU_DSP_WINDOW_SIZE - 8) {
+        fprintf(stderr, "[APU] DSP doorbell against the GP's scratch table: GPSADDR 0x%08X, "
+                "outside the window; the title's 0x%08X\n", table, addr);
+    } else {
+        memcpy(&first, d->ram_ptr + table, 4);
+        fprintf(stderr, "[APU] DSP doorbell against the GP's scratch table: GPSADDR 0x%08X, its "
+                "first page 0x%08X, plus 0x810 0x%08X: %s the title's 0x%08X\n", table, first,
+                first + 0x810u, first + 0x810u == addr ? "the same as" : "not", addr);
+    }
+    fflush(stderr);
+}
+
 static void dsp_ack_frame(MCPXAPUState *d)
 {
     int i;
+
+    g3_compare(d);
 
     if (s_dsp_ack_count < 0)
         dsp_ack_init();
@@ -134,6 +169,7 @@ void mcpx_apu_dsp_ack_add(uint32_t addr)
     s_dsp_ack[s_dsp_ack_count++] = addr;
     fprintf(stderr, "[APU] DSP doorbell registered by the title: 0x%08X\n", addr);
     fflush(stderr);
+    __atomic_store_n(&s_g3_addr, addr, __ATOMIC_RELAXED);
 }
 
 /* Doorbell ack independent of the APU register state: on hosts without MMIO

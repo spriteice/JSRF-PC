@@ -138,6 +138,43 @@ int mcpx_apu_irq_pending(MCPXAPUState *d)
  * say whether the hardware is asking for its interrupt and whether the title
  * has enabled the source; the two counters say whether there was ever
  * anything to ask about. */
+/* The music watchdog's highest count in the last ten seconds, for the line
+ * below (row 12b's check 10, the log check's L5): the sound library's
+ * watchdog count at +0x68 of each ADX handle, which stops the music at 300
+ * (known bug 6), given by port/recomp_manual.c's hook each time the check
+ * runs. Kept by the second in ten slots, so whichever report prints the line
+ * gets the last ten seconds. A slot's second starts far in the past, so
+ * one never filled is never in the last ten. */
+static struct { int64_t sec; int peak; } s_watchdog[10] = {
+    { -100, 0 }, { -100, 0 }, { -100, 0 }, { -100, 0 }, { -100, 0 },
+    { -100, 0 }, { -100, 0 }, { -100, 0 }, { -100, 0 }, { -100, 0 },
+};
+void mcpx_apu_music_watchdog(int count);
+void mcpx_apu_music_watchdog(int count)
+{
+    int64_t sec = qemu_clock_get_ms(QEMU_CLOCK_REALTIME) / 1000;
+    int k = (int)(sec % 10);
+    if (__atomic_load_n(&s_watchdog[k].sec, __ATOMIC_RELAXED) != sec) {
+        __atomic_store_n(&s_watchdog[k].peak, count, __ATOMIC_RELAXED);
+        __atomic_store_n(&s_watchdog[k].sec, sec, __ATOMIC_RELAXED);
+    } else if (count > __atomic_load_n(&s_watchdog[k].peak, __ATOMIC_RELAXED)) {
+        __atomic_store_n(&s_watchdog[k].peak, count, __ATOMIC_RELAXED);
+    }
+}
+/* Whether the check ran in the last ten seconds, and its highest count. */
+static int music_watchdog_peak(int *peak)
+{
+    int64_t sec = qemu_clock_get_ms(QEMU_CLOCK_REALTIME) / 1000;
+    int k, ran = 0;
+    for (k = 0; k < 10; k++) {
+        int p = __atomic_load_n(&s_watchdog[k].peak, __ATOMIC_RELAXED);
+        if (sec - __atomic_load_n(&s_watchdog[k].sec, __ATOMIC_RELAXED) >= 10) continue;
+        if (!ran || p > *peak) *peak = p;
+        ran = 1;
+    }
+    return ran;
+}
+
 void mcpx_apu_debug_print(FILE *f, const char *prefix);
 void mcpx_apu_debug_print(FILE *f, const char *prefix)
 {
@@ -147,11 +184,16 @@ void mcpx_apu_debug_print(FILE *f, const char *prefix)
     extern unsigned long g_apu_seg_done, g_apu_notify_ssl, g_apu_notify_persist;
     extern unsigned long g_apu_voices_seen, g_apu_stream_voices, g_apu_voices_paused;
     MCPXAPUState *d = g_apu_state;
+    char watchdog[48];
+    int peak = 0;
     if (!d) { fprintf(f, "%sno APU\n", prefix); return; }
+    if (music_watchdog_peak(&peak)) snprintf(watchdog, sizeof watchdog, "at most %d", peak);
+    else snprintf(watchdog, sizeof watchdog, "not run");
     fprintf(f,
             "%sSECTL=0x%08X(xcnt=%u) FECTL=0x%08X%s%s -> pipeline %s; "
             "IEN=0x%08X ISTS=0x%08X -- %lu notifications raised, %lu voices "
-            "turned off; the title has sent %u methods (%u VOICE_ON, "
+            "turned off; the music's watchdog %s in the last 10 s; "
+            "the title has sent %u methods (%u VOICE_ON, "
             "%u VOICE_OFF); streaming: %lu segments finished, %lu SSL "
             "notifications, %lu persist notifications; voices processed "
             "%lu (%lu in stream format, %lu paused)\n",
@@ -172,7 +214,7 @@ void mcpx_apu_debug_print(FILE *f, const char *prefix)
                   & NV_PAPU_FECTL_FEMETHMODE_HALTED)) ? "RUNNING" : "STOPPED",
             (unsigned)qatomic_read(&d->regs[NV_PAPU_IEN]),
             (unsigned)qatomic_read(&d->regs[NV_PAPU_ISTS]),
-            g_apu_notifies, g_apu_voice_offs,
+            g_apu_notifies, g_apu_voice_offs, watchdog,
             g_apu_fe_total, g_apu_fe_on, g_apu_fe_off,
             g_apu_seg_done, g_apu_notify_ssl, g_apu_notify_persist,
             g_apu_voices_seen, g_apu_stream_voices, g_apu_voices_paused);
@@ -201,6 +243,11 @@ uint64_t mcpx_apu_read(void *opaque, hwaddr addr, unsigned int size)
     default:
         if (addr < 0x20000) {
             r = qatomic_read(&d->regs[addr]);
+        }
+        /* The title's handler reading the trap's voice (apu_vp.c, G1). */
+        if (addr == NV_PAPU_FEDECPARAM) {
+            extern void mcpx_apu_vp_fedecparam_read(MCPXAPUState *d, uint32_t value);
+            mcpx_apu_vp_fedecparam_read(d, (uint32_t)r);
         }
         break;
     }
@@ -716,6 +763,12 @@ static void *mcpx_apu_frame_thread(void *arg)
             st_run = 0, st_longest = 0;
     int64_t st_trap_us = 0, st_halt_us = 0, st_run_us = 0, st_longest_us = 0;
     int st_ran_trapped = 0;
+    /* The gaps between voice processor frames (row 12b's G8 and check 11):
+     * from one se_frame to the next, the longest in the second and how many
+     * were over 5 ms; a gap with the front end halted, the counter off or
+     * the thread paused in it is counted apart, as nothing was asked then. */
+    int64_t st_gap_last_us = 0, st_gap_longest_us = 0, st_gap_idle_longest_us = 0;
+    int st_gap_over = 0, st_gap_idle = 0, st_gap_was_idle = 0;
     qemu_mutex_lock(&d->lock);
 
     while (!qatomic_read(&d->exiting)) {
@@ -724,6 +777,7 @@ static void *mcpx_apu_frame_thread(void *arg)
             qemu_cond_signal(&d->idle_cond);
             qemu_cond_wait(&d->cond, &d->lock);
             d->is_idle = false;
+            st_gap_was_idle = 1;
             continue;
         }
 
@@ -761,6 +815,7 @@ static void *mcpx_apu_frame_thread(void *arg)
                 int64_t t0 = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
                 mcpx_apu_dsp_ack_tick(d);
                 qemu_cond_timedwait(&d->cond, &d->lock, 1);
+                st_gap_was_idle = 1;
                 if (st_on) {
                     int64_t w = qemu_clock_get_us(QEMU_CLOCK_REALTIME) - t0;
                     if (mode == NV_PAPU_FECTL_FEMETHMODE_TRAPPED) st_trap_us += w;
@@ -807,6 +862,13 @@ static void *mcpx_apu_frame_thread(void *arg)
                         st_halt, st_longest, st_trap_us / 1000.0, st_halt_us / 1000.0,
                         st_longest_us / 1000.0, g_apu_throttle_resets,
                         g_apu_throttle_lost_us / 1000.0, xa2_ring_level());
+                fprintf(stderr, "[APU] gaps between voice processor frames: the longest "
+                        "%.1f ms, %d over 5 ms; %d across a halt, the counter off or a "
+                        "pause (the longest %.1f ms)\n",
+                        st_gap_longest_us / 1000.0, st_gap_over, st_gap_idle,
+                        st_gap_idle_longest_us / 1000.0);
+                st_gap_longest_us = st_gap_idle_longest_us = 0;
+                st_gap_over = st_gap_idle = 0;
                 st_full = st_off = st_trap = st_halt = st_longest = 0; st_ran_trapped = 0;
                 st_trap_us = st_halt_us = st_longest_us = 0;
                 g_apu_throttle_resets = 0; g_apu_throttle_lost_us = 0;
@@ -814,6 +876,21 @@ static void *mcpx_apu_frame_thread(void *arg)
             }
         }
         if (apu_active && !g_test_tone.active) {
+            if (st_on) {
+                int64_t now_us = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
+                if (st_gap_last_us) {
+                    int64_t gap = now_us - st_gap_last_us;
+                    if (st_gap_was_idle) {
+                        st_gap_idle++;
+                        if (gap > st_gap_idle_longest_us) st_gap_idle_longest_us = gap;
+                    } else {
+                        if (gap > st_gap_longest_us) st_gap_longest_us = gap;
+                        if (gap > 5000) st_gap_over++;
+                    }
+                }
+                st_gap_last_us = now_us;
+                st_gap_was_idle = 0;
+            }
             /* Full pipeline: VP voices → DSP → monitor → waveOut */
             se_frame(d);
         } else {
@@ -822,6 +899,7 @@ static void *mcpx_apu_frame_thread(void *arg)
             mcpx_apu_dsp_ack_tick(d);
             mcpx_apu_monitor_frame(d);
             d->ep_frame_div++;
+            st_gap_was_idle = 1;
         }
     }
 

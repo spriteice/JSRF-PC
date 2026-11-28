@@ -6,7 +6,8 @@ the voice counts at its end. The APU now writes it to the log itself
 (mcpx_apu_debug_print). This builds src/apu/apu_core.c with the voice
 processor it links, as the engine does, takes the three reports' prefixes
 from src/kernel/kernel_bridge.c, and has the function write the line at its
-longest, every counter at its largest, after each prefix (test_main.c):
+longest, every counter at its largest and the music watchdog's count at its
+widest, after each prefix (test_main.c):
 each must come out whole, once, on one line. apu_core.c's sound output,
 apu_sdl.c, needs SDL, so test_main.c stands in for it.
 Requires GCC on PATH, including MinGW on Windows.
@@ -55,7 +56,8 @@ if lines[1] != "no state: no APU":
 for prefix, line in zip(prefixes, lines[2:]):
     whole = (line.startswith(prefix + "SECTL=0xFFFFFFFF(xcnt=")
              and " TRAPPED HALTED -> pipeline STOPPED; " in line
-             and f"the title has sent {small} methods ({small} VOICE_ON, {small} VOICE_OFF)" in line
+             and f"voices turned off; the music's watchdog at most -32768 in the last 10 s; "
+                 f"the title has sent {small} methods ({small} VOICE_ON, {small} VOICE_OFF)" in line
              and line.endswith(want_end))
     print(f"{'ok  ' if whole else 'FAIL'}  {prefix.strip().rstrip(':')}: {len(line)} characters"
           + ("" if whole else f"\n      {line}"))

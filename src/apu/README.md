@@ -42,11 +42,46 @@ The sound goes out through SDL2's audio (`apu_sdl.c`), on Linux and Windows, at 
 | `apu_gpfx.c`, `apu_gpfx.h` | The GP's effects settings, followed, and JSRF-PC's own effects run from them |
 | `apu_reverb.h`, `apu_hrtf.h` | JSRF-PC's reverb, and the 3D voices placed from their HRTF settings |
 | `apu_sdl.c`, `apu_xaudio2.h` | The output, with SDL2's audio, behind the entry points apu_xaudio2.h declares (named for the toolkit's XAudio2 output); with Audio > Mute (`xa2_set_mute`), silence in place of what the device takes from the ring, at the same pace |
+| `apu_device_line.h` | The `[APU]` line saying what the sound device took, made from plain values (tests/apu_device_line) |
 | `apu_channels.c`, `apu_channels.h` | The two sides of the sound, in the log (Developer > Logging > RECOMP_APU_CHANNELS) |
 | `apu_shim.h` | QEMU compatibility (threads, atomics, clocks), on `qemu_shim.h` |
 | `qemu_shim.h` | The QEMU types xemu's code is written against (below) |
 | `apu_debug.h` | Debug logging macros |
 | `fpconv.h` | IEEE 754 float/int conversion utilities |
+
+## What the log says
+
+Always on: at the open, `[APU] the sound device as opened:` the driver, what
+the default device itself mixes at as SDL says, and what SDL hands the ring,
+which is always what was asked, as SDL converts (`apu_sdl.c`). SDL 2 doesn't
+give the device's period, so the pulls below are how it shows. In the
+10-second `[APU]` status line, the music's watchdog: the highest count in the
+last ten seconds at +0x68 of the sound library's stream handles, which stops
+the music at 300 (`apu_core.c`, from port/recomp_manual.c's hook on the
+check). Once, when the title registers the DSP's doorbell, the doorbell
+against the first page of the table GPSADDR points at, plus 0x810: whether
+the device could find it itself (`apu_dsp.c`).
+
+Under Developer > Logging's `RECOMP_APU_STATS`, beside the once-a-second
+lines it had: how many times the device pulled and the longest time between
+two pulls (`apu_sdl.c`); the gaps between voice processor frames, the
+longest and how many over 5 ms, with a gap across a halt, the counter off or
+a pause counted apart (`apu_core.c`); and every ten seconds two lines from
+`apu_vp.c`: the front end's traps for an idle voice, the title's methods run
+in one, FEDECPARAM read in one and how often it wasn't the trap's voice, and
+how many reports each idle voice took before it left its list; then, for
+each voice the title turns off, the time from its VOICE_OFF to the first
+frame that finds it out of its list, which is what DirectSound's stop wait
+spins on.
+
+Under `RECOMP_APU_WATCH`, `[APUWATCH]` lines (`apu_vp.c`): each change of a
+playing voice's BA, LBO, CBO or EBO between two frames that the voice
+processor didn't make, said as made by a method or in memory with no method
+(at most 2000); and for line B, an ADPCM mono buffer voice started with EBO
+12351, what follows its line in memory (its peak and loudness decoded, and a
+hash of the bytes, not the bytes) at VOICE_ON and as it passes sample 11647,
+then when the game looks at its position after that (a VOICE_LOCK with
+nothing changed under it) and stops it.
 
 ## Voice Processor Details
 

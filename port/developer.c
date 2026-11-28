@@ -85,6 +85,7 @@ static const DevSwitch k_logging[] = {
     { "JSRF_TALK_LOG", "1" },               /* talks and the event manager's calls (port/recomp_manual.c) */
     { "RECOMP_APU_CHANNELS", "1" },
     { "RECOMP_APU_STATS", "1" },
+    { "RECOMP_APU_WATCH", "1" },            /* the sound post-mortem's watch: voices' loop words, line B's end (src/apu/apu_vp.c) */
 #if defined(__linux__) || defined(_WIN32)
     { "RECOMP_CPU_PROFILE", "1" },
 #endif

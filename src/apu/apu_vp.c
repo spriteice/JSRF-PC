@@ -220,6 +220,378 @@ static void set_hrir_coeff_tar(MCPXAPUState *d, int channel, int coeff_idx,
 }
 
 /* ============================================================
+ * The front end's trap, the stop wait, and the sound's watch
+ *
+ * For b3's baseline build: lines only, nothing here changes what the voice
+ * processor or the front end does.
+ *
+ * RECOMP_APU_STATS, every ten seconds from the frame thread:
+ *
+ *   - the trap (row 12b's G1): how many times an idle voice trapped the
+ *     front end, how many of the title's methods ran while it was trapped,
+ *     how often the title read FEDECPARAM while trapped and how many of
+ *     those reads weren't the voice the trap was for (a method run in the
+ *     trap overwrites it, fe_method), and how many reports each idle voice
+ *     took before it left its list (upstream's #340: the first idle voice
+ *     left in a list takes every report);
+ *   - the stop wait (row 12b's check 1, the Load Game hang): for each voice
+ *     the title turns off, the time from its VOICE_OFF to the first frame
+ *     that finds it out of its list, which is what DirectSound's stop wait
+ *     (sub_001A308E, inlined in sub_001A3E58) spins on.
+ *
+ * RECOMP_APU_WATCH, the sound post-mortem's three observations (lesson 2):
+ *
+ *   - each change of a playing voice's BA, LBO, CBO or EBO between two
+ *     frames that the voice processor didn't make, said as made by a method
+ *     or in memory with no method: the voice array's words read each frame;
+ *   - for line B (an ADPCM mono buffer voice started with EBO 12351, whose
+ *     line ends at sample 11647, 6552 bytes in), what follows it in memory,
+ *     at VOICE_ON and as the voice passes 11647: its peak and loudness
+ *     decoded and a hash of the bytes, not the bytes, so no game data is in
+ *     the log;
+ *   - when the game looks at line B's position after it passes 11647 (a
+ *     VOICE_LOCK with nothing changed under it, as GetCurrentPosition reads
+ *     CBO) and when it stops it, in frames and milliseconds after the pass.
+ * ============================================================ */
+
+extern double host_info_seconds(void) __attribute__((weak));
+static double watch_seconds(void) { return host_info_seconds ? host_info_seconds() : 0.0; }
+
+static int s_vp_stats = -1, s_vp_watch = -1;   /* set by mcpx_apu_vp_init */
+static uint32_t s_vp_frame;   /* frames since the start, from 1; the frame thread writes it */
+
+static struct {
+    unsigned long traps, trapped_methods, reads, reads_other;
+    unsigned long off_retired, off_restarted;
+    unsigned long long off_us, off_longest_us;
+} s_g1;
+static uint32_t s_trap_voice;                  /* the voice the last trap was for */
+static int64_t s_off_us[MCPX_HW_MAX_VOICES];   /* the title's VOICE_OFF, when; 0 none */
+
+/* The frame thread's alone: each idle voice's reports, and the idle voices
+ * in a list on the last frame and this one. */
+static uint32_t s_reports[MCPX_HW_MAX_VOICES];
+static uint32_t s_idle_seen[MCPX_HW_MAX_VOICES], s_active_seen[MCPX_HW_MAX_VOICES];
+static uint16_t s_idle_last[3 * MCPX_HW_MAX_VOICES], s_idle_now[3 * MCPX_HW_MAX_VOICES];
+static int s_idle_last_n, s_idle_now_n;
+static unsigned long s_left[4], s_left_restarted;   /* after 0, 1, 2, 3+ reports */
+static uint32_t s_left_most;
+
+static int vp_trapped(MCPXAPUState *d)
+{
+    return (qatomic_read(&d->regs[NV_PAPU_FECTL]) & NV_PAPU_FECTL_FEMETHMODE)
+           == NV_PAPU_FECTL_FEMETHMODE_TRAPPED;
+}
+
+/* The title read FEDECPARAM (apu_core.c's mcpx_apu_read). */
+void mcpx_apu_vp_fedecparam_read(MCPXAPUState *d, uint32_t value);
+void mcpx_apu_vp_fedecparam_read(MCPXAPUState *d, uint32_t value)
+{
+    if (s_vp_stats <= 0 || !vp_trapped(d)) return;
+    __atomic_fetch_add(&s_g1.reads, 1, __ATOMIC_RELAXED);
+    if (value != __atomic_load_n(&s_trap_voice, __ATOMIC_RELAXED))
+        __atomic_fetch_add(&s_g1.reads_other, 1, __ATOMIC_RELAXED);
+}
+
+/* A frame's walk of the lists: voice v idle in one, reported or not. */
+static void g1_idle(uint16_t v, int reported)
+{
+    if (s_vp_stats <= 0 || v >= MCPX_HW_MAX_VOICES) return;
+    if (s_idle_seen[v] != s_vp_frame && s_idle_now_n < 3 * MCPX_HW_MAX_VOICES)
+        s_idle_now[s_idle_now_n++] = v;
+    s_idle_seen[v] = s_vp_frame;
+    if (reported) s_reports[v]++;
+}
+
+/* After the walk: the idle voices of the last frame no longer in a list
+ * have left it, or were started again. */
+static void g1_walked(void)
+{
+    int i;
+    if (s_vp_stats <= 0) return;
+    for (i = 0; i < s_idle_last_n; i++) {
+        uint16_t v = s_idle_last[i];
+        int64_t off;
+        if (s_idle_seen[v] == s_vp_frame) continue;
+        if (s_active_seen[v] == s_vp_frame) {
+            s_left_restarted++;
+        } else {
+            uint32_t r = s_reports[v];
+            s_left[r < 3 ? r : 3]++;
+            if (r > s_left_most) s_left_most = r;
+            off = __atomic_exchange_n(&s_off_us[v], 0, __ATOMIC_RELAXED);
+            if (off) {
+                int64_t us = qemu_clock_get_us(QEMU_CLOCK_REALTIME) - off;
+                if (us < 0) us = 0;
+                __atomic_fetch_add(&s_g1.off_retired, 1, __ATOMIC_RELAXED);
+                __atomic_fetch_add(&s_g1.off_us, (unsigned long long)us, __ATOMIC_RELAXED);
+                if ((unsigned long long)us > __atomic_load_n(&s_g1.off_longest_us, __ATOMIC_RELAXED))
+                    __atomic_store_n(&s_g1.off_longest_us, (unsigned long long)us, __ATOMIC_RELAXED);
+            }
+        }
+        s_reports[v] = 0;
+    }
+    memcpy(s_idle_last, s_idle_now, (size_t)s_idle_now_n * sizeof s_idle_now[0]);
+    s_idle_last_n = s_idle_now_n;
+    s_idle_now_n = 0;
+}
+
+/* A method of the title's (mcpx_apu_vp_write, the title's thread). */
+static void g1_method(MCPXAPUState *d, uint32_t method, uint32_t argument)
+{
+    uint32_t v;
+    if (s_vp_stats <= 0) return;
+    if (vp_trapped(d)) __atomic_fetch_add(&s_g1.trapped_methods, 1, __ATOMIC_RELAXED);
+    if (method == NV1BA0_PIO_VOICE_OFF) {
+        int64_t none = 0;
+        v = argument & NV1BA0_PIO_VOICE_OFF_HANDLE;
+        if (v < MCPX_HW_MAX_VOICES)
+            __atomic_compare_exchange_n(&s_off_us[v], &none, qemu_clock_get_us(QEMU_CLOCK_REALTIME),
+                                        0, __ATOMIC_RELAXED, __ATOMIC_RELAXED);
+    } else if (method == NV1BA0_PIO_VOICE_ON) {
+        v = argument & NV1BA0_PIO_VOICE_ON_HANDLE;
+        if (v < MCPX_HW_MAX_VOICES && __atomic_exchange_n(&s_off_us[v], 0, __ATOMIC_RELAXED))
+            __atomic_fetch_add(&s_g1.off_restarted, 1, __ATOMIC_RELAXED);
+    }
+}
+
+/* The two lines, every ten seconds, from the frame thread (tests/apu_trap_lines
+ * builds this file with every frame's). */
+#ifndef APU_G1_REPORT_MS
+#define APU_G1_REPORT_MS 10000
+#endif
+static void g1_report(void)
+{
+    static int64_t last_ms;
+    int64_t now = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+    unsigned long n;
+    unsigned long long us;
+    if (s_vp_stats <= 0) return;
+    if (!last_ms) last_ms = now;
+    if (now - last_ms < APU_G1_REPORT_MS) return;
+    last_ms = now;
+    fprintf(stderr, "[APU] the front end, the last 10 s: %lu traps for an idle voice, %lu of "
+            "the title's methods run while one was set; FEDECPARAM read %lu times while "
+            "trapped, %lu of them not the voice it trapped for; %lu idle voices out of their "
+            "lists, after 1 report %lu, 2 %lu, 3 or more %lu (the most %u), none %lu; %lu "
+            "started again first\n",
+            __atomic_exchange_n(&s_g1.traps, 0, __ATOMIC_RELAXED),
+            __atomic_exchange_n(&s_g1.trapped_methods, 0, __ATOMIC_RELAXED),
+            __atomic_exchange_n(&s_g1.reads, 0, __ATOMIC_RELAXED),
+            __atomic_exchange_n(&s_g1.reads_other, 0, __ATOMIC_RELAXED),
+            s_left[0] + s_left[1] + s_left[2] + s_left[3], s_left[1], s_left[2], s_left[3],
+            s_left_most, s_left[0], s_left_restarted);
+    memset(s_left, 0, sizeof s_left);
+    s_left_most = 0;
+    s_left_restarted = 0;
+    n = __atomic_exchange_n(&s_g1.off_retired, 0, __ATOMIC_RELAXED);
+    us = __atomic_exchange_n(&s_g1.off_us, 0, __ATOMIC_RELAXED);
+    fprintf(stderr, "[APU] the title's VOICE_OFFs, the last 10 s: %lu out of their lists, "
+            "the longest %.1f ms from VOICE_OFF to out of its list, %.2f ms on average "
+            "(what DirectSound's stop wait spins on); %lu started again before a frame "
+            "found them out\n",
+            n, (double)__atomic_exchange_n(&s_g1.off_longest_us, 0, __ATOMIC_RELAXED) / 1000.0,
+            n ? (double)us / 1000.0 / (double)n : 0.0,
+            __atomic_exchange_n(&s_g1.off_restarted, 0, __ATOMIC_RELAXED));
+    fflush(stderr);
+}
+
+/* ---- RECOMP_APU_WATCH ---- */
+
+#define WATCH_LINES     2000        /* the change lines' cap */
+#define LINE_B_EBO      12351u      /* line B's EBO at VOICE_ON: the whole buffer */
+#define LINE_B_LAST     11647u      /* its line's last sample */
+#define LINE_B_BYTES    6552u       /* the bytes its line takes: 182 ADPCM blocks */
+
+enum { W_BA = 1, W_LBO = 2, W_CBO = 4, W_EBO = 8 };
+static const char *const k_watch_word[4] = { "BA", "LBO", "CBO", "EBO" };
+static uint8_t s_w_method[MCPX_HW_MAX_VOICES];   /* W_ bits a method wrote; atomic */
+static uint8_t s_w_on[MCPX_HW_MAX_VOICES];       /* VOICE_ON since the last frame; atomic */
+static struct { uint32_t w[4], on_frame; int valid; } s_w[MCPX_HW_MAX_VOICES];
+static int s_w_lines;
+
+static struct {
+    int voice;                     /* -1 none; atomic */
+    uint32_t pass_frame;           /* the frame it passed LINE_B_LAST, 0 not yet; atomic */
+    int64_t pass_us;               /* atomic */
+    uint32_t look_frame, look_cbo; /* the first look after the pass; atomic */
+    int64_t look_us;
+    int locked, between;           /* a VOICE_LOCK on it, and methods since; atomic */
+} s_lb = { -1, 0, 0, 0, 0, 0, 0, 0 };
+
+static hwaddr get_data_ptr(hwaddr sge_base, unsigned int max_sge, uint32_t addr);
+
+static void watch_words(MCPXAPUState *d, uint16_t v, uint32_t w[4])
+{
+    w[0] = voice_get_mask(d, v, NV_PAVS_VOICE_CUR_PSL_START, NV_PAVS_VOICE_CUR_PSL_START_BA);
+    w[1] = voice_get_mask(d, v, NV_PAVS_VOICE_CUR_PSH_SAMPLE, NV_PAVS_VOICE_CUR_PSH_SAMPLE_LBO);
+    w[2] = voice_get_mask(d, v, NV_PAVS_VOICE_PAR_OFFSET, NV_PAVS_VOICE_PAR_OFFSET_CBO);
+    w[3] = voice_get_mask(d, v, NV_PAVS_VOICE_PAR_NEXT, NV_PAVS_VOICE_PAR_NEXT_EBO);
+}
+
+/* What follows line B in memory, to its buffer's end: decoded peak and
+ * loudness, and an FNV-1a hash of the bytes. */
+static void watch_after_line_b(MCPXAPUState *d, uint16_t v, uint32_t ba, uint32_t ebo,
+                               const char *when)
+{
+    uint32_t end = (ebo / ADPCM_SAMPLES_PER_BLOCK + 1) * 36u, off, hash = 2166136261u;
+    uint32_t block[9];
+    int16_t pcm[65 * 2];
+    double sum = 0.0;
+    int peak = 0, any = 0, samples = 0, i;
+    for (off = LINE_B_BYTES; off + 36 <= end; off += 36) {
+        for (i = 0; i < 9; i++) {
+            hwaddr a = get_data_ptr(d->regs[NV_PAPU_VPSGEADDR], 0xFFFFFFFF, ba + off + 4u * (uint32_t)i);
+            block[i] = ldl_le_phys(address_space_memory, a);
+        }
+        for (i = 0; i < 36; i++) {
+            uint8_t b = ((const uint8_t *)block)[i];
+            hash = (hash ^ b) * 16777619u;
+            any |= b;
+        }
+        adpcm_decode_block(pcm, (const uint8_t *)block, 36, 1);
+        for (i = 0; i < ADPCM_SAMPLES_PER_BLOCK; i++) {
+            int a = pcm[i] < 0 ? -pcm[i] : pcm[i];
+            if (a > peak) peak = a;
+            sum += (double)pcm[i] * pcm[i];
+            samples++;
+        }
+    }
+    fprintf(stderr, "[APUWATCH] t=%.3fs line B (voice %u, ba 0x%06X) %s: the %u bytes after "
+            "its line (from ba + %u): peak %d, rms %.0f decoded, hash %08X%s\n",
+            watch_seconds(), v, ba, when, end > LINE_B_BYTES ? end - LINE_B_BYTES : 0,
+            LINE_B_BYTES, peak, samples ? sqrt(sum / samples) : 0.0, hash,
+            any ? "" : ", all zero");
+}
+
+/* A method on a voice (fe_method, the title's thread). */
+static void watch_method(MCPXAPUState *d, uint32_t method, uint32_t argument)
+{
+    uint32_t v = d->regs[NV_PAPU_FECV];
+    int bit = 0;
+    if (s_vp_watch <= 0) return;
+    switch (method) {
+    case NV1BA0_PIO_SET_VOICE_CFG_BUF_BASE: bit = W_BA; break;
+    case NV1BA0_PIO_SET_VOICE_CFG_BUF_LBO:  bit = W_LBO; break;
+    case NV1BA0_PIO_SET_VOICE_BUF_CBO:      bit = W_CBO; break;
+    case NV1BA0_PIO_SET_VOICE_CFG_BUF_EBO:  bit = W_EBO; break;
+    case NV1BA0_PIO_VOICE_ON:
+        v = argument & NV1BA0_PIO_VOICE_ON_HANDLE;
+        if (v < MCPX_HW_MAX_VOICES) __atomic_store_n(&s_w_on[v], 1, __ATOMIC_RELAXED);
+        return;
+    case NV1BA0_PIO_SET_CURRENT_VOICE:
+        return;
+    case NV1BA0_PIO_VOICE_LOCK:
+        if ((int)v != __atomic_load_n(&s_lb.voice, __ATOMIC_RELAXED)) return;
+        if (argument & 1) {
+            __atomic_store_n(&s_lb.between, 0, __ATOMIC_RELAXED);
+            __atomic_store_n(&s_lb.locked, 1, __ATOMIC_RELAXED);
+        } else if (__atomic_exchange_n(&s_lb.locked, 0, __ATOMIC_RELAXED)
+                   && !__atomic_load_n(&s_lb.between, __ATOMIC_RELAXED)
+                   && __atomic_load_n(&s_lb.pass_frame, __ATOMIC_RELAXED)
+                   && !__atomic_load_n(&s_lb.look_frame, __ATOMIC_RELAXED)) {
+            /* A look at it with nothing changed: the first since the pass. */
+            __atomic_store_n(&s_lb.look_cbo, voice_get_mask(d, (uint16_t)v,
+                             NV_PAVS_VOICE_PAR_OFFSET, NV_PAVS_VOICE_PAR_OFFSET_CBO),
+                             __ATOMIC_RELAXED);
+            __atomic_store_n(&s_lb.look_us, qemu_clock_get_us(QEMU_CLOCK_REALTIME), __ATOMIC_RELAXED);
+            __atomic_store_n(&s_lb.look_frame, __atomic_load_n(&s_vp_frame, __ATOMIC_RELAXED),
+                             __ATOMIC_RELAXED);
+        }
+        return;
+    case NV1BA0_PIO_VOICE_OFF: {
+        uint32_t off = argument & NV1BA0_PIO_VOICE_OFF_HANDLE, pass, look, now;
+        int64_t us = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
+        if ((int)off != __atomic_load_n(&s_lb.voice, __ATOMIC_RELAXED)) break;
+        now = __atomic_load_n(&s_vp_frame, __ATOMIC_RELAXED);
+        pass = __atomic_load_n(&s_lb.pass_frame, __ATOMIC_RELAXED);
+        look = __atomic_load_n(&s_lb.look_frame, __ATOMIC_RELAXED);
+        if (!pass)
+            fprintf(stderr, "[APUWATCH] t=%.3fs line B (voice %u) off at sample %u, before it "
+                    "passed sample %u\n", watch_seconds(), off,
+                    voice_get_mask(d, (uint16_t)off, NV_PAVS_VOICE_PAR_OFFSET,
+                                   NV_PAVS_VOICE_PAR_OFFSET_CBO), LINE_B_LAST);
+        else if (!look)
+            fprintf(stderr, "[APUWATCH] t=%.3fs line B (voice %u) off %u frames (%.1f ms) after "
+                    "it passed sample %u, with no look at it between\n", watch_seconds(), off,
+                    now - pass, (double)(us - __atomic_load_n(&s_lb.pass_us, __ATOMIC_RELAXED)) / 1000.0,
+                    LINE_B_LAST);
+        else
+            fprintf(stderr, "[APUWATCH] t=%.3fs line B (voice %u) off %u frames (%.1f ms) after "
+                    "it passed sample %u; the game's first look at it after that (a VOICE_LOCK "
+                    "with nothing changed) %u frames (%.1f ms) after, at sample %u\n",
+                    watch_seconds(), off, now - pass,
+                    (double)(us - __atomic_load_n(&s_lb.pass_us, __ATOMIC_RELAXED)) / 1000.0,
+                    LINE_B_LAST, look - pass,
+                    (double)(__atomic_load_n(&s_lb.look_us, __ATOMIC_RELAXED)
+                             - __atomic_load_n(&s_lb.pass_us, __ATOMIC_RELAXED)) / 1000.0,
+                    __atomic_load_n(&s_lb.look_cbo, __ATOMIC_RELAXED));
+        __atomic_store_n(&s_lb.voice, -1, __ATOMIC_RELAXED);
+        break;
+    }
+    default:
+        break;
+    }
+    if (__atomic_load_n(&s_lb.locked, __ATOMIC_RELAXED))
+        __atomic_fetch_add(&s_lb.between, 1, __ATOMIC_RELAXED);
+    if (bit && v < MCPX_HW_MAX_VOICES)
+        __atomic_fetch_or(&s_w_method[v], (uint8_t)bit, __ATOMIC_RELAXED);
+}
+
+/* A playing voice, before the frame mixes it: what changed since the last. */
+static void watch_before(MCPXAPUState *d, uint16_t v)
+{
+    uint32_t w[4];
+    int k, m;
+    if (s_vp_watch <= 0 || v >= MCPX_HW_MAX_VOICES) return;
+    watch_words(d, v, w);
+    m = __atomic_exchange_n(&s_w_method[v], 0, __ATOMIC_RELAXED);
+    if (__atomic_exchange_n(&s_w_on[v], 0, __ATOMIC_RELAXED)) {
+        uint32_t fmt = voice_get_mask(d, v, NV_PAVS_VOICE_CFG_FMT, 0xFFFFFFFF);
+        s_w[v].valid = 0;
+        s_w[v].on_frame = s_vp_frame;
+        if (w[3] == LINE_B_EBO && !(fmt & NV_PAVS_VOICE_CFG_FMT_DATA_TYPE)
+            && !(fmt & NV_PAVS_VOICE_CFG_FMT_STEREO)
+            && GET_MASK(fmt, NV_PAVS_VOICE_CFG_FMT_CONTAINER_SIZE)
+               == NV_PAVS_VOICE_CFG_FMT_CONTAINER_SIZE_ADPCM) {
+            __atomic_store_n(&s_lb.pass_frame, 0, __ATOMIC_RELAXED);
+            __atomic_store_n(&s_lb.look_frame, 0, __ATOMIC_RELAXED);
+            __atomic_store_n(&s_lb.locked, 0, __ATOMIC_RELAXED);
+            __atomic_store_n(&s_lb.voice, (int)v, __ATOMIC_RELAXED);
+            watch_after_line_b(d, v, w[0], w[3], "on");
+        }
+    }
+    if (!s_w[v].valid) return;
+    for (k = 0; k < 4; k++) {
+        if (w[k] == s_w[v].w[k] || s_w_lines >= WATCH_LINES) continue;
+        if (++s_w_lines == WATCH_LINES)
+            fprintf(stderr, "[APUWATCH] the change lines' cap of %d is reached: no more\n",
+                    WATCH_LINES);
+        fprintf(stderr, "[APUWATCH] t=%.3fs voice %u's %s %u -> %u, %s, %u frames after "
+                "VOICE_ON\n", watch_seconds(), v, k_watch_word[k], s_w[v].w[k], w[k],
+                (m & (1 << k)) ? "by a method" : "in memory, by no method",
+                s_vp_frame - s_w[v].on_frame);
+    }
+}
+
+/* ... and after it: what the frame left, and line B passing its end. */
+static void watch_after(MCPXAPUState *d, uint16_t v)
+{
+    uint32_t before;
+    if (s_vp_watch <= 0 || v >= MCPX_HW_MAX_VOICES) return;
+    before = s_w[v].w[2];
+    watch_words(d, v, s_w[v].w);
+    if (!s_w[v].valid) { s_w[v].valid = 1; before = 0; }
+    if ((int)v == __atomic_load_n(&s_lb.voice, __ATOMIC_RELAXED)
+        && !__atomic_load_n(&s_lb.pass_frame, __ATOMIC_RELAXED)
+        && before <= LINE_B_LAST && s_w[v].w[2] > LINE_B_LAST) {
+        __atomic_store_n(&s_lb.pass_us, qemu_clock_get_us(QEMU_CLOCK_REALTIME), __ATOMIC_RELAXED);
+        __atomic_store_n(&s_lb.pass_frame, s_vp_frame, __ATOMIC_RELAXED);
+        watch_after_line_b(d, v, s_w[v].w[0], s_w[v].w[3], "passing its end");
+    }
+}
+
+/* ============================================================
  * Front-End method dispatch
  * ============================================================ */
 
@@ -619,6 +991,10 @@ static void fe_method(MCPXAPUState *d, uint32_t method, uint32_t argument)
             d->regs[NV_PAPU_FECTL] &= ~NV_PAPU_FECTL_FETRAPREASON;
             d->regs[NV_PAPU_FECTL] |= NV_PAPU_FECTL_FETRAPREASON_REQUESTED;
             d->set_irq = true;
+            if (s_vp_stats > 0) {
+                __atomic_fetch_add(&s_g1.traps, 1, __ATOMIC_RELAXED);
+                __atomic_store_n(&s_trap_voice, argument, __ATOMIC_RELAXED);
+            }
         }
         break;
 
@@ -705,6 +1081,9 @@ void mcpx_apu_vp_write(void *opaque, hwaddr addr, uint64_t val,
     MCPXAPUState *d = (MCPXAPUState *)opaque;
     (void)size;
 
+    /* The trap's and the watch's notes, before the method changes anything. */
+    g1_method(d, (uint32_t)addr, (uint32_t)val);
+    watch_method(d, (uint32_t)addr, (uint32_t)val);
     /* Dispatch known methods through fe_method */
     fe_method(d, (uint32_t)addr, (uint32_t)val);
 }
@@ -1625,6 +2004,7 @@ void mcpx_apu_vp_frame(MCPXAPUState *d,
     int64_t wait_start = 0, wait_us = 0;
 
     memset(d->vp.sample_buf, 0, sizeof(d->vp.sample_buf));
+    __atomic_store_n(&s_vp_frame, s_vp_frame + 1, __ATOMIC_RELAXED);
 
     for (int list = 0; list < 3; list++) {
         hwaddr top, current, next;
@@ -1654,10 +2034,13 @@ void mcpx_apu_vp_frame(MCPXAPUState *d,
                  * until the handler takes it out, so it is simply reported
                  * again on the first frame after the trap clears -- the
                  * hardware queues these; this re-detects them. */
-                if ((d->regs[NV_PAPU_FECTL] & NV_PAPU_FECTL_FEMETHMODE)
-                    == NV_PAPU_FECTL_FEMETHMODE_FREE_RUNNING)
+                int report = (d->regs[NV_PAPU_FECTL] & NV_PAPU_FECTL_FEMETHMODE)
+                             == NV_PAPU_FECTL_FEMETHMODE_FREE_RUNNING;
+                if (report)
                     fe_method(d, SE2FE_IDLE_VOICE, v);
+                g1_idle(v, report);
             } else {
+                if (v < MCPX_HW_MAX_VOICES) s_active_seen[v] = s_vp_frame;
                 queue[queue_len].v = v;
                 queue[queue_len].list = list;
                 queue_len++;
@@ -1665,6 +2048,7 @@ void mcpx_apu_vp_frame(MCPXAPUState *d,
             d->regs[current] = d->regs[next];
         }
     }
+    g1_walked();
 
     /* Mix a voice only once the title has finished changing it, as xemu
      * does (voice_work_dispatch).
@@ -1692,8 +2076,12 @@ void mcpx_apu_vp_frame(MCPXAPUState *d,
     }
     if (wait_start) wait_us = qemu_clock_get_us(QEMU_CLOCK_REALTIME) - wait_start;
 
-    for (int i = 0; i < queue_len; i++)
+    for (int i = 0; i < queue_len; i++) {
+        watch_before(d, queue[i].v);
         voice_process(d, mixbins, d->vp.sample_buf, queue[i].v, queue[i].list);
+        watch_after(d, queue[i].v);
+    }
+    g1_report();
 
     /* RECOMP_APU_STATS: how many frames waited for a voice the title had
      * locked, and for how long. */
@@ -1747,6 +2135,10 @@ void mcpx_apu_vp_frame(MCPXAPUState *d,
 void mcpx_apu_vp_init(MCPXAPUState *d)
 {
     /* Single-threaded - no worker dispatch needed */
+
+    /* The trap's and the watch's switches, read once, before the threads. */
+    s_vp_stats = getenv("RECOMP_APU_STATS") ? 1 : 0;
+    s_vp_watch = getenv("RECOMP_APU_WATCH") ? 1 : 0;
 
     /* RECOMP_APU_MIX=xemu: the sound as xemu plays it with Use DSP off, as
      * it comes set. Each voice's own left and right at the loudest of its

@@ -594,6 +594,11 @@ running while it is open, but your input goes to the menu.
     with the code that started it, the mission script's entries and the
     triggers that fire, every story flag that changes, and the talk zones a
     character walks into.
+    RECOMP_APU_WATCH logs the sound chip's voices as the game changes
+    them: each change to where a playing sound starts, loops, has got to
+    or ends, and whether the game made it through the chip or by writing
+    to its memory; and for one garage voice line, what follows its end in
+    memory, and how long after its end the game looks and stops it.
     RECOMP_HEAP_GUARD logs the game's mistakes with the memory it releases,
     and where in the game's code each one is: a block released twice, used
     after its release, or released through the wrong call. While it is on,

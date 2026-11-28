@@ -12,6 +12,7 @@
  */
 
 #include "apu_xaudio2.h"
+#include "apu_device_line.h"
 
 #include <SDL.h>
 #include <stdatomic.h>
@@ -35,12 +36,23 @@ static _Atomic uint32_t g_underruns;
 static _Atomic uint32_t g_drops;
 static _Atomic uint64_t g_last_pull_ms;
 static _Atomic int      g_muted;        /* Audio > Mute (xa2_set_mute) */
+/* The device's pulls, for RECOMP_APU_STATS' line (row 12b's G8 and G10):
+ * how many since the line, and the longest time between two, in us. */
+static _Atomic uint32_t g_pulls;
+static _Atomic uint64_t g_pull_us, g_pull_gap_us;
 
 static uint64_t sa_now_ms(void)
 {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000u + (uint64_t)(ts.tv_nsec / 1000000);
+}
+
+static uint64_t sa_now_us(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000u + (uint64_t)(ts.tv_nsec / 1000);
 }
 
 /* One device pull: n frames out of the ring, silence for any it lacks. */
@@ -52,6 +64,11 @@ static void sa_pull(int16_t (*out)[SA_CHANNELS], uint32_t want)
     uint32_t i, n = have < want ? have : want;
 
     atomic_store_explicit(&g_last_pull_ms, sa_now_ms(), memory_order_relaxed);
+    {   uint64_t now = sa_now_us();
+        uint64_t last = atomic_exchange_explicit(&g_pull_us, now, memory_order_relaxed);
+        if (last && now - last > atomic_load_explicit(&g_pull_gap_us, memory_order_relaxed))
+            atomic_store_explicit(&g_pull_gap_us, now - last, memory_order_relaxed);
+        atomic_fetch_add_explicit(&g_pulls, 1, memory_order_relaxed); }
     for (i = 0; i < n; i++)
         memcpy(out[i], g_ring[(rd + i) & (SA_RING_FRAMES - 1)], sizeof g_ring[0]);
     if (n < want) {
@@ -138,6 +155,21 @@ int xa2_init(void)
     fprintf(stderr, "[APU] SDL audio output (%s): %d Hz stereo, %d-frame pulls\n",
             SDL_GetCurrentAudioDriver() ? SDL_GetCurrentAudioDriver() : "?",
             SA_RATE, (int)have.samples);
+    /* What the device itself mixes at, beside what SDL hands the ring
+     * (apu_device_line.h): the default device's, as the one opened is. */
+    {   char line[400];
+        SDL_AudioSpec dev;
+        int known = 0;
+        memset(&dev, 0, sizeof dev);
+#if SDL_VERSION_ATLEAST(2, 24, 0)
+        {   char *name = NULL;
+            known = SDL_GetDefaultAudioInfo(&name, &dev, 0) == 0;
+            SDL_free(name); }
+#endif
+        apu_device_line(line, sizeof line, SDL_GetCurrentAudioDriver(), have.freq,
+                        have.channels, have.format, have.samples, have.size, known,
+                        dev.freq, dev.channels, dev.format, dev.samples);
+        fprintf(stderr, "%s\n", line); }
     return 1;
 }
 
@@ -205,6 +237,14 @@ int xa2_submit_samples(const int16_t *samples, int num_samples)
                       "%u underruns/s, %u frames dropped/s\n",
                       wr - rd, (unsigned)SA_RING_FRAMES,
                       (double)(wr - rd) * 1000.0 / SA_RATE, u - lu, dr - ld);
+              /* The device's own cadence (row 12b's G8 and G10): its pulls
+               * in the last second and the longest wait between two. */
+              fprintf(stderr, "  [APU] the device pulled %u times in %.2f s, the longest "
+                      "%.1f ms between two\n",
+                      (unsigned)atomic_exchange_explicit(&g_pulls, 0, memory_order_relaxed),
+                      (double)(now - last_ms) / 1000.0,
+                      (double)atomic_exchange_explicit(&g_pull_gap_us, 0,
+                                                       memory_order_relaxed) / 1000.0);
               fflush(stderr);
               lu = u; ld = dr; last_ms = now;
           }

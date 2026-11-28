@@ -118,7 +118,7 @@ TMAKE = (GL, "[GL] %u textures made in ", 120, 900.0, 600.0, 300.0, 7.5, 33.0, 4
 GL_DRAWS = (GL, "  [GL] %u draws, %llu triangles", 30000, *([0] * 23), *([""] * 8), *([0] * 6))
 QUEUE = ("src/kernel/xbox_memory_layout.c", "[NV2A] queue: %lu flushes", 900, 600, 64.0, 512.0, 2)
 APU_LINE = ("src/apu/apu_core.c", "VOICE_ON, ")
-APU_VALUES = (0, 1, 0, "", "", "running", 0, 0, 5, 6, 70, 41, 29, 3, 4, 5, 6, 7, 8)
+APU_VALUES = (0, 1, 0, "", "", "running", 0, 0, 5, 6, "not run", 70, 41, 29, 3, 4, 5, 6, 7, 8)
 # The prefix the 10 s report gives the APU's line (its mcpx_apu_debug_print).
 APU = ("src/kernel/kernel_bridge.c", '"  [APU] ")')
 CPU_HEAD = ("port/cpuprof.c", "[CPUPROF] the last %.1f s", 10.0, "")
