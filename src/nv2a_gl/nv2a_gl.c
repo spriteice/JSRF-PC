@@ -43,6 +43,7 @@
 #include "nv2a_psh_consts.h"
 #include "nv2a_latency.h"
 #include "nv2a_prompts.h"
+#include "platform/host_info.h"
 
 /*
  * Two ways to get a 3.3 core context.
@@ -14637,6 +14638,9 @@ static void ensure_ready(void)
      * threads, which it starts, run anywhere. */
     { extern void pcores_thread(const char *who) __attribute__((weak));
       if (pcores_thread) pcores_thread("the renderer"); }
+    /* And the one whose core the [HOST] line follows as the renderer's
+     * (src/platform/host_info.h). */
+    host_info_thread(HOST_THREAD_RENDERER);
 }
 
 /*

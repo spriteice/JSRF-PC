@@ -4,10 +4,11 @@ project(platform C)
 # Platform layer
 #   xbox_winnt.h   - Win32 / NT type vocabulary (header only)
 #   win32_compat.* - POSIX implementation of generic Win32 host primitives
+#   host_info.*    - what the host says about a run, for the log
 #
-# On Windows the real <windows.h> is used, so this is an INTERFACE library
-# that only contributes the src/ include path. On Linux it is a real static
-# library carrying the POSIX primitive implementations.
+# On Windows the real <windows.h> is used, so the library carries only
+# host_info.c there, with the src/ include path. On Linux it also carries
+# the POSIX primitive implementations.
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -21,17 +22,18 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 get_filename_component(XBOXRECOMP_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 
 if(WIN32)
-    add_library(platform INTERFACE)
-    target_include_directories(platform INTERFACE ${XBOXRECOMP_SRC_DIR})
+    add_library(platform STATIC host_info.c)
+    target_include_directories(platform PUBLIC ${XBOXRECOMP_SRC_DIR})
     # win32_compat.h is included by name from code shared with POSIX; on
     # Windows it is empty.
-    target_include_directories(platform INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_include_directories(platform PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
     # The POSIX-side code paths these hosts share use pthreads (MinGW's
     # winpthreads).
     find_package(Threads REQUIRED)
-    target_link_libraries(platform INTERFACE Threads::Threads)
+    target_link_libraries(platform PUBLIC Threads::Threads)
+    target_compile_options(platform PRIVATE -Wall -Wextra -O2)
 else()
-    add_library(platform STATIC win32_compat.c)
+    add_library(platform STATIC win32_compat.c host_info.c)
     target_include_directories(platform PUBLIC
         ${XBOXRECOMP_SRC_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}

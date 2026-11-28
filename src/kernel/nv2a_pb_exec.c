@@ -33,6 +33,7 @@
  * order, not a second one that can disagree with it. */
 #include "../d3d/d3d8_swizzle.h"
 #include "nv2a_gl.h"
+#include "platform/host_info.h"
 
 extern ptrdiff_t xbox_GetMemoryOffset(void);
 extern uint32_t g_xbox_image_lo, g_xbox_image_hi;
@@ -1946,6 +1947,9 @@ static void peek_chain(void)
 
 void nv2a_pb_exec_report(void)
 {
+    /* The report's head: the seconds since the start, and the power state
+     * (src/platform/host_info.h). */
+    host_info_report(stderr, "  [HOST] ");
     nv2a_gl_report();
     {
         int k, any = 0;

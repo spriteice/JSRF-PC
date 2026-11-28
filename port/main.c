@@ -61,6 +61,7 @@
 #include "kernel.h"
 #include "xbox_memory_layout.h"
 #include "ohci.h"
+#include "platform/host_info.h"
 
 /* generated dispatch table (src/recomp/gen/recomp_types.h) */
 int recomp_dispatch_init(void);
@@ -749,6 +750,9 @@ static int host_main(void)
     /* The Developer menu's switches into the environment, before anything
      * reads them, and the log off if it was left off (port/developer.c). */
     { extern void developer_start(void); developer_start(); }
+    /* When the run started, by the UTC clock, the switches it has, and the
+     * power state: the [RUN] and [HOST] lines (src/platform/host_info.h). */
+    host_info_start();
     /* Whether this processor's own RCPSS and RSQRTSS give the Xbox's answers,
      * which the runtime works out either way (port/recomp_manual.c). */
     { extern void recomp_sse_approx_log(void); recomp_sse_approx_log(); }
@@ -1029,6 +1033,7 @@ static int host_main(void)
     /* The game runs on this thread from here: on the P cores, with
      * Developer > Performance > Use P cores (port/pcores.c). */
     { extern void pcores_thread(const char *who); pcores_thread("the game"); }
+    host_info_thread(HOST_THREAD_GAME);
     { extern void xbox_guest_lock_acquire(void); xbox_guest_lock_acquire(); }
     xbe_entry_point();
 
