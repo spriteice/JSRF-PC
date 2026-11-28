@@ -115,7 +115,7 @@ SPIN = (GL, "; spinning the last %.2f ms", 1.25, 2.5, 4, 0.75)
 HITCH = (GL, "[HITCH] frame %u: ", 1234, 41.7, 812, 3, 12.5, 6.0, ", pipelines 1.0 ms", 5, 8.25, 20.0, 2)
 FENCE = ("src/kernel/nv2a_pb_exec.c", "[NV2A] waits for a fence: ", 7, 1500.0, 12.5, 3)
 TMAKE = (GL, "[GL] %u textures made in ", 120, 900.0, 600.0, 300.0, 7.5, 33.0, 40, 50.0, 80, 550.0)
-GL_DRAWS = (GL, "  [GL] %u draws, %u triangles", 30000, *([0] * 23), *([""] * 8), *([0] * 6))
+GL_DRAWS = (GL, "  [GL] %u draws, %llu triangles", 30000, *([0] * 23), *([""] * 8), *([0] * 6))
 QUEUE = ("src/kernel/xbox_memory_layout.c", "[NV2A] queue: %lu flushes", 900, 600, 64.0, 512.0, 2)
 APU_LINE = ("src/apu/apu_core.c", "VOICE_ON, ")
 APU_VALUES = (0, 1, 0, "", "", "running", 0, 0, 5, 6, 70, 41, 29, 3, 4, 5, 6, 7, 8)
@@ -259,7 +259,7 @@ def linux_run():
         render(*CPU_THREAD_BARE), render(*CPU_FN, "", "gl_method", 30.0), "\n",
         render(*GLPROF_SHARE), render(*GLPROF_WALK), render(*GLPROF_FPS), render(*CARD),
         pace(900, 50, 3, 1, 0),
-        render(GL, "  [GL] %u draws, %u triangles", 90000, *([0] * 23), *([""] * 8), *([0] * 6)),
+        render(GL, "  [GL] %u draws, %llu triangles", 90000, *([0] * 23), *([""] * 8), *([0] * 6)),
         pace(1500, 51, 4, 1, 0),
         pace(1600, 51, 4, 1, 0),
         render(*SPIN), "\n",

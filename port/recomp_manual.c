@@ -2550,10 +2550,17 @@ extern void sub_00191440_gen(void);
 extern void sub_00191390(void);
 extern void sub_00191150(void);
 extern int nv2a_pb_wait_fence(uint32_t va, uint32_t top, uint32_t time);
+/* The long wait, the game's own (32 KB or more away), timed for the
+ * executor's report (b3's baseline, the performance review's M5): what D3D
+ * waited for against where the walk was, and for how long. */
+extern void nv2a_pb_long_wait(uint32_t top, uint32_t time, uint32_t word, uint32_t behind,
+                              long long t0_us, long long t1_us);
+extern long long host_info_us(void);
 void sub_00191440(void)
 {
     uint32_t time = GARG(1), dev = MEM32(D3D_DEVICE);
-    uint32_t top = MEM32(dev + D3D_NEWEST);
+    uint32_t top = MEM32(dev + D3D_NEWEST), behind = 0, word = 0;
+    long long t0 = 0;
     if (top - time < top - MEM32(MEM32(dev + D3D_FENCE_WORD))) {
         uint32_t sv_eax = g_eax, sv_ecx = g_ecx, sv_edx = g_edx, none = 0, at;
         if (time == top)
@@ -2562,11 +2569,19 @@ void sub_00191440(void)
         at = guest_call_cdecl(sub_00191150, D3D_FIND_RET, 0, NULL);
         g_ecx = dev;
         g_edx = at;
-        if (at && guest_call_cdecl(sub_001910E0, D3D_HOW_FAR_RET, 0, NULL) < D3D_WAIT_FAR)
-            nv2a_pb_wait_fence(MEM32(dev + D3D_FENCE_WORD), MEM32(dev + D3D_NEWEST), time);
+        if (at) {
+            behind = guest_call_cdecl(sub_001910E0, D3D_HOW_FAR_RET, 0, NULL);
+            if (behind < D3D_WAIT_FAR) {
+                nv2a_pb_wait_fence(MEM32(dev + D3D_FENCE_WORD), MEM32(dev + D3D_NEWEST), time);
+            } else {
+                word = MEM32(MEM32(dev + D3D_FENCE_WORD));
+                t0 = host_info_us();
+            }
+        }
         g_eax = sv_eax; g_ecx = sv_ecx; g_edx = sv_edx;
     }
     sub_00191440_gen();
+    if (t0) nv2a_pb_long_wait(MEM32(dev + D3D_NEWEST), time, word, behind, t0, host_info_us());
 }
 
 /* ---- sub_00013A80: one pass of the game's main loop (a count, and a test
@@ -8813,6 +8828,22 @@ void sub_000E3BB0(void)
 #define DD_ZWRITE_NOW   0x19E1E0u   /* what it was set to last */
 #define BACKDROP_IN_RET  0x0006B721u   /* sub_0006B6A0's sub_001BA8F0, before the backdrop */
 #define BACKDROP_OUT_RET 0x0006B75Bu   /* its sub_001BAA50, after it */
+/* Each of the map's four passes draws an area's pieces one at a time, each
+ * between the matrix push sub_001BA9C0 and the pop sub_001BAA50, with the
+ * area's number in ebx (edi in the shadow passes): where those calls return
+ * to, for where the draws come from (draw_from_piece). */
+#define PIECE_PASS0_IN   0x0006B839u   /* sub_0006B6A0, pass 0 */
+#define PIECE_PASS0_OUT  0x0006B892u
+#define PIECE_PASS1_IN   0x0006B9C6u   /* sub_0006B8F0, pass 1 */
+#define PIECE_PASS1_OUT  0x0006BA1Fu
+#define PIECE_SHADOW_IN  0x0006BB25u   /* sub_0006BA80, passes 17 and 18 */
+#define PIECE_SHADOW_OUT 0x0006BB4Fu
+#define PIECE_PASS7_IN   0x0006C401u   /* sub_0006C360, pass 7 */
+#define PIECE_PASS7_OUT  0x0006C4D9u
+#define MATRIX_STACK     0x00264C04u   /* -> the game's matrix stack: +0 its top */
+#define VIEW_NEAR        0x0022E6ACu   /* the near and far distances its sphere test takes */
+#define VIEW_FAR         0x0022E6B0u
+#define VIEW_PLANES      0x00264E78u   /* its 8 floats of side and vertical planes */
 /* The Misc group's objects (vtable 0x1CA558), the best candidate for the
  * birds: one model drawn at many places, in one area. */
 #define MISC_MODEL      0x58u
@@ -8821,6 +8852,13 @@ void sub_000E3BB0(void)
 
 static uint32_t s_game_set[DRAW_SET_WORDS];
 static int s_set_widened;       /* s_game_set is the game's, to put back */
+static DrawArea s_dd_areas[DRAW_AREAS_MAX];   /* the map's areas, while the set is widened */
+static int s_dd_n;
+/* Where the draws D3D starts on this thread come from (draw_from_drawn),
+ * and the last piece's pass and area, so an area's first piece is known:
+ * a new camera's set (sub_0006A970) starts again. */
+static RECOMP_TLS int t_draw_from = DRAW_FROM_REST;
+static int s_piece_pass = -1, s_piece_area = -1;
 
 /* The map's areas, as draw_buildings_widen takes them: 0 when the map isn't
  * there. */
@@ -8962,25 +9000,29 @@ static uint32_t scene_number(void)
  * scene now has them (scene_number). */
 void sub_0006A970(void)
 {
-    static DrawArea areas[DRAW_AREAS_MAX];
+    DrawArea *areas = s_dd_areas;
     uint32_t self = g_ecx, ra = GARG(0), eye_at = GARG(1);
     uint32_t *set = (uint32_t *)((uint8_t *)g_xbox_mem_offset + AREA_SET + AREA_SET_BITS);
     int n;
     sub_0006A970_gen();
     if (self != AREA_SET) return;
+    s_piece_pass = s_piece_area = -1;
     if (s_photo_drawing) area_set_from_photo(set, eye_at, ra);
     else area_set_from_game_eye(set, ra);
     if (!draw_far_buildings()) return;
     n = dd_areas(areas);
     if (!n) return;
+    s_dd_n = n;
     memcpy(s_game_set, set, sizeof s_game_set);
     s_set_widened = 1;
     draw_buildings_scene(scene_number());
     draw_buildings_widen(areas, n, set, pad_now(), nv2a_gl_flips());
 }
 
-/* sub_00012C80, the frame's draw: the game's set back after it. */
+/* sub_00012C80, the frame's draw: the game's set back after it, and the
+ * draws by where they come from counted for the frame (draw_from_frame). */
 extern void sub_00012C80_gen(void);
+extern unsigned long long nv2a_gl_seethru_second(void);
 void sub_00012C80(void)
 {
     sub_00012C80_gen();
@@ -8988,7 +9030,54 @@ void sub_00012C80(void)
         memcpy((uint8_t *)g_xbox_mem_offset + AREA_SET + AREA_SET_BITS, s_game_set, sizeof s_game_set);
         s_set_widened = 0;
     }
+    draw_from_frame(pad_now(), nv2a_gl_flips(), nv2a_gl_seethru_second());
 }
+
+/* A piece of one of the map's passes starts (sub_001BA9C0, below): where its
+ * draws come from, the game's own area or one Far buildings adds, in view or
+ * out of it, by the matrix on top of the game's stack, which the push is
+ * about to copy for the piece. */
+static void piece_start(int pass, int shadow, uint32_t area)
+{
+    float view[DRAW_VIEW_FLOATS];
+    const float *m, *volume = NULL;
+    uint32_t stack = dd_u32(MATRIX_STACK);
+    int first = pass != s_piece_pass || (int)area != s_piece_area, k;
+    s_piece_pass = pass;
+    s_piece_area = (int)area;
+    if (!dd_guest(stack, 4) || !dd_guest(dd_u32(stack), 64)) { t_draw_from = DRAW_FROM_REST; return; }
+    m = dd_float(dd_u32(stack));
+    view[0] = *dd_float(VIEW_NEAR);
+    view[1] = *dd_float(VIEW_FAR);
+    for (k = 0; k < 8; k++) view[2 + k] = *dd_float(VIEW_PLANES + 4u * (uint32_t)k);
+    if (s_set_widened && area < (uint32_t)s_dd_n) volume = s_dd_areas[area].volume;
+    t_draw_from = draw_from_piece(pass == 0, shadow, (int)area, first,
+                                  s_set_widened ? s_game_set : NULL, volume, m, view);
+}
+
+/* Entry hooks (the generated function calls these first, and its body stays
+ * the game's). sub_001BA9C0, the game's matrix push, as the map's passes call
+ * it at the start of each piece, known by where it returns to: where the
+ * piece's draws come from. Called from anywhere else, nothing. */
+void sub_001BA9C0_enter(void)
+{
+    switch (dd_u32(g_esp)) {
+    case PIECE_PASS0_IN:  piece_start(0, 0, g_ebx); break;
+    case PIECE_PASS1_IN:  piece_start(1, 0, g_ebx); break;
+    case PIECE_PASS7_IN:  piece_start(7, 0, g_ebx); break;
+    case PIECE_SHADOW_IN: piece_start(17, 1, g_edi); break;
+    default: break;
+    }
+}
+
+/* D3D's six calls that start a draw (each writes NV2A's BEGIN_END for it,
+ * once a call): each counted by where it comes from. */
+void sub_00198A10_enter(void) { draw_from_drawn(t_draw_from); }
+void sub_00199060_enter(void) { draw_from_drawn(t_draw_from); }
+void sub_001991C0_enter(void) { draw_from_drawn(t_draw_from); }
+void sub_00199300_enter(void) { draw_from_drawn(t_draw_from); }
+void sub_001993A0_enter(void) { draw_from_drawn(t_draw_from); }
+void sub_001996A0_enter(void) { draw_from_drawn(t_draw_from); }
 
 /* ---- photo mode (port/photo_mode.c): the world held -----------------------
  * The game manager has four holds of its own, a dword each from +0x40, which
@@ -9287,6 +9376,9 @@ void sub_001BAA50(void)
 {
     uint32_t ra = dd_u32(g_esp);
     sub_001BAA50_gen();
+    if (ra == PIECE_PASS0_OUT || ra == PIECE_PASS1_OUT || ra == PIECE_PASS7_OUT
+     || ra == PIECE_SHADOW_OUT)
+        t_draw_from = DRAW_FROM_REST;   /* the piece's draws are done */
     if (ra == BACKDROP_OUT_RET && s_backdrop_zwrite >= 0) {
         dd_zwrite((uint32_t)s_backdrop_zwrite, ra);
         s_backdrop_zwrite = -1;

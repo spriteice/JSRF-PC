@@ -27,6 +27,16 @@ void (*g_recomp_mmio_write_fn)(uint32_t addr, uint32_t val, unsigned size);
 
 static int s_mmio_trace = -1;
 
+/* Reads of PFIFO's CACHE1_STATUS, which reads empty here, always
+ * (xbox_memory_layout.c's NV2A_IDLE): how often the title asks, counted for
+ * the executor's report (b3's baseline), and how many since the last ask. */
+#define NV2A_CACHE1_STATUS 0xFD003214u
+static unsigned long s_cache1_status_reads;
+unsigned long kernel_mmio_cache1_status_reads(void)
+{
+    return __atomic_exchange_n(&s_cache1_status_reads, 0, __ATOMIC_RELAXED);
+}
+
 static inline volatile void *plain(uint32_t addr)
 {
     return (volatile void *)((uintptr_t)addr + xbox_GetMemoryOffset());
@@ -36,6 +46,8 @@ uint32_t recomp_mmio_read(uint32_t addr, unsigned size)
 {
     uint32_t v;
     if (s_mmio_trace < 0) s_mmio_trace = getenv("RECOMP_MMIO_TRACE") ? 1 : 0;
+    if (addr == NV2A_CACHE1_STATUS)
+        __atomic_fetch_add(&s_cache1_status_reads, 1, __ATOMIC_RELAXED);
     /* The NV2A's interrupt registers first (nv2a_intr.c): PMC_INTR_0 is
      * worked out from the units', not stored. */
     if (xbox_nv2a_intr_read(addr, size, &v))

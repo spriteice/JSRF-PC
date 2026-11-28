@@ -1245,6 +1245,65 @@ static void check_whole_map(void)
     printf("whole map: %X\n", (unsigned)RUN(0, 9));
 }
 
+/* Where the draws come from (the [DRAW] line's second kind): the game's
+ * own view test of an area's box, then a frame's draws by where they came
+ * from. The view is the game's from the origin along +z, 90 degrees across
+ * and up, from 1 to 1000; a box is 6 points, one on each face, then normals. */
+static void from_box(float *v, float x, float y, float z, float h)
+{
+    static const float d[6][3] = { {1,0,0}, {-1,0,0}, {0,1,0}, {0,-1,0}, {0,0,1}, {0,0,-1} };
+    int i;
+    for (i = 0; i < 6; i++) {
+        v[i * 3] = x + h * d[i][0]; v[i * 3 + 1] = y + h * d[i][1]; v[i * 3 + 2] = z + h * d[i][2];
+        v[18 + i * 3] = d[i][0]; v[18 + i * 3 + 1] = d[i][1]; v[18 + i * 3 + 2] = d[i][2];
+    }
+}
+static void check_from(void)
+{
+    /* near, far; then y >= 0's radius factor and slope, x <= 0's, x > 0's, y < 0's */
+    static const float view[DRAW_VIEW_FLOATS] = { 1, 1000, 1.4142f, 1, 1.4142f, -1, 1.4142f, 1,
+                                                   1.4142f, -1 };
+    static const float id[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
+    static const float back[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,-100,1 };  /* the eye at z 100 */
+    float ahead[36], behind[36], left[36], edge[36], beyond[36], above[36];
+    uint32_t game[DRAW_SET_WORDS] = { 1u };     /* the game's set: area 0 */
+    int k;
+    from_box(ahead, 0, 0, 50, 10);
+    from_box(behind, 0, 0, -50, 10);
+    from_box(left, -200, 0, 50, 10);
+    from_box(edge, -55, 0, 50, 10);                  /* its centre outside the left plane, its box not */
+    from_box(beyond, 0, 0, 2000, 10);
+    from_box(above, 0, 300, 50, 10);
+    CHECK(draw_area_in_view(ahead, id, view));
+    CHECK(!draw_area_in_view(behind, id, view));
+    CHECK(!draw_area_in_view(left, id, view));
+    CHECK(draw_area_in_view(edge, id, view));
+    CHECK(!draw_area_in_view(beyond, id, view));
+    CHECK(!draw_area_in_view(above, id, view));
+    CHECK(!draw_area_in_view(ahead, back, view));   /* behind the eye moved past it */
+    /* A frame: area 0 the game's (two pieces in pass 0, 3 draws), areas 1 (in
+     * view, 2 draws, then 1 in pass 1) and 2 (out of view, 1 draw) added; the
+     * shadow passes 2 draws, the rest 4; 6 second draws of the see-through
+     * fix. Nothing before the start counts. */
+    draw_from_drawn(DRAW_FROM_REST);
+    draw_from_frame(0.0, 0, 0);
+    k = draw_from_piece(1, 0, 0, 1, game, ahead, id, view); draw_from_drawn(k); draw_from_drawn(k);
+    k = draw_from_piece(1, 0, 0, 0, game, ahead, id, view); draw_from_drawn(k);
+    CHECK(k == DRAW_FROM_OWN);
+    k = draw_from_piece(1, 0, 1, 1, game, ahead, id, view); draw_from_drawn(k); draw_from_drawn(k);
+    CHECK(k == DRAW_FROM_ADDED_IN);
+    k = draw_from_piece(1, 0, 2, 1, game, behind, id, view); draw_from_drawn(k);
+    CHECK(k == DRAW_FROM_ADDED_OUT);
+    k = draw_from_piece(0, 0, 1, 1, game, ahead, id, view); draw_from_drawn(k);
+    k = draw_from_piece(0, 1, 2, 1, game, behind, id, view); draw_from_drawn(k); draw_from_drawn(k);
+    CHECK(k == DRAW_FROM_SHADOWS);
+    for (k = 0; k < 4; k++) draw_from_drawn(DRAW_FROM_REST);
+    draw_from_frame(4.9, 1, 6);                     /* not yet 5 s */
+    draw_from_frame(5.0, 1, 6);
+    /* Far buildings off: every area the game's own, in view or not. */
+    CHECK(draw_from_piece(1, 0, 2, 1, NULL, NULL, id, view) == DRAW_FROM_OWN);
+}
+
 int main(int argc, char **argv)
 {
     const char *c = argc > 1 ? argv[1] : "";
@@ -1332,6 +1391,7 @@ int main(int argc, char **argv)
     CHECK(s_row.preset[XBOX_PRESET_BALANCED] == 1 && DRAW_DISTANCE_BALANCED == 1
           && s_far_row.preset[XBOX_PRESET_BALANCED] == 3 && DRAW_FAR_BALANCED == 3
           && s_shadow_row.preset[XBOX_PRESET_BALANCED] == 3 && DRAW_SHADOWS_BALANCED == 3);
+    if (!strcmp(c, "from")) { check_from(); return 0; }
     if (!strcmp(c, "default"))
         CHECK(s_row.preset[XBOX_PRESET_PERFORMANCE] == draw_distance_step() &&
               s_far_row.preset[XBOX_PRESET_PERFORMANCE] == draw_far_buildings() &&

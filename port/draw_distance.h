@@ -295,4 +295,51 @@ void draw_misc_drawn(uint32_t object, uint32_t model, uint32_t area, uint32_t pl
 int draw_far_test_backdrop(void);
 #define DRAW_EYE_LINES 40
 
+/* ---- where the draws come from (b3's baseline, the performance review's M3)
+ *
+ * Always on: each draw D3D starts is counted by where it comes from, and
+ * every 5 seconds a line says how many a frame came from each:
+ *
+ *   [DRAW] t=60.0 draws a frame by where they come from: the game's own
+ *   areas 412.0 (18.0 areas, 17.0 of them in view), the areas Far buildings
+ *   adds 120.0 in view (9.0 areas) and 35.0 out of it (14.0 areas), the
+ *   shadow passes 80.0, the rest 300.0; the see-through fix's second draws 12.0
+ *
+ * The map's four passes (recomp_manual.c) draw an area's pieces one at a
+ * time: a piece's draws are its area's, the game's own when the set the game
+ * made has the area, and Far buildings' when only the widened set does. An
+ * added area is in view when its box (round the six points of its volume)
+ * passes the game's own test of a sphere against the view, as the matrix at
+ * the top of the game's stack has it when the area's first piece starts. The
+ * rest is everything outside the passes: the characters, the objects (the
+ * line above counts those past the game's distance), the backdrop, the HUD. */
+enum { DRAW_FROM_OWN, DRAW_FROM_ADDED_IN, DRAW_FROM_ADDED_OUT, DRAW_FROM_SHADOWS, DRAW_FROM_REST,
+       DRAW_FROMS };
+
+/* The game's view as its sphere test reads it: the near and far distances,
+ * then the 8 floats of its side and vertical planes (0x264E78 to 0x264E94:
+ * for each of y >= 0, x <= 0, x > 0 and y < 0, a radius factor and a slope). */
+#define DRAW_VIEW_FLOATS 10
+
+/* Whether the box round the six points of an area's volume (DrawArea's
+ * volume) is in the view: the game's test of the sphere round it, after the
+ * matrix m (row vectors, as the game's stack keeps it: m[12..14] the move). */
+int draw_area_in_view(const float *volume, const float m[16], const float view[DRAW_VIEW_FLOATS]);
+
+/* A piece of one of the map's passes starts (pass 0 for the pass that
+ * counts the areas, shadow for the shadow passes): what its draws are,
+ * DRAW_FROM_. first: the pass's first piece of this area. game_set: the
+ * game's own set while Far buildings has widened it, else NULL (every area
+ * the game's own). The area is counted on pass 0's first piece; in view is
+ * asked then too, with volume (NULL: none known), m and view. */
+int draw_from_piece(int pass0, int shadow, int area, int first, const uint32_t *game_set,
+                    const float *volume, const float m[16], const float view[DRAW_VIEW_FLOATS]);
+
+/* A draw D3D started, from `from` (DRAW_FROM_). Any thread. */
+void draw_from_drawn(int from);
+
+/* Once a frame, from the frame's draw: the line every 5 seconds, with the
+ * see-through fix's second draws so far (the renderer's count). */
+void draw_from_frame(double now, unsigned frame, unsigned long long seethru_second);
+
 #endif

@@ -42,6 +42,19 @@ int nv2a_pb_wait_fence(uint32_t va, uint32_t top, uint32_t time)
     say("wait(%08X, top %08X, time %08X) ", va, top, time);
     return 1;
 }
+/* The long wait's timing: the clock a millisecond a reading, and the note
+ * of what it waited for. */
+long long host_info_us(void)
+{
+    static long long now;
+    return now += 1000;
+}
+void nv2a_pb_long_wait(uint32_t top, uint32_t time, uint32_t word, uint32_t behind,
+                       long long t0_us, long long t1_us)
+{
+    say("long(top %08X, time %08X, word %08X)", top, time, word);
+    say(" far %X, %u ms ", behind, (uint32_t)((t1_us - t0_us) / 1000), 0);
+}
 static uint32_t g_in[8];
 void sub_00191440_gen(void)
 {
@@ -93,9 +106,10 @@ int main(void)
     one("waiting for the newest: its fence first", 0x110, 0x110, 0x104, 0x00201234u, 0x10,
         "390(ra 0019146F, arg 0) 150(ra 00191478, eax 00000110) "
         "0E0(ra 00191489, ecx 00200000, edx 00201234) wait(00300000, top 00000112, time 00000110) gen");
-    one("the fence 32 KB away: the game's own sleep, no wait here", 0x108, 0x110, 0x104,
-        0x00201234u, 0x8000,
-        "150(ra 00191478, eax 00000108) 0E0(ra 00191489, ecx 00200000, edx 00201234) gen");
+    one("the fence 32 KB away: the game's own sleep, no wait here, and it timed", 0x108, 0x110,
+        0x104, 0x00201234u, 0x8000,
+        "150(ra 00191478, eax 00000108) 0E0(ra 00191489, ecx 00200000, edx 00201234) gen"
+        "long(top 00000110, time 00000108, word 00000104) far 8000, 1 ms ");
     one("no fence found: the game returns, no wait here", 0x108, 0x110, 0x104, 0, 0,
         "150(ra 00191478, eax 00000108) gen");
     one("numbers that wrap", 0xFFFFFFFEu, 0x00000004u, 0xFFFFFFFCu, 0x00201234u, 0x100,

@@ -4,11 +4,12 @@ Cut by text: from src/kernel/nv2a_pb_exec.c and port/recomp_manual.c,
 with recomp_manual.c's GARG, unchanged. Neither links on its own.
 
 Takes nv2a_pb_wait_fence and fence_written from src/kernel/nv2a_pb_exec.c,
-verbatim, and builds them with src/platform/win32_compat.c's events, against
+verbatim, and builds them with src/platform/win32_compat.c's events (and
+src/platform/host_info.c's clock, which the long waits' note reads), against
 a GPU thread that writes fences the way the executor does (test_main.c). Run
 once as it ships and once with RECOMP_FENCE_WAIT=0. Then port/recomp_manual.c's
 sub_00191440 and guest_call_cdecl, verbatim, against stand-ins for the game
-functions it calls (test_wrapper.c). POSIX only (win32_compat.c is the Linux
+functions it calls (test_wrapper.c), the long wait's timing among them. POSIX only (win32_compat.c is the Linux
 side); requires GCC on PATH.
 CC, when set, is the compiler instead of gcc.
 """
@@ -46,6 +47,7 @@ wait_source = ("""
 #include <unistd.h>
 #include <pthread.h>
 #include "xbox_winnt.h"
+#include "platform/host_info.h"
 typedef UCHAR KIRQL;
 #define DISPATCH_LEVEL 2
 static uint8_t g_guest[0x2000];
@@ -97,7 +99,8 @@ with tempfile.TemporaryDirectory(prefix="fence_wait-") as directory:
                     "src/platform/win32_compat.c", "-o", compat], cwd=root, check=True)
     subprocess.run(cc + ["-O2", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-pthread",
                     "-I", "src", "-I", "src/platform", "-x", "c", "-", "-x", "none", compat,
-                    "-lm", "-o", wait_exe], cwd=root, input=wait_source, text=True, check=True)
+                    "src/platform/host_info.c", "-lm", "-o", wait_exe],
+                   cwd=root, input=wait_source, text=True, check=True)
     subprocess.run(cc + ["-O2", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-x", "c", "-",
                     "-o", wrapper_exe], cwd=root, input=wrapper_source, text=True, check=True)
     runs = [("on", [wait_exe], "fence_wait: all cases pass"),

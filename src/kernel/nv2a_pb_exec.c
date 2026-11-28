@@ -1452,10 +1452,61 @@ static struct {
 } s_fw;
 static int s_fences_written;
 
+/* D3D's long waits (b3's baseline, the performance review's M5). Where its
+ * point is 32 KB or more of the push buffer ahead of the walk, sub_00191440
+ * leaves the wait to the game's own code, which sleeps until the walk raises
+ * NOP(5) there. The port times each one (nv2a_pb_long_wait), and the walk
+ * keeps when it wrote each of its last fences, so the report can say how
+ * long before the wait ended the number it waited for had been written: the
+ * point D3D asked for, reached long before the NOP(5) that ends the wait.
+ * The ring is the walk's to write and is read without a lock: a fence
+ * overwritten while read gives that wait's figure a fence late at worst. */
+#define FENCE_TIMES 64
+static struct { uint32_t value; long long us; } s_fence_times[FENCE_TIMES];
+static unsigned s_fence_times_next;
+static struct {
+    unsigned long n, early, unseen;
+    unsigned long long us, longest_us, ahead, bytes, early_us, early_most_us;
+} s_lw;
+
+/* A long wait the port timed: from t0_us to t1_us, for the number `time`
+ * (top D3D's newest when it ended), with `word` the fences' word when it
+ * began and `behind` the bytes of the push buffer from the walk to its fence. */
+void nv2a_pb_long_wait(uint32_t top, uint32_t time, uint32_t word, uint32_t behind,
+                       long long t0_us, long long t1_us)
+{
+    unsigned end = __atomic_load_n(&s_fence_times_next, __ATOMIC_ACQUIRE), i;
+    long long reached = -1, waited = t1_us > t0_us ? t1_us - t0_us : 0;
+    for (i = end > FENCE_TIMES ? end - FENCE_TIMES : 0; i < end; i++) {
+        uint32_t v = s_fence_times[i % FENCE_TIMES].value;
+        long long us = s_fence_times[i % FENCE_TIMES].us;
+        if (us >= t0_us && us <= t1_us && top - v <= top - time) { reached = us; break; }
+    }
+    __atomic_fetch_add(&s_lw.n, 1, __ATOMIC_RELAXED);
+    __atomic_fetch_add(&s_lw.us, (unsigned long long)waited, __ATOMIC_RELAXED);
+    if ((unsigned long long)waited > __atomic_load_n(&s_lw.longest_us, __ATOMIC_RELAXED))
+        __atomic_store_n(&s_lw.longest_us, (unsigned long long)waited, __ATOMIC_RELAXED);
+    __atomic_fetch_add(&s_lw.ahead, (unsigned long long)(time - word), __ATOMIC_RELAXED);
+    __atomic_fetch_add(&s_lw.bytes, (unsigned long long)behind, __ATOMIC_RELAXED);
+    if (reached < 0) {
+        __atomic_fetch_add(&s_lw.unseen, 1, __ATOMIC_RELAXED);
+    } else {
+        unsigned long long before = (unsigned long long)(t1_us - reached);
+        __atomic_fetch_add(&s_lw.early_us, before, __ATOMIC_RELAXED);
+        if (before > __atomic_load_n(&s_lw.early_most_us, __ATOMIC_RELAXED))
+            __atomic_store_n(&s_lw.early_most_us, before, __ATOMIC_RELAXED);
+        if (before > 1000) __atomic_fetch_add(&s_lw.early, 1, __ATOMIC_RELAXED);
+    }
+}
+
 /* The walk wrote `value` to a fence. */
 static void fence_written(uint32_t value)
 {
     uint32_t top;
+    {   unsigned i = s_fence_times_next;
+        s_fence_times[i % FENCE_TIMES].value = value;
+        s_fence_times[i % FENCE_TIMES].us = host_info_us();
+        __atomic_store_n(&s_fence_times_next, i + 1, __ATOMIC_RELEASE); }
     if (!__atomic_load_n(&s_fences_written, __ATOMIC_RELAXED))
         __atomic_store_n(&s_fences_written, 1, __ATOMIC_RELEASE);
     __atomic_thread_fence(__ATOMIC_SEQ_CST);   /* the write, then the look */
@@ -1976,6 +2027,32 @@ void nv2a_pb_exec_report(void)
         if (slept || spun)
             fprintf(stderr, "  [NV2A] waits for a fence: %lu asleep, %.0f ms in all, the longest "
                     "%.1f ms; %lu spun\n", slept, us / 1000.0, most / 1000.0, spun);
+    }
+    {   /* PFIFO's CACHE1_STATUS, read through the MMIO path (kernel_mmio.c). */
+        extern unsigned long kernel_mmio_cache1_status_reads(void);
+        unsigned long reads = kernel_mmio_cache1_status_reads();
+        if (reads)
+            fprintf(stderr, "  [NV2A] PFIFO's CACHE1_STATUS read %lu times since the last "
+                    "report (it reads empty here, always)\n", reads);
+    }
+    {   /* D3D's long waits, beside the short ones (nv2a_pb_long_wait). */
+        unsigned long n = __atomic_exchange_n(&s_lw.n, 0, __ATOMIC_RELAXED);
+        unsigned long early = __atomic_exchange_n(&s_lw.early, 0, __ATOMIC_RELAXED);
+        unsigned long unseen = __atomic_exchange_n(&s_lw.unseen, 0, __ATOMIC_RELAXED);
+        unsigned long long us = __atomic_exchange_n(&s_lw.us, 0, __ATOMIC_RELAXED);
+        unsigned long long most = __atomic_exchange_n(&s_lw.longest_us, 0, __ATOMIC_RELAXED);
+        unsigned long long ahead = __atomic_exchange_n(&s_lw.ahead, 0, __ATOMIC_RELAXED);
+        unsigned long long bytes = __atomic_exchange_n(&s_lw.bytes, 0, __ATOMIC_RELAXED);
+        unsigned long long before = __atomic_exchange_n(&s_lw.early_us, 0, __ATOMIC_RELAXED);
+        unsigned long long before_most = __atomic_exchange_n(&s_lw.early_most_us, 0, __ATOMIC_RELAXED);
+        if (n)
+            fprintf(stderr, "  [NV2A] D3D's long waits, to NOP(5): %lu, %.0f ms in all, the longest "
+                    "%.1f ms; each for a number %.1f ahead of the walk's and %.0f KB of the push "
+                    "buffer, on average; that number written %.1f ms before the wait ended, on "
+                    "average (the most %.1f ms, %lu of them over 1 ms), %lu not seen\n",
+                    n, us / 1000.0, most / 1000.0, (double)ahead / n, bytes / 1024.0 / n,
+                    n > unseen ? before / 1000.0 / (double)(n - unseen) : 0.0,
+                    before_most / 1000.0, early, unseen);
     }
 
     peek_addresses();

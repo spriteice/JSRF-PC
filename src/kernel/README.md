@@ -253,6 +253,15 @@ block the heap or the contiguous window hands out or takes back: the
 seconds since the start, the call, the size and alignment, the address, and
 the guest return address of the kernel call that asked.
 
+Always on, in the pushbuffer's ten-second report (`nv2a_pb_exec.c`), beside
+D3D's short waits for a fence: its long waits, for a point 32 KB or more of
+the push buffer ahead of the walk, which the game's own code sleeps out
+until the walk raises NOP(5) there. The line gives how many, how long in all
+and the longest, how far ahead each point was, and how long before the wait
+ended the walk had written the number it waited for. Then how often the
+title read PFIFO's CACHE1_STATUS, which reads empty here, always
+(`kernel_mmio.c`).
+
 ## NTSTATUS Codes
 
 ```c

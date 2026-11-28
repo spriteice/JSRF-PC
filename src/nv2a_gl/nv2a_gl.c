@@ -409,15 +409,22 @@ static struct {
     float    alpha_ref;
 
     /* stats */
-    uint32_t draws, tris, clears, flips, prog_switches, since_present;
+    uint32_t draws, clears, flips, prog_switches, since_present;
+    /* The triangles drawn, 64-bit, as are the three by pipeline below: at 32
+     * they went back to 0 past 4.29 billion, a long run's day or so (known
+     * bug 56), and every rate read from them with it. */
+    uint64_t tris;
     /* Frames put in the window (sdl_show), the game's and the start-up
      * shader build's box alike: with flips, what the freeze watch reads
      * (nv2a_gl_progress). */
     uint32_t shows;
     /* Displayed frames, as distinct from finished passes: see M_FLIP_STALL. */
     uint32_t frames;
-    uint32_t tris_ff, tris_pm;   /* triangles by transform pipeline */
-    uint32_t tris_ff_lit;        /* of the fixed-function ones, drawn with lighting on */
+    /* The see-through fix's second draws: a draw split in two by its pixels'
+     * alpha, or drawn twice, adds one (port/draw_distance.c's [DRAW] line). */
+    uint64_t see_second;
+    uint64_t tris_ff, tris_pm;   /* triangles by transform pipeline */
+    uint64_t tris_ff_lit;        /* of the fixed-function ones, drawn with lighting on */
     /* The T&L unit's lighting state, as the title programs it (xemu vsh-ff.c
      * reads the same from its lighting context). Decoded so the fixed-
      * function shader can light the way the hardware does. */
@@ -581,7 +588,7 @@ static void prof_report(void)
 {
     static double last;
     static GlProfile prev;
-    static uint32_t prev_tris_p;
+    static uint64_t prev_tris_p;
     double now;
     if (!PROF_ON()) return;
     now = prof_now();
@@ -11829,6 +11836,7 @@ static void do_draw_body(void)
         see.alpha_uniforms = (uint8_t)uses(slot, NV2A_U_ALPHAFUNC);
         how = nv2a_seethru_draw(&g_draw_rs, &see);
         PROF_T0();
+        if (how == NV2A_SEE_SPLIT || how == NV2A_SEE_TWICE) S.see_second++;
         if (how == NV2A_SEE_SPLIT) {
             G->uniform_i(NV2A_U_ALPHAFUNC, g_last.alpha_func | NV2A_PSH_ALPHA_OPAQUE);
             if (vc_vb && !vc_seq) G->draw_indexed(mode, out_n, vc_i32);
@@ -14378,9 +14386,9 @@ static void present(int is_frame)
          * in it. A logo screen is a handful of quads; a level is thousands of
          * triangles, so triangles-per-frame separates the two far better than
          * a flip count guessed in advance. */
-        { static uint32_t prev_tris; static const char *tinit;
+        { static uint64_t prev_tris; static const char *tinit;
           if (!tinit) { tinit = getenv("RECOMP_GL_DUMP_TRIS"); tinit = tinit ? tinit : ""; }
-          S.frame_tris = S.tris - prev_tris;
+          S.frame_tris = (uint32_t)(S.tris - prev_tris);
           prev_tris = S.tris;
           if (*tinit) dump_after_tris = (uint32_t)strtoul(tinit, 0, 0); }
 
@@ -16079,7 +16087,7 @@ void nv2a_gl_report(void)
                 g_ht.hitches, g_ht.compiles, 1000.0 * g_ht.compile_s,
                 1000.0 * g_ht.compile_s / (double)g_ht.compiles, 1000.0 * g_ht.compile_worst);
     fprintf(stderr,
-        "  [GL] %u draws, %u triangles, %u clears, %u presents, "
+        "  [GL] %u draws, %llu triangles, %u clears, %u presents, "
         "%u programs compiled\n"
         "  [GL] %u batches split mid-block (%u of them because the vertex "
         "arrays moved, the rest the constants)\n"
@@ -16088,19 +16096,20 @@ void nv2a_gl_report(void)
         "  [GL] %u inline batches, %u array batches, %u with depth testing\n"
         "  [GL] %u surface switches, %u scene draws\n"
         "  [GL] transform mode: %u fixed-function, %u program (%u/%u other)\n"
-        "  [GL] triangles by pipeline: %u fixed-function (%u of them lit), %u program\n"
+        "  [GL] triangles by pipeline: %llu fixed-function (%llu of them lit), %llu program\n"
         "  [GL] %u draws confined by a window clip rectangle\n"
         "  [GL] %u fixed-function draws asked for vertex blending\n"
         "  [GL] surfaces:%s%s%s%s%s%s%s%s\n"
         "  [GL] stage 0 not textured: %u disabled, %u no offset, %u no size; "
         "stage 1: %u/%u/%u\n",
-        S.draws, S.tris, S.clears, S.flips, S.prog_switches,
+        S.draws, (unsigned long long)S.tris, S.clears, S.flips, S.prog_switches,
         S.midbatch_splits, S.midbatch_array_splits,
         S.skipped_no_prog, S.skipped_no_pos, S.shader_fails,
         S.draws_inline, S.draws_array, S.draws_depth_on, S.surface_switches,
         S.draws_3d,
         S.draws_xf[0], S.draws_xf[1], S.draws_xf[2], S.draws_xf[3],
-        S.tris_ff, S.tris_ff_lit, S.tris_pm, S.wclip_applied,
+        (unsigned long long)S.tris_ff, (unsigned long long)S.tris_ff_lit,
+        (unsigned long long)S.tris_pm, S.wclip_applied,
         S.draws_skinned,
         surf_desc(0), surf_desc(1), surf_desc(2), surf_desc(3),
         surf_desc(4), surf_desc(5), surf_desc(6), surf_desc(7),
@@ -16574,6 +16583,9 @@ static int gfx_init(uint32_t w, uint32_t h)
 /* The present count -- the same number RECOMP_GL_DUMP_AFTER counts in -- for
  * diagnostics outside this file that want to act on one particular frame. */
 uint32_t nv2a_gl_flips(void) { return S.flips; }
+/* The see-through fix's second draws so far, for the [DRAW] line (read on the
+ * game's thread: a figure a moment old at worst). */
+unsigned long long nv2a_gl_seethru_second(void) { return (unsigned long long)S.see_second; }
 
 /* Test hooks for the game side (recomp_manual.c): capture a burst of frames
  * (every surface, as RECOMP_GL_DUMP_FB does) starting now, and log every

@@ -209,6 +209,12 @@ cases = {
                  "[DRAW] the eye at t=10.30: no area's list is the set, from 4; Far buildings adds 4, 9",
                  "[DRAW] the eye at t=0.00: area 0 (another area's list is the set too), from -1; "
                  "Far buildings adds none there"]),
+    # Where the draws come from: a frame's, by the game's own areas, the
+    # added ones in view and out of it, the shadow passes and the rest.
+    "from": (None, ["[DRAW] t=5.0 draws a frame by where they come from: the game's own areas "
+                    "3.0 (1.0 areas, 1.0 of them in view), the areas Far buildings adds 3.0 in "
+                    "view (1.0 areas) and 1.0 out of it (1.0 areas), the shadow passes 2.0, the "
+                    "rest 4.0; the see-through fix's second draws 6.0"]),
 }
 # Cases that must not print a line: none of the map's or the Misc group's for
 # Far buildings off, and no fog line for the area no list names.

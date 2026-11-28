@@ -209,7 +209,7 @@ def test_a_report_value_over_the_full_reports(tmp_path):
 
 def test_a_report_value_counted_from_a_line(tmp_path):
     text = linux_run()
-    cut = text.index(render(GL, "  [GL] %u draws, %u triangles", 90000, *([0] * 23), *([""] * 8), *([0] * 6)))
+    cut = text.index(render(GL, "  [GL] %u draws, %llu triangles", 90000, *([0] * 23), *([""] * 8), *([0] * 6)))
     log = write(tmp_path, text[:cut] + load(0x00010002) + text[cut:])
     status, out = run([checks_file(tmp_path, REPORTS.replace("take = max", "take = max\nfrom = [LOAD] t={} mission ...", 1)),
                        log])

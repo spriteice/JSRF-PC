@@ -15,6 +15,7 @@
  * [DRAW] lines say which area the eye is in and what Far buildings adds from
  * there (draw_distance.h). */
 #include <float.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include "draw_distance.h"
@@ -1082,4 +1083,91 @@ void draw_distance_start(void)
         xbox_MenuAdd(tests, (int)(sizeof tests / sizeof tests[0]));
     }
 #endif
+}
+
+/* ---- where the draws come from ------------------------------------------ */
+
+int draw_area_in_view(const float *volume, const float m[16], const float view[DRAW_VIEW_FLOATS])
+{
+    float lo[3], hi[3], c[3], r, x, y, z, d2 = 0.0f;
+    int i, k;
+    for (k = 0; k < 3; k++) lo[k] = hi[k] = volume[k];
+    for (i = 1; i < 6; i++)
+        for (k = 0; k < 3; k++) {
+            float v = volume[i * 3 + k];
+            if (v < lo[k]) lo[k] = v;
+            if (v > hi[k]) hi[k] = v;
+        }
+    for (k = 0; k < 3; k++) {
+        c[k] = 0.5f * (lo[k] + hi[k]);
+        d2 += 0.25f * (hi[k] - lo[k]) * (hi[k] - lo[k]);
+    }
+    r = sqrtf(d2);
+    x = c[0] * m[0] + c[1] * m[4] + c[2] * m[8] + m[12];
+    y = c[0] * m[1] + c[1] * m[5] + c[2] * m[9] + m[13];
+    z = c[0] * m[2] + c[1] * m[6] + c[2] * m[10] + m[14];
+    /* As the game's: in front of the near distance and short of the far,
+     * then inside each side plane and each vertical one. */
+    if (!(z + r > view[0]) || !(z - r < view[1])) return 0;
+    if (x <= 0.0f ? !(x + r * view[4] > z * view[5]) : !(x - r * view[6] < z * view[7])) return 0;
+    if (y >= 0.0f ? !(y - r * view[2] < z * view[3]) : !(y + r * view[8] > z * view[9])) return 0;
+    return 1;
+}
+
+static unsigned long s_from[DRAW_FROMS];        /* draws since the line, by where from */
+static unsigned long s_from_areas[3], s_own_in; /* pass 0's areas: own, added in, added out */
+static double s_from_since = -1;
+static unsigned s_from_since_frame;
+static int s_from_last = DRAW_FROM_OWN;         /* the last area's, for its later pieces */
+
+int draw_from_piece(int pass0, int shadow, int area, int first, const uint32_t *game_set,
+                    const float *volume, const float m[16], const float view[DRAW_VIEW_FLOATS])
+{
+    int own, in;
+    if (shadow) return DRAW_FROM_SHADOWS;
+    if (!first) return s_from_last;
+    own = !game_set || area < 0 || area >= DRAW_AREAS_MAX
+       || (game_set[area >> 5] >> (area & 31) & 1u);
+    in = volume ? draw_area_in_view(volume, m, view) : 1;
+    s_from_last = own ? DRAW_FROM_OWN : in ? DRAW_FROM_ADDED_IN : DRAW_FROM_ADDED_OUT;
+    if (pass0) {
+        s_from_areas[own ? 0 : in ? 1 : 2]++;
+        if (own && in) s_own_in++;
+    }
+    return s_from_last;
+}
+
+void draw_from_drawn(int from)
+{
+    if (from < 0 || from >= DRAW_FROMS) from = DRAW_FROM_REST;
+    __atomic_fetch_add(&s_from[from], 1, __ATOMIC_RELAXED);
+}
+
+void draw_from_frame(double now, unsigned frame, unsigned long long seethru_second)
+{
+    static unsigned long long seethru_since;
+    unsigned long d[DRAW_FROMS];
+    double f;
+    int k;
+    if (s_from_since < 0) {
+        s_from_since = now; s_from_since_frame = frame; seethru_since = seethru_second;
+        for (k = 0; k < DRAW_FROMS; k++) __atomic_exchange_n(&s_from[k], 0, __ATOMIC_RELAXED);
+        s_from_areas[0] = s_from_areas[1] = s_from_areas[2] = s_own_in = 0;
+        return;
+    }
+    if (now - s_from_since < DRAW_LOG_EVERY) return;
+    f = frame != s_from_since_frame ? (double)(frame - s_from_since_frame) : 1.0;
+    for (k = 0; k < DRAW_FROMS; k++) d[k] = __atomic_exchange_n(&s_from[k], 0, __ATOMIC_RELAXED);
+    fprintf(stderr, "[DRAW] t=%.1f draws a frame by where they come from: the game's own areas "
+                    "%.1f (%.1f areas, %.1f of them in view), the areas Far buildings adds %.1f "
+                    "in view (%.1f areas) and %.1f out of it (%.1f areas), the shadow passes "
+                    "%.1f, the rest %.1f; the see-through fix's second draws %.1f\n",
+            now, d[DRAW_FROM_OWN] / f, s_from_areas[0] / f, s_own_in / f,
+            d[DRAW_FROM_ADDED_IN] / f, s_from_areas[1] / f, d[DRAW_FROM_ADDED_OUT] / f,
+            s_from_areas[2] / f, d[DRAW_FROM_SHADOWS] / f, d[DRAW_FROM_REST] / f,
+            (double)(seethru_second - seethru_since) / f);
+    s_from_areas[0] = s_from_areas[1] = s_from_areas[2] = s_own_in = 0;
+    seethru_since = seethru_second;
+    s_from_since = now;
+    s_from_since_frame = frame;
 }
