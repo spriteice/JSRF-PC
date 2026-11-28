@@ -1,15 +1,24 @@
 #!/bin/bash
 #
 # CI's Linux jobs, in the build image with the tests' packages
-# (.github/ci/docker.sh "linux tests" .github/ci/linux.sh gcc|clang):
+# (.github/ci/docker.sh "linux tests" .github/ci/linux.sh gcc|clang [option...]):
 #
 #   gcc     the engine built with GCC, linked as far as it can be without the
 #           game, and its Debug build too; the engine tests; the tool tests
-#           (tools/ and launcher/), and CI's own (test_ci.py)
+#           (tools/ and launcher/), and CI's own (test_ci.py); and the engine
+#           tests' line coverage, for information only
 #   clang   the release package, made by launcher/linux/build.sh and checked
 #           by launcher/check_package.py; the engine tests built with clang
 #
 # Each then counts its build's warnings in our code (.github/ci/count_warnings.py).
+# The cloud's runs before a commit (docs/build-and-test-reference.md, CI,
+# Before a commit) add options, which GitHub's runs don't:
+#
+#   --side-by-side  the engine tests without those that start threads or
+#                   measure time (tests/run_all.py --side-by-side), for a
+#                   run beside the other jobs; .github/ci/alone.sh runs
+#                   those on their own after
+#   --no-coverage   gcc only: no line coverage, as it checks nothing
 #
 # The generated code is the game's, so CI hasn't got it. The engine is built
 # against the toolkit's header alone, and .github/ci/link_check.py checks
@@ -17,6 +26,22 @@
 # out so the rest links.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+usage="usage: .github/ci/linux.sh gcc|clang [--side-by-side] [--no-coverage]"
+job="${1:-}"
+case "$job" in
+gcc | clang) shift ;;
+*) echo "$usage" >&2; exit 2 ;;
+esac
+beside=()
+coverage=yes
+for option in "$@"; do
+    case "$job $option" in
+    "gcc --side-by-side" | "clang --side-by-side") beside=(--side-by-side) ;;
+    "gcc --no-coverage") coverage= ;;
+    *) echo "linux.sh: $job doesn't take $option" >&2; exit 2 ;;
+    esac
+done
+
 work=/work
 gen="$work/gen/recomp/gen"
 mkdir -p "$gen"
@@ -26,7 +51,7 @@ python3 .github/ci/fetch.py \
     https://github.com/libsdl-org/SDL/releases/download/release-2.30.12/SDL2-2.30.12.tar.gz \
     "$work/SDL2-2.30.12.tar.gz" "$(sed -n 's/^sha256=//p' launcher/linux/sdl.sh)"
 
-case "${1:?gcc or clang}" in
+case "$job" in
 gcc)
     launcher/linux/sdl.sh "$work/SDL2-2.30.12.tar.gz" "$work/sdl"
     CC=gcc CXX=g++ cmake -S port -B "$work/build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -46,7 +71,7 @@ gcc)
         || { cat "$work/cmake-debug.log"; exit 1; }
     python3 .github/ci/link_check.py --log "$work/debug.log" "$work/gen-debug/recomp/gen" \
         cmake --build "$work/debug"
-    python3 tests/run_all.py
+    python3 tests/run_all.py "${beside[@]}"
     python3 -m venv "$work/venv"
     "$work/venv/bin/pip" install --quiet --require-hashes -r .github/ci/tools-requirements.txt
     "$work/venv/bin/python" -m pytest -q -p no:cacheprovider tools launcher .github/ci/test_ci.py
@@ -54,18 +79,18 @@ gcc)
     python3 .github/ci/count_warnings.py gcc-debug "$work/debug.log"
     # The engine tests' line coverage of src/ and port/, for information
     # only: the tests again, with GCC's line counts, and the report.
-    python3 tests/run_all.py --coverage "$work/coverage" | tail -n 1
-    python3 .github/ci/coverage.py "$work/coverage" \
-        || echo "coverage: no report (for information only, so the job goes on)"
+    if [ -z "$coverage" ]; then
+        echo "coverage: left out (--no-coverage)"
+    else
+        python3 tests/run_all.py --coverage "$work/coverage" | tail -n 1
+        python3 .github/ci/coverage.py "$work/coverage" \
+            || echo "coverage: no report (for information only, so the job goes on)"
+    fi
     ;;
 clang)
     python3 .github/ci/link_check.py --log "$work/build.log" "$gen" \
         launcher/linux/build.sh "$work" -DJSRF_GEN_DIR="$gen" -DJSRF_VERSION=ci
-    CC=clang python3 tests/run_all.py
+    CC=clang python3 tests/run_all.py "${beside[@]}"
     python3 .github/ci/count_warnings.py clang "$work/build.log"
-    ;;
-*)
-    echo "usage: .github/ci/linux.sh gcc|clang" >&2
-    exit 2
     ;;
 esac

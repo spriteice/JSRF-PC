@@ -159,7 +159,10 @@ files move between them, and what the PC has installed.
   JSRF-PC Tools' scripts and a repeated run are always alone on the
   machine. A batch's send or fetch for the Ally X or the OptiPlex isn't a
   run: it may share the PC with one, under the PC's SSH slot (When the PC
-  is busy). The cloud's jobs run one after another too.
+  is busy). In the cloud, a commit's CI jobs run side by side, but the
+  engine tests that start threads or measure time run alone after them
+  (CI, Before a commit); its build and its repeated runs are each alone
+  there too.
 
 ### When the PC is busy
 
@@ -236,8 +239,9 @@ against the kept copy (What is kept between builds).
 - **If the sandbox can't get its build images** either (CI, When a
   server is down), the build and the CI jobs wait for whichever is back
   first, the server or the PC.
-- **One job at a time:** the sandbox runs its build and its thread's CI
-  jobs one after another (On my PC).
+- **One run at a time:** the sandbox runs its build, its thread's CI and
+  a repeated run one after another, never two at once (On my PC), and a
+  commit's CI jobs side by side, as CI, Before a commit says.
 
 ### Playback runs
 
@@ -592,7 +596,7 @@ between builds).
 | Job | What it checks |
 |---|---|
 | Build image | Nothing: on a push to `main`, it publishes each build image not yet published (`launcher/images.sh publish`). |
-| Linux, GCC | The engine and the runtime built with GCC, and the link; the Debug build too, as far as the link, with the recompiler's register check and indirect-call records (`port/CMakeLists.txt`); the engine tests; the tool tests, and CI's own (`.github/ci/test_ci.py`); both builds' warnings (below); and, for information only, the engine tests' line coverage of `src/` and `port/` (below). |
+| Linux, GCC | The engine and the runtime built with GCC, and the link; the Debug build too, as far as the link, with the recompiler's register check and indirect-call records (`port/CMakeLists.txt`); the engine tests; the tool tests, and CI's own (`.github/ci/test_ci.py`); both builds' warnings (below); and, on GitHub, for information only, the engine tests' line coverage of `src/` and `port/` (below). |
 | Linux, clang, and the package | The Linux package, made by `launcher/linux/build.sh` as the release is, and the package check; the engine tests built with clang; the build's warnings. |
 | Thread sanitizer | The engine tests that start threads, built with clang's ThreadSanitizer (`tests/run_all.py --tsan`). |
 | Address and undefined-behaviour sanitizers | Every engine test, built with GCC's AddressSanitizer, its leak check included, and UndefinedBehaviorSanitizer (`tests/run_all.py --asan`). |
@@ -625,15 +629,17 @@ between builds).
   At 0, any warning fails the job, as `-Werror` would. The job's log lists
   every warning it counted. These are the static checks of the project
   rules (Workflow 4).
-- **Coverage:** the GCC job runs the engine tests again built with GCC's
-  line counts (`tests/run_all.py --coverage`), and its log ends with each
-  file's lines reached, the files of `src/` and `port/` no test builds,
-  and the totals (`.github/ci/coverage.py`). It is for information only:
-  it fails nothing, and nothing keeps it. A test that builds a piece cut
-  out of a file by text (project rules, How it's written, "Tests link the
-  code they test") counts towards the piece, not the file. GCC writes a
-  program's counts from an exit handler, which `_exit()` skips, so a test
-  that ends with `_exit()`, as one whose threads run on does, calls
+- **Coverage:** on GitHub, the GCC job runs the engine tests again built
+  with GCC's line counts (`tests/run_all.py --coverage`), and its log ends
+  with each file's lines reached, the files of `src/` and `port/` no test
+  builds, and the totals (`.github/ci/coverage.py`). It is for information
+  only: it fails nothing, and nothing keeps it, so the cloud's runs before
+  a commit leave it out (`linux.sh gcc --no-coverage`). A test that builds
+  a piece cut out of a file by text (project rules, How it's written,
+  "Tests link the code they test") counts towards the piece, not the
+  file. GCC writes a program's counts from an exit handler, which
+  `_exit()` skips, so a test that ends with `_exit()`, as one whose
+  threads run on does, calls
   `__gcov_dump()` just before it, under `TEST_COVERAGE`, which `--coverage`
   defines: without that, the files it runs read as never run. And each
   compile's counts have names of their own (`tests/coverage_cc.py`, the
@@ -653,13 +659,35 @@ between builds).
   tree before it.
   - **In the cloud:** every job but Build image and the Windows tests is
     a script in `.github/ci`, run in the build image by
-    `.github/ci/docker.sh`, so the same commands run there as on GitHub:
-    - `.github/ci/docker.sh "linux tests" .github/ci/linux.sh gcc`
-    - `.github/ci/docker.sh "linux tests" .github/ci/linux.sh clang`
+    `.github/ci/docker.sh`, so the same commands run there as on GitHub.
+    "Every job" runs the six side by side, as GitHub does, with two
+    options GitHub's runs don't take: the GCC and clang jobs leave out the
+    engine tests that start threads or measure time (`--side-by-side`), as
+    load on the machine changes what they find, and the GCC job leaves out
+    the coverage pass (`--no-coverage`, Coverage above).
+    `tests/run_all.py --side-by-side` names those tests: the ones `--tsan`
+    runs, and the ones whose files read the clock or sleep. Once all six
+    have ended, those tests run alone, built with GCC and then with clang
+    (`.github/ci/alone.sh`):
+    - `.github/ci/docker.sh "linux tests" .github/ci/linux.sh gcc --side-by-side --no-coverage`
+    - `.github/ci/docker.sh "linux tests" .github/ci/linux.sh clang --side-by-side`
     - `.github/ci/docker.sh "linux tests" .github/ci/tsan.sh`
     - `.github/ci/docker.sh "linux tests" .github/ci/asan.sh`
     - `.github/ci/docker.sh conformance .github/ci/conformance.sh`
     - `.github/ci/docker.sh windows .github/ci/windows.sh`
+    - then, alone: `.github/ci/docker.sh "linux tests" .github/ci/alone.sh`
+
+    Where check 6 gives the GCC job by itself (an earlier commit of those
+    pushed together, or a commit's new tree after `main` moved onto
+    commits that don't overlap it), it runs alone on the sandbox and
+    whole, but for the coverage pass:
+    `.github/ci/docker.sh "linux tests" .github/ci/linux.sh gcc --no-coverage`.
+    The shared folder's cloud-builds/sandbox/run-ci.sh runs either way
+    (`all`, or the jobs it is given). The sanitizer jobs run every test
+    side by side, as they leave timing checks out (`TEST_SANITIZER`,
+    `tests/run_all.py`). In ten trials of this on 28 November 2026 no test
+    failed, where with every test side by side cpuprof's timing check
+    failed (the shared folder's ci-time/FINDINGS.md).
 
     Each job runs in its published build image, pulled or kept (What is
     kept between builds). Behind the sandbox's proxy, `CI_DOCKER_ARGS`
@@ -696,8 +724,8 @@ between builds).
     image of its groups, as docker.sh runs it, in a checkout with nothing
     but the commit's tree, and the Windows job with its downloads kept.
     Say so in the review pack.
-  - The two machines run their jobs at the same time, and each runs its
-    own one after another.
+  - The two machines run their jobs at the same time: the PC its own one
+    after another, the cloud its own as In the cloud says.
 
 ### Repeated runs
 

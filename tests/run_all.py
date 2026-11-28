@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Run every engine test (each tests/<name>/run.py), as CI does.
 
-    python3 tests/run_all.py [--tsan | --asan | --coverage <dir>] [name...]
+    python3 tests/run_all.py [--tsan | --asan | --coverage <dir>]
+                             [--side-by-side | --alone | name...]
 
 With names, only those tests. Each test passes, fails, fails in a way
 listed in tests/known-failures.txt (a known bug, still open, whose failure is
@@ -38,6 +39,13 @@ that ends with _exit(), as one whose threads run on does, writes its counts
 first with __gcov_dump(): _exit() skips the exit handler that writes them.
 It is for information only: the tests' results are shown, and the exit
 status is 0 whatever they are.
+
+--side-by-side leaves out the tests that start threads or measure time (as
+--tsan finds them, and those whose files read the clock or sleep, as
+clock_gettime, GetTickCount or nanosleep), which load on the machine can
+change: for a run beside other jobs, as the cloud's CI before a commit is.
+--alone runs only those, for the run on its own that follows
+(docs/build-and-test-reference.md, CI, Before a commit).
 """
 
 import fnmatch
@@ -53,6 +61,11 @@ import time
 
 root = pathlib.Path(__file__).resolve().parents[1]
 THREADS = re.compile(r"pthread_create|CreateThread|std::thread")
+# A test that starts threads or measures time, which load on the machine can
+# change (--side-by-side and --alone).
+ALONE = re.compile(THREADS.pattern + r"|clock_gettime|QueryPerformanceCounter|GetTickCount"
+                   r"|perf_counter|time\.monotonic|nanosleep|usleep|Sleep\(|SDL_GetTicks"
+                   r"|SDL_Delay|std::chrono")
 TIMEOUT = 600   # seconds for one test's run.py, all its cases
 SKIPPED = 77    # a run.py's exit status when its test can't run here
 
@@ -186,9 +199,9 @@ def report_lines(reports):
     return out
 
 
-def threaded(test):
+def threaded(test, pattern=THREADS):
     for f in test.iterdir():
-        if f.suffix in (".py", ".c", ".cpp", ".h") and THREADS.search(f.read_text(encoding="utf-8", errors="replace")):
+        if f.suffix in (".py", ".c", ".cpp", ".h") and pattern.search(f.read_text(encoding="utf-8", errors="replace")):
             return True
     return False
 
@@ -217,8 +230,11 @@ def main(argv):
         del argv[i:i + 2]
     tsan = "--tsan" in argv
     asan = "--asan" in argv
-    names = [a for a in argv if a not in ("--tsan", "--asan")]
+    beside = "--side-by-side" in argv
+    alone = "--alone" in argv
+    names = [a for a in argv if a not in ("--tsan", "--asan", "--side-by-side", "--alone")]
     if (tsan + asan + (coverage is not None) > 1 or coverage == ""
+            or beside + alone + bool(names) > 1
             or any(a.startswith("-") for a in names)):
         print(__doc__.strip().split("\n\n")[1], file=sys.stderr)
         return 2
@@ -242,6 +258,8 @@ def main(argv):
         tests = [t for t in tests if t.name in names]
     if tsan:
         tests = [t for t in tests if threaded(t)]
+    if beside or alone:
+        tests = [t for t in tests if threaded(t, ALONE) == alone]
 
     env = dict(os.environ)
     supp = root / "tests/tsan.supp"
@@ -334,8 +352,9 @@ def main(argv):
                 print("      | " + l)
         {"ok": passed, "known": known_seen, "FAIL": failed, "skip": skipped}[verdict].append(test.name)
 
-    print("run_all%s: %d passed, %d skipped, %d known failures, %d failed%s" % (
+    print("run_all%s%s: %d passed, %d skipped, %d known failures, %d failed%s" % (
         " --tsan" if tsan else " --asan" if asan else " --coverage" if coverage else "",
+        " --side-by-side" if beside else " --alone" if alone else "",
         len(passed), len(skipped), len(known_seen), len(failed),
         ": " + ", ".join(failed) if failed else ""))
     if coverage is not None:

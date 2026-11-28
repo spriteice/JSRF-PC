@@ -2,7 +2,8 @@
 (.github/ci/linux.sh): fetch.py's tries, launcher/windows/fetch.sh's tries
 at each of a file's sources, how tests/run_all.py names a
 sanitizer's leak, checks that each known bug names its release and counts
-what each tsan.supp entry hides, how count_warnings.py counts a build's
+what each tsan.supp entry hides, which tests it runs side by side and which
+alone, which options linux.sh takes, how count_warnings.py counts a build's
 warnings, how coverage.py adds up the tests' line counts and names the
 programs that wrote none, that the tests that end with _exit() write
 theirs, how tests/coverage_cc.py keeps each compile's apart, how
@@ -290,6 +291,54 @@ def test_a_skipped_test_is_counted_apart(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "skip  skips" in out
     assert "run_all: 1 passed, 1 skipped, 0 known failures, 0 failed" in out
+
+
+def test_side_by_side_leaves_out_the_tests_that_run_alone(tmp_path, monkeypatch, capsys):
+    # A test that starts threads, or one whose files read the clock or sleep,
+    # runs only with --alone; --side-by-side runs the rest. Each is named by
+    # what is in its own files, run.py or its sources.
+    tests = tmp_path / "tests"
+    sources = {"threads": ("worker.c", "pthread_create(&t, 0, run, 0);"),
+               "clock": ("clock.c", "clock_gettime(CLOCK_MONOTONIC, &now);"),
+               "sleeps": ("run.py", "import time\ntime.perf_counter()\n"),
+               "plain": ("maths.c", "int add(int a, int b) { return a + b; }")}
+    for name, (source, text) in sources.items():
+        (tests / name).mkdir(parents=True)
+        (tests / name / source).write_text(text)
+        with open(tests / name / "run.py", "a") as f:
+            f.write("\nprint('%s: here')\n" % name)
+    for name in ("known-failures.txt", "asan-known.txt", "tsan.supp"):
+        (tests / name).write_text("")
+    monkeypatch.setattr(run_all, "root", tmp_path)
+    assert run_all.main(["--side-by-side"]) == 0
+    out = capsys.readouterr().out
+    assert re.findall(r"^ok +(\S+)", out, re.M) == ["plain"]
+    assert "run_all --side-by-side: 1 passed, 0 skipped, 0 known failures, 0 failed" in out
+    assert run_all.main(["--alone"]) == 0
+    out = capsys.readouterr().out
+    assert re.findall(r"^ok +(\S+)", out, re.M) == ["clock", "sleeps", "threads"]
+    assert "run_all --alone: 3 passed" in out
+    for refused in (["--side-by-side", "--alone"], ["--alone", "plain"]):
+        assert run_all.main(refused) == 2
+
+
+def test_every_test_tsan_runs_runs_alone():
+    # The tests --tsan runs, those that start threads, are among those
+    # --alone runs, so no test that starts threads runs beside other jobs.
+    tests = sorted(pathlib.Path(p).parent for p in (root / "tests").glob("*/run.py"))
+    threaded = {t.name for t in tests if run_all.threaded(t)}
+    alone = {t.name for t in tests if run_all.threaded(t, run_all.ALONE)}
+    assert threaded and threaded <= alone
+    assert len(alone) < len(tests)
+
+
+@pytest.mark.parametrize("args", [["clang", "--no-coverage"], ["gcc", "--alone"], ["tsan"]])
+def test_linux_sh_refuses_an_option_its_job_doesnt_take(args):
+    # Before it builds or downloads anything.
+    run = subprocess.run(["bash", str(root / ".github" / "ci" / "linux.sh"), *args],
+                         capture_output=True, text=True)
+    assert run.returncode == 2
+    assert "linux.sh" in run.stderr and not run.stdout
 
 
 def test_each_tsan_group_names_its_release_or_design():
