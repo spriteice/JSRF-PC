@@ -72,7 +72,12 @@ The game's lines that name a control (the A or B by its letter, and in the
 graffiti editor's help lines the D-pad, the left stick and the triggers in
 words) are `prompt_text.c`, from the font calls' overrides there: it knows
 each line by its bytes and draws it in pieces, each name's place marked
-for the style's pictures the same way. The talks' and the missions'
+for the style's pictures the same way. The line itself is marked open
+before its pieces and shut after them, and its pictures after its last
+piece, so the renderer draws each picture at its letters' depth, just
+behind them: what the game draws later behind the text, such as the
+loading screen behind the graffiti error's box, can't cover the picture,
+and what covers the text, such as a fade, covers it too. The talks' and the missions'
 messages, which the game loads from its files into memory of its own,
 have no line of the table to be: their names are found by their own bytes
 (known bug 81), with the rest of the talk window's page, not yet typed, so

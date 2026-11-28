@@ -2150,28 +2150,34 @@ static const char pic_vs[] =
     NV2A_GLSL_VERSION
     "uniform vec4 picRect;\n"
     "uniform vec4 picPart;\n"
+    "uniform float picZ;\n"
     "out vec2 picUv;\n"
     "void main()\n{\n"
     "    vec2 p = vec2(float(gl_VertexID & 1), float((gl_VertexID >> 1) & 1));\n"
     "    picUv = mix(picPart.xw, picPart.zy, p);\n"
-    "    gl_Position = vec4(mix(picRect.xy, picRect.zw, p), 0.0, 1.0);\n"
+    "    gl_Position = vec4(mix(picRect.xy, picRect.zw, p), picZ, 1.0);\n"
     "}\n";
 static const char pic_fs[] =
     NV2A_GLSL_VERSION
     "uniform sampler2D picTex;\n"
     "uniform float picAlpha;\n"
+    "uniform int picCut;\n"
     "in vec2 picUv;\n"
     "out vec4 picOut;\n"
     "void main()\n{\n"
     "    picOut = texture(picTex, picUv) * vec4(1.0, 1.0, 1.0, picAlpha);\n"
+    "    // At a depth: cut where it's clear, as the title's alpha test cuts a\n"
+    "    // letter, so only the picture itself writes it.\n"
+    "    if (picCut != 0 && picOut.a <= 0.0) discard;\n"
     "}\n";
 static struct {
     GLuint prog, vao;
-    GLint  rect_loc, part_loc, alpha_loc;
+    GLint  rect_loc, part_loc, alpha_loc, z_loc, cut_loc;
     int    bad;
 } g_pic;
 
-static void glx_picture(uint32_t tex, const float rect[4], const float part[4], float alpha)
+static void glx_picture(uint32_t tex, const float rect[4], const float part[4], float alpha,
+                        const float *z)
 {
     static const float whole[4] = { 0.0f, 0.0f, 1.0f, 1.0f };
     GLint vao = 0;
@@ -2189,14 +2195,25 @@ static void glx_picture(uint32_t tex, const float rect[4], const float part[4], 
         g_pic.rect_loc = glGetUniformLocation(g_pic.prog, "picRect");
         g_pic.part_loc = glGetUniformLocation(g_pic.prog, "picPart");
         g_pic.alpha_loc = glGetUniformLocation(g_pic.prog, "picAlpha");
+        g_pic.z_loc = glGetUniformLocation(g_pic.prog, "picZ");
+        g_pic.cut_loc = glGetUniformLocation(g_pic.prog, "picCut");
         glUniform1i(glGetUniformLocation(g_pic.prog, "picTex"), SCRATCH_UNIT);
         glGenVertexArrays(1, &g_pic.vao);
     }
     glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vao);
     sc = glIsEnabled(GL_SCISSOR_TEST);
     glDisable(GL_SCISSOR_TEST);
-    glDisable(GL_DEPTH_TEST);
-    glDepthMask(GL_FALSE);
+    if (z) {
+        /* Written, not tested: GL writes depth only with its test on. At
+         * the depth given, with no offset the title's last draw left on. */
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_ALWAYS);
+        glDepthMask(GL_TRUE);
+        glDisable(GL_POLYGON_OFFSET_FILL);
+    } else {
+        glDisable(GL_DEPTH_TEST);
+        glDepthMask(GL_FALSE);
+    }
     glDisable(GL_STENCIL_TEST);
     glDisable(GL_CULL_FACE);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -2206,6 +2223,8 @@ static void glx_picture(uint32_t tex, const float rect[4], const float part[4], 
     glUniform4fv(g_pic.rect_loc, 1, rect);
     glUniform4fv(g_pic.part_loc, 1, part ? part : whole);
     glUniform1f(g_pic.alpha_loc, alpha);
+    glUniform1f(g_pic.z_loc, z ? *z : 0.0f);
+    glUniform1i(g_pic.cut_loc, z ? 1 : 0);
     scratch_bind((GLuint)tex);
     glBindSampler(SCRATCH_UNIT, 0);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);

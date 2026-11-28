@@ -953,10 +953,11 @@ static void plain(void)
         [WIDE_PLAIN_GRAFFITI]   = { 0x00127080u, 0x001DA300u },
         [WIDE_PLAIN_LOADING]    = { 0x00066550u, 0x001CB0A8u },
         [WIDE_PLAIN_VS]         = { 0x00071100u, 0x001CCA80u },
+        [WIDE_PLAIN_LOADING_HELD] = { 0x00066660u, 0x001CB0A8u },
     };
     const uint32_t garage = widescreen_menus_plain[WIDE_PLAIN_GARAGE].vtable;
     unsigned i, j;
-    CHECK(WIDE_PLAINS == 12);
+    CHECK(WIDE_PLAINS == 13);
     CHECK(WIDE_MENU_PIECE(WIDE_MENUS - 1, 0x1F) < WIDE_MENU_PIECE_TEXT_L);
     CHECK(WIDE_MENU_PIECE_FILL(0) > WIDE_MENU_PIECE_TICKER);
     CHECK(WIDE_MENU_PIECE_FILL(WIDE_PLAINS - 1) <= 0xFFu);
@@ -964,15 +965,19 @@ static void plain(void)
         const WidePlainMenu *m = &widescreen_menus_plain[i];
         CHECK(m->va == want[i].va && m->vtable == want[i].vtable);
         CHECK(m->name != NULL && m->name[0] != '\0');
+        /* each its own class but the loading screen's two draws */
         for (j = 0; j < i; j++)
             CHECK(widescreen_menus_plain[j].va != m->va
-                  && widescreen_menus_plain[j].vtable != m->vtable);
+                  && (widescreen_menus_plain[j].vtable != m->vtable
+                      || (j == WIDE_PLAIN_LOADING && i == WIDE_PLAIN_LOADING_HELD)));
         for (j = 0; j < WIDE_MENUS; j++)
             CHECK(widescreen_menus[j].va != m->va && widescreen_menus[j].vtable != m->vtable);
         CHECK(m->vtable != WIDE_MENU_TICKER_CLASS);
     }
     CHECK(widescreen_menus_plain[WIDE_PLAIN_GRAFFITI].when == WIDE_FILL_GRAFFITI);
     CHECK(widescreen_menus_plain[WIDE_PLAIN_LOADING].when == WIDE_FILL_LOADING);
+    CHECK(widescreen_menus_plain[WIDE_PLAIN_LOADING_HELD].when == WIDE_FILL_LOADING_HELD);
+    CHECK(WIDE_LOADING_HIDDEN == 0x02u && WIDE_LOADING_HELD == 0x08u);
     for (i = 0; i < WIDE_PLAIN_GRAFFITI; i++)
         CHECK(widescreen_menus_plain[i].when == WIDE_FILL_ALWAYS);
     CHECK(widescreen_menus_plain[WIDE_PLAIN_VS].when == WIDE_FILL_ALWAYS);
@@ -1003,7 +1008,8 @@ static void plain(void)
         memset(mem() + MENU, 0, 0x200);
         set(MENU, widescreen_menus_plain[i].vtable);
         set(MENU + WIDE_GRAFFITI_STATE, 4);
-        set(MENU + WIDE_LOADING_SHOWN, 1);
+        set(MENU + WIDE_LOADING_SHOWN, i == WIDE_PLAIN_LOADING_HELD ? 0 : 1);
+        set(MENU + WIDE_LOADING_FLAGS, i == WIDE_PLAIN_LOADING_HELD ? WIDE_LOADING_HELD : 0);
         for (k = 0; k < 2; k++) {
             uint32_t at = BUFFER + step * (uint32_t)k;
             began = widescreen_menus_fill(mem(), DEVICE, (int)i, MENU, pass, 1, space);
@@ -1056,6 +1062,57 @@ static void plain(void)
             widescreen_menus_fill_end(began);
             writes += (unsigned)began;
             CHECK(word(DEVICE + WIDE_HUD_D3D_PUT) == BUFFER + 8u * writes);
+        }
+    }
+    /* the loading screen held under a message box (its draw at +0x3C, when
+     * loading ends with a box up, spriteice's graffiti error screen of 27
+     * November 2026): while +0xA4 has 0x08 set and 0x02 clear, whatever
+     * +0x98 is */
+    fresh();
+    memset(mem() + MENU, 0, 0x200);
+    set(MENU, widescreen_menus_plain[WIDE_PLAIN_LOADING_HELD].vtable);
+    {
+        static const struct { uint32_t shown; uint8_t flags; int fills; } h[] = {
+            { 0, 0x08, 1 }, { 0, 0xF9, 1 }, { 1, 0x08, 1 }, { 0, 0x0A, 0 }, { 0, 0xFF, 0 },
+            { 0, 0, 0 }, { 0, 0xF7, 0 }, { 1, 0, 0 },
+        };
+        unsigned k, writes = 0;
+        for (k = 0; k < sizeof h / sizeof h[0]; k++) {
+            int began;
+            set(MENU + WIDE_LOADING_SHOWN, h[k].shown);
+            set(MENU + WIDE_LOADING_FLAGS, 0xAB00u | h[k].flags);   /* the byte alone */
+            began = widescreen_menus_fill(mem(), DEVICE, WIDE_PLAIN_LOADING_HELD, MENU, 0, 1,
+                                          space);
+            CHECK(began == h[k].fills);
+            widescreen_menus_fill_end(began);
+            writes += (unsigned)began;
+            CHECK(word(DEVICE + WIDE_HUD_D3D_PUT) == BUFFER + 8u * writes);
+            if (began)
+                CHECK(mark_at(BUFFER + 8u * (writes - 1u),
+                              WIDE_MENU_PIECE_FILL(WIDE_PLAIN_LOADING_HELD), NV2A_WIDE_HUD_FILL));
+        }
+    }
+    /* the game's three states of the loading screen: loading (+0x98 1, the
+     * flags clear) fills by its first draw only, held under a box (+0x98 0,
+     * 0x08) by its second only, and closed (0x02 too) by neither */
+    {
+        static const struct { uint32_t shown; uint8_t flags; int first, second; } st[] = {
+            { 1, 0, 1, 0 }, { 0, WIDE_LOADING_HELD, 0, 1 },
+            { 0, WIDE_LOADING_HELD | WIDE_LOADING_HIDDEN, 0, 0 },
+        };
+        unsigned k;
+        for (k = 0; k < sizeof st / sizeof st[0]; k++) {
+            int a, b;
+            fresh();
+            memset(mem() + MENU, 0, 0x200);
+            set(MENU, widescreen_menus_plain[WIDE_PLAIN_LOADING].vtable);
+            set(MENU + WIDE_LOADING_SHOWN, st[k].shown);
+            set(MENU + WIDE_LOADING_FLAGS, st[k].flags);
+            a = widescreen_menus_fill(mem(), DEVICE, WIDE_PLAIN_LOADING, MENU, 0, 1, space);
+            widescreen_menus_fill_end(a);
+            b = widescreen_menus_fill(mem(), DEVICE, WIDE_PLAIN_LOADING_HELD, MENU, 0, 1, space);
+            widescreen_menus_fill_end(b);
+            CHECK(a == st[k].first && b == st[k].second);
         }
     }
     /* at the limit, make-space first */

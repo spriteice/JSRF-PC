@@ -55,6 +55,8 @@ ONCE = (
     "[WIDE] the garage's graffiti menu (sub_00127080): its frames' sides filled, piece 217, "
     "its tan strip hidden",
     "[WIDE] the loading screen (sub_00066550): its frames' sides filled, piece 218",
+    "[WIDE] the loading screen held under a message box (sub_00066660): its frames' sides "
+    "filled, piece 220",
     "[WIDE] the GG notebook (sub_00115030): laid out for the wide screen",
     "[WIDE] menu part 194 in the GG notebook, the area name (a sign, flags 80000000): "
     "marked for the left edge",
@@ -165,7 +167,7 @@ COUNTED = {
     # the climbing n5, in the system menu's two listings and options' two
     "[WIDE]   node 5, depth 2: a mesh, track 01, x -40.00..50.00 y 0.00..3.00 z 1.50..1.50\n": 4,
 }
-PLAINS = 12
+PLAINS = 13
 PARTS = 13 + 8 + 3 + 3 + 5
 
 with tempfile.TemporaryDirectory(prefix="widescreen_menus-") as directory:

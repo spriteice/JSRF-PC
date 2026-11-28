@@ -200,6 +200,13 @@ uint32_t prompt_buttons_push(uint8_t *mem, uint32_t device, const uint32_t *word
 uint32_t prompt_buttons_upright(uint8_t *mem, uint32_t device, float grow,
                                 widescreen_hud_space_fn make_space);
 
+/* A line's mark (nv2a_prompts.h, NV2A_PROMPT_LINE_TAG): open before a line
+ * of the game's text with pictures in it is drawn, shut after its
+ * pictures, so the renderer draws them at its letters' depth. Written as
+ * prompt_buttons_push writes one; returns where it went, or 0 for no
+ * device or no room. */
+uint32_t prompt_buttons_line(uint8_t *mem, uint32_t device, int open, widescreen_hud_space_fn make_space);
+
 /* After the draw: the walk closed, and its sphere placed (as
  * prompt_buttons_place) and marked (as prompt_buttons_push) for the
  * renderer. The first time each button is drawn this way, in the box and

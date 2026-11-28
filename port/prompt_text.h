@@ -41,10 +41,17 @@
  *
  * A matched line is drawn at once (prompt_text_draw), in pieces through
  * the call that draws at once, each name's place left clear for its
- * pictures: the words before it; the pictures, each a mark in D3D's push
- * buffer (nv2a_prompts.h, NV2A_PROMPT_MARK_METHOD) the renderer draws the
- * picture on, as the message box's flat A and B are (prompt_buttons.h);
- * then the rest. The font leaves its pen where a piece ends (the font
+ * pictures: the words before it, the rest, and then the pictures, each a
+ * mark in D3D's push buffer (nv2a_prompts.h, NV2A_PROMPT_MARK_METHOD) the
+ * renderer draws the picture on, as the message box's flat A and B are
+ * (prompt_buttons.h). They come after the line's last piece so that each
+ * is drawn after its letters, and the font call's override marks the line
+ * around them (NV2A_PROMPT_LINE_TAG) so the renderer draws them at the
+ * letters' depth: a screen the game draws after the text, behind it, can't
+ * cover them, as it can't the letters (the loading screen held under the
+ * graffiti error box, spriteice, 12:21pm on 27 November 2026, UTC+8: "We
+ * need to make the button show here"), and what covers the text, a fade,
+ * covers them too. The font leaves its pen where a piece ends (the font
  * object's +0x4B118 and +0x4B11C), so each picture is where the name
  * was; a new line in the game's text ($n) takes the pen back to the line's
  * start and one line (PROMPT_TEXT_CELL) down, so the words after a picture
@@ -227,10 +234,11 @@ typedef struct {
 /* The matched line m, its text at text, drawn from (x, y) at the scales xs
  * and ys, as described above, with each piece's text copied to scratch, a
  * guest buffer of m->len + PROMPT_TEXT_COLOUR + 1 bytes or more: a piece
- * after a picture starts with the colour code in force there. Returns the
+ * after a picture starts with the colour code in force there. The pictures
+ * are marked after the last piece, in the line's order. Returns the
  * pictures marked;
  * 0 when the font isn't there, which leaves the rest undrawn as the game's
- * own call would. */
+ * own call would, and marks none. */
 int prompt_text_draw(const PromptTextMatch *m, uint8_t *mem, uint32_t text, uint32_t scratch, float x,
                      float y, float xs, float ys, const PromptTextCalls *c);
 

@@ -81,6 +81,16 @@
  * screens are filled too, but only on the frames they draw in: the graffiti
  * menu on its pass 9 in its states 4 and 8 (graffiti select's 3D scene,
  * shown wide, draws in the others), the loading screen while it's shown.
+ * The loading screen is the one plain menu with two draws: when loading
+ * ends with a message box up (a save's graffiti that won't load, spriteice,
+ * 27 November 2026, 12:21pm UTC+8: "make this screen adhere to
+ * widescreen"), it sets its flag 0x08 and puts the task manager in its mode
+ * +0x4C, in which every task draws through its slot +0x3C, not +0xC: the
+ * loading screen through sub_00066660, held under the box until it's
+ * closed (graffiti-load-error, search-2, sections 6 and 7). That draw has
+ * its own entry (WIDE_PLAIN_LOADING_HELD), filled while the flag is set.
+ * The other plain menus' other slots are no-ops or send the walk back to
+ * +0xC.
  * So is VS mode's setup screen, the first after "VS mode" on the title
  * (spriteice, 8 November 2026, 08:39 UTC: "the first menu after clicking "vs
  * mode" (3rd option on title screen) is still completely broken"), by its
@@ -540,9 +550,9 @@ int widescreen_menus_mark(uint8_t *mem, uint32_t device, unsigned piece, int sid
 void widescreen_menus_unmark(uint8_t *mem, uint32_t device, unsigned piece, int marked,
                              widescreen_hud_space_fn make_space);
 
-/* The plain menus, each by the game function that draws it. The graffiti
- * menu and the loading screen draw on some of their calls only
- * (WidePlainMenu's when). */
+/* The plain menus, each by the game function that draws it (the loading
+ * screen by both of its). The graffiti menu and the loading screen draw on
+ * some of their calls only (WidePlainMenu's when). */
 enum {
     WIDE_PLAIN_SAVE,          /* save and load */
     WIDE_PLAIN_GARAGE,        /* Roboy's garage menu */
@@ -556,15 +566,16 @@ enum {
     WIDE_PLAIN_GRAFFITI,      /* the garage's graffiti menu */
     WIDE_PLAIN_LOADING,       /* the loading screen, with the blue rectangles */
     WIDE_PLAIN_VS,            /* VS mode's setup screen */
+    WIDE_PLAIN_LOADING_HELD,  /* the loading screen held under a message box, its second draw */
     WIDE_PLAINS
 };
 
 /* When a plain menu's draw draws: at every call, or as the graffiti menu's
- * and the loading screen's do. */
-enum { WIDE_FILL_ALWAYS, WIDE_FILL_GRAFFITI, WIDE_FILL_LOADING };
+ * and the loading screen's two do. */
+enum { WIDE_FILL_ALWAYS, WIDE_FILL_GRAFFITI, WIDE_FILL_LOADING, WIDE_FILL_LOADING_HELD };
 
 typedef struct {
-    uint32_t va;               /* the function that draws it, its class's slot +0xC (+0x24 for the graffiti menu) */
+    uint32_t va;               /* the function that draws it, its class's slot +0xC (+0x3C for the held loading screen's) */
     uint32_t vtable;           /* its class */
     const char *name;          /* for the log */
     uint8_t when;              /* WIDE_FILL_... */
@@ -592,9 +603,15 @@ typedef struct {
 #define WIDE_GRAFFITI_PASS  9u
 #define WIDE_GRAFFITI_STATE 0x1C0u
 /* The loading screen draws only while +0x98 (32 bits) is 1 and the byte at
- * +0xA4 has 0x02 clear. */
+ * +0xA4 has WIDE_LOADING_HIDDEN clear; held under a message box (its draw
+ * at +0x3C), only while that byte has WIDE_LOADING_HELD set and
+ * WIDE_LOADING_HIDDEN clear. Loading's end with a box up sets +0x98 to 0
+ * and WIDE_LOADING_HELD, and the task manager calls one of the two draws
+ * in a frame, by its mode. */
 #define WIDE_LOADING_SHOWN  0x98u
 #define WIDE_LOADING_FLAGS  0xA4u
+#define WIDE_LOADING_HIDDEN 0x02u
+#define WIDE_LOADING_HELD   0x08u
 
 extern const WidePlainMenu widescreen_menus_plain[WIDE_PLAINS];
 

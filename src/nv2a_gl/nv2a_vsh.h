@@ -202,6 +202,17 @@ void nv2a_vsh_ff_vpoff(const float reg[4], float out[4]);
 void nv2a_vsh_vprect(const float off[4], const float scale[4],
                      float surf_w, float surf_h, float out[4]);
 
+/* The depth GL is given for a vertex program's vertex, from its oPos as the
+ * program wrote it: gl_Position's z over its w, as the programmable half of
+ * the viewport epilogue works it out (nv2a_vsh.c, emit_viewport_epilogue)
+ * from posMode, zClip and the viewport's z offset and scale, with reversed
+ * depth as nv2a_glsl_revz says, NV2A_Z01 if z01 (RECOMP_GL_Z01), and
+ * NV2A_CLIP_Z01 0, as the GLSL prelude has it. NaN for a w of 0. For a flat
+ * picture drawn at the depth of the letters it stands among
+ * (nv2a_prompts.h, NV2A_PROMPT_LINE_TAG). */
+float nv2a_vsh_ndc_z(const float opos[4], int pos_mode, const float z_clip[2], float vp_off_z,
+                     float vp_scale_z, int z01);
+
 #ifdef __cplusplus
 }
 #endif

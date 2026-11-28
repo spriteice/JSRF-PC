@@ -481,11 +481,16 @@ typedef struct Nv2aGfx {
      * y up), its first row at the top. `part` is the part of it shown, its
      * left, top, right and bottom as fractions of the picture (0 to 1), or
      * NULL for all of it. Blended by its alpha (straight, not
-     * premultiplied) times `alpha` (0 to 1), with no depth test or write,
-     * no stencil, no window clip and no culling: the button prompts' flat
-     * pictures (nv2a_prompts.h, NV2A_PROMPT_MARK_METHOD). The backend as
-     * the next draw expects it. NULL where the backend has none. */
-    void     (*picture)(uint32_t tex, const float rect[4], const float part[4], float alpha);
+     * premultiplied) times `alpha` (0 to 1), with no depth test, no
+     * stencil, no window clip and no culling, and no depth write unless
+     * `z` isn't NULL: then at the NDC depth *z (-1 to 1, or 0 to 1 with
+     * clip control's reversed depth), written wherever its alpha isn't 0,
+     * as a letter's is past the title's alpha test. The button prompts'
+     * flat pictures (nv2a_prompts.h, NV2A_PROMPT_MARK_METHOD; a line's at
+     * its letters' depth, NV2A_PROMPT_LINE_TAG). The backend as the next
+     * draw expects it. NULL where the backend has none. */
+    void     (*picture)(uint32_t tex, const float rect[4], const float part[4], float alpha,
+                        const float *z);
 } Nv2aGfx;
 
 /* The implementation: OpenGL's. */

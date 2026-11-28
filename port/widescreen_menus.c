@@ -105,7 +105,8 @@ const WideMenu widescreen_menus[WIDE_MENUS] = {
 /* The plain menus (the side fill), each the only draw of its class, at its
  * slot +0xC, as the read of the generated code found them
  * (widescreen-3b/menus/search-2; the graffiti menu and the loading screen,
- * search-3 to search-5). */
+ * search-3 to search-5), but the loading screen's second, at its slot
+ * +0x3C, held under a message box (graffiti-load-error/search-2). */
 const WidePlainMenu widescreen_menus_plain[WIDE_PLAINS] = {
     [WIDE_PLAIN_SAVE]       = { 0x0011DD10u, 0x001D8CD0u, "the save and load menu", WIDE_FILL_ALWAYS, WIDE_MENU_STRIP, 1 },
     [WIDE_PLAIN_GARAGE]     = { 0x0011C070u, 0x001D8638u, "Roboy's garage menu", WIDE_FILL_ALWAYS, WIDE_MENU_STRIP, 1 },
@@ -119,6 +120,8 @@ const WidePlainMenu widescreen_menus_plain[WIDE_PLAINS] = {
     [WIDE_PLAIN_GRAFFITI]   = { 0x00127080u, 0x001DA300u, "the garage's graffiti menu", WIDE_FILL_GRAFFITI, WIDE_MENU_STRIP_GRAFFITI, 1 },
     [WIDE_PLAIN_LOADING]    = { 0x00066550u, 0x001CB0A8u, "the loading screen", WIDE_FILL_LOADING, 0, 1 },
     [WIDE_PLAIN_VS]         = { 0x00071100u, 0x001CCA80u, "VS mode's setup screen", WIDE_FILL_ALWAYS, 0, 0 },
+    [WIDE_PLAIN_LOADING_HELD] = { 0x00066660u, 0x001CB0A8u, "the loading screen held under a message box",
+                                  WIDE_FILL_LOADING_HELD, 0, 1 },
 };
 
 /* The menu drawing now and its object, or -1. */
@@ -615,7 +618,10 @@ static int fill_draws(const uint8_t *mem, const WidePlainMenu *m, uint32_t self,
         return pass == WIDE_GRAFFITI_PASS && (state == 4u || state == 8u);
     case WIDE_FILL_LOADING:
         return guest32(mem, self + WIDE_LOADING_SHOWN) == 1u
-            && !(mem[self + WIDE_LOADING_FLAGS] & 0x02u);
+            && !(mem[self + WIDE_LOADING_FLAGS] & WIDE_LOADING_HIDDEN);
+    case WIDE_FILL_LOADING_HELD:
+        return (mem[self + WIDE_LOADING_FLAGS] & (WIDE_LOADING_HELD | WIDE_LOADING_HIDDEN))
+            == WIDE_LOADING_HELD;
     default:
         return 1;
     }

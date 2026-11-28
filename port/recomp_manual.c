@@ -6945,7 +6945,13 @@ void sub_0003D610(void)
     line = s_text.line;
     c.ctx = &t;
     g_esp = (esp - (s_text.len + 16u)) & ~15u;
+    /* Marked round its letters and pictures, which come after its last
+     * piece: the renderer draws them at the letters' depth (prompt_text.h). */
+    if (MEM32(D3D_DEVICE))
+        prompt_buttons_line(m, MEM32(D3D_DEVICE), 1, d3d_make_space);
     prompt_text_draw(&s_text, m, text, g_esp, f[0], f[1], f[2], f[3], &c);
+    if (MEM32(D3D_DEVICE))
+        prompt_buttons_line(m, MEM32(D3D_DEVICE), 0, d3d_make_space);
     if (line >= 0 && line < (int)sizeof told && !told[line] && t.marks) {
         told[line] = 1;
         fprintf(stderr, "[INPUT] button prompts: the game's line at %08X drawn with %d picture%s in art %d, "
@@ -6974,7 +6980,9 @@ void sub_000131F0(void)
  * +0xC with this in ecx, marks its frame for the side fill before the menu
  * draws, and its moving rectangles are found while it draws, until
  * widescreen_menus_fill_end. Each is the only draw of its class, entered
- * only through it. pass is the draw's one argument, for the graffiti menu. */
+ * only through it, but the loading screen's two (+0xC, and +0x3C held
+ * under a message box). pass is the draw's one argument, for the graffiti
+ * menu. */
 static int wide_menu_fill(int plain, uint32_t pass)
 {
     return widescreen_menus_fill((uint8_t *)g_xbox_mem_offset, MEM32(D3D_DEVICE), plain, g_ecx,
@@ -7053,7 +7061,7 @@ void sub_0011AC50(void)
     widescreen_menus_fill_end(began);
 }
 /* sub_00127080: the garage's graffiti menu's draw (class 0x1DA300, slot
- * +0x24; one argument, the pass, ret 4), filled on its pass 9 in its
+ * +0xC; one argument, the pass, ret 4), filled on its pass 9 in its
  * states 4 and 8. */
 extern void sub_00127080_gen(void);
 void sub_00127080(void)
@@ -7069,6 +7077,18 @@ void sub_00066550(void)
 {
     int began = wide_menu_fill(WIDE_PLAIN_LOADING, 0);
     sub_00066550_gen();
+    widescreen_menus_fill_end(began);
+}
+/* sub_00066660: the loading screen's other draw (class 0x1CB0A8, slot
+ * +0x3C; one argument, ret 4), the one the task manager calls in its mode
+ * +0x4C, set when loading ends with a message box up (a save's graffiti
+ * that won't load): the screen held under the box, with its rectangles,
+ * filled while its flag 0x08 is set (widescreen_menus.h). */
+extern void sub_00066660_gen(void);
+void sub_00066660(void)
+{
+    int began = wide_menu_fill(WIDE_PLAIN_LOADING_HELD, 0);
+    sub_00066660_gen();
     widescreen_menus_fill_end(began);
 }
 /* sub_00071100: VS mode's setup screen's draw, its object's (class

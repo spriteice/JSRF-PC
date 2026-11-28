@@ -243,6 +243,14 @@ uint32_t prompt_buttons_upright(uint8_t *mem, uint32_t device, float grow,
     return device ? prompt_buttons_push(mem, device, words, make_space) : 0u;
 }
 
+uint32_t prompt_buttons_line(uint8_t *mem, uint32_t device, int open, widescreen_hud_space_fn make_space)
+{
+    const uint32_t words[NV2A_PROMPT_MARK_WORDS] = {
+        NV2A_PROMPT_LINE_TAG, open ? NV2A_PROMPT_LINE_OPEN : NV2A_PROMPT_LINE_SHUT, 0u, 0u
+    };
+    return device ? prompt_buttons_push(mem, device, words, make_space) : 0u;
+}
+
 /* Once for each button, in the box and out of it: where it went, from
  * which node, with each node's sphere (its size is to be checked against
  * the game's own in the test build). The Start's first flat draw is at no

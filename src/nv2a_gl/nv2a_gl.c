@@ -3692,15 +3692,20 @@ static char *splice_define(const char *src, const char *def)
  * emitter carries the epilogue behind an #ifdef; this is only the switch).
  * RECOMP_GL_Z01 takes the program's depth as the 0..1 it already is, rather
  * than dividing it by a clip range it never used. */
+static int gl_z01(void)
+{
+    static int z01 = -1;
+    if (z01 < 0) z01 = getenv("RECOMP_GL_Z01") ? 1 : 0;
+    return z01;
+}
 static uint32_t build_program(const char *vsrc, const char *fsrc, const char *what)
 {
-    static int zview = -1, z01 = -1;
+    static int zview = -1;
     char *v2 = NULL, *f2 = NULL;
     uint32_t prog;
     if (zview < 0) zview = getenv("RECOMP_GL_ZVIEW") ? 1 : 0;
-    if (z01 < 0)   z01   = getenv("RECOMP_GL_Z01") ? 1 : 0;
     if (zview) f2 = splice_define(fsrc, "#define NV2A_ZVIEW_ON 1\n");
-    if (z01)   v2 = splice_define(vsrc, "#define NV2A_Z01 1\n");
+    if (gl_z01()) v2 = splice_define(vsrc, "#define NV2A_Z01 1\n");
     { double t0 = mono_now(), dt;
       prog = G->prog_new(v2 ? v2 : vsrc, f2 ? f2 : fsrc, what);
       dt = mono_now() - t0;
@@ -7058,6 +7063,12 @@ static float g_upright_grow = NV2A_PROMPT_UPRIGHT_GROW;
  * right in the title's pixels, none while the right isn't above the left,
  * and none again at each frame's end. */
 static float g_prompt_window[2];
+/* A line of the game's text with pictures in it, while it's open (the game
+ * side's line marks, nv2a_prompts.h, NV2A_PROMPT_LINE_TAG; shut again at
+ * each frame's end), and the depth of its letters, GL's NDC z, once one of
+ * its draws has given it (prompts_line_depth): its pictures, which come
+ * after its last piece, are drawn there. */
+static struct { int open, have; float z; } g_prompt_line;
 
 /* what: a control, or NV2A_PROMPT_MARK_GROUP and a group (nv2a_prompts.h). */
 static uint32_t prompts_flat_picture(int art, int what, int px, int box)
@@ -7168,7 +7179,28 @@ static void prompts_flat(void)
         part = uv;
     }
     tex = prompts_flat_picture(art, what, px, box);
-    if (tex) G->picture(tex, rect, part, opacity);
+    if (!tex) return;
+    /* A line's picture at its letters' depth, a quarter of a step behind
+     * them (nv2a_prompts_depth.h), so what the game draws after them behind
+     * them can't cover it and what covers them covers it; a box's button,
+     * or a line's whose letters weren't seen, over the frame. Each said
+     * once. */
+    if (!box && g_prompt_line.open && g_prompt_line.have) {
+        static int told;
+        const float z = nv2a_prompts_behind(g_prompt_line.z, g_revz);
+        if (!told++)
+            fprintf(stderr, "  [GL] button prompts: a line's pictures drawn at its letters' depth (%.9f in "
+                    "GL's depth%s), from present %u\n", (double)z, g_revz ? ", reversed" : "", S.flips);
+        G->picture(tex, rect, part, opacity, &z);
+        return;
+    }
+    if (!box && g_prompt_line.open) {
+        static int told;
+        if (!told++)
+            fprintf(stderr, "  [GL] button prompts: a line's picture with no depth from its letters (no "
+                    "vertex program's draw in the line): drawn over the frame, from present %u\n", S.flips);
+    }
+    G->picture(tex, rect, part, opacity, NULL);
 }
 
 /* The mark's last word: an upright size's (nv2a_prompts.h,
@@ -7181,7 +7213,13 @@ static void prompts_mark(void)
     static float said[8];
     static int nsaid, window_said;
     float grow, left, right;
-    int i;
+    int i, open;
+    if (nv2a_prompts_line_read(g_prompt_mark, &open)) {
+        g_prompt_mark[0] = 0;
+        g_prompt_line.open = open;
+        g_prompt_line.have = 0;
+        return;
+    }
     if (nv2a_prompts_window_read(g_prompt_mark, &left, &right)) {
         g_prompt_mark[0] = 0;
         g_prompt_window[0] = left;
@@ -7217,6 +7255,12 @@ static void prompts_upright_frame_end(void)
     static int told;
     g_upright_laid_n = 0;
     g_prompt_window[0] = g_prompt_window[1] = 0.0f;
+    if (g_prompt_line.open) {
+        static int said;
+        if (!said++)
+            fprintf(stderr, "  [GL] button prompts: a line of text still open at the frame's end: shut\n");
+        g_prompt_line.open = g_prompt_line.have = 0;
+    }
     if (g_upright_grow == NV2A_PROMPT_UPRIGHT_GROW) return;
     if (!told++)
         fprintf(stderr, "  [GL] button prompts: the upright size %.2f still set at the frame's end: "
@@ -8169,6 +8213,19 @@ static void ff_revz_row(float out[4])
         out[c] = (float)((far_end * S.u.ff_mat[3][c] - S.u.ff_mat[2][c]) / range);
 }
 
+/* The posMode a draw's program is given (do_draw_body, "Which space the
+ * program left its position in"): 0, or RECOMP_GL_POSMODE's, 9 asking for
+ * one mode per pipeline. */
+static int draw_pos_mode(void)
+{
+    static int mode = -2;
+    if (mode == -2) {
+        const char *v = getenv("RECOMP_GL_POSMODE");
+        mode = v ? atoi(v) : 0;
+    }
+    return mode == 9 ? (S.xf_mode == NV2A_XF_MODE_FIXED ? 0 : 1) : mode;
+}
+
 /* Whether the draw, through program cache slot `slot`, comes through D3D's
  * screen-space (XYZRHW) pass-through program: the title's 2D -- the HUD,
  * text, menus, and its copies of whole frames (nv2a_wide.h). */
@@ -8176,6 +8233,41 @@ static int draw_screen_space(int slot)
 {
     return S.xf_mode != NV2A_XF_MODE_FIXED
         && g_pcache[slot].inputs == NV2A_WIDE_SCREEN_SPACE_INPUTS;
+}
+
+/* A vertex program's draw in an open line of text (g_prompt_line), one of
+ * its pieces': the depth GL gives its first vertex, the line's letters'
+ * (their quads are flat), from its program run on the CPU (nv2a_vsh_interp)
+ * and the epilogue's depth (nv2a_vsh_ndc_z) with the draw's own posMode,
+ * clip range and viewport. The last of the line's draws is kept. Left as it
+ * was where the program can't be read or run. The first is said in the
+ * log, with whether it was screen space. */
+static void prompts_line_depth(const VtxLive *live, int nlive, const int *attr_at, int slot)
+{
+    static Nv2aVshProgram vp;
+    static int told;
+    const uint32_t pstart = S.prog_start < NV2A_VSH_MAX_INSNS ? S.prog_start : 0;
+    float v[NUM_ATTRS * 4], in[NV2A_VSH_NUM_INPUTS][4], op[4], z;
+    int a;
+    if (attr_at[0] < 0) return;
+    vtx_convert(live, nlive, S.idx[0], v);
+    if (nv2a_vsh_decode(S.prog + pstart * 4, (int)(NV2A_VSH_MAX_INSNS - pstart), &vp) <= 0) return;
+    for (a = 0; a < NV2A_VSH_NUM_INPUTS; a++) {
+        if (a < NUM_ATTRS && attr_at[a] >= 0) memcpy(in[a], v + attr_at[a], sizeof in[a]);
+        else if (a < NUM_ATTRS) memcpy(in[a], S.const_attr[a], sizeof in[a]);
+        else memset(in[a], 0, sizeof in[a]);
+    }
+    if (!nv2a_vsh_interp(&vp, in, S.u.c, op)) return;
+    z = nv2a_vsh_ndc_z(op, draw_pos_mode(), S.u.z_clip, S.u.vp_off[2], S.u.vp_scale[2], gl_z01());
+    if (z != z) return;
+    g_prompt_line.z = z;
+    g_prompt_line.have = 1;
+    if (!told++)
+        fprintf(stderr, "  [GL] button prompts: a line's letters%s at z %.1f (w %.4f), %.9f in GL's "
+                "depth%s, posMode %d, clip range %.1f to %.1f, from present %u\n",
+                draw_screen_space(slot) ? " in screen space" : ", not in screen space", (double)op[2],
+                (double)op[3], (double)z, g_revz ? ", reversed" : "", draw_pos_mode(),
+                (double)S.u.z_clip[0], (double)S.u.z_clip[1], S.flips);
 }
 
 /*
@@ -9123,6 +9215,12 @@ static void do_draw_body(void)
           fflush(stderr);
       } }
 
+    /* An open line of text's letters (g_prompt_line): their depth, for its
+     * pictures. Its draws are its pieces' alone, the font's, by a vertex
+     * program (the screen-space pass-through: draw_screen_space). */
+    if (g_prompt_line.open && n && S.xf_mode != NV2A_XF_MODE_FIXED)
+        prompts_line_depth(live, nlive, attr_at, slot);
+
     PROF_STEP(STEP_SETUP);
     /* The 2D draws the widescreen squeeze measures (below): it reads their
      * converted positions back, so they take the old path. */
@@ -9832,13 +9930,8 @@ static void do_draw_body(void)
      * wrong place: the traffic and the characters. RECOMP_GL_POSMODE=9 asks
      * for one mode per pipeline so the two can be compared in one frame.
      */
-    { static int mode = -2;
-      int use;
-      if (mode == -2) { const char *v = getenv("RECOMP_GL_POSMODE");
-                        mode = v ? atoi(v) : 0; }
-      use = (mode == 9) ? (S.xf_mode == NV2A_XF_MODE_FIXED ? 0 : 1) : mode;
-      if (uses(slot, NV2A_U_POSMODE))
-          G->uniform_i(NV2A_U_POSMODE, use); }
+    if (uses(slot, NV2A_U_POSMODE))
+        G->uniform_i(NV2A_U_POSMODE, draw_pos_mode());
     /* Whether the fog register carries a real factor or a flat 1.0, and how
      * a fog distance becomes that factor. Uniforms belong to the program
      * object, so these go in per draw like the rest -- the last three only

@@ -616,6 +616,9 @@ int prompt_text_draw(const PromptTextMatch *m, uint8_t *mem, uint32_t text, uint
                      float y, float xs, float ys, const PromptTextCalls *c)
 {
     const float side = PROMPT_TEXT_SIDE * ys, pad = PROMPT_TEXT_PAD * xs, line = PROMPT_TEXT_CELL * ys;
+    /* The pictures, marked once the line's last piece is drawn: so each is
+     * drawn after its letters, at their depth (prompt_text.h). */
+    struct { PromptTextPicture pic; float x, y; } held[PROMPT_TEXT_NAMES * PROMPT_TEXT_PICTURES];
     float cx, cy, px, py;
     uint32_t cur = 0;
     int k, p, marks = 0;
@@ -639,9 +642,11 @@ int prompt_text_draw(const PromptTextMatch *m, uint8_t *mem, uint32_t text, uint
             px = cx;
             py = cy;
         }
-        for (p = 0; p < m->name[k].pics; p++, marks++)
-            c->mark(c->ctx, m->name[k].pic[p], px + pad + ((float)p + 0.5f) * side, py + 0.5f * line,
-                    0.5f * side);
+        for (p = 0; p < m->name[k].pics && marks < (int)(sizeof held / sizeof held[0]); p++, marks++) {
+            held[marks].pic = m->name[k].pic[p];
+            held[marks].x = px + pad + ((float)p + 0.5f) * side;
+            held[marks].y = py + 0.5f * line;
+        }
         gx = px + room(m, k, side, pad);
         cur = at + m->name[k].bytes;
         /* The words after it to the end of its line, from the pictures; the
@@ -658,6 +663,7 @@ int prompt_text_draw(const PromptTextMatch *m, uint8_t *mem, uint32_t text, uint
         }
     }
     if (cur < m->len && !piece(c, mem, text, scratch, cur, m->len, cx, cy, &px, &py)) return 0;
+    for (k = 0; k < marks; k++) c->mark(c->ctx, held[k].pic, held[k].x, held[k].y, 0.5f * side);
     return marks;
 }
 

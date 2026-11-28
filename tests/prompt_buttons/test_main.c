@@ -444,6 +444,40 @@ int main(void)
         CHECK(!nv2a_prompts_window_read(words, &left, &right));
     }
 
+    /* A line's marks, open and shut (round a line of the game's text with
+     * pictures, for its letters' depth): pushed as a button's is, read as
+     * open or shut, and not as a button's, a size's or a window's; any
+     * other word 1, or a stray last word, not read as one; none with no
+     * device. */
+    {
+        uint32_t words[NV2A_PROMPT_MARK_WORDS];
+        float left, right, grow;
+        int open = -1, o;
+        unsigned k;
+        for (o = 1; o >= 0; o--) {
+            put32(DEVICE + WIDE_HUD_D3D_PUT, PUSH);
+            CHECK(prompt_buttons_line(mem, DEVICE, o, make_space) == PUSH && spaces == 0);
+            CHECK(get32(PUSH) == ((NV2A_PROMPT_MARK_WORDS << 18) | NV2A_PROMPT_MARK_METHOD));
+            CHECK(get32(DEVICE + WIDE_HUD_D3D_PUT) == PUSH + 20u);
+            for (k = 0; k < NV2A_PROMPT_MARK_WORDS; k++) words[k] = get32(PUSH + 4u + 4u * k);
+            CHECK(words[0] == NV2A_PROMPT_LINE_TAG
+                  && words[1] == (o ? NV2A_PROMPT_LINE_OPEN : NV2A_PROMPT_LINE_SHUT));
+            CHECK(nv2a_prompts_line_read(words, &open) && open == o);
+            CHECK(!nv2a_prompts_mark_read(words[0], &button, &box, &art));
+            CHECK(!nv2a_prompts_upright_read(words, &grow));
+            CHECK(!nv2a_prompts_window_read(words, &left, &right));
+        }
+        words[1] = 2u;
+        CHECK(!nv2a_prompts_line_read(words, &open));
+        words[1] = NV2A_PROMPT_LINE_OPEN;
+        words[3] = 1u;
+        CHECK(!nv2a_prompts_line_read(words, &open));
+        words[3] = 0u;
+        words[0] = NV2A_PROMPT_WINDOW_TAG;
+        CHECK(!nv2a_prompts_line_read(words, &open));
+        CHECK(prompt_buttons_line(mem, 0, 1, make_space) == 0);
+    }
+
     /* The B out of the box, near the limit: space made first. */
     put32(DEVICE + WIDE_HUD_D3D_PUT, PUSH + 0x100u - 16u);
     space_gives = PUSH2;

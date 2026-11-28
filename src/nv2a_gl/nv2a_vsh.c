@@ -721,6 +721,47 @@ void nv2a_vsh_vprect(const float off[4], const float scale[4],
     }
 }
 
+/* nv_away0 (the GLSL above), on the CPU. */
+static float away0(float t)
+{
+    uint32_t bits;
+    memcpy(&bits, &t, sizeof bits);
+    if (t > 0.0f || bits == 0u) return t < 5.421010862e-20f ? 5.421010862e-20f
+                                     : t > 1.844674407e19f ? 1.844674407e19f : t;
+    return t < -1.844674407e19f ? -1.844674407e19f : t > -5.421010862e-20f ? -5.421010862e-20f : t;
+}
+
+/* The programmable half of emit_viewport_epilogue's depth, below, on the
+ * CPU (nv2a_vsh.h): its three posModes, each as the GLSL works it, with
+ * reversed depth (g_revz) and NV2A_Z01 where the GLSL has them, and
+ * NV2A_CLIP_Z01 0. A change to the one is a change to the other
+ * (tests/vsh_ndc_z). */
+float nv2a_vsh_ndc_z(const float opos[4], int pos_mode, const float z_clip[2], float vp_off_z,
+                     float vp_scale_z, int z01)
+{
+    const float z = opos[2], w = opos[3], aw = away0(w);
+    const float scale = vp_scale_z != 0.0f ? vp_scale_z : 1.0f;
+    float ndc;
+    if (pos_mode == 1) {
+        /* gl_Position (x, y, w - z, w) or (x, y, 2z - w, w), over its w */
+        if (w == 0.0f) return NAN;
+        return g_revz ? (w - z) / w : (2.0f * z - w) / w;
+    }
+    if (pos_mode == 2) {
+        if (g_revz) return (16777215.0f - z) / 16777215.0f;
+        return z / 16777215.0f * 2.0f - 1.0f;
+    }
+    if (g_revz) {
+        if (z01) return (aw - z) / aw;
+        return z_clip[1] > z_clip[0] ? (z_clip[1] - z) / (z_clip[1] - z_clip[0])
+                                     : (vp_off_z + scale - z) / scale;
+    }
+    if (z01) ndc = z / aw;
+    else ndc = z_clip[1] > z_clip[0] ? (z - z_clip[0]) / (z_clip[1] - z_clip[0])
+                                     : (z - vp_off_z) / scale;
+    return ndc * 2.0f - 1.0f;
+}
+
 /*
  * Screen space back to clip space.
  *

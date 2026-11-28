@@ -32,6 +32,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "prompt_art.h"
+#include "nv2a_prompts_depth.h"   /* a line's pictures' depth */
 
 #ifdef __cplusplus
 extern "C" {
@@ -248,6 +249,34 @@ static inline int nv2a_prompts_window_read(const uint32_t words[NV2A_PROMPT_MARK
     *right = r.f;
     return 1;
 }
+
+/* A line of the game's text with names in it (port/prompt_text.h), marked
+ * round its letters and pictures, a mark on the same method: word 0
+ * NV2A_PROMPT_LINE_TAG, word 1 NV2A_PROMPT_LINE_OPEN before the line's
+ * first piece or NV2A_PROMPT_LINE_SHUT after its pictures, words 2 and 3
+ * 0. The pictures come after the line's last piece. While the line is
+ * open the renderer keeps the depth of its letters, the screen-space draws
+ * in it, and draws the line's pictures at that depth, with depth written
+ * where they aren't clear (nv2a_prompts_depth.h): as its letters, a
+ * screen the game draws after them, behind them, can't cover them, and
+ * what covers the letters covers them. It shuts at each frame's end as
+ * well, and a picture in a line whose letters weren't seen is drawn as a
+ * box's, over the frame. */
+#define NV2A_PROMPT_LINE_TAG  0x504C0000u   /* "PL" */
+#define NV2A_PROMPT_LINE_SHUT 0u
+#define NV2A_PROMPT_LINE_OPEN 1u
+
+
+/* Whether a mark's words are a line's, into *open (1 open, 0 shut); 0 for
+ * anything else. */
+static inline int nv2a_prompts_line_read(const uint32_t words[NV2A_PROMPT_MARK_WORDS], int *open)
+{
+    if (words[0] != NV2A_PROMPT_LINE_TAG || words[2] || words[3]) return 0;
+    if (words[1] != NV2A_PROMPT_LINE_OPEN && words[1] != NV2A_PROMPT_LINE_SHUT) return 0;
+    *open = words[1] == NV2A_PROMPT_LINE_OPEN;
+    return 1;
+}
+
 
 /* A picture's rectangle rect (its left, bottom, right and top in the
  * frame's NDC, nv2a_prompts_place) cut to a window from left to right, in

@@ -319,11 +319,12 @@ static void case_pictures(void)
 
 /* ---- drawing -------------------------------------------------------------- */
 
-/* The made-up font: what it drew and the pictures marked. A colour code,
- * $c and its digit, takes no room, as in the game's font. */
+/* The made-up font: what it drew and the pictures marked, each with how
+ * many pieces were drawn before it. A colour code, $c and its digit, takes
+ * no room, as in the game's font. */
 #define WIDE 10.0f                    /* a character's advance at scale 1 */
 static struct { char text[64]; float x, y; } g_piece[8];
-static struct { PromptTextPicture pic; float x, y, half; } g_mark[8];
+static struct { PromptTextPicture pic; float x, y, half; int after; } g_mark[8];
 static int g_npieces, g_nmarks, g_no_font;
 static float g_xs, g_ys, g_end;
 
@@ -369,10 +370,18 @@ static void font_mark(void *ctx, PromptTextPicture pic, float x, float y, float 
     g_mark[g_nmarks].x = x;
     g_mark[g_nmarks].y = y;
     g_mark[g_nmarks].half = half;
+    g_mark[g_nmarks].after = g_npieces;
     g_nmarks++;
 }
 
 static const PromptTextCalls k_font = { font_draw, font_measure, font_mark, NULL };
+
+/* Mark i came after every piece of its line: each picture is drawn after
+ * its letters, at their depth (prompt_text.h). */
+static int after_letters(int i)
+{
+    return i < g_nmarks && g_mark[i].after == g_npieces;
+}
 
 /* text, as one of k_lines with its pictures in art, drawn from (x, y) at
  * scale s: what the draw returns, the match left in *m. */
@@ -406,7 +415,8 @@ static int piece_is(int i, const char *text, float x, float y)
 static int mark_at(int i, int show, int art, int p, float left, float top, float s)
 {
     const float side = PROMPT_TEXT_SIDE * s;
-    return i < g_nmarks && pic_is(g_mark[i].pic, show, art) && CLOSE(g_mark[i].half, 0.5f * side)
+    return i < g_nmarks && pic_is(g_mark[i].pic, show, art) && after_letters(i)
+        && CLOSE(g_mark[i].half, 0.5f * side)
         && CLOSE(g_mark[i].x, left + PROMPT_TEXT_PAD * s + ((float)p + 0.5f) * side)
         && CLOSE(g_mark[i].y, top + 0.5f * PROMPT_TEXT_CELL * s);
 }
