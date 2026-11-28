@@ -39,10 +39,9 @@ The thread's first reply:
 - names the saved runs (pre-recorded playback of a play session) its
   testing will need: for each, the area or stage, what the player does
   there, and the devices and modes. It says whether the shared folder's
-  `input-playback/RUNS.md` has one that suits and still plays on route
-  (until input playback's release is out, it lists recordings and no
-  saved run), and for any it hasn't, what I'd need to record, or which
-  steps I'd test by hand instead;
+  `input-playback/RUNS.md` has one that suits and still plays on route,
+  and for any it hasn't, what I'd need to record, or which steps I'd test
+  by hand instead;
 - says anything it can already see that will stop it (What still needs
   me, below).
 
@@ -115,7 +114,10 @@ the thread also:
   (Workflow, Taking turns on `main`), and waits there for that item's
   push. If that item has stopped, or no thread is working on it, it asks
   me whether to go first. The table's row order isn't a commit order,
-  and items the backlog doesn't order go in the queue's order.
+  and nor are the backlog's phases by themselves: a phase orders the work,
+  and only what the notes say waits for what (as b3's "rows 25 to 27 come
+  before the baseline build, which waits for them") orders the commits.
+  Items the backlog doesn't order go in the queue's order.
 - **Checks for overlap once its fix is planned** (Workflow 2), against
   the items in progress in other threads (the backlogs' rows started and
   not yet pushed): whether either change could change what the other's

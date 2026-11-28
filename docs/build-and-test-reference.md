@@ -43,14 +43,21 @@ or a light build's NOTE.md, says which of the thread's it is.
   780M, 16 GB shared memory. When it's free, an extra Windows test device
   for AMD's Windows driver, where known bug 4 shows. Nothing is built on
   it, and no test waits for it.
+- **Windows, unattended:** a Dell OptiPlex: Windows 11, an Intel Core
+  i5-2500, 8 GB, Nvidia Quadro 600 (1 GB). It is JSRF-PC's alone (since
+  28 November 2026): nobody plays on it and nothing is built on it, and it
+  stays on and signed in, nights included: it takes playback runs with
+  nobody at the pad, over SSH from the PC (Playback runs, On the
+  OptiPlex), and is the low end of what JSRF-PC is tested on. Its plays
+  are compared only with its own.
 - On the Ally X I test in Desktop Mode (KDE). Ask me whether the session is
   X11 or Wayland (`echo $XDG_SESSION_TYPE` on the device). Every build must
   also work in Game Mode (gamescope).
 - I only run builds you deliver. I don't build by hand: you build on the
   Windows PC yourself, or in the cloud while another thread has it (When
   the PC is busy, below). Nothing on the devices is installed or changed but
-  what "On my PC" (below) lists, and on the Ally X what "Playback runs"
-  (below) lists, unless I say so.
+  what "On my PC" (below) lists, and on the Ally X and the OptiPlex what
+  "Playback runs" (below) lists, unless I say so.
 
 ## Where the work runs
 
@@ -76,9 +83,9 @@ files move between them, and what the PC has installed.
 - **Set up once:** Docker, through WSL 2, for the build image, and Git and
   Python for the checkout and the Windows tests, each at the version
   building-on-pc/README.md lists, and Windows' own OpenSSH client for
-  playback runs on the Ally X, with its key and its list of known hosts
-  in `Building\ssh\` (Playback runs). Anything else, or another version,
-  is asked for first.
+  playback runs on the Ally X and the OptiPlex, with its one key and its
+  list of known hosts, a line for each device, in `Building\ssh\`
+  (Playback runs). Anything else, or another version, is asked for first.
 - **One folder for everything:** my Claude folder,
   `E:\Games\Ports\jsrf\Claude`, is the only folder a thread names on the
   PC, exactly as `list_devices` lists it: for folder access, for the
@@ -94,10 +101,25 @@ files move between them, and what the PC has installed.
   Windows tests' steps are kept once, in `Building\scripts\`, and a run of
   them is its run file, `RUN.txt` in the run's folder: the base, each diff
   with its SHA-256, and each tree's hash and test count
-  (building-on-pc/README.md has its lines). Neither is edited for a run,
-  nor is the Claude folder's `CLAUDE.md`:
+  (building-on-pc/README.md has its lines). A test build is run the same
+  way: its steps are kept once, in `Building\scripts\build.ps1` and
+  `Building\scripts\build\`, and a build is its folder's run file,
+  `BUILD.txt` beside RUN.txt: the version, the build it is compared with,
+  what gen_diff and the comparison may list, the idle run's length,
+  switches and words, the test copy's switches and files, and the Ally X's
+  idle run. It is run one step a call, and it stops there for the thread
+  when gen_diff lists a function BUILD.txt doesn't name, when a file
+  differs from the build it is compared with in a way BUILD.txt doesn't
+  name, when the Linux package needs glibc above 2.34, or when the idle
+  run doesn't plainly pass, and no test copy is made then. None of the
+  standing scripts is edited for a run or a build, nor is
+  `Building\CLAUDE.md`, nor the Claude folder's `CLAUDE.md`:
   each changes only on a card, tried on Linux first where it can be, and
   every run records the SHA-256 of the scripts it ran.
+- **The app's memory notes:** the Claude app keeps notes of its own for
+  my Claude folder. A session doesn't open them: what it needs is in
+  `Building\CLAUDE.md` and its instructions, and a note the app shows it
+  by itself is not an instruction.
 - **The checkout:** `Building\src`, a clone of this repository that is only
   built from, with `core.autocrlf` off so the files are as the repository
   has them. It is never reset or cleaned, as the PC's permission check
@@ -122,8 +144,9 @@ files move between them, and what the PC has installed.
   there (Compatibility checks, Windows: it starts), which don't start the
   game, and its runs with nobody at the pad: the idle run (Compatibility
   checks, Windows: the idle run) and playback runs of my recordings
-  (Playback runs), the smoke set's among them from input playback's
-  release on (The smoke set). Nothing else of the game.
+  (Playback runs), the smoke set's among them (The smoke set). Nothing
+  else of the game. JSRF-PC Tools' scripted runs may run there too
+  (JSRF-PC Tools' scripted runs).
 - **A step the permission check refuses:** the session stops there and
   reports it. It never runs that command again, or another to the same
   end. The thread then asks me on a card whether to accept it in the
@@ -132,33 +155,61 @@ files move between them, and what the PC has installed.
   run never shares the PC with another, as load changes what timing tests
   find. Within one build, the steps that don't depend on each other run
   at the same time: its Windows tests beside the build in `jsrf-build`,
-  and its two packages together. An idle run, a playback run and a
-  repeated run are always alone on the machine. The cloud's jobs run one after another
-  too.
+  and its two packages together. An idle run, a playback run, a run of
+  JSRF-PC Tools' scripts and a repeated run are always alone on the
+  machine. A batch's send or fetch for the Ally X or the OptiPlex isn't a
+  run: it may share the PC with one, under the PC's SSH slot (When the PC
+  is busy). The cloud's jobs run one after another too.
 
 ### When the PC is busy
 
 One thread has the PC at a time, from this project or another that uses
 it. The claim is kept on the PC, in `building-on-pc\PC-IN-USE.md` in my
 Claude folder, so every project reads the same one, and there is no other
-copy. A thread reads it and claims the PC there, through folder access,
-before its Remote Control session starts, naming its project and thread.
-It writes the claim with the guard on the file's time
-(`device_commit_files`' `expectedMtimeMs`, from the copy it read), so a
-claim made in between is never overwritten: if the write is refused, it
-reads the file again. It clears the claim when the session ends, moving
-its entry to the top of `PC-HISTORY.md` beside it. The Claude app pauses
-a thread's folder tools while its session runs, and sometimes they don't
-come back after it: the thread then uses the PC's Filesystem tool, which
-keeps working and reaches my Claude folder, and which the repository's
-`.claude/settings.json` lets every thread use without asking. Through it,
-the thread clears the claim and moves its entry with `edit_file`, the
-claim's exact text as the guard, places the test list in `Testing\`, and
-reads the run's reports and my results and logs. It carries text only, so
-whatever else the run needs goes to the PC before the session. While
-another thread has
-the PC, or the thread can't reach the folder, a test build doesn't wait: it
-is made in the cloud, in the thread's sandbox.
+copy. A thread reads it and claims the PC there before its Remote Control
+session starts, naming its project and thread, and clears it when the
+session ends, moving its entry to the top of `PC-HISTORY.md` beside it.
+It does both with the standing claim script, `building-on-pc\claim.py`,
+run through the folder link's own shell, which also waits for the PC and
+keeps the waiting line, the state paragraph's last sentence, in turn.
+Each write is guarded by the file's SHA-256 as the script last read it,
+so a claim made in between is never overwritten. A thread without the
+folder link's shell, as another project's may be, claims by hand through
+folder access, with the guard on the file's time (`device_commit_files`'
+`expectedMtimeMs`, from the copy it read), keeping the state paragraph's
+form that the claim file's header gives: if the write is refused, it
+reads the file again. What a thread leaves on the PC, such as a build's
+folder, is its own entry in `building-on-pc\PC-LEFT.md`, not part of the
+claim. building-on-pc/README.md has the script's lines.
+
+The folder link's own shell is for file steps in my Claude folder: the
+claims, a run's files into its folder and its reports out of it, and a
+test list into `Testing\`. Nothing of the game, a build, a test or
+another folder is run through it: those are the session's.
+
+The thread ends its Remote Control session with `stop_remote_control` as
+soon as the session's last reply is in: the one its instructions ask for
+at the end, with its reports written. A reply that asks a question, stops
+at a refused step, or says it is still working or waiting isn't the
+last, and a batch the session started on another device runs on by
+itself. The Claude app pauses a thread's folder tools while its session
+runs, and sometimes they don't come back after it: the thread then asks
+the coordinator straight away for a worker thread with folder access,
+which does the file steps the thread has written out (the claims, the
+history entries, copying files), as the project instructions say.
+
+A batch on the Ally X or the OptiPlex holds that device's own claim
+beside the PC's (Playback runs), from its send to its fetch. Its send and
+its fetch, each a short session that runs only `ssh` and `scp` from its
+own run's folder, hold the PC's SSH slot for their minutes
+(`building-on-pc\PC-SSH-IN-USE.md`, one at a time, claim.py's `pcssh`),
+not the PC's claim. So they run whether the PC is free or another
+thread's run holds it, never touch that run, and don't wait for the
+game's processes. A send made inside a run that holds the PC's claim
+anyway, such as a build's idle run on the Ally X, needs no slot.
+
+While another thread has the PC, or the thread can't reach the folder, a
+test build doesn't wait: it is made in the cloud, in the thread's sandbox.
 A release build still waits for the PC, as it checks its generated code
 against the kept copy (What is kept between builds).
 
@@ -201,35 +252,144 @@ unattended, and read their logs.
   set before it, and the in-game menu's rows, marks in the log and
   screenshots at its idle moments and frames), and the settings and saves
   it starts from (`profile/`), which stay on the device it was recorded
-  on. The engine plays it with `--play` on a copy of them, made for each
-  play in the run's `plays/<date>-<time>/` with its screenshots, so my own
-  settings and saves are never opened, and it ends at the recording's end,
-  or when it drifts off route (docs/playing.md, Playback).
+  on. A batch on the OptiPlex plays the PC's runs, so it takes a copy of
+  each run's `profile/` across with them, into the batch's folder there,
+  as the run folder's own: it is never changed there, and each play still
+  plays its own copy of it. The engine plays it with `--play` on a copy
+  of them, made for each play in the run's `plays/<date>-<time>/` with its
+  screenshots, so my own settings and saves are never opened, and it ends
+  at the recording's end, or when it drifts off route (docs/playing.md,
+  Playback).
 - **Never by hand:** you never record a run, or press anything during
   one. A run's log shows what a log can; how anything looks or feels
   stays mine to judge (project rules, Workflow 4).
-- **Minimized and muted:** every run, on the PC and on the Ally X, starts
-  the game with the launcher's `--minimized`, and with `mute=1` (Audio >
-  Mute) in the run's own copy of the settings, so a run doesn't take my
-  screen, keyboard or sound while I use the machine. On Linux the window
-  may show for a moment as it opens (docs/playing.md, Settings keys).
+- **Minimized and muted:** every run, on the PC, the Ally X and the
+  OptiPlex, starts the game with the launcher's `--minimized`, and with
+  `mute=1` (Audio > Mute) in the run's own copy of the settings, so a run
+  doesn't take my screen, keyboard or sound while I use the machine. On
+  Linux the window may show for a moment as it opens (docs/playing.md,
+  Settings keys).
 - **On the PC:** through a Remote Control session, under the PC's claim
   (When the PC is busy), in the build's folder, on a copy of my portable
-  folder made as for testing (Delivery package), and alone on the PC.
+  folder made as for testing (Delivery package), and alone on the PC. A
+  batch of them is run as a test build is (On my PC, The standing rules
+  and scripts): its steps are kept once, in `Building\scripts\plays.ps1`
+  and `Building\scripts\plays\`, and a batch is its folder's run file,
+  `plays\PLAYS.txt` (the package, the runs' folder, and a play line for
+  each run, as the Ally X's BATCH.txt writes it), run one step a call. The
+  plays run in a hidden Windows PowerShell of their own, which outlives
+  the session's tool call, and a play that stops before it starts, or
+  writes no log, ends the batch there.
 - **On the Ally X:** over SSH from the PC's session, in Desktop Mode, on
   power and on my network. The session copies the Linux package and the
   run folders across with `scp`, starts a batch of runs that outlives the
   connection (`systemd-run --user`), kept awake with `systemd-inhibit` so
-  no power setting changes, and copies each run's log back. A batch holds
+  no power setting changes, and copies each run's log back. The batch
+  wakes the Ally X's screen and holds it on while it runs, with Plasma's
+  own inhibitor (`kde-inhibit --power --screenSaver`), so the game paces
+  itself by the screen's refreshes as it does when I play: the log says
+  so with `[WIN] counting the display's refreshes from the kernel`, and a
+  play paced by the game's own clock instead (`[WIN] frames are paced by
+  the game's clock: no display`) ends the batch. It leaves the screen as
+  it found it, off again if it was off, and changes no Plasma setting. Its
+  scripts are the standing ones in `Building\scripts\allyx\`, started by
+  `Building\scripts\allyx-batch.ps1` from the batch's run file,
+  `BATCH.txt` (building-on-pc/README.md has its lines). A batch holds
   the Ally X's claim, `building-on-pc\ALLY-X-IN-USE.md` beside the PC's,
-  kept the same way, and nothing else runs there while it is held. What I
-  set up there once: SSH turned on (`sudo systemctl enable --now sshd`), a
-  password for `deck`, and the PC's key in `~/.ssh/authorized_keys`.
-  Nothing is installed, and `sudo systemctl disable --now sshd` undoes it.
-  Game Mode isn't run this way: I test it myself.
+  kept the same way, with `ALLY-X-HISTORY.md` and, for what a batch leaves
+  there, `ALLY-X-LEFT.md`, and nothing else runs there while it is held.
+  What I set up there once: SSH turned on (`sudo systemctl enable --now
+  sshd`), a password for `deck`, and the PC's key in
+  `~/.ssh/authorized_keys`. Nothing is installed, and `sudo systemctl
+  disable --now sshd` undoes it. Game Mode isn't run this way: I test it
+  myself.
+- **On the OptiPlex:** over SSH from the PC's session, as for the Ally X,
+  to its account `jsrf` (a standard user, with no admin rights), signed
+  in at the OptiPlex's own desktop, on power, with its screen on. The
+  OptiPlex is JSRF-PC's alone, so no run waits for me there: a game found
+  running there is a leftover of an earlier batch, and the batch stops
+  and says so rather than closing it. The session copies the Windows
+  package and the run folders into
+  `C:\Users\jsrf\jsrf-test\batches\<batch>\` with `scp`, and starts the
+  batch through the scheduled task "JSRF-PC batch", so that it runs on
+  jsrf's desktop, where the game has a screen, and outlives the
+  connection. Its scripts are the standing ones in
+  `Building\scripts\optiplex\`, started by
+  `Building\scripts\optiplex-batch.ps1` from the batch's run file,
+  `BATCH.txt`, and its plays are the PC's own `Building\scripts\plays\`
+  (building-on-pc/README.md has their lines). The batch keeps Windows
+  awake, with the screen on, while it runs, and the session copies each
+  run's log back. The 1 GB card shows no frame at my PC's settings, so
+  each play's copy of the settings there also sets the Default resolution
+  and turns off MSAA, SMAA, anisotropic filtering and the upscaling
+  (`resolution`, `msaa`, `smaa`, `aniso`, `upscale_2d`, `upscale_3d` and
+  `upscale_graffiti`), and leaves the draw distance as recorded. A batch
+  holds the OptiPlex's claim, `building-on-pc\OPTIPLEX-IN-USE.md` beside
+  the PC's, kept the same way, with `OPTIPLEX-HISTORY.md` and
+  `OPTIPLEX-LEFT.md`, and nothing else runs there while it is held. My
+  game folder is there, in `jsrf-test\game\`, copied by me: no thread
+  moves game files there, and every run only reads it. What I set up
+  there once (the shared folder's spare-pc/SETUP.md): Windows' own
+  OpenSSH Server, with password and keyboard-interactive logins off and
+  SSH let in from my own network only; the account jsrf, with the PC's
+  key in its `authorized_keys`; the scheduled task; and the power
+  settings. Nothing else is installed, and SETUP.md's last part undoes
+  it.
+- **What comes back:** a batch's results, on the PC or the Ally X, reach
+  the shared folder only through the standing copy-back script (the
+  shared folder's standing-scripts/stage-c/cloud/fetch-results.py), which
+  keeps only the files on its fixed list, each checked against the
+  batch's SHA256SUMS.txt and as text, with my first name put as `<user>`,
+  so no picture, save, package, profile or generated code can pass.
 - **In TESTING.md,** a playback run is a step, `Playback: <run> on
   <device>` (Test checklist), and it passes when its log, read in full,
   shows what the step says I'd see.
+
+### JSRF-PC Tools' scripted runs
+
+JSRF-PC Tools' script mode plays a steps file on the tool's own window,
+with nobody at it, and checks what the window shows and what is on disk
+(docs/jsrf-pc-tools.md, Scripts). You may run it yourself, unattended, on
+the PC and on the Ally X, with the steps files in `launcher/tools/scripts/`
+of the build under test, and read what it writes. The game never starts.
+
+- **On copies, never my files:** each play is on its own copy of a
+  JSRF-PC folder, made in the run's folder: a placeholder launcher and a
+  `data` folder whose saves are a copy of the ones playback runs start
+  from (my portable folder's copy for testing on the PC, the Playback
+  folder's on the Ally X), with no game folder in its settings. The
+  tool's own user folders (`APPDATA` and `LOCALAPPDATA` on Windows, `HOME`
+  and the `XDG_` folders on Linux) point into the run's folder too, so my
+  settings, my saves, the game's files and other emulators' folders are
+  never opened. After the run, it checks that the saves it copied from
+  and my own folders are unchanged: the Playback folder's `portable/` and
+  deck's `~/.config/jsrf-pc`, `~/.local/share/xbased` and `~/.wine` on
+  the Ally X, and my portable folder and `%LOCALAPPDATA%\JSRF-PC\` on the
+  PC.
+- **On the PC:** through a Remote Control session, under the PC's claim,
+  alone on the PC, by the standing scripts: a run is `tools\TOOLS.txt` in
+  the run's folder, run one step a call (check, run, results) by
+  `Building\scripts\tools.ps1`, which is never edited for a run. The
+  tool's window shows on my screen for a few minutes and ignores my mouse
+  and keyboard while a script plays.
+- **On the Ally X:** as a batch, as playback runs are (Playback runs, On
+  the Ally X): over SSH from the PC's session, in Desktop Mode, on power,
+  under the Ally X's claim, alone on the machine, as `tools` and `script`
+  lines in the batch's BATCH.txt, which `Building\scripts\allyx\tools-run.sh`
+  plays before the batch's idle run and plays. The tool's window shows on
+  the screen for a few minutes and ignores the pad, mouse and keyboard
+  while a script plays.
+- **Its verdict:** a play is PASS only when the tool ends by itself with
+  exit 0 and an END line with no step failed, or, for a play closed from
+  outside, when its window is closed as its cross closes it after every
+  step before its last (a pause), and it ends with exit 0, no END line and
+  no step failed.
+- **What comes back:** each play's `script.log` and the run's verdicts,
+  text only, by the standing copy-back script's fixed list (Playback runs,
+  What comes back). The screenshots stay in the run's folder on the PC,
+  where a thread may look at them through folder access.
+- **In TESTING.md,** a scripted run is a step, `Tools script: <steps file>
+  on <device>`, and it passes when the run's verdict for it is PASS.
 
 ### What is kept between builds
 
@@ -313,6 +473,9 @@ published, is never published itself.
   Ask before installing system packages, there or on the PC. A Python
   virtual environment, in a container or the thread's own folder, isn't
   one (Building, 4).
+- **On the PC,** the steps below are the standing build scripts', run
+  from the build's BUILD.txt (On my PC, The standing rules and scripts),
+  never copied or changed for a build.
 
 ### 1. Generated code
 
@@ -663,15 +826,16 @@ On the PC, the package as delivered then plays the game's title on its
 own, with nobody at the pad, to show that the build gets that far and stays
 up:
 
-- **How:** with the shared folder's building-on-pc/idle-run/ script (its
-  README says how), on a second copy of my portable folder, made as for
-  testing (Delivery package), so the copy I test with isn't touched,
-  minimized and muted as a playback run is (Playback runs). The
-  game shows its title and the scene behind it, and about 3 minutes 40
-  seconds in (the game's frame 13415) goes back to the intro, loading the
-  title again. The run ends there, and the game is closed through its
-  window, not killed. input-playback/PHASE-0.md's six idle runs are what
-  it looks like.
+- **How:** with the standing idle run, `Building\scripts\idle-run.ps1`, run
+  from there and never copied (the shared folder's
+  building-on-pc/idle-run/README.md says how), on a second copy of my
+  portable folder, made as for testing (Delivery package), so the copy I
+  test with isn't touched, minimized and muted as a playback run is
+  (Playback runs). The game shows its title and the scene behind it, and
+  about 3 minutes 40 seconds in (the game's frame 13415) goes back to the
+  intro, loading the title again. The run ends there, and the game is
+  closed through its window, not killed. input-playback/PHASE-0.md's six
+  idle runs are what it looks like.
 - **Passes** when its log, read in full on the PC, has the build's version
   on its first line, shows the title loaded at the start and again after
   the timeout (two `[LOAD]` lines for mission 0000005A's stage 00010000),
@@ -688,6 +852,22 @@ up:
   window opened minimized on Windows puts no frame on screen until it is
   shown, so the presenter's lines (`[PRESENT]`) count none, and no display
   is measured.
+
+### Linux: the idle run
+
+On the Ally X, the Linux package as delivered plays the same idle run, so
+Linux gets the check on every build that Windows has:
+
+- **How:** as a batch with only its idle line (Playback runs, On the
+  Ally X), on a copy of the Playback folder's portable folder, so nothing
+  of mine there is touched, minimized and muted, with the screen woken
+  and held. The game is closed through its window, not killed.
+- **Passes** as the Windows idle run does, from the same log lines, and
+  its log's `[WIN]` line also shows it paced by the screen's refreshes.
+  If the Ally X is off, asleep, in Game Mode, off power or in use, the
+  run waits for the next build, and TESTING.md says so; it fails nothing
+  then.
+- **If it fails,** as the Windows idle run.
 
 ### Linux and Windows: package contents
 
@@ -722,7 +902,9 @@ build image changed: find why before delivering.
 
 One folder per build, named `<date>-<commit>-<topic>` (as in
 `2026-10-23-ce20630-menu-cleanup`). It is made in `Building\` on the PC,
-or in the sandbox while another thread has the PC (When the PC is busy),
+by the standing build scripts from its BUILD.txt (On my PC, The standing
+rules and scripts), or in the sandbox while another thread has the PC
+(When the PC is busy),
 and kept in the shared folder's `test-builds/`, which stays the record,
 holding (a light build holds less: Light builds):
 
@@ -782,9 +964,9 @@ test-lists/README.md has its path.
 - **What to test:** numbered steps for the areas the change's code touches,
   and nothing else, each saying exactly what to do and on which device,
   what I should see if it works, and what I'd see if it doesn't. A change
-  to a shared layer also has the smoke set's runs, from input playback's
-  release on (The smoke set). A step can be a playback run, `Playback:
-  <run> on <device>`, which you run and mark from its log (Playback runs).
+  to a shared layer also has the smoke set's runs (The smoke set). A step
+  can be a playback run, `Playback: <run> on <device>`, which you run and
+  mark from its log (Playback runs).
 - **Where:** Desktop Mode, Game Mode, or both on the Ally X, and the Windows
   PC. A step for the laptop is marked optional, and only for a change that
   could act differently on AMD's Windows driver.
@@ -831,14 +1013,14 @@ breaking a stage nobody was looking at.
   recompiler and the pipeline, the kernel, the device models, the renderer
   and the platform layer, and the build itself (the CMake files, the build
   images, the flags). When unsure, it is one.
-- **Where:** on the PC and on the Ally X, with nobody at the pad, as
-  input-playback/RUNS.md says, minimized and muted as every playback run
-  is (Playback runs). Each run is a step in TESTING.md, and it passes when
-  its log, read in full, shows what the step says I'd see.
-- **Until input playback's release is out** (RUNS.md lists the saved
-  runs from then), there is no smoke set and nothing waits for it: I test
-  by hand what a saved run would. From then, a new feature's own saved run
-  joins it (project rules, How it's written).
+- **Where:** on the PC and on the Ally X, and on the OptiPlex when it is
+  free, with nobody at the pad, as input-playback/RUNS.md says, minimized
+  and muted as every playback run is (Playback runs). Each run is a step
+  in TESTING.md, and it passes when its log, read in full, shows what the
+  step says I'd see.
+- **The runs** are the saved runs input-playback/RUNS.md lists for it,
+  since input playback shipped in b2.2 (24 November 2026). A new
+  feature's own saved run joins them (project rules, How it's written).
 
 ## Batches
 

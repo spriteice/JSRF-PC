@@ -16,10 +16,12 @@ says what it did about it and asks nothing. A path these docs
 name that isn't in the repository (known-bugs.md, `release-prep/`,
 `test-builds/`, `building-on-pc/` and the work's folders) is in the
 project's shared folder, which isn't published with it. The PC's claim,
-PC-IN-USE.md and PC-HISTORY.md, is the exception: it is in
-`building-on-pc\` in my Claude folder on the PC, where other projects that
-use the PC read it too (docs/build-and-test-reference.md, When the PC is
-busy).
+PC-IN-USE.md and PC-HISTORY.md, with PC-LEFT.md for what threads leave on
+the PC and the standing claim script, claim.py, that keeps them, is the
+exception: it is in `building-on-pc\` in my Claude folder on the PC, where
+other projects that use the PC read it too, beside the Ally X's and the
+OptiPlex's claims and the PC's SSH slot (docs/build-and-test-reference.md,
+When the PC is busy).
 
 Every time written where I could read it is in my zone, UTC+8, written
 like 7:13pm, with my zone's date (the project instructions, section 1): a
@@ -208,10 +210,9 @@ failed, and lets the code carry on.
 
 **Every feature gets tests** of the parts of it that link on their own,
 such as its maths, its settings and its menu rows, as tests/menu and
-tests/freecam do. From input playback's release on, it also gets a saved
-run in the smoke set (docs/build-and-test-reference.md, The smoke set);
-until then, I test it by hand. If no part of it can be reached from a test,
-say why.
+tests/freecam do. It also gets a saved run in the smoke set
+(docs/build-and-test-reference.md, The smoke set). If no part of it can be
+reached from a test, say why.
 
 **Tests link the code they test.** A test builds the real source file,
 never a copy. If the code can't be linked on its own, split it into a unit
@@ -249,6 +250,9 @@ Stop and tell me why instead.
 - Bare numbers: magic numbers, and unnamed addresses or offsets.
 - Sleeps or retries that hide timing bugs.
 - Making up in one layer for a bug in another (Where code goes, 2).
+- A console's keys, or Microsoft's: JSRF-PC and its tools never ask for,
+  read or ship one (no keys.bin, EEPROM.bin, BIOS or key prompt), and a
+  feature that would need one is left out.
 - The recompiler's bring-up probes (`--force-return`, `--entry-stubs` and
   `--trace-functions`) anywhere but a diagnosis. A test build that carries
   one says so in TESTING.md, and none is ever in
@@ -278,13 +282,15 @@ In order:
    checks pass: CI's count of the compilers' warnings in our code
    (docs/build-and-test-reference.md, CI, Warnings). You don't play the
    game: you run only the packaged engine's own checks and its runs with
-   nobody at the pad, the idle run on my PC, and playback runs of my
-   recordings on my PC and the Ally X, the smoke set's among them from
-   input playback's release on (docs/build-and-test-reference.md, "On my
-   PC" and "Playback runs"). So call every runtime claim "unverified" until
-   I test it, but for what those runs' logs show. How anything looks or
-   feels is mine to judge. Never claim something is fixed without
-   evidence. A change made for timing or speed is measured before and
+   nobody at the pad, the idle run on my PC and the Ally X, and playback
+   runs of my recordings on my PC, the Ally X and the OptiPlex, the smoke
+   set's among them, and JSRF-PC Tools' scripted runs on my PC and the
+   Ally X (docs/build-and-test-reference.md, "On my PC", "Playback runs",
+   "JSRF-PC Tools' scripted runs" and the idle runs). So call every
+   runtime claim "unverified" until I test it, but for what those runs'
+   logs show. How anything looks or feels is mine to judge. Never claim
+   something is fixed without evidence. A change made for timing or speed
+   is measured before and
    after, and tuning is measured again when a deeper cause in the same area
    is fixed.
 5. **Track my testing.** Read every log I send in full before reporting on

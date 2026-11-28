@@ -151,19 +151,34 @@ progressing, however rarely it happens.
    same commit, with `-DCMAKE_BUILD_TYPE=Debug` after the version
    (`launcher/windows/build.sh /work b1.1-debug -DCMAKE_BUILD_TYPE=Debug`),
    which turns on the recompiler's register check and indirect-call
-   records (port/CMakeLists.txt). It plays the idle run and, from input
-   playback's release on, the smoke set's runs on the PC, and its logs show
-   no `[ABI]` report (docs/build-and-test-reference.md, Windows: the idle
-   run, and The smoke set). It is never shipped or tested by hand.
+   records (port/CMakeLists.txt). It plays the idle run and the smoke
+   set's runs on the PC, and its logs show no `[ABI]` report
+   (docs/build-and-test-reference.md, Windows: the idle run, and The smoke
+   set). It is never shipped or tested by hand.
 8. **Test those packages:** the test checklist on the Ally X, in Desktop
    Mode and Game Mode, and on the Windows PC. It covers the areas the
    release's changes touch and, on both devices, a fresh install, an
-   upgrade over the previous release and, from input playback's release
-   on, the smoke set (docs/build-and-test-reference.md, The smoke set). If
-   anything fails, it is fixed, the fix gets its own rules check, and the
-   release is built again (step 7). A critical bug found here stops the
-   release (The gate).
+   upgrade over the previous release and the smoke set
+   (docs/build-and-test-reference.md, The smoke set). If anything fails,
+   it is fixed, the fix gets its own rules check, and the release is built
+   again (step 7). A critical bug found here stops the release (The gate).
    Nothing is tagged yet, so no tag ever has to move.
+   - **What a step expects:** a step's "works" names only what some build
+     has been seen to do. A step that tries something no build has shown
+     yet says so, so a failure there isn't read as this release's.
+   - **The upgrade** is tested where the maintainer's settings and saves
+     are: a package's own data folder (`portable/` in builds from before
+     it) is copied into the new package's folder, and the system's
+     settings folder (`~/.config/jsrf-pc`, `%LOCALAPPDATA%\JSRF-PC\`) is
+     used only when that is where the maintainer plays.
+   - **What each device sends:** every run's `last-run.log`, and, from
+     each first start (the fresh install's and the upgrade's), its
+     `build/build.log` and `build/engine.stamp`. An upgrade tested on the
+     system's settings folder on the PC (`%LOCALAPPDATA%\JSRF-PC\`), which
+     no thread can reach, asks for that start's `last-run.log`, from the
+     start that loaded the save, copied by the maintainer into the Claude
+     folder's `Testing\Results\` beside the test list's results, where the
+     thread reads it.
 
 ## Publish
 
@@ -214,8 +229,11 @@ Only on the maintainer's say-so.
 A published tag is never moved. The fix goes in the next release,
 and until then the published release text lists the problem as a known
 issue. The exception is a hotfix, on the maintainer's say-so: it ships the
-fix straight away, as a release of its own (docs/versioning.md). It carries
-only its fix, so it skips steps 1 to 6, and takes the rest:
+fix straight away, as a release of its own (docs/versioning.md). It
+carries its fix, and only what else the maintainer says it may (as
+b2.2-hotfix carried random graffiti's drawn set), so it skips steps 1
+to 6. Whatever it carries still has its README lines and changelog
+entry, in the hotfix's release commit. It takes the rest:
 
 - **The gate,** with its exception for a hotfix (The gate).
 - **Step 7:** the release build, from the hotfix's commit and with the
