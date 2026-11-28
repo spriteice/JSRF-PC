@@ -2,9 +2,13 @@
 USB controller's interrupt beside the display's (test_main.c): every
 interrupt routine and DPC must run holding the guest lock, one at a time,
 and every DPC queued must run once (known bug 16); an interrupt object or
-DPC at guest address 0 is turned away with a [CHECK] line. On Linux the
-threads are src/platform/win32_compat.c's, on Windows the system's. Requires
-GCC on PATH, including MinGW on Windows.
+DPC at guest address 0 is turned away with a [CHECK] line; the vectors
+HalGetInterruptVector gives are the levels the device models raise;
+KeSynchronizeExecution runs its routine once and answers what it returned;
+and a routine not in dispatch is never called, a DPC's and
+KeSynchronizeExecution's each said in one line. On Linux the threads are
+src/platform/win32_compat.c's, on Windows the system's. Requires GCC on
+PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
 """
 import os
@@ -38,3 +42,7 @@ with tempfile.TemporaryDirectory(prefix="usb_interrupt-") as directory:
     for what in ("a KINTERRUPT at guest address 0", "a KDPC at guest address 0"):
         if what not in text:
             sys.exit(f"usb_interrupt: no [CHECK] line for {what}")
+    for line in ("DPC routine 0x00010050 not in dispatch",
+                 "KeSynchronizeExecution: routine 0x00010070 not in dispatch"):
+        if text.count(line) != 1:
+            sys.exit(f"usb_interrupt: \"{line}\" not said once")

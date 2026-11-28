@@ -26,6 +26,15 @@
  * (code/pass2's Q). And KeInitializeInterrupt and KeInitializeDpc given an
  * object at guest address 0 each say so once ([CHECK]) and write nothing:
  * memset was handed NULL, and the test stopped there.
+ *
+ * And the rest of the file's calls, as they are today (b3 row 9e): each
+ * vector HalGetInterruptVector gives is the level the device models raise,
+ * with the IRQL written in the game's byte; KeSynchronizeExecution runs its
+ * routine once, holding the guest lock as its caller does, and answers what
+ * the routine returned; and a DPC, interrupt or synchronize routine that is
+ * not in dispatch is never called, and the call says so: 0, -1 or FALSE,
+ * with a line for the DPC's and KeSynchronizeExecution's, which run.py
+ * counts.
  */
 #include "kernel.h"
 #include <stdio.h>
@@ -61,6 +70,14 @@ void __gcov_dump(void);
 #define VBLANK_ISR_VA    0x00010010u
 #define USB_DPC_VA       0x00010020u
 #define VBLANK_DPC_VA    0x00010030u
+#define SYNC_VA          0x00010040u   /* KeSynchronizeExecution's routine */
+#define LOST_DPC_VA      0x00010050u   /* routines not in dispatch */
+#define LOST_ISR_VA      0x00010060u
+#define LOST_SYNC_VA     0x00010070u
+#define LOST_DPC         0x00001100u   /* their KDPC and KINTERRUPT */
+#define LOST_INTERRUPT   0x00001140u
+#define LOST_VECTOR      5u            /* a vector no device model raises */
+#define IRQLS            0x00001180u   /* 8 bytes, the game's IRQL bytes among them */
 #define USB_VECTOR       1u            /* ohci.c's OHCI_VECTOR */
 #define VBLANK_VECTOR    3u            /* kernel_bridge.c's NV2A_VECTOR */
 
@@ -229,6 +246,20 @@ static void dpc_routine(uint32_t dpc, uint32_t arg1, volatile LONG *run, const c
 static void usb_dpc(void)    { dpc_routine(USB_DPC, 0x11, &s_usb_run, "the USB interrupt's DPC"); }
 static void vblank_dpc(void) { dpc_routine(VBLANK_DPC, 0x21, &s_vblank_run, "the display interrupt's DPC"); }
 
+/* BOOLEAN SynchronizeRoutine(PVOID Context), stdcall: its `ret 4` takes the
+ * return address and the context. It answers s_sync_answer. */
+static volatile LONG s_sync_runs;
+static uint32_t s_sync_context, s_sync_answer;
+static void sync_routine(void)
+{
+    enter("KeSynchronizeExecution's routine");
+    s_sync_context = BRIDGE_MEM32(g_esp + 4);
+    __atomic_add_fetch(&s_sync_runs, 1, __ATOMIC_RELAXED);
+    leave();
+    g_eax = s_sync_answer;
+    g_esp += 8;
+}
+
 recomp_func_t recomp_lookup(uint32_t va)
 {
     switch (va) {
@@ -236,6 +267,7 @@ recomp_func_t recomp_lookup(uint32_t va)
     case VBLANK_ISR_VA: return vblank_isr;
     case USB_DPC_VA:    return usb_dpc;
     case VBLANK_DPC_VA: return vblank_dpc;
+    case SYNC_VA:       return sync_routine;
     default:            return NULL;
     }
 }
@@ -308,6 +340,107 @@ static void call_bridge(void (*bridge)(void), const uint32_t *args, int n)
     g_esp += (uint32_t)n * 4;
 }
 
+/* ULONG HalGetInterruptVector(ULONG BusInterruptLevel, PKIRQL Irql), as the
+ * game asks before it makes each interrupt object: the vector is the level,
+ * which is what the device models raise (ohci.c's OHCI_VECTOR, and
+ * kernel_bridge.c's NV2A_VECTOR), and the IRQL, the level too, is written in
+ * the one byte the game gave; given no byte, it writes nothing. */
+static void the_vectors_are_the_levels(void)
+{
+    const uint32_t usb[] = { USB_VECTOR, IRQLS + 2 }, vblank[] = { VBLANK_VECTOR, IRQLS + 5 };
+    const uint32_t no_irql[] = { VBLANK_VECTOR, 0 };
+    uint32_t usb_vector, vblank_vector, nothing_vector;
+    uint8_t want[8], at_zero;
+    int i;
+
+    for (i = 0; i < 8; i++) {
+        BRIDGE_MEM8(IRQLS + (uint32_t)i) = 0xEE;
+        want[i] = 0xEE;
+    }
+    want[2] = USB_VECTOR;
+    want[5] = VBLANK_VECTOR;
+    call_bridge(bridge_HalGetInterruptVector, usb, 2);
+    usb_vector = g_eax;
+    call_bridge(bridge_HalGetInterruptVector, vblank, 2);
+    vblank_vector = g_eax;
+    at_zero = s_guest[0];
+    call_bridge(bridge_HalGetInterruptVector, no_irql, 2);
+    nothing_vector = g_eax;
+    printf("usb_interrupt: HalGetInterruptVector gave vectors %u and %u for levels "
+           "%u and %u, IRQLs %u and %u\n", usb_vector, vblank_vector, USB_VECTOR,
+           VBLANK_VECTOR, BRIDGE_MEM8(IRQLS + 2), BRIDGE_MEM8(IRQLS + 5));
+    if (usb_vector != USB_VECTOR || vblank_vector != VBLANK_VECTOR || nothing_vector != VBLANK_VECTOR)
+        fail("HalGetInterruptVector gave a vector the device models don't raise");
+    if (memcmp(want, XBOX_TO_NATIVE(IRQLS), sizeof want))
+        fail("HalGetInterruptVector didn't write the IRQL in the game's byte alone");
+    if (s_guest[0] != at_zero)
+        fail("HalGetInterruptVector given no IRQL byte wrote at guest address 0");
+}
+
+/* BOOLEAN KeSynchronizeExecution(Interrupt, SynchronizeRoutine, Context),
+ * called holding the guest lock, as every caller is (a bridge, on a thread
+ * running the title's code): the routine runs once, on this thread, holding
+ * it, marked as an interrupt and beside no other routine, with its context,
+ * and what it answers is the call's answer. */
+static void a_routine_synchronises(void)
+{
+    uint32_t answer;
+
+    for (answer = 0; answer < 2; answer++) {
+        const uint32_t args[] = { USB_INTERRUPT, SYNC_VA, 0x5100u + answer };
+        uint32_t esp = g_esp;
+        LONG runs = s_sync_runs;
+
+        s_sync_answer = answer;
+        g_eax = 0xDEADu;
+        call_bridge(bridge_KeSynchronizeExecution, args, 3);
+        printf("usb_interrupt: KeSynchronizeExecution ran its routine %ld times, "
+               "with context 0x%X, and said %u for its %u\n",
+               (long)(s_sync_runs - runs), s_sync_context, g_eax, answer);
+        if (s_sync_runs - runs != 1)
+            fail("KeSynchronizeExecution did not run its routine once");
+        if (s_sync_context != 0x5100u + answer)
+            fail("KeSynchronizeExecution's routine was not given its context");
+        if (g_eax != answer)
+            fail("KeSynchronizeExecution did not answer what its routine returned");
+        if (g_esp != esp)
+            fail("KeSynchronizeExecution moved the caller's stack");
+    }
+}
+
+/* Routines not in dispatch, a lifted function missing: none is called, and
+ * the stack is as it was. An interrupt's: kernel_raise_interrupt_locked says
+ * -1. KeSynchronizeExecution's: it says FALSE, with a line. A DPC's:
+ * kernel_run_dpc says 0, with a line. kernel_run_dpc takes the guest lock
+ * and gives it back, as the timer thread's drain calls it, so the lock is
+ * given up first. run.py counts the lines. */
+static void routines_not_in_dispatch(void)
+{
+    const uint32_t interrupt[] = { LOST_INTERRUPT, LOST_ISR_VA, 0, LOST_VECTOR };
+    const uint32_t connect[] = { LOST_INTERRUPT };
+    const uint32_t sync[] = { USB_INTERRUPT, LOST_SYNC_VA, 0 };
+    const uint32_t dpc[] = { LOST_DPC, LOST_DPC_VA, 0 };
+    uint32_t esp = g_esp;
+    int raised, ran;
+
+    call_bridge(bridge_KeInitializeInterrupt, interrupt, 4);
+    call_bridge(bridge_KeConnectInterrupt, connect, 1);
+    raised = kernel_raise_interrupt_locked(LOST_VECTOR);
+    if (raised != -1 || g_esp != esp)
+        fail("an interrupt whose routine is not in dispatch was delivered");
+    g_eax = 0xDEADu;
+    call_bridge(bridge_KeSynchronizeExecution, sync, 3);
+    if (g_eax != 0 || g_esp != esp)
+        fail("KeSynchronizeExecution with a routine not in dispatch did not say FALSE");
+    call_bridge(bridge_KeInitializeDpc, dpc, 3);
+    xbox_guest_lock_release();
+    ran = kernel_run_dpc(LOST_DPC, 0x31, 0x32);
+    if (ran != 0 || g_esp != esp)
+        fail("a DPC whose routine is not in dispatch was run");
+    printf("usb_interrupt: routines not in dispatch: the interrupt's said %d, "
+           "the DPC's %d\n", raised, ran);
+}
+
 int main(void)
 {
     const uint32_t usb_int[]    = { USB_INTERRUPT, USB_ISR_VA, 0, USB_VECTOR };
@@ -326,7 +459,9 @@ int main(void)
     slot = xbox_worker_stack_alloc();
     g_esp = XBOX_WORKER_STACK_TOP(slot);
 
-    /* The game's set-up: its interrupts connected, its DPCs made. */
+    /* The game's set-up: its vectors asked for, its interrupts connected,
+     * its DPCs made. */
+    the_vectors_are_the_levels();
     call_bridge(bridge_KeInitializeInterrupt, usb_int, 4);
     call_bridge(bridge_KeInitializeInterrupt, vblank_int, 4);
     call_bridge(bridge_KeInitializeDpc, usb_dpc_init, 3);
@@ -430,6 +565,8 @@ int main(void)
         if (memcmp(before, s_guest, sizeof before))
             fail("an interrupt object or DPC was written at guest address 0");
     }
+    a_routine_synchronises();
+    routines_not_in_dispatch();
 #ifdef TEST_COVERAGE
     /* _exit() skips the exit handlers, and GCC writes the line counts from
      * one, so they are written first. */

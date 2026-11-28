@@ -2,9 +2,10 @@
 alone, as xbox_kernel_bridge_init does (test_main.c): KeTickCount must keep
 up with the host's millisecond clock with no GPU thread running, a timer
 set with KeSetTimer must fire its DPC once, and a timer at guest address 0
-is turned away with a [CHECK] line. On Linux the thread is
-src/platform/win32_compat.c's, on Windows the system's. Requires GCC on PATH,
-including MinGW on Windows.
+is turned away with a [CHECK] line. Run again with no worker stack for the
+timer thread, and then with no TIB, the thread must not start, and say so
+once. On Linux the thread is src/platform/win32_compat.c's, on Windows the
+system's. Requires GCC on PATH, including MinGW on Windows.
 CC, when set, is the compiler instead of gcc.
 """
 import os
@@ -28,13 +29,23 @@ with tempfile.TemporaryDirectory(prefix="kernel_clock-") as directory:
     subprocess.run(cc + ["-O2", "-std=gnu11", "-Wall", "-Wextra", *flags,
                          "-Isrc", "-Isrc/platform", "-Isrc/kernel",
                          *sources, "-lm", "-o", exe], cwd=root, check=True)
-    try:
-        run = subprocess.run([exe], capture_output=True, text=True, timeout=120)
-    except subprocess.TimeoutExpired:
-        sys.exit("kernel_clock: no end in 120 s")
-    text = run.stdout + run.stderr
-    print(text, end="")
-    if run.returncode != 0 or "kernel_clock: all cases pass" not in text:
-        sys.exit(f"kernel_clock: exit {run.returncode}")
+
+    def run(*mode):
+        name = " ".join(["kernel_clock", *mode])
+        try:
+            done = subprocess.run([exe, *mode], capture_output=True, text=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            sys.exit(f"{name}: no end in 120 s")
+        text = done.stdout + done.stderr
+        print(text, end="")
+        if done.returncode != 0 or f"{name}: all cases pass" not in text:
+            sys.exit(f"{name}: exit {done.returncode}")
+        return text
+
+    text = run()
     if "[CHECK] kernel_timer.c:" not in text or "a KTIMER at guest address 0" not in text:
         sys.exit("kernel_clock: no [CHECK] line for the timer at guest address 0")
+    for mode, what in (("no-stack", "no worker stack"), ("no-tib", "no TIB")):
+        line = f"timer thread has {what}; it doesn't start: no clock, timers or DPCs"
+        if run(mode).count(line) != 1:
+            sys.exit(f"kernel_clock {mode}: \"{line}\" not said once")

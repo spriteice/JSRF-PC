@@ -17,6 +17,10 @@
  * runs holding it too. Before the routines took the lock, they ran without it,
  * beside the title, and the first one fails here. A wait that runs APCs also
  * says it didn't wait, for the guest lock's report (xbox_kernel_call_waited).
+ * An APC whose routine is in neither dispatch, a kernel export's slot or
+ * not, is taken off the ring and never called, and says so in a line with
+ * the slot's kernel ordinal, 0 off the kernel's slots, which run.py looks
+ * for (b3 row 9e).
  */
 #include "kernel.h"
 #include <stdio.h>
@@ -38,6 +42,10 @@ void __gcov_dump(void);
 #define WAIT_STACK    0x00080000u   /* the waiting thread's guest stack top */
 #define TITLE_APC_VA  0x00010000u   /* a completion routine in the title */
 #define KERNEL_APC_VA (KERNEL_VA_BASE + 0x3Fu * 4)  /* a kernel export's slot */
+#define LOST_SLOT     0x40u         /* a kernel export with no routine here */
+#define LOST_ORDINAL  202u          /* the ordinal in that slot */
+#define LOST_KERNEL_VA (KERNEL_VA_BASE + LOST_SLOT * 4)
+#define LOST_TITLE_VA 0x00010040u   /* a title address not in dispatch */
 #define IOSTATUS      0x00001000u
 #define RING          32            /* kernel_apc.c's BRIDGE_APC_RING */
 
@@ -213,6 +221,25 @@ int main(void)
         if (s_holds) fail("a full ring's APC left the guest lock held");
     }
     wait_alertably(RING, "a full ring's wait");
+
+    /* APCs whose routines are in neither dispatch: taken off the ring, never
+     * called, and each said in a line, run.py's. */
+    g_slot_ordinals[LOST_SLOT] = LOST_ORDINAL;
+    {
+        long before = ran_now();
+        bridge_queue_apc(LOST_KERNEL_VA, 0x6000u, IOSTATUS);
+        bridge_queue_apc(LOST_TITLE_VA, 0x6001u, IOSTATUS);
+        if (bridge_deliver_pending_apcs() != 2)
+            fail("APCs not in dispatch were left on the ring");
+        if (ran_now() != before)
+            fail("an APC not in dispatch ran another routine");
+        if (g_esp != WAIT_STACK)
+            fail("an APC not in dispatch moved the waiting thread's stack");
+        if (s_holds)
+            fail("an APC not in dispatch left the guest lock held");
+        if (bridge_deliver_pending_apcs() != 0)
+            fail("an APC not in dispatch was delivered twice");
+    }
 
     __atomic_store_n(&s_stop, 1, __ATOMIC_RELEASE);
     while (__atomic_load_n(&s_stop, __ATOMIC_ACQUIRE) < 2)

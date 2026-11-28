@@ -19,6 +19,11 @@
  * given a timer at guest address 0 says so once ([CHECK]) and writes
  * nothing: memset was handed NULL, and the test stopped there.
  *
+ * kernel_timer_start runs once, so the timer thread that can't start is
+ * run.py's second and third runs, `no-stack` and `no-tib`: with no worker
+ * stack for it, or no TIB, kernel_timer_start must say so, once, and start
+ * nothing, so that the clock stands still and a timer set never fires.
+ *
  * The thread's per-pass device work (the display and APU interrupts, the
  * GPU's software methods, the watches) and the DPCs are kernel_bridge.c's and
  * kernel_interrupt.c's, and stand-ins here: only the timer thread is tested.
@@ -68,6 +73,8 @@ size_t xbox_GetMappedSize(void) { return GUEST_BYTES; }
  * to the log comes in order. */
 static DWORD s_main_thread;
 static volatile LONG s_tibs, s_taken_elsewhere;
+/* `no-stack` and `no-tib`: what kernel_timer_start is refused. */
+static int s_no_stack, s_no_tib;
 static void taken_here(void)
 {
     if (GetCurrentThreadId() != s_main_thread)
@@ -77,7 +84,7 @@ uint32_t xbox_AllocThreadTib(void)
 {
     taken_here();
     __atomic_add_fetch(&s_tibs, 1, __ATOMIC_RELAXED);
-    return TIB;
+    return s_no_tib ? 0 : TIB;
 }
 
 /* The worker stack slices, as xbox_memory_layout.c hands them out. */
@@ -86,6 +93,8 @@ int xbox_worker_stack_alloc(void)
 {
     int i;
     taken_here();
+    if (s_no_stack)
+        return -1;
     for (i = 0; i < XBOX_WORKER_STACK_COUNT; i++) {
         LONG bit = 1L << i;
         if (!(__atomic_fetch_or(&s_slots, bit, __ATOMIC_ACQ_REL) & bit))
@@ -292,12 +301,50 @@ static void a_null_timer_is_turned_away(void)
         fail("KeInitializeTimerEx wrote a timer at guest address 0");
 }
 
-int main(void)
+/* 5, run.py's `no-stack` and `no-tib` runs: a timer thread with no worker
+ * stack, or no TIB, doesn't start. kernel_timer_start says so (run.py counts
+ * the line), and a second call says nothing more: the clock stands still,
+ * and a timer set never fires. */
+static void the_timer_thread_cannot_start(void)
+{
+    long long due = -(long long)TIMER_DUE_MS * 10000;
+    const uint32_t init[] = { TIMER, 0 };
+    const uint32_t set[] = { TIMER, (uint32_t)due, (uint32_t)((unsigned long long)due >> 32), DPC };
+    long passes, runs;
+    uint32_t tick;
+
+    kernel_timer_start();
+    kernel_timer_start();
+    call_bridge(bridge_KeInitializeTimerEx, init, 2);
+    call_bridge(bridge_KeSetTimer, set, 4);
+    Sleep(TIMER_DUE_MS * 10);
+    passes = __atomic_load_n(&s_passes, __ATOMIC_RELAXED);
+    runs = __atomic_load_n(&s_dpc_runs, __ATOMIC_ACQUIRE);
+    tick = tick_count();
+    printf("kernel_clock: with no %s, %ld timer thread passes in %d ms, "
+           "KeTickCount %u, a timer's DPC run %ld times\n",
+           s_no_stack ? "worker stack" : "TIB", passes, TIMER_DUE_MS * 10,
+           tick, runs);
+    if (passes)
+        fail("the timer thread ran with nothing to run on");
+    if (tick)
+        fail("KeTickCount moved with no timer thread");
+    if (runs)
+        fail("a timer fired with no timer thread");
+}
+
+int main(int argc, char **argv)
 {
     /* Under the thread sanitizer (tests/run_all.py --tsan) the checks of
      * time are left out, as the sanitizer slows every thread. */
     const char *sanitizer = getenv("TEST_SANITIZER");
+    const char *mode = argc > 1 ? argv[1] : NULL;
     int slot;
+
+    if (mode && strcmp(mode, "no-stack") && strcmp(mode, "no-tib")) {
+        printf("kernel_clock: no run named %s: give no-stack, no-tib or nothing\n", mode);
+        return 2;
+    }
 
     s_main_thread = GetCurrentThreadId();
     s_guest = calloc(1, GUEST_BYTES);
@@ -306,10 +353,17 @@ int main(void)
     slot = xbox_worker_stack_alloc();
     g_esp = XBOX_WORKER_STACK_TOP(slot);
 
-    the_clock_moves(!(sanitizer && *sanitizer));
-    a_timer_fires();
-    a_timer_is_cancelled();
-    a_null_timer_is_turned_away();
+    if (mode) {
+        /* Refused only now: main's own stack is taken above. */
+        s_no_stack = !strcmp(mode, "no-stack");
+        s_no_tib = !s_no_stack;
+        the_timer_thread_cannot_start();
+    } else {
+        the_clock_moves(!(sanitizer && *sanitizer));
+        a_timer_fires();
+        a_timer_is_cancelled();
+        a_null_timer_is_turned_away();
+    }
     if (__atomic_load_n(&s_taken_elsewhere, __ATOMIC_RELAXED))
         fail("the timer thread took its own stack or TIB: kernel_timer_start "
              "must, before it starts, so its lines in the log come in order");
@@ -321,11 +375,12 @@ int main(void)
     __gcov_dump();
 #endif
     if (s_failures) {
-        printf("kernel_clock: %d failures\n", s_failures);
+        printf("kernel_clock%s%s: %d failures\n", mode ? " " : "", mode ? mode : "",
+               s_failures);
         fflush(stdout);
         _exit(1);
     }
-    printf("kernel_clock: all cases pass\n");
+    printf("kernel_clock%s%s: all cases pass\n", mode ? " " : "", mode ? mode : "");
     fflush(stdout);
     _exit(0);
 }
